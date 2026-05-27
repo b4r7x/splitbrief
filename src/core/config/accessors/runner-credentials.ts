@@ -32,8 +32,9 @@ export function missingRunnerCredential(runner: RunnerCredentialConfig): Missing
     };
   }
 
-  const info = PROVIDER_CATALOG[runner.provider];
-  if (!info.apiKeyEnv || runner.apiKey || process.env[info.apiKeyEnv]) return undefined;
+	const info = PROVIDER_CATALOG[runner.provider];
+	if (info.isLocal) return undefined;
+	if (!info.apiKeyEnv || runner.apiKey || process.env[info.apiKeyEnv]) return undefined;
   return {
     provider: runner.provider,
     providerDisplayName: info.displayName,

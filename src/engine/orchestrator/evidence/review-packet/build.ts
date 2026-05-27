@@ -1,7 +1,5 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Summary } from '../../../../core/schemas/summary.js';
-import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { ReviewPacket, ReviewPacketCheckpoint } from '../../../../core/schemas/review-packet.js';
 import { ReviewPacketSchema, REVIEW_PACKET_VERSION } from '../../../../core/schemas/review-packet.js';
 import { RECOVERY_ACTIONS, RECOVERY_REASONS, type RecoveryAction, type RecoveryReason } from '../../../../core/schemas/enums.js';
@@ -33,10 +31,12 @@ import {
   buildFinalReview,
   buildRun,
   buildValidation,
-  makeRecoveryWithSources,
   resolveChangedFiles,
   sourceArtifactMissing,
 } from './sections.js';
+import { addMissing } from './missing-artifacts.js';
+import type { BuildReviewPacketOptions, BriefQualityArtifact, PacketEvent } from './types.js';
+import { makeRecoveryWithSources } from './recovery.js';
 
 const RUN_LEDGER_PATH = `${SNAPSHOTS_DIR}/run-ledger.json`;
 
@@ -50,27 +50,6 @@ export const REVIEWER_CHECKLIST = [
   'Use `diptych snapshot diff SNAPSHOT_ID` before any restore.',
   'Use `diptych snapshot restore SNAPSHOT_ID` only after conflicts are understood.',
 ] as const;
-
-export type BuildReviewPacketOptions = {
-  projectDir: string;
-  sessionId: string;
-  summary: Summary;
-  state: WorkflowState;
-  finalReviewStatus: 'written' | 'failed';
-};
-
-export type BriefQualityArtifact = {
-  version: 1;
-  passed: boolean;
-  score: number;
-  issues: Array<{ severity: 'error' | 'warning'; message: string }>;
-};
-
-export type PacketEvent = ReviewPacket['recoveryDecisions']['events'][number];
-
-export function addMissing(missing: string[], artifact: string): void {
-  if (!missing.includes(artifact)) missing.push(artifact);
-}
 
 function recoveryReason(value: unknown): RecoveryReason | undefined {
   return includes(RECOVERY_REASONS, value) ? value : undefined;
@@ -328,7 +307,14 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     readiness,
     changes: buildChanges(opts.state, ledger, drift, changedFiles),
     checkpoints,
-    recoveryDecisions: makeRecoveryWithSources(opts.projectDir, opts.sessionId, opts.state, events, ledger, missing),
+    recoveryDecisions: makeRecoveryWithSources({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      state: opts.state,
+      events,
+      ledger,
+      missing,
+    }),
     validation: buildValidation(opts.state, ledger),
     evidence: buildEvidence(ledger),
     drift: buildDrift(opts.projectDir, opts.sessionId, drift, briefQuality),

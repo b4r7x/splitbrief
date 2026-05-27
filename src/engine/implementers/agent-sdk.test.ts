@@ -30,8 +30,8 @@ async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
 function setQueryResponse(text: string): void {
   queryMock.mockImplementation(() => asyncIter([
     { type: 'system', subtype: 'init', session_id: 'sess-1' },
-    { type: 'assistant', content: [{ type: 'text', text }] },
-    { type: 'result', content: [{ type: 'text', text }], session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5 } },
+    { type: 'assistant', message: { content: [{ type: 'text', text }] } },
+    { type: 'result', result: text, session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5 } },
   ]));
 }
 
@@ -124,10 +124,10 @@ describe('createAgentSdkImplementer', () => {
     queryMock.mockImplementation((_opts: unknown) => {
       return asyncIter([
         { type: 'system', subtype: 'init', session_id: 'sess-1' },
-        { type: 'assistant', content: [{ type: 'text', text: 'wrote a file' }] },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'wrote a file' }] } },
         {
           type: 'result',
-          content: [{ type: 'text', text: 'wrote a file' }],
+          result: 'wrote a file',
           session_id: 'sess-1',
           usage: { input_tokens: 10, output_tokens: 5 },
         },
@@ -140,10 +140,10 @@ describe('createAgentSdkImplementer', () => {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
       mkdirSync(join(projectDir, 'src'), { recursive: true });
       writeFileSync(join(projectDir, 'src/new-file.ts'), 'export const x = 1;\n');
-      yield { type: 'assistant', content: [{ type: 'text', text: 'ok' }] };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
       yield {
         type: 'result',
-        content: [{ type: 'text', text: 'ok' }],
+        result: 'ok',
         session_id: 'sess-1',
         usage: { input_tokens: 10, output_tokens: 5 },
       };
@@ -168,9 +168,9 @@ describe('createAgentSdkImplementer', () => {
     queryMock.mockImplementationOnce(async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
       writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
-      yield { type: 'assistant', content: [{ type: 'text', text: 'ok' }] };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
       yield {
-        type: 'result', content: [{ type: 'text', text: 'ok' }],
+        type: 'result', result: 'ok',
         session_id: 'sess-1', usage: { input_tokens: 1, output_tokens: 1 },
       };
     });

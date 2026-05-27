@@ -92,6 +92,23 @@ interface KeyInfo {
   provider: string | undefined;
   envVar: string | undefined;
   inConfig: boolean;
+  envRecommended: boolean;
+}
+
+function isSameProviderOrigin(candidate: string | undefined, expected: string | undefined): boolean {
+  if (!candidate || !expected) return true;
+  try {
+    return new URL(candidate).origin === new URL(expected).origin;
+  } catch {
+    return false;
+  }
+}
+
+function envRecommendedForApiProvider(provider: string, apiBase: string | undefined): boolean {
+  if (!isProviderId(provider)) return false;
+  const info = PROVIDER_CATALOG[provider];
+  if (!info.apiKeyEnv) return false;
+  return isSameProviderOrigin(apiBase, info.baseURL);
 }
 
 function plannerKeyInfo(planner: PlannerConfig): KeyInfo {
@@ -99,15 +116,15 @@ function plannerKeyInfo(planner: PlannerConfig): KeyInfo {
     case 'agent-sdk': {
       const envVar = PROVIDER_CATALOG['agent-sdk']?.apiKeyEnv;
       const envKey = envVar ? process.env[envVar] : undefined;
-      return { key: planner.apiKey ?? envKey, provider: 'agent-sdk', envVar, inConfig: !!planner.apiKey };
+      return { key: planner.apiKey ?? envKey, provider: 'agent-sdk', envVar, inConfig: !!planner.apiKey, envRecommended: true };
     }
     case 'api': {
       const envVar = isProviderId(planner.provider) ? PROVIDER_CATALOG[planner.provider].apiKeyEnv : undefined;
       const envKey = envVar ? process.env[envVar] : undefined;
-      return { key: planner.apiKey ?? envKey, provider: planner.provider, envVar, inConfig: !!planner.apiKey };
+      return { key: planner.apiKey ?? envKey, provider: planner.provider, envVar, inConfig: !!planner.apiKey, envRecommended: envRecommendedForApiProvider(planner.provider, planner.apiBase) };
     }
     default:
-      return { key: undefined, provider: undefined, envVar: undefined, inConfig: false };
+      return { key: undefined, provider: undefined, envVar: undefined, inConfig: false, envRecommended: false };
   }
 }
 
@@ -117,14 +134,15 @@ function implementerKeyInfo(implementer: ImplementerConfig): KeyInfo {
   const envVar = providerId ? PROVIDER_CATALOG[providerId].apiKeyEnv : undefined;
   const envKey = envVar ? process.env[envVar] : undefined;
   const apiKey = getRunnerApiKey(implementer);
-  return { key: apiKey ?? envKey, provider: providerId, envVar, inConfig: !!apiKey };
+  const apiBase = implementer.kind === 'api' ? implementer.apiBase : undefined;
+  return { key: apiKey ?? envKey, provider: providerId, envVar, inConfig: !!apiKey, envRecommended: providerId ? envRecommendedForApiProvider(providerId, apiBase) : false };
 }
 
 export function securityWarnings(config: Config): string[] {
   const warnings: string[] = [];
 
   for (const [role, info] of [['planner', plannerKeyInfo(config.planner)], ['implementer', implementerKeyInfo(config.implementer)]] as const) {
-    if (info.inConfig && info.envVar) {
+    if (info.inConfig && info.envVar && info.envRecommended) {
       warnings.push(`API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`);
     }
     if (info.key && info.provider) {
@@ -135,7 +153,7 @@ export function securityWarnings(config: Config): string[] {
   for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
     const info = implementerKeyInfo(profile);
     const role = `implementer profile ${name}`;
-    if (info.inConfig && info.envVar) {
+    if (info.inConfig && info.envVar && info.envRecommended) {
       warnings.push(`API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`);
     }
     if (info.key && info.provider) {

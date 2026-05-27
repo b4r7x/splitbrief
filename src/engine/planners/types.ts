@@ -86,6 +86,11 @@ export interface PlannerCallbacks {
   signal?: AbortSignal | undefined;
 }
 
+export interface PlannerOutputCallbacks {
+  onOutput: (text: string) => void;
+  signal?: AbortSignal | undefined;
+}
+
 /** Result from a single planning phase. */
 export interface PhaseResult {
   /** Resolved artifact content (what should be persisted to disk). */
@@ -136,14 +141,14 @@ export interface Planner extends RunnerRuntime {
     prompt: string,
     artifactType: 'spec' | 'plan',
     projectDir: string,
-    callbacks: { onOutput: (text: string) => void },
+    callbacks: PlannerOutputCallbacks,
   ): Promise<RegenerateResult>;
 
   escalateHint(
     task: Task,
     error: string,
     projectDir: string,
-    callbacks: { onOutput: (text: string) => void },
+    callbacks: PlannerOutputCallbacks,
     languageContext?: LanguageContext,
   ): Promise<EscalationResult>;
 
@@ -151,7 +156,7 @@ export interface Planner extends RunnerRuntime {
     task: Task,
     error: string,
     projectDir: string,
-    callbacks: { onOutput: (text: string) => void },
+    callbacks: PlannerOutputCallbacks,
     languageContext?: LanguageContext,
   ): Promise<EscalationResult>;
 
@@ -179,7 +184,7 @@ export interface Planner extends RunnerRuntime {
   review(
     prompt: string,
     projectDir: string,
-    callbacks: { onOutput: (text: string) => void },
+    callbacks: PlannerOutputCallbacks,
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
   summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string>;

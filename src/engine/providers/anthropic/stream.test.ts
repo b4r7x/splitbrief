@@ -69,6 +69,28 @@ describe('streamAnthropicCompletion', () => {
     });
   });
 
+  it('rejects instead of returning partial text when aborted mid-stream', async () => {
+    const controller = new AbortController();
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":" must-not-complete"}}\n\n',
+      ]),
+    );
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        signal: controller.signal,
+        onProgress: () => controller.abort(new Error('cancelled')),
+      }),
+    ).rejects.toThrow('cancelled');
+  });
+
 });
 
 describe('splitSystemMessages', () => {

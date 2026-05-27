@@ -273,7 +273,7 @@ Workflow lifecycle hooks let users run custom commands or in-process modules at 
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes `sha256(canonical-JSON)` of the hook section; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.diptych/hook-trust.json`. Any edit to the hooks section invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise diptych refuses to start. This prevents silent RCE via a config edit.
+First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.diptych/hook-trust.json`. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise diptych refuses to start. This prevents silent RCE via a config or hook-file edit.
 
 ## Repo-map
 

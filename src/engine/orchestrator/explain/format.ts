@@ -1,4 +1,4 @@
-import type { RunExplain, RunExplainRoute } from './explain.js';
+import type { RunExplain, RunExplainRoute } from './types.js';
 
 const MAX_ROUTING_LINES = 20;
 

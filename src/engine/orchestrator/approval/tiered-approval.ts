@@ -11,6 +11,9 @@ import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { readApprovalsStore, writeApprovalsStore } from '../../../core/approval/store.js';
 import { error } from '../../../utils/error.js';
+import { ActionClassSchema } from '../../../core/schemas/enums.js';
+
+type ApprovalTierOverrides = NonNullable<Config['approval']>['tiers'];
 
 export type GateActionInput = {
   actionDescription: string;
@@ -52,6 +55,18 @@ export function upsertApprovalGrant(projectDir: string, grant: ApprovalGrant): v
   writeApprovalsStore(projectDir, { version: 1, grants: filtered });
 }
 
+function compactTierOverrides(rawTiers: ApprovalTierOverrides | undefined): TierMap | undefined {
+  if (!rawTiers) return undefined;
+  const tierOverrides: TierMap = {};
+  for (const [key, tier] of Object.entries(rawTiers)) {
+    const actionClass = ActionClassSchema.safeParse(key);
+    if (actionClass.success && tier !== undefined) {
+      tierOverrides[actionClass.data] = tier;
+    }
+  }
+  return Object.keys(tierOverrides).length > 0 ? tierOverrides : undefined;
+}
+
 export async function gateAction(input: GateActionInput): Promise<GateDecision> {
   const { actionDescription, task, dependsOnFiles, projectDir, sessionId, phase, taskId, bus, callbacks, config } = input;
 
@@ -59,10 +74,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     return { allow: true };
   }
 
-  const rawTiers = config.approval?.tiers;
-  const tierOverrides: TierMap | undefined = rawTiers
-    ? (Object.fromEntries(Object.entries(rawTiers).filter(([, v]) => v !== undefined)) as TierMap)
-    : undefined;
+  const tierOverrides = compactTierOverrides(config.approval?.tiers);
   const { actionClass, tier } = classifyAction(
     { actionDescription, taskFile: task.file, taskInBounds: taskScopePatterns(task), dependsOnFiles, projectDir, allowedPaths: config.approval?.allowedPaths },
     tierOverrides,
@@ -71,8 +83,6 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   if (tier === 'auto') {
     return { allow: true };
   }
-
-  bus.publish({ type: 'approval_prompted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }) });
 
   const request: TieredApprovalRequest = { tier, actionClass, actionDescription, phase, ...(taskId !== undefined && { taskId }) };
 
@@ -92,6 +102,8 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
       bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: 'session' });
       return { allow: true };
     }
+
+    bus.publish({ type: 'approval_prompted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }) });
 
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
       bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'APPROVAL_REQUIRED' });
@@ -122,6 +134,8 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   }
 
   if (tier === 'confirm') {
+    bus.publish({ type: 'approval_prompted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }) });
+
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
       bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'APPROVAL_REQUIRED' });
       return { allow: false, reason: 'APPROVAL_REQUIRED', tier, actionClass, actionDescription };

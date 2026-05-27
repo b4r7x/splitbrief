@@ -140,6 +140,22 @@ describe('runClaudePlannerStream', () => {
     }
   });
 
+  it('rejects without spawning when the signal is already aborted', async () => {
+    installShim([
+      '{"type":"result","result":"should not run"}',
+    ]);
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await expect(runClaudePlannerStream({
+      prompt: 'p',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: () => {},
+      signal: controller.signal,
+    })).rejects.toThrow('The operation was aborted');
+  });
+
 });
 
 describe('runClaudeOneShot', () => {
@@ -194,6 +210,21 @@ describe('runClaudeOneShot', () => {
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
+  });
+
+  it('rejects without spawning when the signal is already aborted', async () => {
+    installShim([
+      '{"type":"result","result":"should not run"}',
+    ]);
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await expect(runClaudeOneShot({
+      prompt: 'p',
+      projectDir: shimDir,
+      onOutput: () => {},
+      signal: controller.signal,
+    })).rejects.toThrow('The operation was aborted');
   });
 
   it('returns empty text + null usage when the stream contains no result event', async () => {

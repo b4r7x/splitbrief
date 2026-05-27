@@ -3,6 +3,7 @@
 A consolidated set of grep / find commands that must return **zero** (or match the stated count) before any PR merges. Each one encodes an architectural rule documented elsewhere in `docs/`; this file is the single place to run them all.
 
 All gates run automatically as part of `npm run test-ci` via `npm run check:invariants` (implemented in `scripts/check-invariants.ts`).
+The runner fails closed: a broken gate command is a failed gate, not a zero-count pass.
 
 ---
 
@@ -39,7 +40,7 @@ Gates are consolidated here; full rationale for each lives in the linked doc.
 
 When touching provider SDK code, match these patterns rather than reinventing:
 
-- **Anthropic Agent SDK key scoping.** Pass `options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey }` to `query()`. Never mutate `process.env` globally. The per-call `env` option was confirmed in SDK `0.2.114`.
+- **Anthropic Agent SDK key scoping.** Pass `options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey }` to `query()`. Never mutate `process.env` globally. The per-call `env` option is required for the supported `@anthropic-ai/claude-agent-sdk` peer range.
 - **OpenAI abort signal.** Pass `signal` as the second arg to every resource call: `client.chat.completions.create(body, { signal })`. The in-loop `opts.signal?.aborted` check stays for aborts landing between chunks, but the wire-through makes the initial POST cancellable too.
 
 ---

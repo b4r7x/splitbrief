@@ -1,4 +1,5 @@
 import { error } from '../../utils/error.js';
+import { redactSecrets } from '../../utils/redact.js';
 
 export const providerError = {
   unknownNeedsApiBase: (name: string) =>
@@ -22,6 +23,11 @@ export const providerError = {
     error('provider-expected-openai-client', `Expected OpenAI-compatible client for provider '${provider}'`, { provider }),
   httpFailure: (status: number, url: string) =>
     error('provider-http-failure', `HTTP ${status}`, { status, url }),
+  invalidApiBase: (apiBase: string, reason: string) =>
+    error('provider-invalid-api-base', `Invalid apiBase '${redactSecrets(apiBase)}': ${reason}`, {
+      apiBase: redactSecrets(apiBase),
+      reason,
+    }),
   apiBaseExfiltration: (provider: string, envVar: string) =>
     error(
       'provider-api-base-exfiltration',

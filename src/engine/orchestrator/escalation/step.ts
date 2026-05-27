@@ -35,6 +35,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       config: retryRuntime.config,
       implementer: retryRuntime.implementer,
       ...(retryRuntime.implementerProfile !== undefined && { implementerProfile: retryRuntime.implementerProfile }),
+      signal: ctx.signal,
     });
   } catch (err) {
     staged.cleanup();
@@ -45,6 +46,10 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   if (!retryResult.success) {
     staged.cleanup();
     return { state, task, lastError: retryResult.error ?? retryFailureFallback, attempts };
+  }
+  if (ctx.signal?.aborted) {
+    staged.cleanup();
+    return { state, task, lastError, attempts, result: { completed: false, method: 'failed', attempts } };
   }
 
   const stagedChangedFiles = await getChangedFilesSinceSnapshot(staged.projectDir, ctx.taskStartSnapshot);
@@ -64,6 +69,10 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     callbacks: ctx.callbacks,
     config: ctx.config,
   });
+  if (ctx.signal?.aborted) {
+    staged.cleanup();
+    return { state, task, lastError, attempts, result: { completed: false, method: 'failed', attempts } };
+  }
   if (!changedFilesGate.allow) {
     const files = changedFilesGate.changedFiles.join(', ');
     const reason = changedFilesGate.reason ?? 'denied';
@@ -136,7 +145,13 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       task,
       lastError,
       attempts,
-      result: { completed: true, method, attempts },
+      result: {
+        completed: true,
+        method,
+        attempts,
+        ...(commitResult.validationResults.length > 0 && { validationResults: commitResult.validationResults }),
+        ...(actualChangedFiles.length > 0 && { changedFiles: actualChangedFiles }),
+      },
     };
   }
 

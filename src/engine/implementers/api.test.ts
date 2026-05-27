@@ -234,4 +234,35 @@ describe('api implementer — Anthropic path', () => {
       else process.env['ANTHROPIC_API_KEY'] = orig;
     }
   });
+
+  it('refuses env-sourced Anthropic key with a custom apiBase', async () => {
+    const orig = process.env['ANTHROPIC_API_KEY'];
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env-key';
+    try {
+      const cfg = makeConfig({
+        implementer: {
+          provider: 'anthropic',
+          model: 'claude-3-5-sonnet-20241022',
+          apiBase: 'https://proxy.example.com/v1',
+        },
+      });
+      const implementer = createApiImplementer(cfg);
+      const task = makeTask({ id: 'T-ant-guard', file: 'src/guard.ts', action: 'create' });
+
+      const result = await implementer.implement({
+        task,
+        projectDir,
+        config: cfg,
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error).toMatch(/exfiltrat/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = orig;
+    }
+  });
 });

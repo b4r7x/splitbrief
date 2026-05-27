@@ -167,4 +167,37 @@ describe('runApprovalLoop', () => {
     expect(regenCalls[0]?.[1]).toBe('spec');
     expect(approvalCalls).toBe(2);
   });
+
+  it('passes the abort signal into planner regeneration callbacks', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const controller = new AbortController();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn()
+        .mockResolvedValueOnce({ approved: false, comment: 'revise' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus } = makeBusRecorder();
+    let capturedSignal: AbortSignal | undefined;
+    const planner = makePlanner({
+      regenerate: async (_prompt, _target, _projectDir, regenCallbacks) => {
+        capturedSignal = regenCallbacks.signal;
+        return { text: 'regenerated', usage: null };
+      },
+    });
+
+    await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+      signal: controller.signal,
+    });
+
+    expect(capturedSignal).toBe(controller.signal);
+  });
 });

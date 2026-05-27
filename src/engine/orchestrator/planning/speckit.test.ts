@@ -190,6 +190,21 @@ describe('runSpeckitPlanning', () => {
     expect(warnings.some(w => 'message' in w && /coverage below/.test(w.message))).toBe(true);
   });
 
+  it('records planner token usage from analyze review calls', async () => {
+    const withoutReviewUsage = await runSpeckit();
+    const withReviewUsage = await runSpeckit({
+      plannerOverrides: {
+        review: vi.fn().mockResolvedValue({
+          text: '```json\n{"specTaskCoverage":1,"planTaskCoverage":1,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```',
+          usage: { inputTokens: 7, outputTokens: 3 },
+        }),
+      },
+    });
+
+    expect(withReviewUsage.result.state.tokenUsage.plannerInput - withoutReviewUsage.result.state.tokenUsage.plannerInput).toBe(7);
+    expect(withReviewUsage.result.state.tokenUsage.plannerOutput - withoutReviewUsage.result.state.tokenUsage.plannerOutput).toBe(3);
+  });
+
   it('passes through phases in the documented order', async () => {
     const { events } = await runSpeckit();
     const statusEvents = events.filter(e => e.type === 'planner_status');

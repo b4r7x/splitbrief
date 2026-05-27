@@ -35,7 +35,7 @@ export async function runLocalRetries(
       usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
       profileOverride: ctx.retryProfileOverride,
-      invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, implementer, config }) =>
+      invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, implementer, config, signal }) =>
         implementer.retry({
           task: t, projectDir, config, context: ctx.context,
           languageContext: buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language),
@@ -43,6 +43,7 @@ export async function runLocalRetries(
           onOutput: textHandler,
           bus: ctx.bus,
           phase: state.phase,
+          signal,
         }),
     });
 

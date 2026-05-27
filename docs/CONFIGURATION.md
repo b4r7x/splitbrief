@@ -121,7 +121,7 @@ OpenAI-compatible HTTP endpoint.
 |---|---|:---:|---|
 | `provider` | non-empty string | yes | `anthropic` \| `openrouter` \| `deepseek` \| `openai` \| `groq` \| `together` \| `ollama` \| `lm-studio` \| any custom name |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
-| `apiKey` | string | no | Inline key. **Strongly prefer the matching env var** (see [API-KEYS.md](./API-KEYS.md)). The loader warns on inline keys and on provider/key-format mismatch. |
+| `apiKey` | string | no | Inline key. **Strongly prefer the matching env var** for official provider endpoints (see [API-KEYS.md](./API-KEYS.md)). Use an inline key for known providers with a custom/proxy `apiBase`; env-sourced provider keys are rejected for that case. |
 
 YAML — minimal (Anthropic):
 
@@ -894,7 +894,7 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-boots
 | `TOGETHER_API_KEY` | `together` | |
 | `OLLAMA_API_KEY` | `ollama` | Optional; usually unset. |
 
-Inline `apiKey` in YAML works but triggers a stderr warning recommending the env var. Unknown providers without a built-in catalog entry must set both `apiBase` and `apiKey` in YAML.
+Inline `apiKey` in YAML works. For official provider endpoints, it triggers a stderr warning recommending the env var. For known providers with a custom/proxy `apiBase`, keep the key inline because env-sourced provider keys are not sent to custom endpoints. Unknown providers without a built-in catalog entry must set both `apiBase` and `apiKey` in YAML.
 
 ### Runtime overrides
 

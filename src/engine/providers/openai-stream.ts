@@ -13,6 +13,7 @@ import { toTokenDelta } from '../streaming/token-utils.js';
 import { throwMappedError } from '../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
 import { attachImagesToLastUserMessage } from './image-attach.js';
+import { throwIfAborted } from '../../utils/abort.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -156,7 +157,7 @@ export async function streamCompletion(
 
   try {
     for await (const chunk of withIdleTimeout(stream, STREAM_IDLE_TIMEOUT_MS, 'Model response timed out')) {
-      if (opts.signal?.aborted) break;
+      throwIfAborted(opts.signal);
       const content = chunk.choices?.[0]?.delta?.content;
       if (content) {
         fullResponse += content;
@@ -168,7 +169,7 @@ export async function streamCompletion(
     }
   } catch (err: unknown) {
     if (opts.signal?.aborted) {
-      return { text: fullResponse, usage };
+      throwIfAborted(opts.signal);
     }
     if (timeoutError.isIdle(err)) throw err;
     throwMappedError(err, endpoint);

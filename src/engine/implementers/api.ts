@@ -1,11 +1,10 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createImplementerBase } from './base.js';
-import { createClient } from '../providers/registry.js';
+import { getProvider } from '../providers/registry.js';
+import { createClientFromProvider } from '../providers/client.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
-import { isProviderId } from '../../core/schemas/enums.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
@@ -33,10 +32,13 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
       const model = resolveAutoModel(impl.model, impl.provider);
       if (!model) throw providerError.missingModel('implementer');
 
-      const client: StreamClient | null = impl.provider === 'anthropic' ? null : toStreamClient(createClient(config));
-
-      const providerEnvKey = isProviderId(impl.provider) ? PROVIDER_CATALOG[impl.provider]?.apiKeyEnv : undefined;
-      const resolvedApiKey = impl.apiKey ?? (providerEnvKey ? process.env[providerEnvKey] : undefined) ?? '';
+      const provider = getProvider(impl.provider, {
+        apiBase: impl.apiBase,
+        apiKey: impl.apiKey,
+      });
+      const client: StreamClient | null = impl.provider === 'anthropic'
+        ? null
+        : toStreamClient(createClientFromProvider(provider));
 
       const messages = [
         { role: 'system' as const, content: systemPreamble },
@@ -46,8 +48,8 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
       return dispatchStreamCompletion({
         provider: impl.provider,
         client,
-        apiKey: resolvedApiKey,
-        apiBase: impl.apiBase ?? '',
+        apiKey: provider.apiKey(),
+        apiBase: provider.baseURL,
         model,
         messages,
         temperature,

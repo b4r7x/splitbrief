@@ -14,13 +14,7 @@ import { findAffectedTestFile } from '../../core/validation/test-discovery.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import { detectValidationHeuristic } from './validation-heuristic.js';
 import { sanitizeDiscoveredValidation } from './planning/sanitize-discovered-validation.js';
-
-export interface ValidationResult {
-  passed: boolean;
-  stage: 'typecheck' | 'lint' | 'test';
-  error?: string | undefined;
-  output?: string | undefined;
-}
+import type { ValidationResult } from './validation-types.js';
 
 const MAX_ERROR_LINES = 20;
 export type ValidationCommandRunner = typeof runCommand;

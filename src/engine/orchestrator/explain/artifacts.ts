@@ -26,7 +26,7 @@ import type {
   ExplainArtifactInputs,
   ReadinessSummary,
   RunExplainArtifact,
-} from './explain.js';
+} from './types.js';
 
 export const explainArtifactsError = {
   sessionPathNotDirectory: (sessionId: string) =>

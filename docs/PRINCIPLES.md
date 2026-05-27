@@ -33,6 +33,7 @@ Distilled from:
 | 18 | **EventBus port** — engine emits all events through `src/engine/events/bus.ts`; UI / persistence / observability / hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent` / `OrchestratorEvent` / `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting). | [ARCHITECTURE.md](./ARCHITECTURE.md#eventbus) |
 | 19 | **Repo-map context** — the planner sees a token-budgeted symbol summary of the codebase per workflow. PageRank ranking, SQLite cache, opt-out via `codebase.enabled: false`. | [REPOMAP.md](./REPOMAP.md) |
 | 20 | **Hook system** — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); trust prompt prevents RCE; 2 opt-in built-ins (`prettier-on-change`, `block-secrets`). | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
+| 21 | **Parameter objects for wide APIs** — exported/cross-boundary functions use an options object at 4+ parameters; any function with 6+ parameters needs an options object unless the positional shape is a tiny local math/helper primitive. Split oversized option objects by concern instead of passing a grab bag. | this doc |
 
 ## Decision lookup — "where does X go?"
 

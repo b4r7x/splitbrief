@@ -3,7 +3,7 @@ import type { ProviderDef, ProviderOverrides } from './types.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/types/config-options.js';
-import { createClientFromProvider } from './client.js';
+import { createClientFromProvider, validateProviderBaseURL } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenRouterProvider } from './openrouter.js';
@@ -48,6 +48,9 @@ export const KNOWN_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
 };
 
 export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
+  if (overrides?.apiBase) {
+    validateProviderBaseURL(overrides.apiBase);
+  }
   const factory = isProviderId(name) ? KNOWN_PROVIDERS[name] : undefined;
   if (factory) {
     if (overrides?.apiBase) {
@@ -64,11 +67,18 @@ function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): 
   if (!isProviderId(name)) return;
   const info = PROVIDER_CATALOG[name];
   if (!info.apiKeyEnv) return;
-  if (info.baseURL && overrides.apiBase === info.baseURL) return;
+  if (info.baseURL && isSameProviderBaseURL(overrides.apiBase, info.baseURL)) return;
   if (overrides.apiKey) return;
   const envKey = process.env[info.apiKeyEnv];
   if (!envKey) return;
   throw providerError.apiBaseExfiltration(name, info.apiKeyEnv);
+}
+
+function isSameProviderBaseURL(candidate: string | undefined, expected: string): boolean {
+  if (!candidate) return false;
+  const candidateUrl = new URL(candidate);
+  const expectedUrl = new URL(expected);
+  return candidateUrl.origin === expectedUrl.origin;
 }
 
 function getImplementerProvider(config: Config): ProviderDef {

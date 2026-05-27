@@ -490,7 +490,7 @@ cd /tmp/diptych-fresh
 npm ci && npm run test-ci
 ```
 
-Verify: install completes, `npm run test-ci` (typecheck + lint + full test suite) is green.
+Verify: install completes, `npm run test-ci` (typecheck + lint + full test suite + invariants) is green.
 
 ## References
 

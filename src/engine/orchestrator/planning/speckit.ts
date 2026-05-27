@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { runFullPlanning } from './full.js';
 import { transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus, createBusTextHandler } from '../events.js';
+import { publishPlannerStatus } from '../events.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
@@ -19,6 +19,7 @@ import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type { ConstitutionCheckResult, ConstitutionViolation } from '../../../core/schemas/constitution.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
+import { runPlannerReview } from '../planner-review.js';
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 
@@ -134,8 +135,8 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     constitutionResult = { passed: true, violations: [] };
   } else {
     const prompt = buildConstitutionPrompt(opts.feature, '', constitutionContent);
-    const onOutput = createBusTextHandler({ bus: bus, phase: state.phase });
-    const review = await planner.review(prompt, projectDir, { onOutput });
+    const review = await runPlannerReview({ planner, prompt, projectDir, sessionId, bus, state, signal: wctx.signal });
+    state = review.state;
     constitutionResult = parseConstitutionCheck(review.text);
   }
   writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
@@ -165,8 +166,8 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     readArtifact(dir, TASKS_FILE),
   ]);
   const analyzePrompt = buildAnalyzePrompt(specText, planText, tasksText);
-  const onOutput = createBusTextHandler({ bus: bus, phase: state.phase });
-  const review = await planner.review(analyzePrompt, projectDir, { onOutput });
+  const review = await runPlannerReview({ planner, prompt: analyzePrompt, projectDir, sessionId, bus, state, signal: wctx.signal });
+  state = review.state;
   const analysis = parseAnalyze(review.text);
   writeSecureFile(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2));
 

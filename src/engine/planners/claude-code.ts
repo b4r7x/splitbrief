@@ -15,38 +15,41 @@ export function createClaudeCodePlanner(model?: string, initialSessionId?: strin
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
-  async function invokeWithSessionFallback(
-    prompt: string,
-    projectDir: string,
-    callbacks: { onOutput: (text: string) => void; onSessionId?: ((id: string) => void) | undefined; onSessionExpired?: ((id: string) => void) | undefined; onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined },
-    images?: Attachment[] | undefined,
-  ) {
+	  async function invokeWithSessionFallback(
+	    prompt: string,
+	    projectDir: string,
+	    callbacks: { onOutput: (text: string) => void; onSessionId?: ((id: string) => void) | undefined; onSessionExpired?: ((id: string) => void) | undefined; onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined },
+	    images?: Attachment[] | undefined,
+	    signal?: AbortSignal | undefined,
+	  ) {
     const priorId = session.getResumeId();
     return runWithResumeFallback(
       session,
       (resumeId) => runClaudePlannerStream({
         prompt, projectDir, sessionId: resumeId ?? null,
-        onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
-        ...(effort !== undefined && { effort }),
-        ...(images && images.length > 0 ? { images } : {}),
-      }),
+	        onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
+	        ...(effort !== undefined && { effort }),
+	        ...(images && images.length > 0 ? { images } : {}),
+	        ...(signal !== undefined && { signal }),
+	      }),
       () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
     );
   }
 
   return createPlannerBase({
-    async invokePlan({ prompt, projectDir, callbacks, images }) {
-      const result = await invokeWithSessionFallback(prompt, projectDir, callbacks, images);
+	    async invokePlan({ prompt, projectDir, callbacks, images, signal }) {
+	      const result = await invokeWithSessionFallback(prompt, projectDir, callbacks, images, signal);
       session.capture(result.sessionId);
       if (result.sessionId) callbacks.onSessionId?.(result.sessionId);
       return { text: result.text, usage: result.usage };
     },
 
-    async invokeEscalate({ prompt, projectDir, callbacks }) {
-      return runClaudeOneShot({
-        prompt, projectDir, onOutput: callbacks.onOutput, model: resolvedModel,
-        ...(effort !== undefined && { effort }),
-      });
+	    async invokeEscalate({ prompt, projectDir, callbacks, signal }) {
+	      return runClaudeOneShot({
+	        prompt, projectDir, onOutput: callbacks.onOutput, model: resolvedModel,
+	        ...(effort !== undefined && { effort }),
+	        ...(signal !== undefined && { signal }),
+	      });
     },
 
     ...createCommandAvailability('claude'),

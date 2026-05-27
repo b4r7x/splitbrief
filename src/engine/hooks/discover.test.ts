@@ -45,7 +45,7 @@ describe('discoverHookModules', () => {
     const hooks = await discoverHookModules(projectDir);
 
     expect(hooks).toEqual([
-      { event: 'pre_task', path: join(hooksDir(), 'pre-task.ts') },
+      { event: 'pre_task', path: join('.diptych', 'hooks', 'pre-task.ts') },
     ]);
   });
 
@@ -81,7 +81,7 @@ describe('discoverHookModules', () => {
 describe('mergeDiscoveredHooks', () => {
   it('appends discovered hooks after explicit hooks for the same event', () => {
     const explicit = makeCommandHookEntry({ name: 'explicit', command: 'true' });
-    const discoveredPath = join(hooksDir(), 'pre-task.ts');
+    const discoveredPath = join('.diptych', 'hooks', 'pre-task.ts');
 
     const hooks = mergeDiscoveredHooks(
       { pre_task: [explicit] },

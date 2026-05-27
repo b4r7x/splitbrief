@@ -62,6 +62,7 @@ export type ReviewPlannerEstimateOptions = {
   estimate: DeterministicEstimate;
   metadata: SpecMetadata;
   forcedProfileId?: string | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 const CLASSIFICATIONS = [
@@ -247,6 +248,7 @@ export async function reviewPlannerEstimate(
       bus: opts.bus,
       state: opts.state,
       metadata: opts.metadata,
+      signal: opts.signal,
     });
     const decision = parsePlannerEstimateReview(result.text);
     publishPlannerStatus(opts.bus, result.state, 'done', {

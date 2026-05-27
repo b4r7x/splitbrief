@@ -107,6 +107,7 @@ export type RegenerateFromFeedbackCtx = {
   bus: EventBus;
   state: WorkflowState;
   metadata: SpecMetadata;
+  signal?: AbortSignal | undefined;
   skillsContext?: string | undefined;
   planOverride?: string | undefined;
 };
@@ -142,6 +143,7 @@ export async function regenerateFromFeedback(
       state,
       metadata,
       writeTo: PLAN_FILE,
+      signal: ctx.signal,
     });
     return { kind: 'plan', state: result.state, plan: result.text };
   }
@@ -157,6 +159,7 @@ export async function regenerateFromFeedback(
     state,
     metadata,
     writeTo: TASKS_FILE,
+    signal: ctx.signal,
   });
   return { kind: 'tasks', state: result.state, tasks: parseTasks(result.text) };
 }

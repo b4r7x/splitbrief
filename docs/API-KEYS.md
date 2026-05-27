@@ -19,7 +19,7 @@ Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persi
 | Anthropic / Agent SDK | `ANTHROPIC_API_KEY` | Required for Claude Code planner and Agent SDK |
 | OpenRouter | `OPENROUTER_API_KEY` | |
 | DeepSeek | `DEEPSEEK_API_KEY` | |
-| Custom provider | `<PROVIDER_NAME>_API_KEY` | Auto-generated from provider name (uppercased, non-alphanumeric → `_`) |
+| Custom provider | Not inferred | Set `apiKey` inline with `apiBase` unless the provider is added to the catalog |
 | Ollama | Not required | Local provider |
 | LM Studio | Not required | Local provider |
 
@@ -40,7 +40,7 @@ implementer:
   apiKey: sk-...
 ```
 
-⚠️ **diptych warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable. Config file storage is a convenience tradeoff, not the recommended approach.
+⚠️ **diptych warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable when the provider uses its official endpoint. Keep an inline key for a known provider with a custom/proxy `apiBase`; environment keys are intentionally rejected for that case to avoid sending your provider key to an unexpected endpoint.
 
 ## Security Measures
 

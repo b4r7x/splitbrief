@@ -109,7 +109,7 @@ describe('engine-level hook trust gate', () => {
     markHooksConfigTrusted(projectDir, mergedV1);
     expect(isHooksConfigTrusted(projectDir, mergedV1)).toBe(true);
 
-    writeFileSync(join(hooksDir, 'on-complete.js'), 'export default function() { return "v2"; }');
+    writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() { return "v2"; }');
 
     const mergedV2 = await resolveHooksConfig(projectDir, undefined);
     expect(isHooksConfigTrusted(projectDir, mergedV2)).toBe(false);

@@ -14,7 +14,7 @@ import type {
   RunExplain,
   RunExplainArtifact,
   RunExplainRoute,
-} from './explain.js';
+} from './types.js';
 
 export function sessionStatus(summary: Summary | null, state: WorkflowState | null): string | null {
   if (state?.phase) return state.phase === 'complete' ? 'complete' : 'in-progress';

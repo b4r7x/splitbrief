@@ -6,7 +6,7 @@ Thanks for considering a contribution. diptych is a small, opinionated codebase 
 
 Read in order:
 
-1. [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — 20 architectural rules at a glance.
+1. [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — architectural rules at a glance.
 2. [docs/CONCEPTS.md](./docs/CONCEPTS.md) — shared vocabulary (EventBus, EngineEvent, Phase, Hook, RepoMap).
 3. [docs/STRUCTURE.md](./docs/STRUCTURE.md) — where files live, file-placement decision tree.
 4. [docs/TESTING.md](./docs/TESTING.md) — test philosophy and placement.
@@ -37,7 +37,7 @@ npm run format                # Biome format --write
 npm test                      # vitest run
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # vitest run --coverage
-npm run test-ci               # typecheck -> lint -> test (the full gate)
+npm run test-ci               # typecheck -> lint -> test -> invariants
 ```
 
 **Before submitting a PR, `npm run test-ci` MUST pass.**
@@ -48,54 +48,17 @@ npm run test-ci               # typecheck -> lint -> test (the full gate)
 2. Respect layer direction — [docs/LAYERS.md](./docs/LAYERS.md). Imports flow one way: `utils -> lib -> core -> engine/stores -> features`. No cross-feature imports.
 3. Write tests for observable behavior — [docs/TESTING.md](./docs/TESTING.md). Colocate unit tests next to source; multi-folder flows go under `testing/integration/{cli,orchestrator,ui}/`.
 4. Validate at boundaries only — [docs/ERRORS.md](./docs/ERRORS.md).
-5. Run the pre-merge gates below.
+5. Run `npm run test-ci`.
 
 ## Pre-merge gates
 
-Enforced on every PR; full list + rationale lives in [docs/INVARIANTS.md](./docs/INVARIANTS.md). Run locally:
+Enforced on every PR; the full list and rationale lives in [docs/INVARIANTS.md](./docs/INVARIANTS.md). Run locally:
 
 ```bash
-# 1. No barrels
-find src -name 'index.ts'
-
-# 2. Inferred types live with their schema
-rg "z\.infer" src/core/types/
-
-# 3. Zero memoization / imperative handles
-rg "useMemo|useCallback|React\.memo|forwardRef|useImperativeHandle" src/
-
-# 4. No raw throw new Error in engine/lib/cli (use error() factory)
-rg "throw new Error" src/engine/ src/lib/ src/cli/ | rg -v "\.test\."
-
-# 5. No raw setter on store facade
-rg "^\s*set:\s*store\.set" src/stores/
-
-# 6. simple-git imported only in lib/git in production source
-rg "from 'simple-git'" src/ --glob '!**/*.test.ts' | rg -v "^src/lib/git.ts:"
-
-# 7. Anthropic SDK key scoped via env option, no global mutation
-rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk-backend.ts
-
-# 8. No classes in production source
-rg "\bclass\s+\w+" src/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx'
-
-# 9. No cross-feature imports
-rg "from '\.\./\.\./features/" src/features/
-
-# 10. onEvent callback is gone (EventBus-only)
-grep -rn "callbacks\.onEvent" src/
-
-# 11. Legacy OrchestratorEvent is gone
-grep -rn "OrchestratorEvent\b" src/
-
-# 12. Engine MUST NOT import from features
-grep -rln "from.*features" src/engine | grep -v "\.test\." | wc -l
-
-# 13. Legacy TuiEvent is gone
-grep -rn "\bTuiEvent\b" src/
+npm run check:invariants
 ```
 
-Each gate must return 0 matches (or the stated count). Sanctioned exceptions for unsafe assertions are enumerated in [CLAUDE.md §Core conventions](./CLAUDE.md#core-conventions).
+Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/INVARIANTS.md) and `scripts/check-invariants.ts` together.
 
 ## Code conventions
 
@@ -107,6 +70,7 @@ Each gate must return 0 matches (or the stated count). Sanctioned exceptions for
 - **No decorative comments.** No section banners. Ordering documents, not banners.
 - **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions listed in [CLAUDE.md](./CLAUDE.md).
 - **Engine has zero React imports.** `src/engine/` must not import `ink`, `react`, or anything under `src/features/`, `src/components/`, `src/hooks/`.
+- **Use options objects for wide APIs.** Exported or cross-boundary functions switch to a named options object at 4+ parameters; any 6+ parameter function needs one unless it is a tiny local math/helper primitive.
 
 Full rule index: [docs/PRINCIPLES.md](./docs/PRINCIPLES.md).
 

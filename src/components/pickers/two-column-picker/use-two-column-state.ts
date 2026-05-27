@@ -3,6 +3,7 @@ import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../picker-utils.js';
 import { handleKeyboardInput } from './two-column-keyboard.js';
 import { useColumnState } from './use-column-state.js';
+import { CUSTOM_ROW_ID, isRealRightItem, isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 const noop = () => {};
 
@@ -34,19 +35,6 @@ export interface RightColumnProps<L, R> {
   customRow?: CustomRowOptions<L, R> | undefined;
   onLeftChange?: ((item: L) => void) | undefined;
   initialIndex?: number | undefined;
-}
-
-export const CUSTOM_ROW_ID = '__custom__' as const;
-
-export type VirtualCustomItem = { id: typeof CUSTOM_ROW_ID; isVirtual: true };
-export type RightItemOrVirtual<R> = R | VirtualCustomItem;
-
-export function isVirtualCustomItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is VirtualCustomItem {
-  return 'isVirtual' in item;
-}
-
-function isRealItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is R {
-  return !isVirtualCustomItem(item);
 }
 
 export interface ColumnState<T> {
@@ -133,7 +121,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightActive = activeColumn === 'right';
   const isOnVirtual = !!rightCurrentItem && isVirtualCustomItem(rightCurrentItem);
   const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
-    && isRealItem(rightCurrentItem) && (isRightItemCustom?.(rightCurrentItem) ?? false);
+    && isRealRightItem(rightCurrentItem) && (isRightItemCustom?.(rightCurrentItem) ?? false);
 
   const currentLeftKey = leftCol.currentItem ? leftGetKey(leftCol.currentItem) : null;
   const syncLeftItem = useEffectEvent(() => {

@@ -6,7 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
-  for (const key of ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY']) {
+  for (const key of ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY', 'OLLAMA_API_KEY']) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
@@ -61,6 +61,7 @@ describe('validateConfig', () => {
   });
 
   it('allows local implementers without API credentials', () => {
+    delete process.env.OLLAMA_API_KEY;
     const config = makeConfig({
       implementer: { kind: 'api', provider: 'ollama', model: 'm', apiBase: 'http://localhost:11434/v1' },
     });
@@ -166,6 +167,14 @@ describe('securityWarnings', () => {
     });
 
     expect(securityWarnings(config).filter(w => w.includes('found in') && w.includes('config'))).toEqual([]);
+  });
+
+  it('does not recommend env keys for known providers using custom apiBase', () => {
+    const config: Config = makeConfig({
+      planner: { kind: 'api', provider: 'anthropic', model: 'm', apiKey: 'sk-ant-test', apiBase: 'https://proxy.example.com/v1' },
+    });
+
+    expect(securityWarnings(config).some(w => w.includes('ANTHROPIC_API_KEY') && w.includes('planner config'))).toBe(false);
   });
 
   it('warns when provider key formats look wrong in config or env vars', () => {

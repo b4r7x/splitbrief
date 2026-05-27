@@ -6,7 +6,7 @@ import {
   recordSkippedTaskEvidence,
 } from './task-evidence.js';
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
-import type { ValidationResult } from '../validation.js';
+import type { ValidationResult } from '../validation-types.js';
 
 function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
   return { passed: true, stage };

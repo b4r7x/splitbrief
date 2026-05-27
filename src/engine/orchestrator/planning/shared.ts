@@ -280,7 +280,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     };
     state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
 
-    const regen = await regenerateTasks(projectDir, sessionId, planner, callbacks, bus, state, metadata);
+    const regen = await regenerateTasks({ projectDir, sessionId, planner, callbacks, bus, state, metadata, signal });
     state = regen.state;
     tasks = regen.tasks;
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -35,6 +35,17 @@ describe('trust', () => {
       const h = hashHooksConfig(undefined);
       expect(h.startsWith('sha256:')).toBe(true);
     });
+
+    it('changes when a module hook file changes', () => {
+      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "allow" });');
+      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "deny" });');
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
   });
 
   describe('isHooksConfigTrusted', () => {
@@ -51,6 +62,18 @@ describe('trust', () => {
     it('returns false after config changes', () => {
       markHooksConfigTrusted(projectDir, { pre_task: [{ command: 'prettier' }] });
       expect(isHooksConfigTrusted(projectDir, { pre_task: [{ command: 'eslint' }] })).toBe(false);
+    });
+
+    it('returns false after a trusted module file changes', () => {
+      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "allow" });');
+      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "deny" });');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
     });
   });
 
