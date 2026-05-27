@@ -19,7 +19,12 @@ function formatTokenCount(tokens: number): string {
   return `${tokens} tokens`;
 }
 
-export function PlannerStatusCard({ event }: { event: PlannerStatusEvent }) {
+interface PlannerStatusCardProps {
+  event: PlannerStatusEvent;
+  chrome?: boolean | undefined;
+}
+
+export function PlannerStatusCard({ event, chrome = false }: PlannerStatusCardProps) {
   const t = useTheme();
   const latestHeartbeat = eventsStore.use(selectLatestHeartbeat);
   const role = phaseRole(event.phase);
@@ -34,6 +39,18 @@ export function PlannerStatusCard({ event }: { event: PlannerStatusEvent }) {
     const hintSuffix = latestHeartbeat?.phaseHint
       ? ` · ${latestHeartbeat.phaseHint}`
       : '';
+
+    if (chrome) {
+      return (
+        <Box width="100%" overflow="hidden">
+          <Spinner
+            label={`${role} ${event.phase}${suffix}...${heartbeatSuffix}${hintSuffix}`}
+            color={color}
+            startTime={event.ts}
+          />
+        </Box>
+      );
+    }
 
     return (
       <Box flexDirection="column">

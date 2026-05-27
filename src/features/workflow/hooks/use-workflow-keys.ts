@@ -29,7 +29,7 @@ function applyAction(action: WorkflowKeyAction) {
     case 'toggle-sidebar': controlsStore.toggleSidebar(); return;
     case 'toggle-diff': conversationScrollStore.toggleDiff(action.index); return;
     case 'review-scroll': reviewStore.setScrollOffset(action.offset); return;
-    case 'conversation-scroll-up': conversationScrollStore.scrollUp({ renderableCount: action.renderableCount, totalHeight: action.totalHeight, step: action.step }); return;
+    case 'conversation-scroll-up': conversationScrollStore.scrollUp({ renderableCount: action.renderableCount, totalHeight: action.totalHeight, step: action.step, maxOffset: action.maxOffset }); return;
     case 'conversation-scroll-down': conversationScrollStore.scrollDown(action.step); return;
     case 'conversation-scroll-bottom': conversationScrollStore.scrollToBottom(action.renderableCount); return;
     default: return assertNever(action);

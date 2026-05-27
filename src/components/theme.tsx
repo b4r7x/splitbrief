@@ -30,6 +30,9 @@ export interface Theme {
     bold: string;
     italic: string;
     code: string;
+    blockquote: string;
+    list: string;
+    rule: string;
   };
   cursor: {
     fg: string;
@@ -74,6 +77,9 @@ const terminalTheme: Theme = {
     bold: 'white',
     italic: 'gray',
     code: 'yellow',
+    blockquote: 'gray',
+    list: 'cyan',
+    rule: 'gray',
   },
   cursor: {
     fg: 'black',
@@ -118,6 +124,9 @@ const monoTheme: Theme = {
     bold: '#c0c0c0',
     italic: '#828bb8',
     code: '#e0af68',
+    blockquote: '#828bb8',
+    list: '#7aa2f7',
+    rule: '#3b3b3b',
   },
   cursor: {
     fg: '#1a1a1a',

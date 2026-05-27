@@ -11,8 +11,8 @@ export function AgentStatusRow() {
   if (!latestStatus) return <Box height={1} />;
 
   return (
-    <Box flexShrink={0} paddingX={1}>
-      <PlannerStatusCard event={latestStatus} />
+    <Box height={1} overflow="hidden" flexShrink={0} paddingX={1}>
+      <PlannerStatusCard event={latestStatus} chrome />
     </Box>
   );
 }

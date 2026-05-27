@@ -7,7 +7,7 @@ export type WorkflowKeyAction =
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; index: number }
   | { type: 'review-scroll'; offset: number }
-  | { type: 'conversation-scroll-up'; renderableCount: number; step: number; totalHeight: number }
+  | { type: 'conversation-scroll-up'; renderableCount: number; step: number; totalHeight: number; maxOffset: number }
   | { type: 'conversation-scroll-down'; step: number }
   | { type: 'conversation-scroll-bottom'; renderableCount: number };
 
@@ -70,21 +70,21 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
   const pageStep = Math.max(1, viewportHeight - 2);
 
   if (key.shift && key.upArrow) {
-    return { type: 'conversation-scroll-up', renderableCount, step: 1, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: 1, totalHeight, maxOffset };
   }
   if (key.shift && key.downArrow) {
     return { type: 'conversation-scroll-down', step: 1 };
   }
 
   if (key.pageUp) {
-    return { type: 'conversation-scroll-up', renderableCount, step: pageStep, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: pageStep, totalHeight, maxOffset };
   }
   if (key.pageDown) {
     return { type: 'conversation-scroll-down', step: pageStep };
   }
 
   if (input === 'g') {
-    return { type: 'conversation-scroll-up', renderableCount, step: maxOffset, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: maxOffset, totalHeight, maxOffset };
   }
   if (input === 'G') {
     return { type: 'conversation-scroll-bottom', renderableCount };

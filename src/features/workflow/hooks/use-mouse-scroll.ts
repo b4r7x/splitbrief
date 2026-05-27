@@ -39,9 +39,9 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
       return;
     }
 
-    const { renderableCount, totalHeight } = snapshot;
+    const { renderableCount, totalHeight, maxOffset } = snapshot;
     if (direction < 0) {
-      conversationScrollStore.scrollUp({ renderableCount, totalHeight, step: WHEEL_STEP });
+      conversationScrollStore.scrollUp({ renderableCount, totalHeight, step: WHEEL_STEP, maxOffset });
     } else {
       conversationScrollStore.scrollDown(WHEEL_STEP);
     }

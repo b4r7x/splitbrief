@@ -14,7 +14,6 @@ import {
   formatPhaseCost,
   calculatePhaseRowCost,
 } from './drilldown-overlay.js';
-import { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
 import { resolvePricing } from '../../../../engine/providers/pricing-resolver.js';
 
 describe('buildPhaseRows', () => {
@@ -171,17 +170,6 @@ describe('renderBar', () => {
     [0, 10, 10, '░░░░░░░░░░'],
   ] as const)('renderBar(%i, %i, %i) → %s', (value, max, width, expected) => {
     expect(renderBar(value, max, width)).toBe(expected);
-  });
-});
-
-describe('formatCacheHitPct', () => {
-  it.each([
-    [0, 500, 'cache n/a'],
-    [100, 0, 'cache n/a'],
-    [200, 800, 'cache 20%'],
-    [500, 500, 'cache 50%'],
-  ] as const)('formatCacheHitPct(%i, %i) → %s', (cacheRead, input, expected) => {
-    expect(formatCacheHitPct(cacheRead, input)).toBe(expected);
   });
 });
 

@@ -29,9 +29,11 @@ export interface ConversationScrollSnapshot {
 }
 
 function readWorkflowChromeHeight(): number {
+  const { cols } = terminalSizeStore.get();
   return getChromeHeight(
     inputHeightStore.get().rows,
     hasWorkflowConfig(eventsStore.get().events),
+    cols,
   );
 }
 
@@ -62,6 +64,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     inputHeightStore.get().rows,
     hasConfig,
     promptRows,
+    cols,
   );
   const sidebarVisible = controlsStore.get().sidebarVisible;
   const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);

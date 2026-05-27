@@ -192,9 +192,10 @@ export function Composer({
           paddingX={1}
           width="100%"
           minHeight={3}
+          flexShrink={0}
         >
           <Text color={theme.accent}>&gt; </Text>
-          <Box flexGrow={1}>
+          <Box flexGrow={1} overflow="hidden">
             <MultilineInput
               key={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
               value={value}
