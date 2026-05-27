@@ -47,16 +47,9 @@ export async function fetchJsonWithTimeout(
   url: string,
   timeoutMs: number,
 ): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw providerError.httpFailure(res.status, redactSecrets(url));
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw providerError.httpFailure(res.status, redactSecrets(url));
+  return await res.json();
 }
 
 export function createClientFromProvider(provider: ProviderDef): OpenAI {

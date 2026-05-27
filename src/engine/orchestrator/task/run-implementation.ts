@@ -40,7 +40,6 @@ export async function runImplementation(opts: {
   const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
   const streamingFeed = createStreamingFeed(
     task.id,
-    config.implementer.kind === 'api',
     opts.streamingSink ?? noopStreamingSink,
   );
 

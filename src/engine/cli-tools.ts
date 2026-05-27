@@ -17,6 +17,7 @@ export interface CliToolPlanner {
 
 export interface CliToolImplementer {
   buildArgs(opts: { prompt: string; model?: string | undefined }): string[];
+  parseLine?: ((line: string) => ParsedLine) | undefined;
 }
 
 export interface CliToolEntry {
@@ -60,6 +61,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
         if (model) args.unshift('--model', model);
         return args;
       },
+      parseLine: parseJsonlLine,
     },
   },
   opencode: {

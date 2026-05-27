@@ -110,25 +110,23 @@ export function runCommand(
   const timeout = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
   let stdout = '';
   let stderr = '';
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutSignal = AbortSignal.timeout(timeout);
 
   return spawnPipe({
     command,
     args,
     cwd: options?.cwd,
     onSpawned: (proc) => {
-      timer = setTimeout(() => killProcess(proc), timeout);
+      if (timeoutSignal.aborted) {
+        killProcess(proc);
+        return;
+      }
+      timeoutSignal.addEventListener('abort', () => killProcess(proc), { once: true });
     },
     onStdout: (chunk) => { stdout += chunk; },
     onStderr: (chunk) => { stderr += chunk; },
-    onClose: (code) => {
-      if (timer !== null) clearTimeout(timer);
-      return { stdout, stderr, code: code ?? 1 };
-    },
-    onError: () => {
-      if (timer !== null) clearTimeout(timer);
-      return null;
-    },
+    onClose: (code) => ({ stdout, stderr, code: code ?? 1 }),
+    onError: () => null,
   });
 }
 
@@ -153,23 +151,7 @@ export interface SpawnOptions {
 export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
   let output = '';
   let stderrOutput = '';
-  let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let cleanupAbortTimer: (() => void) | null = null;
-
-  const clearTimer = () => {
-    if (timer === null) return;
-    clearTimeout(timer);
-    timer = null;
-  };
-  const clearProcessGuards = () => {
-    clearTimer();
-    cleanupAbortTimer?.();
-    cleanupAbortTimer = null;
-  };
-  const clearTimerOnAbort = () => {
-    clearTimer();
-  };
+  const timeoutSignal = AbortSignal.timeout(opts.timeout);
 
   return spawnPipe({
     command: opts.command,
@@ -179,16 +161,11 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     stdin: opts.stdinInput,
     signal: opts.signal,
     onSpawned: (proc) => {
-      timer = setTimeout(() => {
-        timedOut = true;
+      if (timeoutSignal.aborted) {
         killProcess(proc, { group: true });
-      }, opts.timeout);
-      if (opts.signal?.aborted) {
-        clearTimer();
         return;
       }
-      opts.signal?.addEventListener('abort', clearTimerOnAbort, { once: true });
-      cleanupAbortTimer = () => opts.signal?.removeEventListener('abort', clearTimerOnAbort);
+      timeoutSignal.addEventListener('abort', () => killProcess(proc, { group: true }), { once: true });
     },
     onStdout: (chunk) => {
       output += chunk;
@@ -198,11 +175,9 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
       stderrOutput += chunk;
     },
     onClose: (code) => {
-      clearProcessGuards();
-      return { output, code: code ?? 1, timedOut, stderr: stderrOutput };
+      return { output, code: code ?? 1, timedOut: timeoutSignal.aborted, stderr: stderrOutput };
     },
     onError: (err) => {
-      clearProcessGuards();
       if (opts.notFoundMessage && isENOENT(err)) return processError.notFound(opts.command, opts.notFoundMessage);
       return null;
     },

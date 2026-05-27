@@ -85,7 +85,7 @@ describe('HomeScreen', () => {
   it('caps recent sessions and reports the hidden count in the home screen', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 18, isSmall: true });
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 10; i++) {
       saveSummary({ projectDir: projectDir, sessionId: `session-${i}` }, makeSession({
         id: `session-${i}`,
         feature: `feature ${i}`,
@@ -97,9 +97,8 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('feature 3');
-    expect(frame).toContain('feature 2');
-    expect(frame).not.toContain('feature 1');
+    expect(frame).toContain('feature 9');
+    expect(frame).toContain('feature 8');
     expect(frame).toContain('+2 more');
     ui.unmount();
   });
@@ -136,6 +135,81 @@ describe('HomeScreen', () => {
     expect(after).toContain('Tab fill');
     expect(lineIndexContaining(after, 'Planner')).toBe(plannerLine);
     expect(lineIndexContaining(after, 'Mode')).toBe(modeLine);
+    ui.unmount();
+  });
+
+  it('renders full ASCII logo on large terminals', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('__| (_)');
+    ui.unmount();
+  });
+
+  it('renders small logo on medium terminals', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('── diptych ──');
+    ui.unmount();
+  });
+
+  it('renders plain text logo on small terminals', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('diptych');
+    ui.unmount();
+  });
+
+  it('shows many sessions on tall terminals', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+
+    for (let i = 0; i < 10; i++) {
+      saveSummary({ projectDir: projectDir, sessionId: `session-${i}` }, makeSession({
+        id: `session-${i}`,
+        feature: `tall feature ${i}`,
+        startedAt: 1_700_000_000 + i,
+      }));
+    }
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    for (let i = 0; i < 10; i++) {
+      expect(frame).toContain(`tall feature ${i}`);
+    }
+    ui.unmount();
+  });
+
+  it('sessions appear close to the logo without excessive gap', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+
+    saveSummary({ projectDir: projectDir, sessionId: 'gap-session' }, makeSession({
+      id: 'gap-session',
+      feature: 'gap test feature',
+      startedAt: 1_700_000_000,
+    }));
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    const logoLine = frame.split('\n').findIndex(line => line.includes('__| (_)'));
+    const sessionLine = frame.split('\n').findIndex(line => line.includes('gap test feature'));
+    expect(logoLine).toBeGreaterThanOrEqual(0);
+    expect(sessionLine).toBeGreaterThanOrEqual(0);
+    expect(sessionLine - logoLine).toBeLessThan(15);
     ui.unmount();
   });
 });

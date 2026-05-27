@@ -20,13 +20,8 @@ export interface StreamingFeed {
 
 export function createStreamingFeed(
   taskId: TaskId,
-  isApiRunner: boolean,
   sink: StreamingSink,
 ): StreamingFeed {
-  if (!isApiRunner) {
-    return { onText() {}, stop() {} };
-  }
-
   const ringBuffer = createRingBuffer(5);
   let remainder = '';
 
