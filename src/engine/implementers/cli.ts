@@ -2,7 +2,8 @@ import type { CliImplementerConfig } from '../../core/schemas/implementer-config
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
-import { spawnWithTimeout } from '../../lib/process/spawn.js';
+import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import { parseTextLine } from '../streaming/output-parsers.js';
 import { processError } from '../../lib/process/errors.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../availability.js';
@@ -31,26 +32,28 @@ export function createCliImplementer(config: CliImplementerConfig, options?: Imp
       if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
       const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
 
-      const result = await spawnWithTimeout({
-        command: tool.command,
-        args,
-        cwd: projectDir,
-        timeout,
-        onProgress: onOutput,
-        notFoundMessage: tool.notFoundMessage,
-        signal,
-      });
+      const timeoutSignal = AbortSignal.timeout(timeout);
+      const composedSignal = signal
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
 
-      const label = `Tool implementer (${toolName})`;
-      if (result.code === 127) throw processError.notFound(label, tool.notFoundMessage);
-      if (result.timedOut) {
-        throw processError.timeout({ command: label, label, timeoutMs: timeout, output: result.output });
+      try {
+        return await spawnAndCollect({
+          command: tool.command,
+          args,
+          cwd: projectDir,
+          parseLine: tool.implementer.parseLine ?? parseTextLine,
+          notFoundMessage: tool.notFoundMessage,
+          onText: onOutput,
+          signal: composedSignal,
+        });
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'TimeoutError') {
+          throw processError.timeout({ command: `Tool implementer (${toolName})`, label: `Tool implementer (${toolName})`, timeoutMs: timeout, output: '' });
+        }
+        if (signal?.aborted) throw err;
+        throw err;
       }
-      if (result.code !== 0) {
-        throw processError.exitCode({ command: label, label, code: result.code, stderr: result.stderr, output: result.output });
-      }
-
-      return { text: result.output, usage: null };
     },
 
     detectChanges: createChangeDetector(`Tool implementer (${toolName})`),

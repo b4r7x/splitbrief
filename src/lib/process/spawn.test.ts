@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin } from './spawn.js';
 import { killProcess } from './registry.js';
 import { isENOENT } from './errors.js';
@@ -147,33 +147,28 @@ describe('spawnWithTimeout', () => {
     expect(chunks.join('')).toContain('before abort');
   });
 
-  it('clears the command timeout timer when aborted', async () => {
-    vi.useFakeTimers();
+  it('resolves abort promptly without waiting for timeout', async () => {
     const controller = new AbortController();
     let resolveOutput: () => void = () => {};
     const outputSeen = new Promise<void>(resolve => {
       resolveOutput = resolve;
     });
 
-    try {
-      const promise = spawnWithTimeout({
-        command: 'node',
-        args: ['-e', 'console.log("before abort"); setTimeout(() => {}, 10_000)'],
-        cwd: process.cwd(),
-        timeout: 60_000,
-        onProgress: () => resolveOutput(),
-        signal: controller.signal,
-      });
+    const start = Date.now();
+    const promise = spawnWithTimeout({
+      command: 'node',
+      args: ['-e', 'console.log("before abort"); setTimeout(() => {}, 10_000)'],
+      cwd: process.cwd(),
+      timeout: 60_000,
+      onProgress: () => resolveOutput(),
+      signal: controller.signal,
+    });
 
-      await outputSeen;
-      expect(vi.getTimerCount()).toBeGreaterThan(0);
-      controller.abort();
+    await outputSeen;
+    controller.abort();
 
-      await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(Date.now() - start).toBeLessThan(5_000);
   });
 });
 

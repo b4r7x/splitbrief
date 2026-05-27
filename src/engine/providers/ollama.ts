@@ -28,14 +28,12 @@ function extractOllamaModels(data: unknown): OllamaModel[] | null {
 }
 
 async function detectContextLengthFromShow(baseURL: string, model: string): Promise<number | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const res = await fetch(`${stripV1Suffix(baseURL)}/api/show`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: model }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;
     const json: unknown = await res.json();
@@ -47,8 +45,6 @@ async function detectContextLengthFromShow(baseURL: string, model: string): Prom
   } catch (error) {
     warnError('detectContextLength(ollama)', error);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

@@ -38,7 +38,7 @@ export function PlannerStatusCard({ event }: { event: PlannerStatusEvent }) {
     return (
       <Box flexDirection="column">
         <Spinner
-          label={`${role}  ${event.phase}${suffix}...`}
+          label={`${role} ${event.phase}${suffix}...`}
           color={color}
           startTime={event.ts}
         />

@@ -64,9 +64,13 @@ export async function withContinuationLoop<T>(opts: WithContinuationLoopOpts<T>)
     sinks.setAbortHandler(() => callController.abort());
     partialOutput = '';
 
+    const bodySignal = ctx.signal
+      ? AbortSignal.any([ctx.signal, callController.signal])
+      : callController.signal;
+
     let attempt: AttemptResult<T>;
     try {
-      attempt = await body({ signal: callController.signal, continuationPrompt, recordOutput });
+      attempt = await body({ signal: bodySignal, continuationPrompt, recordOutput });
     } catch (err) {
       sinks.setAbortHandler(null);
 

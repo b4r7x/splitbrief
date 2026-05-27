@@ -26,21 +26,9 @@ function fakeSink(): StreamingSink & {
 }
 
 describe('createStreamingFeed', () => {
-  it('ignores output for non-API runners', () => {
+  it('streams output into the sink until stopped', () => {
     const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), false, sink);
-
-    feed.onText('hello');
-    feed.stop();
-
-    expect(sink.start).not.toHaveBeenCalled();
-    expect(sink.pushLines).not.toHaveBeenCalled();
-    expect(sink.stop).not.toHaveBeenCalled();
-  });
-
-  it('streams API runner output into the sink until stopped', () => {
-    const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), true, sink);
+    const feed = createStreamingFeed(taskId('T001'), sink);
 
     expect(sink.start).toHaveBeenCalledWith(taskId('T001'));
 
@@ -56,12 +44,25 @@ describe('createStreamingFeed', () => {
 
   it('shows long incomplete lines before a newline arrives', () => {
     const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), true, sink);
+    const feed = createStreamingFeed(taskId('T001'), sink);
     const longLine = 'a'.repeat(21);
 
     feed.onText(longLine);
 
     expect(sink.lines.at(-1)).toEqual([longLine]);
     feed.stop();
+  });
+
+  it('feeds text through the ring buffer to the sink for any runner kind', () => {
+    const sink = fakeSink();
+    const feed = createStreamingFeed(taskId('T001'), sink);
+
+    expect(sink.started).toBe(true);
+
+    feed.onText('line1\nline2\nline3\n');
+    expect(sink.lines.at(-1)).toEqual(['line1', 'line2', 'line3']);
+
+    feed.stop();
+    expect(sink.stopped).toBe(true);
   });
 });

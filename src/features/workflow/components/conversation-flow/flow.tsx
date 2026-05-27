@@ -142,7 +142,6 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
 
   // Overflowing content uses a negative marginTop equal to trimTop to offset the partial first section.
   const hasOverflow = totalDynamicHeight > innerHeight;
-  const spacerHeight = hasOverflow ? 0 : Math.max(0, innerHeight - totalDynamicHeight);
   const scrollMargin = hasOverflow ? -trimTop : 0;
 
   return (
@@ -167,7 +166,6 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
         </Box>
       )}
       <Box height={innerHeight} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {spacerHeight > 0 && <Box height={spacerHeight} flexShrink={0} />}
         <Box width="100%" flexDirection="column" marginTop={scrollMargin} flexShrink={0}>
           {renderableItems.length === 0 && completedItems.length === 0 && (
             <Text color={t.textDim}>No events yet</Text>
