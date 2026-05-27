@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { getDiptychPath } from '../paths.js';
 import { StatsSchema, emptyStats, type Stats } from '../schemas/stats.js';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { writeSecureFile } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import type { CostBreakdown } from '../schemas/summary.js';
+import { accumulateProviderCosts } from './provider-costs.js';
 
 const STATS_FILE = 'stats.json';
 
@@ -27,10 +27,7 @@ export function readStats(projectDir: string): Stats {
 
 function writeStats(projectDir: string, stats: Stats): void {
   const filePath = statsPath(projectDir);
-  mkdirSync(dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.tmp`;
-  writeFileSync(tempPath, JSON.stringify(stats, null, 2) + '\n', { encoding: 'utf-8', mode: SECURE_FILE_MODE });
-  renameSync(tempPath, filePath);
+  writeSecureFile(filePath, JSON.stringify(stats, null, 2) + '\n');
 }
 
 export interface StatsUpdateInput {
@@ -62,15 +59,7 @@ function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
   }
 
   if (input.providerCosts) {
-    for (const [provider, pc] of Object.entries(input.providerCosts)) {
-      const existing = next.providerTotals[provider];
-      if (existing) {
-        existing.cost += pc.cost;
-        existing.sessions += 1;
-      } else {
-        next.providerTotals[provider] = { cost: pc.cost, sessions: 1 };
-      }
-    }
+    accumulateProviderCosts(next.providerTotals, input.providerCosts);
   }
 
   return next;

@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useInput } from 'ink';
+import type { Phase } from '../../../../core/schemas/enums.js';
 import type { Screen } from '../../../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.js';
-import { rotateIndex } from '../../../pickers/picker-utils.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { useCompletionSelection } from '../use-completion-selection.js';
 
 function matchesCommandQuery(cmd: RuntimeCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
@@ -29,22 +30,17 @@ interface UseCommandCompletionResult {
   inputKey: number;
 }
 
-interface SelectionState {
-  key: string;
-  index: number;
-}
-
 interface LatestCommandState {
   currentScreen: Screen;
   selectionKey: string;
+  itemCount: number;
   filtered: RuntimeCommandDef[];
   fuzzyMatch: RuntimeCommandDef | null;
-  effectiveSelectedIndex: number;
 }
 
 function buildSelectionKey(
   currentScreen: Screen,
-  phase: string,
+  phase: Phase,
   query: string,
   filtered: RuntimeCommandDef[],
   fuzzyMatch: RuntimeCommandDef | null,
@@ -67,11 +63,6 @@ export function useCommandCompletion({
   disabled,
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const [inputKey, setInputKey] = useState(0);
-  const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
-  // Snapshot of derived render state for the useInput handler. Ink invokes the latest
-  // committed render's callback so closure capture would also work, but mirroring the
-  // fields together keeps the handler reading a single coherent snapshot.
-  const latestRef = useRef<LatestCommandState | null>(null);
   const phase = lifecycleStore.use(s => s.phase);
 
   const commandMode = value.startsWith('/');
@@ -88,18 +79,15 @@ export function useCommandCompletion({
   const fuzzyMatch = commandMode && filtered.length === 0
     ? suggestRuntimeCommand(validCommands, query)
     : null;
-
   const showSuggestions = commandMode && (filtered.length > 0 || fuzzyMatch !== null);
   const selectionKey = buildSelectionKey(currentScreen, phase, query, filtered, fuzzyMatch);
-  const selectedIndex = selection.key === selectionKey ? selection.index : 0;
-  const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
-  latestRef.current = {
+  const { effectiveSelectedIndex, latestRef, moveSelection } = useCompletionSelection<LatestCommandState>({
     currentScreen,
     selectionKey,
+    itemCount: filtered.length,
     filtered,
     fuzzyMatch,
-    effectiveSelectedIndex,
-  };
+  });
 
   useInput(
     (_input, key) => {
@@ -111,21 +99,11 @@ export function useCommandCompletion({
         return;
       }
       if (key.upArrow) {
-        if (latest.filtered.length > 0) {
-          setSelection({
-            key: latest.selectionKey,
-            index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, -1),
-          });
-        }
+        moveSelection(latest, -1);
         return;
       }
       if (key.downArrow) {
-        if (latest.filtered.length > 0) {
-          setSelection({
-            key: latest.selectionKey,
-            index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, 1),
-          });
-        }
+        moveSelection(latest, 1);
         return;
       }
       if (key.tab) {

@@ -65,7 +65,6 @@ function eventToHookKey(e: EngineEvent): HookEvent | null {
     case 'validate':
       return e.status === 'done' ? 'post_validation' : null;
     case 'git_commit': return 'post_commit';
-    case 'plan_done': return 'post_planning';
     case 'workflow_complete': return 'on_complete';
     case 'error': return 'on_error';
     default: return null;

@@ -8,11 +8,11 @@ import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
-import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
+import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
-import { findSingleRunningSession } from '../sessions/single-running-session.js';
+import { resolveRunningSession } from '../session-resolve.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 export interface AttachDeps {
@@ -28,21 +28,6 @@ const defaultDeps: AttachDeps = {
   initStores,
   renderApp,
 };
-
-async function resolveRunningSession(
-  projectDir: string,
-  deps: AttachDeps,
-): Promise<string> {
-  const result = await findSingleRunningSession(projectDir, deps);
-  if (result.kind === 'single') return result.id;
-  if (result.kind === 'none') {
-    throw cliError('no running sessions found; pass <session-id> explicitly', 1);
-  }
-  throw cliError(
-    `multiple running sessions (${result.ids.join(', ')}); pass <session-id> explicitly`,
-    1,
-  );
-}
 
 export async function attachCommand(
   sessionId: string | undefined,

@@ -6,6 +6,7 @@ import { readJsonSafeAsync } from '../lib/fs.js';
 import type { GitClient } from '../lib/git.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
+import { PhaseSchema, type Phase } from '../core/schemas/enums.js';
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
@@ -65,7 +66,7 @@ export type WorktreeInfo = {
   branch: string;
   status: WorktreeStatus;
   sessionId: string | null;
-  phase: string | null;
+  phase: Phase | null;
   lastUpdated: string | null;
 };
 
@@ -82,7 +83,7 @@ export type RemoveWorktreeOptions = {
   force?: boolean;
 };
 
-async function readSessionState(worktreeDir: string, sessionId: string): Promise<{ phase: string | null; lastUpdated: string | null }> {
+async function readSessionState(worktreeDir: string, sessionId: string): Promise<{ phase: Phase | null; lastUpdated: string | null }> {
   const stateFile = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, STATE_FILE);
   if (!existsSync(stateFile)) return { phase: null, lastUpdated: null };
   let lastUpdated: string | null = null;
@@ -92,8 +93,9 @@ async function readSessionState(worktreeDir: string, sessionId: string): Promise
     lastUpdated = null;
   }
   const raw = await readJsonSafeAsync(stateFile);
-  if (isRecord(raw) && typeof raw.phase === 'string') {
-    return { phase: raw.phase, lastUpdated };
+  if (isRecord(raw)) {
+    const phase = PhaseSchema.safeParse(raw.phase);
+    if (phase.success) return { phase: phase.data, lastUpdated };
   }
   return { phase: null, lastUpdated };
 }
@@ -161,7 +163,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
     const activeFilePath = join(wtDir, DIPTYCH_DIR, ACTIVE_FILE);
     let sessionId: string | null = null;
     let status: WorktreeStatus = 'none';
-    let phase: string | null = null;
+    let phase: Phase | null = null;
     let lastUpdated: string | null = null;
 
     if (existsSync(activeFilePath)) {

@@ -5,7 +5,7 @@ import { createImplementerBase } from './base.js';
 import { spawnWithTimeout } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
 import { CLI_TOOLS } from '../cli-tools.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import { runClaudeOneShot } from '../claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { runnerConfigError } from '../runners/errors.js';

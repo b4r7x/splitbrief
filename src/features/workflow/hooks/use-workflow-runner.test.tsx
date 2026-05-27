@@ -180,7 +180,7 @@ describe('useWorkflowRunner', () => {
       phase: 'reviewing-spec',
     };
     saveState(projectDir, sessionId, saved);
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(
       <Harness
@@ -194,7 +194,7 @@ describe('useWorkflowRunner', () => {
     // The bogus planner completes quickly and saveFinalSession clears the
     // active marker; we restore it to simulate a mid-flight rewind request
     // from the UI while the engine is still running.
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const didRewind = requestRewind({ target: 'spec', comment: 'needs clarification' });
     expect(didRewind).toBe(true);
@@ -218,7 +218,7 @@ describe('useWorkflowRunner', () => {
       phase: 'implementing',
     };
     saveState(projectDir, sessionId, saved);
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(
       <Harness
@@ -229,7 +229,7 @@ describe('useWorkflowRunner', () => {
       />,
     );
     await flush();
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
     expect(didRewind).toBe(true);

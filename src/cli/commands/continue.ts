@@ -8,12 +8,10 @@ import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
-import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
+import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
-import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-import { isResumable } from '../../core/phases.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { addWorkflowOptions } from '../options.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
@@ -22,6 +20,7 @@ import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 import { findSingleRunningSession } from '../sessions/single-running-session.js';
+import { assertResumableState } from '../session-resolve.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ContinueDeps {
@@ -122,27 +121,15 @@ export async function continueCommand(
     throw cliError(`session '${sessionId}' has no saved state and is not running — cannot continue.`, 1);
   }
 
-  if (!('stateVersion' in state) || state.stateVersion < CURRENT_STATE_VERSION) {
-    throw cliError(
-      `session '${sessionId}' state is from an older version and cannot be resumed.\nStart a new workflow with \`diptych start\`.`,
-      1,
-    );
-  }
-
-  if (!isResumable(state)) {
-    throw cliError(
-      `session '${sessionId}' is in phase "${state.phase}" which cannot be resumed.`,
-      1,
-    );
-  }
+  assertResumableState(state, sessionId);
 
   if (opts.json) {
-    await deps.runHeadless(state.feature, opts.projectDir, opts, state, sessionId);
+    await deps.runHeadless({ feature: state.feature, projectDir: opts.projectDir, opts, savedState: state, sessionId });
     return;
   }
 
   if (opts.rpc) {
-    await deps.runRpc(state.feature, opts.projectDir, opts, state, sessionId);
+    await deps.runRpc({ feature: state.feature, projectDir: opts.projectDir, opts, savedState: state, sessionId });
     return;
   }
 

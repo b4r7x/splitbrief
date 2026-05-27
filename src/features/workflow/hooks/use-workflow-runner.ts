@@ -28,6 +28,7 @@ import { killAllProcesses } from '../../../lib/process/registry.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from './build-rewind-action.js';
 import { usePromptCallbacks } from './use-prompt-callbacks.js';
@@ -187,7 +188,7 @@ export function useWorkflowRunner({
       }
     } catch (err) {
       if (!controller.signal.aborted && !abortedRef.current && !lifecycleStore.get().cancelled) {
-        addEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message: String(err) });
+        addEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message: toErrorMessage(err) });
       }
     }
   });

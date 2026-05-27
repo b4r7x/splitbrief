@@ -23,21 +23,21 @@ describe('writeActive / readActive round-trip', () => {
   it('writes and reads back the session id', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
-    writeActive(dir, '2026-04-14-my-feature');
+    writeActive({ projectDir: dir, sessionId: '2026-04-14-my-feature' });
     expect(readActive(dir)).toBe('2026-04-14-my-feature');
   });
 
   it('trims trailing newline', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
-    writeActive(dir, '2026-04-14-feature');
+    writeActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
     expect(readActive(dir)).toBe('2026-04-14-feature');
   });
 
   it('rejects invalid session ids', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
-    expect(() => writeActive(dir, '../outside')).toThrow('Invalid session id');
+    expect(() => writeActive({ projectDir: dir, sessionId: '../outside' })).toThrow('Invalid session id');
   });
 });
 
@@ -59,7 +59,7 @@ describe('clearActive', () => {
   it('deletes the active file', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
-    writeActive(dir, '2026-04-14-feature');
+    writeActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
     clearActive(dir);
     expect(readActive(dir)).toBeNull();
   });
@@ -73,7 +73,7 @@ describe('clearActive', () => {
 describe('isSessionLive', () => {
   it('returns false when session folder does not exist', () => {
     const dir = makeTmp();
-    expect(isSessionLive(dir, '2026-04-14-nonexistent')).toBe(false);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-nonexistent' })).toBe(false);
   });
 
   it('returns false for session in complete phase', () => {
@@ -82,7 +82,7 @@ describe('isSessionLive', () => {
     mkdirSync(sDir, { recursive: true });
     const state = { ...createInitialState('done'), phase: 'complete' };
     writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
-    expect(isSessionLive(dir, '2026-04-14-done')).toBe(false);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-done' })).toBe(false);
   });
 
   it('returns false for session in idle phase', () => {
@@ -91,7 +91,7 @@ describe('isSessionLive', () => {
     mkdirSync(sDir, { recursive: true });
     const state = createInitialState('idle');
     writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
-    expect(isSessionLive(dir, '2026-04-14-idle')).toBe(false);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-idle' })).toBe(false);
   });
 
   it('returns true for session in implementing phase', () => {
@@ -100,7 +100,7 @@ describe('isSessionLive', () => {
     mkdirSync(sDir, { recursive: true });
     const state = { ...createInitialState('feature'), phase: 'implementing' };
     writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
-    expect(isSessionLive(dir, '2026-04-14-implementing')).toBe(true);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-implementing' })).toBe(true);
   });
 
   it('returns false when state.json is corrupt', () => {
@@ -108,12 +108,12 @@ describe('isSessionLive', () => {
     const sDir = sessionDir(dir, '2026-04-14-corrupt');
     mkdirSync(sDir, { recursive: true });
     writeFileSync(join(sDir, STATE_FILE), '{bad json!!!');
-    expect(isSessionLive(dir, '2026-04-14-corrupt')).toBe(false);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-corrupt' })).toBe(false);
   });
 
   it('rejects invalid session ids before reading state', () => {
     const dir = makeTmp();
-    expect(() => isSessionLive(dir, '../outside')).toThrow('Invalid session id');
+    expect(() => isSessionLive({ projectDir: dir, sessionId: '../outside' })).toThrow('Invalid session id');
   });
 });
 

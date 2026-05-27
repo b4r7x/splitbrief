@@ -56,7 +56,7 @@ export function persistPhases(projectDir: string, sessionId: string, phases: Pla
 export function handlePlanningFailure(
   err: unknown, projectDir: string, sessionId: string, state: WorkflowState, wctx: PlannerCallbacksContext,
 ): { state: WorkflowState; tasks: Task[]; cancelled: true } {
-  publishError(wctx.bus, state.phase, labelError('Planning failed', err));
+  publishError({ bus: wctx.bus, phase: state.phase }, labelError('Planning failed', err));
   return { state: transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' }), tasks: [], cancelled: true };
 }
 
@@ -84,7 +84,7 @@ export async function runPlannerCallInContinuationLoop(
   const { wctx, planner, feature, mode, skillsContext, codebaseContext, priorMessages, collectedQuestions, attachments } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
-  const textHandler = createBusTextHandler(wctx.bus, state.phase);
+  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
   const conversational = planner.capabilities.supportsConversationalPlanning;
   let attachmentsConsumed = false;
 
@@ -209,7 +209,7 @@ async function readTasksForApproval(
 
 function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {
   const firstError = report.issues.find(i => i.severity === 'error');
-  publishError(bus, phase, `Task Brief quality gate failed: ${firstError?.message ?? 'unknown error'}`);
+  publishError({ bus: bus, phase: phase }, `Task Brief quality gate failed: ${firstError?.message ?? 'unknown error'}`);
 }
 
 export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Promise<BriefsApprovalLoopResult> {
@@ -236,7 +236,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     if (result.action === 'edit') {
       const edited = await readPersistedTasks(tasksFilePath);
       if (!edited.ok) {
-        publishError(bus, state.phase, edited.message);
+        publishError({ bus: bus, phase: state.phase }, edited.message);
         continue;
       }
       const { report, ok } = runBriefQualityGate(edited.tasks, projectDir, sessionId, bus, state.phase);
@@ -257,7 +257,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     if (!result.comment) {
       const approved = await readTasksForApproval(tasksFilePath, tasks, projectDir, sessionId, metadata);
       if (!approved.ok) {
-        publishError(bus, state.phase, approved.message);
+        publishError({ bus: bus, phase: state.phase }, approved.message);
         continue;
       }
       const { report, ok } = runBriefQualityGate(approved.tasks, projectDir, sessionId, bus, state.phase);
@@ -287,7 +287,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     const { report, ok } = runBriefQualityGate(tasks, projectDir, sessionId, bus, state.phase);
     if (!ok) {
       const firstError = report.issues.find(i => i.severity === 'error');
-      createBusTextHandler(bus, state.phase)(`\n[Brief quality gate failed after regeneration: ${firstError?.message ?? 'unknown error'}. Please review and try again.]\n`);
+      createBusTextHandler({ bus: bus, phase: state.phase })(`\n[Brief quality gate failed after regeneration: ${firstError?.message ?? 'unknown error'}. Please review and try again.]\n`);
     }
 
     state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });

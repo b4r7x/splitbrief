@@ -14,7 +14,7 @@ import { handleRetryAndEscalation } from './escalation.js';
 import type { WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
 
 const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},
@@ -47,7 +47,8 @@ function makeValidatingState(): WorkflowState {
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
   state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-  state = transition(state, { type: 'APPROVE_PLAN' });
+  state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
+  state = transition(state, { type: 'APPROVE_BRIEFS' });
   state = transition(state, { type: 'TASK_SENT' });
   return state;
 }

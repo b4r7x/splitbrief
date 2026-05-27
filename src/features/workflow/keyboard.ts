@@ -56,14 +56,17 @@ export function handleReviewScroll(
   return NONE;
 }
 
-export function handleConversationScroll(
-  input: string,
-  key: Key,
-  renderableCount: number,
-  maxOffset: number,
-  viewportHeight: number,
-  totalHeight: number,
-): WorkflowKeyAction {
+export interface ConversationScrollInput {
+  input: string;
+  key: Key;
+  renderableCount: number;
+  maxOffset: number;
+  viewportHeight: number;
+  totalHeight: number;
+}
+
+export function handleConversationScroll(options: ConversationScrollInput): WorkflowKeyAction {
+  const { input, key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
   const pageStep = Math.max(1, viewportHeight - 2);
 
   if (key.shift && key.upArrow) {

@@ -1,4 +1,4 @@
-import { runCommand } from './process/spawn.js';
+import { runCommand } from '../lib/process/spawn.js';
 
 export const DEFAULT_AVAILABILITY = {
   isAvailable: async (): Promise<boolean> => true,

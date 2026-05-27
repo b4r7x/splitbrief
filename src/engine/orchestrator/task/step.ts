@@ -51,10 +51,10 @@ async function runChainAnalysisSafe(opts: {
     writeDriftChainState(opts.projectDir, opts.sessionId, update.state);
 
     if (update.emitted) {
-      publishDriftChainDetected(opts.bus, opts.state.phase, update.emitted, threshold);
+      publishDriftChainDetected({ bus: opts.bus, phase: opts.state.phase }, update.emitted, threshold);
     }
   } catch (err) {
-    publishWarningFromError(opts.wctx.bus, opts.state.phase, 'drift chain analysis failed', err);
+    publishWarningFromError({ bus: opts.wctx.bus, phase: opts.state.phase }, 'drift chain analysis failed', err);
   }
 }
 
@@ -65,7 +65,7 @@ function recordApprovalDenial(
   decision: GateDecision,
   message: string,
 ): void {
-  publishError(wctx.bus, state.phase, message);
+  publishError({ bus: wctx.bus, phase: state.phase }, message);
   const rejectedTier = decision.tier;
   if (rejectedTier && rejectedTier !== 'auto' && decision.actionClass && decision.actionDescription) {
     persistRejectionEvidence(
@@ -146,7 +146,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       streamingSink: wctx.streamingSink,
     });
   } catch (err) {
-    publishError(wctx.bus, state.phase, labelError('Implementation failed', err));
+    publishError({ bus: wctx.bus, phase: state.phase }, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx, task, initialError: toErrorMessage(err),
       state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
@@ -201,7 +201,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     };
     const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, { projectDir, sessionId });
     if (!preVal.allow) {
-      publishWarning(wctx.bus, state.phase, `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`);
+      publishWarning({ bus: wctx.bus, phase: state.phase }, `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`);
       return state;
     }
   }

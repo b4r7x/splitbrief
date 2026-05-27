@@ -68,7 +68,7 @@ describe('publishPlannerStatus', () => {
 describe('publishValidation — result phase aggregates stage outcomes', () => {
   it('passed=true only when every stage passed', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
+    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
       phase: 'result',
       results: [
         { stage: 'typecheck', passed: true },
@@ -87,7 +87,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('passed=false with first failing stage error on partial failure', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
+    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
       phase: 'result',
       results: [
         { stage: 'typecheck', passed: true },
@@ -107,7 +107,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     const { bus, events } = makeBusRecorder();
     const startTime = Date.now() - 500;
 
-    publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
+    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
       phase: 'result', results: [{ stage: 'typecheck', passed: true }], startTime,
     });
 
@@ -118,7 +118,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 describe('publish* payload forwarding', () => {
   it('publishError — forwards message and timestamp', () => {
     const { bus, events } = makeBusRecorder();
-    publishError(bus, 'implementing', 'something went wrong');
+    publishError({ bus: bus, phase: 'implementing' }, 'something went wrong');
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'error', message: 'something went wrong' });
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
@@ -126,7 +126,7 @@ describe('publish* payload forwarding', () => {
 
   it('publishCostPrediction — forwards prediction payload', () => {
     const { bus, events } = makeBusRecorder();
-    publishCostPrediction(bus, 'implementing', {
+    publishCostPrediction({ bus: bus, phase: 'implementing' }, {
       estimatedTasks: 5,
       lowCost: 0.10,
       expectedCost: 0.25,
@@ -146,28 +146,28 @@ describe('publish* payload forwarding', () => {
 
   it('publishBudgetWarning — forwards cost and budget', () => {
     const { bus, events } = makeBusRecorder();
-    publishBudgetWarning(bus, 'implementing', 0.80, 1.00);
+    publishBudgetWarning({ bus: bus, phase: 'implementing' }, 0.80, 1.00);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'budget_warning', currentCost: 0.80, maxBudget: 1.00 });
   });
 
   it('publishBudgetExceeded — forwards cost and budget', () => {
     const { bus, events } = makeBusRecorder();
-    publishBudgetExceeded(bus, 'implementing', 1.50, 1.00);
+    publishBudgetExceeded({ bus: bus, phase: 'implementing' }, 1.50, 1.00);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'budget_exceeded', currentCost: 1.50, maxBudget: 1.00 });
   });
 
   it('publishGitCommit — includes file when provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit(bus, 'implementing', 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit', 'src/a.ts');
+    publishGitCommit({ bus: bus, phase: 'implementing' }, 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit', 'src/a.ts');
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit', file: 'src/a.ts' });
   });
 
   it('publishGitCommit — omits file when not provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit(bus, 'implementing', 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit');
+    publishGitCommit({ bus: bus, phase: 'implementing' }, 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit');
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit' });
     expect('file' in (events[0] as Record<string, unknown>)).toBe(false);
@@ -183,7 +183,7 @@ describe('publish* payload forwarding', () => {
       detectedAtTaskId: 'T003',
       ts: Date.now(),
     };
-    publishDriftChainDetected(bus, 'implementing', chain, 0.6);
+    publishDriftChainDetected({ bus: bus, phase: 'implementing' }, chain, 0.6);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: 'drift_chain_detected',

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../../core/schemas/task.js';
+import { ValidationStageSchema } from '../../../core/schemas/enums.js';
 
 export const ReportEvidenceInputSchema = z.object({
   sessionId: z.string().min(1),
@@ -26,7 +27,7 @@ export const MarkTaskDoneInputSchema = z.object({
 export const ReportValidationResultInputSchema = z.object({
   sessionId: z.string().min(1),
   taskId: TaskIdSchema,
-  stage: z.enum(['typecheck', 'lint', 'test']),
+  stage: ValidationStageSchema,
   passed: z.boolean(),
   errorSummary: z.string().optional(),
   changedFiles: z.array(z.string()).optional(),

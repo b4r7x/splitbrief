@@ -8,7 +8,7 @@ export async function dispatchNativeInjection(
   planner: Planner,
   projectDir: string,
   sessionId: string,
-  state: WorkflowState,
+  getState: () => WorkflowState,
   setState: (s: WorkflowState) => void,
   bus: EventBus,
 ): Promise<void> {
@@ -19,13 +19,12 @@ export async function dispatchNativeInjection(
       ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
       : message.text;
     await planner.injectUserTurn(injectionText, projectDir);
-    const next = transitionAndSave(projectDir, sessionId, state, {
+    const next = transitionAndSave(projectDir, sessionId, getState(), {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,
     });
     setState(next);
     bus.publish({ type: 'message_injected_native', ts: Date.now(), phase: next.phase, id: message.id });
   } catch {
-    // Fire-and-forget — failure is not fatal, message stays in queue for drain
   }
 }

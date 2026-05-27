@@ -48,6 +48,21 @@ describe('eventBus', () => {
     expect(seen).toHaveLength(1);
   });
 
+  it('unsubscribeAll removes every subscribed sink', () => {
+    const bus = createEventBus();
+    const a: EngineEvent[] = [];
+    const b: EngineEvent[] = [];
+    bus.subscribe((e) => a.push(e));
+    bus.subscribe((e) => b.push(e));
+    bus.publish(ev());
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    bus.unsubscribeAll();
+    bus.publish(ev());
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+  });
+
   it('subscribing the same sink twice is idempotent (Set semantics)', () => {
     const bus = createEventBus();
     const seen: EngineEvent[] = [];

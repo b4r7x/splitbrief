@@ -91,7 +91,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
     throw err;
   }
 
-  writeActive(projectDir, sessionId);
+  writeActive({ projectDir: projectDir, sessionId: sessionId });
   rmSync(sourceDir, { recursive: true, force: true });
 
   return { status: 'migrated', sourceDir, sessionId, warnings };

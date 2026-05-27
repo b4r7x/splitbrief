@@ -207,7 +207,7 @@ describe('CommandPaletteOverlay', () => {
 
   it('session items from disk appear in results when query matches', async () => {
     const session = makeSession({ id: 'sess-abc', feature: 'add login form', status: 'interrupted', summary: null });
-    saveSummary(projectDir, session.id, session);
+    saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
 
     const instance = renderCommandPalette();
     await tick(1); await tick(1);
@@ -335,7 +335,7 @@ describe('CommandPaletteOverlay', () => {
   it('session action does not double-close overlay (underlying overlay survives)', async () => {
     const uniqueFeature = 'uniquefeaturexyz987';
     const session = makeSession({ id: 'sess-regression', feature: uniqueFeature, status: 'interrupted', summary: null });
-    saveSummary(projectDir, session.id, session);
+    saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
 
     overlayStore.reset();
     overlayStore.open('settings');

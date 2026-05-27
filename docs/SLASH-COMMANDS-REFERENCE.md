@@ -271,7 +271,7 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
 - **Screens**: `home`, `workflow`.
 - **Args**: required. Either a 1-based index (matching the order shown by `/attach`) or the attachment's ID. Calling without an argument prints `"Usage: /detach <index|id>"`.
 - **Example**: `/detach 1`, `/detach att_a8f3c2`
-- **Behavior**: Numeric values within the pending range are treated as indices; otherwise the value is matched against attachment IDs via `requestDetach`. On success prints `"Detached: <input>"`. On no match prints `"No attachment matched: <input>"`.
+- **Behavior**: Numeric values within the pending range are treated as indices; otherwise the value is matched against attachment IDs by the detach handler. On success prints `"Detached: <input>"`. On no match prints `"No attachment matched: <input>"`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; index lookup and detach wiring in `src/app/command-context.ts`.
 - **See also**: `/attach`.
 

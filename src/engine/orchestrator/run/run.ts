@@ -104,11 +104,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       } catch (err) {
         if (trackedState) {
           try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
-            if (wctx) publishWarningFromError(wctx.bus, trackedState.phase, 'Failed to save state', saveErr);
+            if (wctx) publishWarningFromError({ bus: wctx.bus, phase: trackedState.phase }, 'Failed to save state', saveErr);
           }
         }
         killAllProcesses();
-        if (wctx && trackedState) publishError(wctx.bus, trackedState.phase, toErrorMessage(err));
+        if (wctx && trackedState) publishError({ bus: wctx.bus, phase: trackedState.phase }, toErrorMessage(err));
         sessionStatus = 'failed';
         result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
       }

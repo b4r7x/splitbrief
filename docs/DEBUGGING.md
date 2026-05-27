@@ -21,7 +21,7 @@ Inspect with `jq`:
 cat .diptych/sessions/*/session.jsonl | jq .
 
 # Only failures
-jq 'select(.type == "task_failed" or .type == "task_full_fail" or .type == "error")' \
+jq 'select(.type == "task_full_fail" or .type == "error")' \
   .diptych/sessions/<id>/session.jsonl
 
 # Validation outcomes

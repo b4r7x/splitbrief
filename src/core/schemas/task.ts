@@ -17,11 +17,12 @@
  * @see docs/TASK-CONTRACT.md
  */
 import { z } from 'zod';
-import { TaskStatusSchema } from './enums.js';
+import { FileActionSchema, TaskStatusSchema } from './enums.js';
 
 export const TaskIdSchema = z.string().brand<'TaskId'>();
 export type TaskId = z.infer<typeof TaskIdSchema>;
 export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
+export const taskIdToString = (id: TaskId): string => id;
 
 export const TaskSchema = z.object({
   /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
@@ -29,7 +30,7 @@ export const TaskSchema = z.object({
   /** Short human-readable label. */
   title: z.string(),
   /** `create` if the file does not yet exist; `modify` if it does. */
-  action: z.enum(['create', 'modify']),
+  action: FileActionSchema,
   /** Project-relative path, e.g. `src/features/auth/SignupForm.tsx`. */
   file: z.string(),
   /** IDs of tasks that must reach a terminal state before this task may start. */

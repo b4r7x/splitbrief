@@ -1,36 +1,10 @@
 import { useState, useEffect, useEffectEvent, useRef } from 'react';
-import { createConnection, type Socket } from 'node:net';
+import type { Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { IpcPromptRequest, IpcPromptResponse } from '../../../engine/ipc/protocol.js';
-import { parseServerMessage } from '../../../engine/ipc/protocol.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { backoffDelay, createIpcConnection, destroyIpcSockets, handleIpcConnectionClose, scheduleIpcReconnect, type IpcClientActions, type IpcClientState } from './ipc-client-connection.js';
 
-export type IpcClientStatus =
-  | 'connecting'
-  | 'connected'
-  | 'readonly'
-  | 'reconnecting'
-  | 'failed'
-  | 'detached';
-
-export type IpcClientState = {
-  status: IpcClientStatus;
-  sessionId: string | null;
-  readonly: boolean;
-};
-
-export type IpcClientActions = {
-  sendUserInput(text: string): void;
-  detach(): void;
-};
-
-const MAX_ATTEMPTS = 5;
-const BASE_DELAY_MS = 100;
-const MAX_DELAY_MS = 5000;
-
-function backoffDelay(attempt: number): number {
-  return Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
-}
+export type { IpcClientActions, IpcClientState, IpcClientStatus } from './ipc-client-connection.js';
 
 export function useIpcClient(opts: {
   sockPath: string;
@@ -48,8 +22,6 @@ export function useIpcClient(opts: {
 
   const socketRef = useRef<Socket | null>(null);
   const attemptRef = useRef(0);
-  const bufferRef = useRef('');
-  // Use refs for flags that are checked in async callbacks to avoid stale closures
   const isDetachedRef = useRef(false);
   const generationRef = useRef(0);
 
@@ -103,140 +75,37 @@ export function useIpcClient(opts: {
     function connect() {
       if (!canMutate()) return;
 
-      bufferRef.current = '';
-      const socket = createConnection(opts.sockPath);
+      const socket = createIpcConnection({
+        sockPath: opts.sockPath,
+        callbacks: {
+          setState,
+          onEvent,
+          hasPromptHandler,
+          handlePromptRequest,
+          ownsSocket,
+          canMutate,
+          markDetached: () => { isDetachedRef.current = true; },
+          resetAttempts: () => { attemptRef.current = 0; },
+        },
+        onClose: (closedSocket) => {
+          sockets.delete(closedSocket);
+          handleIpcConnectionClose({
+            socket: closedSocket,
+            canMutate,
+            clearCurrentSocket: (socketToClear) => {
+              if (socketRef.current === socketToClear) socketRef.current = null;
+            },
+            getAttempt: () => attemptRef.current,
+            setAttempt: (attempt) => { attemptRef.current = attempt; },
+            setState,
+            onEvent,
+            backoff,
+            reconnect: delay => scheduleIpcReconnect(reconnectTimers, delay, canMutate, connect),
+          });
+        },
+      });
       sockets.add(socket);
       socketRef.current = socket;
-
-      socket.on('data', (chunk: Buffer) => {
-        if (!canMutate(socket)) return;
-        bufferRef.current += chunk.toString('utf8');
-        const lines = bufferRef.current.split('\n');
-        bufferRef.current = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(trimmed);
-          } catch {
-            onEvent({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: 'IPC: malformed server message',
-            });
-            continue;
-          }
-          const msg = parseServerMessage(parsed);
-          if (msg === null) {
-            onEvent({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: 'IPC: invalid server message structure',
-            });
-            continue;
-          }
-          if (!canMutate(socket)) return;
-          if (msg.kind === 'session_meta') {
-            setState({
-              status: msg.readonly ? 'readonly' : 'connected',
-              sessionId: msg.sessionId,
-              readonly: msg.readonly,
-            });
-            attemptRef.current = 0;
-          } else if (msg.kind === 'event') {
-            onEvent(msg.payload);
-          } else if (msg.kind === 'prompt_request') {
-            if (!hasPromptHandler()) {
-              onEvent({
-                type: 'warning',
-                ts: Date.now(),
-                phase: 'idle',
-                message: `IPC: no prompt handler for ${msg.request.kind}`,
-              });
-              continue;
-            }
-            void handlePromptRequest(msg.request)
-              .then((response: IpcPromptResponse) => {
-                if (!ownsSocket(socket) || socket.destroyed) return;
-                socket.write(JSON.stringify({
-                  kind: 'prompt_response',
-                  requestId: msg.request.requestId,
-                  response,
-                }) + '\n');
-              })
-              .catch((err: unknown) => {
-                if (!canMutate(socket)) return;
-                onEvent({
-                  type: 'warning',
-                  ts: Date.now(),
-                  phase: 'idle',
-                  message: `IPC: prompt handler failed: ${toErrorMessage(err)}`,
-                });
-              });
-          } else if (msg.kind === 'error') {
-            isDetachedRef.current = true;
-            setState(prev => ({ ...prev, status: 'failed' }));
-            onEvent({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: msg.message,
-            });
-            socket.destroy();
-          }
-        }
-      });
-
-      socket.on('connect', () => {
-        if (!canMutate(socket)) return;
-      });
-
-      socket.on('timeout', () => {
-        if (!canMutate(socket)) return;
-        socket.destroy();
-      });
-
-      socket.on('error', () => {
-        // 'close' will follow; handled there
-      });
-
-      socket.on('close', () => {
-        sockets.delete(socket);
-        if (!canMutate(socket)) return;
-        if (socketRef.current === socket) socketRef.current = null;
-
-        const attempt = attemptRef.current;
-        if (attempt >= MAX_ATTEMPTS) {
-          setState(prev => ({ ...prev, status: 'failed' }));
-          onEvent({
-            type: 'ipc_reconnect_failed',
-            ts: Date.now(),
-            phase: 'idle',
-          });
-          return;
-        }
-
-        setState(prev => ({ ...prev, status: 'reconnecting' }));
-        onEvent({
-          type: 'ipc_reconnect_attempt',
-          ts: Date.now(),
-          phase: 'idle',
-          attempt,
-          maxAttempts: MAX_ATTEMPTS,
-        });
-
-        attemptRef.current = attempt + 1;
-        const delay = backoff(attempt);
-        const timer = setTimeout(() => {
-          reconnectTimers.delete(timer);
-          if (!canMutate()) return;
-          connect();
-        }, delay);
-        reconnectTimers.add(timer);
-      });
     }
 
     connect();
@@ -244,13 +113,7 @@ export function useIpcClient(opts: {
     return () => {
       disposed = true;
       clearReconnectTimers();
-      for (const socket of sockets) {
-        if (socketRef.current === socket) {
-          socketRef.current = null;
-        }
-        socket.destroy();
-      }
-      sockets.clear();
+      destroyIpcSockets(sockets, socketRef);
     };
   }, [enabled, opts.sockPath]);
 

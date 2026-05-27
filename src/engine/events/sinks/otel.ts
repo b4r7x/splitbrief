@@ -1,7 +1,9 @@
 import { trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Context, type TracerProvider } from '@opentelemetry/api';
 import type { EngineEvent, EventSink } from '../types.js';
-import type { TaskId } from '../../../core/schemas/task.js';
+import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
+import { redactSecrets } from '../../../utils/redact.js';
+import * as typeGuards from '../../../utils/type-guards.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
@@ -18,7 +20,6 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
   let phaseCtx: Context = ROOT_CONTEXT;
   let lastPhase: string | null = null;
   const taskSpans = new Map<string, Span>();
-  const taskKey = (id: TaskId): string => id as string;
 
   return (event: EngineEvent) => {
     switch (event.type) {
@@ -90,7 +91,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
           const parentCtx = phaseSpan ? phaseCtx : workflowCtx;
           const span = tracer.startSpan('diptych.task', {
             attributes: {
-              'diptych.task.id': taskKey(event.taskId),
+              'diptych.task.id': taskIdToString(event.taskId),
               'diptych.task.title': event.title,
               'diptych.task.file': event.file,
               'diptych.task.action': event.action,
@@ -98,38 +99,37 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
               'diptych.task.total': event.total,
             },
           }, parentCtx);
-          taskSpans.set(taskKey(event.taskId), span);
+          taskSpans.set(taskIdToString(event.taskId), span);
         }
         return;
       }
       case 'task_completed': {
-        const span = taskSpans.get(taskKey(event.taskId));
+        const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
           span.setAttribute('diptych.task.method', event.method);
           span.setAttribute('diptych.task.retries', event.retries);
           span.setAttribute('diptych.task.duration_ms', event.duration);
           span.setStatus({ code: SpanStatusCode.OK });
           span.end();
-          taskSpans.delete(taskKey(event.taskId));
+          taskSpans.delete(taskIdToString(event.taskId));
         }
         return;
       }
-      case 'task_failed':
       case 'task_full_fail': {
-        const span = taskSpans.get(taskKey(event.taskId));
+        const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
           span.setStatus({ code: SpanStatusCode.ERROR, message: 'task failed' });
           span.end();
-          taskSpans.delete(taskKey(event.taskId));
+          taskSpans.delete(taskIdToString(event.taskId));
         }
         return;
       }
       case 'task_skipped': {
-        const span = taskSpans.get(taskKey(event.taskId));
+        const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
           span.setAttribute('diptych.task.skip_reason', event.reason);
           span.end();
-          taskSpans.delete(taskKey(event.taskId));
+          taskSpans.delete(taskIdToString(event.taskId));
         }
         return;
       }
@@ -155,18 +155,83 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'error': {
         if (workflowSpan) {
-          workflowSpan.recordException(new Error(event.message));
+          workflowSpan.recordException(new Error(redactSecrets(event.message)));
         }
         return;
       }
       case 'warning': {
         if (workflowSpan) {
-          workflowSpan.addEvent('diptych.warning', { 'diptych.warning.message': event.message });
+          workflowSpan.addEvent('diptych.warning', { 'diptych.warning.message': redactSecrets(event.message) });
         }
         return;
       }
-      default:
+      case 'workflow_resumed':
+      case 'paused_external_changes':
+      case 'recovery_prompted':
+      case 'recovery_action_selected':
+      case 'recovery_action_failed':
+      case 'recovery_resolved':
+      case 'planner_text':
+      case 'planner_heartbeat':
+      case 'spec_rejected':
+      case 'spec_regenerated':
+      case 'plan_approved':
+      case 'plan_rejected':
+      case 'plan_regenerated':
+      case 'rewind_to_spec':
+      case 'rewind_to_plan':
+      case 'all_tasks_done':
+      case 'brief_quality_passed':
+      case 'brief_quality_failed':
+      case 'drift_report':
+      case 'drift_chain_detected':
+      case 'snapshot_created':
+      case 'snapshot_restored':
+      case 'snapshot_restore_conflict':
+      case 'mode_resolved':
+      case 'mode_downgrade_advised':
+      case 'mode_advice':
+      case 'instant_plan_received':
+      case 'task_retry':
+      case 'task_escalating':
+      case 'task_reset':
+      case 'task_tokens':
+      case 'task_review_needed':
+      case 'hint_failed':
+      case 'implementer_generate_running':
+      case 'implementer_generate_done':
+      case 'implementer_generate_failed':
+      case 'escalate':
+      case 'git_commit':
+      case 'git_checkpoint':
+      case 'git_branch_created':
+      case 'clarifications_collected':
+      case 'clarification_answered':
+      case 'message_queued':
+      case 'message_injected_native':
+      case 'queue_drained':
+      case 'queue_cleared':
+      case 'user_message':
+      case 'planner_attachments_dropped':
+      case 'cost_prediction':
+      case 'budget_warning':
+      case 'budget_paused':
+      case 'budget_exceeded':
+      case 'approval_prompted':
+      case 'approval_granted':
+      case 'approval_rejected':
+      case 'approval_sticky_recorded':
+      case 'approval_mode_changed':
+      case 'ipc_server_started':
+      case 'ipc_client_attached':
+      case 'ipc_client_detached':
+      case 'ipc_reconnect_attempt':
+      case 'ipc_reconnect_failed':
+      case 'replay_started':
+      case 'replay_complete':
         return;
+      default:
+        return typeGuards.assertNever(event);
     }
   };
 }

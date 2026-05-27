@@ -24,13 +24,13 @@ interface EventCardProps {
 function renderEventContent(event: EngineEvent, diffExpanded: boolean, t: Theme): ReactNode {
   switch (event.type) {
     case 'workflow_started': case 'workflow_resumed': case 'workflow_complete':
-    case 'research_done': case 'spec_done': case 'spec_approved': case 'spec_rejected':
-    case 'spec_regenerated': case 'plan_done': case 'plan_approved': case 'plan_rejected':
+    case 'spec_rejected':
+    case 'spec_regenerated': case 'plan_approved': case 'plan_rejected':
     case 'plan_regenerated': case 'all_tasks_done': case 'planner_heartbeat':
     case 'git_commit': case 'git_checkpoint': case 'git_branch_created':
     case 'warning': case 'error':
     case 'message_queued': case 'message_injected_native': case 'queue_drained': case 'queue_cleared':
-    case 'planner_attachment_added': case 'planner_attachments_dropped':
+    case 'planner_attachments_dropped':
     case 'mode_resolved': case 'mode_downgrade_advised': case 'mode_advice': case 'instant_plan_received':
     case 'clarifications_collected': case 'clarification_answered':
     case 'brief_quality_passed': case 'brief_quality_failed':
@@ -40,11 +40,10 @@ function renderEventContent(event: EngineEvent, diffExpanded: boolean, t: Theme)
     case 'approval_sticky_recorded': case 'approval_mode_changed':
     case 'ipc_server_started': case 'ipc_client_attached': case 'ipc_client_detached':
     case 'ipc_reconnect_attempt': case 'ipc_reconnect_failed':
-    case 'server_crash_detected': case 'server_post_mortem_shown':
     case 'replay_started': case 'replay_complete':
       return renderSimpleCard(event, t);
     case 'task_started': case 'task_completed': case 'task_skipped': case 'task_retry':
-    case 'task_failed': case 'task_escalating': case 'task_full_fail':
+    case 'task_escalating': case 'task_full_fail':
     case 'task_tokens': case 'task_review_needed': case 'hint_failed':
       return renderTaskCard(event, t);
     case 'cost_update': case 'cost_prediction': case 'budget_warning':

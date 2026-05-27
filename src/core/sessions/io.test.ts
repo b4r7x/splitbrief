@@ -1,8 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { listSessions, listAllSessions, getSessionDir, saveSummary } from './io.js';
+import { listSessions, listAllSessions, saveSummary } from './io.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -128,23 +127,11 @@ describe('listAllSessions', () => {
   });
 });
 
-describe('getSessionDir', () => {
-  it('returns project-scope path', () => {
-    const dir = getSessionDir('project', '/my/project');
-    expect(dir).toBe(join('/my/project', DIPTYCH_DIR, 'sessions'));
-  });
-
-  it('returns global-scope path', () => {
-    const dir = getSessionDir('global', '/my/project');
-    expect(dir).toBe(join(homedir(), DIPTYCH_DIR, 'sessions'));
-  });
-});
-
 describe('saveSummary', () => {
   it('writes session summary.json to per-session subdirectory', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-1' });
-    saveSummary(tmp, '2024-01-01-save-1', session);
+    saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-1' }, session);
     const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json'), 'utf-8');
     expect(JSON.parse(raw)).toEqual(session);
   });
@@ -152,7 +139,7 @@ describe('saveSummary', () => {
   it('creates directory if it does not exist', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-2' });
-    saveSummary(tmp, '2024-01-01-save-2', session);
+    saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-2' }, session);
     const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-2', 'summary.json'), 'utf-8');
     expect(JSON.parse(raw)).toEqual(session);
   });
@@ -160,7 +147,7 @@ describe('saveSummary', () => {
   it('sets 0o600 file permissions', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-3' });
-    saveSummary(tmp, '2024-01-01-save-3', session);
+    saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-3' }, session);
     const stats = statSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-3', 'summary.json'));
     expect(stats.mode & 0o777).toBe(0o600);
   });
@@ -168,13 +155,13 @@ describe('saveSummary', () => {
   it('validates session data and throws on invalid', () => {
     tmp = createTempDir('sessions-io-test');
     const invalid = { id: 'bad', feature: 123 };
-    expect(() => saveSummary(tmp, 'bad', invalid as never)).toThrow('Invalid session data');
+    expect(() => saveSummary({ projectDir: tmp, sessionId: 'bad' }, invalid as never)).toThrow('Invalid session data');
   });
 
   it('rejects mismatched path id and summary payload id', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-real' });
-    expect(() => saveSummary(tmp, '2024-01-01-other', session)).toThrow(
+    expect(() => saveSummary({ projectDir: tmp, sessionId: '2024-01-01-other' }, session)).toThrow(
       "Cannot save session summary for '2024-01-01-other'",
     );
     expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-other'))).toBe(false);
@@ -183,13 +170,13 @@ describe('saveSummary', () => {
   it('rejects invalid session ids', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '../outside' });
-    expect(() => saveSummary(tmp, '../outside', session)).toThrow('Invalid session id');
+    expect(() => saveSummary({ projectDir: tmp, sessionId: '../outside' }, session)).toThrow('Invalid session id');
   });
 
   it('round-trips through listSessions', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-rt-1', feature: 'roundtrip', startedAt: 5000 });
-    saveSummary(tmp, '2024-01-01-rt-1', session);
+    saveSummary({ projectDir: tmp, sessionId: '2024-01-01-rt-1' }, session);
     const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.id).toBe('2024-01-01-rt-1');

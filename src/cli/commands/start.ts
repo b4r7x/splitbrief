@@ -17,8 +17,7 @@ import { runRpc } from '../rpc/run.js';
 import { createResponseWriter } from '../rpc/writer.js';
 import { parseAtFiles } from '../parse-at-files.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { cliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
 import { slugify } from '../../utils/slugify.js';
@@ -36,6 +35,7 @@ import {
   readinessBlockerMessage,
 } from '../../core/readiness/format.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { buildCLIOverrides } from '../build-overrides.js';
@@ -70,14 +70,14 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
     console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
     opts.project = wtPath;
   } catch (err) {
-    throw cliError(toErrorMessage(err), 1);
+    rethrowAsCli(err);
   }
 }
 
-function persistStartReadiness(projectDir: string, sessionId: string, report: ReadinessReport): void {
+function persistStartReadiness(ref: SessionRef, report: ReadinessReport): void {
   const record = createStartReadinessRecord(report);
   writeSecureFile(
-    join(sessionDir(projectDir, sessionId), READINESS_FILE),
+    join(sessionDir(ref.projectDir, ref.sessionId), READINESS_FILE),
     JSON.stringify(record, null, 2) + '\n',
   );
 }
@@ -149,7 +149,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       const sessId = generateSessionId(projectDir, detachFeature);
       const sessDir = sessionDir(projectDir, sessId);
       ensureSessionDir(projectDir, sessId);
-      persistStartReadiness(projectDir, sessId, readiness.report);
+      persistStartReadiness({ projectDir, sessionId: sessId }, readiness.report);
 
       const overrides = { ...buildCLIOverrides(opts), mode };
 
@@ -186,8 +186,15 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       assertReadinessCanStart(readiness.report, true);
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
-      persistStartReadiness(projectDir, sessionId, readiness.report);
-      await deps.runHeadless(enrichedFeature ?? feature, projectDir, opts, undefined, sessionId, readiness, undefined, undefined, plannerContext);
+      persistStartReadiness({ projectDir, sessionId }, readiness.report);
+      await deps.runHeadless({
+        feature: enrichedFeature ?? feature,
+        projectDir,
+        opts,
+        sessionId,
+        readiness,
+        plannerContext,
+      });
       return;
     }
 
@@ -199,8 +206,15 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       assertReadinessCanStart(readiness.report, true);
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
-      persistStartReadiness(projectDir, sessionId, readiness.report);
-      await deps.runRpc(enrichedFeature ?? feature, projectDir, opts, undefined, sessionId, readiness, undefined, undefined, plannerContext);
+      persistStartReadiness({ projectDir, sessionId }, readiness.report);
+      await deps.runRpc({
+        feature: enrichedFeature ?? feature,
+        projectDir,
+        opts,
+        sessionId,
+        readiness,
+        plannerContext,
+      });
       return;
     }
 
@@ -214,7 +228,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     clearStaleSessionForCli(projectDir);
 
     const sessionId = feature && !needsSetup ? beginSession(projectDir, feature) : undefined;
-    if (sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);
+    if (sessionId && readiness) persistStartReadiness({ projectDir, sessionId }, readiness.report);
 
     await deps.initStores(projectDir, opts);
     let worktreeName: string | null = null;

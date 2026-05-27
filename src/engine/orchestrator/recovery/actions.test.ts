@@ -45,7 +45,8 @@ function implementingState(tasks: Task[]): WorkflowState {
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
   state = transition(state, { type: 'PLAN_DONE', tasks });
-  return transition(state, { type: 'APPROVE_PLAN' });
+  state = transition(state, { type: 'BRIEFS_READY', tasks });
+  return transition(state, { type: 'APPROVE_BRIEFS' });
 }
 
 function routeBiggerIssue(task: Task, facts?: RecoveryIssue['facts']): RecoveryIssue {

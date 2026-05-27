@@ -18,7 +18,7 @@ import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import type { Config } from '../../core/schemas/config.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
 
 const REAL_TASKS_MD = `---
 id: T001

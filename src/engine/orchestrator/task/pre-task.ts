@@ -38,8 +38,8 @@ export async function runPreTaskHooksAndPublish(opts: {
     };
     const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
     if (!pre.allow) {
-      publishWarning(wctx.bus, state.phase, `pre_task blocked: ${pre.reason ?? 'hook denied'}`);
-      publishTaskSkipped(wctx.bus, state.phase, { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' });
+      publishWarning({ bus: wctx.bus, phase: state.phase }, `pre_task blocked: ${pre.reason ?? 'hook denied'}`);
+      publishTaskSkipped({ bus: wctx.bus, phase: state.phase }, { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SKIP_TASK', taskId: task.id });
       setTrackedState(state);
       persistTaskEvidence(wctx, state, task, 'skipped', { status: 'skipped', reason: pre.reason ?? 'pre_task hook denied' });
@@ -47,7 +47,7 @@ export async function runPreTaskHooksAndPublish(opts: {
     }
   }
 
-  publishTaskStart(wctx.bus, state.phase, {
+  publishTaskStart({ bus: wctx.bus, phase: state.phase }, {
     taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
     ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
@@ -58,7 +58,7 @@ export async function runPreTaskHooksAndPublish(opts: {
   try {
     taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
   } catch (err) {
-    publishError(wctx.bus, state.phase, `Task blocked by approval gate: ${toErrorMessage(err)}`);
+    publishError({ bus: wctx.bus, phase: state.phase }, `Task blocked by approval gate: ${toErrorMessage(err)}`);
     return { proceed: false, state };
   }
 

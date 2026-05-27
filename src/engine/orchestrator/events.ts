@@ -1,6 +1,6 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskId } from '../../core/schemas/task.js';
-import type { Phase, RecoveryAction, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
+import type { RecoveryAction, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type { EngineEvent, EventBus, ValidationStages } from '../events/types.js';
 import type { ValidationResult } from './validation.js';
@@ -8,6 +8,7 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
+import type { BusContext } from '../types/bus-context.js';
 import type { UserEditConflict, UserEditConflictAction, CurrentCodeContextMode, TaskContextFit, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
 
@@ -18,8 +19,8 @@ type ValidationPhase =
   | { phase: 'progress'; stages: ValidationStages; startTime: number }
   | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
-export function createBusTextHandler(bus: EventBus, phase: Phase): (text: string) => void {
-  return (text) => bus.publish({ type: 'planner_text', ts: Date.now(), phase, text });
+export function createBusTextHandler(ctx: BusContext): (text: string) => void {
+  return (text) => ctx.bus.publish({ type: 'planner_text', ts: Date.now(), phase: ctx.phase, text });
 }
 
 export function publishPlannerStatus(
@@ -38,38 +39,38 @@ export function publishPlannerStatus(
 }
 
 export function publishTaskStart(
-  bus: EventBus, phase: Phase,
+  ctx: BusContext,
   opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string },
 ): void {
-  bus.publish({ type: 'task_started', ts: Date.now(), phase, ...opts });
+  ctx.bus.publish({ type: 'task_started', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
 export function publishTaskSkipped(
-  bus: EventBus, phase: Phase,
+  ctx: BusContext,
   opts: { taskId: TaskId; title: string; reason: string },
 ): void {
-  bus.publish({ type: 'task_skipped', ts: Date.now(), phase, ...opts });
+  ctx.bus.publish({ type: 'task_skipped', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
 export function publishTaskComplete(
-  bus: EventBus, phase: Phase,
+  ctx: BusContext,
   opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string; implementerProfile?: string },
 ): void {
-  bus.publish({ type: 'task_completed', ts: Date.now(), phase, ...opts });
+  ctx.bus.publish({ type: 'task_completed', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
-export function publishValidation(bus: EventBus, workflowPhase: Phase, taskId: TaskId, opts: ValidationPhase): void {
+export function publishValidation(ctx: BusContext, taskId: TaskId, opts: ValidationPhase): void {
   if (opts.phase === 'start') {
-    bus.publish({
-      type: 'validate', ts: Date.now(), phase: workflowPhase, taskId,
+    ctx.bus.publish({
+      type: 'validate', ts: Date.now(), phase: ctx.phase, taskId,
       status: 'running', passed: false, stages: { ...EMPTY_STAGES },
     });
     return;
   }
 
   if (opts.phase === 'progress') {
-    bus.publish({
-      type: 'validate', ts: opts.startTime, phase: workflowPhase, taskId,
+    ctx.bus.publish({
+      type: 'validate', ts: opts.startTime, phase: ctx.phase, taskId,
       status: 'running', passed: false, stages: opts.stages,
     });
     return;
@@ -87,85 +88,84 @@ export function publishValidation(bus: EventBus, workflowPhase: Phase, taskId: T
       if (failedError === undefined) failedError = r.error;
     }
   }
-  bus.publish({
-    type: 'validate', ts: Date.now(), phase: workflowPhase, taskId,
+  ctx.bus.publish({
+    type: 'validate', ts: Date.now(), phase: ctx.phase, taskId,
     status: 'done', passed, stages,
     ...(failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });
 }
 
-export function publishGitCommit(bus: EventBus, phase: Phase, taskId: TaskId, message: string, file?: string): void {
-  bus.publish({ type: 'git_commit', ts: Date.now(), phase, taskId, message, ...(file !== undefined && { file }) });
+export function publishGitCommit(ctx: BusContext, taskId: TaskId, message: string, file?: string): void {
+  ctx.bus.publish({ type: 'git_commit', ts: Date.now(), phase: ctx.phase, taskId, message, ...(file !== undefined && { file }) });
 }
 
-export function publishGitBranchCreated(bus: EventBus, phase: Phase, name: string): void {
-  bus.publish({ type: 'git_branch_created', ts: Date.now(), phase, name });
+export function publishGitBranchCreated(ctx: BusContext, name: string): void {
+  ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
 }
 
-export function publishGitCheckpoint(bus: EventBus, phase: Phase, taskId: TaskId, tag: string): void {
-  bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase, taskId, tag });
+export function publishGitCheckpoint(ctx: BusContext, taskId: TaskId, tag: string): void {
+  ctx.bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase: ctx.phase, taskId, tag });
 }
 
-export function publishRetry(bus: EventBus, phase: Phase, taskId: TaskId, attempt: number, maxRetries: number, error: string): void {
-  bus.publish({ type: 'task_retry', ts: Date.now(), phase, taskId, attempt, maxRetries, error });
+export function publishRetry(ctx: BusContext, taskId: TaskId, attempt: number, maxRetries: number, error: string): void {
+  ctx.bus.publish({ type: 'task_retry', ts: Date.now(), phase: ctx.phase, taskId, attempt, maxRetries, error });
 }
 
-export function publishEscalate(bus: EventBus, phase: Phase, taskId: TaskId, tier: 0 | 1 | 2, hint?: string, tool?: string, model?: string): void {
-  bus.publish({
-    type: 'escalate', ts: Date.now(), phase, taskId, tier,
-    ...(hint !== undefined && { hint }),
-    ...(tool !== undefined && { tool }),
-    ...(model !== undefined && { model }),
+export function publishEscalate(opts: BusContext & { taskId: TaskId; tier: 0 | 1 | 2; hint?: string | undefined; tool?: string | undefined; model?: string | undefined }): void {
+  opts.bus.publish({
+    type: 'escalate', ts: Date.now(), phase: opts.phase, taskId: opts.taskId, tier: opts.tier,
+    ...(opts.hint !== undefined && { hint: opts.hint }),
+    ...(opts.tool !== undefined && { tool: opts.tool }),
+    ...(opts.model !== undefined && { model: opts.model }),
   });
 }
 
-export function publishCostUpdate(bus: EventBus, phase: Phase, tokenUsage: TokenUsage): void {
-  bus.publish({ type: 'cost_update', ts: Date.now(), phase, tokenUsage });
+export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void {
+  ctx.bus.publish({ type: 'cost_update', ts: Date.now(), phase: ctx.phase, tokenUsage });
 }
 
-export function publishCostPrediction(bus: EventBus, phase: Phase, prediction: CostPrediction): void {
-  bus.publish({ type: 'cost_prediction', ts: Date.now(), phase, prediction });
+export function publishCostPrediction(ctx: BusContext, prediction: CostPrediction): void {
+  ctx.bus.publish({ type: 'cost_prediction', ts: Date.now(), phase: ctx.phase, prediction });
 }
 
-export function publishBudgetWarning(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number): void {
-  bus.publish({ type: 'budget_warning', ts: Date.now(), phase, currentCost, maxBudget });
+export function publishBudgetWarning(ctx: BusContext, currentCost: number, maxBudget: number): void {
+  ctx.bus.publish({ type: 'budget_warning', ts: Date.now(), phase: ctx.phase, currentCost, maxBudget });
 }
 
-export function publishBudgetPaused(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number, threshold: number): void {
-  bus.publish({ type: 'budget_paused', ts: Date.now(), phase, currentCost, maxBudget, threshold });
+export function publishBudgetPaused(ctx: BusContext, currentCost: number, maxBudget: number, threshold: number): void {
+  ctx.bus.publish({ type: 'budget_paused', ts: Date.now(), phase: ctx.phase, currentCost, maxBudget, threshold });
 }
 
-export function publishBudgetExceeded(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number): void {
-  bus.publish({ type: 'budget_exceeded', ts: Date.now(), phase, currentCost, maxBudget });
+export function publishBudgetExceeded(ctx: BusContext, currentCost: number, maxBudget: number): void {
+  ctx.bus.publish({ type: 'budget_exceeded', ts: Date.now(), phase: ctx.phase, currentCost, maxBudget });
 }
 
-export function publishError(bus: EventBus, phase: Phase, message: string): void {
-  bus.publish({ type: 'error', ts: Date.now(), phase, message });
+export function publishError(ctx: BusContext, message: string): void {
+  ctx.bus.publish({ type: 'error', ts: Date.now(), phase: ctx.phase, message });
 }
 
-export function publishWarning(bus: EventBus, phase: Phase, message: string): void {
-  bus.publish({ type: 'warning', ts: Date.now(), phase, message });
+export function publishWarning(ctx: BusContext, message: string): void {
+  ctx.bus.publish({ type: 'warning', ts: Date.now(), phase: ctx.phase, message });
 }
 
-export function publishWarningFromError(bus: EventBus, phase: Phase, label: string, err: unknown): void {
-  publishWarning(bus, phase, labelError(label, err));
+export function publishWarningFromError(ctx: BusContext, label: string, err: unknown): void {
+  publishWarning(ctx, labelError(label, err));
 }
 
-export function publishUserMessage(bus: EventBus, phase: Phase, text: string): void {
-  bus.publish({ type: 'user_message', ts: Date.now(), phase, text });
+export function publishUserMessage(ctx: BusContext, text: string): void {
+  ctx.bus.publish({ type: 'user_message', ts: Date.now(), phase: ctx.phase, text });
 }
 
 export function publishUserEditConflict(
-  bus: EventBus,
-  phase: Phase,
+  ctx: BusContext,
   conflict: UserEditConflict,
   selectedAction?: UserEditConflictAction,
 ): void {
-  bus.publish({
+  ctx.bus.publish({
     type: 'paused_external_changes',
     ts: Date.now(),
-    phase,
+    phase: ctx.phase,
     conflict,
     ...(selectedAction !== undefined && { selectedAction }),
   });
@@ -186,8 +186,8 @@ export function publishRecoveryPrompted(bus: EventBus, issue: RecoveryIssue): vo
   });
 }
 
-export function publishTaskReviewNeeded(bus: EventBus, phase: Phase, request: TaskReviewRequest): void {
-  bus.publish({ type: 'task_review_needed', ts: Date.now(), phase, ...request });
+export function publishTaskReviewNeeded(ctx: BusContext, request: TaskReviewRequest): void {
+  ctx.bus.publish({ type: 'task_review_needed', ts: Date.now(), phase: ctx.phase, ...request });
 }
 
 type RecoveryEventSpec =
@@ -259,15 +259,15 @@ export function publishRecoveryResolved(
   });
 }
 
-export function publishWorkflowConfig(bus: EventBus, phase: Phase, opts: {
+export function publishWorkflowConfig(ctx: BusContext, opts: {
   mode: WorkflowMode;
   plannerTool: string;
   plannerModel?: string | undefined;
   implementerTool: string;
   implementerModel?: string | undefined;
 }): void {
-  bus.publish({
-    type: 'workflow_config', ts: Date.now(), phase,
+  ctx.bus.publish({
+    type: 'workflow_config', ts: Date.now(), phase: ctx.phase,
     mode: opts.mode,
     plannerTool: opts.plannerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
@@ -276,15 +276,15 @@ export function publishWorkflowConfig(bus: EventBus, phase: Phase, opts: {
   });
 }
 
-export function publishImplementerGenerateRunning(bus: EventBus, phase: Phase, taskId: TaskId, file?: string): void {
-  bus.publish({ type: 'implementer_generate_running', ts: Date.now(), phase, taskId, ...(file !== undefined && { file }) });
+export function publishImplementerGenerateRunning(ctx: BusContext, taskId: TaskId, file?: string): void {
+  ctx.bus.publish({ type: 'implementer_generate_running', ts: Date.now(), phase: ctx.phase, taskId, ...(file !== undefined && { file }) });
 }
 
-export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts: { taskId: TaskId; file: string; diff?: string | undefined; linesAdded: number; linesRemoved: number; duration: number }): void {
+export function publishImplementerGenerateDone(ctx: BusContext, opts: { taskId: TaskId; file: string; diff?: string | undefined; linesAdded: number; linesRemoved: number; duration: number }): void {
   const event: EngineEvent = {
     type: 'implementer_generate_done',
     ts: Date.now(),
-    phase,
+    phase: ctx.phase,
     taskId: opts.taskId,
     file: opts.file,
     linesAdded: opts.linesAdded,
@@ -292,31 +292,30 @@ export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts
     duration: opts.duration,
   };
   if (opts.diff !== undefined) event.diff = opts.diff;
-  bus.publish(event);
+  ctx.bus.publish(event);
 }
 
-function publishImplementerGenerateFailed(bus: EventBus, phase: Phase, taskId: TaskId, model: string): void {
-  bus.publish({ type: 'implementer_generate_failed', ts: Date.now(), phase, taskId, model });
+function publishImplementerGenerateFailed(ctx: BusContext, taskId: TaskId, model: string): void {
+  ctx.bus.publish({ type: 'implementer_generate_failed', ts: Date.now(), phase: ctx.phase, taskId, model });
 }
 
 export function createImplementerPublisher(bus: EventBus): ImplementerPublisher {
   return {
-    publishRunning: ({ phase, taskId, file }) => publishImplementerGenerateRunning(bus, phase, taskId, file),
-    publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone(bus, phase, opts),
-    publishFailed: ({ phase, taskId, model }) => publishImplementerGenerateFailed(bus, phase, taskId, model),
+    publishRunning: ({ phase, taskId, file }) => publishImplementerGenerateRunning({ bus, phase }, taskId, file),
+    publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone({ bus, phase }, opts),
+    publishFailed: ({ phase, taskId, model }) => publishImplementerGenerateFailed({ bus, phase }, taskId, model),
   };
 }
 
 export function publishDriftChainDetected(
-  bus: EventBus,
-  phase: Phase,
+  ctx: BusContext,
   chain: EmittedChain,
   threshold: number,
 ): void {
-  bus.publish({
+  ctx.bus.publish({
     type: 'drift_chain_detected',
     ts: Date.now(),
-    phase,
+    phase: ctx.phase,
     chainLength: chain.chainLength,
     score: chain.score,
     threshold,

@@ -1,16 +1,3 @@
-export type McpRequest = {
-  jsonrpc: '2.0';
-  id: string | number;
-  method: string;
-  params?: Record<string, unknown>;
-};
-
-export type McpNotification = {
-  jsonrpc: '2.0';
-  method: string;
-  params?: Record<string, unknown>;
-};
-
 export type McpResponse = {
   jsonrpc: '2.0';
   id: string | number;

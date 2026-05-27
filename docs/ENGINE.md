@@ -92,7 +92,7 @@ function createEventBus(): EventBus {
 Events cover the full workflow lifecycle. A few examples:
 
 - `workflow_started` / `workflow_complete` — session boundaries
-- `task_started` / `task_completed` / `task_failed` — task lifecycle with timing, method, retries
+- `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
 - `planner_text` — streaming planner output chunks
 - `cost_update` — cumulative token usage after each planner or implementer call
 
@@ -112,7 +112,7 @@ Up to six sinks can subscribe to the bus. Two are unconditional (JSONL, tree rec
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes NDJSON to stdout, one line per event. Only subscribed in `--json` headless mode.
 
-**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only six event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `plan_done` maps to `post_planning`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
+**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
 
 **OTel sink** (`src/engine/events/sinks/otel.ts`) — maps events to OpenTelemetry spans. Creates nested spans for workflow, phases, and tasks. Point events (cost, validation, warnings) become span attributes or events. Opt-in via `config.otel.enabled`.
 

@@ -2,9 +2,10 @@ import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { PlanResult } from '../../engine/planners/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../setup.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { rethrowAsCli } from '../errors.js';
 import { warnStderr } from '../../lib/warn.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
@@ -53,14 +54,13 @@ export function registerSpecCommand(program: Command): void {
           onOutput(text: string) {
             process.stdout.write(text);
           },
-          onPhase(phase: string) {
+          onPhase(phase: Phase) {
             console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
           },
           sessionId,
         });
       } catch (err) {
-        const msg = toErrorMessage(err);
-        throw Object.assign(new Error(msg, { cause: err }), { exitCode: 1 });
+        rethrowAsCli(err);
       }
 
       for (const phase of result.phases ?? []) {

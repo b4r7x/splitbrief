@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, redactSecretsWithMetadata, maskApiKey } from './redact.js';
+import { redactSecrets, redactSecretsWithMetadata } from './redact.js';
 
 describe('redactSecrets', () => {
   it.each([
@@ -81,16 +81,5 @@ describe('redactSecrets', () => {
     expect(result.redacted).toBe(true);
     expect(result.text).not.toContain('user:password@example.com');
     expect(result.text).not.toContain('secret-key-body');
-  });
-});
-
-describe('maskApiKey', () => {
-  it('masks long keys showing last 4 chars', () => {
-    expect(maskApiKey('sk-ant-api03-abcdef1234')).toBe('••••1234');
-  });
-
-  it('returns empty string for undefined or empty input', () => {
-    expect(maskApiKey(undefined)).toBe('');
-    expect(maskApiKey('')).toBe('');
   });
 });

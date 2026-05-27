@@ -12,7 +12,7 @@ import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './r
 import { readEvidenceLedger } from '../evidence/persistence.js';
 import type { EscalationContext } from './types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
 
 const TEST_SINKS = {
   setAbortHandler: () => {},

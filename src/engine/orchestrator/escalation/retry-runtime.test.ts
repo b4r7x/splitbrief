@@ -10,7 +10,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { retryConfigForProfile, stateForRetryProfile, createRetryRuntime } from './retry-runtime.js';
 import type { EscalationContext } from './types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
 
 const TEST_SINKS = {
   setAbortHandler: () => {},

@@ -2,8 +2,7 @@ import type { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../core/approval/store.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError, isCliError } from '../errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 
 const VALID_SCOPES = ['session', 'always', 'all'] as const;
 type ClearScope = (typeof VALID_SCOPES)[number];
@@ -60,8 +59,7 @@ export function registerApprovalCommand(program: Command): void {
           );
         }
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
     });
 
@@ -89,8 +87,7 @@ export function registerApprovalCommand(program: Command): void {
         const count = before.grants.length - after.grants.length;
         console.log(`Cleared ${count} approval grant(s).`);
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
     });
 }

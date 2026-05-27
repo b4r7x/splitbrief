@@ -4,7 +4,6 @@ import { HookModuleEntrySchema, type HookEvent, type HookModuleEntry, type Hooks
 
 const HOOK_EVENT_BY_FILE_NAME: Record<string, HookEvent> = {
   'pre-planning': 'pre_planning',
-  'post-planning': 'post_planning',
   'pre-task': 'pre_task',
   'post-task': 'post_task',
   'pre-validation': 'pre_validation',

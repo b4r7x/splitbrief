@@ -1,11 +1,9 @@
 import { createStore, storeBase } from '../create-store.js';
-import { feedbackStore } from '../ui/feedback.js';
+import { publishFeedbackError } from '../shared/feedback-events.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Screen } from '../../core/navigation/types.js';
-
-export type InputMode = 'normal' | 'review' | 'question';
 
 export type WorkflowAttach = {
   sockPath: string;
@@ -38,7 +36,7 @@ function navigate(args: NavigateArgs) {
   const current = store.get().screen;
   const to = args.to;
   if (!transitions[current].includes(to)) {
-    feedbackStore.setError(`Cannot navigate from "${current}" to "${to}"`);
+    publishFeedbackError(`Cannot navigate from "${current}" to "${to}"`);
     return;
   }
 

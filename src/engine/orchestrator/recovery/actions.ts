@@ -9,7 +9,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { hashTaskBrief } from '../../../core/brief-hash.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { createEvidenceLedger } from '../evidence/ledger.js';
 import {
@@ -216,7 +216,7 @@ function applySkipCurrentTaskRecoveryAction(
     type: 'RESOLVE_PENDING_RECOVERY',
     action: opts.action,
   });
-  publishTaskSkipped(opts.bus, issue.phase, {
+  publishTaskSkipped({ bus: opts.bus, phase: issue.phase }, {
     taskId: target.task.id,
     title: target.task.title,
     reason,

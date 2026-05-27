@@ -48,7 +48,7 @@ async function maybeAutoSnapshot(opts: {
       await recordRunSnapshot(opts.projectDir, opts.sessionId, result.manifest, 'post-task');
     }
   } catch (err) {
-    publishWarningFromError(opts.bus, opts.phase, `auto-snapshot (${opts.label}) failed`, err);
+    publishWarningFromError({ bus: opts.bus, phase: opts.phase }, `auto-snapshot (${opts.label}) failed`, err);
   }
 }
 
@@ -116,7 +116,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const routingProfiles = retryProfileOverride === undefined ? resolvedProfiles.profiles : resolvedProfiles.profiles.filter(profile => profile.name === retryProfileOverride);
     if (routingProfiles.length === 0) {
       const message = `Recovery selected implementer profile "${retryProfileOverride}" is not configured.`;
-      publishError(wctx.bus, state.phase, message);
+      publishError({ bus: wctx.bus, phase: state.phase }, message);
       const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, selectedImplementerProfile: retryProfileOverride, canRouteBigger: false, routingReason: message, createdAt: nowIso() });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
@@ -129,7 +129,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const selectedModel = selectedProfile ? getRunnerModelName(selectedProfile.config) : undefined;
     if (!selectedProfile) {
       const message = routingBlockMessage(routingDecision);
-      publishError(wctx.bus, state.phase, message);
+      publishError({ bus: wctx.bus, phase: state.phase }, message);
       const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, routingDecision, createdAt: nowIso() });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);

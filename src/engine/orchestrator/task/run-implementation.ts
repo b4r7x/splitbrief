@@ -37,7 +37,7 @@ export async function runImplementation(opts: {
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  const textHandler = createBusTextHandler(wctx.bus, state.phase);
+  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
   const streamingFeed = createStreamingFeed(
     task.id,
     config.implementer.kind === 'api',

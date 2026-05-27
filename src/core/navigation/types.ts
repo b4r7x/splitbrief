@@ -1,4 +1,5 @@
 export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
+export type InputMode = 'normal' | 'review' | 'question';
 
 export const ALL_SCREENS: readonly Screen[] = ['home', 'workflow', 'summary', 'setup'];
 

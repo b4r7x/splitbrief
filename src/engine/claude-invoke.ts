@@ -109,7 +109,7 @@ interface BuildArgsOpts {
   images?: Attachment[] | undefined;
 }
 
-export function applyEffortPrefix(prompt: string, effort: EffortLevel | undefined): string {
+function applyEffortPrefix(prompt: string, effort: EffortLevel | undefined): string {
   if (!effort) return prompt;
   return `/effort ${effort}\n\n${prompt}`;
 }

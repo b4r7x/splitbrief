@@ -134,7 +134,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     constitutionResult = { passed: true, violations: [] };
   } else {
     const prompt = buildConstitutionPrompt(opts.feature, '', constitutionContent);
-    const onOutput = createBusTextHandler(bus, state.phase);
+    const onOutput = createBusTextHandler({ bus: bus, phase: state.phase });
     const review = await planner.review(prompt, projectDir, { onOutput });
     constitutionResult = parseConstitutionCheck(review.text);
   }
@@ -165,7 +165,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     readArtifact(dir, TASKS_FILE),
   ]);
   const analyzePrompt = buildAnalyzePrompt(specText, planText, tasksText);
-  const onOutput = createBusTextHandler(bus, state.phase);
+  const onOutput = createBusTextHandler({ bus: bus, phase: state.phase });
   const review = await planner.review(analyzePrompt, projectDir, { onOutput });
   const analysis = parseAnalyze(review.text);
   writeSecureFile(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2));

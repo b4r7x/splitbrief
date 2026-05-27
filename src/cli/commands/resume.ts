@@ -2,8 +2,6 @@ import type { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app.js';
 import { loadState } from '../../core/state/persistence.js';
-import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-import { isResumable } from '../../core/phases.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions } from '../options.js';
 import { setupWorkflow, resolveProjectDir } from '../setup.js';
@@ -16,6 +14,7 @@ import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
+import { assertResumableState } from '../session-resolve.js';
 
 export function registerResumeCommand(program: Command): void {
   addWorkflowOptions(
@@ -39,21 +38,15 @@ export function registerResumeCommand(program: Command): void {
       throw cliError(`session '${sessionId}' has no state.json — cannot resume.`);
     }
 
-    if (!('stateVersion' in state) || state.stateVersion < CURRENT_STATE_VERSION) {
-      throw cliError('saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `diptych start`.');
-    }
-
-    if (!isResumable(state)) {
-      throw cliError(`Cannot resume from phase "${state.phase}".`);
-    }
+    assertResumableState(state, sessionId);
 
     if (opts.json) {
-      await runHeadless(state.feature, projectDir, opts, state, sessionId);
+      await runHeadless({ feature: state.feature, projectDir, opts, savedState: state, sessionId });
       return;
     }
 
     if (opts.rpc) {
-      await runRpc(state.feature, projectDir, opts, state, sessionId);
+      await runRpc({ feature: state.feature, projectDir, opts, savedState: state, sessionId });
       return;
     }
 

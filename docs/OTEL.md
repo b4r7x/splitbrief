@@ -74,7 +74,7 @@ diptych.workflow                           (root, SpanKind.INTERNAL)
 └── diptych.phase.final-review
 ```
 
-Phase spans are opened on the first `planner_status { status: 'running' }` for a new `phase`; the previous phase span ends when the next starts. Task spans are opened on `task_started` and closed on `task_completed` / `task_failed` / `task_full_fail` / `task_skipped`. `workflow_complete` and `workflow_cancelled` force-close any still-open children. Span names (`diptych.workflow`, `diptych.phase.<name>`, `diptych.task`) and the `diptych.*` attribute namespace are stable.
+Phase spans are opened on the first `planner_status { status: 'running' }` for a new `phase`; the previous phase span ends when the next starts. Task spans are opened on `task_started` and closed on `task_completed` / `task_full_fail` / `task_skipped`. `workflow_complete` and `workflow_cancelled` force-close any still-open children. Span names (`diptych.workflow`, `diptych.phase.<name>`, `diptych.task`) and the `diptych.*` attribute namespace are stable.
 
 ## Event → span mapping
 
@@ -90,7 +90,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 | `planner_status { status: 'done' }` | Set `diptych.phase.duration_ms` on the active phase span |
 | `task_started` | Open `diptych.task` grandchild under active phase (or workflow if no phase open); attributes: `diptych.task.{id,title,file,action,index,total}` |
 | `task_completed` | End task span with status OK; attributes: `diptych.task.{method,retries,duration_ms}` |
-| `task_failed` / `task_full_fail` | End task span with `SpanStatusCode.ERROR` |
+| `task_full_fail` | End task span with `SpanStatusCode.ERROR` |
 | `task_skipped` | Set `diptych.task.skip_reason`; close |
 | `cost_update` | Accumulate `diptych.cost.input_tokens` / `diptych.cost.output_tokens` on workflow span |
 | `validate { status: 'done' }` | Span event `diptych.validate` on active phase |
@@ -154,7 +154,7 @@ Today, a task with 2 retries produces one span covering all attempts. Whether to
 
 ### Error-status propagation
 
-Currently `task_failed` marks only the task span `ERROR`; the parent phase and workflow stay `OK`. OTel convention varies across backends — some bubble the worst-status-child up, some don't. Left as-is pending observed backend behavior.
+Currently `task_full_fail` marks only the task span `ERROR`; the parent phase and workflow stay `OK`. OTel convention varies across backends — some bubble the worst-status-child up, some don't. Left as-is pending observed backend behavior.
 
 ### Out of scope for v1
 

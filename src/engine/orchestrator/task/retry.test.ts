@@ -23,7 +23,9 @@ afterEach(cleanupTaskProjects);
 describe('retryAndRecord — retry budget', () => {
   it('local retry on first attempt succeeds → advances task, records local method', async () => {
     const task = makeTask({ id: 'T001' });
-    const state = implementingState([task]);
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
 
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -121,8 +123,6 @@ describe('retryAndRecord — retry budget', () => {
 
     const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
-    expect(busEvents.find((e) => e.type === 'task_failed')).toBeUndefined();
-
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
   });

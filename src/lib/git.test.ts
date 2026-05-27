@@ -1,14 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, rmSync, existsSync, readFileSync, renameSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   isGitRepo,
   getCurrentDiff,
-  hasExternalChanges,
   getCurrentChangedFiles,
   discardFileChange,
   branchExists,
   createBranch,
+  checkIgnoredPaths,
   gitError,
 } from './git.js';
 import { simpleGit } from 'simple-git';
@@ -60,31 +60,6 @@ describe('git utils', () => {
       const dir = tracked(setupGitRepo());
       const diff = await getCurrentDiff(dir);
       expect(diff).toBe('');
-    });
-  });
-
-  describe('hasExternalChanges', () => {
-    it('returns true when modified files exist', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'init.txt'), 'modified');
-      expect(await hasExternalChanges(dir)).toBe(true);
-    });
-
-    it('returns false when working tree is clean', async () => {
-      const dir = tracked(setupGitRepo());
-      expect(await hasExternalChanges(dir)).toBe(false);
-    });
-
-    it('returns true for deleted files', async () => {
-      const dir = tracked(setupGitRepo());
-      rmSync(join(dir, 'init.txt'));
-      expect(await hasExternalChanges(dir)).toBe(true);
-    });
-
-    it('returns true for moved files', async () => {
-      const dir = tracked(setupGitRepo());
-      renameSync(join(dir, 'init.txt'), join(dir, 'renamed.txt'));
-      expect(await hasExternalChanges(dir)).toBe(true);
     });
   });
 
@@ -174,6 +149,37 @@ describe('git utils', () => {
       writeFileSync(join(dir, 'created.txt'), 'new file');
       await discardFileChange(dir, 'created.txt', 'untracked');
       expect(existsSync(join(dir, 'created.txt'))).toBe(false);
+    });
+  });
+
+  describe('checkIgnoredPaths', () => {
+    it('returns empty array for empty input', async () => {
+      const dir = tracked(setupGitRepo());
+      const result = await checkIgnoredPaths(dir, []);
+      expect(result).toEqual([]);
+    });
+
+    it('identifies gitignored paths via stdin', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, '.gitignore'), '*.log\ndist/\n');
+      mkdirSync(join(dir, 'dist'), { recursive: true });
+      writeFileSync(join(dir, 'debug.log'), 'x');
+      writeFileSync(join(dir, 'dist', 'bundle.js'), 'x');
+      writeFileSync(join(dir, 'src.ts'), 'export {}');
+
+      const result = await checkIgnoredPaths(dir, ['debug.log', 'dist/bundle.js', 'src.ts']);
+      expect(result).toContain('debug.log');
+      expect(result).toContain('dist/bundle.js');
+      expect(result).not.toContain('src.ts');
+    });
+
+    it('handles paths with spaces', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, '.gitignore'), '*.log\n');
+      writeFileSync(join(dir, 'my file.log'), 'x');
+
+      const result = await checkIgnoredPaths(dir, ['my file.log']);
+      expect(result).toContain('my file.log');
     });
   });
 

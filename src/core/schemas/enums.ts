@@ -57,9 +57,15 @@ const TASK_STATUSES = ['pending', 'in_progress', 'done', 'failed', 'escalated', 
 export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+export const FileActionSchema = z.enum(['create', 'modify']);
+export type FileAction = z.infer<typeof FileActionSchema>;
+
 const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'escalated-hint', 'escalated-full', 'failed', 'skipped', 'mcp-tool'] as const;
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
+
+export const ValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
+export type ValidationStage = z.infer<typeof ValidationStageSchema>;
 
 export const RECOVERY_REASONS = [
   'implementation-error',

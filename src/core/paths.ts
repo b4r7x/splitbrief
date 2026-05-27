@@ -8,9 +8,6 @@ export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';
 export const ACTIVE_FILE = 'active';
 
-export const diptychDir = (projectDir: string): string =>
-  join(projectDir, DIPTYCH_DIR);
-
 export const activeFile = (projectDir: string): string =>
   join(projectDir, DIPTYCH_DIR, ACTIVE_FILE);
 
@@ -54,6 +51,7 @@ export const TASKS_FILE = 'tasks.md';
 export const RESEARCH_FILE = 'research.md';
 export const REVIEW_FILE = 'review.md';
 export const STATE_FILE = 'state.json';
+export const SUMMARY_FILE = 'summary.json';
 export const SESSION_LOG_FILE = 'session.jsonl';
 export const CONFIG_FILE = 'config.yaml';
 export const CLARIFICATIONS_FILE = 'clarifications.md';

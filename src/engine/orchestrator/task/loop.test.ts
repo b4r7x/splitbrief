@@ -16,7 +16,7 @@ import { createValidator } from '../validation.js';
 import { readRunSnapshotLedger } from '../../snapshots/run.js';
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
 
 const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},

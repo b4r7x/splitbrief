@@ -59,14 +59,10 @@ describe('tasksStore — via addEvent', () => {
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');
   });
 
-  it('updates task state from failure and escalation lifecycle events', () => {
+  it('updates task state from escalation lifecycle events', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Escalating task' }));
     addEvent({ type: 'task_escalating', ts: Date.now(), phase: 'escalating', taskId: taskId('T001') });
     expect(tasksStore.get().taskMap.get('T001')!.status).toBe('escalated');
-
-    addEvent(makeTaskStart({ taskId: taskId('T002'), title: 'Failed task' }));
-    addEvent({ type: 'task_failed', ts: Date.now(), phase: 'implementing', taskId: taskId('T002') });
-    expect(tasksStore.get().taskMap.get('T002')!.status).toBe('failed');
 
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Full fail task' }));
     addEvent({ type: 'task_full_fail', ts: Date.now(), phase: 'escalating', taskId: taskId('T003') });

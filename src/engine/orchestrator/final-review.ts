@@ -27,7 +27,7 @@ import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
+import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
 
 export async function runFinalReviewPhase(
@@ -53,7 +53,7 @@ export async function runFinalReviewPhase(
       });
       await recordRunSnapshot(projectDir, sessionId, result.manifest, 'pre-final-review');
     } catch (err) {
-      publishWarningFromError(bus, state.phase, 'auto-snapshot (pre-final-review) failed', err);
+      publishWarningFromError({ bus: bus, phase: state.phase }, 'auto-snapshot (pre-final-review) failed', err);
     }
   }
 
@@ -96,7 +96,7 @@ export async function runFinalReviewPhase(
     });
     state = review.state;
   } catch (err) {
-    publishError(bus, state.phase, labelError('Final review failed', err));
+    publishError({ bus: bus, phase: state.phase }, labelError('Final review failed', err));
     reviewStatus = 'failed';
   }
 
@@ -132,7 +132,7 @@ export async function runFinalReviewPhase(
       finalReviewStatus: reviewStatus,
     });
   } catch (err) {
-    publishWarningFromError(bus, state.phase, 'Review packet generation failed', err);
+    publishWarningFromError({ bus: bus, phase: state.phase }, 'Review packet generation failed', err);
   }
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;

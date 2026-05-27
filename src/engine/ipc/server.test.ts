@@ -298,6 +298,18 @@ describe('startIpcServer', () => {
     });
   });
 
+  it('rejects prompt promises after 30s timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const { srv } = await makeServer();
+      const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
+      vi.advanceTimersByTime(30_000);
+      await expect(promptPromise).rejects.toThrow('IPC prompt timed out after 30s: external_changes');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sends prompt requests immediately to an attached client', async () => {
     const { srv } = await makeServer();
     const socket = await connectClient(srv.sockPath);

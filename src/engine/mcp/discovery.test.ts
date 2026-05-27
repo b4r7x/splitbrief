@@ -36,8 +36,8 @@ describe('resolveSessionIds', () => {
 
   it('returns all session IDs when --all-sessions is set', () => {
     const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
-    saveSummary(projectDir, 'sess-1', { ...SESSION_STUB, id: 'sess-1' });
-    saveSummary(projectDir, 'sess-2', { ...SESSION_STUB, id: 'sess-2' });
+    saveSummary({ projectDir: projectDir, sessionId: 'sess-1' }, { ...SESSION_STUB, id: 'sess-1' });
+    saveSummary({ projectDir: projectDir, sessionId: 'sess-2' }, { ...SESSION_STUB, id: 'sess-2' });
     const ids = resolveSessionIds(projectDir, { allSessions: true });
     expect(ids).toHaveLength(2);
     expect(ids).toContain('sess-1');
@@ -54,7 +54,7 @@ describe('resolveSessionIds', () => {
   it('returns [activeId] when neither option is set and active session exists', () => {
     const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     ensureSessionDir(projectDir, 'active-sess');
-    writeActive(projectDir, 'active-sess');
+    writeActive({ projectDir: projectDir, sessionId: 'active-sess' });
     expect(resolveSessionIds(projectDir, {})).toEqual(['active-sess']);
   });
 

@@ -767,7 +767,6 @@ Sessions are execution records, not a plan archive or project-management databas
 | Event | When |
 |---|---|
 | `pre_planning` | Before any planner phase starts |
-| `post_planning` | After Task Brief transport written |
 | `pre_task` | Before each implementer task |
 | `post_task` | After each successful task |
 | `pre_validation` | Before tsc/lint/test |

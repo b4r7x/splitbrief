@@ -4,6 +4,7 @@ import { skillsStore } from '../stores/project/skills.js';
 import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
+import { detectionStore } from '../stores/project/detection.js';
 import { setHighlightTheme } from '../lib/highlight.js';
 import { warnError, warnStderr } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/registry.js';
@@ -77,6 +78,6 @@ async function loadDiscovery(projectDir: string): Promise<void> {
     discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
       skillsStore.setAvailable(skills);
     }),
-    loadDetectionIntoStores(getDefaultDetectionService(), { detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
+    loadDetectionIntoStores(getDefaultDetectionService(), { detectAll, fetchModelsDevCatalog, discoverAllCliTools }, detectionStore, projectDir),
   ]);
 }

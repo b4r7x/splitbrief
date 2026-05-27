@@ -1,6 +1,8 @@
 import { createReadStream, existsSync } from 'node:fs';
-import * as readline from 'node:readline';
+import { createInterface } from 'node:readline';
 import type { EngineEvent } from '../events/types.js';
+import { parseEngineEvent } from '../events/schema.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 export type ReplayOptions = {
   sessionJsonlPath: string;
@@ -14,15 +16,9 @@ export type ReplayResult = {
   lastTs: number | null;
 };
 
-function isEngineEvent(value: unknown): value is EngineEvent {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as { type?: unknown; ts?: unknown };
-  return typeof v.type === 'string' && v.type.length > 0 && typeof v.ts === 'number';
-}
-
 function entryToEvent(raw: unknown): EngineEvent | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const entry = raw as Record<string, unknown>;
+  if (!isRecord(raw)) return null;
+  const entry = raw;
   if (entry['kind'] !== 'event') return null;
   const type = entry['type'];
   if (typeof type !== 'string') return null;
@@ -36,8 +32,8 @@ function entryToEvent(raw: unknown): EngineEvent | null {
   } else {
     return null;
   }
-  const data = typeof entry['data'] === 'object' && entry['data'] !== null
-    ? entry['data'] as Record<string, unknown>
+  const data = isRecord(entry['data'])
+    ? entry['data']
     : {};
   const phase = entry['phase'];
   const taskId = entry['taskId'];
@@ -45,7 +41,7 @@ function entryToEvent(raw: unknown): EngineEvent | null {
   const candidate: Record<string, unknown> = { type, ts, ...data };
   if (phase !== undefined) candidate['phase'] = phase;
   if (taskId !== undefined) candidate['taskId'] = taskId;
-  return isEngineEvent(candidate) ? candidate : null;
+  return parseEngineEvent(candidate);
 }
 
 export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResult> {
@@ -57,7 +53,7 @@ export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResul
 
   const events: EngineEvent[] = [];
   const stream = createReadStream(sessionJsonlPath, { encoding: 'utf-8' });
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
   for await (const line of rl) {
     if (!line.trim()) continue;

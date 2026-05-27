@@ -12,7 +12,7 @@ User-declared commands that fire on workflow events. Configured in the `hooks` s
 
 **Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`, `pre_compact`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre-hook.ts`, which also runs active built-in hooks before user entries.
 
-**Post-hooks and on-hooks** (`post_task`, `post_validation`, `post_commit`, `post_planning`, `on_complete`, `on_error`) fire asynchronously after the action through the hook sink on the EventBus (`src/engine/hooks/sink.ts`). A deny outcome from a post-hook is informational only -- it cannot block the already-completed action.
+**Post-hooks and on-hooks** (`post_task`, `post_validation`, `post_commit`, `on_complete`, `on_error`) fire asynchronously after the action through the hook sink on the EventBus (`src/engine/hooks/sink.ts`). A deny outcome from a post-hook is informational only -- it cannot block the already-completed action.
 
 Hooks support two kinds: `command` (spawns a subprocess, receives the event as JSON on stdin) and `module` (loads an ES module exporting a handler function). Variable substitution in command args uses `${event.<path>}` syntax -- for example `${event.taskId}`, `${event.phase}`. Resolved by `src/engine/hooks/substitute.ts`. Each hook entry declares an `on_failure` policy: `block`, `warn`, or `ignore`.
 

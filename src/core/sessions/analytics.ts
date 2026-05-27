@@ -1,4 +1,5 @@
 import type { Session } from '../schemas/session.js';
+import { accumulateProviderCosts } from '../stats/provider-costs.js';
 
 export type SessionAnalytics = {
   totalSessions: number;
@@ -38,15 +39,7 @@ export function aggregateSessionCosts(sessions: Session[]): SessionAnalytics {
     localRateSum += cb.localCompletionRate;
 
     if (cb.providerCosts) {
-      for (const [provider, pc] of Object.entries(cb.providerCosts)) {
-        const existing = result.providerTotals[provider];
-        if (existing) {
-          existing.cost += pc.cost;
-          existing.sessions += 1;
-        } else {
-          result.providerTotals[provider] = { cost: pc.cost, sessions: 1 };
-        }
-      }
+      accumulateProviderCosts(result.providerTotals, cb.providerCosts);
     }
   }
 

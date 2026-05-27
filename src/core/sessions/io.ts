@@ -1,19 +1,12 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { Session } from '../schemas/session.js';
+import type { SessionRef } from '../types/session-ref.js';
 import { SessionSchema } from '../schemas/session.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, sessionsRoot, getDiptychPath } from '../paths.js';
+import { sessionDir, sessionsRoot } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { sessionError } from './errors.js';
-
-export function getSessionDir(scope: 'project' | 'global', projectDir: string): string {
-  if (scope === 'global') {
-    return join(homedir(), DIPTYCH_DIR, SESSIONS_DIR);
-  }
-  return getDiptychPath(projectDir, SESSIONS_DIR);
-}
 
 function readSummaryFile(filePath: string): Session | null {
   try {
@@ -33,7 +26,8 @@ function readSummaryFile(filePath: string): Session | null {
   }
 }
 
-export function saveSummary(projectDir: string, id: string, session: Session): void {
+export function saveSummary(ref: SessionRef, session: Session): void {
+  const { projectDir, sessionId: id } = ref;
   const result = SessionSchema.safeParse(session);
   if (!result.success) {
     throw sessionError.invalidData(id, result.error.message);

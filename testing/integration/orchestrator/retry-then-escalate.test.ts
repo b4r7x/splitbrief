@@ -26,7 +26,8 @@ function makeValidatingState(): WorkflowState {
   s = transition(s, { type: 'SPEC_DONE' });
   s = transition(s, { type: 'APPROVE_SPEC' });
   s = transition(s, { type: 'PLAN_DONE', tasks: [task] });
-  s = transition(s, { type: 'APPROVE_PLAN' });
+  s = transition(s, { type: 'BRIEFS_READY', tasks: [task] });
+  s = transition(s, { type: 'APPROVE_BRIEFS' });
   return transition(s, { type: 'TASK_SENT' });
 }
 

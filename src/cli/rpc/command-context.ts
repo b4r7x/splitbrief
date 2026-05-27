@@ -1,22 +1,14 @@
-import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { taskId as parseTaskId } from '../../core/schemas/task.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
-import { sessionDir } from '../../core/paths.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
-import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
-import { attachImage, detachImage, listAttachments } from '../../stores/ui/attachments.js';
-import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../core/approval/store.js';
-import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
-import { writeSessionHtmlReport } from '../../engine/export/collect.js';
+import { createCommandContext } from '../command-context-factory.js';
 import { error } from '../../utils/error.js';
 
 const rpcCommandContextError = {
@@ -44,39 +36,32 @@ export function createRpcCommandContext(opts: {
   const pushError = (message: string) => {
     opts.errors.push(message);
   };
-  const getSessionIdOrThrow = () => {
-    const id = opts.getSessionId();
-    if (!id) throw rpcCommandContextError.noActiveSession();
-    return id;
-  };
-
-  return {
+  return createCommandContext({
+    projectDir: () => opts.projectDir,
+    getConfig: opts.getConfig,
+    saveConfig: (config) => {
+      opts.setConfig(config);
+      return { ok: true };
+    },
+    getSessionId: () => opts.getSessionId(),
+    noActiveSession: () => rpcCommandContextError.noActiveSession(),
+    noConfig: () => rpcCommandContextError.noActiveSession(),
     openOverlay: (type) => pushMessage(`Overlay ${type} is not available in RPC mode.`),
-    navigate: () => pushMessage('Navigation is not available in RPC mode.'),
+    navigateHome: () => pushMessage('Navigation is not available in RPC mode.'),
     quit: () => opts.abort(),
-    setWorkflowMode: (mode) => {
-      const current = opts.getConfig();
-      opts.setConfig({ ...current, workflow: { ...current.workflow, mode } });
-      return true;
-    },
-    setPlannerEffort: (effort) => {
-      const current = opts.getConfig();
-      opts.setConfig({ ...current, planner: { ...current.planner, effort } });
-      return true;
-    },
     setFeedbackMessage: pushMessage,
     setFeedbackError: pushError,
     refreshDetection: async () => {
       pushMessage('Tool detection refresh is not available in RPC mode.');
     },
     getCurrentPhase: opts.getPhase,
-    requestRewind: (target, comment) => {
+    requestRewind: (request) => {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const action = target === 'spec'
-        ? { type: 'REWIND_TO_SPEC' as const, ...(comment ? { comment } : {}) }
-        : { type: 'REWIND_TO_PLAN' as const, ...(comment ? { comment } : {}) };
+      const action = request.target === 'spec'
+        ? { type: 'REWIND_TO_SPEC' as const, ...(request.comment ? { comment: request.comment } : {}) }
+        : { type: 'REWIND_TO_PLAN' as const, ...(request.comment ? { comment: request.comment } : {}) };
       transitionAndSave(opts.projectDir, sessionId, state, action);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
@@ -98,46 +83,5 @@ export function createRpcCommandContext(opts: {
       if (!state || !sessionId) return 0;
       return clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count;
     },
-    rebuildRepomap: async () => {
-      const cacheDir = opts.getConfig().codebase?.cacheDir;
-      return rebuildRepomap(opts.projectDir, cacheDir === undefined ? {} : { cacheDir });
-    },
-    attachImage: (input) => attachImage(input, opts.projectDir),
-    detachImage,
-    listAttachments,
-    writeHandoff: async (target, taskId) => {
-      const sessionId = getSessionIdOrThrow();
-      return writeHandoffPack({
-        projectDir: opts.projectDir,
-        sessionId,
-        target,
-        outDir: join(sessionDir(opts.projectDir, sessionId), 'handoffs', target),
-        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
-        mode: 'overwrite',
-      });
-    },
-    listApprovals: () => readApprovalsStore(opts.projectDir).grants,
-    clearApprovals: (scope = 'all') => {
-      const before = readApprovalsStore(opts.projectDir);
-      const after = clearGrantsByScope(before, scope);
-      writeApprovalsStore(opts.projectDir, after);
-      return before.grants.length - after.grants.length;
-    },
-    getApprovalEnabled: () => opts.getConfig().approval?.enabled !== false,
-    setApprovalEnabled: (enabled) => {
-      const current = opts.getConfig();
-      const approval = current.approval ?? { enabled: true, feedRejectionsToPlanner: true };
-      opts.setConfig({ ...current, approval: { ...approval, enabled } });
-    },
-    acceptRunSnapshot: () => acceptRunSnapshot(opts.projectDir, getSessionIdOrThrow()),
-    rejectRunSnapshot: () => rejectRunSnapshot(opts.projectDir, getSessionIdOrThrow()),
-    compactTranscript: async () => {
-      const sessionId = getSessionIdOrThrow();
-      return performManualCompaction(opts.getConfig(), opts.projectDir, sessionId);
-    },
-    exportSession: async () => {
-      const sessionId = getSessionIdOrThrow();
-      return writeSessionHtmlReport(sessionDir(opts.projectDir, sessionId), sessionId);
-    },
-  };
+  });
 }

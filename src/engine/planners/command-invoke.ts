@@ -3,7 +3,7 @@ import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js'
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 
 export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined): PlannerCapabilities {

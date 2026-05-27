@@ -9,6 +9,7 @@ import {
   REVIEW_PACKET_MARKDOWN_FILE,
   SESSION_LOG_FILE,
   STATE_FILE,
+  SUMMARY_FILE,
   sessionDir,
 } from '../../../core/paths.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -25,9 +26,7 @@ import type {
   ExplainArtifactInputs,
   ReadinessSummary,
   RunExplainArtifact,
-} from './types.js';
-
-export const SUMMARY_FILE = 'summary.json';
+} from './explain.js';
 
 export const explainArtifactsError = {
   sessionPathNotDirectory: (sessionId: string) =>
@@ -137,7 +136,7 @@ function readinessChecks(value: unknown): ReadinessSummary['checks'] {
 
 async function readLogEvents(projectDir: string, sessionId: string): Promise<SessionLogEventEntry[]> {
   const events: SessionLogEventEntry[] = [];
-  for await (const event of readEvents(projectDir, sessionId)) {
+  for await (const event of readEvents({ projectDir: projectDir, sessionId: sessionId })) {
     events.push(event);
   }
   return events;

@@ -125,7 +125,14 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     return {
       ...rest,
       ...(isCostKnown
-        ? { cost: calculateTaskUsageCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel) }
+        ? { cost: calculateTaskUsageCost({
+          task: task,
+          tokenUsage: state.tokenUsage,
+          implementerTool: implementerTool,
+          plannerTool: plannerTool,
+          implementerModel: implementerModel,
+          plannerModel: plannerModel,
+        }) }
         : { costPosture: task.costPosture ?? 'unknown-price' }),
     };
   });

@@ -5,7 +5,7 @@ export function clearStaleSession(projectDir: string): void {
   const active = readActive(projectDir);
   if (!active) return;
 
-  if (isSessionLive(projectDir, active)) {
+  if (isSessionLive({ projectDir, sessionId: active })) {
     throw sessionError.stillActive(active);
   }
 

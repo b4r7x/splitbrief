@@ -45,7 +45,7 @@ describe('saveFinalSession', () => {
   it('clears the active session by default', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-final';
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     saveFinalSession({
       projectDir,
@@ -62,7 +62,7 @@ describe('saveFinalSession', () => {
   it('preserves the active session for recoverable pending recovery stops', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-recovery';
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     saveFinalSession({
       projectDir,

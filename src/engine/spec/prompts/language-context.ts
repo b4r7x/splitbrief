@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { detectProjectLanguage } from '../../../core/project-meta.js';
 
 export type LanguageContext = {
   language: string;
@@ -97,20 +96,7 @@ export function codeFenceLanguage(ctx: LanguageContext): string {
 }
 
 export function detectPromptLanguage(projectDir: string): string | undefined {
-  if (existsSync(join(projectDir, 'Cargo.toml'))) return 'rust';
-  if (existsSync(join(projectDir, 'go.mod'))) return 'go';
-  if (existsSync(join(projectDir, 'pyproject.toml'))) return 'python';
-
-  const pkgPath = join(projectDir, 'package.json');
-  if (!existsSync(pkgPath)) return undefined;
-
-  try {
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    return deps.typescript ? 'typescript' : 'javascript';
-  } catch {
-    return undefined;
-  }
+  return detectProjectLanguage(projectDir);
 }
 
 export function extractLanguageFromResearch(researchMarkdown: string): string | undefined {

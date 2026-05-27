@@ -26,9 +26,9 @@ describe('buildPhaseRows', () => {
     const rows = buildPhaseRows({
       planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.01 },
       implementing: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 100, cacheCreateTokens: 0, cost: 0.05 },
-      validating: { inputTokens: 50, outputTokens: 20, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.003 },
+      'validating-task': { inputTokens: 50, outputTokens: 20, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.003 },
     });
-    expect(rows.map(r => r.phase)).toEqual(['implementing', 'planning', 'validating']);
+    expect(rows.map(r => r.phase)).toEqual(['implementing', 'planning', 'validating-task']);
   });
 
   it('can sort by a derived display cost when store rows keep raw token data', () => {

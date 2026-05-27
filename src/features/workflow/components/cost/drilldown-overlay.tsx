@@ -10,9 +10,10 @@ import { useStores } from '../../../../stores/use-stores.js';
 import { calculateUsageCost } from '../../../../engine/providers/pricing.js';
 import { resolvePricing, type ResolvedPricing } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
+import { PhaseSchema, type Phase } from '../../../../core/schemas/enums.js';
 
 export type PhaseRow = {
-  phase: string;
+  phase: Phase;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -53,9 +54,14 @@ export function buildPhaseRows(
   costForRow: (row: PhaseRow) => number = row => row.cost,
 ): PhaseRow[] {
   return Object.entries(perPhase)
-    .map(([phase, data]) => {
+    .flatMap(([phase, data]) => {
+      if (!data) return [];
+      const parsed = PhaseSchema.safeParse(phase);
+      if (!parsed.success) return [];
+      const phaseRow = parsed.data;
       const row = { phase, ...data };
-      return { ...row, cost: costForRow(row) };
+      const typedRow = { ...row, phase: phaseRow };
+      return [{ ...typedRow, cost: costForRow(typedRow) }];
     })
     .sort((a, b) => b.cost - a.cost);
 }
@@ -157,7 +163,7 @@ export function calculatePhaseRowCost(
 }
 
 function pricingForPhase(
-  phase: string,
+  phase: Phase,
   plannerPricing: ResolvedPricing | null,
   implementerPricing: ResolvedPricing | null,
 ): ResolvedPricing | null {

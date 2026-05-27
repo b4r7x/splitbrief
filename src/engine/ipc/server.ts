@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import { parseClientMessage, type IpcPromptRequest, type IpcPromptRequestInput, type IpcPromptResponse, type ServerMessage } from './protocol.js';
-import { readReplayEvents } from './replay.js';
+import { parseClientMessage, type IpcPromptRequestInput, type IpcPromptResponse } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { error, type AppError } from '../../utils/error.js';
+import { createLineBuffer } from '../../lib/process/line-buffer.js';
+import { rejectAsAlreadyAttached, tryControlDetach } from './control-detach.js';
+import { createPromptTracker, type IpcPromptUnavailableError } from './prompt-tracker.js';
+import { replaySession, writeServerMessage } from './replay-session.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -27,24 +29,7 @@ export type IpcServer = {
   close(): Promise<void>;
 };
 
-export type IpcPromptUnavailableError = AppError<'ipc-prompt-no-client-headless', {
-  promptKind: IpcPromptRequest['kind'];
-}> & {
-  code: 'ipc_prompt_no_client_headless';
-  promptKind: IpcPromptRequest['kind'];
-};
-
-type ClientState = {
-  socket: Socket;
-  unsubscribe: () => void;
-  buffer: string;
-};
-
-type PendingPrompt = {
-  request: IpcPromptRequest;
-  resolve: (response: IpcPromptResponse) => void;
-  reject: (err: Error) => void;
-};
+export type { IpcPromptUnavailableError };
 
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
   const {
@@ -64,212 +49,82 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     try { unlinkSync(sockPath); } catch { /* ignore */ }
   }
 
-  let currentClient: ClientState | null = null;
-  let nextPromptId = 1;
-  const pendingPrompts = new Map<string, PendingPrompt>();
-  let currentUnsubscribe: (() => void) | null = null;
-
-  function writeMessage(socket: Socket, msg: ServerMessage): void {
-    if (socket.destroyed) return;
-    try {
-      socket.write(JSON.stringify(msg) + '\n');
-    } catch {
-      // socket may have closed mid-write; ignore
-    }
-  }
-
-  function sendPrompt(socket: Socket, request: IpcPromptRequest): void {
-    writeMessage(socket, { kind: 'prompt_request', request });
-  }
-
-  function sendPendingPrompts(socket: Socket): void {
-    for (const pending of pendingPrompts.values()) {
-      sendPrompt(socket, pending.request);
-    }
-  }
-
-  async function replaySession(socket: Socket, jsonlPath: string): Promise<void> {
-    const replayStart = Date.now();
-    const result = await readReplayEvents({ sessionJsonlPath: jsonlPath });
-    const { events: replayedEvents, count: totalEvents, firstTs, lastTs } = result;
-
-    if (!socket.destroyed) {
-      writeMessage(socket, { kind: 'event', payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents } });
-    }
-
-    const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
-    if (!socket.destroyed) {
-      writeMessage(socket, replayMeta);
-    }
-
-    for (const event of replayedEvents) {
-      if (socket.destroyed) break;
-      writeMessage(socket, { kind: 'event', payload: event });
-    }
-
-    const durationMs = Date.now() - replayStart;
-    const completeEvent = { type: 'replay_complete' as const, ts: Date.now(), phase: 'idle' as const, totalEvents, durationMs };
-    if (!socket.destroyed) {
-      writeMessage(socket, { kind: 'event', payload: completeEvent });
-    }
-  }
+  let currentClient: { socket: Socket; unsubscribe: () => void } | null = null;
 
   const server: Server = createServer((socket: Socket) => {
     void handleConnection(socket);
   });
 
-  function createNoClientPromptError(request: IpcPromptRequest): IpcPromptUnavailableError {
-    return Object.assign(
-      error(
-        'ipc-prompt-no-client-headless',
-        `IPC prompt cannot be answered in explicit headless mode without an attached client: ${request.kind}`,
-        { promptKind: request.kind },
-      ),
-      {
-        code: 'ipc_prompt_no_client_headless' as const,
-        promptKind: request.kind,
-      },
-    );
-  }
-
-  function rejectAsAlreadyAttached(socket: Socket): void {
-    writeMessage(socket, {
-      kind: 'error',
-      code: 'already_attached',
-      message: 'session already has an attached client; use --force to steal',
-    });
-    socket.destroy();
-  }
-
-  function tryControlDetach(socket: Socket): void {
-    let buffer = '';
-    let consumed = false;
-    const timer = setTimeout(() => {
-      if (consumed) return;
-      consumed = true;
-      rejectAsAlreadyAttached(socket);
-    }, 500);
-
-    socket.on('data', (chunk: Buffer) => {
-      if (consumed) return;
-      buffer += chunk.toString('utf8');
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let msg: ReturnType<typeof parseClientMessage>;
-        try {
-          const parsed: unknown = JSON.parse(trimmed);
-          msg = parseClientMessage(parsed);
-          if (!msg) {
-            consumed = true;
-            clearTimeout(timer);
-            rejectAsAlreadyAttached(socket);
-            return;
-          }
-        } catch {
-          consumed = true;
-          clearTimeout(timer);
-          rejectAsAlreadyAttached(socket);
-          return;
-        }
-        if (msg.kind === 'detach') {
-          consumed = true;
-          clearTimeout(timer);
-          if (currentClient) {
-            try { currentClient.socket.destroy(); } catch { /* ignore */ }
-          }
-          socket.destroy();
-        } else {
-          consumed = true;
-          clearTimeout(timer);
-          rejectAsAlreadyAttached(socket);
-        }
-        return;
-      }
-    });
-
-    socket.on('error', () => {
-      consumed = true;
-      clearTimeout(timer);
-      socket.destroy();
-    });
-
-    socket.on('close', () => {
-      consumed = true;
-      clearTimeout(timer);
-    });
-  }
+  const promptTracker = createPromptTracker({
+    bus,
+    noClientPromptBehavior,
+    currentSocket: () => currentClient?.socket ?? null,
+    writeMessage: writeServerMessage,
+  });
 
   async function handleConnection(socket: Socket): Promise<void> {
     if (currentClient !== null) {
-      // Allow second connection to send a control-channel `{kind:'detach'}` to
-      // detach the current client, without rejecting outright. Anything else
-      // (or no message within the grace window) is rejected as `already_attached`.
-      tryControlDetach(socket);
+      tryControlDetach({
+        socket,
+        currentSocket: () => currentClient?.socket ?? null,
+        rejectAsAlreadyAttached: rejectSocket => rejectAsAlreadyAttached(rejectSocket, writeServerMessage),
+      });
       return;
     }
 
     let detached = false;
     let replaying = true;
     const liveBacklog: EngineEvent[] = [];
-    const client: ClientState = { socket, unsubscribe: () => undefined, buffer: '' };
+    const client: { socket: Socket; unsubscribe: () => void } = { socket, unsubscribe: () => undefined };
     currentClient = client;
 
     function writeEvent(event: EngineEvent): void {
-      writeMessage(socket, { kind: 'event', payload: event });
+      writeServerMessage(socket, { kind: 'event', payload: event });
     }
 
     function detachClient() {
       if (detached) return;
       detached = true;
       client.unsubscribe();
-      if (currentUnsubscribe === client.unsubscribe) currentUnsubscribe = null;
       if (currentClient?.socket === socket) {
         currentClient = null;
       }
       bus.publish({ type: 'ipc_client_detached', ts: Date.now(), phase: 'idle' });
     }
 
-    socket.on('data', (chunk: Buffer) => {
-      client.buffer += chunk.toString('utf8');
-      const lines = client.buffer.split('\n');
-      client.buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let msg: ReturnType<typeof parseClientMessage>;
-        try {
-          const parsed: unknown = JSON.parse(trimmed);
-          msg = parseClientMessage(parsed);
-          if (!msg) {
-            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: invalid message structure from client: ${trimmed}` });
-            continue;
-          }
-        } catch {
-          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: malformed JSON from client: ${trimmed}` });
-          continue;
+    const lineBuffer = createLineBuffer((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let msg: ReturnType<typeof parseClientMessage>;
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        msg = parseClientMessage(parsed);
+        if (!msg) {
+          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: invalid message structure from client: ${trimmed}` });
+          return;
         }
-        if (msg.kind === 'user_input') {
-          try {
-            onUserInput(msg.text);
-          } catch (err) {
-            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: onUserInput threw: ${toErrorMessage(err)}` });
-          }
-        } else if (msg.kind === 'prompt_response') {
-          const pending = pendingPrompts.get(msg.requestId);
-          if (!pending) {
-            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: response for unknown prompt ${msg.requestId}` });
-            continue;
-          }
-          pendingPrompts.delete(msg.requestId);
-          pending.resolve(msg.response);
-        } else if (msg.kind === 'detach') {
-          detachClient();
-          socket.destroy();
-        }
+      } catch {
+        bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: malformed JSON from client: ${trimmed}` });
+        return;
       }
+      if (msg.kind === 'user_input') {
+        try {
+          onUserInput(msg.text);
+        } catch (err) {
+          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: onUserInput threw: ${toErrorMessage(err)}` });
+        }
+      } else if (msg.kind === 'prompt_response') {
+        if (!promptTracker.handleResponse(msg.requestId, msg.response)) {
+          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: response for unknown prompt ${msg.requestId}` });
+        }
+      } else if (msg.kind === 'detach') {
+        detachClient();
+        socket.destroy();
+      }
+    });
+
+    socket.on('data', (chunk: Buffer) => {
+      lineBuffer.push(chunk.toString('utf8'));
     });
 
     socket.on('close', () => {
@@ -277,14 +132,14 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     });
 
     socket.on('error', (err) => {
-      bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC client error: ${err.message}` });
+      bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC client error: ${toErrorMessage(err)}` });
       detachClient();
     });
 
-    writeMessage(socket, { kind: 'session_meta', sessionId, startedAt, mode, feature, readonly: false });
+    writeServerMessage(socket, { kind: 'session_meta', sessionId, startedAt, mode, feature, readonly: false });
 
     bus.publish({ type: 'ipc_client_attached', ts: Date.now(), phase: 'idle' });
-    sendPendingPrompts(socket);
+    promptTracker.sendPendingPrompts(socket);
 
     const unsubscribe = bus.subscribe((event) => {
       if (socket.destroyed) return;
@@ -295,10 +150,9 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       writeEvent(event);
     });
     client.unsubscribe = unsubscribe;
-    currentUnsubscribe = unsubscribe;
 
     if (sessionJsonlPath) {
-      await replaySession(socket, sessionJsonlPath);
+      await replaySession({ socket, sessionJsonlPath, writeMessage: writeServerMessage });
     }
 
     replaying = false;
@@ -321,49 +175,13 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
   return {
     sockPath,
     requestClientPrompt(requestWithoutId): Promise<IpcPromptResponse> {
-      const request = {
-        ...requestWithoutId,
-        requestId: `prompt-${nextPromptId++}`,
-      } as IpcPromptRequest;
-
-      return new Promise<IpcPromptResponse>((resolve, reject) => {
-        if (!currentClient && noClientPromptBehavior === 'fail-closed') {
-          const err = createNoClientPromptError(request);
-          bus.publish({
-            type: 'warning',
-            ts: Date.now(),
-            phase: 'idle',
-            message: err.message,
-          });
-          reject(err);
-          return;
-        }
-
-        pendingPrompts.set(request.requestId, { request, resolve, reject });
-        if (currentClient) {
-          sendPrompt(currentClient.socket, request);
-        } else {
-          bus.publish({
-            type: 'warning',
-            ts: Date.now(),
-            phase: 'idle',
-            message: `IPC prompt waiting for attached client: ${request.kind}`,
-          });
-        }
-      });
+      return promptTracker.requestClientPrompt(requestWithoutId);
     },
     close(): Promise<void> {
-      for (const pending of pendingPrompts.values()) {
-        pending.reject(new Error(`IPC prompt cancelled while closing server: ${pending.request.kind}`));
-      }
-      pendingPrompts.clear();
-
-      if (currentUnsubscribe) {
-        try { currentUnsubscribe(); } catch { /* ignore */ }
-        currentUnsubscribe = null;
-      }
+      promptTracker.rejectAll(request => new Error(`IPC prompt cancelled while closing server: ${request.kind}`));
 
       if (currentClient) {
+        try { currentClient.unsubscribe(); } catch { /* ignore */ }
         try { currentClient.socket.destroy(); } catch { /* ignore */ }
         currentClient = null;
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupEventsIntoSections, findLatestRenderableDiffEventIndex, findLatestEventByType } from './event-sections.js';
+import { groupEventsIntoSections, findLatestRenderableDiffEventIndex } from './event-sections.js';
 import type { Section } from './event-sections.js';
 import { taskId } from '../schemas/task.js';
 import {
@@ -136,23 +136,5 @@ describe('findLatestRenderableDiffEventIndex', () => {
     ];
 
     expect(findLatestRenderableDiffEventIndex(sections)).toBe(2);
-  });
-});
-
-describe('findLatestEventByType', () => {
-  it('returns undefined for empty array', () => {
-    expect(findLatestEventByType([], 'planner_text')).toBeUndefined();
-  });
-
-  it('returns the last matching event', () => {
-    const e1 = makePlannerText({ text: 'first' });
-    const e2 = makePlannerText({ text: 'second' });
-    const result = findLatestEventByType([e1, e2], 'planner_text');
-    expect(result).toBe(e2);
-  });
-
-  it('returns undefined when no event of that type exists', () => {
-    const e = makePlannerText({ text: 'hello' });
-    expect(findLatestEventByType([e], 'workflow_config')).toBeUndefined();
   });
 });

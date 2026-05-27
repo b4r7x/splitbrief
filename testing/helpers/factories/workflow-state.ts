@@ -9,7 +9,8 @@ export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>)
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
   state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'APPROVE_PLAN' });
+  state = transition(state, { type: 'BRIEFS_READY', tasks });
+  state = transition(state, { type: 'APPROVE_BRIEFS' });
   return { ...state, ...overrides };
 }
 

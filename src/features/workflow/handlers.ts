@@ -1,7 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import { addEvent, markCancelled } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { attachImage, detachImage } from '../../stores/ui/attachments.js';
 
 export type RewindTarget =
   | { target: 'spec'; comment?: string }
@@ -65,14 +64,4 @@ export function requestClearQueue(): number {
     addEvent({ type: 'queue_cleared', ts: Date.now(), phase: lifecycleStore.get().phase, count: depth });
   }
   return depth;
-}
-
-export function requestAttach(path: string, projectDir: string): { ok: true; resolvedPath: string } | { ok: false; reason: string } {
-  const result = attachImage(path, projectDir);
-  if (!result.ok) return { ok: false, reason: result.reason };
-  return { ok: true, resolvedPath: result.path };
-}
-
-export function requestDetach(id?: string): boolean {
-  return detachImage(id);
 }

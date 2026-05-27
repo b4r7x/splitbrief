@@ -1,4 +1,5 @@
 import type { PickerOption } from './model-catalog.js';
+import * as typeGuards from '../../utils/type-guards.js';
 
 export type View =
   | { kind: 'picker' }
@@ -28,5 +29,7 @@ export function viewReducer(state: ViewState, action: ViewAction): ViewState {
       return { ...state, view: { kind: 'custom-model', item: action.item } };
     case 'close':
       return { ...state, view: { kind: 'picker' } };
+    default:
+      return typeGuards.assertNever(action);
   }
 }

@@ -1,11 +1,13 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readPackageJson } from './project-meta.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
 import { ensureSecureDir, fsError, SECURE_FILE_MODE } from '../lib/fs.js';
 import { assertWritablePathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { error, matches } from '../utils/error.js';
+import type { WorkflowMode } from './schemas/enums.js';
 
 export const pathError = {
   escapesProject: (filePath: string) =>
@@ -18,7 +20,7 @@ let cachedVersion: string | null = null;
 function readPackageVersion(): string {
   try {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-    const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
+    const parsed = readPackageJson(root);
     return typeof parsed?.version === 'string' ? parsed.version : '0.0.0';
   } catch {
     return '0.0.0';
@@ -36,7 +38,7 @@ export type SpecMetadata = {
   plannerModel?: string | undefined;
   implementerTool: string;
   implementerModel?: string | undefined;
-  mode: string;
+  mode: WorkflowMode;
 };
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);

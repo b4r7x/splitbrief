@@ -2,7 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createImplementerBase } from './base.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 
 export interface CommandBasedImplementerOpts {

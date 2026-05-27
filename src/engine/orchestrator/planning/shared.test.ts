@@ -7,7 +7,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../ipc/constants.js';
+import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './shared.js';
 import type { PlannerCallbacksContext } from '../types.js';
 

@@ -2,7 +2,9 @@ import { createStore, storeBase } from '../create-store.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { phaseCostRole } from '../../core/phases.js';
+import * as typeGuards from '../../utils/type-guards.js';
 
 interface PhaseTokens {
   inputTokens: number;
@@ -30,7 +32,7 @@ export interface TokensState {
   localCount: number;
   escalatedCount: number;
   tokenUsage: TokenUsage | null;
-  perPhase: Record<string, PhaseTokens>;
+  perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
   prediction: CostPrediction | null;
   completedTaskCount: number;
@@ -199,7 +201,80 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
-    default:
+    case 'workflow_started':
+    case 'workflow_resumed':
+    case 'workflow_complete':
+    case 'workflow_cancelled':
+    case 'paused_external_changes':
+    case 'recovery_prompted':
+    case 'recovery_action_selected':
+    case 'recovery_action_failed':
+    case 'recovery_resolved':
+    case 'planner_status':
+    case 'planner_text':
+    case 'planner_heartbeat':
+    case 'spec_rejected':
+    case 'spec_regenerated':
+    case 'plan_approved':
+    case 'plan_rejected':
+    case 'plan_regenerated':
+    case 'rewind_to_spec':
+    case 'rewind_to_plan':
+    case 'all_tasks_done':
+    case 'brief_quality_passed':
+    case 'brief_quality_failed':
+    case 'drift_report':
+    case 'drift_chain_detected':
+    case 'snapshot_created':
+    case 'snapshot_restored':
+    case 'snapshot_restore_conflict':
+    case 'mode_resolved':
+    case 'mode_downgrade_advised':
+    case 'mode_advice':
+    case 'instant_plan_received':
+    case 'task_skipped':
+    case 'task_retry':
+    case 'task_escalating':
+    case 'task_full_fail':
+    case 'task_reset':
+    case 'task_review_needed':
+    case 'hint_failed':
+    case 'implementer_generate_running':
+    case 'implementer_generate_done':
+    case 'implementer_generate_failed':
+    case 'validate':
+    case 'escalate':
+    case 'git_commit':
+    case 'git_checkpoint':
+    case 'git_branch_created':
+    case 'clarifications_collected':
+    case 'clarification_answered':
+    case 'message_queued':
+    case 'message_injected_native':
+    case 'queue_drained':
+    case 'queue_cleared':
+    case 'user_message':
+    case 'planner_attachments_dropped':
+    case 'budget_warning':
+    case 'budget_paused':
+    case 'budget_exceeded':
+    case 'approval_prompted':
+    case 'approval_granted':
+    case 'approval_rejected':
+    case 'approval_sticky_recorded':
+    case 'approval_mode_changed':
+    case 'ipc_server_started':
+    case 'ipc_client_attached':
+    case 'ipc_client_detached':
+    case 'ipc_reconnect_attempt':
+    case 'ipc_reconnect_failed':
+    case 'replay_started':
+    case 'replay_complete':
+    case 'warning':
+    case 'error':
       return state;
+
+    default:
+      return typeGuards.assertNever(event);
   }
 }

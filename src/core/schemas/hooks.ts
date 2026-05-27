@@ -3,7 +3,6 @@ import { isRecord } from '../../utils/type-guards.js';
 
 export const HookEventSchema = z.enum([
   'pre_planning',
-  'post_planning',
   'pre_task',
   'post_task',
   'pre_validation',
@@ -66,7 +65,6 @@ export const HooksConfigSchema = z
   .object({
     builtin: z.record(z.string(), z.boolean()).optional(),
     pre_planning: z.array(HookEntrySchema).optional(),
-    post_planning: z.array(HookEntrySchema).optional(),
     pre_task: z.array(HookEntrySchema).optional(),
     post_task: z.array(HookEntrySchema).optional(),
     pre_validation: z.array(HookEntrySchema).optional(),

@@ -3,7 +3,6 @@ import { writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaudePlannerStream, runClaudeOneShot } from './claude-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { getActiveProcessCount } from '../lib/process/registry.js';
 
 /**
  * These tests exercise the real subprocess seam. `claude-invoke.ts` hardcodes
@@ -22,13 +21,6 @@ function installShim(bodyLines: string[]): string {
   writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return shimPath;
-}
-
-function installFailingShim(exitCode: number, stderr?: string): void {
-  const shimPath = join(shimDir, 'claude');
-  const stderrLine = stderr ? `printf '%s\\n' '${stderr.replace(/'/g, "'\\''")}' >&2\n` : '';
-  writeFileSync(shimPath, `#!/bin/bash\n${stderrLine}exit ${exitCode}\n`, 'utf8');
-  chmodSync(shimPath, 0o755);
 }
 
 beforeEach(() => {
@@ -148,33 +140,6 @@ describe('runClaudePlannerStream', () => {
     }
   });
 
-  it('does not leave subprocesses in the active-process registry after success', async () => {
-    installShim(['{"type":"result","result":""}']);
-    const before = getActiveProcessCount();
-    await runClaudePlannerStream({
-      prompt: 'p',
-      projectDir: shimDir,
-      sessionId: null,
-      onOutput: () => {},
-    });
-    expect(getActiveProcessCount()).toBe(before);
-  });
-
-  it('does not leave subprocesses in the active-process registry after failure', async () => {
-    installFailingShim(1, 'something broke');
-    const before = getActiveProcessCount();
-    try {
-      await runClaudePlannerStream({
-        prompt: 'p',
-        projectDir: shimDir,
-        sessionId: null,
-        onOutput: () => {},
-      });
-    } catch {
-      // expected
-    }
-    expect(getActiveProcessCount()).toBe(before);
-  });
 });
 
 describe('runClaudeOneShot', () => {

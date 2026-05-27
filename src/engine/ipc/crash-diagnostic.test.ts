@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, mkdir, rm } from 'node:fs/promises';
 import type { ServerStatus } from './lockfile.js';
-import { buildCrashDiagnostic, formatCrashDiagnostic, showCrashDiagnostic, waitForCrashDiagnosticOption } from './crash-diagnostic.js';
+import { buildCrashDiagnostic } from './crash-diagnostic.js';
+import { formatCrashDiagnostic, showCrashDiagnostic, waitForCrashDiagnosticOption } from '../../cli/crash-diagnostic.js';
 
 const BASE_STATUS_CRASHED: ServerStatus = {
   alive: false,

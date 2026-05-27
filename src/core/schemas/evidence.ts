@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TaskIdSchema } from './task.js';
-import { ActionClassSchema, TaskStatusSchema, TaskCompletionMethodSchema, WorkflowModeSchema } from './enums.js';
+import { ActionClassSchema, TaskStatusSchema, TaskCompletionMethodSchema, ValidationStageSchema, WorkflowModeSchema } from './enums.js';
 
 const EvidenceRejectionSchema = z.object({
   ts: z.string(),
@@ -22,7 +22,7 @@ const EvidenceApprovalSchema = z.object({
 });
 export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
 
-export const EvidenceValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
+export const EvidenceValidationStageSchema = ValidationStageSchema;
 export type EvidenceValidationStage = z.infer<typeof EvidenceValidationStageSchema>;
 
 const EvidenceValidationEntrySchema = z.object({

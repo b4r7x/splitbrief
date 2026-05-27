@@ -450,7 +450,6 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `sessions` | Sessions picker — select a past session to resume | `picker.tsx` |
 | `runners` | Planner/implementer runner + model selection | `picker.tsx` |
 | `skills` | Skills picker — toggle available skills for a workflow | `picker.tsx` |
-| `tree-view` | Session tree rendering primitives used by tree-view tests and consumers | `tree-view.tsx` |
 
 Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlays) imports. Internal structure is documented by inspection — there is no catalog per-feature.
 

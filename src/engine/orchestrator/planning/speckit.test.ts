@@ -16,7 +16,7 @@ import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'speckit' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'speckit' } as const;
 
 const SAMPLE_SPEC = '# Spec\n\n- requirement A\n';
 const SAMPLE_PLAN = '# Plan\n\n1. step A\n';

@@ -100,8 +100,8 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       renderRuns.push({ route: routerStore.get(), options });
     },
     runHeadless: async () => {},
-    runRpc: async (feature, projectDir, opts, state, sessionId) => {
-      rpcRuns.push({ feature, projectDir, opts, state, sessionId });
+    runRpc: async ({ feature, projectDir, opts, savedState, sessionId }) => {
+      rpcRuns.push({ feature, projectDir, opts, state: savedState, sessionId });
     },
     setupWorkflow: async (opts) => ({
       projectDir: opts.project ?? '',

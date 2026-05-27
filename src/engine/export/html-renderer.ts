@@ -280,9 +280,9 @@ function normalizePhaseWidths(durations: number[], total: number): number[] {
   return widths;
 }
 
-function renderPhaseRow(phase: string, duration: number, width: number): string {
+function renderPhaseRow(phaseName: string, duration: number, width: number): string {
   return `<li class="phase-row">
-<span>${escapeHtml(phase)}</span>
+<span>${escapeHtml(phaseName)}</span>
 <span class="phase-track"><span class="phase-fill" style="width: ${width}%;"></span></span>
 <span class="muted">${escapeHtml(formatTime(duration))}</span>
 </li>`;

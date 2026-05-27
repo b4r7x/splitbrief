@@ -41,17 +41,30 @@ function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | un
   throw cliError(`Recovery required: ${issue.message}`, 1);
 }
 
-export async function runHeadless(
-  feature: string,
-  projectDir: string,
-  opts: WorkflowOpts,
-  savedState?: WorkflowState | undefined,
-  sessionId?: string | undefined,
-  readiness?: CollectedReadiness | undefined,
-  _planner?: Planner | undefined,
-  _implementer?: Implementer | undefined,
-  plannerContext?: string | undefined,
-): Promise<void> {
+export interface RunHeadlessOptions {
+  feature: string;
+  projectDir: string;
+  opts: WorkflowOpts;
+  savedState?: WorkflowState | undefined;
+  sessionId?: string | undefined;
+  readiness?: CollectedReadiness | undefined;
+  _planner?: Planner | undefined;
+  _implementer?: Implementer | undefined;
+  plannerContext?: string | undefined;
+}
+
+export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
+  const {
+    feature,
+    projectDir,
+    opts,
+    savedState,
+    sessionId,
+    readiness,
+    _planner,
+    _implementer,
+    plannerContext,
+  } = options;
   const loadedResult = readiness?.config
     ? { config: readiness.config, warnings: readiness.warnings }
     : loadConfig(projectDir);

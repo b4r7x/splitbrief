@@ -11,7 +11,7 @@ describe('stdoutJsonSink', () => {
 
     const sink = createStdoutJsonSink();
     sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'x' });
-    sink({ type: 'plan_done', ts: 200, phase: 'planning', taskCount: 3 });
+    sink({ type: 'instant_plan_received', ts: 200, phase: 'planning', taskCount: 3 });
 
     expect(writes).toHaveLength(2);
     expect(writes[0]).toMatch(/^\{"type":"workflow_started"/);

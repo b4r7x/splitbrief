@@ -15,10 +15,10 @@ import { configStore } from '../../stores/project/config.js';
 import { listProjectFiles } from '../../lib/file-listing.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Screen } from '../../core/navigation/types.js';
-import type { InputMode } from '../../stores/navigation/router.js';
+import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
-import { attachImage } from '../../stores/ui/attachments.js';
+import { attachImage } from '../../stores/workflow/attachments.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;

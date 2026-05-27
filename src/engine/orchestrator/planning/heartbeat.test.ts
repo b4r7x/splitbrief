@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HEARTBEAT_THRESHOLD_MS, startPlannerHeartbeat } from './heartbeat.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../ipc/constants.js';
+import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import type { EngineEvent } from '../../events/types.js';
 
 function createMockBus() {
@@ -13,6 +13,7 @@ function createMockBus() {
     subscribe() {
       return () => {};
     },
+    unsubscribeAll() {},
   };
 }
 

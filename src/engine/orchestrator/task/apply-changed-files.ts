@@ -44,7 +44,7 @@ export async function applyChangedFiles(opts: {
     }
   } catch (err) {
     staged?.cleanup();
-    publishError(wctx.bus, state.phase, `Task changed files blocked by approval gate: ${toErrorMessage(err)}`);
+    publishError({ bus: wctx.bus, phase: state.phase }, `Task changed files blocked by approval gate: ${toErrorMessage(err)}`);
     return { proceed: false, state };
   }
 
@@ -79,15 +79,13 @@ export async function applyChangedFiles(opts: {
         );
         if (restoreResult.conflictedFiles.length > 0) {
           state = await opts.handleConflict(state, restoreResult.conflictedFiles);
-          publishWarning(
-            wctx.bus,
-            state.phase,
+          publishWarning({ bus: wctx.bus, phase: state.phase },
             `denied task rollback skipped files changed during approval: ${restoreResult.conflictedFiles.join(', ')}`,
           );
         }
       }
     } catch (err) {
-      publishWarningFromError(wctx.bus, state.phase, 'failed to discard denied task changes', err);
+      publishWarningFromError({ bus: wctx.bus, phase: state.phase }, 'failed to discard denied task changes', err);
     }
     staged?.cleanup();
     opts.recordApprovalDenial(
@@ -107,9 +105,7 @@ export async function applyChangedFiles(opts: {
     staged.cleanup();
     if (promoteResult.conflictedFiles.length > 0) {
       state = await opts.handleConflict(state, promoteResult.conflictedFiles);
-      publishError(
-        wctx.bus,
-        state.phase,
+      publishError({ bus: wctx.bus, phase: state.phase },
         `Approved task promotion blocked because files changed during approval: ${promoteResult.conflictedFiles.join(', ')}`,
       );
       return { proceed: false, state };

@@ -10,12 +10,8 @@ type SimpleCardEvent = Extract<EngineEvent, {
     | 'workflow_started'
     | 'workflow_resumed'
     | 'workflow_complete'
-    | 'research_done'
-    | 'spec_done'
-    | 'spec_approved'
     | 'spec_rejected'
     | 'spec_regenerated'
-    | 'plan_done'
     | 'plan_approved'
     | 'plan_rejected'
     | 'plan_regenerated'
@@ -30,7 +26,6 @@ type SimpleCardEvent = Extract<EngineEvent, {
     | 'message_injected_native'
     | 'queue_drained'
     | 'queue_cleared'
-    | 'planner_attachment_added'
     | 'planner_attachments_dropped'
     | 'mode_resolved'
     | 'mode_downgrade_advised'
@@ -55,8 +50,6 @@ type SimpleCardEvent = Extract<EngineEvent, {
     | 'ipc_client_detached'
     | 'ipc_reconnect_attempt'
     | 'ipc_reconnect_failed'
-    | 'server_crash_detected'
-    | 'server_post_mortem_shown'
     | 'replay_started'
     | 'replay_complete';
 }>;
@@ -144,15 +137,6 @@ export function renderSimpleCard(event: SimpleCardEvent, t: Theme): ReactNode {
           valueColor={t.textDim}
         />
       );
-    case 'planner_attachment_added':
-      return (
-        <Card
-          label="attached"
-          labelColor={t.info}
-          value={event.path}
-          valueColor={t.textDim}
-        />
-      );
     case 'planner_attachments_dropped':
       return (
         <Card
@@ -207,12 +191,8 @@ export function renderSimpleCard(event: SimpleCardEvent, t: Theme): ReactNode {
     case 'workflow_started':
     case 'workflow_resumed':
     case 'workflow_complete':
-    case 'research_done':
-    case 'spec_done':
-    case 'spec_approved':
     case 'spec_rejected':
     case 'spec_regenerated':
-    case 'plan_done':
     case 'plan_approved':
     case 'plan_rejected':
     case 'plan_regenerated':
@@ -236,8 +216,6 @@ export function renderSimpleCard(event: SimpleCardEvent, t: Theme): ReactNode {
     case 'ipc_client_detached':
     case 'ipc_reconnect_attempt':
     case 'ipc_reconnect_failed':
-    case 'server_crash_detected':
-    case 'server_post_mortem_shown':
     case 'replay_started':
     case 'replay_complete':
       return null;

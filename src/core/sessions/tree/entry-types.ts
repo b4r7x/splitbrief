@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../schemas/task.js';
-import { RecoveryReasonSchema, RecoveryActionSchema, PhaseSchema } from '../../schemas/enums.js';
+import { RecoveryReasonSchema, RecoveryActionSchema, PhaseSchema, FileActionSchema } from '../../schemas/enums.js';
 
 export const SessionStartPayloadSchema = z.object({
   feature: z.string(),
@@ -13,7 +13,7 @@ export const PlanStepPayloadSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   file: z.string(),
-  action: z.enum(['create', 'modify']),
+  action: FileActionSchema,
   description: z.string(),
   index: z.number().int().nonnegative(),
   total: z.number().int().positive(),

@@ -155,13 +155,13 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     discoveredValidation?: DiscoveredValidation,
   ): Promise<ValidationResult[]> {
     const startTime = Date.now();
-    publishValidation(bus, phase, taskId, { phase: 'start' });
+    publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'start' });
     const heuristic = detectValidationHeuristic(projectDir);
     const sanitizedDiscovered = sanitizeDiscoveredValidation(discoveredValidation);
     const results = await validateTask(task, projectDir, config, sanitizedDiscovered, heuristic, (stages) => {
-      publishValidation(bus, phase, taskId, { phase: 'progress', stages, startTime });
+      publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'progress', stages, startTime });
     });
-    publishValidation(bus, phase, taskId, { phase: 'result', results, startTime });
+    publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'result', results, startTime });
     return results;
   }
 

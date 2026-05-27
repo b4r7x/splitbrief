@@ -8,6 +8,7 @@ import { renderClaudeCode } from './renderers/claude-code.js';
 import { renderCopilotIssue } from './renderers/copilot-issue.js';
 import { loadRenderer } from './load-renderer.js';
 import { error } from '../../utils/error.js';
+import { includes } from '../../utils/type-guards.js';
 
 export const handoffRenderError = {
   unknownTaskId: (id: string) => error('handoff-unknown-task-id', `unknown task id: ${id}`, { id }),
@@ -56,6 +57,10 @@ export interface RenderHandoffWithCustomOptions {
   trustCustomRenderers?: boolean;
 }
 
+function isBuiltInHandoffInput(input: Omit<HandoffInput, 'target'> & { target: string }): input is HandoffInput {
+  return includes(HANDOFF_TARGETS, input.target);
+}
+
 export async function renderHandoffWithCustom(
   input: Omit<HandoffInput, 'target'> & { target: string },
   projectDir: string,
@@ -66,8 +71,8 @@ export async function renderHandoffWithCustom(
     throw handoffRenderError.invalidTarget(input.target, validation.reason);
   }
 
-  if ((HANDOFF_TARGETS as readonly string[]).includes(input.target)) {
-    return renderHandoff(input as HandoffInput);
+  if (isBuiltInHandoffInput(input)) {
+    return renderHandoff(input);
   }
 
   if (!options.trustCustomRenderers) {
@@ -88,5 +93,5 @@ export async function renderHandoffWithCustom(
     throw handoffRenderError.loadFailed(result.reason);
   }
 
-  return Promise.resolve(result.fn(input as HandoffInput));
+  return Promise.resolve(result.fn(input));
 }

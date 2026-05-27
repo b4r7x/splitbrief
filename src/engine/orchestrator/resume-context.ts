@@ -47,10 +47,10 @@ export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Pro
       },
       keepRecentCountForThreshold(threshold),
       format,
-      () => publishWarning(opts.bus, 'researching', 'Structured compaction returned invalid JSON; saved freeform summary instead.'),
+      () => publishWarning({ bus: opts.bus, phase: 'researching' }, 'Structured compaction returned invalid JSON; saved freeform summary instead.'),
     );
   } catch (err) {
-    publishWarningFromError(opts.bus, 'researching', 'Transcript auto-compaction failed', err);
+    publishWarningFromError({ bus: opts.bus, phase: 'researching' }, 'Transcript auto-compaction failed', err);
   }
 }
 
@@ -58,7 +58,7 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
   const { projectDir, sessionId, bus, config, resumeHolder, requireNonEmpty } = opts;
   const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
   if (rebuilt.warning === 'transcript-unavailable') {
-    publishWarning(bus, 'researching', 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+    publishWarning({ bus: bus, phase: 'researching' }, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
     return;
   }
   if (!resumeHolder) return;
@@ -77,7 +77,7 @@ export type SessionExpiredHandlerOpts = {
 
 export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {
   return async () => {
-    publishWarning(opts.bus, 'researching', 'Previous planner conversation expired — rebuilding context from transcript.');
+    publishWarning({ bus: opts.bus, phase: 'researching' }, 'Previous planner conversation expired — rebuilding context from transcript.');
     await applyRebuiltContext(opts);
   };
 }

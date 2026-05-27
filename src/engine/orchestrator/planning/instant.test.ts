@@ -13,7 +13,7 @@ import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE } from '../
 import { runPlanningPhase } from './run.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'instant' };
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'instant' } as const;
 
 const SAMPLE_TASKS_MD = `---
 id: T001

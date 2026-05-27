@@ -18,7 +18,7 @@ export async function handleApprovalTimeUserEditConflict(opts: {
     files: opts.files,
     currentTaskId: opts.task.id,
   });
-  publishUserEditConflict(opts.ctx.bus, opts.state.phase, conflict, 'pause');
+  publishUserEditConflict({ bus: opts.ctx.bus, phase: opts.state.phase }, conflict, 'pause');
   const issue = buildApprovalPromotionConflictRecoveryIssue({
     conflict,
     currentTask: opts.task,

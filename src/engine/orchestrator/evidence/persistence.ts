@@ -9,7 +9,7 @@ import { recordApprovalEvidence, recordRejectionEvidence } from './approval-evid
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus, WorkflowMode } from '../../../core/schemas/enums.js';
-import { hashTaskBrief } from '../../../core/brief-hash.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { EvidenceLedgerSchema } from '../../../core/schemas/evidence.js';
@@ -66,7 +66,7 @@ export function persistTaskEvidence(
     }
     writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
   } catch (err) {
-    publishWarningFromError(wctx.bus, state.phase, 'failed to persist evidence ledger', err);
+    publishWarningFromError({ bus: wctx.bus, phase: state.phase }, 'failed to persist evidence ledger', err);
   }
 }
 
@@ -102,6 +102,6 @@ export function persistApprovalEvidence(
     }
     writeEvidenceLedger(wctx.projectDir, wctx.sessionId, ledger);
   } catch (err) {
-    publishWarningFromError(wctx.bus, state.phase, 'failed to persist approval evidence', err);
+    publishWarningFromError({ bus: wctx.bus, phase: state.phase }, 'failed to persist approval evidence', err);
   }
 }

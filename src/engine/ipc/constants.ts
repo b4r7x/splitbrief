@@ -1,2 +1,1 @@
-export const HEARTBEAT_INTERVAL_MS = 2000;
 export const HEARTBEAT_STALENESS_MS = 8000;

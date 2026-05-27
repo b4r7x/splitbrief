@@ -98,9 +98,23 @@ describe('parseServerMessage', () => {
   it('parses valid event message', () => {
     const msg = {
       kind: 'event',
-      payload: { type: 'phase_changed', ts: 1000, phase: 'planning' },
+      payload: { type: 'warning', ts: 1000, phase: 'planning', message: 'heads up' },
     };
     expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('rejects event with unknown payload type', () => {
+    expect(parseServerMessage({
+      kind: 'event',
+      payload: { type: 'not_real', ts: 1000, phase: 'planning' },
+    })).toBeNull();
+  });
+
+  it('rejects event with missing variant fields', () => {
+    expect(parseServerMessage({
+      kind: 'event',
+      payload: { type: 'task_completed', ts: 1000, phase: 'implementing' },
+    })).toBeNull();
   });
 
   it('rejects event with non-object payload', () => {

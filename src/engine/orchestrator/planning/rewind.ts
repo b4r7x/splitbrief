@@ -36,9 +36,9 @@ export async function handleRewindSpec(
     const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     const regenPrompt = drainPrefix + buildRegeneratePrompt('spec', current, rewindPending.comment);
-    createBusTextHandler(wctx.bus, state.phase)(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
+    createBusTextHandler({ bus: wctx.bus, phase: state.phase })(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
-      onOutput: createBusTextHandler(wctx.bus, state.phase),
+      onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, SPEC_FILE, regenResult.text, metadata);
@@ -112,9 +112,9 @@ export async function handleRewindPlan(
     const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     const regenPrompt = drainPrefix + buildRegeneratePrompt('plan', current, rewindPending.comment);
-    createBusTextHandler(wctx.bus, state.phase)(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
+    createBusTextHandler({ bus: wctx.bus, phase: state.phase })(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
-      onOutput: createBusTextHandler(wctx.bus, state.phase),
+      onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, PLAN_FILE, regenResult.text, metadata);

@@ -91,7 +91,7 @@ export async function buildResumeContext(
     return { messages: await readCompactedResumeMessages(projectDir, sessionId) };
   } catch {
     const messages: ResumeMessage[] = [];
-    for await (const m of readMessages(projectDir, sessionId)) {
+    for await (const m of readMessages({ projectDir: projectDir, sessionId: sessionId })) {
       messages.push({ role: m.role, content: m.text });
     }
     return { messages };

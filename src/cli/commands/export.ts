@@ -3,8 +3,7 @@ import { sessionDir } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError, isCliError } from '../errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
 
 interface ExportCommandOptions {
@@ -28,8 +27,7 @@ async function exportAction(sessionId: string | undefined, opts: ExportCommandOp
 
     console.log(`Report written to ${result.path}`);
   } catch (err) {
-    if (isCliError(err)) throw err;
-    throw cliError(toErrorMessage(err), 1);
+    rethrowAsCli(err);
   }
 }
 

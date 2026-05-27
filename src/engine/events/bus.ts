@@ -17,5 +17,9 @@ export function createEventBus(): EventBus {
     return () => { sinks.delete(sink); };
   }
 
-  return { publish, subscribe };
+  function unsubscribeAll(): void {
+    sinks.clear();
+  }
+
+  return { publish, subscribe, unsubscribeAll };
 }

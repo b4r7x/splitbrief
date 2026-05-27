@@ -6,6 +6,7 @@ import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js'
 import { formatCost } from '../../../core/formatting.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
 import { uniqueSorted } from '../../../utils/collections.js';
+import { retryCountsFromEvents } from '../evidence/retry-counts.js';
 import { artifactPath } from './artifacts.js';
 import type {
   DeterministicEstimate,
@@ -13,7 +14,7 @@ import type {
   RunExplain,
   RunExplainArtifact,
   RunExplainRoute,
-} from './types.js';
+} from './explain.js';
 
 export function sessionStatus(summary: Summary | null, state: WorkflowState | null): string | null {
   if (state?.phase) return state.phase === 'complete' ? 'complete' : 'in-progress';
@@ -60,7 +61,7 @@ export function buildActivity(
     retries: retryActivity(events),
     escalatedTasks: taskStatusActivity(state, events, ['escalated'], ['task_escalating', 'escalate']),
     skippedTasks: skippedActivity(state, events),
-    failedTasks: taskStatusActivity(state, events, ['failed'], ['task_failed', 'task_full_fail']),
+    failedTasks: taskStatusActivity(state, events, ['failed'], ['task_full_fail']),
     recoveryRisks: state?.pendingRecovery ? [state.pendingRecovery.message] : [],
   };
 }
@@ -190,17 +191,10 @@ function unknownCostFlags(costBreakdown: Summary['costBreakdown'] | ReviewPacket
 }
 
 function retryActivity(events: SessionLogEventEntry[]): RunExplain['activity']['retries'] {
-  const retries = new Map<string, { taskId: string; retryCount: number; lastError: string | null }>();
-  for (const event of events) {
-    if (event.type !== 'task_retry' || !event.taskId) continue;
-    const current = retries.get(event.taskId) ?? { taskId: event.taskId, retryCount: 0, lastError: null };
-    retries.set(event.taskId, {
-      taskId: event.taskId,
-      retryCount: current.retryCount + 1,
-      lastError: eventMessage(event) ?? current.lastError,
-    });
-  }
-  return [...retries.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
+  const retries = retryCountsFromEvents(events, eventMessage);
+  return [...retries.entries()]
+    .map(([taskId, retry]) => ({ taskId, ...retry }))
+    .sort((left, right) => left.taskId.localeCompare(right.taskId));
 }
 
 function taskStatusActivity(

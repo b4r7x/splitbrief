@@ -1,24 +1,6 @@
 import type { TaskCompletionMethod } from '../schemas/enums.js';
 import type { LayoutEvent } from './event-types.js';
 
-function hasEventType<TEvent extends { type: string }, TType extends string>(
-  event: TEvent,
-  type: TType,
-): event is Extract<TEvent, { type: TType }> {
-  return event.type === type;
-}
-
-export function findLatestEventByType<TEvent extends { type: string }, TType extends string>(
-  events: readonly TEvent[],
-  type: TType,
-): Extract<TEvent, { type: TType }> | undefined {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e && hasEventType(e, type)) return e;
-  }
-  return undefined;
-}
-
 export function findLatestRenderableDiffEventIndex<TEvent extends LayoutEvent>(sections: Section<TEvent>[]): number | null {
   for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
     const section = sections[sectionIndex];

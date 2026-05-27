@@ -24,13 +24,8 @@ export type EngineEvent =
   | { type: 'planner_status'; ts: number; phase: Phase; status: 'running' | 'done'; tool?: string; model?: string; duration?: number; summary?: string }
   | { type: 'planner_text'; ts: number; phase: Phase; text: string }
   | { type: 'planner_heartbeat'; ts: number; phase: Phase; elapsedMs: number; accumulatedTokens: number; phaseHint?: string }
-  // Planning phase milestones
-  | { type: 'research_done'; ts: number; phase: Phase }
-  | { type: 'spec_done'; ts: number; phase: Phase }
-  | { type: 'spec_approved'; ts: number; phase: Phase }
   | { type: 'spec_rejected'; ts: number; phase: Phase }
   | { type: 'spec_regenerated'; ts: number; phase: Phase; comment: string }
-  | { type: 'plan_done'; ts: number; phase: Phase; taskCount: number }
   | { type: 'plan_approved'; ts: number; phase: Phase }
   | { type: 'plan_rejected'; ts: number; phase: Phase }
   | { type: 'plan_regenerated'; ts: number; phase: Phase; comment: string }
@@ -50,7 +45,6 @@ export type EngineEvent =
   | { type: 'instant_plan_received'; ts: number; phase: Phase; taskCount: number }
   | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
   | { type: 'task_completed'; ts: number; phase: Phase; taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string; implementerProfile?: string }
-  | { type: 'task_failed'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_skipped'; ts: number; phase: Phase; taskId: TaskId; title: string; reason: string }
   | { type: 'task_retry'; ts: number; phase: Phase; taskId: TaskId; attempt: number; maxRetries: number; error: string }
   | { type: 'task_escalating'; ts: number; phase: Phase; taskId: TaskId }
@@ -74,7 +68,6 @@ export type EngineEvent =
   | { type: 'queue_drained'; ts: number; phase: Phase; count: number }
   | { type: 'queue_cleared'; ts: number; phase: Phase; count: number }
   | { type: 'user_message'; ts: number; phase: Phase; text: string }
-  | { type: 'planner_attachment_added'; ts: number; phase: Phase; id: string; path: string; sizeBytes: number }
   | { type: 'planner_attachments_dropped'; ts: number; phase: Phase; count: number; reason: 'unsupported-backend' | 'capability-degraded' }
   | { type: 'cost_update'; ts: number; phase: Phase; tokenUsage: TokenUsage }
   | { type: 'cost_prediction'; ts: number; phase: Phase; prediction: CostPrediction }
@@ -91,8 +84,6 @@ export type EngineEvent =
   | { type: 'ipc_client_detached'; ts: number; phase: Phase }
   | { type: 'ipc_reconnect_attempt'; ts: number; phase: Phase; attempt: number; maxAttempts: number }
   | { type: 'ipc_reconnect_failed'; ts: number; phase: Phase }
-  | { type: 'server_crash_detected'; ts: number; phase: Phase; sessionId: string; pid: number | null; signal: string | null }
-  | { type: 'server_post_mortem_shown'; ts: number; phase: Phase; sessionId: string }
   | { type: 'replay_started'; ts: number; phase: Phase; totalEvents: number }
   | { type: 'replay_complete'; ts: number; phase: Phase; totalEvents: number; durationMs: number }
   | { type: 'warning'; ts: number; phase: Phase; message: string }
@@ -105,4 +96,5 @@ export type EventSink = (event: EngineEvent) => void;
 export interface EventBus {
   publish(event: EngineEvent): void;
   subscribe(sink: EventSink): () => void;
+  unsubscribeAll(): void;
 }

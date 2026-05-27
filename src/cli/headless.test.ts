@@ -12,7 +12,7 @@ import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import { beginSession, writeActive } from '../core/sessions/lifecycle.js';
-import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { runHeadless } from './headless.js';
 
@@ -165,7 +165,15 @@ describe('runHeadless — budget pause behavior', () => {
     const sessionId = beginSession(projectDir, 'fix budget behavior');
 
     await expect(
-      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), sessionId, undefined, planner, implementer),
+      runHeadless({
+        feature: 'fix budget behavior',
+        projectDir: projectDir,
+        opts: {},
+        savedState: makeBudgetState(),
+        sessionId: sessionId,
+        _planner: planner,
+        _implementer: implementer,
+      }),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('Recovery required'),
@@ -201,7 +209,14 @@ describe('runHeadless — budget pause behavior', () => {
   it('uses the configured budgetPauseThreshold in the JSON output', async () => {
     const projectDir = setupProject(0.75);
 
-    await runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), undefined, undefined, planner, implementer);
+    await runHeadless({
+      feature: 'fix budget behavior',
+      projectDir: projectDir,
+      opts: {},
+      savedState: makeBudgetState(),
+      _planner: planner,
+      _implementer: implementer,
+    });
 
     const pausedLine = stdoutChunks
       .join('')
@@ -247,7 +262,14 @@ describe('runHeadless — budget pause behavior', () => {
     ]);
 
     await expect(
-      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), undefined, undefined, planner, implementer),
+      runHeadless({
+        feature: 'fix budget behavior',
+        projectDir: projectDir,
+        opts: {},
+        savedState: makeBudgetState(),
+        _planner: planner,
+        _implementer: implementer,
+      }),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
@@ -288,10 +310,10 @@ describe('runHeadless — recovery stops', () => {
     writeMinimalConfigYaml(projectDir);
     const sessionId = 'sess-headless-recovery';
     ensureSessionDir(projectDir, sessionId);
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const task = makeTask({ id: 'T001' });
-    const issue = buildValidationFailedRecoveryIssue({
+    const issue = buildRetryExhaustedRecoveryIssue({
       task,
       validationSummary: 'npm test failed',
       attempts: 2,
@@ -307,7 +329,15 @@ describe('runHeadless — recovery stops', () => {
     }, { type: 'SET_PENDING_RECOVERY', issue });
     saveState(projectDir, sessionId, state);
 
-    await expect(runHeadless('recover me', projectDir, {}, state, sessionId, undefined, planner, implementer)).rejects.toMatchObject({
+    await expect(runHeadless({
+      feature: 'recover me',
+      projectDir: projectDir,
+      opts: {},
+      savedState: state,
+      sessionId: sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    })).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('Recovery required'),
     });
@@ -321,7 +351,7 @@ describe('runHeadless — recovery stops', () => {
     expect(jsonLines).toContainEqual(expect.objectContaining({
       type: 'recovery_required',
       sessionId,
-      reason: 'validation-failed',
+      reason: 'retry-exhausted',
       availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
     }));
   });

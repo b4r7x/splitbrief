@@ -120,7 +120,7 @@ describe('validation pipeline', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
 
   it('skips typecheck when master switch is off', async () => {
     const config = makeConfig({ typecheck: false, typecheckCommand: 'cargo check', lint: false, test: false });
@@ -160,7 +160,7 @@ describe('layer priority', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
 
   it('config wins over discovered', async () => {
     const runner = makeCommandRunner();
@@ -280,7 +280,7 @@ describe('discovered validation sanitization', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
 
   it('does NOT execute planner-discovered ./evil-script', async () => {
     const runner = makeCommandRunner();

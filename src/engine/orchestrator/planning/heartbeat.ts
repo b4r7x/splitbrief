@@ -1,6 +1,6 @@
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../ipc/constants.js';
+import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 
 export const HEARTBEAT_THRESHOLD_MS = 5000;
 

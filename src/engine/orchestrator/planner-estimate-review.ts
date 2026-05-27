@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { CostPrediction, PlannerEstimateReview, PlannerEstimateReviewClassification } from '../../core/schemas/summary.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
@@ -103,7 +104,7 @@ function resolveProfileSelections(config: Config): PlannerEstimateReviewPacket['
 export function buildPlannerEstimateReviewPacket(opts: {
   estimate: DeterministicEstimate;
   config: Config;
-  mode: string;
+  mode: WorkflowMode;
   forcedProfileId?: string | undefined;
 }): PlannerEstimateReviewPacket {
   const userSelections = resolveProfileSelections(opts.config);
@@ -258,7 +259,7 @@ export async function reviewPlannerEstimate(
     return { state: result.state, review: completedReview(decision) };
   } catch (err) {
     const message = labelError('Planner estimate review failed', err);
-    publishWarning(opts.bus, opts.state.phase, message);
+    publishWarning({ bus: opts.bus, phase: opts.state.phase }, message);
     publishPlannerStatus(opts.bus, opts.state, 'done', {
       duration: Date.now() - start,
       summary: 'Planner estimate review unavailable',

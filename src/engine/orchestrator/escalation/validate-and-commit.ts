@@ -29,7 +29,7 @@ export async function validateAndCommit(
     changedFiles = preApprovedChangedFiles ?? await getChangedFilesSinceSnapshot(ctx.projectDir, ctx.taskStartSnapshot);
   } catch (err) {
     const reason = toErrorMessage(err);
-    publishError(ctx.bus, state.phase, `Retry changed files blocked by approval gate: ${reason}`);
+    publishError({ bus: ctx.bus, phase: state.phase }, `Retry changed files blocked by approval gate: ${reason}`);
     return {
       state,
       completed: false,
@@ -69,16 +69,14 @@ export async function validateAndCommit(
             task,
             files: restoreResult.conflictedFiles,
           });
-          publishError(
-            ctx.bus,
-            nextState.phase,
+          publishError({ bus: ctx.bus, phase: nextState.phase },
             `Denied retry rollback skipped files changed during approval: ${restoreResult.conflictedFiles.join(', ')}`,
           );
         }
       } catch (err) {
-        publishError(ctx.bus, state.phase, `Failed to discard denied retry changes: ${toErrorMessage(err)}`);
+        publishError({ bus: ctx.bus, phase: state.phase }, `Failed to discard denied retry changes: ${toErrorMessage(err)}`);
       }
-      publishError(ctx.bus, nextState.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
+      publishError({ bus: ctx.bus, phase: nextState.phase }, `Retry changed files blocked by approval gate: ${reason} (${files})`);
       persistRetryRejectionEvidence(ctx, nextState, task, changedFilesGate);
       return {
         state: nextState,
