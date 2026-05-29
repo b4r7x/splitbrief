@@ -48,7 +48,9 @@ describe('setupWorkflow', () => {
   it.each([
     { label: 'planner', opts: { planner: 'claude-code' } },
     { label: 'implementer', opts: { implementer: 'ollama' } },
-  ] as const)('writes the config without requesting setup when a $label override is provided', async ({ opts }) => {
+  ] as const)('writes the config without requesting setup when a $label override is provided', async ({
+    opts,
+  }) => {
     createTestGitRepo(tmp);
 
     const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });

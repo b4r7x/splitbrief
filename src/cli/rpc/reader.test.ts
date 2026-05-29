@@ -28,11 +28,11 @@ describe('createCommandReader', () => {
     const errors: string[] = [];
     const stream = createReadableInput();
 
-    createCommandReader(
+    createCommandReader({
       stream,
-      (command) => commands.push(command),
-      (error) => errors.push(error),
-    );
+      onCommand: (command) => commands.push(command),
+      onError: (error) => errors.push(error),
+    });
 
     stream.end(`\n${validCommands.map((command) => JSON.stringify(command)).join('\n')}\n\n`);
     await waitForReader();
@@ -46,11 +46,11 @@ describe('createCommandReader', () => {
     const errors: string[] = [];
     const stream = createReadableInput();
 
-    createCommandReader(
+    createCommandReader({
       stream,
-      (command) => commands.push(command),
-      (error) => errors.push(error),
-    );
+      onCommand: (command) => commands.push(command),
+      onError: (error) => errors.push(error),
+    });
 
     stream.end('not json\n');
     await waitForReader();
@@ -63,12 +63,14 @@ describe('createCommandReader', () => {
     let closed = false;
     const stream = createReadableInput();
 
-    createCommandReader(
+    createCommandReader({
       stream,
-      () => {},
-      () => {},
-      () => { closed = true; },
-    );
+      onCommand: () => {},
+      onError: () => {},
+      onClose: () => {
+        closed = true;
+      },
+    });
 
     stream.end();
     await waitForReader();
@@ -81,18 +83,20 @@ describe('createCommandReader', () => {
     const errors: string[] = [];
     const stream = createReadableInput();
 
-    createCommandReader(
+    createCommandReader({
       stream,
-      (command) => commands.push(command),
-      (error) => errors.push(error),
-    );
+      onCommand: (command) => commands.push(command),
+      onError: (error) => errors.push(error),
+    });
 
-    stream.end([
-      '{"type":"unknown"}',
-      '{"type":"message","text":""}',
-      '{"type":"recovery","action":""}',
-      '{"type":"slash","command":""}',
-    ].join('\n'));
+    stream.end(
+      [
+        '{"type":"unknown"}',
+        '{"type":"message","text":""}',
+        '{"type":"recovery","action":""}',
+        '{"type":"slash","command":""}',
+      ].join('\n'),
+    );
     await waitForReader();
 
     expect(commands).toEqual([]);

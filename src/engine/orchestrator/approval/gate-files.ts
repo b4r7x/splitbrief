@@ -11,7 +11,9 @@ export type GateChangedFilesDecision = GateDecision & {
   rejectedFile?: string;
 };
 
-export async function gateChangedFiles(input: GateChangedFilesInput): Promise<GateChangedFilesDecision> {
+export async function gateChangedFiles(
+  input: GateChangedFilesInput,
+): Promise<GateChangedFilesDecision> {
   const changedFiles = uniqueSorted(input.changedFiles);
   const confirmApprovals: NonNullable<GateDecision['confirmApprovals']> = [];
   for (const file of changedFiles) {
@@ -35,9 +37,11 @@ export async function gateChangedFiles(input: GateChangedFilesInput): Promise<Ga
   return {
     allow: true,
     changedFiles,
-    ...(firstConfirm ? {
-      confirmReason: firstConfirm.reason,
-      confirmApprovals,
-    } : {}),
+    ...(firstConfirm
+      ? {
+          confirmReason: firstConfirm.reason,
+          confirmApprovals,
+        }
+      : {}),
   };
 }

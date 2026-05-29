@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { TaskCompletionMethodSchema } from './enums.js';
+import {
+  CurrentCodeContextModeSchema,
+  TaskCompletionMethodSchema,
+  TaskContextFitSchema,
+} from './enums.js';
 import { TaskIdSchema } from './task.js';
 
 export interface TokenDelta {
@@ -33,12 +37,12 @@ export const TaskTokenUsageSchema = z.object({
   tool: z.string().optional(),
   model: z.string().optional(),
   implementerProfile: z.string().optional(),
-  contextFit: z.enum(['fits', 'tight', 'overflow']).optional(),
+  contextFit: TaskContextFitSchema.optional(),
   estimatedTokens: z.number().nonnegative().optional(),
   untruncatedEstimatedTokens: z.number().nonnegative().optional(),
   contextLength: z.number().nonnegative().optional(),
   currentCodeTruncated: z.boolean().optional(),
-  currentCodeContextMode: z.enum(['none', 'whole-file', 'function-level', 'truncated']).optional(),
+  currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
   costPosture: z.string().optional(),
   routingReason: z.string().optional(),
 });

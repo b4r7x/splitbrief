@@ -1,7 +1,10 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
-import type { ApiImplementerConfig, ImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
+import type {
+  ApiImplementerConfig,
+  ImplementerConfig,
+} from '../../../src/core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../src/core/schemas/planner-config.js';
 import type { ProjectContext } from '../../../src/core/state/types.js';
 
@@ -14,7 +17,10 @@ const defaultApiImplementer: ApiImplementerConfig = {
   temperature: 0.2,
 };
 
-type ConfigOverrides = Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & {
+type ConfigOverrides = Omit<
+  Partial<Config>,
+  'implementer' | 'planner' | 'validation' | 'workflow'
+> & {
   implementer?: Partial<ImplementerConfig>;
   planner?: PlannerConfig;
   validation?: Partial<Config['validation']>;
@@ -76,21 +82,29 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
-  if (overrides?.plannerEstimateReview !== undefined) base.plannerEstimateReview = overrides.plannerEstimateReview;
-  if (overrides?.autoSplitOverflow !== undefined) base.autoSplitOverflow = overrides.autoSplitOverflow;
+  if (overrides?.plannerEstimateReview !== undefined)
+    base.plannerEstimateReview = overrides.plannerEstimateReview;
+  if (overrides?.autoSplitOverflow !== undefined)
+    base.autoSplitOverflow = overrides.autoSplitOverflow;
   return ConfigSchema.parse(base);
 }
 
 export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>[0]): Config {
   return makeConfig({
     ...overrides,
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop', ...overrides?.validation },
+    validation: {
+      typecheck: false,
+      lint: false,
+      test: false,
+      testCommand: 'noop',
+      ...overrides?.validation,
+    },
   });
 }
 
 export const defaultContext: ProjectContext = {
   name: 'test-project',
   dir: join(tmpdir(), `diptych-test-${process.pid}`),
-  runtime: 'Node.js 22',
+  runtime: 'node',
   testCommand: 'npm test',
 };

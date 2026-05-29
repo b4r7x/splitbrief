@@ -19,7 +19,9 @@ describe('withSignalHandlers', () => {
     const handler = vi.fn();
 
     await expect(
-      withSignalHandlers(handler, async () => { throw new Error('boom'); }),
+      withSignalHandlers(handler, async () => {
+        throw new Error('boom');
+      }),
     ).rejects.toThrow('boom');
 
     const after = await withSignalHandlers(handler, async () => {});

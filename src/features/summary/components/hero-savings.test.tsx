@@ -40,19 +40,27 @@ describe('HeroSavings', () => {
   });
 
   it('renders nothing when hasSavingsEstimate is false', () => {
-    const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown({ hasSavingsEstimate: false })} />);
+    const ui = renderFeature(
+      <HeroSavings costBreakdown={makeCostBreakdown({ hasSavingsEstimate: false })} />,
+    );
     expect(ui.lastFrame() ?? '').toBe('');
     ui.unmount();
   });
 
   it('renders dim message when savingsAmount is zero', () => {
-    const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: 0, savingsPercentage: 0 })} />);
+    const ui = renderFeature(
+      <HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: 0, savingsPercentage: 0 })} />,
+    );
     expect(ui.lastFrame() ?? '').toContain('No savings this run');
     ui.unmount();
   });
 
   it('renders dim message when savingsAmount is negative', () => {
-    const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: -0.05, savingsPercentage: -5 })} />);
+    const ui = renderFeature(
+      <HeroSavings
+        costBreakdown={makeCostBreakdown({ savingsAmount: -0.05, savingsPercentage: -5 })}
+      />,
+    );
     expect(ui.lastFrame() ?? '').toContain('No savings this run');
     ui.unmount();
   });

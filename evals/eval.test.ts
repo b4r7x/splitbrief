@@ -100,7 +100,9 @@ describe('eval harness', () => {
 
         expect(response.status).toBe(202);
         expect(await response.text()).toBe('{"message":"replayed"}');
-        await expect(fetch('https://example.test/messages', { method: 'POST' })).rejects.toThrow('exhausted');
+        await expect(fetch('https://example.test/messages', { method: 'POST' })).rejects.toThrow(
+          'exhausted',
+        );
       } finally {
         replayer.uninstall();
       }
@@ -119,8 +121,12 @@ describe('eval harness', () => {
       try {
         writeFileSync(join(copied.projectDir, '.diptych/config.yaml'), 'changed: true\n');
 
-        expect(readFileSync(join(fixtureDir, '.diptych/config.yaml'), 'utf-8')).toBe(originalConfig);
-        expect(readFileSync(join(copied.projectDir, '.diptych/config.yaml'), 'utf-8')).toBe('changed: true\n');
+        expect(readFileSync(join(fixtureDir, '.diptych/config.yaml'), 'utf-8')).toBe(
+          originalConfig,
+        );
+        expect(readFileSync(join(copied.projectDir, '.diptych/config.yaml'), 'utf-8')).toBe(
+          'changed: true\n',
+        );
       } finally {
         rmSync(copied.tmpDir, { recursive: true, force: true });
       }

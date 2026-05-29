@@ -36,7 +36,10 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   if (result.data.id !== id) {
     throw sessionError.idMismatch(id, result.data.id);
   }
-  writeSecureFile(join(sessionDir(projectDir, id), 'summary.json'), `${JSON.stringify(session, null, 2)}\n`);
+  writeSecureFile(
+    join(sessionDir(projectDir, id), 'summary.json'),
+    `${JSON.stringify(session, null, 2)}\n`,
+  );
 }
 
 const MAX_RECENT_SESSIONS = 10;

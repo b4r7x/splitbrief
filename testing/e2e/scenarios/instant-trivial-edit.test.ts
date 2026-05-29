@@ -28,9 +28,15 @@ describe('e2e: instant mode trivial edit', () => {
 
     const taskCompleted = ctx.events.find((event) => event.type === 'task_completed');
     expect(taskCompleted).toBeDefined();
-    expect(readFileSync(join(ctx.projectDir, 'README.md'), 'utf-8')).toBe('# Tiny Spec\n\nA small fixture project for e2e replay.');
+    expect(readFileSync(join(ctx.projectDir, 'README.md'), 'utf-8')).toBe(
+      '# Tiny Spec\n\nA small fixture project for e2e replay.',
+    );
 
-    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(0);
-    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(0);
+    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(
+      0,
+    );
+    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(
+      0,
+    );
   });
 });

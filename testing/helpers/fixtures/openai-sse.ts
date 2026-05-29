@@ -1,8 +1,13 @@
-function openAiSseChunks(parts: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>): string {
+function openAiSseChunks(
+  parts: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>,
+): string {
   const lines: string[] = [];
   for (const p of parts) {
     const chunk: Record<string, unknown> = {
-      id: 'chatcmpl-1', object: 'chat.completion.chunk', created: 0, model: 'm',
+      id: 'chatcmpl-1',
+      object: 'chat.completion.chunk',
+      created: 0,
+      model: 'm',
       choices: [{ index: 0, delta: { content: p.content ?? '' }, finish_reason: null }],
     };
     if (p.usage) chunk.usage = p.usage;

@@ -28,9 +28,22 @@ import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hook
 import { error } from '../../../utils/error.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
-import type { OrchestratorCallbacks, ResumeContextHolder, WorkflowContext, WorkflowSinks } from '../types.js';
+import type {
+  OrchestratorCallbacks,
+  ResumeContextHolder,
+  WorkflowContext,
+  WorkflowSinks,
+} from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { createImplementerPublisher, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarningFromError, publishGitBranchCreated } from '../events.js';
+import {
+  createImplementerPublisher,
+  publishError,
+  publishPlannerStatus,
+  publishWorkflowConfig,
+  publishUserMessage,
+  publishWarningFromError,
+  publishGitBranchCreated,
+} from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -78,14 +91,17 @@ export type InitResult =
   | { ok: true; state: WorkflowState; wctx: WorkflowContext }
   | { ok: false; summary: Summary };
 
-export async function initializeWorkflow(
-  opts: RunWorkflowOptions,
-  sessionId: string,
-  summaryBase: SummaryBase,
-  metadata: SpecMetadata,
-  setTrackedState: (s: WorkflowState) => void,
-  resumeHolder: ResumeContextHolder,
-): Promise<InitResult> {
+export type InitializeWorkflowArgs = {
+  opts: RunWorkflowOptions;
+  sessionId: string;
+  summaryBase: SummaryBase;
+  metadata: SpecMetadata;
+  setTrackedState: (s: WorkflowState) => void;
+  resumeHolder: ResumeContextHolder;
+};
+
+export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
+  const { opts, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
   const { feature, projectDir, callbacks, savedState, sinks } = opts;
 
   ensureDiptychDir(projectDir);
@@ -113,14 +129,24 @@ export async function initializeWorkflow(
   }
   const unsubs: Array<() => void> = [];
   if (opts.tuiSink) unsubs.push(bus.subscribe(opts.tuiSink));
-  unsubs.push(bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript)));
+  unsubs.push(
+    bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript)),
+  );
   unsubs.push(bus.subscribe(createTreeRecorderSink({ projectDir, sessionId })));
   if (opts.headless) unsubs.push(bus.subscribe(createStdoutJsonSink()));
   if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
-  if (config.hooks) unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
+  if (config.hooks)
+    unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
   if (config.otel?.enabled) {
     const { trace } = await import('@opentelemetry/api');
-    unsubs.push(bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName })));
+    unsubs.push(
+      bus.subscribe(
+        createOtelSink({
+          provider: trace.getTracerProvider(),
+          serviceName: config.otel.serviceName,
+        }),
+      ),
+    );
   }
   initSinkUnsubscribers.set(bus, unsubs);
   if (config.approval?.enabled === false) {
@@ -136,18 +162,34 @@ export async function initializeWorkflow(
   if (savedState && !hasPendingRecovery) {
     await autoCompactResumeContext({ projectDir, sessionId, bus, config, planner });
     if (!planner.capabilities.supportsSessionResume) {
-      await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
+      await applyRebuiltContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        config,
+        resumeHolder,
+        requireNonEmpty: true,
+      });
     }
   }
   if (!hasPendingRecovery) {
     const available = await planner.isAvailable();
     if (!available) {
-      publishError({ bus: bus, phase: 'idle' }, `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
-      return { ok: false, summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }) };
+      publishError(
+        { bus: bus, phase: 'idle' },
+        `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`,
+      );
+      return {
+        ok: false,
+        summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }),
+      };
     }
   }
 
-  const implementer = opts._implementer ?? (await createImplementer(config, { publisher: createImplementerPublisher(bus) }));
+  const implementer =
+    opts._implementer ??
+    (await createImplementer(config, { publisher: createImplementerPublisher(bus) }));
 
   let state: WorkflowState;
 
@@ -163,13 +205,20 @@ export async function initializeWorkflow(
       plannerTool: summaryBase.plannerTool,
       ...(summaryBase.plannerModel !== undefined && { plannerModel: summaryBase.plannerModel }),
       implementerTool: summaryBase.implementerTool,
-      ...(summaryBase.implementerModel !== undefined && { implementerModel: summaryBase.implementerModel }),
+      ...(summaryBase.implementerModel !== undefined && {
+        implementerModel: summaryBase.implementerModel,
+      }),
     };
     state = transitionAndSave(projectDir, sessionId, state, { type: 'START', feature });
     setTrackedState(state);
     publishPlannerStatus(bus, state, 'running');
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
-    appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
+    appendMessage(
+      projectDir,
+      sessionId,
+      { role: 'user', text: feature },
+      config.workflow.persistTranscript,
+    );
     publishUserMessage({ bus: bus, phase: state.phase }, feature);
 
     if (config.workflow.git?.createBranch) {
@@ -183,13 +232,16 @@ export async function initializeWorkflow(
     }
   }
 
-  publishWorkflowConfig({ bus: bus, phase: state.phase }, {
-    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    plannerTool: summaryBase.plannerTool,
-    plannerModel: summaryBase.plannerModel,
-    implementerTool: summaryBase.implementerTool,
-    implementerModel: summaryBase.implementerModel,
-  });
+  publishWorkflowConfig(
+    { bus: bus, phase: state.phase },
+    {
+      mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      plannerTool: summaryBase.plannerTool,
+      plannerModel: summaryBase.plannerModel,
+      implementerTool: summaryBase.implementerTool,
+      implementerModel: summaryBase.implementerModel,
+    },
+  );
 
   const pkg = readPackageJson(projectDir);
   const context: ProjectContext = {
@@ -201,21 +253,51 @@ export async function initializeWorkflow(
 
   const validator = createValidator();
   const wctx: WorkflowContext = {
-    projectDir, sessionId, config, callbacks, bus, planner, context, implementer,
-    signal: opts.signal, metadata, resumeHolder, sinks, validator,
-    ...(opts.retryProfileOverride !== undefined && { retryProfileOverride: opts.retryProfileOverride }),
-    ...(opts.retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId: opts.retryProfileOverrideTaskId }),
+    projectDir,
+    sessionId,
+    config,
+    callbacks,
+    bus,
+    planner,
+    context,
+    implementer,
+    signal: opts.signal,
+    metadata,
+    resumeHolder,
+    sinks,
+    validator,
+    ...(opts.retryProfileOverride !== undefined && {
+      retryProfileOverride: opts.retryProfileOverride,
+    }),
+    ...(opts.retryProfileOverrideTaskId !== undefined && {
+      retryProfileOverrideTaskId: opts.retryProfileOverrideTaskId,
+    }),
     ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
-    ...(opts.drainPendingAttachments !== undefined && { drainPendingAttachments: opts.drainPendingAttachments }),
+    ...(opts.drainPendingAttachments !== undefined && {
+      drainPendingAttachments: opts.drainPendingAttachments,
+    }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
   };
 
   if (!savedState && config.hooks) {
-    const prePlanPayload: EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };
-    const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, { projectDir, sessionId });
+    const prePlanPayload: EngineEvent = {
+      type: 'workflow_started',
+      ts: Date.now(),
+      phase: state.phase,
+      feature,
+    };
+    const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, {
+      projectDir,
+      sessionId,
+    });
     if (!pre.allow) {
-      bus.publish({ type: 'warning', ts: Date.now(), phase: state.phase, message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}` });
+      bus.publish({
+        type: 'warning',
+        ts: Date.now(),
+        phase: state.phase,
+        message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}`,
+      });
       return { ok: false, summary: buildSummary({ ...summaryBase, state }) };
     }
   }

@@ -32,7 +32,10 @@ export type EvalProjectCopy = {
   projectDir: string;
 };
 
-export function copyScenarioFixture(scenario: Pick<EvalScenario, 'fixtureDir' | 'id'>, mode: EvalMode): EvalProjectCopy {
+export function copyScenarioFixture(
+  scenario: Pick<EvalScenario, 'fixtureDir' | 'id'>,
+  mode: EvalMode,
+): EvalProjectCopy {
   const tmpDir = mkdtempSync(join(tmpdir(), `diptych-eval-${scenario.id}-${mode}-`));
   const projectDir = join(tmpDir, basename(scenario.fixtureDir));
   cpSync(scenario.fixtureDir, projectDir, { recursive: true });
@@ -59,8 +62,10 @@ async function runSingleEval(
       recorder = createCassetteRecorder(cassetteFile, `${scenario.id}-${mode}`, {
         scenarioId: scenario.id,
         mode,
-        plannerModel: config.planner.kind === 'api' ? config.planner.model ?? 'unknown' : 'unknown',
-        implementerModel: config.implementer.kind === 'api' ? config.implementer.model ?? 'unknown' : 'unknown',
+        plannerModel:
+          config.planner.kind === 'api' ? (config.planner.model ?? 'unknown') : 'unknown',
+        implementerModel:
+          config.implementer.kind === 'api' ? (config.implementer.model ?? 'unknown') : 'unknown',
       });
       recorder.install();
     }
@@ -107,7 +112,10 @@ async function runSingleEval(
     return collectRunMetrics(scenario.id, mode, summary, events, qualityResults, durationMs);
   } finally {
     try {
-      if (recorder) { recorder.save(); recorder.uninstall(); }
+      if (recorder) {
+        recorder.save();
+        recorder.uninstall();
+      }
       if (replayer) replayer.uninstall();
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -136,25 +144,38 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
     console.log(`  baseline (${opts.baselineImplementerModel})...`);
     const baselineConfig = buildEvalConfig(modelPair, 'baseline');
     const baseline = await runSingleEval(scenario, baselineConfig, 'baseline', opts);
-    console.log(`    cost: $${baseline.cost.estimatedCostUSD.toFixed(4)} | quality: ${Math.round(baseline.quality.score * 100)}%`);
+    console.log(
+      `    cost: $${baseline.cost.estimatedCostUSD.toFixed(4)} | quality: ${Math.round(baseline.quality.score * 100)}%`,
+    );
 
     console.log(`  routed (${opts.routedImplementerModel})...`);
     const routedConfig = buildEvalConfig(modelPair, 'routed');
     const routed = await runSingleEval(scenario, routedConfig, 'routed', opts);
-    console.log(`    cost: $${routed.cost.estimatedCostUSD.toFixed(4)} | quality: ${Math.round(routed.quality.score * 100)}%`);
+    console.log(
+      `    cost: $${routed.cost.estimatedCostUSD.toFixed(4)} | quality: ${Math.round(routed.quality.score * 100)}%`,
+    );
 
     comparisons.push(compareScenario(scenario.id, scenario.name, baseline, routed));
   }
 
-  const totalBaseline = comparisons.reduce((sum, comparison) => sum + comparison.baselineCostUSD, 0);
+  const totalBaseline = comparisons.reduce(
+    (sum, comparison) => sum + comparison.baselineCostUSD,
+    0,
+  );
   const totalRouted = comparisons.reduce((sum, comparison) => sum + comparison.routedCostUSD, 0);
-  const avgSavings = comparisons.length > 0
-    ? comparisons.reduce((sum, comparison) => sum + comparison.costSavingsPercent, 0) / comparisons.length
-    : 0;
-  const avgQuality = comparisons.length > 0
-    ? comparisons.reduce((sum, comparison) => sum + comparison.qualityRetentionPercent, 0) / comparisons.length
-    : 0;
-  const matched = comparisons.filter((comparison) => comparison.qualityRetentionPercent >= 100).length;
+  const avgSavings =
+    comparisons.length > 0
+      ? comparisons.reduce((sum, comparison) => sum + comparison.costSavingsPercent, 0) /
+        comparisons.length
+      : 0;
+  const avgQuality =
+    comparisons.length > 0
+      ? comparisons.reduce((sum, comparison) => sum + comparison.qualityRetentionPercent, 0) /
+        comparisons.length
+      : 0;
+  const matched = comparisons.filter(
+    (comparison) => comparison.qualityRetentionPercent >= 100,
+  ).length;
 
   const report: EvalReport = {
     timestamp: new Date().toISOString(),
@@ -190,9 +211,8 @@ type ModelPair = {
 };
 
 export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
-  const implementerModel = mode === 'baseline'
-    ? pair.baselineImplementerModel
-    : pair.routedImplementerModel;
+  const implementerModel =
+    mode === 'baseline' ? pair.baselineImplementerModel : pair.routedImplementerModel;
 
   return ConfigSchema.parse({
     version: 3,
@@ -223,4 +243,3 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
     },
   });
 }
-

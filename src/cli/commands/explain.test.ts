@@ -63,7 +63,10 @@ function writeSession(projectDir: string): void {
     ],
   });
   saveState(projectDir, SESSION_ID, state);
-  saveSummary({ projectDir: projectDir, sessionId: SESSION_ID }, makeSession({ id: SESSION_ID, status: 'complete', summary }));
+  saveSummary(
+    { projectDir: projectDir, sessionId: SESSION_ID },
+    makeSession({ id: SESSION_ID, status: 'complete', summary }),
+  );
   writeActive({ projectDir: projectDir, sessionId: SESSION_ID });
 }
 
@@ -84,7 +87,9 @@ describe('explain command', () => {
     };
     expect(parsed.type).toBe('run_explain');
     expect(parsed.explain?.sessionId).toBe(SESSION_ID);
-    expect(parsed.explain?.routing).toContainEqual(expect.objectContaining({ selectedProfile: 'local-small' }));
+    expect(parsed.explain?.routing).toContainEqual(
+      expect.objectContaining({ selectedProfile: 'local-small' }),
+    );
   });
 
   it('prints compact human output for an explicit session', async () => {

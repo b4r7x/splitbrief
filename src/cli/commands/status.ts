@@ -11,6 +11,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';
+import { pluralize } from '../../utils/format.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';
@@ -27,7 +28,7 @@ function printCostHistory(projectDir: string): void {
     }
 
     console.log(
-      `\n${ansis.bold(`Cost History (${analytics.completedSessions} session${analytics.completedSessions === 1 ? '' : 's'})`)}`,
+      `\n${ansis.bold(`Cost History (${analytics.completedSessions} ${pluralize(analytics.completedSessions, 'session')})`)}`,
     );
     console.log(`  ${ansis.dim('Total spent:')}    ${formatCost(analytics.totalCost)}`);
     console.log(`  ${ansis.dim('Total saved:')}    ~${formatCost(analytics.totalSavings)}`);
@@ -44,7 +45,7 @@ function printCostHistory(projectDir: string): void {
       for (const [id, data] of providers) {
         const name = getProviderDisplayName(id);
         console.log(
-          `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} session${data.sessions === 1 ? '' : 's'})`,
+          `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} ${pluralize(data.sessions, 'session')})`,
         );
       }
     }
@@ -74,17 +75,25 @@ export function registerStatusCommand(program: Command): void {
         console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);
         const phaseSuffix = state.awaitingContinue ? ` ${ansis.yellow('(awaiting continue)')}` : '';
         console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}${phaseSuffix}`);
-        console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
+        console.log(
+          `${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`,
+        );
         console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
         console.log(`${ansis.dim('Session:')}  ${sessionId}`);
 
         if (state.plannerTool) {
           const model = state.plannerModel ? ` (${formatModelName(state.plannerModel)})` : '';
-          console.log(`${ansis.dim('Planner:')}  ${getProviderDisplayName(state.plannerTool)}${model}`);
+          console.log(
+            `${ansis.dim('Planner:')}  ${getProviderDisplayName(state.plannerTool)}${model}`,
+          );
         }
         if (state.implementerTool) {
-          const model = state.implementerModel ? ` (${formatModelName(state.implementerModel)})` : '';
-          console.log(`${ansis.dim('Impl:')}     ${getProviderDisplayName(state.implementerTool)}${model}`);
+          const model = state.implementerModel
+            ? ` (${formatModelName(state.implementerModel)})`
+            : '';
+          console.log(
+            `${ansis.dim('Impl:')}     ${getProviderDisplayName(state.implementerTool)}${model}`,
+          );
         }
 
         const completed = getCompletedTaskIds(state);

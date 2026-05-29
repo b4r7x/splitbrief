@@ -84,8 +84,12 @@ describe('migrateCommand', () => {
   it('handles repeated migration collisions', async () => {
     setupLegacyDir(tmp);
     mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', EXPECTED_SESSION_ID), { recursive: true });
-    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated`), { recursive: true });
-    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-2`), { recursive: true });
+    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated`), {
+      recursive: true,
+    });
+    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-2`), {
+      recursive: true,
+    });
 
     const result = await migrateCommand(tmp);
 
@@ -93,17 +97,22 @@ describe('migrateCommand', () => {
       status: 'migrated',
       sessionId: `${EXPECTED_SESSION_ID}-migrated-3`,
     });
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-3`))).toBe(true);
+    expect(
+      existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-3`)),
+    ).toBe(true);
   });
 
   it('falls back to the current date when legacy startedAt is invalid', async () => {
     const legacyDir = join(tmp, DIPTYCH_DIR, 'current');
     mkdirSync(legacyDir, { recursive: true });
-    writeFileSync(join(legacyDir, 'state.json'), JSON.stringify({
-      feature: 'broken date',
-      startedAt: 'not-a-date',
-      sessionId: 'legacy-session-abc',
-    }));
+    writeFileSync(
+      join(legacyDir, 'state.json'),
+      JSON.stringify({
+        feature: 'broken date',
+        startedAt: 'not-a-date',
+        sessionId: 'legacy-session-abc',
+      }),
+    );
 
     await migrateCommand(tmp);
 
@@ -119,7 +128,9 @@ describe('migrateCommand', () => {
 
     await expect(migrateCommand(tmp)).rejects.toThrow();
 
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}.tmp`))).toBe(false);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}.tmp`))).toBe(
+      false,
+    );
     expect(existsSync(join(tmp, DIPTYCH_DIR, 'current'))).toBe(true);
   });
 });

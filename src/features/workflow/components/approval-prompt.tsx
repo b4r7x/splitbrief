@@ -9,13 +9,13 @@ import { getApprovalPromptRows } from '../prompt-rows.js';
 type ConfirmStep = 'phrase' | 'reason';
 
 export function ApprovalPrompt() {
-  const state = approvalPromptStore.use(s => s);
+  const state = approvalPromptStore.use((s) => s);
   const [phraseInput, setPhraseInput] = useState('');
   const [reasonInput, setReasonInput] = useState('');
   const [confirmStep, setConfirmStep] = useState<ConfirmStep>('phrase');
   const [phraseError, setPhraseError] = useState('');
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
+  const cols = terminalSizeStore.use((s) => s.cols);
 
   const isActive = state.status === 'pending';
   const promptIdentity = state.status === 'pending' ? state.resolve : null;
@@ -73,11 +73,11 @@ export function ApprovalPrompt() {
             return;
           }
           if (key.backspace || key.delete) {
-            setPhraseInput(p => p.slice(0, -1));
+            setPhraseInput((p) => p.slice(0, -1));
             return;
           }
           if (input && !key.ctrl && !key.meta) {
-            setPhraseInput(p => p + input);
+            setPhraseInput((p) => p + input);
             setPhraseError('');
           }
           return;
@@ -104,11 +104,11 @@ export function ApprovalPrompt() {
             return;
           }
           if (key.backspace || key.delete) {
-            setReasonInput(r => r.slice(0, -1));
+            setReasonInput((r) => r.slice(0, -1));
             return;
           }
           if (input && !key.ctrl && !key.meta) {
-            setReasonInput(r => r + input);
+            setReasonInput((r) => r + input);
           }
         }
       }
@@ -133,7 +133,9 @@ export function ApprovalPrompt() {
         overflow="hidden"
         flexShrink={0}
       >
-        <Text color={t.warning}>{`[?] Write outside task scope: ${request.actionDescription}`}</Text>
+        <Text
+          color={t.warning}
+        >{`[?] Write outside task scope: ${request.actionDescription}`}</Text>
         <Text color={t.text}>{'  [A] Approve once'}</Text>
         <Text color={t.text}>{'  [S] Approve for this session'}</Text>
         <Text color={t.textDim}>{'  [W] Always approve (saved to .diptych/approvals.json)'}</Text>
@@ -157,7 +159,9 @@ export function ApprovalPrompt() {
         <Text color={t.error}>{`[!] Destructive action: ${request.actionDescription}`}</Text>
         {confirmStep === 'phrase' && (
           <>
-            <Text color={t.textDim}>{'    Type "I confirm" to proceed, or press Escape to cancel.'}</Text>
+            <Text color={t.textDim}>
+              {'    Type "I confirm" to proceed, or press Escape to cancel.'}
+            </Text>
             <Box>
               <Text color={t.textDim}>{'    Phrase: '}</Text>
               <Text color={t.accent}>{phraseInput}</Text>

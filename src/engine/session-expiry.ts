@@ -11,7 +11,7 @@ export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [
 
 export function isSessionExpiredError(err: unknown): boolean {
   const msg = toErrorMessage(err);
-  return SESSION_EXPIRED_PATTERNS.some(p => p.test(msg));
+  return SESSION_EXPIRED_PATTERNS.some((p) => p.test(msg));
 }
 
 export interface SessionResumeState {

@@ -34,7 +34,9 @@ Do something useful
 
 async function writeFakeEditor(): Promise<string> {
   const scriptPath = join(sessionDir, 'fake-editor.js');
-  await writeFile(scriptPath, `#!/usr/bin/env node
+  await writeFile(
+    scriptPath,
+    `#!/usr/bin/env node
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const filePath = process.argv[2];
@@ -61,7 +63,9 @@ if (mode === 'two-tasks') {
   process.exit(0);
 }
 writeFileSync(filePath, process.env.FAKE_EDITOR_CONTENT ?? '');
-`, 'utf-8');
+`,
+    'utf-8',
+  );
   await chmod(scriptPath, 0o700);
   return scriptPath;
 }
@@ -86,7 +90,12 @@ afterEach(async () => {
 
 describe('openExternalEditor edit mode', () => {
   it('writes a temp file, opens the configured editor, applies the edited task, and cleans up', async () => {
-    const task = makeTask({ id: 'T001', title: 'Original', implementationSteps: ['step'], tests: ['test'] });
+    const task = makeTask({
+      id: 'T001',
+      title: 'Original',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
     planEditorStore.initEditor([task]);
 
     openExternalEditor(task, 'edit', sessionDir);
@@ -110,7 +119,12 @@ describe('openExternalEditor edit mode', () => {
   });
 
   it('surfaces non-zero editor exit status without applying edits', () => {
-    const task = makeTask({ id: 'T001', title: 'Original', implementationSteps: ['step'], tests: ['test'] });
+    const task = makeTask({
+      id: 'T001',
+      title: 'Original',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'exit-42');
 
@@ -142,7 +156,10 @@ describe('openExternalEditor edit mode', () => {
   it('surfaces parse errors from edited task markdown', () => {
     const task = makeTask({ id: 'T001', implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-    vi.stubEnv('FAKE_EDITOR_CONTENT', makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'));
+    vi.stubEnv(
+      'FAKE_EDITOR_CONTENT',
+      makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'),
+    );
 
     openExternalEditor(task, 'edit', sessionDir);
 

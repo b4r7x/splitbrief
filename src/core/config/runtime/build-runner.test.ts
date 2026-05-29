@@ -103,7 +103,7 @@ describe('buildRunnerConfig', () => {
           kind: 'api',
           tool: 'my-custom-provider',
           model: 'test',
-        })
+        }),
       ).toThrow(/apiBase/);
     });
 
@@ -122,15 +122,15 @@ describe('buildRunnerConfig', () => {
 
   describe('kind inference errors', () => {
     it('throws when kind cannot be inferred from any field', () => {
-      expect(() =>
-        buildRunnerConfig('planner', {})
-      ).toThrow(/Cannot infer runner kind for planner/);
+      expect(() => buildRunnerConfig('planner', {})).toThrow(
+        /Cannot infer runner kind for planner/,
+      );
     });
 
     it('throws with the role in the message', () => {
-      expect(() =>
-        buildRunnerConfig('implementer', {})
-      ).toThrow(/Cannot infer runner kind for implementer/);
+      expect(() => buildRunnerConfig('implementer', {})).toThrow(
+        /Cannot infer runner kind for implementer/,
+      );
     });
   });
 
@@ -170,7 +170,7 @@ describe('buildRunnerConfig', () => {
       expect(() =>
         buildRunnerConfig('planner', {
           kind: 'cli',
-        })
+        }),
       ).toThrow(/tool/);
     });
 
@@ -178,7 +178,7 @@ describe('buildRunnerConfig', () => {
       expect(() =>
         buildRunnerConfig('planner', {
           kind: 'shell',
-        })
+        }),
       ).toThrow(/command/);
     });
 
@@ -187,7 +187,7 @@ describe('buildRunnerConfig', () => {
         buildRunnerConfig('implementer', {
           kind: 'api',
           tool: 'ollama',
-        })
+        }),
       ).toThrow(/model/);
     });
   });

@@ -1,5 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import { publishFeedbackError } from '../shared/feedback-events.js';
+import { assertNever } from '../../utils/type-guards.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
@@ -9,11 +10,27 @@ export type WorkflowAttach = {
   sockPath: string;
 };
 
+type WorkflowPayload = {
+  feature: string;
+  plannerContext?: string | undefined;
+  resumeState?: WorkflowState | undefined;
+  sessionId?: string | undefined;
+  worktreeName?: string | undefined;
+  attach?: WorkflowAttach | undefined;
+  readiness?: ReadinessReport | undefined;
+};
+type SummaryPayload = { summary: Summary; sessionId?: string | undefined };
+type SetupPayload = {
+  onComplete?: 'home' | 'workflow' | undefined;
+  feature?: string | undefined;
+  plannerContext?: string | undefined;
+};
+
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; plannerContext?: string | undefined; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
-  | { screen: 'summary'; summary: Summary; sessionId?: string | undefined }
-  | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined; plannerContext?: string | undefined };
+  | ({ screen: 'workflow' } & WorkflowPayload)
+  | ({ screen: 'summary' } & SummaryPayload)
+  | ({ screen: 'setup' } & SetupPayload);
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow', 'setup'],
@@ -28,9 +45,9 @@ const store = createStore<RouteData>(initial);
 
 export type NavigateArgs =
   | { to: 'home' }
-  | { to: 'workflow'; feature: string; plannerContext?: string | undefined; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
-  | { to: 'summary'; summary: Summary; sessionId?: string | undefined }
-  | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined; plannerContext?: string | undefined };
+  | ({ to: 'workflow' } & WorkflowPayload)
+  | ({ to: 'summary' } & SummaryPayload)
+  | ({ to: 'setup' } & SetupPayload);
 
 function navigate(args: NavigateArgs) {
   const current = store.get().screen;
@@ -67,6 +84,8 @@ function navigate(args: NavigateArgs) {
         plannerContext: args.plannerContext,
       });
       return;
+    default:
+      return assertNever(args);
   }
 }
 

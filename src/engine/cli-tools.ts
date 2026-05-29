@@ -1,11 +1,20 @@
 import type { ParsedLine } from './runners/types.js';
-import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/output-parsers.js';
+import { parseJsonlLine } from './streaming/parse-jsonl.js';
+import { parseOpencodeLine } from './streaming/parse-opencode.js';
+import { parseTextLine } from './streaming/parse-text.js';
 import type { CliToolId, EffortLevel } from '../core/schemas/enums.js';
 import type { InvokeResult } from './runners/types.js';
 import type { TokenDelta } from '../core/schemas/tokens.js';
 
 export interface CliToolPlanner {
-  buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined; effort?: EffortLevel | undefined }): string[];
+  buildArgs(opts: {
+    prompt: string;
+    model?: string | undefined;
+    projectDir: string;
+    mode: 'plan' | 'escalate';
+    sessionId?: string | null | undefined;
+    effort?: EffortLevel | undefined;
+  }): string[];
   parseLine: (line: string) => ParsedLine;
   postProcess?: (text: string, stderrOutput: string, usage: TokenDelta | null) => InvokeResult;
   isAvailableOpts?: { timeout?: number | undefined };
@@ -91,7 +100,15 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     notFoundMessage: 'Aider not found. Install it from https://aider.chat',
     planner: {
       buildArgs: ({ prompt, model, mode }) => {
-        const args = ['--chat-mode', 'ask', '--yes-always', '--no-stream', '--no-pretty', '--message', prompt];
+        const args = [
+          '--chat-mode',
+          'ask',
+          '--yes-always',
+          '--no-stream',
+          '--no-pretty',
+          '--message',
+          prompt,
+        ];
         if (model) args.unshift('--model', model);
         if (mode === 'plan') args.push('--read', 'src/');
         return args;
@@ -117,7 +134,8 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
   copilot: {
     command: 'copilot',
     description: 'GitHub Copilot CLI',
-    notFoundMessage: 'Copilot CLI not found. Install: npm install -g @github/copilot — or see https://github.com/github/copilot-cli',
+    notFoundMessage:
+      'Copilot CLI not found. Install: npm install -g @github/copilot — or see https://github.com/github/copilot-cli',
     planner: {
       buildArgs: ({ prompt, model }) => {
         const args = ['-p', prompt, '--output-format', 'json', '--allow-all'];

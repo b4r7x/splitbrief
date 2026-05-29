@@ -1,15 +1,16 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import { uniqueIds, uniqueSorted } from '../../../utils/collections.js';
+import { uniqueSortedIds, uniqueSorted } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
 
-import type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
+import type {
+  UserEditConflictKind,
+  UserEditConflictAction,
+  UserEditConflictFile,
+  UserEditConflict,
+} from '../../events/workflow-events.js';
 
 function taskPatterns(task: Task): string[] {
-  return [
-    task.file,
-    ...(task.scope?.inBounds ?? []),
-    ...(task.scope?.approvedOutOfBounds ?? []),
-  ];
+  return [task.file, ...(task.scope?.inBounds ?? []), ...(task.scope?.approvedOutOfBounds ?? [])];
 }
 
 function fileMatchesTask(file: string, task: Task): boolean {
@@ -37,7 +38,7 @@ function classifyFile(opts: {
     return {
       file,
       kind: 'dependency-file-conflict',
-      affectedTaskIds: uniqueIds(affectedDependencies),
+      affectedTaskIds: uniqueSortedIds(affectedDependencies),
     };
   }
 
@@ -49,7 +50,7 @@ function classifyFile(opts: {
     return {
       file,
       kind: 'future-task-stale-input',
-      affectedTaskIds: uniqueIds(affectedFutureTasks),
+      affectedTaskIds: uniqueSortedIds(affectedFutureTasks),
     };
   }
 
@@ -60,7 +61,8 @@ function dominantKind(fileConflicts: UserEditConflictFile[]): UserEditConflictKi
   const kinds = fileConflicts.map((conflict) => conflict.kind);
   if (kinds.includes('current-task-conflict')) return 'current-task-conflict';
   if (kinds.includes('dependency-file-conflict')) return 'dependency-file-conflict';
-  if (kinds.includes('changed-during-approval-promotion')) return 'changed-during-approval-promotion';
+  if (kinds.includes('changed-during-approval-promotion'))
+    return 'changed-during-approval-promotion';
   if (kinds.includes('future-task-stale-input')) return 'future-task-stale-input';
   return 'unrelated';
 }
@@ -84,7 +86,9 @@ export function classifyUserEditConflict(opts: {
   const files = uniqueSorted(opts.files, { nonEmpty: true });
   const fileConflicts = files.map((file) => classifyFile({ ...opts, file }));
   const kind = dominantKind(fileConflicts);
-  const affectedTaskIds = uniqueIds(fileConflicts.flatMap((conflict) => conflict.affectedTaskIds));
+  const affectedTaskIds = uniqueSortedIds(
+    fileConflicts.flatMap((conflict) => conflict.affectedTaskIds),
+  );
   const safeToContinue = kind === 'unrelated' || kind === 'future-task-stale-input';
 
   return {

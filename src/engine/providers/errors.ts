@@ -3,11 +3,21 @@ import { redactSecrets } from '../../utils/redact.js';
 
 export const providerError = {
   unknownNeedsApiBase: (name: string) =>
-    error('provider-unknown-needs-api-base', `Unknown provider '${name}' requires an apiBase override`, { name }),
+    error(
+      'provider-unknown-needs-api-base',
+      `Unknown provider '${name}' requires an apiBase override`,
+      { name },
+    ),
   unknownNeedsApiKey: (name: string) =>
-    error('provider-unknown-needs-api-key', `Unknown provider '${name}' requires an overrides.apiKey`, { name }),
+    error(
+      'provider-unknown-needs-api-key',
+      `Unknown provider '${name}' requires an overrides.apiKey`,
+      { name },
+    ),
   notApi: (kind: string) =>
-    error('provider-not-api', `getImplementerProvider requires kind=api, got kind=${kind}`, { kind }),
+    error('provider-not-api', `getImplementerProvider requires kind=api, got kind=${kind}`, {
+      kind,
+    }),
   anthropicNotOpenAICompat: () =>
     error(
       'provider-anthropic-not-openai-compat',
@@ -20,7 +30,11 @@ export const providerError = {
       { role },
     ),
   expectedOpenAIClient: (provider: string) =>
-    error('provider-expected-openai-client', `Expected OpenAI-compatible client for provider '${provider}'`, { provider }),
+    error(
+      'provider-expected-openai-client',
+      `Expected OpenAI-compatible client for provider '${provider}'`,
+      { provider },
+    ),
   httpFailure: (status: number, url: string) =>
     error('provider-http-failure', `HTTP ${status}`, { status, url }),
   invalidApiBase: (apiBase: string, reason: string) =>
@@ -32,8 +46,8 @@ export const providerError = {
     error(
       'provider-api-base-exfiltration',
       `Refusing to send ${envVar} to a custom apiBase for known provider '${provider}'. ` +
-      `This combination can exfiltrate API keys. Either remove the apiBase override, ` +
-      `or set the API key explicitly in the same config (not via environment variable).`,
+        `This combination can exfiltrate API keys. Either remove the apiBase override, ` +
+        `or set the API key explicitly in the same config (not via environment variable).`,
       { provider, envVar },
     ),
 } as const;

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
-import { computeScrollOffset } from '../../pickers/picker-utils.js';
+import { windowSlice } from '../../pickers/picker-utils.js';
 
 export function CompletionPanel<T>({
   items,
@@ -31,10 +31,11 @@ export function CompletionPanel<T>({
   const t = useTheme();
   if (!(isOpen ?? items.length > 0)) return null;
 
-  const scrollOffset = computeScrollOffset(selectedIndex, maxVisible, items.length);
-  const visibleSlice = items.slice(scrollOffset, scrollOffset + maxVisible);
-  const showScrollUp = scrollOffset > 0;
-  const showScrollDown = scrollOffset + maxVisible < items.length;
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = windowSlice(
+    items,
+    selectedIndex,
+    maxVisible,
+  );
   const panelBg = t.suggestionPanelBg;
 
   return (
@@ -48,7 +49,7 @@ export function CompletionPanel<T>({
     >
       {showScrollUp && (
         <Box width="100%" backgroundColor={panelBg}>
-          <Text color={t.scrollIndicator}>  ↑ more</Text>
+          <Text color={t.scrollIndicator}> ↑ more</Text>
           <Box flexGrow={1} backgroundColor={panelBg} />
         </Box>
       )}
@@ -65,7 +66,7 @@ export function CompletionPanel<T>({
       {renderEmpty?.(panelBg)}
       {showScrollDown && (
         <Box width="100%" backgroundColor={panelBg}>
-          <Text color={t.scrollIndicator}>  ↓ more</Text>
+          <Text color={t.scrollIndicator}> ↓ more</Text>
           <Box flexGrow={1} backgroundColor={panelBg} />
         </Box>
       )}

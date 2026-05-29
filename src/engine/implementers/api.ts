@@ -10,7 +10,10 @@ import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
 
-export function createApiImplementer(initialConfig: Config, options?: ImplementerFactoryOptions): Implementer {
+export function createApiImplementer(
+  initialConfig: Config,
+  options?: ImplementerFactoryOptions,
+): Implementer {
   assertImplementerKind(initialConfig, 'api');
 
   return createImplementerBase({
@@ -36,9 +39,8 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
         apiBase: impl.apiBase,
         apiKey: impl.apiKey,
       });
-      const client: StreamClient | null = impl.provider === 'anthropic'
-        ? null
-        : toStreamClient(createClientFromProvider(provider));
+      const client: StreamClient | null =
+        impl.provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(provider));
 
       const messages = [
         { role: 'system' as const, content: systemPreamble },

@@ -11,10 +11,13 @@ export const StatsSchema = z.object({
   totalTasks: z.number().int().nonnegative(),
   totalLocalTasks: z.number().int().nonnegative(),
   totalEscalatedTasks: z.number().int().nonnegative(),
-  providerTotals: z.record(z.string(), z.object({
-    cost: z.number().nonnegative(),
-    sessions: z.number().int().nonnegative(),
-  })),
+  providerTotals: z.record(
+    z.string(),
+    z.object({
+      cost: z.number().nonnegative(),
+      sessions: z.number().int().nonnegative(),
+    }),
+  ),
 });
 
 export type Stats = z.infer<typeof StatsSchema>;

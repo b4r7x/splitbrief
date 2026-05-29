@@ -1,11 +1,6 @@
 import { z } from 'zod';
 
-export const SnapshotPhaseSchema = z.enum([
-  'planning',
-  'implementing',
-  'reviewing',
-  'manual',
-]);
+export const SnapshotPhaseSchema = z.enum(['planning', 'implementing', 'reviewing', 'manual']);
 export type SnapshotPhase = z.infer<typeof SnapshotPhaseSchema>;
 
 export const SnapshotFileEntrySchema = z.object({
@@ -41,7 +36,6 @@ export type RunSnapshotKind = z.infer<typeof RunSnapshotKindSchema>;
 export const RunSnapshotLedgerSchema = z.object({
   version: z.literal(1),
   sessionId: z.string(),
-  taskId: z.string().optional(),
   taskIndex: z.number().int().nonnegative().optional(),
   runSnapshotIds: z.array(z.string()),
   runSnapshotKinds: z.record(z.string(), RunSnapshotKindSchema).optional(),

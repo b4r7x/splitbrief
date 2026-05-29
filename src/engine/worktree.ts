@@ -1,12 +1,20 @@
 import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
-import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR, worktreePath } from '../core/paths.js';
+import {
+  DIPTYCH_DIR,
+  ACTIVE_FILE,
+  STATE_FILE,
+  SESSIONS_DIR,
+  TREES_DIR,
+  worktreePath,
+} from '../core/paths.js';
 import { readJsonSafeAsync } from '../lib/fs.js';
-import type { GitClient } from '../lib/git.js';
+import { getCurrentBranch, type GitClient } from '../lib/git.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
 import { PhaseSchema, type Phase } from '../core/schemas/enums.js';
+import { isTerminalPhase } from '../core/phases.js';
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
@@ -22,21 +30,54 @@ const WORKTREE_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
 
 export const worktreeError = {
   nameRequired: () => error('worktree-name-required', 'Worktree name is required.'),
-  nameTooLong: (name: string) => error('worktree-name-too-long', `Worktree name "${name}" is too long (max 64 characters).`, { name }),
-  nameBadPrefix: (name: string) => error('worktree-name-bad-prefix', `Worktree name "${name}" must not start with "." or "-".`, { name }),
-  nameReserved: (name: string) => error('worktree-name-reserved', `Worktree name "${name}" is reserved.`, { name }),
-  nameHasPathSeparator: (name: string) => error('worktree-name-path-separator', `Worktree name "${name}" must not contain path separators.`, { name }),
+  nameTooLong: (name: string) =>
+    error('worktree-name-too-long', `Worktree name "${name}" is too long (max 64 characters).`, {
+      name,
+    }),
+  nameBadPrefix: (name: string) =>
+    error('worktree-name-bad-prefix', `Worktree name "${name}" must not start with "." or "-".`, {
+      name,
+    }),
+  nameReserved: (name: string) =>
+    error('worktree-name-reserved', `Worktree name "${name}" is reserved.`, { name }),
+  nameHasPathSeparator: (name: string) =>
+    error(
+      'worktree-name-path-separator',
+      `Worktree name "${name}" must not contain path separators.`,
+      { name },
+    ),
   nameInvalidCharacters: (name: string) =>
-    error('worktree-name-invalid-characters', `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`, { name }),
+    error(
+      'worktree-name-invalid-characters',
+      `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`,
+      { name },
+    ),
   sourceDirty: (fileCount: number) =>
-    error('worktree-source-dirty', `Source working tree is dirty (${fileCount} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`, { fileCount }),
+    error(
+      'worktree-source-dirty',
+      `Source working tree is dirty (${fileCount} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`,
+      { fileCount },
+    ),
   branchExists: (branch: string) =>
-    error('worktree-branch-exists', `Branch ${branch} already exists. Use --worktree <other-name> or delete the branch first.`, { branch }),
-  notFound: (slug: string) => error('worktree-not-found', `Worktree ".trees/${slug}" does not exist.`, { slug }),
+    error(
+      'worktree-branch-exists',
+      `Branch ${branch} already exists. Use --worktree <other-name> or delete the branch first.`,
+      { branch },
+    ),
+  notFound: (slug: string) =>
+    error('worktree-not-found', `Worktree ".trees/${slug}" does not exist.`, { slug }),
   liveSession: (slug: string, sessionId: string) =>
-    error('worktree-live-session', `Worktree ".trees/${slug}" has a live session ${sessionId}. Stop the session first, or use --force.`, { slug, sessionId }),
+    error(
+      'worktree-live-session',
+      `Worktree ".trees/${slug}" has a live session ${sessionId}. Stop the session first, or use --force.`,
+      { slug, sessionId },
+    ),
   uncommittedChanges: (slug: string) =>
-    error('worktree-uncommitted-changes', `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`, { slug }),
+    error(
+      'worktree-uncommitted-changes',
+      `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`,
+      { slug },
+    ),
 } as const;
 
 export function validateWorktreeName(name: string): void {
@@ -81,9 +122,13 @@ export type RemoveWorktreeOptions = {
   slug: string;
   git: GitClient;
   force?: boolean;
+  deleteBranch?: boolean;
 };
 
-async function readSessionState(worktreeDir: string, sessionId: string): Promise<{ phase: Phase | null; lastUpdated: string | null }> {
+async function readSessionState(
+  worktreeDir: string,
+  sessionId: string,
+): Promise<{ phase: Phase | null; lastUpdated: string | null }> {
   const stateFile = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, STATE_FILE);
   if (!existsSync(stateFile)) return { phase: null, lastUpdated: null };
   let lastUpdated: string | null = null;
@@ -101,17 +146,7 @@ async function readSessionState(worktreeDir: string, sessionId: string): Promise
 }
 
 async function resolveWorktreeBranch(wtDir: string): Promise<string> {
-  const gitFile = join(wtDir, '.git');
-  const gitFileContent = (await readFile(gitFile, 'utf-8')).trim();
-  const match = gitFileContent.match(/^gitdir:\s*(.+)$/);
-  if (!match?.[1]) return '';
-  const gitdir = match[1].trim();
-  const headFile = join(gitdir, 'HEAD');
-  if (!existsSync(headFile)) return '';
-  const head = (await readFile(headFile, 'utf-8')).trim();
-  const refMatch = head.match(/^ref:\s*refs\/heads\/(.+)$/);
-  if (!refMatch?.[1]) return head;
-  return refMatch[1];
+  return getCurrentBranch(wtDir);
 }
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
@@ -174,7 +209,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
         const state = await readSessionState(wtDir, sessionId);
         phase = state.phase;
         lastUpdated = state.lastUpdated;
-        if (phase === 'complete' || phase === 'idle') {
+        if (phase !== null && isTerminalPhase(phase)) {
           status = 'idle';
         } else {
           status = 'active';
@@ -196,9 +231,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
   return results.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function removeWorktree(
-  opts: RemoveWorktreeOptions & { deleteBranch?: boolean },
-): Promise<void> {
+export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void> {
   const { projectDir, slug, git, force = false, deleteBranch = false } = opts;
   validateWorktreeName(slug);
   const wtPath = worktreePath(projectDir, slug);
@@ -218,7 +251,7 @@ export async function removeWorktree(
     const sessionId = (await readFile(activeFilePath, 'utf-8')).trim() || null;
     if (sessionId) {
       const { phase } = await readSessionState(wtPath, sessionId);
-      const isLive = phase !== null && phase !== 'complete' && phase !== 'idle';
+      const isLive = phase !== null && !isTerminalPhase(phase);
       if (isLive) {
         if (!force) {
           throw worktreeError.liveSession(slug, sessionId);

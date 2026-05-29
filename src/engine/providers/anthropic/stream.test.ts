@@ -1,11 +1,36 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { streamAnthropicCompletion, splitSystemMessages } from './stream.js';
+import { streamAnthropicCompletion } from './stream.js';
 
 function makeSseResponse(events: string[]): Response {
   return new Response(events.join(''), {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream' },
   });
+}
+
+const MINIMAL_SSE = ['event: message_stop\ndata: {"type":"message_stop"}\n\n'];
+
+interface CapturedSystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: string };
+}
+
+async function captureRequestSystem(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+): Promise<CapturedSystemBlock[] | undefined> {
+  vi.mocked(globalThis.fetch).mockResolvedValue(makeSseResponse(MINIMAL_SSE));
+  await streamAnthropicCompletion({
+    apiKey: 'sk-test',
+    apiBase: 'https://api.anthropic.com/v1',
+    model: 'claude-sonnet-4-6',
+    messages,
+    temperature: 0.3,
+    onProgress: () => {},
+  });
+  const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+  const body = JSON.parse(String((init as RequestInit).body));
+  return body.system as CapturedSystemBlock[] | undefined;
 }
 
 describe('streamAnthropicCompletion', () => {
@@ -90,35 +115,39 @@ describe('streamAnthropicCompletion', () => {
       }),
     ).rejects.toThrow('cancelled');
   });
-
 });
 
-describe('splitSystemMessages', () => {
-  it('returns cache_control on last system block only', () => {
-    const result = splitSystemMessages([
+describe('system message cache control in the request body', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends cache_control on the last system block only', async () => {
+    const system = await captureRequestSystem([
       { role: 'system', content: 'system preamble' },
       { role: 'system', content: 'repo map content' },
       { role: 'user', content: 'research the codebase' },
     ]);
-    expect(result.system).toHaveLength(2);
-    expect(result.system![0]!.cache_control).toBeUndefined();
-    expect(result.system![1]!.cache_control).toEqual({ type: 'ephemeral' });
-    expect(result.conversation).toHaveLength(1);
+    expect(system).toHaveLength(2);
+    expect(system?.[0]?.cache_control).toBeUndefined();
+    expect(system?.[1]?.cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  it('returns undefined system when no system messages', () => {
-    const result = splitSystemMessages([
-      { role: 'user', content: 'hello' },
-    ]);
-    expect(result.system).toBeUndefined();
+  it('omits the system field when there are no system messages', async () => {
+    const system = await captureRequestSystem([{ role: 'user', content: 'hello' }]);
+    expect(system).toBeUndefined();
   });
 
-  it('single system message gets cache_control', () => {
-    const result = splitSystemMessages([
+  it('sends cache_control on a single system block', async () => {
+    const system = await captureRequestSystem([
       { role: 'system', content: 'only system' },
       { role: 'user', content: 'query' },
     ]);
-    expect(result.system).toHaveLength(1);
-    expect(result.system![0]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(system).toHaveLength(1);
+    expect(system?.[0]?.cache_control).toEqual({ type: 'ephemeral' });
   });
 });

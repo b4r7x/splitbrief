@@ -9,3 +9,34 @@ export function formatCost(dollars: number): string {
   if (!Number.isFinite(dollars)) return '$0.00';
   return `$${Math.max(0, dollars).toFixed(2)}`;
 }
+
+export function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return 'unknown';
+  return `${Math.round(value)}%`;
+}
+
+export function formatCostFact(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  return `$${value.toFixed(2)}`;
+}
+
+export function budgetPercentOf(currentCost: number, maxBudget: number): number {
+  if (!Number.isFinite(currentCost) || !Number.isFinite(maxBudget) || maxBudget <= 0) return 0;
+  return Math.round((currentCost / maxBudget) * 10_000) / 100;
+}
+
+export function formatKnownCost(amount: number, isKnown: boolean): string {
+  if (isKnown) return formatCost(amount);
+  return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
+}
+
+export function formatTokensShort(tokens: number): string {
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
+  return String(tokens);
+}
+
+export function formatTruncatedList(values: string[], max: number): string {
+  const visible = values.slice(0, max).join(', ');
+  const hidden = values.length - max;
+  return hidden > 0 ? `${visible}, +${hidden} more` : visible;
+}

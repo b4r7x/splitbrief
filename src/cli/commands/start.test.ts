@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -13,7 +20,8 @@ import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 
 import { routerStore } from '../../stores/navigation/router.js';
 
-const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
+const spawnServerMock =
+  vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
 const runHeadlessMock = vi.fn<() => Promise<void>>();
 const runRpcMock = vi.fn<() => Promise<void>>();
 const initStoresMock: StartDeps['initStores'] = async () => {};
@@ -45,14 +53,18 @@ beforeEach(() => {
     mkdirSync(opts.sessionDir, { recursive: true });
     writeFileSync(
       join(opts.sessionDir, 'server-args.json'),
-      JSON.stringify({
-        sessionId: opts.sessionId,
-        projectDir: opts.projectDir,
-        feature: opts.feature,
-        mode: opts.mode,
-        configPath: opts.configPath,
-        overrides: opts.overrides ?? {},
-      }, null, 2),
+      JSON.stringify(
+        {
+          sessionId: opts.sessionId,
+          projectDir: opts.projectDir,
+          feature: opts.feature,
+          mode: opts.mode,
+          configPath: opts.configPath,
+          overrides: opts.overrides ?? {},
+        },
+        null,
+        2,
+      ),
     );
     return { ok: true, pid: 1234, sessionId: opts.sessionId };
   });
@@ -88,33 +100,39 @@ function writeReadyReadinessFixtures(projectDir: string): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
   const configFilePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
-  writeFileSync(configFilePath, [
-    'version: 3',
-    'planner:',
-    '  kind: api',
-    '  provider: ollama',
-    '  apiBase: http://localhost:11434/v1',
-    '  model: qwen2.5-coder:7b',
-    '  contextLength: 32768',
-    'implementer:',
-    '  kind: api',
-    '  provider: ollama',
-    '  apiBase: http://localhost:11434/v1',
-    '  model: qwen2.5-coder:7b',
-    '  contextLength: 32768',
-    'validation:',
-    '  typecheck: true',
-    '  lint: true',
-    '  test: true',
-    '  testCommand: npm test',
-    'workflow:',
-    '  approve: default',
-    '  maxRetries: 3',
-    '  persistTranscript: true',
-    '  mode: standard',
-  ].join('\n'));
+  writeFileSync(
+    configFilePath,
+    [
+      'version: 3',
+      'planner:',
+      '  kind: api',
+      '  provider: ollama',
+      '  apiBase: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  contextLength: 32768',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  apiBase: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  contextLength: 32768',
+      'validation:',
+      '  typecheck: true',
+      '  lint: true',
+      '  test: true',
+      '  testCommand: npm test',
+      'workflow:',
+      '  approve: default',
+      '  maxRetries: 3',
+      '  persistTranscript: true',
+      '  mode: standard',
+    ].join('\n'),
+  );
   chmodSync(configFilePath, 0o600);
-  writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }, null, 2));
+  writeFileSync(
+    join(projectDir, 'package.json'),
+    JSON.stringify({ scripts: { test: 'vitest run' } }, null, 2),
+  );
 }
 
 function readOnlySessionArtifact(projectDir: string, artifact: string): unknown {
@@ -240,11 +258,17 @@ describe('start command — --worktree flag', () => {
 
     await runStart(['--project', tmp, '--worktree', 'detached-feature', '--detach', 'implement X']);
 
-    const artifact = readOnlySessionArtifact(wtPath, 'server-args.json') as { projectDir?: string; configPath?: string };
+    const artifact = readOnlySessionArtifact(wtPath, 'server-args.json') as {
+      projectDir?: string;
+      configPath?: string;
+    };
     expect(artifact.projectDir).toBe(wtPath);
     expect(artifact.configPath).toBe(join(wtPath, DIPTYCH_DIR, CONFIG_FILE));
 
-    const output = vi.mocked(console.log).mock.calls.map((call) => call.join(' ')).join('\n');
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((call) => call.join(' '))
+      .join('\n');
     expect(output).toContain(`cd ${wtPath} && diptych attach`);
   });
 
@@ -253,20 +277,33 @@ describe('start command — --worktree flag', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runStart([
-      '--project', tmp,
+      '--project',
+      tmp,
       '--detach',
-      '--planner', 'codex',
-      '--planner-model', 'gpt-5',
-      '--planner-command', 'plan-it',
-      '--implementer', 'openrouter',
-      '--implementer-model', 'qwen/qwen3-coder',
-      '--implementer-command', 'build-it',
-      '--model', 'alias-model',
-      '--provider', 'deepseek',
-      '--approve', 'all',
-      '--budget', '4.25',
-      '--planner-effort', 'high',
-      '--mode', 'quick',
+      '--planner',
+      'codex',
+      '--planner-model',
+      'gpt-5',
+      '--planner-command',
+      'plan-it',
+      '--implementer',
+      'openrouter',
+      '--implementer-model',
+      'qwen/qwen3-coder',
+      '--implementer-command',
+      'build-it',
+      '--model',
+      'alias-model',
+      '--provider',
+      'deepseek',
+      '--approve',
+      'all',
+      '--budget',
+      '4.25',
+      '--planner-effort',
+      'high',
+      '--mode',
+      'quick',
       '--auto',
       'implement X',
     ]);
@@ -314,8 +351,10 @@ describe('start command — --worktree flag', () => {
     let captured: unknown;
     try {
       await runStart([
-        '--project', tmp,
-        '--worktree', 'combo',
+        '--project',
+        tmp,
+        '--worktree',
+        'combo',
         '--detach',
         '--json',
         'implement X',
@@ -375,7 +414,7 @@ describe('start command — readiness', () => {
       captured = err;
     }
 
-    const output = consoleSpy.mock.calls.map(call => call.join(' ')).join('\n');
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(isCliError(captured)).toBe(true);
     expect(output).toContain('repo.active-session-live');
     expect(output).not.toContain('repo.dirty-worktree');
@@ -437,7 +476,9 @@ describe('start command — readiness', () => {
       report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
     };
     expect(firstLine.report?.status).toBe('blocked');
-    expect(firstLine.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('repo.active-session-live');
+    expect(
+      firstLine.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
+    ).toContain('repo.active-session-live');
   });
 
   it('emits readiness before RPC workflow execution and persists compact session evidence', async () => {
@@ -508,7 +549,9 @@ describe('start command — shorthand invocation', () => {
     registerStartCommand(program, fakeDeps);
 
     let specCalled = false;
-    program.command('spec').action(() => { specCalled = true; });
+    program.command('spec').action(() => {
+      specCalled = true;
+    });
     await program.parseAsync(['node', 'diptych', 'spec']);
 
     expect(specCalled).toBe(true);
@@ -521,7 +564,15 @@ describe('start command — shorthand invocation', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', '--mode', 'quick', 'build feature X', '--project', tmp]);
+    await program.parseAsync([
+      'node',
+      'diptych',
+      '--mode',
+      'quick',
+      'build feature X',
+      '--project',
+      tmp,
+    ]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'build feature X' });
   });
@@ -539,7 +590,15 @@ describe('start command — @file syntax', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'start', 'build it', '@brief.md', '--project', tmp]);
+    await program.parseAsync([
+      'node',
+      'diptych',
+      'start',
+      'build it',
+      '@brief.md',
+      '--project',
+      tmp,
+    ]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow' });
     const route = routerStore.get() as { feature?: string; plannerContext?: string };
@@ -555,7 +614,15 @@ describe('start command — @file syntax', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'start', 'build it', '@ghost.md', '--project', tmp]);
+    await program.parseAsync([
+      'node',
+      'diptych',
+      'start',
+      'build it',
+      '@ghost.md',
+      '--project',
+      tmp,
+    ]);
 
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('@ghost.md'));
     expect(routerStore.get().screen).toBe('workflow');

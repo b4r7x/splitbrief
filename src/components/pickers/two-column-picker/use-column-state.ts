@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { clampIndex } from '../../../utils/indexing.js';
 
 export interface ColumnStateHook<T> {
   filter: string;
@@ -11,13 +12,14 @@ export interface ColumnStateHook<T> {
   reset: (initialIndex: number) => void;
 }
 
-const clampIndex = (index: number, length: number) => Math.min(index, Math.max(0, length - 1));
+export interface ColumnStateInput<T> {
+  source: T[];
+  filterFn: (item: T, query: string) => boolean;
+  initialIndex: number;
+}
 
-export function useColumnState<T>(
-  source: T[],
-  filterFn: (item: T, query: string) => boolean,
-  initialIndex: number,
-): ColumnStateHook<T> {
+export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T> {
+  const { source, filterFn, initialIndex } = input;
   const [filter, setFilterState] = useState('');
   const [index, setIndex] = useState(initialIndex);
 

@@ -8,15 +8,24 @@ import { renderClaudeCode } from './renderers/claude-code.js';
 import { renderCopilotIssue } from './renderers/copilot-issue.js';
 import { loadRenderer } from './load-renderer.js';
 import { error } from '../../utils/error.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 import { includes } from '../../utils/type-guards.js';
 
 export const handoffRenderError = {
   unknownTaskId: (id: string) => error('handoff-unknown-task-id', `unknown task id: ${id}`, { id }),
-  unsupportedTarget: (target: string) => error('handoff-unsupported-target', `unsupported target: ${target}`, { target }),
+  unsupportedTarget: (target: string) =>
+    error('handoff-unsupported-target', `unsupported target: ${target}`, { target }),
   unknownTarget: (target: string) =>
-    error('handoff-unknown-target', `unknown target: ${target}. No built-in or custom renderer found.`, { target }),
+    error(
+      'handoff-unknown-target',
+      `unknown target: ${target}. No built-in or custom renderer found.`,
+      { target },
+    ),
   invalidTarget: (target: string, reason: string) =>
-    error('handoff-invalid-target', `invalid handoff target "${target}": ${reason}`, { target, reason }),
+    error('handoff-invalid-target', `invalid handoff target "${target}": ${reason}`, {
+      target,
+      reason,
+    }),
   loadFailed: (reason: string) => error('handoff-renderer-load-failed', reason, { reason }),
   customRendererBlocked: (target: string) =>
     error(
@@ -28,8 +37,8 @@ export const handoffRenderError = {
 
 export function renderHandoff(input: HandoffInput): HandoffPack {
   const tasks = input.selectedTaskIds
-    ? input.selectedTaskIds.map(id => {
-        const task = input.tasks.find(t => t.id === id);
+    ? input.selectedTaskIds.map((id) => {
+        const task = input.tasks.find((t) => t.id === id);
         if (!task) throw handoffRenderError.unknownTaskId(id);
         return task;
       })
@@ -57,7 +66,9 @@ export interface RenderHandoffWithCustomOptions {
   trustCustomRenderers?: boolean;
 }
 
-function isBuiltInHandoffInput(input: Omit<HandoffInput, 'target'> & { target: string }): input is HandoffInput {
+function isBuiltInHandoffInput(
+  input: Omit<HandoffInput, 'target'> & { target: string },
+): input is HandoffInput {
   return includes(HANDOFF_TARGETS, input.target);
 }
 
@@ -79,8 +90,8 @@ export async function renderHandoffWithCustom(
     throw handoffRenderError.customRendererBlocked(input.target);
   }
 
-  const tsPath = join(projectDir, '.diptych', 'handoff-renderers', `${input.target}.ts`);
-  const jsPath = join(projectDir, '.diptych', 'handoff-renderers', `${input.target}.js`);
+  const tsPath = join(projectDir, DIPTYCH_DIR, 'handoff-renderers', `${input.target}.ts`);
+  const jsPath = join(projectDir, DIPTYCH_DIR, 'handoff-renderers', `${input.target}.js`);
 
   const resolvedPath = existsSync(tsPath) ? tsPath : existsSync(jsPath) ? jsPath : null;
 

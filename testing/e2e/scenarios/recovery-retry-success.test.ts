@@ -27,7 +27,11 @@ describe('e2e: recovery retry success', () => {
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
     const validationPath = join(ctx.projectDir, 'src/form-validation.ts');
     expect(readFileSync(validationPath, 'utf-8')).toContain('validateForm');
-    expect(evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'ada@example.com' })")).toEqual({ valid: true, errors: [] });
-    expect(evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'broken' }).valid")).toBe(false);
+    expect(
+      evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'ada@example.com' })"),
+    ).toEqual({ valid: true, errors: [] });
+    expect(evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'broken' }).valid")).toBe(
+      false,
+    );
   });
 });

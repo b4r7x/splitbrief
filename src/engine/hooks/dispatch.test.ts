@@ -5,7 +5,10 @@ import { join, resolve } from 'node:path';
 import { runHook } from './dispatch.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookModuleEntry } from '../../core/schemas/hooks.js';
-import { makeCommandHookEntry, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
+import {
+  makeCommandHookEntry,
+  makeThrowingModuleHook,
+} from '#testing/helpers/factories/hook-entry.js';
 
 const event: EngineEvent = {
   type: 'task_started',
@@ -47,7 +50,10 @@ function mkModuleEntry(overrides: Partial<HookModuleEntry> & { path: string }): 
   };
 }
 
-async function withTempModule<T>(source: string, run: (moduleProjectDir: string, modulePath: string) => Promise<T>): Promise<T> {
+async function withTempModule<T>(
+  source: string,
+  run: (moduleProjectDir: string, modulePath: string) => Promise<T>,
+): Promise<T> {
   const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
   const modulePath = 'hook.mjs';
   try {
@@ -75,7 +81,11 @@ describe('runHook', () => {
   });
 
   it('returns warn when command not found (ENOENT)', async () => {
-    const outcome = await runHook(mkEntry({ command: 'this-command-does-not-exist-xyz' }), event, ctx);
+    const outcome = await runHook(
+      mkEntry({ command: 'this-command-does-not-exist-xyz' }),
+      event,
+      ctx,
+    );
     expect(outcome.kind).toBe('warn');
   });
 
@@ -130,13 +140,19 @@ describe('runHook — kind: module', () => {
   });
 
   it('returns warn when module has no default export (on_failure: warn)', async () => {
-    const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/no-default-export.mjs', on_failure: 'warn' });
+    const entry = mkModuleEntry({
+      path: 'testing/fixtures/hooks/no-default-export.mjs',
+      on_failure: 'warn',
+    });
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(outcome.kind).toBe('warn');
   });
 
   it('returns deny when module has no default export and on_failure: block', async () => {
-    const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/no-default-export.mjs', on_failure: 'block' });
+    const entry = mkModuleEntry({
+      path: 'testing/fixtures/hooks/no-default-export.mjs',
+      on_failure: 'block',
+    });
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(outcome.kind).toBe('deny');
   });
@@ -145,12 +161,18 @@ describe('runHook — kind: module', () => {
     { onFailure: 'block', outcome: 'deny' },
     { onFailure: 'warn', outcome: 'warn' },
     { onFailure: 'ignore', outcome: 'allow' },
-  ] as const)('maps module timeout with on_failure=$onFailure to $outcome', async ({ onFailure, outcome }) => {
+  ] as const)('maps module timeout with on_failure=$onFailure to $outcome', async ({
+    onFailure,
+    outcome,
+  }) => {
     await withTempModule(
       'export default async function hook() { await new Promise((resolve) => setTimeout(resolve, 50)); return { kind: "allow" }; }',
       async (moduleProjectDir, modulePath) => {
         const entry = mkModuleEntry({ path: modulePath, timeout_ms: 10, on_failure: onFailure });
-        const result = await runHook(entry, event, { projectDir: moduleProjectDir, sessionId: 's' });
+        const result = await runHook(entry, event, {
+          projectDir: moduleProjectDir,
+          sessionId: 's',
+        });
         expect(result.kind).toBe(outcome);
         if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
       },
@@ -161,7 +183,10 @@ describe('runHook — kind: module', () => {
     { onFailure: 'block', outcome: 'deny' },
     { onFailure: 'warn', outcome: 'warn' },
     { onFailure: 'ignore', outcome: 'allow' },
-  ] as const)('maps module throw with on_failure=$onFailure to $outcome', async ({ onFailure, outcome }) => {
+  ] as const)('maps module throw with on_failure=$onFailure to $outcome', async ({
+    onFailure,
+    outcome,
+  }) => {
     const entry = makeThrowingModuleHook({ on_failure: onFailure });
     const result = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(result.kind).toBe(outcome);

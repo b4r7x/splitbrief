@@ -59,8 +59,7 @@ export async function buildCrashDiagnostic(
   const exitCode = data?.exitCode ?? null;
   const cause = data?.cause ?? null;
 
-  const diagStatus: 'crashed' | 'exited' =
-    !status.alive && status.crashed ? 'crashed' : 'exited';
+  const diagStatus: 'crashed' | 'exited' = !status.alive && status.crashed ? 'crashed' : 'exited';
 
   const logPath = join(sessionDir, SERVER_LOG_FILE);
   const logTail = await readLastLines(logPath, 20);

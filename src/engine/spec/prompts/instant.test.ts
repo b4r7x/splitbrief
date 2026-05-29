@@ -18,7 +18,9 @@ describe('buildInstantPrompt', () => {
 
   it('requires Task Brief v1 scope, escalation, and evidence sections', () => {
     const prompt = buildInstantPrompt('x', 'y');
-    expect(prompt).toContain('Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence');
+    expect(prompt).toContain(
+      'Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence',
+    );
     expect(prompt).toContain('do not omit them');
     expect(prompt).not.toContain('optional in instant mode');
   });
@@ -35,7 +37,9 @@ describe('buildInstantPrompt', () => {
 describe('buildQuickPlanPrompt', () => {
   it('does not weaken Task Brief v1 scope, escalation, or evidence sections', () => {
     const prompt = buildQuickPlanPrompt('change feature', 'repo');
-    expect(prompt).toContain('Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence');
+    expect(prompt).toContain(
+      'Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence',
+    );
     expect(prompt).toContain('must include');
     expect(prompt).toContain('must state when the implementer should stop');
     expect(prompt).toContain('must state the reviewable proof');

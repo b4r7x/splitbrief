@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { z } from 'zod';
 import { writeSecureFile } from '../../lib/fs.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { getDiptychPath } from '../paths.js';
 import { HookEventSchema, HooksConfigSchema } from '../schemas/hooks.js';
 
 const TRUST_FILE = 'hook-trust.json';
@@ -23,14 +24,10 @@ type ModuleDigest = {
   error?: string;
 };
 
-export function hashHooksConfig(hooks: unknown): string;
-export function hashHooksConfig(projectDir: string, hooks: unknown): string;
-export function hashHooksConfig(...args: [hooks: unknown] | [projectDir: string, hooks: unknown]): string {
-  const projectDir = args.length === 2 ? args[0] : undefined;
-  const hooks = args.length === 2 ? args[1] : args[0];
+export function hashHooksConfig(projectDir: string, hooks: unknown): string {
   const json = canonicalJSON({
     hooks: hooks ?? null,
-    moduleDigests: projectDir ? collectModuleDigests(projectDir, hooks) : [],
+    moduleDigests: collectModuleDigests(projectDir, hooks),
   });
   const hex = createHash('sha256').update(json, 'utf8').digest('hex');
   return `sha256:${hex}`;
@@ -64,7 +61,7 @@ function hashHookModule(projectDir: string, modulePath: string): ModuleDigest {
 }
 
 function trustFilePath(projectDir: string): string {
-  return join(projectDir, '.diptych', TRUST_FILE);
+  return getDiptychPath(projectDir, TRUST_FILE);
 }
 
 export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolean {
@@ -81,6 +78,9 @@ export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolea
 }
 
 export function markHooksConfigTrusted(projectDir: string, hooks: unknown): void {
-  const file: TrustFile = { version: TRUST_VERSION, trusted_hash: hashHooksConfig(projectDir, hooks) };
+  const file: TrustFile = {
+    version: TRUST_VERSION,
+    trusted_hash: hashHooksConfig(projectDir, hooks),
+  };
   writeSecureFile(trustFilePath(projectDir), JSON.stringify(file, null, 2) + '\n');
 }

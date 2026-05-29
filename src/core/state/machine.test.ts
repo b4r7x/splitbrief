@@ -24,7 +24,9 @@ describe('transition', () => {
   it('throws when an action is not valid for the current phase', () => {
     const state = createInitialState('feat');
 
-    expect(() => transition(state, { type: 'VALIDATION_PASS' })).toThrow('Cannot apply VALIDATION_PASS');
+    expect(() => transition(state, { type: 'VALIDATION_PASS' })).toThrow(
+      'Cannot apply VALIDATION_PASS',
+    );
   });
 
   it('START -> researching', () => {
@@ -45,7 +47,13 @@ describe('transition', () => {
 
   it('REJECT_SPEC -> idle', () => {
     const tasks = [makeTask({ id: 't1' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec', tasks, currentTaskIndex: 1, attempt: 2 };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-spec',
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
+    };
     const next = transition(state, { type: 'REJECT_SPEC' });
     expect(next.phase).toBe('idle');
     expect(next.tasks).toEqual([]);
@@ -81,7 +89,9 @@ describe('transition', () => {
       ...createInitialState('feat'),
       phase: 'implementing',
     };
-    expect(() => transition(state, { type: 'VALIDATION_FAIL' })).toThrow('Cannot apply VALIDATION_FAIL');
+    expect(() => transition(state, { type: 'VALIDATION_FAIL' })).toThrow(
+      'Cannot apply VALIDATION_FAIL',
+    );
   });
 
   it('ESCALATE is rejected from implementing phase', () => {
@@ -267,7 +277,7 @@ describe('transition', () => {
       currentTaskIndex: 0,
       attempt: 4,
     };
-    const next = transition(state, { type: 'VALIDATION_FAIL' }, 5);
+    const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries: 5 });
     expect(next.phase).toBe('implementing');
     expect(next.attempt).toBe(5);
   });
@@ -281,7 +291,7 @@ describe('transition', () => {
       currentTaskIndex: 0,
       attempt: 5,
     };
-    const next = transition(state, { type: 'VALIDATION_FAIL' }, 5);
+    const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries: 5 });
     expect(next.phase).toBe('escalating');
   });
 
@@ -516,7 +526,10 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
     };
-    const next = transition(state, { type: 'CONSTITUTION_CHECK_FAIL', reason: 'violates principle X' });
+    const next = transition(state, {
+      type: 'CONSTITUTION_CHECK_FAIL',
+      reason: 'violates principle X',
+    });
     expect(next.phase).toBe('idle');
     expect(next.awaitingContinue).toBe(false);
     expect(next.tasks).toEqual([]);
@@ -538,7 +551,12 @@ describe('transition', () => {
 
   it('BRIEFS_READY -> reviewing-briefs with tasks set', () => {
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-plan', currentTaskIndex: 3, attempt: 2 };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-plan',
+      currentTaskIndex: 3,
+      attempt: 2,
+    };
     const next = transition(state, { type: 'BRIEFS_READY', tasks });
     expect(next.phase).toBe('reviewing-briefs');
     expect(next.tasks).toEqual(tasks);
@@ -548,7 +566,11 @@ describe('transition', () => {
 
   it('APPROVE_BRIEFS -> implementing with index and attempt reset', () => {
     const tasks = [makeTask({ id: 't1' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      tasks,
+    };
     const next = transition(state, { type: 'APPROVE_BRIEFS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(0);
@@ -557,7 +579,13 @@ describe('transition', () => {
 
   it('REJECT_BRIEFS -> idle', () => {
     const tasks = [makeTask({ id: 't1' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks, currentTaskIndex: 1, attempt: 2 };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
+    };
     const next = transition(state, { type: 'REJECT_BRIEFS' });
     expect(next.phase).toBe('idle');
     expect(next.tasks).toEqual([]);
@@ -631,10 +659,15 @@ describe('transition', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
-      pendingRecovery: makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' }),
+      pendingRecovery: makeRecoveryIssue({
+        status: 'applying',
+        selectedAction: 'retry-same-worker',
+      }),
     };
 
-    const next = transition(state, { type: 'RESOLVE_PENDING_RECOVERY', action: 'retry-same-worker' });
+    const next = transition(state, {
+      type: 'RESOLVE_PENDING_RECOVERY',
+    });
 
     expect(next.phase).toBe('validating-task');
     expect(next.pendingRecovery).toBeUndefined();
@@ -654,10 +687,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_PASS strips currentCode from the completed task', () => {
-    const tasks = [
-      makeTask({ id: 't1', currentCode: 'const x = 1;' }),
-      makeTask({ id: 't2' }),
-    ];
+    const tasks = [makeTask({ id: 't1', currentCode: 'const x = 1;' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -686,10 +716,7 @@ describe('transition', () => {
   });
 
   it('FULL_SUCCESS strips currentCode from the escalated task', () => {
-    const tasks = [
-      makeTask({ id: 't1', currentCode: 'source code here' }),
-      makeTask({ id: 't2' }),
-    ];
+    const tasks = [makeTask({ id: 't1', currentCode: 'source code here' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',

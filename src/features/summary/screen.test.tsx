@@ -7,8 +7,8 @@ import { makeConfig } from '../../../testing/helpers/factories/config.js';
 import { makeSummary } from '../../../testing/helpers/factories/summary.js';
 import { makeTask } from '../../../testing/helpers/factories/task.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
-import { createEvidenceLedger } from '../../engine/orchestrator/evidence/ledger.js';
-import { writeEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
+import { createEvidenceLedger } from '../../core/evidence/ledger.js';
+import { writeEvidenceLedger } from '../../core/evidence/ledger.js';
 import { recordFinalReviewEvidence } from '../../engine/orchestrator/evidence/reporting.js';
 import { recordLocalTaskEvidence } from '../../engine/orchestrator/evidence/task-evidence.js';
 import { configStore } from '../../stores/project/config.js';
@@ -51,7 +51,10 @@ describe('SummaryScreen', () => {
   });
 
   it('uses task compiler language in the summary header', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary({ totalTasks: 5, completedByLocal: 4, escalatedToPlanner: 1 }) });
+    routerStore.init({
+      screen: 'summary',
+      summary: makeSummary({ totalTasks: 5, completedByLocal: 4, escalatedToPlanner: 1 }),
+    });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -119,7 +122,12 @@ describe('SummaryScreen', () => {
   });
 
   it('renders brief quality score when briefQuality is present', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary({ briefQuality: { score: 0.8, passed: true, errorCount: 0, warningCount: 2 } }) });
+    routerStore.init({
+      screen: 'summary',
+      summary: makeSummary({
+        briefQuality: { score: 0.8, passed: true, errorCount: 0, warningCount: 2 },
+      }),
+    });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -131,7 +139,12 @@ describe('SummaryScreen', () => {
   });
 
   it('renders drift warning count when driftSummary is present', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary({ driftSummary: { passed: false, score: 0.84, errorCount: 0, warningCount: 1 } }) });
+    routerStore.init({
+      screen: 'summary',
+      summary: makeSummary({
+        driftSummary: { passed: false, score: 0.84, errorCount: 0, warningCount: 1 },
+      }),
+    });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -193,7 +206,12 @@ describe('SummaryScreen', () => {
     const sessionId = 'summary-evidence-session';
     try {
       const task = makeTask({ id: 'T001', title: 'Evidence detail', file: 'src/evidence.ts' });
-      let ledger = createEvidenceLedger({ sessionId, feature: 'demo', mode: 'standard', tasks: [task] });
+      let ledger = createEvidenceLedger({
+        sessionId,
+        feature: 'demo',
+        mode: 'standard',
+        tasks: [task],
+      });
       ledger = recordLocalTaskEvidence({
         ledger,
         task,

@@ -32,7 +32,9 @@ describe('e2e: standard mode multi-task', () => {
       name: 'Ada Lovelace',
       role: 'admin',
     });
-    expect(readFileSync(join(ctx.projectDir, 'src/profile.test.ts'), 'utf-8')).toContain('getUserProfile');
+    expect(readFileSync(join(ctx.projectDir, 'src/profile.test.ts'), 'utf-8')).toContain(
+      'getUserProfile',
+    );
     expect(taskStartedEvents.map((event) => event.index)).toEqual(
       taskStartedEvents.map((_, index) => index),
     );
@@ -46,7 +48,11 @@ describe('e2e: standard mode multi-task', () => {
 
     const costEvents = ctx.events.filter((event) => event.type === 'cost_update');
     expect(costEvents.length).toBeGreaterThan(0);
-    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(0);
-    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(0);
+    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(
+      0,
+    );
+    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(
+      0,
+    );
   });
 });

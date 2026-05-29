@@ -27,7 +27,12 @@ describe('createResponseWriter', () => {
   it('writes ack, error, status, and event responses as JSON lines', () => {
     const { chunks, stream } = createCaptureStream();
     const writer = createResponseWriter(stream);
-    const event = { type: 'warning', ts: 1, phase: 'planning', message: 'watch this' } satisfies EngineEvent;
+    const event = {
+      type: 'warning',
+      ts: 1,
+      phase: 'planning',
+      message: 'watch this',
+    } satisfies EngineEvent;
 
     writer.ack('approve');
     writer.error('bad command');

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useInput } from 'ink';
 import { Fzf, type FzfResultItem } from 'fzf';
 import { useCompletionSelection } from '../use-completion-selection.js';
+import { useCompletionNavigation } from '../use-completion-navigation.js';
 
 const MAX_RESULTS = 50;
 
@@ -53,7 +53,10 @@ export function findReferenceToken(value: string): ReferenceToken | null {
 function filterFiles(files: string[], query: string): string[] {
   if (!query) return files.slice(0, MAX_RESULTS);
   const fzf = new Fzf(files);
-  return fzf.find(query).slice(0, MAX_RESULTS).map((entry: FzfResultItem<string>) => entry.item);
+  return fzf
+    .find(query)
+    .slice(0, MAX_RESULTS)
+    .map((entry: FzfResultItem<string>) => entry.item);
 }
 
 function completeToken(value: string, token: ReferenceToken, selected: string): string {
@@ -71,50 +74,37 @@ export function useReferenceCompletion({
   setValue,
   disabled,
 }: UseReferenceCompletionOptions): UseReferenceCompletionResult {
-  const [inputKey, setInputKey] = useState(0);
   const [dismissedValue, setDismissedValue] = useState<string | null>(null);
 
   const token = findReferenceToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
   const showSuggestions = token !== null && filtered.length > 0 && dismissedValue !== value;
   const selectionKey = buildSelectionKey(token, filtered);
-  const { effectiveSelectedIndex, latestRef, moveSelection } = useCompletionSelection<LatestReferenceState>({
-    value,
-    token,
-    selectionKey,
-    itemCount: filtered.length,
-    filtered,
-  });
+  const { effectiveSelectedIndex, latestRef, moveSelection } =
+    useCompletionSelection<LatestReferenceState>({
+      value,
+      token,
+      selectionKey,
+      itemCount: filtered.length,
+      filtered,
+    });
 
-  useInput(
-    (_input, key) => {
-      const latest = latestRef.current;
-      if (!latest?.token || latest.filtered.length === 0) return;
-
-      if (key.upArrow) {
-        moveSelection(latest, -1);
-        return;
-      }
-      if (key.downArrow) {
-        moveSelection(latest, 1);
-        return;
-      }
-      if (key.tab || key.return) {
-        const selected = latest.filtered[latest.effectiveSelectedIndex];
-        if (selected) {
-          const nextValue = completeToken(latest.value, latest.token, selected);
-          setValue(nextValue);
-          setDismissedValue(nextValue);
-          setInputKey((k) => k + 1);
-        }
-        return;
-      }
-      if (key.escape) {
-        setDismissedValue(latest.value);
+  const { inputKey, bumpInputKey } = useCompletionNavigation({
+    isActive: showSuggestions && !disabled,
+    latestRef,
+    hasItems: (l) => !!l.token && l.filtered.length > 0,
+    onMove: (l, dir) => moveSelection(l, dir),
+    onSelect: (l) => {
+      const selected = l.filtered[l.effectiveSelectedIndex];
+      if (selected && l.token) {
+        const nextValue = completeToken(l.value, l.token, selected);
+        setValue(nextValue);
+        setDismissedValue(nextValue);
+        bumpInputKey();
       }
     },
-    { isActive: showSuggestions && !disabled },
-  );
+    onEscape: (l) => setDismissedValue(l.value),
+  });
 
   return {
     filtered,

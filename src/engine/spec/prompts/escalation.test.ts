@@ -17,7 +17,12 @@ describe('escalation prompts', () => {
 
   it('Python full escalation uses Python signature fences', () => {
     const task = makeTask({ signature: 'def load_config(path: str) -> dict[str, str]:' });
-    const prompt = buildEscalationPrompt(task, 'old code', 'failed', buildLanguageContext('python'));
+    const prompt = buildEscalationPrompt(
+      task,
+      'old code',
+      'failed',
+      buildLanguageContext('python'),
+    );
     expect(prompt).toContain('```python');
     expect(prompt).toContain('Python import statements');
     expect(prompt).not.toMatch(/TypeScript|typescript|```typescript|ESM imports/);

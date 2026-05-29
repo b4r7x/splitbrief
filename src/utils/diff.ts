@@ -1,16 +1,27 @@
 const LARGE_FILE_THRESHOLD = 5000;
 
-export function computeDiff(oldContent: string, newContent: string): { diff: string; linesAdded: number; linesRemoved: number } {
+export function computeDiff(
+  oldContent: string,
+  newContent: string,
+): { diff: string; linesAdded: number; linesRemoved: number } {
   if (oldContent === newContent) return { diff: '', linesAdded: 0, linesRemoved: 0 };
 
   const oldLines = oldContent === '' ? [] : oldContent.split('\n');
   const newLines = newContent === '' ? [] : newContent.split('\n');
 
   if (oldLines.length === 0) {
-    return { diff: newLines.map(l => `+ ${l}`).join('\n'), linesAdded: newLines.length, linesRemoved: 0 };
+    return {
+      diff: newLines.map((l) => `+ ${l}`).join('\n'),
+      linesAdded: newLines.length,
+      linesRemoved: 0,
+    };
   }
   if (newLines.length === 0) {
-    return { diff: oldLines.map(l => `- ${l}`).join('\n'), linesAdded: 0, linesRemoved: oldLines.length };
+    return {
+      diff: oldLines.map((l) => `- ${l}`).join('\n'),
+      linesAdded: 0,
+      linesRemoved: oldLines.length,
+    };
   }
 
   // Files > 5000 lines: Myers diff is O(m×n), use faster positional fallback
@@ -22,7 +33,10 @@ export function computeDiff(oldContent: string, newContent: string): { diff: str
   return formatWithContext(changes, 2);
 }
 
-function diffLinesSimple(oldLines: string[], newLines: string[]): { diff: string; linesAdded: number; linesRemoved: number } {
+function diffLinesSimple(
+  oldLines: string[],
+  newLines: string[],
+): { diff: string; linesAdded: number; linesRemoved: number } {
   const changes: Change[] = [];
   const maxLen = Math.max(oldLines.length, newLines.length);
   for (let i = 0; i < maxLen; i++) {
@@ -51,20 +65,21 @@ function diffLines(oldLines: string[], newLines: string[]): Change[] {
     const oi = oldLines[i - 1] ?? '';
     for (let j = 1; j <= n; j++) {
       const nj = newLines[j - 1] ?? '';
-      dp[i * stride + j] = oi === nj
-        ? lookup(i - 1, j - 1) + 1
-        : Math.max(lookup(i - 1, j), lookup(i, j - 1));
+      dp[i * stride + j] =
+        oi === nj ? lookup(i - 1, j - 1) + 1 : Math.max(lookup(i - 1, j), lookup(i, j - 1));
     }
   }
 
   const changes: Change[] = [];
-  let i = m, j = n;
+  let i = m,
+    j = n;
   while (i > 0 || j > 0) {
-    const oi = i > 0 ? oldLines[i - 1] ?? '' : '';
-    const nj = j > 0 ? newLines[j - 1] ?? '' : '';
+    const oi = i > 0 ? (oldLines[i - 1] ?? '') : '';
+    const nj = j > 0 ? (newLines[j - 1] ?? '') : '';
     if (i > 0 && j > 0 && oi === nj) {
       changes.push({ type: ' ', line: oi });
-      i--; j--;
+      i--;
+      j--;
     } else if (j > 0 && (i === 0 || lookup(i, j - 1) >= lookup(i - 1, j))) {
       changes.push({ type: '+', line: nj });
       j--;
@@ -77,7 +92,10 @@ function diffLines(oldLines: string[], newLines: string[]): Change[] {
   return changes.reverse();
 }
 
-function formatWithContext(changes: Change[], contextLines: number): { diff: string; linesAdded: number; linesRemoved: number } {
+function formatWithContext(
+  changes: Change[],
+  contextLines: number,
+): { diff: string; linesAdded: number; linesRemoved: number } {
   const changed = new Set<number>();
   changes.forEach((ch, i) => {
     if (ch.type !== ' ') changed.add(i);
@@ -87,7 +105,11 @@ function formatWithContext(changes: Change[], contextLines: number): { diff: str
 
   const included = new Set<number>();
   for (const idx of changed) {
-    for (let c = Math.max(0, idx - contextLines); c <= Math.min(changes.length - 1, idx + contextLines); c++) {
+    for (
+      let c = Math.max(0, idx - contextLines);
+      c <= Math.min(changes.length - 1, idx + contextLines);
+      c++
+    ) {
       included.add(c);
     }
   }

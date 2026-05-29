@@ -2,7 +2,15 @@ import { useState, useEffect, useEffectEvent, useRef } from 'react';
 import type { Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { IpcPromptRequest, IpcPromptResponse } from '../../../engine/ipc/protocol.js';
-import { backoffDelay, createIpcConnection, destroyIpcSockets, handleIpcConnectionClose, scheduleIpcReconnect, type IpcClientActions, type IpcClientState } from './ipc-client-connection.js';
+import {
+  backoffDelay,
+  createIpcConnection,
+  destroyIpcSockets,
+  handleIpcConnectionClose,
+  scheduleIpcReconnect,
+  type IpcClientActions,
+  type IpcClientState,
+} from './ipc-client-connection.js';
 
 export type { IpcClientActions, IpcClientState, IpcClientStatus } from './ipc-client-connection.js';
 
@@ -47,7 +55,9 @@ export function useIpcClient(opts: {
     const ownsEffect = () => generationRef.current === generation && !disposed;
     const ownsSocket = (socket: Socket) => ownsEffect() && socketRef.current === socket;
     const canMutate = (socket?: Socket) =>
-      ownsEffect() && !isDetachedRef.current && (socket === undefined || socketRef.current === socket);
+      ownsEffect() &&
+      !isDetachedRef.current &&
+      (socket === undefined || socketRef.current === socket);
     const clearReconnectTimers = () => {
       for (const timer of reconnectTimers) clearTimeout(timer);
       reconnectTimers.clear();
@@ -67,9 +77,10 @@ export function useIpcClient(opts: {
 
     isDetachedRef.current = false;
     attemptRef.current = 0;
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      status: prev.status === 'connected' || prev.status === 'readonly' ? prev.status : 'connecting',
+      status:
+        prev.status === 'connected' || prev.status === 'readonly' ? prev.status : 'connecting',
     }));
 
     function connect() {
@@ -84,8 +95,12 @@ export function useIpcClient(opts: {
           handlePromptRequest,
           ownsSocket,
           canMutate,
-          markDetached: () => { isDetachedRef.current = true; },
-          resetAttempts: () => { attemptRef.current = 0; },
+          markDetached: () => {
+            isDetachedRef.current = true;
+          },
+          resetAttempts: () => {
+            attemptRef.current = 0;
+          },
         },
         onClose: (closedSocket) => {
           sockets.delete(closedSocket);
@@ -96,11 +111,13 @@ export function useIpcClient(opts: {
               if (socketRef.current === socketToClear) socketRef.current = null;
             },
             getAttempt: () => attemptRef.current,
-            setAttempt: (attempt) => { attemptRef.current = attempt; },
+            setAttempt: (attempt) => {
+              attemptRef.current = attempt;
+            },
             setState,
             onEvent,
             backoff,
-            reconnect: delay => scheduleIpcReconnect(reconnectTimers, delay, canMutate, connect),
+            reconnect: (delay) => scheduleIpcReconnect(reconnectTimers, delay, canMutate, connect),
           });
         },
       });
@@ -130,7 +147,7 @@ export function useIpcClient(opts: {
   function detach() {
     isDetachedRef.current = true;
     generationRef.current += 1;
-    setState(prev => ({ ...prev, status: 'detached' }));
+    setState((prev) => ({ ...prev, status: 'detached' }));
     const socket = socketRef.current;
     if (socket && !socket.destroyed) {
       try {

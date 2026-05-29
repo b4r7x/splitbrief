@@ -12,8 +12,12 @@ const ctx = (dir: string) => ({ projectDir: dir, sessionId: 'test-session' });
 
 describe('hooks-builtins integration', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'hooks-builtins-int-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'hooks-builtins-int-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   describe('block-secrets via runPreHooks — production path (git_commit event)', () => {
     it('denies when git_commit event has file field containing AWS key (production path via task/commit.ts)', async () => {
@@ -33,7 +37,8 @@ describe('hooks-builtins integration', () => {
 
       const result = await runPreHooks(hooks, 'pre_commit', event, ctx(dir));
       expect(result.allow).toBe(false);
-      expect(result.reason).toContain('AWS access key');
+      expect(result.reason).toContain('secret detected');
+      expect(result.reason).toContain('infra.ts');
     });
 
     it('allows when git_commit event has file field with clean file (production path)', async () => {
@@ -79,18 +84,28 @@ describe('hooks-builtins integration', () => {
 
       const hooks: HooksConfig = {
         builtin: { 'block-secrets': true },
-        pre_commit: [{
-          kind: 'command',
-          command: 'echo',
-          args: ['user-hook'],
-          timeout_ms: 5000,
-          on_failure: 'warn',
-        }],
+        pre_commit: [
+          {
+            kind: 'command',
+            command: 'echo',
+            args: ['user-hook'],
+            timeout_ms: 5000,
+            on_failure: 'warn',
+          },
+        ],
       };
-      const event = makeTaskStart({ taskId: taskId('T1'), title: 'plant file', index: 0, total: 1, file: 'oops.ts', action: 'create' });
+      const event = makeTaskStart({
+        taskId: taskId('T1'),
+        title: 'plant file',
+        index: 0,
+        total: 1,
+        file: 'oops.ts',
+        action: 'create',
+      });
       const result = await runPreHooks(hooks, 'pre_commit', event, ctx(dir));
       expect(result.allow).toBe(false);
-      expect(result.reason).toContain('AWS access key');
+      expect(result.reason).toContain('secret detected');
+      expect(result.reason).toContain('oops.ts');
     });
   });
 });

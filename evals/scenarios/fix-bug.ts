@@ -26,10 +26,7 @@ function buggyPatternRemoved(dir: string): QualityCheckResult {
   }
 
   const compact = content.replaceAll(/\s+/g, '');
-  const buggyPatterns = [
-    'Math.floor(totalItems/pageSize)',
-    'Math.trunc(totalItems/pageSize)',
-  ];
+  const buggyPatterns = ['Math.floor(totalItems/pageSize)', 'Math.trunc(totalItems/pageSize)'];
   const foundPattern = buggyPatterns.find((pattern) => compact.includes(pattern));
 
   return foundPattern === undefined

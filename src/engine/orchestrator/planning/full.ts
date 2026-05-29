@@ -12,17 +12,21 @@ import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval/approval.js';
-import { blocksSpecGate, blocksPlanGate, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import {
+  blocksSpecGate,
+  blocksPlanGate,
+  resolveApproveLevel,
+} from '../../../core/config/runtime/resolve.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
 import {
   drainAndFormat,
   handlePlanningFailure,
-  persistPhases,
   runBriefQualityGate,
   runBriefsApprovalLoop,
-  runPlannerCallInContinuationLoop,
-} from './shared.js';
+} from './briefs-approval-loop.js';
+import { persistPhases } from './planning-io.js';
+import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
@@ -56,7 +60,9 @@ async function runNewPlanning(
       mode: 'speckit',
       skillsContext,
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
-      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
+      ...(resumeHolder && resumeHolder.messages.length > 0
+        ? { priorMessages: resumeHolder.messages }
+        : {}),
       ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {}),
       collectedQuestions,
       phaseHint: 'analyzing codebase',
@@ -64,7 +70,7 @@ async function runNewPlanning(
     state = run.state;
     planResult = run.result;
   } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, wctx);
+    return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
@@ -79,14 +85,32 @@ async function runNewPlanning(
     }
   }
 
-  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
+  state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'RESEARCH_DONE' });
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
-    state = await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, wctx.bus, metadata, planner);
+    state = await collectAndPersistClarifications({
+      questions: collectedQuestions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked: callbacks.onQuestionAsked,
+      persistTranscript: config.workflow.persistTranscript,
+      bus: wctx.bus,
+      metadata,
+      planner,
+    });
     ({ state, tasks } = await regeneratePlanAndTasks({
-      projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, skillsContext, signal,
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      metadata,
+      skillsContext,
+      signal,
     }));
   }
 
@@ -96,12 +120,31 @@ async function runNewPlanning(
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
 
   if (blocksSpecGate(approveLevel)) {
-    const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const specLoop = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      signal,
+      persistTranscript: config.workflow.persistTranscript,
+    });
     state = specLoop.state;
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
     if (specLoop.regenerated) {
       ({ state, tasks } = await regeneratePlanAndTasks({
-        projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, skillsContext, signal,
+        projectDir,
+        sessionId,
+        planner,
+        callbacks,
+        bus: wctx.bus,
+        state,
+        metadata,
+        skillsContext,
+        signal,
       }));
     }
   }
@@ -115,19 +158,37 @@ async function runNewPlanning(
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
 
   if (blocksPlanGate(approveLevel)) {
-    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const planLoop = await runApprovalLoop({
+      type: 'plan',
+      filePath: planPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      signal,
+      persistTranscript: config.workflow.persistTranscript,
+    });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
     if (planLoop.regenerated) {
       const taskRegen = await regenerateTasks({
-        projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, signal,
+        projectDir,
+        sessionId,
+        planner,
+        callbacks,
+        bus: wctx.bus,
+        state,
+        metadata,
+        signal,
       });
       state = taskRegen.state;
       tasks = taskRegen.tasks;
     }
   }
 
-  runBriefQualityGate(tasks, projectDir, sessionId, wctx.bus, state.phase);
+  runBriefQualityGate({ tasks, projectDir, sessionId, bus: wctx.bus, phase: state.phase });
 
   if (!opts.deferBriefGate) {
     const briefsLoop = await runBriefsApprovalLoop({
@@ -156,12 +217,16 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   const { wctx, selectedSkills } = opts;
   const { projectDir, sessionId, metadata, config } = wctx;
   let { state } = opts;
-  const skillsContext = selectedSkills?.length ? await buildSkillsSection(selectedSkills) : undefined;
+  const skillsContext = selectedSkills?.length
+    ? await buildSkillsSection(selectedSkills)
+    : undefined;
 
-  const approveLevel = opts.approveLevel ?? resolveApproveLevel({
-    mode: config.workflow.mode ?? 'standard',
-    configApprove: config.workflow.approve,
-  });
+  const approveLevel =
+    opts.approveLevel ??
+    resolveApproveLevel({
+      mode: config.workflow.mode ?? 'standard',
+      configApprove: config.workflow.approve,
+    });
   const skipPlanApproval = !blocksPlanGate(approveLevel);
 
   const rewindPending = opts.rewindPending;
@@ -173,9 +238,16 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
       // non-fatal: rewind continues even if chain state reset fails
     }
     if (rewindPending.target === 'spec') {
-      return handleRewindSpec(opts, rewindPending, skipPlanApproval, metadata, skillsContext, state);
+      return handleRewindSpec({
+        opts,
+        rewindPending,
+        skipPlanApproval,
+        metadata,
+        skillsContext,
+        state,
+      });
     }
-    return handleRewindPlan(opts, rewindPending, skipPlanApproval, metadata, state);
+    return handleRewindPlan({ opts, rewindPending, skipPlanApproval, metadata, state });
   }
 
   return runNewPlanning(opts, approveLevel, metadata, skillsContext, state);

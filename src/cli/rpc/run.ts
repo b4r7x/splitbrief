@@ -1,5 +1,5 @@
 import type { Readable, Writable } from 'node:stream';
-import { DEFAULT_WORKFLOW_MODE, type Config } from '../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
 import { RecoveryActionSchema, type Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -10,19 +10,16 @@ import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/
 import { runWorkflow } from '../../engine/orchestrator/run/run.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import type { CollectedReadiness } from '../../core/readiness/collect.js';
-import { loadConfig } from '../../core/config/load/load.js';
-import { applyCLIOverrides } from '../../core/config/runtime/overrides.js';
 import { loadState } from '../../core/state/persistence.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { createEventBus } from '../../engine/events/bus.js';
+import { eventPhase } from '../../engine/events/schema.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError } from '../errors.js';
-import { buildCLIOverrides } from '../build-overrides.js';
+import { resolveRunConfig } from '../build-overrides.js';
 import { createApprovalGate, createGate } from './gates.js';
 import { createCommandReader } from './reader.js';
 import { createResponseWriter } from './writer.js';
@@ -50,25 +47,12 @@ export interface RunRpcOptions {
   deps?: RunRpcDeps | undefined;
 }
 
-function loadAndApplyConfig(projectDir: string, opts: WorkflowOpts, readiness: CollectedReadiness | undefined): Config {
-  const loadedResult = readiness?.config
-    ? { config: readiness.config, warnings: readiness.warnings }
-    : loadConfig(projectDir);
-  const { config: loaded, warnings } = loadedResult;
-  for (const warning of warnings) warnStderr(`⚠ ${warning}`);
-
-  const config = applyCLIOverrides(loaded, buildCLIOverrides(opts));
-
-  if (!config) throw cliError('Failed to load config');
-  return config;
-}
-
 function currentSessionId(projectDir: string, sessionId: string | undefined): string | undefined {
   return sessionId ?? readActive(projectDir) ?? undefined;
 }
 
 function pendingQueueDepth(state: WorkflowState | null): number {
-  return state?.messageQueue.filter(message => !message.drainedAt).length ?? 0;
+  return state?.messageQueue.filter((message) => !message.drainedAt).length ?? 0;
 }
 
 function pendingGateType(
@@ -95,7 +79,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     plannerContext,
     deps = {},
   } = options;
-  let config = loadAndApplyConfig(projectDir, opts, readiness);
+  let config = resolveRunConfig({ projectDir, opts, readiness });
   const writer = createResponseWriter(deps.output ?? process.stdout);
   const bus = createEventBus();
   const approvalGate = createApprovalGate();
@@ -111,7 +95,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const queuedRecoveryActions: string[] = [];
 
   bus.subscribe((event) => {
-    if ('phase' in event) currentPhase = event.phase;
+    const phase = eventPhase(event);
+    if (phase) currentPhase = phase;
     writer.event(event);
   });
 
@@ -156,7 +141,14 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     return pending;
   };
 
-  const requestRecoveryAction = async (state: WorkflowState): Promise<{ shouldRun: boolean; state: WorkflowState; retryProfileOverride?: string | undefined; retryProfileOverrideTaskId?: TaskId | undefined }> => {
+  const requestRecoveryAction = async (
+    state: WorkflowState,
+  ): Promise<{
+    shouldRun: boolean;
+    state: WorkflowState;
+    retryProfileOverride?: string | undefined;
+    retryProfileOverrideTaskId?: TaskId | undefined;
+  }> => {
     if (!state.pendingRecovery) return { shouldRun: true, state };
     const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
     if (!id) {
@@ -200,8 +192,11 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       return {
         shouldRun: result.status !== 'paused' && result.status !== 'aborted',
         state: result.state,
-        ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && { retryProfileOverride }),
-        ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+        ...(retryProfileOverride !== undefined &&
+          result.status === 'retry-current-task' && { retryProfileOverride }),
+        ...(retryProfileOverride !== undefined &&
+          result.status === 'retry-current-task' &&
+          retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       };
     }
 
@@ -213,7 +208,9 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     getSessionId: () => activeSessionId,
     getState: readCurrentState,
     getConfig: () => config,
-    setConfig: (next) => { config = next; },
+    setConfig: (next) => {
+      config = next;
+    },
     getPhase: () => currentPhase,
     getQueueHandler: () => queueHandler,
     getClearQueueHandler: () => clearQueueHandler,
@@ -232,17 +229,17 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
   const stdinClosedError = new Error('stdin closed unexpectedly');
 
-  const reader = createCommandReader(
-    deps.input ?? process.stdin,
-    handleCommand,
-    (message) => writer.error(message),
-    () => {
+  const reader = createCommandReader({
+    stream: deps.input ?? process.stdin,
+    onCommand: handleCommand,
+    onError: (message) => writer.error(message),
+    onClose: () => {
       abortController.abort(stdinClosedError);
       approvalGate.reject(stdinClosedError);
       messageGate.reject(stdinClosedError);
       recoveryGate.reject(stdinClosedError);
     },
-  );
+  });
 
   try {
     let stateForRun = savedState;

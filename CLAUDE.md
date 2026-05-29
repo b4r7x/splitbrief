@@ -27,7 +27,7 @@ npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run test-ci                  # typecheck && lint && test && invariants
+npm run test-ci                  # format && typecheck && lint && test && invariants
 ```
 
 ## Documentation map
@@ -64,6 +64,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
+| Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |
 | Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
@@ -89,7 +90,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run test-ci` (typecheck → lint → test → invariants) must pass before any PR.
+- **Zero failing gates.** `npm run test-ci` (format → typecheck → lint → test → invariants) must pass before any PR.
 
 ## Current TUI architecture
 

@@ -17,12 +17,24 @@ function findBalancedBrace(text: string, start: number): number {
   let escaped = false;
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\' && inString) { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
     if (inString) continue;
     if (ch === '{') depth++;
-    if (ch === '}') { depth--; if (depth === 0) return i; }
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
   }
   return -1;
 }
@@ -76,7 +88,7 @@ export function createQuestionAccumulator() {
     addChunk(chunk: string): ClarificationQuestion[] {
       buffer += chunk;
       const extracted = extractQuestionsFromStream(buffer);
-      const newOnes = extracted.filter(q => !seenIds.has(q.id));
+      const newOnes = extracted.filter((q) => !seenIds.has(q.id));
       for (const q of newOnes) {
         seenIds.add(q.id);
         allQuestions.push(q);

@@ -12,13 +12,30 @@ const PLANNER_SCENARIOS: PlannerScenario[] = [
   {
     tool: 'copilot',
     plannerBare: ['-p', 'prompt', '--output-format', 'json', '--allow-all'],
-    plannerWithModel: ['--model', 'gpt-5.2', '-p', 'prompt', '--output-format', 'json', '--allow-all'],
+    plannerWithModel: [
+      '--model',
+      'gpt-5.2',
+      '-p',
+      'prompt',
+      '--output-format',
+      'json',
+      '--allow-all',
+    ],
     modelBeforePrompt: true,
   },
   {
     tool: 'kilo-code',
     plannerBare: ['run', '--auto', '--json', '-m', 'architect', 'prompt'],
-    plannerWithModel: ['run', '--auto', '--json', '-m', 'architect', 'prompt', '--model', 'claude-sonnet-4-6'],
+    plannerWithModel: [
+      'run',
+      '--auto',
+      '--json',
+      '-m',
+      'architect',
+      'prompt',
+      '--model',
+      'claude-sonnet-4-6',
+    ],
   },
 ];
 
@@ -67,15 +84,32 @@ function getImplementer(tool: keyof typeof CLI_TOOLS) {
 }
 
 describe('CLI_TOOLS planner buildArgs', () => {
-  it.each(PLANNER_SCENARIOS)('$tool: produces bare args without --model', ({ tool, plannerBare }) => {
-    const args = getPlanner(tool).buildArgs({ prompt: 'prompt', model: undefined, projectDir: '/tmp', mode: 'plan' });
+  it.each(PLANNER_SCENARIOS)('$tool: produces bare args without --model', ({
+    tool,
+    plannerBare,
+  }) => {
+    const args = getPlanner(tool).buildArgs({
+      prompt: 'prompt',
+      model: undefined,
+      projectDir: '/tmp',
+      mode: 'plan',
+    });
     expect(args).toEqual(plannerBare);
     expect(args).not.toContain('--model');
   });
 
-  it.each(PLANNER_SCENARIOS)('$tool: inserts --model <model> when provided', ({ tool, plannerWithModel, modelBeforePrompt }) => {
+  it.each(PLANNER_SCENARIOS)('$tool: inserts --model <model> when provided', ({
+    tool,
+    plannerWithModel,
+    modelBeforePrompt,
+  }) => {
     const model = extractModel(plannerWithModel);
-    const args = getPlanner(tool).buildArgs({ prompt: 'prompt', model, projectDir: '/tmp', mode: 'plan' });
+    const args = getPlanner(tool).buildArgs({
+      prompt: 'prompt',
+      model,
+      projectDir: '/tmp',
+      mode: 'plan',
+    });
     expect(args).toEqual(plannerWithModel);
     if (modelBeforePrompt) {
       expect(args.indexOf('--model')).toBeLessThan(args.indexOf('-p'));
@@ -84,13 +118,19 @@ describe('CLI_TOOLS planner buildArgs', () => {
 });
 
 describe('CLI_TOOLS implementer buildArgs', () => {
-  it.each(IMPLEMENTER_SCENARIOS)('$tool: produces bare args without --model', ({ tool, implementerBare }) => {
+  it.each(IMPLEMENTER_SCENARIOS)('$tool: produces bare args without --model', ({
+    tool,
+    implementerBare,
+  }) => {
     const args = getImplementer(tool).buildArgs({ prompt: 'prompt', model: undefined });
     expect(args).toEqual(implementerBare);
     expect(args).not.toContain('--model');
   });
 
-  it.each(IMPLEMENTER_SCENARIOS)('$tool: appends --model <model> when provided', ({ tool, implementerWithModel }) => {
+  it.each(IMPLEMENTER_SCENARIOS)('$tool: appends --model <model> when provided', ({
+    tool,
+    implementerWithModel,
+  }) => {
     const model = extractModel(implementerWithModel);
     const args = getImplementer(tool).buildArgs({ prompt: 'prompt', model });
     expect(args).toEqual(implementerWithModel);
@@ -130,18 +170,53 @@ describe('codex planner — session resume (CLI contract)', () => {
   });
 
   it('uses `exec resume --model <m> --json <id> <prompt>` in plan mode with sessionId', () => {
-    const args = codex.buildArgs({ prompt: 'continue', model: 'gpt-5', projectDir: '/tmp/proj', mode: 'plan', sessionId: 'abc-123' });
+    const args = codex.buildArgs({
+      prompt: 'continue',
+      model: 'gpt-5',
+      projectDir: '/tmp/proj',
+      mode: 'plan',
+      sessionId: 'abc-123',
+    });
     expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);
   });
 
   it('uses vanilla `exec --json --full-auto` when no sessionId is provided', () => {
-    const args = codex.buildArgs({ prompt: 'new feature', model: 'gpt-5', projectDir: '/tmp/proj', mode: 'plan' });
-    expect(args).toEqual(['--model', 'gpt-5', 'exec', '--json', '--full-auto', '--cd', '/tmp/proj', 'new feature']);
+    const args = codex.buildArgs({
+      prompt: 'new feature',
+      model: 'gpt-5',
+      projectDir: '/tmp/proj',
+      mode: 'plan',
+    });
+    expect(args).toEqual([
+      '--model',
+      'gpt-5',
+      'exec',
+      '--json',
+      '--full-auto',
+      '--cd',
+      '/tmp/proj',
+      'new feature',
+    ]);
   });
 
   it('ignores sessionId in escalate mode (one-shot exec form)', () => {
-    const args = codex.buildArgs({ prompt: 'escalate', model: 'gpt-5', projectDir: '/tmp/proj', mode: 'escalate', sessionId: 'abc-123' });
-    expect(args).toEqual(['--model', 'gpt-5', 'exec', '--json', '--full-auto', '--cd', '/tmp/proj', 'escalate']);
+    const args = codex.buildArgs({
+      prompt: 'escalate',
+      model: 'gpt-5',
+      projectDir: '/tmp/proj',
+      mode: 'escalate',
+      sessionId: 'abc-123',
+    });
+    expect(args).toEqual([
+      '--model',
+      'gpt-5',
+      'exec',
+      '--json',
+      '--full-auto',
+      '--cd',
+      '/tmp/proj',
+      'escalate',
+    ]);
     expect(args).not.toContain('resume');
   });
 });

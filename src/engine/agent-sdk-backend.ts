@@ -1,6 +1,7 @@
 import type { InvokeResult } from './runners/types.js';
 import type { EffortLevel } from '../core/schemas/enums.js';
 import type { Attachment } from '../core/schemas/attachment.js';
+import type { TokenDelta } from '../core/schemas/tokens.js';
 import { effortToAnthropicBudget } from '../core/schemas/enums.js';
 import { accumulateUsage, toTokenDelta } from './streaming/token-utils.js';
 import { createChangeDetector } from './change-detection.js';
@@ -73,7 +74,8 @@ export async function isAgentSdkAvailable(apiKey?: string): Promise<boolean> {
   try {
     await loadSdk();
     return true;
-  } catch { /* SDK not installed — treat as unavailable */
+  } catch {
+    /* SDK not installed — treat as unavailable */
     return false;
   }
 }
@@ -97,7 +99,7 @@ function extractResultText(message: SdkMessage): string {
 
 interface StreamResult {
   text: string;
-  usage: { inputTokens: number; outputTokens: number } | null;
+  usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null;
   sessionId: string | null;
 }
 
@@ -111,7 +113,7 @@ export interface ProcessStreamOptions {
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
   const { stream, onOutput, onSessionId, signal } = opts;
   let collectedText = '';
-  let usage: { inputTokens: number; outputTokens: number } | null = null;
+  let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
 
   for await (const message of stream) {
@@ -148,7 +150,10 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
   return { text: collectedText, usage, sessionId };
 }
 
-function createForwardedAbortController(signal: AbortSignal | undefined): { controller?: AbortController; cleanup: () => void } {
+function createForwardedAbortController(signal: AbortSignal | undefined): {
+  controller?: AbortController;
+  cleanup: () => void;
+} {
   if (!signal) return { cleanup: () => {} };
   throwIfAborted(signal);
   const controller = new AbortController();
@@ -182,7 +187,10 @@ export interface AgentSdkInvokeOpts {
 
 export interface AgentSdkBackend {
   invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
-  detectChanges?: (projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>;
+  detectChanges?: (
+    projectDir: string,
+    before: string[],
+  ) => Promise<{ changed: boolean; output: string }>;
 }
 
 function buildPromptWithImages(prompt: string, images: Attachment[] | undefined): string {
@@ -190,7 +198,7 @@ function buildPromptWithImages(prompt: string, images: Attachment[] | undefined)
   // Agent SDK exposes Read tool to planners; surface attachment paths so the
   // model loads them itself. Vision arrives via the Read tool result rather
   // than inline content blocks (the SDK string `prompt` is the supported entry).
-  const refs = images.map(img => `[image attachment: ${img.path}]`).join('\n');
+  const refs = images.map((img) => `[image attachment: ${img.path}]`).join('\n');
   return `${refs}\n\n${prompt}`;
 }
 
@@ -201,29 +209,51 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
   session.capture(opts.initialSessionId ?? null);
 
   const backend: AgentSdkBackend = {
-    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired, effort, images, signal }) {
+    async invoke({
+      prompt,
+      projectDir,
+      model,
+      onOutput,
+      onSessionId,
+      onSessionExpired,
+      effort,
+      images,
+      signal,
+    }) {
       throwIfAborted(signal);
       const { query } = await loadSdk();
 
       const apiKey = opts.apiKey;
-      const captureSession = (id: string) => { session.capture(id); onSessionId?.(id); };
+      const captureSession = (id: string) => {
+        session.capture(id);
+        onSessionId?.(id);
+      };
       const finalPrompt = buildPromptWithImages(prompt, images);
 
       const runQuery = async (resumeId: string | undefined) => {
         throwIfAborted(signal);
         const forwardedAbort = createForwardedAbortController(signal);
         const options: SdkQueryOptions['options'] = {
-          allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir,
+          allowedTools: opts.allowedTools,
+          permissionMode,
+          model,
+          cwd: projectDir,
         };
         if (resumeId) options.resume = resumeId;
-        if (effort) options.thinking = { type: 'enabled', budgetTokens: effortToAnthropicBudget(effort) };
+        if (effort)
+          options.thinking = { type: 'enabled', budgetTokens: effortToAnthropicBudget(effort) };
         // Scope ANTHROPIC_API_KEY to this SDK call via the `env` option so concurrent
         // workflows with different keys don't race. Omit `env` entirely when no override
         // is set so the SDK inherits process.env as usual.
         if (apiKey) options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey };
         if (forwardedAbort.controller) options.abortController = forwardedAbort.controller;
         try {
-          return await processStream({ stream: query({ prompt: finalPrompt, options }), onOutput, onSessionId: captureSession, signal });
+          return await processStream({
+            stream: query({ prompt: finalPrompt, options }),
+            onOutput,
+            onSessionId: captureSession,
+            signal,
+          });
         } finally {
           forwardedAbort.cleanup();
         }
@@ -233,7 +263,9 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       const result = await runWithResumeFallback(
         session,
         (resumeId) => runQuery(resumeId),
-        () => { if (priorId) onSessionExpired?.(priorId); },
+        () => {
+          if (priorId) onSessionExpired?.(priorId);
+        },
       );
       return { text: result.text, usage: result.usage };
     },

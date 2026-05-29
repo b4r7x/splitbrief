@@ -104,14 +104,21 @@ export function extractLanguageFromResearch(researchMarkdown: string): string | 
   return normalizeLanguage(match?.[1] ?? match?.[2]);
 }
 
-export function buildLanguageContextSections(ctx: LanguageContext): Array<{ heading: string; body: string }> {
+export function buildLanguageContextSections(
+  ctx: LanguageContext,
+): Array<{ heading: string; body: string }> {
   if (isJavaScriptLikeLanguage(ctx)) return [];
-  return [{
-    heading: 'Language Context',
-    body: `Target language: ${ctx.language}\nModule system: ${ctx.moduleSystem}\nImports: ${ctx.importConvention}\nTypes: ${ctx.typeAnnotationStyle}\nFile extension: ${ctx.fileExtension || 'project-specific'}`,
-  }];
+  return [
+    {
+      heading: 'Language Context',
+      body: `Target language: ${ctx.language}\nModule system: ${ctx.moduleSystem}\nImports: ${ctx.importConvention}\nTypes: ${ctx.typeAnnotationStyle}\nFile extension: ${ctx.fileExtension || 'project-specific'}`,
+    },
+  ];
 }
 
-export function buildProjectLanguageContext(projectDir: string, language: string | undefined): LanguageContext {
+export function buildProjectLanguageContext(
+  projectDir: string,
+  language: string | undefined,
+): LanguageContext {
   return buildLanguageContext(language ?? detectPromptLanguage(projectDir));
 }

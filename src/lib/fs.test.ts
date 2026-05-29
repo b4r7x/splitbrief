@@ -1,10 +1,11 @@
-import { describe, it, expect, afterEach, test } from 'vitest';
+import { describe, it, expect, afterEach, test, vi } from 'vitest';
 import {
   writeFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   statSync,
   symlinkSync,
 } from 'node:fs';
@@ -13,6 +14,9 @@ import {
   readFileOrEmpty,
   checkConfigPermissions,
   writeSecureFile,
+  writeSecureFileAsync,
+  readValidatedJson,
+  readJsonl,
   ensureSecureDir,
   ensureGitignore,
   fsError,
@@ -194,7 +198,7 @@ describe('writeSecureFile', () => {
     await Promise.all(
       files.map(
         (f, i) =>
-          new Promise<void>(resolve => {
+          new Promise<void>((resolve) => {
             writeSecureFile(f, `value-${i}`);
             resolve();
           }),
@@ -206,6 +210,115 @@ describe('writeSecureFile', () => {
       expect(statSync(path).mode & 0o777).toBe(0o600);
     }
     expect(statSync(base).mode & 0o777).toBe(0o700);
+  });
+});
+
+describe('writeSecureFileAsync', () => {
+  it('writes content with 0o600 permissions and creates parent dirs', async () => {
+    const dir = makeTmp();
+    const file = join(dir, 'a', 'b', 'secret.json');
+    await writeSecureFileAsync(file, '{"ok":true}');
+    expect(readFileSync(file, 'utf-8')).toBe('{"ok":true}');
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, 'a')).mode & 0o777).toBe(0o700);
+  });
+
+  it('overwrites an existing file via atomic rename', async () => {
+    const dir = makeTmp();
+    const file = join(dir, 'x.json');
+    await writeSecureFileAsync(file, 'first');
+    await writeSecureFileAsync(file, 'second');
+    expect(readFileSync(file, 'utf-8')).toBe('second');
+    const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
+    expect(stray).toEqual([]);
+  });
+
+  it('refuses to write through a file symlink', async () => {
+    const dir = makeTmp();
+    const outside = join(dir, 'outside');
+    mkdirSync(outside);
+    const target = join(outside, 'target.txt');
+    writeFileSync(target, 'original');
+    const link = join(dir, 'link.json');
+    symlinkSync(target, link);
+
+    await expect(writeSecureFileAsync(link, 'malicious')).rejects.toThrow(
+      /refusing to write through symlink/,
+    );
+    expect(readFileSync(target, 'utf-8')).toBe('original');
+  });
+});
+
+describe('readValidatedJson', () => {
+  const parse = (v: unknown): { n: number } | null =>
+    typeof v === 'object' && v !== null && 'n' in v && typeof (v as { n: unknown }).n === 'number'
+      ? { n: (v as { n: number }).n }
+      : null;
+
+  it('returns the fallback and does not warn when the file is missing', () => {
+    const dir = makeTmp();
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const result = readValidatedJson(join(dir, 'nope.json'), parse, { n: -1 }, 'label');
+    expect(result).toEqual({ n: -1 });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('parses and returns valid content', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'v.json');
+    writeFileSync(file, JSON.stringify({ n: 7 }));
+    expect(readValidatedJson(file, parse, { n: -1 }, 'label')).toEqual({ n: 7 });
+  });
+
+  it('warns once and returns the fallback when JSON is corrupt', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'bad.json');
+    writeFileSync(file, '{ not json');
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    expect(readValidatedJson(file, parse, { n: -1 }, 'corrupt-label')).toEqual({ n: -1 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0] ?? '')).toContain('corrupt-label');
+    warn.mockRestore();
+  });
+
+  it('warns and returns the fallback when the parser rejects the value', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'wrong.json');
+    writeFileSync(file, JSON.stringify({ other: true }));
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    expect(readValidatedJson(file, parse, { n: -1 }, 'schema-label')).toEqual({ n: -1 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});
+
+describe('readJsonl', () => {
+  const parseLine = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+
+  it('returns [] without warning when the file is missing', () => {
+    const dir = makeTmp();
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    expect(readJsonl(join(dir, 'nope.jsonl'), parseLine, 'label')).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('skips blank lines and collects parsed values', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'lines.jsonl');
+    writeFileSync(file, '1\n\n2\n3\n');
+    expect(readJsonl(file, parseLine, 'label')).toEqual([1, 2, 3]);
+  });
+
+  it('warns and skips a single malformed line without aborting the rest', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'partial.jsonl');
+    writeFileSync(file, '1\n{bad\n3\n');
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    expect(readJsonl(file, parseLine, 'jsonl-label')).toEqual([1, 3]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });
 
@@ -292,7 +405,7 @@ describe('ensureGitignore', () => {
     writeFileSync(join(dir, '.gitignore'), '.diptych/\n');
     ensureGitignore(dir, '.diptych/');
     const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-    const lines = content.split('\n').filter(l => l.trim() === '.diptych/');
+    const lines = content.split('\n').filter((l) => l.trim() === '.diptych/');
     expect(lines).toHaveLength(1);
   });
 

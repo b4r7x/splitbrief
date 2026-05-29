@@ -46,15 +46,18 @@ afterEach(() => {
 describe('initStores', () => {
   it('loads config from disk into configStore (cli planner / cli implementer)', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: {
-        kind: 'cli',
-        tool: 'claude-code',
-        model: 'claude-sonnet-4-6',
-      },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'claude-sonnet-4-6',
+        },
+      }),
+    );
 
     await initStores(dir);
 
@@ -78,11 +81,14 @@ describe('initStores', () => {
 
   it('applies CLI-override workflow mode on top of loaded config', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     await initStores(dir, { mode: 'quick' });
 
@@ -91,11 +97,14 @@ describe('initStores', () => {
 
   it('populates sessionsStore.sessions from the on-disk session directory', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     // Create a session on disk with a valid summary.json matching SessionSchema.
     const sessionId = '2026-04-18-bootstrap-test';
@@ -134,16 +143,19 @@ describe('initStores', () => {
     await initStores(dir);
 
     const sessions = sessionsStore.get().sessions;
-    expect(sessions.some(s => s.id === sessionId)).toBe(true);
+    expect(sessions.some((s) => s.id === sessionId)).toBe(true);
   }, 15_000);
 
   it('sessionsStore ends up with an empty list when no sessions exist on disk', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     await initStores(dir);
 
@@ -152,11 +164,14 @@ describe('initStores', () => {
 
   it('skillsStore is populated (possibly empty) after bootstrap completes', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     await initStores(dir);
 
@@ -168,11 +183,14 @@ describe('initStores', () => {
 
   it('overrides implementer model from opts.implementerModel', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     await initStores(dir, { implementerModel: 'claude-opus-4-5' });
 
@@ -181,11 +199,14 @@ describe('initStores', () => {
 
   it('resolves before returning (all awaited side-effects settle)', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
 
     await initStores(dir);
 
@@ -196,11 +217,14 @@ describe('initStores', () => {
 
   it('repeated bootstrap does not accumulate resize listeners', async () => {
     const dir = makeProjectDir();
-    writeConfigYaml(dir, toYaml({
-      ...createDefaultConfig(),
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-    }));
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
     const before = process.stdout.listenerCount('resize');
 
     await initStores(dir);

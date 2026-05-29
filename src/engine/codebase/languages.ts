@@ -18,8 +18,13 @@ const TYPESCRIPT: LanguageConfig = {
     return ext === '.tsx' ? 'tree-sitter-tsx.wasm' : 'tree-sitter-typescript.wasm';
   },
   declarationNodeTypes: new Set([
-    'function_declaration', 'class_declaration', 'abstract_class_declaration',
-    'interface_declaration', 'type_alias_declaration', 'enum_declaration', 'lexical_declaration',
+    'function_declaration',
+    'class_declaration',
+    'abstract_class_declaration',
+    'interface_declaration',
+    'type_alias_declaration',
+    'enum_declaration',
+    'lexical_declaration',
   ]),
   importRegex: /import\s+(?:[^'"`]+\s+from\s+)?['"]([^'"]+)['"]/g,
   resolveImportCandidates(stripped) {
@@ -37,7 +42,13 @@ const JAVASCRIPT: LanguageConfig = {
   declarationNodeTypes: TYPESCRIPT.declarationNodeTypes,
   importRegex: TYPESCRIPT.importRegex,
   resolveImportCandidates(stripped) {
-    return [`${stripped}.js`, `${stripped}.jsx`, `${stripped}.mjs`, stripped, `${stripped}/index.js`];
+    return [
+      `${stripped}.js`,
+      `${stripped}.jsx`,
+      `${stripped}.mjs`,
+      stripped,
+      `${stripped}/index.js`,
+    ];
   },
 };
 
@@ -45,35 +56,59 @@ const PYTHON: LanguageConfig = {
   id: 'python',
   extensions: new Set(['.py']),
   grammarPackage: 'tree-sitter-wasms',
-  resolveGrammarWasm() { return 'out/tree-sitter-python.wasm'; },
+  resolveGrammarWasm() {
+    return 'out/tree-sitter-python.wasm';
+  },
   declarationNodeTypes: new Set(['function_definition', 'class_definition']),
   importRegex: /(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/g,
   resolveImportCandidates(stripped) {
     return [`${stripped}.py`, `${stripped}/__init__.py`];
   },
-  isExported() { return true; },
+  isExported() {
+    return true;
+  },
 };
 
 const GO: LanguageConfig = {
   id: 'go',
   extensions: new Set(['.go']),
   grammarPackage: 'tree-sitter-wasms',
-  resolveGrammarWasm() { return 'out/tree-sitter-go.wasm'; },
+  resolveGrammarWasm() {
+    return 'out/tree-sitter-go.wasm';
+  },
   declarationNodeTypes: new Set(['function_declaration', 'method_declaration', 'type_declaration']),
   importRegex: null,
-  resolveImportCandidates() { return []; },
-  isExported(name) { const ch = name[0]; return ch !== undefined && ch === ch.toUpperCase() && ch !== ch.toLowerCase(); },
+  resolveImportCandidates() {
+    return [];
+  },
+  isExported(name) {
+    const ch = name[0];
+    return ch !== undefined && ch === ch.toUpperCase() && ch !== ch.toLowerCase();
+  },
 };
 
 const RUST: LanguageConfig = {
   id: 'rust',
   extensions: new Set(['.rs']),
   grammarPackage: 'tree-sitter-wasms',
-  resolveGrammarWasm() { return 'out/tree-sitter-rust.wasm'; },
-  declarationNodeTypes: new Set(['function_item', 'struct_item', 'enum_item', 'impl_item', 'trait_item', 'type_item']),
+  resolveGrammarWasm() {
+    return 'out/tree-sitter-rust.wasm';
+  },
+  declarationNodeTypes: new Set([
+    'function_item',
+    'struct_item',
+    'enum_item',
+    'impl_item',
+    'trait_item',
+    'type_item',
+  ]),
   importRegex: null,
-  resolveImportCandidates() { return []; },
-  isExported(_name, nodeText) { return nodeText.startsWith('pub ') || nodeText.startsWith('pub('); },
+  resolveImportCandidates() {
+    return [];
+  },
+  isExported(_name, nodeText) {
+    return nodeText.startsWith('pub ') || nodeText.startsWith('pub(');
+  },
 };
 
 const LANGUAGE_BY_EXT = new Map<string, LanguageConfig>();

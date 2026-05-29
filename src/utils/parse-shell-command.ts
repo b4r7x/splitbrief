@@ -17,7 +17,10 @@ export function parseShellCommand(input: string): string[] {
       continue;
     }
     if (quote) {
-      if (ch === quote) { quote = null; continue; }
+      if (ch === quote) {
+        quote = null;
+        continue;
+      }
       current += ch;
       continue;
     }

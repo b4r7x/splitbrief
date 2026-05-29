@@ -3,10 +3,7 @@ import { getActiveFilteredStdin, type FilteredStdin } from '../../../lib/termina
 import { routerStore } from '../../../stores/navigation/router.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import {
-  readConversationScrollSnapshot,
-  readReviewContentHeight,
-} from '../layout.js';
+import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout.js';
 
 const WHEEL_STEP = 1;
 
@@ -41,7 +38,12 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
 
     const { renderableCount, totalHeight, maxOffset } = snapshot;
     if (direction < 0) {
-      conversationScrollStore.scrollUp({ renderableCount, totalHeight, step: WHEEL_STEP, maxOffset });
+      conversationScrollStore.scrollUp({
+        renderableCount,
+        totalHeight,
+        step: WHEEL_STEP,
+        maxOffset,
+      });
     } else {
       conversationScrollStore.scrollDown(WHEEL_STEP);
     }

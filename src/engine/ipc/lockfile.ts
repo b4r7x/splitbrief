@@ -41,7 +41,10 @@ export async function writeLockfile(
   await writeFile(lockfilePath(sessionDir), JSON.stringify(payload), { mode: SECURE_FILE_MODE });
 }
 
-async function updateLockfile(sessionDir: string, mutate: (data: LockfileData) => void): Promise<void> {
+async function updateLockfile(
+  sessionDir: string,
+  mutate: (data: LockfileData) => void,
+): Promise<void> {
   const data = await readLockfile(sessionDir);
   if (!data) return;
   mutate(data);
@@ -117,22 +120,17 @@ async function isProcessAliveByPid(pid: number, startTimeMs: number): Promise<bo
 export async function checkServerStatus(sessionDir: string): Promise<ServerStatus> {
   const data = await readLockfile(sessionDir);
 
-  // Rule 1: no lockfile
   if (!data) return { alive: false, crashed: false, data: null };
 
-  // Rule 2: clean exit recorded
   if (data.exitedAt !== undefined) return { alive: false, crashed: false, data };
 
-  // Rule 3: process gone (PID check including PID-reuse guard)
   if (!(await isProcessAliveByPid(data.pid, data.startTimeMs))) {
     return { alive: false, crashed: true, data };
   }
 
-  // Rule 4: heartbeat stale
   if (Date.now() - data.lastAliveMs > HEARTBEAT_STALENESS_MS) {
     return { alive: false, crashed: true, data };
   }
 
-  // Rule 5: alive
   return { alive: true, data };
 }

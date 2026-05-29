@@ -1,11 +1,9 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import { addEvent, markCancelled } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import type { RewindTarget } from '../../core/state/build-rewind-action.js';
 
-export type RewindTarget =
-  | { target: 'spec'; comment?: string }
-  | { target: 'plan'; comment?: string }
-  | { target: 'task'; taskId: string };
+export type { RewindTarget };
 
 interface Handlers {
   abort: () => void;
@@ -17,7 +15,7 @@ interface Handlers {
 
 const handlers: Partial<Handlers> = {};
 
-export function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void {
+function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void {
   if (h === null) delete handlers[k];
   else handlers[k] = h;
 }
@@ -30,7 +28,8 @@ export const setAbortHandler = (h: Handlers['abort'] | null) => setHandler('abor
 export const setCancelHandler = (h: Handlers['cancel'] | null) => setHandler('cancel', h);
 export const setRewindHandler = (h: Handlers['rewind'] | null) => setHandler('rewind', h);
 export const setQueueHandler = (h: Handlers['queue'] | null) => setHandler('queue', h);
-export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) => setHandler('clearQueue', h);
+export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) =>
+  setHandler('clearQueue', h);
 
 export function abortTurn(): boolean {
   if (!handlers.abort) return false;
@@ -61,7 +60,12 @@ export function requestClearQueue(): number {
   if (handlers.clearQueue) return handlers.clearQueue();
   const depth = lifecycleStore.get().queueDepth;
   if (depth > 0) {
-    addEvent({ type: 'queue_cleared', ts: Date.now(), phase: lifecycleStore.get().phase, count: depth });
+    addEvent({
+      type: 'queue_cleared',
+      ts: Date.now(),
+      phase: lifecycleStore.get().phase,
+      count: depth,
+    });
   }
   return depth;
 }

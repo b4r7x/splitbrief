@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { TaskIdSchema } from './task.js';
-import { ActionClassSchema, TaskStatusSchema, TaskCompletionMethodSchema, ValidationStageSchema, WorkflowModeSchema } from './enums.js';
+import {
+  ActionClassSchema,
+  TaskStatusSchema,
+  TaskCompletionMethodSchema,
+  ValidationStageSchema,
+  WorkflowModeSchema,
+} from './enums.js';
 
 const EvidenceRejectionSchema = z.object({
   ts: z.string(),
@@ -23,7 +29,6 @@ const EvidenceApprovalSchema = z.object({
 export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
 
 export const EvidenceValidationStageSchema = ValidationStageSchema;
-export type EvidenceValidationStage = z.infer<typeof EvidenceValidationStageSchema>;
 
 const EvidenceValidationEntrySchema = z.object({
   stage: EvidenceValidationStageSchema,
@@ -58,7 +63,6 @@ const EvidenceFinalReviewSchema = z.object({
   path: z.string(),
   status: EvidenceFinalReviewStatusSchema,
 });
-export type EvidenceFinalReview = z.infer<typeof EvidenceFinalReviewSchema>;
 
 const EvidenceValidationSummarySchema = z.object({
   passed: z.number().nonnegative(),
@@ -66,7 +70,6 @@ const EvidenceValidationSummarySchema = z.object({
   skipped: z.number().nonnegative(),
   escalated: z.number().nonnegative(),
 });
-export type EvidenceValidationSummary = z.infer<typeof EvidenceValidationSummarySchema>;
 
 export const EvidenceLedgerSchema = z.object({
   version: z.literal(1),

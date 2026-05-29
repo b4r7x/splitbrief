@@ -17,7 +17,9 @@ let originalPath: string | undefined;
 
 function installShim(bodyLines: string[]): string {
   const shimPath = join(shimDir, 'claude');
-  const body = bodyLines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`).join('\n');
+  const body = bodyLines
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
   writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return shimPath;
@@ -108,10 +110,7 @@ describe('runClaudePlannerStream', () => {
       type: 'assistant',
       message: { content: [{ type: 'text', text: marker }] },
     });
-    installShim([
-      assistantEvent,
-      '{"type":"result","result":""}',
-    ]);
+    installShim([assistantEvent, '{"type":"result","result":""}']);
 
     const questions: Array<{ id: string }> = [];
     await runClaudePlannerStream({
@@ -119,7 +118,9 @@ describe('runClaudePlannerStream', () => {
       projectDir: shimDir,
       sessionId: null,
       onOutput: () => {},
-      onQuestion: (qs) => { for (const parsed of qs) questions.push(parsed); },
+      onQuestion: (qs) => {
+        for (const parsed of qs) questions.push(parsed);
+      },
     });
 
     expect(questions.map((it) => it.id)).toContain('q1');
@@ -129,33 +130,34 @@ describe('runClaudePlannerStream', () => {
     // Point PATH at an empty dir that has no `claude` shim.
     process.env['PATH'] = createTempDir('empty-path');
     try {
-      await expect(runClaudePlannerStream({
-        prompt: 'p',
-        projectDir: shimDir,
-        sessionId: null,
-        onOutput: () => {},
-      })).rejects.toThrow(/Claude Code CLI not found/);
+      await expect(
+        runClaudePlannerStream({
+          prompt: 'p',
+          projectDir: shimDir,
+          sessionId: null,
+          onOutput: () => {},
+        }),
+      ).rejects.toThrow(/Claude Code CLI not found/);
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
-    installShim([
-      '{"type":"result","result":"should not run"}',
-    ]);
+    installShim(['{"type":"result","result":"should not run"}']);
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));
 
-    await expect(runClaudePlannerStream({
-      prompt: 'p',
-      projectDir: shimDir,
-      sessionId: null,
-      onOutput: () => {},
-      signal: controller.signal,
-    })).rejects.toThrow('The operation was aborted');
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('The operation was aborted');
   });
-
 });
 
 describe('runClaudeOneShot', () => {
@@ -202,29 +204,31 @@ describe('runClaudeOneShot', () => {
   it('rejects with CLAUDE_NOT_FOUND when claude binary is missing', async () => {
     process.env['PATH'] = createTempDir('empty-path-2');
     try {
-      await expect(runClaudeOneShot({
-        prompt: 'p',
-        projectDir: shimDir,
-        onOutput: () => {},
-      })).rejects.toThrow(/Claude Code CLI not found/);
+      await expect(
+        runClaudeOneShot({
+          prompt: 'p',
+          projectDir: shimDir,
+          onOutput: () => {},
+        }),
+      ).rejects.toThrow(/Claude Code CLI not found/);
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
-    installShim([
-      '{"type":"result","result":"should not run"}',
-    ]);
+    installShim(['{"type":"result","result":"should not run"}']);
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));
 
-    await expect(runClaudeOneShot({
-      prompt: 'p',
-      projectDir: shimDir,
-      onOutput: () => {},
-      signal: controller.signal,
-    })).rejects.toThrow('The operation was aborted');
+    await expect(
+      runClaudeOneShot({
+        prompt: 'p',
+        projectDir: shimDir,
+        onOutput: () => {},
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('The operation was aborted');
   });
 
   it('returns empty text + null usage when the stream contains no result event', async () => {

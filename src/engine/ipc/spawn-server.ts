@@ -53,7 +53,11 @@ function tryConnect(sockPath: string): Promise<boolean> {
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
-      try { socket.destroy(); } catch { /* ignore */ }
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
       resolve(ok);
     };
     socket.once('connect', () => finish(true));

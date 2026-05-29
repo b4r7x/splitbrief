@@ -5,7 +5,10 @@ import type { HookOutcome, HookContext } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 
-export type HookModuleFunction = (event: EngineEvent, ctx: HookContext) => Promise<HookOutcome> | HookOutcome;
+export type HookModuleFunction = (
+  event: EngineEvent,
+  ctx: HookContext,
+) => Promise<HookOutcome> | HookOutcome;
 
 export type LoadResult =
   | { ok: true; fn: HookModuleFunction }

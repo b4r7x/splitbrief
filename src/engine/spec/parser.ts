@@ -6,6 +6,7 @@ import { FileActionSchema } from '../../core/schemas/enums.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
 import { extractFirstFencedBlock } from '../parsers/code-patterns.js';
+import { TASK_BRIEF_HEADINGS } from './headings.js';
 
 function isConfinedRelativePath(p: string): boolean {
   if (isAbsolute(p)) return false;
@@ -19,11 +20,14 @@ const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   action: FileActionSchema,
-  file: z.string().min(1).refine(isConfinedRelativePath, { message: 'task file path must be a confined relative path' }),
-  depends_on: z.union([
-    z.array(z.string()),
-    z.string().transform(s => [s]),
-  ]).optional().default([]),
+  file: z
+    .string()
+    .min(1)
+    .refine(isConfinedRelativePath, { message: 'task file path must be a confined relative path' }),
+  depends_on: z
+    .union([z.array(z.string()), z.string().transform((s) => [s])])
+    .optional()
+    .default([]),
 });
 
 type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
@@ -135,7 +139,7 @@ type Sections = {
   evidence: string[];
 };
 
-function readSection(sectionMap: Record<string, string>, ...headers: string[]): string {
+function readSection(sectionMap: Record<string, string>, ...headers: readonly string[]): string {
   for (const header of headers) {
     const exact = sectionMap[header];
     if (exact !== undefined) return exact;
@@ -167,18 +171,22 @@ function extractSections(block: string): Sections {
   const { inBounds, outOfBounds } = extractScopeBuckets(scopeText);
 
   return {
-    description: readSection(sectionMap, 'description', 'what to do').trim(),
-    signature: extractCodeBlock(readSection(sectionMap, 'signature', 'function signature')),
-    tests: extractListItems(readSection(sectionMap, 'tests')),
-    constraints: extractListItems(readSection(sectionMap, 'constraints')),
-    pattern: readSection(sectionMap, 'pattern').trim(),
-    currentCode: extractCodeBlock(readSection(sectionMap, 'current code')).trim(),
-    typeDefs: extractCodeBlock(readSection(sectionMap, 'type definitions', 'types')),
-    implementationSteps: extractNumberedItems(readSection(sectionMap, 'implementation steps')),
+    description: readSection(sectionMap, ...TASK_BRIEF_HEADINGS.description.keys).trim(),
+    signature: extractCodeBlock(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.signature.keys)),
+    tests: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.tests.keys)),
+    constraints: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.constraints.keys)),
+    pattern: readSection(sectionMap, ...TASK_BRIEF_HEADINGS.pattern.keys).trim(),
+    currentCode: extractCodeBlock(
+      readSection(sectionMap, ...TASK_BRIEF_HEADINGS.currentCode.keys),
+    ).trim(),
+    typeDefs: extractCodeBlock(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.typeDefs.keys)),
+    implementationSteps: extractNumberedItems(
+      readSection(sectionMap, ...TASK_BRIEF_HEADINGS.implementationSteps.keys),
+    ),
     scopeInBounds: inBounds,
     scopeOutOfBounds: outOfBounds,
-    escalation: extractListItems(readSection(sectionMap, 'escalation')),
-    evidence: extractListItems(readSection(sectionMap, 'evidence')),
+    escalation: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.escalation.keys)),
+    evidence: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.evidence.keys)),
   };
 }
 
@@ -195,7 +203,8 @@ function extractScopeBuckets(text: string): { inBounds: string[]; outOfBounds: s
     if (labelMatch?.[1] !== undefined) {
       const label = labelMatch[1].trim().toLowerCase();
       if (label === 'in bounds' || label === 'in-bounds' || label === 'in') bucket = 'in';
-      else if (label === 'out of bounds' || label === 'out-of-bounds' || label === 'out') bucket = 'out';
+      else if (label === 'out of bounds' || label === 'out-of-bounds' || label === 'out')
+        bucket = 'out';
       else bucket = null;
       continue;
     }

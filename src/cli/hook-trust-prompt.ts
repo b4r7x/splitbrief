@@ -27,14 +27,16 @@ export async function ensureHooksTrusted(opts: HookTrustOptions): Promise<void> 
   process.stderr.write(`\n  diptych config defines hooks (untrusted):\n${summary}\n`);
 
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const answer = (await rl.question('Trust these hooks for this project? [y/N] ')).trim().toLowerCase();
+  const answer = (await rl.question('Trust these hooks for this project? [y/N] '))
+    .trim()
+    .toLowerCase();
   rl.close();
 
   if (answer !== 'y' && answer !== 'yes') {
-      throw cliError(
-        'Refusing to run with untrusted hooks. Edit .diptych/config.yaml or re-run and answer y.',
-        1,
-      );
+    throw cliError(
+      'Refusing to run with untrusted hooks. Edit .diptych/config.yaml or re-run and answer y.',
+      1,
+    );
   }
   markHooksConfigTrusted(opts.projectDir, opts.hooks);
 }
@@ -45,7 +47,8 @@ function formatHookSummary(hooks: HooksConfig): string {
     if (event === 'builtin' || !Array.isArray(entries)) continue;
     for (const entry of entries) {
       const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
-      const args = entry.kind === 'command' && entry.args.length > 0 ? ` ${entry.args.join(' ')}` : '';
+      const args =
+        entry.kind === 'command' && entry.args.length > 0 ? ` ${entry.args.join(' ')}` : '';
       lines.push(`  ${event}: ${label}${args}`);
     }
   }

@@ -65,11 +65,9 @@ describe('renderer trust gate', () => {
       }`,
     );
 
-    const pack = await renderHandoffWithCustom(
-      { ...baseInput, target: 'trusted-renderer' },
-      tmp,
-      { trustCustomRenderers: true },
-    );
+    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'trusted-renderer' }, tmp, {
+      trustCustomRenderers: true,
+    });
     expect(pack.files).toHaveLength(1);
     expect(pack.files[0]?.content).toBe('ok');
   });
@@ -80,11 +78,9 @@ describe('renderer trust gate', () => {
   });
 
   it('built-in targets work regardless of trustCustomRenderers setting', async () => {
-    const pack = await renderHandoffWithCustom(
-      { ...baseInput, target: 'spec-kit' },
-      tmp,
-      { trustCustomRenderers: false },
-    );
+    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'spec-kit' }, tmp, {
+      trustCustomRenderers: false,
+    });
     expect(pack.files.length).toBeGreaterThan(0);
   });
 

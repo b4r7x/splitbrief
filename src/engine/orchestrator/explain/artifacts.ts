@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  DIPTYCH_DIR,
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
   READINESS_FILE,
@@ -8,6 +9,7 @@ import {
   REVIEW_PACKET_JSON_FILE,
   REVIEW_PACKET_MARKDOWN_FILE,
   SESSION_LOG_FILE,
+  SESSIONS_DIR,
   STATE_FILE,
   SUMMARY_FILE,
   sessionDir,
@@ -22,15 +24,13 @@ import { readJsonSafeAsync } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
-import type {
-  ExplainArtifactInputs,
-  ReadinessSummary,
-  RunExplainArtifact,
-} from './types.js';
+import type { ExplainArtifactInputs, ReadinessSummary, RunExplainArtifact } from './types.js';
 
 export const explainArtifactsError = {
   sessionPathNotDirectory: (sessionId: string) =>
-    error('explain-session-path-not-directory', `Session path is not a directory: ${sessionId}`, { sessionId }),
+    error('explain-session-path-not-directory', `Session path is not a directory: ${sessionId}`, {
+      sessionId,
+    }),
   sessionNotFound: (sessionId: string) =>
     error('explain-session-not-found', `No session found: ${sessionId}`, { sessionId }),
 } as const;
@@ -48,7 +48,7 @@ const ARTIFACT_FILES = [
 ] as const;
 
 export function artifactPath(sessionId: string, file: string): string {
-  return `.diptych/sessions/${sessionId}/${file}`;
+  return `${DIPTYCH_DIR}/${SESSIONS_DIR}/${sessionId}/${file}`;
 }
 
 export async function assertSessionDirectory(projectDir: string, sessionId: string): Promise<void> {
@@ -61,7 +61,10 @@ export async function assertSessionDirectory(projectDir: string, sessionId: stri
   }
 }
 
-export async function readExplainArtifacts(projectDir: string, sessionId: string): Promise<ExplainArtifactInputs> {
+export async function readExplainArtifacts(
+  projectDir: string,
+  sessionId: string,
+): Promise<ExplainArtifactInputs> {
   const [summary, reviewPacket, state, readiness, events, artifacts] = await Promise.all([
     readSummary(projectDir, sessionId),
     readReviewPacket(projectDir, sessionId),
@@ -83,14 +86,20 @@ async function hasArtifact(projectDir: string, sessionId: string, file: string):
 }
 
 async function readArtifacts(projectDir: string, sessionId: string): Promise<RunExplainArtifact[]> {
-  return Promise.all(ARTIFACT_FILES.map(async ({ key, file }) => ({
-    key,
-    path: artifactPath(sessionId, file),
-    present: await hasArtifact(projectDir, sessionId, file),
-  })));
+  return Promise.all(
+    ARTIFACT_FILES.map(async ({ key, file }) => ({
+      key,
+      path: artifactPath(sessionId, file),
+      present: await hasArtifact(projectDir, sessionId, file),
+    })),
+  );
 }
 
-async function readJson(projectDir: string, sessionId: string, file: string): Promise<unknown | null> {
+async function readJson(
+  projectDir: string,
+  sessionId: string,
+  file: string,
+): Promise<unknown | null> {
   return readJsonSafeAsync(join(sessionDir(projectDir, sessionId), file));
 }
 
@@ -103,14 +112,20 @@ async function readSummary(projectDir: string, sessionId: string): Promise<Summa
   return summary.success ? summary.data : null;
 }
 
-async function readReviewPacket(projectDir: string, sessionId: string): Promise<ReviewPacket | null> {
+async function readReviewPacket(
+  projectDir: string,
+  sessionId: string,
+): Promise<ReviewPacket | null> {
   const raw = await readJson(projectDir, sessionId, REVIEW_PACKET_JSON_FILE);
   if (raw === null) return null;
   const parsed = ReviewPacketSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
-async function readReadiness(projectDir: string, sessionId: string): Promise<ReadinessSummary | null> {
+async function readReadiness(
+  projectDir: string,
+  sessionId: string,
+): Promise<ReadinessSummary | null> {
   const raw = await readJson(projectDir, sessionId, READINESS_FILE);
   const record = narrowRecord(raw);
   if (!record || record.type !== 'start-readiness') return null;
@@ -134,7 +149,10 @@ function readinessChecks(value: unknown): ReadinessSummary['checks'] {
   return checks;
 }
 
-async function readLogEvents(projectDir: string, sessionId: string): Promise<SessionLogEventEntry[]> {
+async function readLogEvents(
+  projectDir: string,
+  sessionId: string,
+): Promise<SessionLogEventEntry[]> {
   const events: SessionLogEventEntry[] = [];
   for await (const event of readEvents({ projectDir: projectDir, sessionId: sessionId })) {
     events.push(event);

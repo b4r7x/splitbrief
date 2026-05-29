@@ -22,5 +22,9 @@ export function MeasureBox({ children, onHeightChange, measureKey }: MeasureBoxP
     }
   }, [measureKey ?? null]);
 
-  return <Box ref={ref} flexDirection="column" flexShrink={0} flexGrow={0} width="100%">{children}</Box>;
+  return (
+    <Box ref={ref} flexDirection="column" flexShrink={0} flexGrow={0} width="100%">
+      {children}
+    </Box>
+  );
 }

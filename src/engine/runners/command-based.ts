@@ -25,7 +25,7 @@ function substitutePromptPlaceholder(
   prompt: string,
 ): { command: string; args: string[]; useStdin: boolean } {
   const commandHasPlaceholder = command.includes('{prompt}');
-  const argsHavePlaceholder = args.some(a => a.includes('{prompt}'));
+  const argsHavePlaceholder = args.some((a) => a.includes('{prompt}'));
 
   if (!commandHasPlaceholder && !argsHavePlaceholder) {
     return { command, args, useStdin: true };
@@ -33,18 +33,20 @@ function substitutePromptPlaceholder(
 
   return {
     command: commandHasPlaceholder ? command.replace('{prompt}', prompt) : command,
-    args: argsHavePlaceholder ? args.map(a => a.replace('{prompt}', prompt)) : args,
+    args: argsHavePlaceholder ? args.map((a) => a.replace('{prompt}', prompt)) : args,
     useStdin: false,
   };
 }
 
 export async function invokeCommandBasedRunner(
-  opts: CommandBasedOptions,
-  prompt: string,
-  projectDir: string,
-  onOutput?: (chunk: string) => void,
-  signal?: AbortSignal,
+  opts: CommandBasedOptions & {
+    prompt: string;
+    projectDir: string;
+    onOutput?: ((chunk: string) => void) | undefined;
+    signal?: AbortSignal | undefined;
+  },
 ): Promise<CommandBasedResult> {
+  const { prompt, projectDir, onOutput, signal } = opts;
   const rawArgs = opts.args ?? [];
   const format: OutputFormat = opts.outputFormat ?? 'text';
 
@@ -84,10 +86,6 @@ export async function invokeCommandBasedRunner(
       });
     }
 
-    if (result.code === 127) {
-      throw processError.notFound(opts.command, opts.notFoundMessage);
-    }
-
     stdout = result.output;
     stderr = result.stderr;
   } else {
@@ -100,7 +98,7 @@ export async function invokeCommandBasedRunner(
       notFoundMessage: opts.notFoundMessage,
       onText: onOutput,
       signal,
-      onStderr: chunk => {
+      onStderr: (chunk) => {
         stderr += chunk;
       },
     });

@@ -151,8 +151,8 @@ describe('psCommand', () => {
 
     const lines = await collectPsOutput();
 
-    expect(lines.find(line => line.includes('aliased-session'))?.trimStart()).toMatch(/^1\s/);
-    expect(lines.find(line => line.includes('unknown-session'))?.trimStart()).toMatch(/^-\s/);
+    expect(lines.find((line) => line.includes('aliased-session'))?.trimStart()).toMatch(/^1\s/);
+    expect(lines.find((line) => line.includes('unknown-session'))?.trimStart()).toMatch(/^-\s/);
   });
 
   it('ELAPSED column shows correct duration string for exited session', async () => {

@@ -4,14 +4,21 @@ import { join } from 'node:path';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
-import { runBriefQualityGate } from '../../../src/engine/orchestrator/planning/shared.js';
+import { runBriefQualityGate } from '../../../src/engine/orchestrator/planning/briefs-approval-loop.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { sessionDir, BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../src/core/paths.js';
-import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  makeWorkflowMetadata,
+  TEST_WORKFLOW_SINKS,
+} from '#testing/helpers/orchestrator-context.js';
 
 const TEST_METADATA = makeWorkflowMetadata('instant');
 
@@ -59,7 +66,13 @@ describe('runBriefQualityGate', () => {
     const { bus, events } = makeBusRecorder();
     const task = makeFullTask();
 
-    const { report, ok } = runBriefQualityGate([task], projectDir, sessionId, bus, 'planning');
+    const { report, ok } = runBriefQualityGate({
+      tasks: [task],
+      projectDir,
+      sessionId,
+      bus,
+      phase: 'planning',
+    });
 
     expect(ok).toBe(true);
     expect(report.passed).toBe(true);
@@ -70,7 +83,7 @@ describe('runBriefQualityGate', () => {
     expect(persisted.version).toBe(1);
     expect(persisted.passed).toBe(true);
 
-    const ev = events.find(e => e.type === 'brief_quality_passed');
+    const ev = events.find((e) => e.type === 'brief_quality_passed');
     expect(ev).toBeDefined();
     if (ev && 'score' in ev) {
       expect(ev.score).toBe(1);
@@ -83,7 +96,13 @@ describe('runBriefQualityGate', () => {
     const { bus, events } = makeBusRecorder();
     const task = makeTask({ tests: [] });
 
-    const { report, ok } = runBriefQualityGate([task], projectDir, sessionId, bus, 'planning');
+    const { report, ok } = runBriefQualityGate({
+      tasks: [task],
+      projectDir,
+      sessionId,
+      bus,
+      phase: 'planning',
+    });
 
     expect(ok).toBe(false);
     expect(report.passed).toBe(false);
@@ -91,7 +110,7 @@ describe('runBriefQualityGate', () => {
     const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
     expect(existsSync(reportPath)).toBe(true);
 
-    const ev = events.find(e => e.type === 'brief_quality_failed');
+    const ev = events.find((e) => e.type === 'brief_quality_failed');
     expect(ev).toBeDefined();
     if (ev && 'errorCount' in ev) {
       expect(ev.errorCount).toBeGreaterThan(0);
@@ -122,7 +141,12 @@ describe('runBriefQualityGate', () => {
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: TEST_WORKFLOW_SINKS,
       },
       planner,
@@ -137,7 +161,9 @@ describe('runBriefQualityGate', () => {
     const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
     expect(existsSync(reportPath)).toBe(true);
     const persisted = JSON.parse(readFileSync(reportPath, 'utf-8'));
-    expect(persisted.issues.map((i: { code: string; severity: string }) => [i.code, i.severity])).toEqual(
+    expect(
+      persisted.issues.map((i: { code: string; severity: string }) => [i.code, i.severity]),
+    ).toEqual(
       expect.arrayContaining([
         ['missing_scope', 'error'],
         ['missing_evidence', 'error'],

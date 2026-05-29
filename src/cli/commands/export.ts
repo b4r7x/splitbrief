@@ -3,7 +3,7 @@ import { sessionDir } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
 
 interface ExportCommandOptions {
@@ -11,8 +11,11 @@ interface ExportCommandOptions {
   out?: string;
 }
 
-async function exportAction(sessionId: string | undefined, opts: ExportCommandOptions): Promise<void> {
-  try {
+async function exportAction(
+  sessionId: string | undefined,
+  opts: ExportCommandOptions,
+): Promise<void> {
+  await withCliErrors(() => {
     const projectDir = resolveProjectDir(opts.project);
     const resolvedSessionId = resolveExportSessionId(projectDir, sessionId);
     const result = writeSessionHtmlReport(
@@ -26,9 +29,7 @@ async function exportAction(sessionId: string | undefined, opts: ExportCommandOp
     }
 
     console.log(`Report written to ${result.path}`);
-  } catch (err) {
-    rethrowAsCli(err);
-  }
+  });
 }
 
 export function registerExportCommand(program: Command): void {
@@ -40,18 +41,21 @@ export function registerExportCommand(program: Command): void {
     .action(exportAction);
 }
 
-function resolveExportSessionId(projectDir: string, requestedSessionId: string | undefined): string {
+function resolveExportSessionId(
+  projectDir: string,
+  requestedSessionId: string | undefined,
+): string {
   if (requestedSessionId) return requestedSessionId;
 
   const sessions = listAllSessions(projectDir);
   const activeSessionId = readActive(projectDir);
 
   if (activeSessionId) {
-    const activeSession = sessions.find(session => session.id === activeSessionId);
+    const activeSession = sessions.find((session) => session.id === activeSessionId);
     if (activeSession?.status === 'complete') return activeSessionId;
   }
 
-  const completedSession = sessions.find(session => session.status === 'complete');
+  const completedSession = sessions.find((session) => session.status === 'complete');
   if (completedSession) return completedSession.id;
 
   throw cliError('No session specified and no completed sessions found.', 1);

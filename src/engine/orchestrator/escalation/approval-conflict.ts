@@ -25,7 +25,10 @@ export async function handleApprovalTimeUserEditConflict(opts: {
     phase: opts.state.phase,
     createdAt: nowIso(),
   });
-  const next = transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'SET_PENDING_RECOVERY', issue });
+  const next = transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, {
+    type: 'SET_PENDING_RECOVERY',
+    issue,
+  });
   publishRecoveryPrompted(opts.ctx.bus, issue);
   opts.setTrackedState?.(next);
   return next;

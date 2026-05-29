@@ -30,13 +30,20 @@ function collectChangedPaths(before: unknown, after: unknown, prefix: string): s
   if (Object.is(before, after)) return [];
   if (isRecord(before) && isRecord(after)) {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    return Array.from(keys).flatMap(key => collectChangedPaths(before[key], after[key], `${prefix}.${key}`));
+    return Array.from(keys).flatMap((key) =>
+      collectChangedPaths(before[key], after[key], `${prefix}.${key}`),
+    );
   }
   if (JSON.stringify(before) === JSON.stringify(after)) return [];
   return [prefix];
 }
 
-function runnerChangedPaths(config: Config, updated: Config, role: 'planner' | 'implementer', extra: string[] = []): string[] {
+function runnerChangedPaths(
+  config: Config,
+  updated: Config,
+  role: 'planner' | 'implementer',
+  extra: string[] = [],
+): string[] {
   const changed = collectChangedPaths(config[role], updated[role], role);
   return Array.from(new Set([...changed, ...extra]));
 }
@@ -65,13 +72,20 @@ export function usePickerActions(
     }
   };
 
-  const commandBasedIndex = catalog.items.findIndex(item => item.kind === 'shell' || item.kind === 'agent');
+  const commandBasedIndex = catalog.items.findIndex(
+    (item) => item.kind === 'shell' || item.kind === 'agent',
+  );
 
   return {
     confirm(selection: PickerOption, model: ModelOption | null) {
       if (selection.kind === 'shell' || selection.kind === 'agent') {
-        const selectionIndex = catalog.items.findIndex(item => item.id === selection.id);
-        dispatchView({ type: 'open-custom-command', preservedLeftIndex: selectionIndex >= 0 ? selectionIndex : commandBasedIndex >= 0 ? commandBasedIndex : 0, intendedKind: selection.kind });
+        const selectionIndex = catalog.items.findIndex((item) => item.id === selection.id);
+        dispatchView({
+          type: 'open-custom-command',
+          preservedLeftIndex:
+            selectionIndex >= 0 ? selectionIndex : commandBasedIndex >= 0 ? commandBasedIndex : 0,
+          intendedKind: selection.kind,
+        });
         return;
       }
       const label = model
@@ -79,20 +93,28 @@ export function usePickerActions(
         : selection.displayName;
       if (isPlanner) {
         const updated = commitPlannerSelection(config, selection, model);
-        commit(updated, `Planner set to: ${label}`, runnerChangedPaths(config, updated, 'planner', [
-          'planner.kind',
-          'planner.tool',
-          'planner.provider',
-          ...(model ? ['planner.model'] : []),
-        ]));
+        commit(
+          updated,
+          `Planner set to: ${label}`,
+          runnerChangedPaths(config, updated, 'planner', [
+            'planner.kind',
+            'planner.tool',
+            'planner.provider',
+            ...(model ? ['planner.model'] : []),
+          ]),
+        );
       } else {
         const updated = commitImplementerSelection(config, selection, model);
-        commit(updated, `Implementer set to: ${label}`, runnerChangedPaths(config, updated, 'implementer', [
-          'implementer.kind',
-          'implementer.tool',
-          'implementer.provider',
-          'implementer.model',
-        ]));
+        commit(
+          updated,
+          `Implementer set to: ${label}`,
+          runnerChangedPaths(config, updated, 'implementer', [
+            'implementer.kind',
+            'implementer.tool',
+            'implementer.provider',
+            'implementer.model',
+          ]),
+        );
       }
     },
     leftChange(item: PickerOption) {
@@ -101,7 +123,10 @@ export function usePickerActions(
     deleteRight(item: ModelOption) {
       const updated = removeCustomModel(config, role, item.id);
       const result = configStore.save(updated, {
-        changedPaths: runnerChangedPaths(config, updated, role, [`${role}.customModels`, `${role}.model`]),
+        changedPaths: runnerChangedPaths(config, updated, role, [
+          `${role}.customModels`,
+          `${role}.model`,
+        ]),
       });
       if (result.ok) {
         feedbackStore.setMessage(`Removed custom model: ${item.id}`);
@@ -111,31 +136,48 @@ export function usePickerActions(
     },
     customCommand(cmd: string) {
       if (viewState.view.kind !== 'custom-command') {
-        throw error(
-          'picker-invalid-view',
-          'customCommand called outside custom-command view',
-          { view: viewState.view.kind },
-        );
+        throw error('picker-invalid-view', 'customCommand called outside custom-command view', {
+          view: viewState.view.kind,
+        });
       }
-      const updated = commitCustomCommand(config, role, cmd, viewState.view.intendedKind);
-      commit(updated, `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`, runnerChangedPaths(config, updated, role, [
-        `${role}.kind`,
-        `${role}.tool`,
-        `${role}.command`,
-        ...(role === 'implementer' ? [`${role}.model`] : []),
-      ]));
+      const updated = commitCustomCommand({
+        config,
+        role,
+        command: cmd,
+        kind: viewState.view.intendedKind,
+      });
+      commit(
+        updated,
+        `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`,
+        runnerChangedPaths(config, updated, role, [
+          `${role}.kind`,
+          `${role}.tool`,
+          `${role}.command`,
+          ...(role === 'implementer' ? [`${role}.model`] : []),
+        ]),
+      );
     },
     customModel(modelName: string) {
       if (viewState.view.kind !== 'custom-model') return;
       const customModelItem = viewState.view.item;
-      const updated = commitCustomModel(config, role, customModelItem, modelName, catalog.customModels);
-      commit(updated, `${catalog.roleLabel} set to: ${customModelItem.displayName} › ${formatModelName(modelName)}`, runnerChangedPaths(config, updated, role, [
-        `${role}.kind`,
-        `${role}.tool`,
-        `${role}.provider`,
-        `${role}.model`,
-        `${role}.customModels`,
-      ]));
+      const updated = commitCustomModel({
+        config,
+        role,
+        selection: customModelItem,
+        modelName,
+        customModels: catalog.customModels,
+      });
+      commit(
+        updated,
+        `${catalog.roleLabel} set to: ${customModelItem.displayName} › ${formatModelName(modelName)}`,
+        runnerChangedPaths(config, updated, role, [
+          `${role}.kind`,
+          `${role}.tool`,
+          `${role}.provider`,
+          `${role}.model`,
+          `${role}.customModels`,
+        ]),
+      );
     },
     openCustomModel(item: PickerOption) {
       dispatchView({ type: 'open-custom-model', item });

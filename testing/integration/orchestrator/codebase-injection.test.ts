@@ -11,13 +11,18 @@ import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factor
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  makeWorkflowMetadata,
+  TEST_WORKFLOW_SINKS,
+} from '#testing/helpers/orchestrator-context.js';
 
 const META = makeWorkflowMetadata('quick');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 // Tiny .ts file so buildRepoMap has something non-empty to format. The test asserts
 // the orchestrator propagates _some_ codebase context to the planner, not the exact
@@ -40,15 +45,25 @@ describe('codebase context injection into planner', () => {
 
     let capturedContext: string | undefined;
     const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation((_feature, _dir, _cb, ctx) => {
-        capturedContext = ctx;
-        return { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } };
+      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
+        capturedContext = codebaseContext;
+        return {
+          spec: '',
+          plan: '',
+          tasks: [makeTask()],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        };
       }),
     });
     const { callbacks } = makeCallbacks();
     const bus = createEventBus();
     const config = makeConfig({
-      workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true, persistTranscript: false },
+      workflow: {
+        mode: 'quick',
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        persistTranscript: false,
+      },
       codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.diptych' },
     });
 
@@ -56,14 +71,23 @@ describe('codebase context injection into planner', () => {
     state = transition(state, { type: 'START', feature: 'add bar feature' });
 
     await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: TEST_WORKFLOW_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+      },
       planner,
       state,
       feature: state.feature,
     });
 
     expect(typeof capturedContext).toBe('string');
-    if (capturedContext === undefined) throw new Error('expected planner to receive codebase context');
+    if (capturedContext === undefined)
+      throw new Error('expected planner to receive codebase context');
     expect(capturedContext.length).toBeGreaterThan(0);
     expect(capturedContext).toContain('sample.ts');
   });
@@ -78,15 +102,25 @@ describe('codebase context injection into planner', () => {
 
     let capturedContext: string | undefined = 'SENTINEL';
     const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation((_feature, _dir, _cb, ctx) => {
-        capturedContext = ctx;
-        return { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } };
+      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
+        capturedContext = codebaseContext;
+        return {
+          spec: '',
+          plan: '',
+          tasks: [makeTask()],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        };
       }),
     });
     const { callbacks } = makeCallbacks();
     const bus = createEventBus();
     const config = makeConfig({
-      workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true, persistTranscript: false },
+      workflow: {
+        mode: 'quick',
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        persistTranscript: false,
+      },
       codebase: { enabled: false, tokenBudget: 1000, cacheDir: '.diptych' },
     });
 
@@ -94,7 +128,15 @@ describe('codebase context injection into planner', () => {
     state = transition(state, { type: 'START', feature: 'add baz feature' });
 
     await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: TEST_WORKFLOW_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+      },
       planner,
       state,
       feature: state.feature,

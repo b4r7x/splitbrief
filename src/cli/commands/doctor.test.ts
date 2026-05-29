@@ -81,7 +81,7 @@ describe('doctor command', () => {
 
     await runDoctor(['--project', tmp]);
 
-    const output = consoleSpy.mock.calls.map(call => call.join(' ')).join('\n');
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain('Run readiness:');
     expect(output).toContain('Config:');
     expect(output).toContain('Repository:');
@@ -102,7 +102,10 @@ describe('doctor command', () => {
       type?: string;
       report?: { sections?: Array<{ checks: Array<{ severity: string }> }> };
     };
-    const severities = parsed.report?.sections?.flatMap(section => section.checks.map(check => check.severity)) ?? [];
+    const severities =
+      parsed.report?.sections?.flatMap((section) =>
+        section.checks.map((check) => check.severity),
+      ) ?? [];
     expect(parsed.type).toBe('readiness_report');
     expect(severities).toContain('warning');
     expect(severities).toContain('info');
@@ -121,7 +124,10 @@ describe('doctor command', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as { exitCode: number }).exitCode).toBe(1);
-    const parsed = JSON.parse(writes.join('').trim()) as { type?: string; report?: { status?: string; nextAction?: { kind?: string } } };
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      type?: string;
+      report?: { status?: string; nextAction?: { kind?: string } };
+    };
     expect(parsed.type).toBe('readiness_report');
     expect(parsed.report?.status).toBe('blocked');
     expect(parsed.report?.nextAction?.kind).toBe('run-init');
@@ -152,9 +158,13 @@ describe('doctor command', () => {
     }
 
     expect(isCliError(captured)).toBe(true);
-    const parsed = JSON.parse(writes.join('').trim()) as { report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> } };
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+    };
     expect(parsed.report?.status).toBe('blocked');
-    expect(parsed.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('config.invalid');
+    expect(
+      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
+    ).toContain('config.invalid');
     expect(readFileSync(configFile, 'utf-8')).toBe(badConfig);
   });
 
@@ -170,7 +180,11 @@ describe('doctor command', () => {
     }
 
     expect(isCliError(captured)).toBe(true);
-    const parsed = JSON.parse(writes.join('').trim()) as { report?: { sections?: Array<{ checks: Array<{ id: string }> }> } };
-    expect(parsed.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('repo.not-git');
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { sections?: Array<{ checks: Array<{ id: string }> }> };
+    };
+    expect(
+      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
+    ).toContain('repo.not-git');
   });
 });

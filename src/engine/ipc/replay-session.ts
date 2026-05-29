@@ -21,10 +21,14 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
   const { socket, sessionJsonlPath, writeMessage } = opts;
   const replayStart = Date.now();
   const result = await readReplayEvents({ sessionJsonlPath });
-  const { events: replayedEvents, count: totalEvents, firstTs, lastTs } = result;
+  const { events: replayedEvents, firstTs, lastTs } = result;
+  const totalEvents = replayedEvents.length;
 
   if (!socket.destroyed) {
-    writeMessage(socket, { kind: 'event', payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents } });
+    writeMessage(socket, {
+      kind: 'event',
+      payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents },
+    });
   }
 
   const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
@@ -38,7 +42,13 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
   }
 
   const durationMs = Date.now() - replayStart;
-  const completeEvent = { type: 'replay_complete' as const, ts: Date.now(), phase: 'idle' as const, totalEvents, durationMs };
+  const completeEvent = {
+    type: 'replay_complete' as const,
+    ts: Date.now(),
+    phase: 'idle' as const,
+    totalEvents,
+    durationMs,
+  };
   if (!socket.destroyed) {
     writeMessage(socket, { kind: 'event', payload: completeEvent });
   }

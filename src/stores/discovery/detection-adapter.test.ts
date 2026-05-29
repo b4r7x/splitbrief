@@ -7,7 +7,7 @@ import { modelCacheStore } from './model-cache.js';
 import { detectionStore } from '../project/detection.js';
 import { loadDetectionIntoStores } from './detection-adapter.js';
 import { createDetectionService } from '../../engine/detection/service.js';
-import type { DetectionDeps, DetectionServiceForTests } from '../../engine/detection/service.js';
+import type { DetectionDeps } from '../../engine/detection/service.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
   tool: 'claude-code',
@@ -46,7 +46,7 @@ function makeCountingDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps
 }
 
 describe('loadDetectionIntoStores', () => {
-  let service: DetectionServiceForTests;
+  let service: ReturnType<typeof createDetectionService>;
 
   beforeEach(() => {
     service = createDetectionService();
@@ -55,8 +55,14 @@ describe('loadDetectionIntoStores', () => {
   });
 
   it('populates both planners and implementers from detectAll', async () => {
-    const planners = [makePlanner({ tool: 'claude-code' }), makePlanner({ tool: 'codex', available: false })];
-    const implementers = [makeImplementer({ provider: 'ollama' }), makeImplementer({ provider: 'lm-studio', available: false })];
+    const planners = [
+      makePlanner({ tool: 'claude-code' }),
+      makePlanner({ tool: 'codex', available: false }),
+    ];
+    const implementers = [
+      makeImplementer({ provider: 'ollama' }),
+      makeImplementer({ provider: 'lm-studio', available: false }),
+    ];
     const deps: DetectionDeps = {
       detectAll: async () => ({ planners, implementers }),
       fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
@@ -118,7 +124,9 @@ describe('loadDetectionIntoStores', () => {
       const deps: DetectionDeps = {
         ...makeCountingDeps(),
         fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog),
-        discoverAllCliTools: vi.fn().mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
+        discoverAllCliTools: vi
+          .fn()
+          .mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
       };
 
       await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
@@ -132,7 +140,9 @@ describe('loadDetectionIntoStores', () => {
       // Cached planner gen-1 is restored (not re-detected into gen-2).
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
       expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
-      expect(modelCacheStore.getProviderModels('opencode')).toEqual([{ id: 'anthropic/claude-sonnet-4.6' }]);
+      expect(modelCacheStore.getProviderModels('opencode')).toEqual([
+        { id: 'anthropic/claude-sonnet-4.6' },
+      ]);
     });
 
     it('always runs detection when projectDir is undefined (no cache scope)', async () => {

@@ -12,7 +12,9 @@ describe('buildSegments', () => {
       tabSize: 4,
     });
 
-    expect([...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight')).toBe(false);
+    expect(
+      [...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight'),
+    ).toBe(false);
   });
 
   it('keeps explicit highlight ranges for pasted text', () => {
@@ -26,6 +28,8 @@ describe('buildSegments', () => {
       highlight: { start: 'hello '.length, end: 'hello pasted'.length },
     });
 
-    expect([...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight')).toBe(true);
+    expect(
+      [...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight'),
+    ).toBe(true);
   });
 });

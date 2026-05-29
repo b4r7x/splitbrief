@@ -30,17 +30,21 @@ describe('ApprovalPrompt', () => {
   it('resets confirmation progress when a pending request is superseded', async () => {
     const ui = render(<ApprovalPrompt />);
     const first = openApprovalPrompt(makeConfirmRequest('delete temp files'));
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     ui.stdin.write('I confirm');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     ui.stdin.write(ENTER);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     expect(ui.lastFrame() ?? '').toContain('Phrase accepted. Enter reason');
 
     const second = openApprovalPrompt(makeConfirmRequest('reset repository'));
     await expect(first).resolves.toEqual({ decision: 'deny', reason: 'superseded' });
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('reset repository');

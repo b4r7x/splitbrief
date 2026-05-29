@@ -15,15 +15,17 @@ export function useReviewContent(filePath: string | null): string {
     }
 
     const controller = new AbortController();
-    fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' }).then((data) => {
-      setContent(data);
-      reviewStore.setLineCount(data.split('\n').length);
-    }).catch((err: unknown) => {
-      if (controller.signal.aborted) return;
-      setContent('');
-      reviewStore.setLineCount(0);
-      feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
-    });
+    fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' })
+      .then((data) => {
+        setContent(data);
+        reviewStore.setLineCount(data.split('\n').length);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setContent('');
+        reviewStore.setLineCount(0);
+        feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
+      });
 
     return () => {
       controller.abort();

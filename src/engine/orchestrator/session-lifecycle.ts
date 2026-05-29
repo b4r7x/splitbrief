@@ -69,7 +69,8 @@ export async function withShutdownHandlers(
   opts: WithShutdownHandlersOpts,
   fn: () => Promise<void>,
 ): Promise<{ cancelled: boolean }> {
-  const shutdown = () => shutdownWorkflow(opts.projectDir, opts.sessionId, opts.getTrackedState, opts.getCurrentTask);
+  const shutdown = () =>
+    shutdownWorkflow(opts.projectDir, opts.sessionId, opts.getTrackedState, opts.getCurrentTask);
   return withSignalHandlers(shutdown, fn);
 }
 
@@ -86,21 +87,25 @@ export type InstallQueueHandlerOpts = {
 
 export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
   const serialize = createStateSerializer();
-  opts.sinks.setQueueHandler(createQueueHandler(
-    opts.projectDir,
-    opts.sessionId,
-    opts.getTrackedState,
-    opts.setTrackedState,
-    opts.bus,
-    opts.config.workflow.persistTranscript,
-    opts.planner,
-    serialize,
-  ));
-  opts.sinks.setClearQueueHandler?.(createClearQueueHandler(
-    opts.projectDir,
-    opts.sessionId,
-    opts.getTrackedState,
-    opts.setTrackedState,
-    opts.bus,
-  ));
+  opts.sinks.setQueueHandler(
+    createQueueHandler({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      getState: opts.getTrackedState,
+      setState: opts.setTrackedState,
+      bus: opts.bus,
+      persistTranscript: opts.config.workflow.persistTranscript,
+      planner: opts.planner,
+      serialize,
+    }),
+  );
+  opts.sinks.setClearQueueHandler?.(
+    createClearQueueHandler({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      getState: opts.getTrackedState,
+      setState: opts.setTrackedState,
+      bus: opts.bus,
+    }),
+  );
 }

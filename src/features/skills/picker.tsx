@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../workflow/layout/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { skillsStore } from '../../stores/project/skills.js';
@@ -24,15 +24,27 @@ interface SkillRowProps {
   theme: Theme;
 }
 
-function SkillRow({ skill, isCursor, isChecked, nameColWidth, descMaxWidth, theme: t }: SkillRowProps) {
+function SkillRow({
+  skill,
+  isCursor,
+  isChecked,
+  nameColWidth,
+  descMaxWidth,
+  theme: t,
+}: SkillRowProps) {
   const name = truncateWithEllipsis(skill.name, nameColWidth).padEnd(nameColWidth);
   const desc = truncateWithEllipsis(skill.description, descMaxWidth);
   return (
     <Box>
       <CursorCell isCursor={isCursor} />
       <Text color={isChecked ? t.success : t.textDim}>{isChecked ? '[x] ' : '[ ] '}</Text>
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{name}</Text>
-      <Text color={t.textDim}>{'  '}{desc}</Text>
+      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
+        {name}
+      </Text>
+      <Text color={t.textDim}>
+        {'  '}
+        {desc}
+      </Text>
     </Box>
   );
 }
@@ -47,12 +59,12 @@ export function SkillsPicker() {
   const [navigating, setNavigating] = useState(false);
 
   const sortedSkills = [
-    ...skills.filter(s => s.scope === 'project'),
-    ...skills.filter(s => s.scope === 'global'),
+    ...skills.filter((s) => s.scope === 'project'),
+    ...skills.filter((s) => s.scope === 'global'),
   ];
 
   const toggle = (id: string) => {
-    setChecked(prev => {
+    setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -121,18 +133,26 @@ export function SkillsPicker() {
         }
         return false;
       }}
-      placeholder={skills.length === 0 ? (
-        <Box flexDirection="column">
-          <Text color={t.textDim}>  No skills found.</Text>
-          <Text color={t.textDim}>  Add skills to .claude/skills/ or .diptych/skills/ to get started.</Text>
-        </Box>
-      ) : (
-        <Text color={t.textDim}>{'  No matching skills'}</Text>
-      )}
+      placeholder={
+        skills.length === 0 ? (
+          <Box flexDirection="column">
+            <Text color={t.textDim}> No skills found.</Text>
+            <Text color={t.textDim}>
+              {' '}
+              Add skills to .claude/skills/ or .diptych/skills/ to get started.
+            </Text>
+          </Box>
+        ) : (
+          <Text color={t.textDim}>{'  No matching skills'}</Text>
+        )
+      }
       sectionBy={(skill) => skill.scope}
       renderSectionHeader={(section, index) => (
         <Box marginTop={index > 0 ? 1 : 0}>
-          <Text bold color={t.text}>{'  '}{section === 'project' ? 'Project' : 'Global'}</Text>
+          <Text bold color={t.text}>
+            {'  '}
+            {section === 'project' ? 'Project' : 'Global'}
+          </Text>
         </Box>
       )}
       renderItem={(skill, { isCursor }) => (

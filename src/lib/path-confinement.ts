@@ -4,10 +4,21 @@ import { error } from '../utils/error.js';
 
 export const pathConfinementError = {
   absolutePath: (relativePath: string) =>
-    error('path-confined-absolute', `unsafe path: absolute paths not allowed: ${relativePath}`, { relativePath }),
+    error('path-confined-absolute', `unsafe path: absolute paths not allowed: ${relativePath}`, {
+      relativePath,
+    }),
   escapesRoot: (relativePath: string) =>
-    error('path-confined-escape', `unsafe path: path escapes root directory: ${relativePath}`, { relativePath }),
+    error('path-confined-escape', `unsafe path: path escapes root directory: ${relativePath}`, {
+      relativePath,
+    }),
 } as const;
+
+export function isPathConfined(relativePath: string, rootDir: string): boolean {
+  if (isAbsolute(relativePath) || win32.isAbsolute(relativePath)) return false;
+  const resolvedRoot = resolve(rootDir);
+  const resolvedFull = resolve(rootDir, relativePath);
+  return resolvedFull === resolvedRoot || resolvedFull.startsWith(`${resolvedRoot}${sep}`);
+}
 
 /**
  * Asserts that `relativePath` resolves to a location inside `rootDir`.
@@ -17,9 +28,7 @@ export function assertPathConfined(relativePath: string, rootDir: string): void 
   if (isAbsolute(relativePath) || win32.isAbsolute(relativePath)) {
     throw pathConfinementError.absolutePath(relativePath);
   }
-  const resolvedRoot = resolve(rootDir);
-  const resolvedFull = resolve(rootDir, relativePath);
-  if (resolvedFull !== resolvedRoot && !resolvedFull.startsWith(`${resolvedRoot}${sep}`)) {
+  if (!isPathConfined(relativePath, rootDir)) {
     throw pathConfinementError.escapesRoot(relativePath);
   }
 }

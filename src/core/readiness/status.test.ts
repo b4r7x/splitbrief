@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  aggregateReadinessStatus,
-  countReadinessChecks,
-  selectNextAction,
-} from './status.js';
+import { aggregateReadinessStatus, countReadinessChecks, selectNextAction } from './status.js';
 import type { ReadinessCheck } from './types.js';
 
 describe('readiness status', () => {
@@ -35,9 +31,7 @@ describe('readiness status', () => {
   });
 
   it('defaults to continue when only advisory checks exist', () => {
-    const checks: ReadinessCheck[] = [
-      { id: 'mode', severity: 'info', summary: 'mode standard' },
-    ];
+    const checks: ReadinessCheck[] = [{ id: 'mode', severity: 'info', summary: 'mode standard' }];
 
     expect(selectNextAction(checks, 'ready')).toMatchObject({
       kind: 'continue',

@@ -57,10 +57,15 @@ describe('error event → UI propagation', () => {
       const bus = createEventBus();
       bus.subscribe(createTuiSink());
 
-      const warningEvent: EngineEvent = { type: 'warning', ts: Date.now(), phase: 'implementing', message: 'Rate limit approaching' };
+      const warningEvent: EngineEvent = {
+        type: 'warning',
+        ts: Date.now(),
+        phase: 'implementing',
+        message: 'Rate limit approaching',
+      };
       bus.publish(warningEvent);
 
-      const warnings = eventsStore.get().events.filter(e => e.type === 'warning');
+      const warnings = eventsStore.get().events.filter((e) => e.type === 'warning');
       expect(warnings).toHaveLength(1);
     });
   });

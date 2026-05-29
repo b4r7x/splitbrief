@@ -1,8 +1,6 @@
 import type { Task } from '../../../src/core/schemas/task.js';
 import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
-import type {
-  Implementer,
-} from '../../../src/engine/implementers/types.js';
+import type { Implementer } from '../../../src/engine/implementers/types.js';
 
 export type FauxImplementStep = {
   success: boolean;

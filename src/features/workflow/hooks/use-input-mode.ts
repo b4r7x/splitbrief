@@ -2,7 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../../../core/navigation/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 
-type ReviewResult = { approved: boolean; comment?: string | undefined; action?: 'edit' | undefined };
+type ReviewResult = {
+  approved: boolean;
+  comment?: string | undefined;
+  action?: 'edit' | undefined;
+};
 
 export interface UseInputModeResult {
   mode: InputMode;
@@ -14,7 +18,10 @@ export interface UseInputModeResult {
 }
 
 export function useInputMode(): UseInputModeResult {
-  const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
+  const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({
+    mode: 'normal',
+    hint: '',
+  });
   // Mirror committed mode into a ref: resolve() can be invoked after `await` boundaries
   // (e.g. review-parser.ts awaits openInEditor before calling resolve), where a captured
   // closure value would go stale across intervening renders/mode changes.
@@ -86,5 +93,12 @@ export function useInputMode(): UseInputModeResult {
     };
   }, []);
 
-  return { mode: modeState.mode, hint: modeState.hint, setReviewMode, setQuestionMode, resolve, resetMode };
+  return {
+    mode: modeState.mode,
+    hint: modeState.hint,
+    setReviewMode,
+    setQuestionMode,
+    resolve,
+    resetMode,
+  };
 }

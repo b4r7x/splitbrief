@@ -4,7 +4,11 @@ import { createHookSink } from './sink.js';
 import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
-import { makeCommandHookEntry, makeAllowHook, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
+import {
+  makeCommandHookEntry,
+  makeAllowHook,
+  makeThrowingModuleHook,
+} from '#testing/helpers/factories/hook-entry.js';
 
 const projectDir = resolve('.');
 const ctx = { projectDir, sessionId: 'sess-1' };
@@ -30,7 +34,11 @@ function denyViaStdoutHook(name: string, message: string): HookCommandEntry {
   });
 }
 
-async function waitForWarnings(warnings: readonly string[], expected: number, timeoutMs = 5000): Promise<void> {
+async function waitForWarnings(
+  warnings: readonly string[],
+  expected: number,
+  timeoutMs = 5000,
+): Promise<void> {
   const start = Date.now();
   while (warnings.length < expected) {
     if (Date.now() - start > timeoutMs) return;
@@ -134,12 +142,19 @@ describe('createHookSink', () => {
   it('does not dispatch for validate events with status=running (only done)', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks: HooksConfig = {
-      post_validation: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      post_validation: [
+        makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
+      ],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const runningEvent: EngineEvent = {
-      type: 'validate', ts: 1, phase: 'implementing', taskId: 'T1' as never,
-      status: 'running', passed: false, stages: { typecheck: false, lint: false, test: false },
+      type: 'validate',
+      ts: 1,
+      phase: 'implementing',
+      taskId: 'T1' as never,
+      status: 'running',
+      passed: false,
+      stages: { typecheck: false, lint: false, test: false },
     };
     sink(runningEvent);
     await waitForNoActivity(all);
@@ -150,12 +165,19 @@ describe('createHookSink', () => {
   it('dispatches post_validation for validate event with status=done', async () => {
     const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {
-      post_validation: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      post_validation: [
+        makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
+      ],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const doneEvent: EngineEvent = {
-      type: 'validate', ts: 1, phase: 'implementing', taskId: 'T1' as never,
-      status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true },
+      type: 'validate',
+      ts: 1,
+      phase: 'implementing',
+      taskId: 'T1' as never,
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
     };
     sink(doneEvent);
     await waitForWarnings(warnings, 1);
@@ -191,7 +213,9 @@ describe('createHookSink', () => {
 
   it('catches unexpected thrown errors and publishes warning', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = { post_task: [makeThrowingModuleHook({ name: 'unexpected-throw' })] };
+    const hooks: HooksConfig = {
+      post_task: [makeThrowingModuleHook({ name: 'unexpected-throw' })],
+    };
     const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);

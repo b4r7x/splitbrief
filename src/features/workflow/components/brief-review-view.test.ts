@@ -3,14 +3,14 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  buildRoutingPreviewMetadata,
   formatQualityDisplay,
   formatTaskReviewLine,
   getTaskStatusSymbol,
   buildTaskDetailParts,
   formatTaskCount,
-  refreshPlanReviewMetadata,
-} from './brief-review.js';
+} from './brief-review-format.js';
+import { refreshPlanReviewMetadata } from './plan-review-metadata.js';
+import { buildRoutingPreviewMetadata } from '../../../engine/facades/routing-preview.js';
 import type { BriefQualityReport, BriefQualityIssue } from '../../../engine/spec/brief-quality.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -64,7 +64,12 @@ describe('getTaskStatusSymbol', () => {
 
   it('returns ⚠ when any issue has severity error', () => {
     const issues: BriefQualityIssue[] = [
-      { taskId: taskId('T001'), severity: 'error', code: 'missing_validation', message: 'no tests' },
+      {
+        taskId: taskId('T001'),
+        severity: 'error',
+        code: 'missing_validation',
+        message: 'no tests',
+      },
     ];
     expect(getTaskStatusSymbol(issues)).toBe('⚠');
   });
@@ -72,7 +77,12 @@ describe('getTaskStatusSymbol', () => {
   it('returns ⚠ when issues contain both errors and warnings', () => {
     const issues: BriefQualityIssue[] = [
       { taskId: taskId('T001'), severity: 'warning', code: 'missing_scope', message: 'no scope' },
-      { taskId: taskId('T001'), severity: 'error', code: 'missing_validation', message: 'no tests' },
+      {
+        taskId: taskId('T001'),
+        severity: 'error',
+        code: 'missing_validation',
+        message: 'no tests',
+      },
     ];
     expect(getTaskStatusSymbol(issues)).toBe('⚠');
   });
@@ -217,7 +227,10 @@ describe('buildRoutingPreviewMetadata', () => {
     try {
       const task = makeTask({ action: 'modify', file: 'missing.ts' });
 
-      const metadata = await buildRoutingPreviewMetadata([task], { config: makeConfig(), projectDir });
+      const metadata = await buildRoutingPreviewMetadata([task], {
+        config: makeConfig(),
+        projectDir,
+      });
 
       expect(metadata[0]).toMatchObject({
         taskId: task.id,
@@ -225,7 +238,9 @@ describe('buildRoutingPreviewMetadata', () => {
         validationStatus: 'warn',
         risk: 'high',
       });
-      expect(formatTaskReviewLine(task, [], metadata[0])).toContain('estimate missing-current-code');
+      expect(formatTaskReviewLine(task, [], metadata[0])).toContain(
+        'estimate missing-current-code',
+      );
     } finally {
       await rm(projectDir, { recursive: true, force: true });
     }
@@ -240,7 +255,10 @@ describe('buildRoutingPreviewMetadata', () => {
         currentCode: 'export const stale = true;\n',
       });
 
-      const metadata = await buildRoutingPreviewMetadata([task], { config: makeConfig(), projectDir });
+      const metadata = await buildRoutingPreviewMetadata([task], {
+        config: makeConfig(),
+        projectDir,
+      });
 
       expect(metadata[0]).toMatchObject({
         taskId: task.id,

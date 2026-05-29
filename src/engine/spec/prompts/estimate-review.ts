@@ -1,13 +1,14 @@
-import { buildPrompt, instructionsSection } from './shared.js';
+import { buildPrompt, fenced, instructionsSection } from './shared.js';
 
 export function buildPlannerEstimateReviewPrompt(packet: unknown): string {
   return buildPrompt({
     title: 'Planner Estimate Review',
-    intro: 'You are reviewing a deterministic pre-run estimate before implementation starts. The user explicitly opted into this extra planner call.',
+    intro:
+      'You are reviewing a deterministic pre-run estimate before implementation starts. The user explicitly opted into this extra planner call.',
     sections: [
       {
         heading: 'Estimate Packet',
-        body: '```json\n' + JSON.stringify(packet, null, 2) + '\n```',
+        body: fenced(JSON.stringify(packet, null, 2), 'json'),
       },
       instructionsSection(
         `Answer only from the packet. Do not request repo maps, source code, full task bodies, or logs.

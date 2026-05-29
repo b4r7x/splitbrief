@@ -28,7 +28,14 @@ describe('buildLanguageContext', () => {
     ['python', 'Python', 'Python', 'PEP 484', '.py', 'Python modules'],
     ['go', 'Go', 'Go import', 'Go type', '.go', 'Go packages'],
     ['rust', 'Rust', 'use/mod', 'Rust', '.rs', 'Rust crates/modules'],
-    [undefined, 'the project language', 'project language', 'project language', '', 'the project module system'],
+    [
+      undefined,
+      'the project language',
+      'project language',
+      'project language',
+      '',
+      'the project module system',
+    ],
   ] as const)('returns conventions for %s', (input, language, importText, typeText, fileExtension, moduleSystem) => {
     const ctx = buildLanguageContext(input);
 
@@ -106,14 +113,36 @@ describe('buildLanguageContextSections', () => {
 
 describe('detectPromptLanguage', () => {
   it.each([
-    ['TypeScript package projects', (dir: string) => writeFileSync(join(dir, 'package.json'), '{"devDependencies":{"typescript":"^6.0.0"}}'), 'typescript'],
-    ['Python project markers', (dir: string) => {
-      mkdirSync(join(dir, 'src'));
-      writeFileSync(join(dir, 'pyproject.toml'), '[tool.pytest.ini_options]');
-    }, 'python'],
-    ['Rust from Cargo.toml', (dir: string) => writeFileSync(join(dir, 'Cargo.toml'), '[package]\nname = "myapp"'), 'rust'],
-    ['Go from go.mod', (dir: string) => writeFileSync(join(dir, 'go.mod'), 'module example.com/myapp'), 'go'],
-    ['JavaScript package projects', (dir: string) => writeFileSync(join(dir, 'package.json'), '{"dependencies":{"express":"^4.0.0"}}'), 'javascript'],
+    [
+      'TypeScript package projects',
+      (dir: string) =>
+        writeFileSync(join(dir, 'package.json'), '{"devDependencies":{"typescript":"^6.0.0"}}'),
+      'typescript',
+    ],
+    [
+      'Python project markers',
+      (dir: string) => {
+        mkdirSync(join(dir, 'src'));
+        writeFileSync(join(dir, 'pyproject.toml'), '[tool.pytest.ini_options]');
+      },
+      'python',
+    ],
+    [
+      'Rust from Cargo.toml',
+      (dir: string) => writeFileSync(join(dir, 'Cargo.toml'), '[package]\nname = "myapp"'),
+      'rust',
+    ],
+    [
+      'Go from go.mod',
+      (dir: string) => writeFileSync(join(dir, 'go.mod'), 'module example.com/myapp'),
+      'go',
+    ],
+    [
+      'JavaScript package projects',
+      (dir: string) =>
+        writeFileSync(join(dir, 'package.json'), '{"dependencies":{"express":"^4.0.0"}}'),
+      'javascript',
+    ],
     ['unknown projects', () => {}, undefined],
   ] as const)('detects %s', (_name, arrange, expected) => {
     withTempProject((tmpDir) => {

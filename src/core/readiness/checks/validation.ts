@@ -19,18 +19,20 @@ export function buildValidationChecks(
   packageScripts: PackageScriptsReadinessInput,
   projectDir: string,
 ): ReadinessCheck[] {
-  const checks: ReadinessCheck[] = [{
-    id: 'validation.configured',
-    severity: 'info',
-    summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, lint ${onOff(config.validation.lint)}, test ${onOff(config.validation.test)}.`,
-    details: [`Test command: ${config.validation.testCommand ?? 'npm test'}`],
-    metadata: {
-      typecheck: config.validation.typecheck,
-      lint: config.validation.lint,
-      test: config.validation.test,
-      testCommand: config.validation.testCommand ?? 'npm test',
+  const checks: ReadinessCheck[] = [
+    {
+      id: 'validation.configured',
+      severity: 'info',
+      summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, lint ${onOff(config.validation.lint)}, test ${onOff(config.validation.test)}.`,
+      details: [`Test command: ${config.validation.testCommand ?? 'npm test'}`],
+      metadata: {
+        typecheck: config.validation.typecheck,
+        lint: config.validation.lint,
+        test: config.validation.test,
+        testCommand: config.validation.testCommand ?? 'npm test',
+      },
     },
-  }];
+  ];
 
   const disabled = [
     !config.validation.typecheck ? 'typecheck' : null,
@@ -57,7 +59,10 @@ export function buildValidationChecks(
   }
 
   if (config.validation.test) {
-    const testScriptWarning = testCommandWarning(config.validation.testCommand ?? 'npm test', packageScripts);
+    const testScriptWarning = testCommandWarning(
+      config.validation.testCommand ?? 'npm test',
+      packageScripts,
+    );
     if (testScriptWarning) checks.push(testScriptWarning);
   }
 
@@ -119,5 +124,5 @@ function hasKnownLinterConfig(projectDir: string): boolean {
     '.eslintrc.yaml',
     'biome.json',
   ];
-  return files.some(file => existsSync(join(projectDir, file)));
+  return files.some((file) => existsSync(join(projectDir, file)));
 }

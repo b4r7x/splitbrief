@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { ScrollIndicator } from '../scroll-indicator.js';
-import { CURSOR, NO_CURSOR, computeScrollOffset } from './picker-utils.js';
+import { CURSOR, NO_CURSOR, windowSlice } from './picker-utils.js';
 
 interface SingleColumnPickerProps<T> {
   label: string;
@@ -37,10 +37,12 @@ export function SingleColumnPicker<T>({
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
-  const scrollOffset = computeScrollOffset(selectedIndex, visibleRows, items.length);
-  const slice = items.slice(scrollOffset, scrollOffset + visibleRows);
-  const showScrollUp = scrollOffset > 0;
-  const showScrollDown = scrollOffset + visibleRows < items.length;
+  const {
+    scrollOffset,
+    visibleSlice: slice,
+    showScrollUp,
+    showScrollDown,
+  } = windowSlice(items, selectedIndex, visibleRows);
 
   return (
     <Box
@@ -52,39 +54,39 @@ export function SingleColumnPicker<T>({
       borderColor={isActive ? t.accent : t.border}
       paddingX={2}
     >
-      <Text bold color={isActive ? t.accent : t.textDim}>{label}</Text>
+      <Text bold color={isActive ? t.accent : t.textDim}>
+        {label}
+      </Text>
 
       {!hideFilterRow && (
         <Box>
           <Text color={isActive ? t.accent : t.textDim}>{'> '}</Text>
-          {customFilterPrompt ?? (filter
-            ? <Text color={t.text}>{filter}</Text>
-            : <Text color={t.textDim}>Type to filter...</Text>)}
+          {customFilterPrompt ??
+            (filter ? (
+              <Text color={t.text}>{filter}</Text>
+            ) : (
+              <Text color={t.textDim}>Type to filter...</Text>
+            ))}
         </Box>
       )}
 
       {!hideFilterRow && showScrollUp && <ScrollIndicator show direction="up" />}
 
-      {items.length === 0 ? (
-        placeholderWhenEmpty ?? <Text color={t.textDim}>No items</Text>
-      ) : (
-        slice.map((item, i) => {
-          const idx = scrollOffset + i;
-          const isCursor = isActive && idx === selectedIndex;
-          return (
-            <Box key={getKey(item)}>
-              <Text color={isCursor ? t.accent : t.textDim}>
-                {isCursor ? CURSOR : NO_CURSOR}
-              </Text>
-              {renderRow(item, isCursor, contentMaxWidth)}
-            </Box>
-          );
-        })
-      )}
+      {items.length === 0
+        ? (placeholderWhenEmpty ?? <Text color={t.textDim}>No items</Text>)
+        : slice.map((item, i) => {
+            const idx = scrollOffset + i;
+            const isCursor = isActive && idx === selectedIndex;
+            return (
+              <Box key={getKey(item)}>
+                <Text color={isCursor ? t.accent : t.textDim}>{isCursor ? CURSOR : NO_CURSOR}</Text>
+                {renderRow(item, isCursor, contentMaxWidth)}
+              </Box>
+            );
+          })}
 
-      {!hideFilterRow && (showScrollDown
-        ? <ScrollIndicator show direction="down" />
-        : <Text>{' '}</Text>)}
+      {!hideFilterRow &&
+        (showScrollDown ? <ScrollIndicator show direction="down" /> : <Text> </Text>)}
     </Box>
   );
 }

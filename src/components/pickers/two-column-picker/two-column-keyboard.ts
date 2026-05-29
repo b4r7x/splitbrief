@@ -52,7 +52,21 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
 }
 
 export function handleKeyboardInput<L extends FilterableItem, R extends { id: string }>(
-  input: string, key: { escape: boolean; ctrl: boolean; meta: boolean; leftArrow: boolean; rightArrow: boolean; upArrow: boolean; downArrow: boolean; return: boolean; backspace: boolean; delete: boolean; shift: boolean; tab: boolean },
+  input: string,
+  key: {
+    escape: boolean;
+    ctrl: boolean;
+    meta: boolean;
+    leftArrow: boolean;
+    rightArrow: boolean;
+    upArrow: boolean;
+    downArrow: boolean;
+    return: boolean;
+    backspace: boolean;
+    delete: boolean;
+    shift: boolean;
+    tab: boolean;
+  },
   ctx: KeyboardContext<L, R>,
 ): void {
   if (key.escape) {
@@ -86,7 +100,13 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (key.rightArrow) {
-    if (ctx.leftActive && ctx.leftCurrentItem && !ctx.isDisabled && !ctx.isSpecial && (ctx.rightItems.length > 0 || ctx.rightPlaceholder)) {
+    if (
+      ctx.leftActive &&
+      ctx.leftCurrentItem &&
+      !ctx.isDisabled &&
+      !ctx.isSpecial &&
+      (ctx.rightItems.length > 0 || ctx.rightPlaceholder)
+    ) {
       ctx.setActiveColumn('right');
     }
     return;
@@ -119,7 +139,8 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
       return;
     }
     if (ctx.isOnVirtual) {
-      if (ctx.onCustomRightOverlay && ctx.leftCurrentItem) ctx.onCustomRightOverlay(ctx.leftCurrentItem);
+      if (ctx.onCustomRightOverlay && ctx.leftCurrentItem)
+        ctx.onCustomRightOverlay(ctx.leftCurrentItem);
       return;
     }
     const rc = ctx.filteredRight[ctx.rightEffectiveIndex];

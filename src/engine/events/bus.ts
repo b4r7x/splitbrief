@@ -8,13 +8,19 @@ export function createEventBus(): EventBus {
     // must not tear down the engine mid-task. Errors should re-emerge via the bus itself
     // (the offending sink can publish a `warning` event before throwing, if it wants).
     for (const sink of sinks) {
-      try { sink(event); } catch { /* intentional swallow — see comment above */ }
+      try {
+        sink(event);
+      } catch {
+        /* intentional swallow — see comment above */
+      }
     }
   }
 
   function subscribe(sink: EventSink): () => void {
     sinks.add(sink);
-    return () => { sinks.delete(sink); };
+    return () => {
+      sinks.delete(sink);
+    };
   }
 
   function unsubscribeAll(): void {

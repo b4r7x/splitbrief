@@ -34,7 +34,7 @@ function setupSession(name: string): { projectDir: string; sessionId: string } {
 function makeBus(): { bus: EventBus; events: EngineEvent[] } {
   const bus = createEventBus();
   const events: EngineEvent[] = [];
-  bus.subscribe(event => events.push(event));
+  bus.subscribe((event) => events.push(event));
   return { bus, events };
 }
 
@@ -121,14 +121,16 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
     });
     expect(result.state.tasks[0]).toMatchObject({ id: task.id, status: 'pending' });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'recovery_resolved',
-        action: 'route-bigger-worker',
-        outcome: 'retry-current-task',
-        implementerProfile: 'cloud-capable',
-      }),
-    ]));
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'recovery_resolved',
+          action: 'route-bigger-worker',
+          outcome: 'retry-current-task',
+          implementerProfile: 'cloud-capable',
+        }),
+      ]),
+    );
   });
 
   it('blocks when the recovery issue does not name a bigger profile', () => {

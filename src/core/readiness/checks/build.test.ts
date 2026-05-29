@@ -27,7 +27,9 @@ function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRea
 }
 
 function allCheckIds(input: BuildReadinessReportInput): string[] {
-  return buildReadinessReport(input).sections.flatMap(section => section.checks.map(check => check.id));
+  return buildReadinessReport(input).sections.flatMap((section) =>
+    section.checks.map((check) => check.id),
+  );
 }
 
 function readyInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildReadinessReportInput {
@@ -49,8 +51,8 @@ describe('readiness checks', () => {
   it('reports ready for a clean project with valid config, context, and npm test script', () => {
     const report = buildReadinessReport(readyInput());
     const availability = report.sections
-      .flatMap(section => section.checks)
-      .find(check => check.id === 'runners.availability');
+      .flatMap((section) => section.checks)
+      .find((check) => check.id === 'runners.availability');
 
     expect(report.status).toBe('ready');
     expect(report.counts.warning).toBe(0);
@@ -86,13 +88,14 @@ describe('readiness checks', () => {
 
     expect(report.status).toBe('ready-with-warnings');
     expect(report.nextAction.kind).toBe('continue');
-    expect(report.sections
-      .flatMap(section => section.checks)
-      .find(check => check.id === 'context.implementer.missing')?.severity).toBe('warning');
-    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
-      'context.planner.missing',
-      'context.implementer.missing',
-    ]));
+    expect(
+      report.sections
+        .flatMap((section) => section.checks)
+        .find((check) => check.id === 'context.implementer.missing')?.severity,
+    ).toBe('warning');
+    expect(allCheckIds(input)).toEqual(
+      expect.arrayContaining(['context.planner.missing', 'context.implementer.missing']),
+    );
   });
 
   it('reports missing profile cost tier and inferred write mode as non-blocking info', () => {
@@ -121,14 +124,18 @@ describe('readiness checks', () => {
     };
 
     const report = buildReadinessReport(baseInput({ config }));
-    const checks = report.sections.flatMap(section => section.checks);
+    const checks = report.sections.flatMap((section) => section.checks);
 
     expect(report.status).toBe('ready');
-    expect(checks.find(check => check.id === 'runners.implementer.profile-cost-tier-missing')).toMatchObject({
+    expect(
+      checks.find((check) => check.id === 'runners.implementer.profile-cost-tier-missing'),
+    ).toMatchObject({
       severity: 'info',
       metadata: { profile: 'local-qwen', costTier: null },
     });
-    expect(checks.find(check => check.id === 'runners.implementer.profile-writes-files-inferred')).toMatchObject({
+    expect(
+      checks.find((check) => check.id === 'runners.implementer.profile-writes-files-inferred'),
+    ).toMatchObject({
       severity: 'info',
       metadata: { profile: 'local-qwen', writesFiles: 'extracted-code' },
     });
@@ -148,8 +155,8 @@ describe('readiness checks', () => {
 
     const report = buildReadinessReport(baseInput({ config }));
     const budget = report.sections
-      .flatMap(section => section.checks)
-      .find(check => check.id === 'cost.budget-missing');
+      .flatMap((section) => section.checks)
+      .find((check) => check.id === 'cost.budget-missing');
 
     expect(budget).toMatchObject({
       severity: 'info',
@@ -179,10 +186,9 @@ describe('readiness checks', () => {
     const report = buildReadinessReport(input);
 
     expect(report.status).toBe('ready-with-warnings');
-    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
-      'validation.disabled',
-      'validation.test-script-missing',
-    ]));
+    expect(allCheckIds(input)).toEqual(
+      expect.arrayContaining(['validation.disabled', 'validation.test-script-missing']),
+    );
   });
 
   it('warns for dirty repositories and blocks live active sessions', () => {
@@ -199,10 +205,9 @@ describe('readiness checks', () => {
 
     expect(report.status).toBe('blocked');
     expect(report.nextAction.kind).toBe('clean-or-isolate-repo');
-    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
-      'repo.dirty-worktree',
-      'repo.active-session-live',
-    ]));
+    expect(allCheckIds(input)).toEqual(
+      expect.arrayContaining(['repo.dirty-worktree', 'repo.active-session-live']),
+    );
   });
 
   it('summarizes implementer profiles when present', () => {
@@ -227,8 +232,8 @@ describe('readiness checks', () => {
 
     const report = buildReadinessReport(baseInput({ config }));
     const profileCheck = report.sections
-      .flatMap(section => section.checks)
-      .find(check => check.id === 'runners.implementer.default');
+      .flatMap((section) => section.checks)
+      .find((check) => check.id === 'runners.implementer.default');
 
     expect(profileCheck?.summary).toContain('local-qwen');
     expect(profileCheck?.metadata).toMatchObject({

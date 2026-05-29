@@ -35,7 +35,11 @@ describe('listSessions', () => {
 
   it('parses summary.json files from subdirectories', () => {
     tmp = createTempDir('sessions-io-test');
-    writeSessionSubdir(tmp, '2024-01-01-auth', makeSession({ id: '2024-01-01-auth', feature: 'auth' }));
+    writeSessionSubdir(
+      tmp,
+      '2024-01-01-auth',
+      makeSession({ id: '2024-01-01-auth', feature: 'auth' }),
+    );
 
     const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
@@ -45,12 +49,28 @@ describe('listSessions', () => {
 
   it('sorts sessions by startedAt descending', () => {
     tmp = createTempDir('sessions-io-test');
-    writeSessionSubdir(tmp, '2024-01-01-old', makeSession({ id: '2024-01-01-old', startedAt: 1000 }));
-    writeSessionSubdir(tmp, '2024-01-02-mid', makeSession({ id: '2024-01-02-mid', startedAt: 2000 }));
-    writeSessionSubdir(tmp, '2024-01-03-new', makeSession({ id: '2024-01-03-new', startedAt: 3000 }));
+    writeSessionSubdir(
+      tmp,
+      '2024-01-01-old',
+      makeSession({ id: '2024-01-01-old', startedAt: 1000 }),
+    );
+    writeSessionSubdir(
+      tmp,
+      '2024-01-02-mid',
+      makeSession({ id: '2024-01-02-mid', startedAt: 2000 }),
+    );
+    writeSessionSubdir(
+      tmp,
+      '2024-01-03-new',
+      makeSession({ id: '2024-01-03-new', startedAt: 3000 }),
+    );
 
     const sessions = listSessions(tmp);
-    expect(sessions.map(s => s.id)).toEqual(['2024-01-03-new', '2024-01-02-mid', '2024-01-01-old']);
+    expect(sessions.map((s) => s.id)).toEqual([
+      '2024-01-03-new',
+      '2024-01-02-mid',
+      '2024-01-01-old',
+    ]);
   });
 
   it('limits to MAX_RECENT_SESSIONS (10)', () => {
@@ -132,7 +152,10 @@ describe('saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-1' });
     saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-1' }, session);
-    const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json'), 'utf-8');
+    const raw = readFileSync(
+      join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json'),
+      'utf-8',
+    );
     expect(JSON.parse(raw)).toEqual(session);
   });
 
@@ -140,7 +163,10 @@ describe('saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-2' });
     saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-2' }, session);
-    const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-2', 'summary.json'), 'utf-8');
+    const raw = readFileSync(
+      join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-2', 'summary.json'),
+      'utf-8',
+    );
     expect(JSON.parse(raw)).toEqual(session);
   });
 
@@ -148,14 +174,18 @@ describe('saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-3' });
     saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-3' }, session);
-    const stats = statSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-3', 'summary.json'));
+    const stats = statSync(
+      join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-3', 'summary.json'),
+    );
     expect(stats.mode & 0o777).toBe(0o600);
   });
 
   it('validates session data and throws on invalid', () => {
     tmp = createTempDir('sessions-io-test');
     const invalid = { id: 'bad', feature: 123 };
-    expect(() => saveSummary({ projectDir: tmp, sessionId: 'bad' }, invalid as never)).toThrow('Invalid session data');
+    expect(() => saveSummary({ projectDir: tmp, sessionId: 'bad' }, invalid as never)).toThrow(
+      'Invalid session data',
+    );
   });
 
   it('rejects mismatched path id and summary payload id', () => {
@@ -170,7 +200,9 @@ describe('saveSummary', () => {
   it('rejects invalid session ids', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '../outside' });
-    expect(() => saveSummary({ projectDir: tmp, sessionId: '../outside' }, session)).toThrow('Invalid session id');
+    expect(() => saveSummary({ projectDir: tmp, sessionId: '../outside' }, session)).toThrow(
+      'Invalid session id',
+    );
   });
 
   it('round-trips through listSessions', () => {

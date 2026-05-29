@@ -10,8 +10,10 @@ export const ApprovalGrantSchema = z.object({
 });
 export type ApprovalGrant = z.infer<typeof ApprovalGrantSchema>;
 
-export const ApprovalsStoreSchema = z.object({
-  version: z.literal(1),
-  grants: z.array(ApprovalGrantSchema),
-}).strict();
+export const ApprovalsStoreSchema = z
+  .object({
+    version: z.literal(1),
+    grants: z.array(ApprovalGrantSchema),
+  })
+  .strict();
 export type ApprovalsStore = z.infer<typeof ApprovalsStoreSchema>;

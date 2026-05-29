@@ -2,7 +2,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
@@ -47,8 +51,8 @@ describe('initializeWorkflow', () => {
       };
       let trackedState: WorkflowState | undefined;
 
-      const init = await initializeWorkflow(
-        {
+      const init = await initializeWorkflow({
+        opts: {
           feature,
           projectDir,
           config,
@@ -61,11 +65,11 @@ describe('initializeWorkflow', () => {
         sessionId,
         summaryBase,
         metadata,
-        (state) => {
+        setTrackedState: (state) => {
           trackedState = state;
         },
-        { messages: [] },
-      );
+        resumeHolder: { messages: [] },
+      });
 
       expect(init.ok).toBe(true);
       expect(trackedState?.feature).toBe(feature);
@@ -83,7 +87,10 @@ describe('initializeWorkflow', () => {
         file: task.file,
         action: task.action,
       };
-      const result = await runPreHooks(init.wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
+      const result = await runPreHooks(init.wctx.config.hooks, 'pre_task', preTaskPayload, {
+        projectDir,
+        sessionId,
+      });
 
       expect(result).toEqual({ allow: false, reason: 'blocked by discovered hook' });
     });

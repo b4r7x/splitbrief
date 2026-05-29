@@ -15,7 +15,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    await rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
   vi.restoreAllMocks();
 });
 
@@ -46,7 +50,14 @@ describe('createSaveHandler', () => {
 
   it('round-trip: written tasks.md parses back to same count and IDs', async () => {
     const t1 = makeTask({ implementationSteps: ['s1'], tests: ['t1'] });
-    const t2 = makeTask({ id: 'T002', title: 'B', file: 'src/b.ts', description: 'B desc', implementationSteps: ['s2'], tests: ['t2'] });
+    const t2 = makeTask({
+      id: 'T002',
+      title: 'B',
+      file: 'src/b.ts',
+      description: 'B desc',
+      implementationSteps: ['s2'],
+      tests: ['t2'],
+    });
     planEditorStore.initEditor([t1, t2]);
 
     const onApprove = vi.fn();
@@ -72,8 +83,21 @@ describe('createSaveHandler', () => {
   });
 
   it('catches parse errors and surfaces them as saveError', async () => {
-    const t1 = makeTask({ id: 'T001', implementationSteps: ['s1'], tests: ['t1'], dependsOn: ['T002'] });
-    const t2 = makeTask({ id: 'T002', title: 'B', file: 'src/b.ts', description: 'B desc', implementationSteps: ['s2'], tests: ['t2'], dependsOn: ['T001'] });
+    const t1 = makeTask({
+      id: 'T001',
+      implementationSteps: ['s1'],
+      tests: ['t1'],
+      dependsOn: ['T002'],
+    });
+    const t2 = makeTask({
+      id: 'T002',
+      title: 'B',
+      file: 'src/b.ts',
+      description: 'B desc',
+      implementationSteps: ['s2'],
+      tests: ['t2'],
+      dependsOn: ['T001'],
+    });
     planEditorStore.initEditor([t1, t2]);
 
     const onApprove = vi.fn();
@@ -82,5 +106,4 @@ describe('createSaveHandler', () => {
     expect(onApprove).not.toHaveBeenCalled();
     expect(planEditorStore.get().saveError).toContain('Round-trip parse failed');
   });
-
 });

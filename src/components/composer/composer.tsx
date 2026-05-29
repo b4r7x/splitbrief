@@ -23,7 +23,10 @@ import { computeCompletionOverlayRows, computeCompletionCap } from './completion
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 
-function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
+function borderColorForMode(
+  mode: InputMode,
+  theme: { planner: string; warning: string; border: string },
+): string {
   if (mode === 'review') return theme.planner;
   if (mode === 'question') return theme.warning;
   return theme.border;
@@ -112,7 +115,6 @@ export function Composer({
   const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
 
   const handleFileDrop = (path: string) => {
-    const projectDir = configStore.get().projectDir;
     const result = attachImage(path, projectDir);
     if (result.ok) {
       feedbackStore.setMessage(`Attached: ${result.path}`);
@@ -210,8 +212,7 @@ export function Composer({
               onVisibleRowsChange={setVisibleRows}
               keyBindings={{
                 submit: (key: { return: boolean }) => key.return,
-                newline: (key: { return: boolean; shift: boolean }) =>
-                  key.return && key.shift,
+                newline: (key: { return: boolean; shift: boolean }) => key.return && key.shift,
               }}
               onBoundaryNavigate={handleInputBoundaryNavigate}
             />

@@ -28,14 +28,8 @@ const ERROR_PATTERNS: Array<[RegExp | ((msg: string) => boolean), ErrorHint]> = 
     /\b429\b|[Tt]oo [Mm]any [Rr]equests|rate[._\s-]limit/i,
     { message: 'Rate limited by provider', hint: 'Will retry automatically.' },
   ],
-  [
-    /ENOTFOUND/,
-    { message: 'Cannot reach host', hint: 'Check your network connection.' },
-  ],
-  [
-    /ECONNREFUSED/,
-    { message: 'Cannot connect to provider', hint: 'Is the service running?' },
-  ],
+  [/ENOTFOUND/, { message: 'Cannot reach host', hint: 'Check your network connection.' }],
+  [/ECONNREFUSED/, { message: 'Cannot connect to provider', hint: 'Is the service running?' }],
 ];
 
 export function getErrorHint(error: string): ErrorHint | undefined {

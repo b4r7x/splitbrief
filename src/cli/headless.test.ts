@@ -104,7 +104,10 @@ function makeBudgetState(): WorkflowState {
     tests: ['verifies budget pause behavior with a passing validation command'],
     constraints: ['keep behavior focused on the budget threshold'],
     typeDefs: 'function runBudgetFixture(): void',
-    implementationSteps: ['1. Run the implementation once', '2. Stop at the budget pause threshold'],
+    implementationSteps: [
+      '1. Run the implementation once',
+      '2. Stop at the budget pause threshold',
+    ],
     scope: { inBounds: ['budget behavior'], outOfBounds: ['unrelated workflow changes'] },
     evidence: ['headless JSON output includes budget_paused'],
   });
@@ -133,8 +136,12 @@ describe('runHeadless — budget pause behavior', () => {
       stdoutChunks.push(String(chunk));
       return true;
     });
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code: number | string | null | undefined) => {
-      const err = new Error(`process.exit(${String(code)})`) as Error & { code: number | string | null | undefined };
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code: number | string | null | undefined,
+    ) => {
+      const err = new Error(`process.exit(${String(code)})`) as Error & {
+        code: number | string | null | undefined;
+      };
       err.code = code;
       throw err;
     }) as never);
@@ -184,25 +191,30 @@ describe('runHeadless — budget pause behavior', () => {
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => JSON.parse(line) as {
-        type?: string;
-        currentCost?: number;
-        maxBudget?: number;
-        threshold?: number;
-        reason?: string;
-        sessionId?: string;
-      });
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type?: string;
+            currentCost?: number;
+            maxBudget?: number;
+            threshold?: number;
+            reason?: string;
+            sessionId?: string;
+          },
+      );
     const paused = jsonLines.find((line) => line.type === 'budget_paused');
 
     expect(paused).toBeDefined();
     expect(paused?.currentCost).toBeGreaterThan(17);
     expect(paused?.maxBudget).toBe(20);
     expect(paused?.threshold).toBe(0.85);
-    expect(jsonLines).toContainEqual(expect.objectContaining({
-      type: 'recovery_required',
-      sessionId,
-      reason: 'budget-paused',
-    }));
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_required',
+        sessionId,
+        reason: 'budget-paused',
+      }),
+    );
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
@@ -320,24 +332,29 @@ describe('runHeadless — recovery stops', () => {
       maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
-    const state = transition({
-      ...createInitialState('recover me'),
-      phase: 'implementing',
-      tasks: [task],
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    }, { type: 'SET_PENDING_RECOVERY', issue });
+    const state = transition(
+      {
+        ...createInitialState('recover me'),
+        phase: 'implementing',
+        tasks: [task],
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      { type: 'SET_PENDING_RECOVERY', issue },
+    );
     saveState(projectDir, sessionId, state);
 
-    await expect(runHeadless({
-      feature: 'recover me',
-      projectDir: projectDir,
-      opts: {},
-      savedState: state,
-      sessionId: sessionId,
-      _planner: planner,
-      _implementer: implementer,
-    })).rejects.toMatchObject({
+    await expect(
+      runHeadless({
+        feature: 'recover me',
+        projectDir: projectDir,
+        opts: {},
+        savedState: state,
+        sessionId: sessionId,
+        _planner: planner,
+        _implementer: implementer,
+      }),
+    ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('Recovery required'),
     });
@@ -347,12 +364,27 @@ describe('runHeadless — recovery stops', () => {
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => JSON.parse(line) as { type?: string; reason?: string; availableActions?: string[]; sessionId?: string });
-    expect(jsonLines).toContainEqual(expect.objectContaining({
-      type: 'recovery_required',
-      sessionId,
-      reason: 'retry-exhausted',
-      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
-    }));
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type?: string;
+            reason?: string;
+            availableActions?: string[];
+            sessionId?: string;
+          },
+      );
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_required',
+        sessionId,
+        reason: 'retry-exhausted',
+        availableActions: [
+          'planner-split-rebase',
+          'skip-current-task',
+          'pause-run',
+          'abort-workflow',
+        ],
+      }),
+    );
   });
 });

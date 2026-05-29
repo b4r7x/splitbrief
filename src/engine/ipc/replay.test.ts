@@ -31,11 +31,12 @@ afterEach(() => {
 describe('readReplayEvents', () => {
   it('returns empty result for nonexistent file', async () => {
     const result = await readReplayEvents({ sessionJsonlPath: '/nonexistent/path/session.jsonl' });
-    expect(result).toEqual({ events: [], count: 0, firstTs: null, lastTs: null });
+    expect(result).toEqual({ events: [], firstTs: null, lastTs: null });
   });
 
   it('returns all events from a valid session.jsonl', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const events: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
@@ -45,7 +46,6 @@ describe('readReplayEvents', () => {
     writeFileSync(filePath, events.map(makeSessionEntry).join('\n') + '\n');
 
     const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.count).toBe(3);
     expect(result.events).toHaveLength(3);
     expect(result.events[0]!.type).toBe('workflow_started');
     expect(result.events[2]!.type).toBe('warning');
@@ -54,7 +54,8 @@ describe('readReplayEvents', () => {
   });
 
   it('skips malformed JSON lines and returns valid events around them', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const lines = [
       makeSessionEntry({ type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' }),
@@ -64,44 +65,14 @@ describe('readReplayEvents', () => {
     writeFileSync(filePath, lines.join('\n') + '\n');
 
     const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.count).toBe(2);
+    expect(result.events).toHaveLength(2);
     expect(result.events[0]!.type).toBe('workflow_started');
     expect(result.events[1]!.type).toBe('workflow_complete');
   });
 
-  it('applies fromTs filter and only returns events with ts >= fromTs', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
-    const filePath = join(dir, 'session.jsonl');
-    const events: EngineEvent[] = [
-      { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
-      { type: 'warning', ts: 2000, phase: 'idle', message: 'a' },
-      { type: 'workflow_complete', ts: 3000, phase: 'idle' },
-    ];
-    writeFileSync(filePath, events.map(makeSessionEntry).join('\n') + '\n');
-
-    const result = await readReplayEvents({ sessionJsonlPath: filePath, fromTs: 2000 });
-    expect(result.count).toBe(2);
-    expect(result.events[0]!.ts).toBe(2000);
-    expect(result.events[1]!.ts).toBe(3000);
-  });
-
-  it('firstTs and lastTs reflect the filtered set', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
-    const filePath = join(dir, 'session.jsonl');
-    const events: EngineEvent[] = [
-      { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
-      { type: 'warning', ts: 2500, phase: 'idle', message: 'b' },
-      { type: 'workflow_complete', ts: 5000, phase: 'idle' },
-    ];
-    writeFileSync(filePath, events.map(makeSessionEntry).join('\n') + '\n');
-
-    const result = await readReplayEvents({ sessionJsonlPath: filePath, fromTs: 2000 });
-    expect(result.firstTs).toBe(2500);
-    expect(result.lastTs).toBe(5000);
-  });
-
   it('handles large files (>1000 lines) using streaming readline', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     // Write 1200 events with enough data per line to exceed typical buffer sizes
     const lines: string[] = [];
@@ -118,34 +89,32 @@ describe('readReplayEvents', () => {
     writeFileSync(filePath, lines.join('\n') + '\n');
 
     const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.count).toBe(1200);
+    expect(result.events).toHaveLength(1200);
     expect(result.firstTs).toBe(0);
     expect(result.lastTs).toBe(1199 * 1000);
   });
 
-  it('returns empty result when all events filtered out by fromTs', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
-    const filePath = join(dir, 'session.jsonl');
-    const events: EngineEvent[] = [
-      { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
-    ];
-    writeFileSync(filePath, events.map(makeSessionEntry).join('\n') + '\n');
-
-    const result = await readReplayEvents({ sessionJsonlPath: filePath, fromTs: 9999 });
-    expect(result.count).toBe(0);
-    expect(result.firstTs).toBeNull();
-    expect(result.lastTs).toBeNull();
-  });
-
   it('skips lines with kind !== event', async () => {
-    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
-    const messageLine = JSON.stringify({ kind: 'message', ts: new Date(500).toISOString(), role: 'user', phase: 'idle', text: 'hello' });
-    const eventLine = makeSessionEntry({ type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' });
+    const messageLine = JSON.stringify({
+      kind: 'message',
+      ts: new Date(500).toISOString(),
+      role: 'user',
+      phase: 'idle',
+      text: 'hello',
+    });
+    const eventLine = makeSessionEntry({
+      type: 'workflow_started',
+      ts: 1000,
+      phase: 'idle',
+      feature: 'test',
+    });
     writeFileSync(filePath, [messageLine, eventLine].join('\n') + '\n');
 
     const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.count).toBe(1);
+    expect(result.events).toHaveLength(1);
     expect(result.events[0]!.type).toBe('workflow_started');
   });
 });

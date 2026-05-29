@@ -12,9 +12,12 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import { readEvidenceLedger } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import type { RoutingDecision } from '../context-routing/types.js';
-import { createApprovalPromotionConflict, classifyUserEditConflict } from '../user-edit/conflicts.js';
+import {
+  createApprovalPromotionConflict,
+  classifyUserEditConflict,
+} from '../user-edit/conflicts.js';
 import { RecoveryIssueSchema } from '../../../core/schemas/recovery.js';
 import {
   buildContextOverflowRecoveryIssue,
@@ -86,7 +89,7 @@ function setupSession(name = 'recovery-action'): { projectDir: string; sessionId
 function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events: EngineEvent[] } {
   const bus = createEventBus();
   const events: EngineEvent[] = [];
-  bus.subscribe(event => events.push(event));
+  bus.subscribe((event) => events.push(event));
   bus.subscribe(createJsonlSink(projectDir, sessionId, true));
   return { bus, events };
 }
@@ -123,13 +126,15 @@ describe('recovery issue builders', () => {
     expect(issue.reason).toBe('retry-exhausted');
     expect(issue.phase).toBe('escalating');
     expect(issue.recommendedAction).toBe('route-bigger-worker');
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'route-bigger-worker',
-      'planner-split-rebase',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(issue.availableActions).toEqual(
+      expect.arrayContaining([
+        'route-bigger-worker',
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ]),
+    );
     expectValidRecoveryIssue(issue);
 
     const override = buildRetryExhaustedRecoveryIssue({
@@ -157,12 +162,14 @@ describe('recovery issue builders', () => {
 
     expect(withRoute.reason).toBe('context-overflow');
     expect(withRoute.recommendedAction).toBe('route-bigger-worker');
-    expect(withRoute.availableActions).toEqual(expect.arrayContaining([
-      'route-bigger-worker',
-      'planner-split-rebase',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(withRoute.availableActions).toEqual(
+      expect.arrayContaining([
+        'route-bigger-worker',
+        'planner-split-rebase',
+        'pause-run',
+        'abort-workflow',
+      ]),
+    );
     expect(withRoute.facts).toMatchObject({
       estimatedTokens: 45_000,
       contextLength: 32_768,
@@ -177,11 +184,9 @@ describe('recovery issue builders', () => {
     });
 
     expect(withoutRoute.recommendedAction).toBe('planner-split-rebase');
-    expect(withoutRoute.availableActions).toEqual(expect.arrayContaining([
-      'planner-split-rebase',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(withoutRoute.availableActions).toEqual(
+      expect.arrayContaining(['planner-split-rebase', 'pause-run', 'abort-workflow']),
+    );
     expectValidRecoveryIssue(withoutRoute);
 
     const explicitlyUnavailableRoute = buildContextOverflowRecoveryIssue({
@@ -192,11 +197,9 @@ describe('recovery issue builders', () => {
       canRouteBigger: false,
     });
 
-    expect(explicitlyUnavailableRoute.availableActions).toEqual(expect.arrayContaining([
-      'planner-split-rebase',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(explicitlyUnavailableRoute.availableActions).toEqual(
+      expect.arrayContaining(['planner-split-rebase', 'pause-run', 'abort-workflow']),
+    );
     expectValidRecoveryIssue(explicitlyUnavailableRoute);
   });
 
@@ -219,12 +222,14 @@ describe('recovery issue builders', () => {
     expect(issue.message).toBe('User edits conflict with T014');
     expect(issue.files).toEqual(['src/current.ts']);
     expect(issue.affectedTaskIds).toEqual([task.id]);
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'planner-split-rebase',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(issue.availableActions).toEqual(
+      expect.arrayContaining([
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ]),
+    );
     expect(issue.recommendedAction).toBe('planner-split-rebase');
     expectValidRecoveryIssue(issue);
   });
@@ -244,7 +249,9 @@ describe('recovery issue builders', () => {
       createdAt,
     });
 
-    expect(issue.availableActions).toEqual(expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']));
+    expect(issue.availableActions).toEqual(
+      expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']),
+    );
     expect(issue.recommendedAction).toBe('continue');
     expect(issue.facts).toMatchObject({ safeToContinue: true, conflictKind: 'unrelated' });
     expectValidRecoveryIssue(issue);
@@ -289,12 +296,14 @@ describe('recovery issue builders', () => {
 
     expect(issue.reason).toBe('approval-promotion-conflict');
     expect(issue.message).toBe('Approval promotion blocked for T016');
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'planner-split-rebase',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(issue.availableActions).toEqual(
+      expect.arrayContaining([
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ]),
+    );
     expect(issue.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(issue);
   });
@@ -312,7 +321,9 @@ describe('recovery issue builders', () => {
     });
 
     expect(belowMax.reason).toBe('budget-paused');
-    expect(belowMax.availableActions).toEqual(expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']));
+    expect(belowMax.availableActions).toEqual(
+      expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']),
+    );
     expect(belowMax.facts).toMatchObject({ budgetPercent: 85, belowMaxBudget: true });
     expectValidRecoveryIssue(belowMax);
 
@@ -362,12 +373,14 @@ describe('recovery issue builders', () => {
     expect(issue.files).toEqual(['src/base.ts', 'src/followup.ts']);
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'planner-split-rebase',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
+    expect(issue.availableActions).toEqual(
+      expect.arrayContaining([
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ]),
+    );
     expect(issue.recommendedAction).toBe('planner-split-rebase');
     expectValidRecoveryIssue(issue);
   });
@@ -400,7 +413,9 @@ describe('applyRecoveryAction', () => {
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
     expect(readSessionLog(projectDir, sessionId)).toContain('"type":"recovery_resolved"');
   });
 
@@ -412,7 +427,9 @@ describe('applyRecoveryAction', () => {
         currentCost: 5.25,
         maxBudget: 5,
       }),
-      availableActions: ['continue', 'pause-run', 'abort-workflow'] as ReturnType<typeof buildBudgetExceededRecoveryIssue>['availableActions'],
+      availableActions: ['continue', 'pause-run', 'abort-workflow'] as ReturnType<
+        typeof buildBudgetExceededRecoveryIssue
+      >['availableActions'],
     };
     const state = { ...implementingState([makeTask({ id: 'T031' })]), pendingRecovery: issue };
     saveState(projectDir, sessionId, state);
@@ -429,7 +446,9 @@ describe('applyRecoveryAction', () => {
 
     expect(result).toMatchObject({ ok: false, status: 'blocked', code: 'unsafe-continue' });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
+    );
     expect(state.pendingRecovery).toEqual(issue);
   });
 
@@ -467,7 +486,9 @@ describe('applyRecoveryAction', () => {
       status: 'paused',
       selectedAction: 'pause-run',
     });
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected']),
+    );
   });
 
   it('aborts intentionally without mutating task status', () => {
@@ -500,7 +521,9 @@ describe('applyRecoveryAction', () => {
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
     expect(persisted?.tasks).toEqual([]);
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
   });
 
   it('skips the current task, records evidence, clears recovery, and does not overwrite user edits', () => {
@@ -538,11 +561,9 @@ describe('applyRecoveryAction', () => {
     expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.observedEvidence).toContain(
       'skipped: recovery retry-exhausted: T034 exhausted recovery retries',
     );
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining([
-      'recovery_action_selected',
-      'task_skipped',
-      'recovery_resolved',
-    ]));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'task_skipped', 'recovery_resolved']),
+    );
   });
 
   it('prepares retry-same-worker by resetting only the current task without advancing', () => {
@@ -583,7 +604,9 @@ describe('applyRecoveryAction', () => {
     expect(result.state.tasks[0]?.status).toBe('pending');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState(projectDir, sessionId)?.tasks[0]?.status).toBe('pending');
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
   });
 
   it('prepares route-bigger-worker by resetting the current task with the selected profile', () => {
@@ -608,16 +631,42 @@ describe('applyRecoveryAction', () => {
       config: {
         version: 2,
         planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'qwen-small' },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen-small',
+        },
         implementerProfiles: {
           default: 'local-qwen',
           profiles: {
-            'cheap-cloud': { kind: 'api', provider: 'deepseek', apiBase: 'https://api.deepseek.com/v1', model: 'deepseek-chat', costTier: 'cheap' },
-            'local-qwen': { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'qwen-small', costTier: 'local' },
+            'cheap-cloud': {
+              kind: 'api',
+              provider: 'deepseek',
+              apiBase: 'https://api.deepseek.com/v1',
+              model: 'deepseek-chat',
+              costTier: 'cheap',
+            },
+            'local-qwen': {
+              kind: 'api',
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
+              model: 'qwen-small',
+              costTier: 'local',
+            },
           },
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, compactionFormat: 'auto', mode: 'standard', taskReview: 'none' },
+        workflow: {
+          autoApproveSpec: false,
+          autoApprovePlan: false,
+          maxRetries: 3,
+          commitStrategy: 'none',
+          persistTranscript: true,
+          compactionFormat: 'auto',
+          mode: 'standard',
+          taskReview: 'none',
+        },
       },
       selectedAt,
     });
@@ -631,7 +680,9 @@ describe('applyRecoveryAction', () => {
     expect(result.state.tasks[0]?.status).toBe('pending');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
   });
 
   it('blocks planner-split-rebase until a proposal approval flow exists', () => {
@@ -662,6 +713,8 @@ describe('applyRecoveryAction', () => {
     });
     expect(result.state.pendingRecovery).toEqual(issue);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
+    );
   });
 });

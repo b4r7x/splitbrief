@@ -5,7 +5,11 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -16,7 +20,11 @@ import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'speckit' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'speckit',
+} as const;
 
 const SAMPLE_SPEC = '# Spec\n\n- requirement A\n';
 const SAMPLE_PLAN = '# Plan\n\n1. step A\n';
@@ -53,14 +61,21 @@ afterEach(() => {
   dirs = [];
 });
 
-function setupProject(opts?: { withConstitution?: string }): { projectDir: string; sessionId: string } {
+function setupProject(opts?: { withConstitution?: string }): {
+  projectDir: string;
+  sessionId: string;
+} {
   const projectDir = createTempDir('speckit-test');
   dirs.push(projectDir);
   const sessionId = 'sess-speckit';
   ensureSessionDir(projectDir, sessionId);
   if (opts?.withConstitution !== undefined) {
     mkdirSync(join(projectDir, '.specify', 'memory'), { recursive: true });
-    writeFileSync(join(projectDir, '.specify', 'memory', 'constitution.md'), opts.withConstitution, 'utf8');
+    writeFileSync(
+      join(projectDir, '.specify', 'memory', 'constitution.md'),
+      opts.withConstitution,
+      'utf8',
+    );
   }
   // Pre-write the spec/plan/tasks artifacts so the planner mock doesn't have to.
   const dir = sessionDir(projectDir, sessionId);
@@ -74,12 +89,14 @@ function planResult(): PlanResult {
   return {
     spec: SAMPLE_SPEC,
     plan: SAMPLE_PLAN,
-    tasks: [makeTask({
-      id: 'T001',
-      scope: { inBounds: ['src/a.ts'], outOfBounds: ['other files'] },
-      evidence: ['brief-quality.json recorded a passing gate'],
-      typeDefs: 'type TaskA = { path: string }',
-    })],
+    tasks: [
+      makeTask({
+        id: 'T001',
+        scope: { inBounds: ['src/a.ts'], outOfBounds: ['other files'] },
+        evidence: ['brief-quality.json recorded a passing gate'],
+        typeDefs: 'type TaskA = { path: string }',
+      }),
+    ],
     usage: { inputTokens: 10, outputTokens: 5 },
     phases: [],
   };
@@ -106,20 +123,32 @@ async function runSpeckit(opts: RunOpts = {}) {
   const { projectDir, sessionId } = setupProject(
     opts.withConstitution !== undefined ? { withConstitution: opts.withConstitution } : {},
   );
-  const reviewFn = opts.reviewText ?? (() => '```json\n{"specTaskCoverage":1,"planTaskCoverage":1,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```');
+  const reviewFn =
+    opts.reviewText ??
+    (() =>
+      '```json\n{"specTaskCoverage":1,"planTaskCoverage":1,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```');
   const planner = makePlanner({
     plan: vi.fn().mockResolvedValue(planResult()),
-    review: vi.fn().mockImplementation(async (prompt: string) => ({ text: reviewFn(prompt), usage: null })),
+    review: vi
+      .fn()
+      .mockImplementation(async (prompt: string) => ({ text: reviewFn(prompt), usage: null })),
     ...opts.plannerOverrides,
   });
   const { callbacks } = makeCallbacks(opts.callbacksOverride);
-  const config = makeConfig({ workflow: { mode: 'speckit', autoApproveSpec: true, autoApprovePlan: true } });
+  const config = makeConfig({
+    workflow: { mode: 'speckit', autoApproveSpec: true, autoApprovePlan: true },
+  });
   const { bus, events } = makeBusRecorder();
   const initial = createInitialState('add login');
   const state: WorkflowState = { ...initial, phase: 'idle' };
   const result = await runPlanningPhase({
     wctx: {
-      projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+      projectDir,
+      config,
+      callbacks,
+      metadata: TEST_METADATA,
+      sessionId,
+      bus,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     },
     planner,
@@ -171,23 +200,27 @@ describe('runSpeckitPlanning', () => {
   });
 
   it('aborts the workflow on a hard constitution violation', async () => {
-    const failJson = '```json\n{"passed":false,"violations":[{"principle":"P1","reason":"bad","severity":"hard"}]}\n```';
+    const failJson =
+      '```json\n{"passed":false,"violations":[{"principle":"P1","reason":"bad","severity":"hard"}]}\n```';
     const { result, projectDir, sessionId } = await runSpeckit({
       withConstitution: '# Rules',
-      reviewText: (p) => p.includes('Constitution Check') ? failJson : '{}',
+      reviewText: (p) => (p.includes('Constitution Check') ? failJson : '{}'),
     });
     expect(result.cancelled).toBe(true);
     expect(result.state.phase).toBe('idle');
     expect(result.tasks).toEqual([]);
-    const cc = JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), 'constitution-check.json'), 'utf8'));
+    const cc = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), 'constitution-check.json'), 'utf8'),
+    );
     expect(cc.passed).toBe(false);
   });
 
   it('emits a warning event when analyze coverage is below threshold', async () => {
-    const lowCoverage = '```json\n{"specTaskCoverage":0.4,"planTaskCoverage":0.5,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```';
+    const lowCoverage =
+      '```json\n{"specTaskCoverage":0.4,"planTaskCoverage":0.5,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```';
     const { events } = await runSpeckit({ reviewText: () => lowCoverage });
-    const warnings = events.filter(e => e.type === 'warning');
-    expect(warnings.some(w => 'message' in w && /coverage below/.test(w.message))).toBe(true);
+    const warnings = events.filter((e) => e.type === 'warning');
+    expect(warnings.some((w) => 'message' in w && /coverage below/.test(w.message))).toBe(true);
   });
 
   it('records planner token usage from analyze review calls', async () => {
@@ -201,14 +234,20 @@ describe('runSpeckitPlanning', () => {
       },
     });
 
-    expect(withReviewUsage.result.state.tokenUsage.plannerInput - withoutReviewUsage.result.state.tokenUsage.plannerInput).toBe(7);
-    expect(withReviewUsage.result.state.tokenUsage.plannerOutput - withoutReviewUsage.result.state.tokenUsage.plannerOutput).toBe(3);
+    expect(
+      withReviewUsage.result.state.tokenUsage.plannerInput -
+        withoutReviewUsage.result.state.tokenUsage.plannerInput,
+    ).toBe(7);
+    expect(
+      withReviewUsage.result.state.tokenUsage.plannerOutput -
+        withoutReviewUsage.result.state.tokenUsage.plannerOutput,
+    ).toBe(3);
   });
 
   it('passes through phases in the documented order', async () => {
     const { events } = await runSpeckit();
-    const statusEvents = events.filter(e => e.type === 'planner_status');
-    const phasesInOrder = statusEvents.map(e => 'phase' in e ? e.phase : null);
+    const statusEvents = events.filter((e) => e.type === 'planner_status');
+    const phasesInOrder = statusEvents.map((e) => ('phase' in e ? e.phase : null));
     expect(phasesInOrder).toContain('clarifying');
     expect(phasesInOrder).toContain('constitution-check');
     expect(phasesInOrder).toContain('analyzing');
@@ -220,7 +259,8 @@ describe('runSpeckitPlanning', () => {
   });
 
   it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockResolvedValueOnce({ approved: true })
       .mockResolvedValue({ approved: false });
@@ -233,7 +273,8 @@ describe('runSpeckitPlanning', () => {
 
   it('blocks invalid briefs even when user approves reviewing-briefs', async () => {
     let tasksPath = '';
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async (_type, filePath) => {

@@ -51,7 +51,7 @@ describe('dispatchStreamCompletion', () => {
       model: 'some-model',
       messages: [{ role: 'user', content: 'hello' }],
       temperature: 0.2,
-      onProgress: text => progress.push(text),
+      onProgress: (text) => progress.push(text),
     });
 
     expect(result.text).toBe('Hi there');

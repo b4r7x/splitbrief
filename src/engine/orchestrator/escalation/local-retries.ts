@@ -7,7 +7,10 @@ import { runRetryStep } from './step.js';
 import type { EscalationContext, RetryStepOutcome } from './types.js';
 
 export async function runLocalRetries(
-  ctx: EscalationContext, initialTask: Task, initialState: WorkflowState, initialError: string,
+  ctx: EscalationContext,
+  initialTask: Task,
+  initialState: WorkflowState,
+  initialError: string,
 ): Promise<RetryStepOutcome> {
   let state = initialState;
   let task = initialTask;
@@ -22,26 +25,66 @@ export async function runLocalRetries(
     if (state.phase === 'implementing') {
       state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'TASK_SENT' });
     }
-    state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'VALIDATION_FAIL' }, maxRetries);
+    state = transitionAndSave(
+      ctx.projectDir,
+      ctx.sessionId,
+      state,
+      { type: 'VALIDATION_FAIL' },
+      maxRetries,
+    );
     if (state.phase === 'escalating') {
-      publishRetry({ bus: ctx.bus, phase: state.phase }, task.id, attempt, maxRetries, lastError);
+      publishRetry({
+        bus: ctx.bus,
+        phase: state.phase,
+        taskId: task.id,
+        attempt,
+        maxRetries,
+        error: lastError,
+      });
       break;
     }
-    publishRetry({ bus: ctx.bus, phase: state.phase }, task.id, attempt, maxRetries, lastError);
+    publishRetry({
+      bus: ctx.bus,
+      phase: state.phase,
+      taskId: task.id,
+      attempt,
+      maxRetries,
+      error: lastError,
+    });
 
     const outcome = await runRetryStep({
-      ctx, task, state, lastError, attempts,
-      method: 'local', transitionType: 'VALIDATION_PASS',
+      ctx,
+      task,
+      state,
+      lastError,
+      attempts,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
       usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
       profileOverride: ctx.retryProfileOverride,
-      invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, implementer, config, signal }) =>
+      invokeRetry: async ({
+        task: t,
+        lastError: err,
+        attempts: a,
+        projectDir,
+        implementer,
+        config,
+        signal,
+      }) =>
         implementer.retry({
-          task: t, projectDir, config, context: ctx.context,
-          languageContext: buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language),
-          error: err, attempt: a, kind: 'local',
+          task: t,
+          projectDir,
+          config,
+          context: ctx.context,
+          languageContext: buildProjectLanguageContext(
+            ctx.projectDir,
+            state.discoveredValidation?.language,
+          ),
+          error: err,
+          attempt: a,
+          kind: 'local',
           onOutput: textHandler,
-          bus: ctx.bus,
           phase: state.phase,
           signal,
         }),

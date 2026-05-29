@@ -80,7 +80,9 @@ describe('applyCLIOverrides — plannerEffort', () => {
     expect(result.planner.effort).toBe('high');
   });
   it('throws on invalid effort value', () => {
-    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'bogus' })).toThrow(/Must be one of/);
+    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'bogus' })).toThrow(
+      /Must be one of/,
+    );
   });
   it('leaves config untouched when override absent', () => {
     const result = applyCLIOverrides(baseConfig, {});
@@ -135,7 +137,10 @@ describe('applyCLIOverrides — yolo', () => {
   });
 
   it('non-yolo override does not change approval', () => {
-    const config: Config = { ...baseConfig, approval: { enabled: true, feedRejectionsToPlanner: true } };
+    const config: Config = {
+      ...baseConfig,
+      approval: { enabled: true, feedRejectionsToPlanner: true },
+    };
     const result = applyCLIOverrides(config, {});
     expect(result.approval?.enabled).toBe(true);
   });

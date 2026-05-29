@@ -12,9 +12,10 @@ export function getTaskEditorRowHeight(
   metadata?: PlanTaskReviewMetadata | undefined,
 ): number {
   if (!isExpanded) return 3;
-  const scopeItems = (task.scope?.inBounds?.length ?? 0)
-    + (task.scope?.outOfBounds?.length ?? 0)
-    + (task.scope?.approvedOutOfBounds?.length ?? 0);
+  const scopeItems =
+    (task.scope?.inBounds?.length ?? 0) +
+    (task.scope?.outOfBounds?.length ?? 0) +
+    (task.scope?.approvedOutOfBounds?.length ?? 0);
   const routingItems = [
     metadata?.checkpoint,
     metadata?.costPosture,
@@ -35,16 +36,20 @@ export function getTaskEditorRowHeight(
   return 3 + 1 + detailListRows;
 }
 
-export function getVisibleTaskWindow(
-  tasks: Task[],
-  cursor: number,
-  expandedIds: ReadonlySet<string>,
-  metadata: ReadonlyMap<string, PlanTaskReviewMetadata>,
-  rowBudget: number,
-): VisibleTaskWindow {
+export interface VisibleTaskWindowInput {
+  tasks: Task[];
+  cursor: number;
+  expandedIds: ReadonlySet<string>;
+  metadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
+  rowBudget: number;
+}
+
+export function getVisibleTaskWindow(input: VisibleTaskWindowInput): VisibleTaskWindow {
+  const { tasks, cursor, expandedIds, metadata, rowBudget } = input;
   if (tasks.length === 0) return { scrollOffset: 0, visibleTasks: [] };
 
-  const heightFor = (task: Task) => getTaskEditorRowHeight(task, expandedIds.has(task.id), metadata.get(task.id));
+  const heightFor = (task: Task) =>
+    getTaskEditorRowHeight(task, expandedIds.has(task.id), metadata.get(task.id));
   const clampedCursor = Math.max(0, Math.min(cursor, tasks.length - 1));
   const cursorTask = tasks[clampedCursor];
   if (!cursorTask) return { scrollOffset: 0, visibleTasks: [] };

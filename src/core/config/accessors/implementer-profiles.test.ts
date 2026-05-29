@@ -54,9 +54,11 @@ describe('resolveImplementerProfiles', () => {
 
     const resolved = resolveImplementerProfiles(config);
 
-    expect(resolved.profiles.map(profile => profile.name)).toEqual(['cloud-cheap', 'local-qwen']);
+    expect(resolved.profiles.map((profile) => profile.name)).toEqual(['cloud-cheap', 'local-qwen']);
     expect(resolved.defaultProfile.name).toBe('local-qwen');
-    expect(resolved.profiles.map(profile => [profile.name, profile.capabilities.writesFiles])).toEqual([
+    expect(
+      resolved.profiles.map((profile) => [profile.name, profile.capabilities.writesFiles]),
+    ).toEqual([
       ['cloud-cheap', 'extracted-code'],
       ['local-qwen', 'extracted-code'],
     ]);
@@ -90,7 +92,7 @@ describe('resolveImplementerProfiles', () => {
     const resolved = resolveImplementerProfiles(config);
 
     expect(resolved.defaultProfile.name).toBe('a-local');
-    expect(resolved.profiles.map(profile => [profile.name, profile.isDefault])).toEqual([
+    expect(resolved.profiles.map((profile) => [profile.name, profile.isDefault])).toEqual([
       ['a-local', true],
       ['z-local', false],
     ]);

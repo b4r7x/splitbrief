@@ -1,5 +1,21 @@
-export function uniqueIds<T extends string>(ids: T[]): T[] {
+export function uniqueSortedIds<T extends string>(ids: T[]): T[] {
   return [...new Set(ids)].sort();
+}
+
+export function uniquePush<T>(arr: T[], value: T): void {
+  if (!arr.includes(value)) arr.push(value);
+}
+
+export function countByValue<T, K extends string>(
+  items: readonly T[],
+  key: (item: T) => K,
+): Partial<Record<K, number>> {
+  const counts: Partial<Record<K, number>> = {};
+  for (const item of items) {
+    const k = key(item);
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export function uniqueSorted(

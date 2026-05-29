@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { lifecycleStore } from './lifecycle.js';
 import { addEvent, resetWorkflow } from './actions.js';
-import {
-  makePlannerStatus,
-} from '#testing/helpers/events.js';
+import { makePlannerStatus } from '#testing/helpers/events.js';
 
 describe('lifecycleStore', () => {
   beforeEach(() => resetWorkflow());

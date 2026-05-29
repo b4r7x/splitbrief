@@ -18,16 +18,19 @@ describe('e2e: drift out-of-scope detection', () => {
 
   function installDriftHook(): void {
     mkdirSync(join(ctx.projectDir, '.diptych/hooks'), { recursive: true });
-    writeFileSync(join(ctx.projectDir, '.diptych/hooks/pre-validation.js'), [
-      "import { mkdirSync, writeFileSync } from 'node:fs';",
-      "import { join } from 'node:path';",
-      'export default function writeDrift(_event, ctx) {',
-      "  mkdirSync(join(ctx.projectDir, 'src'), { recursive: true });",
-      "  writeFileSync(join(ctx.projectDir, 'src/out-of-scope.ts'), 'export const drift = true;\\n');",
-      "  return { kind: 'allow' };",
-      '}',
-      '',
-    ].join('\n'));
+    writeFileSync(
+      join(ctx.projectDir, '.diptych/hooks/pre-validation.js'),
+      [
+        "import { mkdirSync, writeFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        'export default function writeDrift(_event, ctx) {',
+        "  mkdirSync(join(ctx.projectDir, 'src'), { recursive: true });",
+        "  writeFileSync(join(ctx.projectDir, 'src/out-of-scope.ts'), 'export const drift = true;\\n');",
+        "  return { kind: 'allow' };",
+        '}',
+        '',
+      ].join('\n'),
+    );
   }
 
   it('detects deterministic drift and emits an out-of-scope drift chain', async () => {
@@ -39,10 +42,12 @@ describe('e2e: drift out-of-scope detection', () => {
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
     expect(readFileSync(parserPath, 'utf-8')).toContain('parseConfig');
-    expect(evaluateTsArtifact(parserPath, "mod.parseConfig('name=diptych; enabled=true')")).toEqual({
-      name: 'diptych',
-      enabled: true,
-    });
+    expect(evaluateTsArtifact(parserPath, "mod.parseConfig('name=diptych; enabled=true')")).toEqual(
+      {
+        name: 'diptych',
+        enabled: true,
+      },
+    );
     expect(driftReport).toBeDefined();
     expect(driftReport?.passed).toBe(false);
     expect(driftReport?.errorCount).toBeGreaterThan(0);

@@ -32,8 +32,10 @@ export type HandoffPack = {
 export type HandoffRendererInput = Omit<HandoffInput, 'target'> & { target: string };
 
 export const HandoffPackSchema = z.object({
-  files: z.array(z.object({
-    path: z.string(),
-    content: z.string(),
-  })),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      content: z.string(),
+    }),
+  ),
 });

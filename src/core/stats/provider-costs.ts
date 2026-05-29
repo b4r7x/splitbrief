@@ -1,7 +1,10 @@
 export type ProviderCostTotals = Record<string, { cost: number; sessions: number }>;
 export type ProviderCostSource = Record<string, { cost: number }>;
 
-export function accumulateProviderCosts(target: ProviderCostTotals, source: ProviderCostSource): void {
+export function accumulateProviderCosts(
+  target: ProviderCostTotals,
+  source: ProviderCostSource,
+): void {
   for (const [provider, providerCost] of Object.entries(source)) {
     const existing = target[provider];
     if (existing) {

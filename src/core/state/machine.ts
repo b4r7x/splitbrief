@@ -79,7 +79,12 @@ const phaseActions = {
     'ALL_DONE',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
-  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_FAIL'],
+  escalating: [
+    ...VALIDATION_OR_ESCALATION_SHARED_ACTIONS,
+    'UPDATE_TASK_CODE',
+    'CLEAR_TASK_CODE',
+    'HINT_FAIL',
+  ],
   'final-review': ['REVIEW_DONE'],
   complete: [],
 } as const satisfies Record<Phase, readonly StateAction['type'][]>;
@@ -107,14 +112,14 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
 function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus): WorkflowState {
   return {
     ...state,
-    tasks: state.tasks.map(t => t.id === taskId ? { ...t, status } : t),
+    tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, status } : t)),
   };
 }
 
 function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   return {
     ...state,
-    tasks: state.tasks.map(t => {
+    tasks: state.tasks.map((t) => {
       if (t.id !== taskId) return t;
       const { currentCode: _currentCode, ...rest } = t;
       return rest;
@@ -134,7 +139,11 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   };
 }
 
-function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>, now: Date = new Date()): WorkflowState {
+function markRecoveryApplying(
+  state: WorkflowState,
+  action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>,
+  now: Date = new Date(),
+): WorkflowState {
   if (!state.pendingRecovery) return state;
   return {
     ...state,
@@ -147,7 +156,48 @@ function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction,
   };
 }
 
-export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3, now: Date = new Date()): WorkflowState {
+function rewindReset(
+  state: WorkflowState,
+  target: 'spec' | 'plan',
+  comment?: string,
+): WorkflowState {
+  return {
+    ...state,
+    phase: target === 'spec' ? 'specifying' : 'planning',
+    tasks: [],
+    currentTaskIndex: 0,
+    attempt: 0,
+    awaitingContinue: false,
+    plannerSessionId: undefined,
+    clarifications: [],
+    constitutionFailureReason: undefined,
+    analysisResult: undefined,
+    discoveredValidation: undefined,
+    rewindPending: { target, ...(comment ? { comment } : {}) },
+  };
+}
+
+function resetToIdle(
+  state: WorkflowState,
+  opts: { clearAwaitingContinue?: boolean } = {},
+): WorkflowState {
+  return {
+    ...state,
+    phase: 'idle',
+    ...(opts.clearAwaitingContinue ? { awaitingContinue: false } : {}),
+    tasks: [],
+    currentTaskIndex: 0,
+    attempt: 0,
+  };
+}
+
+export function transition(
+  state: WorkflowState,
+  action: StateAction,
+  opts: { maxRetries?: number | undefined; now?: Date | undefined } = {},
+): WorkflowState {
+  const maxRetries = opts.maxRetries ?? 3;
+  const now = opts.now ?? new Date();
   if (!canApplyAction(state.phase, action.type)) {
     throw transitionError.invalidActionForPhase(state.phase, action.type);
   }
@@ -157,10 +207,22 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'researching' };
 
     case 'START_QUICK':
-      return { ...state, phase: 'implementing', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+      return {
+        ...state,
+        phase: 'implementing',
+        tasks: action.tasks,
+        currentTaskIndex: 0,
+        attempt: 0,
+      };
 
     case 'START_INSTANT':
-      return { ...state, phase: 'implementing', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+      return {
+        ...state,
+        phase: 'implementing',
+        tasks: action.tasks,
+        currentTaskIndex: 0,
+        attempt: 0,
+      };
 
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
@@ -172,22 +234,28 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'planning' };
 
     case 'REJECT_SPEC':
-      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
+      return resetToIdle(state);
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
 
     case 'REJECT_PLAN':
-      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
+      return resetToIdle(state);
 
     case 'BRIEFS_READY':
-      return { ...state, phase: 'reviewing-briefs', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+      return {
+        ...state,
+        phase: 'reviewing-briefs',
+        tasks: action.tasks,
+        currentTaskIndex: 0,
+        attempt: 0,
+      };
 
     case 'APPROVE_BRIEFS':
       return { ...state, phase: 'implementing', currentTaskIndex: 0, attempt: 0 };
 
     case 'REJECT_BRIEFS':
-      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
+      return resetToIdle(state);
 
     case 'SPEC_CLARIFY_START':
       return { ...state, phase: 'clarifying' };
@@ -199,7 +267,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'planning' };
 
     case 'CONSTITUTION_CHECK_FAIL':
-      return { ...state, phase: 'idle', awaitingContinue: false, tasks: [], currentTaskIndex: 0, attempt: 0 };
+      return resetToIdle(state, { clearAwaitingContinue: true });
 
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
@@ -250,13 +318,15 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'UPDATE_TASK_CODE':
       return {
         ...state,
-        tasks: state.tasks.map(t => t.id === action.taskId ? { ...t, currentCode: action.code } : t),
+        tasks: state.tasks.map((t) =>
+          t.id === action.taskId ? { ...t, currentCode: action.code } : t,
+        ),
       };
 
     case 'CLEAR_TASK_CODE':
       return {
         ...state,
-        tasks: state.tasks.map(t => {
+        tasks: state.tasks.map((t) => {
           if (t.id !== action.taskId) return t;
           const { currentCode: _currentCode, ...task } = t;
           return task;
@@ -270,7 +340,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'complete' };
 
     case 'CANCEL':
-      return { ...state, phase: 'idle', awaitingContinue: false, tasks: [], currentTaskIndex: 0, attempt: 0 };
+      return resetToIdle(state, { clearAwaitingContinue: true });
 
     case 'ABORT_TURN':
       return { ...state, awaitingContinue: true };
@@ -282,46 +352,20 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, plannerSessionId: action.sessionId };
 
     case 'REWIND_TO_SPEC':
-      return {
-        ...state,
-        phase: 'specifying',
-        tasks: [],
-        currentTaskIndex: 0,
-        attempt: 0,
-        awaitingContinue: false,
-        plannerSessionId: undefined,
-        clarifications: [],
-        constitutionFailureReason: undefined,
-        analysisResult: undefined,
-        discoveredValidation: undefined,
-        rewindPending: { target: 'spec', ...(action.comment ? { comment: action.comment } : {}) },
-      };
+      return rewindReset(state, 'spec', action.comment);
 
     case 'REWIND_TO_PLAN':
-      return {
-        ...state,
-        phase: 'planning',
-        tasks: [],
-        currentTaskIndex: 0,
-        attempt: 0,
-        awaitingContinue: false,
-        plannerSessionId: undefined,
-        clarifications: [],
-        constitutionFailureReason: undefined,
-        analysisResult: undefined,
-        discoveredValidation: undefined,
-        rewindPending: { target: 'plan', ...(action.comment ? { comment: action.comment } : {}) },
-      };
+      return rewindReset(state, 'plan', action.comment);
 
     case 'CLEAR_REWIND_PENDING':
       return { ...state, rewindPending: undefined };
 
     case 'RESET_TASK': {
-      const idx = state.tasks.findIndex(t => t.id === action.taskId);
+      const idx = state.tasks.findIndex((t) => t.id === action.taskId);
       if (idx < 0) return state;
       return {
         ...state,
-        tasks: state.tasks.map((t, i) => i === idx ? { ...t, status: 'pending' } : t),
+        tasks: state.tasks.map((t, i) => (i === idx ? { ...t, status: 'pending' } : t)),
         currentTaskIndex: idx,
         attempt: 0,
         phase: 'implementing',
@@ -334,8 +378,8 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'MARK_DELIVERED_NATIVE':
       return {
         ...state,
-        messageQueue: state.messageQueue.map(m =>
-          m.id === action.id ? { ...m, deliveredViaNative: true } : m
+        messageQueue: state.messageQueue.map((m) =>
+          m.id === action.id ? { ...m, deliveredViaNative: true } : m,
         ),
       };
 
@@ -343,12 +387,12 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       const ts = now.toISOString();
       return {
         ...state,
-        messageQueue: state.messageQueue.map(m => m.drainedAt ? m : { ...m, drainedAt: ts }),
+        messageQueue: state.messageQueue.map((m) => (m.drainedAt ? m : { ...m, drainedAt: ts })),
       };
     }
 
     case 'CLEAR_QUEUE':
-      return { ...state, messageQueue: state.messageQueue.filter(m => m.drainedAt) };
+      return { ...state, messageQueue: state.messageQueue.filter((m) => m.drainedAt) };
 
     case 'SET_PENDING_RECOVERY':
       return { ...state, pendingRecovery: action.issue };

@@ -38,9 +38,12 @@ export function parseMouseEvents(chunk: string): { events: MouseEvent[]; clean: 
 
     events.push({
       type: baseButton === 64 ? 'wheel-up' : 'wheel-down',
-      x, y,
+      x,
+      y,
       button: baseButton,
-      shift, meta, ctrl,
+      shift,
+      meta,
+      ctrl,
     });
     return '';
   });

@@ -4,7 +4,9 @@ import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
 const warnSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-afterEach(() => { warnSpy.mockClear(); });
+afterEach(() => {
+  warnSpy.mockClear();
+});
 
 describe('sanitizeDiscoveredValidation', () => {
   it('returns undefined for null input', () => {
@@ -54,9 +56,7 @@ describe('sanitizeDiscoveredValidation', () => {
     };
     const result = sanitizeDiscoveredValidation(input);
     expect(result?.testCommand).toBeUndefined();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('./scripts/evil'),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('./scripts/evil'));
   });
 
   it('blocks commands with parent-relative paths', () => {

@@ -19,7 +19,9 @@ interface SpawnAndCollectOptions {
   signal?: AbortSignal | undefined;
 }
 
-export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<InvokeResult & { sessionId?: string | null }> {
+export async function spawnAndCollect(
+  opts: SpawnAndCollectOptions,
+): Promise<InvokeResult & { sessionId?: string | null }> {
   const parseLine = opts.parseLine ?? getLineParser(opts.format ?? 'text');
 
   let collectedText = '';

@@ -9,10 +9,9 @@ describe('createOllamaProvider detectContextLength (via /api/show)', () => {
 
   it('parses num_ctx from parameters', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ parameters: 'num_ctx 32768\ntemperature 0.7' }),
-        { status: 200 },
-      ),
+      new Response(JSON.stringify({ parameters: 'num_ctx 32768\ntemperature 0.7' }), {
+        status: 200,
+      }),
     );
 
     const result = await createOllamaProvider().detectContextLength('qwen:7b');

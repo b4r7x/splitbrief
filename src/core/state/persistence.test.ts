@@ -53,7 +53,9 @@ describe('saveState / loadState roundtrip', () => {
     const nested = join(dir, 'deep', 'nested');
     expect(existsSync(nested)).toBe(false);
     saveState(nested, SESSION_ID, createInitialState('feat'));
-    expect(existsSync(join(nested, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'state.json'))).toBe(true);
+    expect(existsSync(join(nested, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'state.json'))).toBe(
+      true,
+    );
   });
 
   it('preserves pending recovery in roundtrip', () => {
@@ -72,7 +74,12 @@ describe('saveState / loadState roundtrip', () => {
         estimatedTokens: 42_000,
         contextLimit: 32_768,
       },
-      availableActions: ['route-bigger-worker', 'planner-split-rebase', 'pause-run', 'abort-workflow'],
+      availableActions: [
+        'route-bigger-worker',
+        'planner-split-rebase',
+        'pause-run',
+        'abort-workflow',
+      ],
       recommendedAction: 'route-bigger-worker',
     });
     const state = {
@@ -107,7 +114,10 @@ describe('loadState', () => {
     const dir = makeTmp();
     const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
-    writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ stateVersion: 2, phase: 'idle', tasks: 'not-array' }));
+    writeFileSync(
+      join(stateDir, 'state.json'),
+      JSON.stringify({ stateVersion: 2, phase: 'idle', tasks: 'not-array' }),
+    );
     expect(loadState(dir, SESSION_ID)).toBeNull();
   });
 
@@ -123,13 +133,35 @@ describe('loadState', () => {
 describe('appendEngineEvent', () => {
   it('appends JSONL lines to session log file with kind:event and ISO ts', () => {
     const dir = makeTmp();
-    const event1 = { ts: 1000, type: 'task_started', taskId: taskId('T001'), phase: 'implementing' as const, title: 'Task 1', index: 0, total: 1, file: 'src/x.ts', action: 'create' };
-    const event2 = { ts: 2000, type: 'task_completed', taskId: taskId('T001'), phase: 'implementing' as const, title: 'Task 1', method: 'local', retries: 0, duration: 100 };
+    const event1 = {
+      ts: 1000,
+      type: 'task_started',
+      taskId: taskId('T001'),
+      phase: 'implementing' as const,
+      title: 'Task 1',
+      index: 0,
+      total: 1,
+      file: 'src/x.ts',
+      action: 'create',
+    };
+    const event2 = {
+      ts: 2000,
+      type: 'task_completed',
+      taskId: taskId('T001'),
+      phase: 'implementing' as const,
+      title: 'Task 1',
+      method: 'local',
+      retries: 0,
+      duration: 100,
+    };
 
     appendEngineEvent(dir, SESSION_ID, event1);
     appendEngineEvent(dir, SESSION_ID, event2);
 
-    const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
     const lines = raw.trim().split('\n');
     expect(lines).toHaveLength(2);
     const entry1 = JSON.parse(lines[0] ?? '');
@@ -144,9 +176,16 @@ describe('appendEngineEvent', () => {
 
   it('creates directory when it does not exist', () => {
     const dir = makeTmp();
-    const event = { ts: 1000, type: 'workflow_started', phase: 'idle' as const, feature: 'test-feature' };
+    const event = {
+      ts: 1000,
+      type: 'workflow_started',
+      phase: 'idle' as const,
+      feature: 'test-feature',
+    };
     appendEngineEvent(dir, SESSION_ID, event);
-    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(true);
+    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(
+      true,
+    );
   });
 
   it('persists phase-less events in a schema-valid log entry', () => {
@@ -157,7 +196,10 @@ describe('appendEngineEvent', () => {
       mode: 'yolo',
     });
 
-    const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
     const entry = JSON.parse(raw.trim());
 
     expect(entry.phase).toBeUndefined();
@@ -177,7 +219,12 @@ describe('appendEngineEvent', () => {
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const event = { ts: 1000, type: 'workflow_started', phase: 'idle' as const, feature: 'test-feature' };
+      const event = {
+        ts: 1000,
+        type: 'workflow_started',
+        phase: 'idle' as const,
+        feature: 'test-feature',
+      };
       expect(() => appendEngineEvent(dir, SESSION_ID, event)).not.toThrow();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
       expect(output).toContain('failed to persist log entry');
@@ -193,7 +240,10 @@ describe('appendMessage', () => {
   it('writes kind:message entry with ISO ts when persistTranscript is true', () => {
     const dir = makeTmp();
     appendMessage(dir, SESSION_ID, { role: 'user', text: 'add auth' }, true);
-    const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
     const entry = JSON.parse(raw.trim());
     expect(entry.kind).toBe('message');
     expect(entry.role).toBe('user');
@@ -211,8 +261,16 @@ describe('appendMessage', () => {
 
   it('includes optional fields when provided', () => {
     const dir = makeTmp();
-    appendMessage(dir, SESSION_ID, { role: 'assistant', phase: 'researching', text: 'hello', interrupted: true }, true);
-    const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
+    appendMessage(
+      dir,
+      SESSION_ID,
+      { role: 'assistant', phase: 'researching', text: 'hello', interrupted: true },
+      true,
+    );
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
     const entry = JSON.parse(raw.trim());
     expect(entry.phase).toBe('researching');
     expect(entry.interrupted).toBe(true);

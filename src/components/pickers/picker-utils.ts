@@ -17,6 +17,16 @@ export function rotateIndex(current: number, length: number, delta: 1 | -1): num
   return (current + delta + length) % length;
 }
 
+export function windowSlice<T>(items: T[], selectedIndex: number, windowSize: number) {
+  const scrollOffset = computeScrollOffset(selectedIndex, windowSize, items.length);
+  return {
+    scrollOffset,
+    visibleSlice: items.slice(scrollOffset, scrollOffset + windowSize),
+    showScrollUp: scrollOffset > 0,
+    showScrollDown: scrollOffset + windowSize < items.length,
+  };
+}
+
 export function filterByFields<T>(item: T, query: string, fields: (keyof T)[]): boolean {
   if (query.length === 0) return true;
   const lower = query.toLowerCase();
@@ -33,7 +43,8 @@ export function computeScrollWindow<T>(
   chromeRows: number,
   maxVisible?: number,
 ) {
-  const visible = availableRows(terminalRows, chromeRows, maxVisible);
+  const base = availableRows(terminalRows, chromeRows);
+  const visible = maxVisible !== undefined ? Math.min(base, maxVisible) : base;
   const scrollOffset = computeScrollOffset(selectedIndex, visible, items.length);
   const visibleSlice = items.slice(scrollOffset, scrollOffset + visible);
   const showScrollUp = scrollOffset > 0;

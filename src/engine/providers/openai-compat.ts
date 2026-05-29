@@ -5,23 +5,22 @@ import { v1ModelsUrl } from './constants.js';
 
 type CompatModel = { id: string };
 
-export function createOpenAICompatProvider(
-  name: string,
-  defaultBaseURL: string,
-  envKeyName: string,
-  isLocal: boolean,
-  overrides?: ProviderOverrides,
-): ProviderDefWithMetadata {
+export function createOpenAICompatProvider(opts: {
+  name: string;
+  defaultBaseURL: string;
+  envKeyName: string;
+  overrides?: ProviderOverrides | undefined;
+}): ProviderDefWithMetadata {
   return createMetadataProvider<CompatModel>(
     {
-      name,
-      defaultBaseURL,
-      envKeyName,
-      isLocal,
+      name: opts.name,
+      defaultBaseURL: opts.defaultBaseURL,
+      envKeyName: opts.envKeyName,
+      isLocal: false,
       schema: z.object({ id: z.string() }).passthrough(),
       fallback: (id) => ({ id }),
       modelsUrl: v1ModelsUrl,
     },
-    overrides,
+    opts.overrides,
   );
 }

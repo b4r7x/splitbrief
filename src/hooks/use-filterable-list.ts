@@ -10,7 +10,11 @@ interface UseFilterableListOptions<T> {
   isActive?: boolean | undefined;
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialIndex?: number | undefined;
-  customKeys?: (input: string, key: Key, ctx: { filtered: T[]; selectedIndex: number }) => boolean | undefined;
+  customKeys?: (
+    input: string,
+    key: Key,
+    ctx: { filtered: T[]; selectedIndex: number },
+  ) => boolean | undefined;
 }
 
 interface UseFilterableListResult<T> {
@@ -49,11 +53,15 @@ export function useFilterableList<T>({
         return;
       }
       if (key.upArrow) {
-        setSelectedIndex((prev) => filtered.length === 0 ? 0 : navigateIndex('up', prev, filtered.length));
+        setSelectedIndex((prev) =>
+          filtered.length === 0 ? 0 : navigateIndex('up', prev, filtered.length),
+        );
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((prev) => filtered.length === 0 ? 0 : navigateIndex('down', prev, filtered.length));
+        setSelectedIndex((prev) =>
+          filtered.length === 0 ? 0 : navigateIndex('down', prev, filtered.length),
+        );
         return;
       }
       if (key.backspace || key.delete) {

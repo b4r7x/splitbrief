@@ -3,11 +3,46 @@ import { suggestRuntimeCommand } from './lookup.js';
 import type { RuntimeCommandDef } from './types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
-  { kind: 'noarg', name: '/help', label: 'Help', description: '', validScreens: ['home'], handler: () => {} },
-  { kind: 'arg', name: '/mode', label: 'Mode', description: '', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/settings', label: 'Settings', description: '', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/planner', label: 'Planner', description: '', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/quit', label: 'Quit', description: '', validScreens: ['home'], handler: () => {} },
+  {
+    kind: 'noarg',
+    name: '/help',
+    label: 'Help',
+    description: '',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: '',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/settings',
+    label: 'Settings',
+    description: '',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/planner',
+    label: 'Planner',
+    description: '',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/quit',
+    label: 'Quit',
+    description: '',
+    validScreens: ['home'],
+    handler: () => {},
+  },
 ];
 
 describe('suggestRuntimeCommand', () => {

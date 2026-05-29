@@ -27,7 +27,7 @@ function makeExportData(overrides: Partial<ExportData> = {}): ExportData {
       estimatedCostSavings: '$1.03',
       escalationRate: 0.2,
       costBreakdown: {
-        hypotheticalCost: 1.20,
+        hypotheticalCost: 1.2,
         actualPlannerCost: 0.15,
         actualImplementerCost: 0.02,
         totalActualCost: 0.17,
@@ -40,7 +40,13 @@ function makeExportData(overrides: Partial<ExportData> = {}): ExportData {
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:7b',
       mode: 'standard',
-      phaseTimings: { researching: 30_000, specifying: 20_000, planning: 15_000, implementing: 50_000, 'final-review': 5_000 },
+      phaseTimings: {
+        researching: 30_000,
+        specifying: 20_000,
+        planning: 15_000,
+        implementing: 50_000,
+        'final-review': 5_000,
+      },
     },
     ...overrides,
   };
@@ -64,19 +70,28 @@ describe('renderSessionHtml', () => {
   });
 
   it('omits hero savings when no cost breakdown', () => {
-    const html = renderSessionHtml(makeExportData({
-      summary: {
-        ...makeExportData().summary,
-        costBreakdown: undefined,
-      },
-    }));
+    const html = renderSessionHtml(
+      makeExportData({
+        summary: {
+          ...makeExportData().summary,
+          costBreakdown: undefined,
+        },
+      }),
+    );
     expect(html).not.toContain('saved');
   });
 
   it('includes evidence section when evidence data present', () => {
-    const html = renderSessionHtml(makeExportData({
-      evidence: { totalTasks: 5, tasksWithValidationEvidence: 4, escalatedTasks: 1, failedTasks: 0 },
-    }));
+    const html = renderSessionHtml(
+      makeExportData({
+        evidence: {
+          totalTasks: 5,
+          tasksWithValidationEvidence: 4,
+          escalatedTasks: 1,
+          failedTasks: 0,
+        },
+      }),
+    );
     expect(html).toContain('4/5');
   });
 
@@ -86,7 +101,9 @@ describe('renderSessionHtml', () => {
   });
 
   it('escapes HTML in feature name', () => {
-    const html = renderSessionHtml(makeExportData({ feature: 'fix <script>alert("xss")</script>' }));
+    const html = renderSessionHtml(
+      makeExportData({ feature: 'fix <script>alert("xss")</script>' }),
+    );
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
   });

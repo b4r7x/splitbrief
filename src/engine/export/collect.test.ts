@@ -20,19 +20,24 @@ afterEach(() => {
 });
 
 function writeSummary(): void {
-  writeFileSync(join(sessionDirectory, 'summary.json'), JSON.stringify(makeSession({
-    id: 'test-session',
-    status: 'complete',
-    feature: 'add auth',
-    completedAt: Date.parse('2026-05-04T12:00:00Z'),
-    summary: makeSummary({
-      feature: 'add auth',
-      totalTasks: 3,
-      completedByLocal: 2,
-      escalatedToPlanner: 1,
-      totalTime: 60_000,
-    }),
-  })));
+  writeFileSync(
+    join(sessionDirectory, 'summary.json'),
+    JSON.stringify(
+      makeSession({
+        id: 'test-session',
+        status: 'complete',
+        feature: 'add auth',
+        completedAt: Date.parse('2026-05-04T12:00:00Z'),
+        summary: makeSummary({
+          feature: 'add auth',
+          totalTasks: 3,
+          completedByLocal: 2,
+          escalatedToPlanner: 1,
+          totalTime: 60_000,
+        }),
+      }),
+    ),
+  );
 }
 
 describe('collectExportData', () => {
@@ -68,39 +73,42 @@ describe('collectExportData', () => {
 
   it('includes evidence when evidence.json is present', () => {
     writeSummary();
-    writeFileSync(join(sessionDirectory, 'evidence.json'), JSON.stringify({
-      version: 1,
-      sessionId: 'test-session',
-      feature: 'add auth',
-      generatedAt: '2026-05-04T12:00:00Z',
-      validationSummary: { passed: 2, failed: 0, skipped: 0, escalated: 0 },
-      tasks: [
-        {
-          id: 'T001',
-          title: 'one',
-          file: 'src/one.ts',
-          status: 'done',
-          retries: 0,
-          changedFiles: ['src/one.ts'],
-          validation: [{ stage: 'test', passed: true }],
-          expectedEvidence: ['tests pass'],
-          observedEvidence: ['test passed'],
-          escalated: false,
-        },
-        {
-          id: 'T002',
-          title: 'two',
-          file: 'src/two.ts',
-          status: 'escalated',
-          retries: 0,
-          changedFiles: [],
-          validation: [],
-          expectedEvidence: [],
-          observedEvidence: [],
-          escalated: true,
-        },
-      ],
-    }));
+    writeFileSync(
+      join(sessionDirectory, 'evidence.json'),
+      JSON.stringify({
+        version: 1,
+        sessionId: 'test-session',
+        feature: 'add auth',
+        generatedAt: '2026-05-04T12:00:00Z',
+        validationSummary: { passed: 2, failed: 0, skipped: 0, escalated: 0 },
+        tasks: [
+          {
+            id: 'T001',
+            title: 'one',
+            file: 'src/one.ts',
+            status: 'done',
+            retries: 0,
+            changedFiles: ['src/one.ts'],
+            validation: [{ stage: 'test', passed: true }],
+            expectedEvidence: ['tests pass'],
+            observedEvidence: ['test passed'],
+            escalated: false,
+          },
+          {
+            id: 'T002',
+            title: 'two',
+            file: 'src/two.ts',
+            status: 'escalated',
+            retries: 0,
+            changedFiles: [],
+            validation: [],
+            expectedEvidence: [],
+            observedEvidence: [],
+            escalated: true,
+          },
+        ],
+      }),
+    );
 
     const result = collectExportData(sessionDirectory, 'test-session');
 
@@ -128,33 +136,54 @@ describe('collectExportData', () => {
 
   it('includes drift and brief quality when their artifacts are present', () => {
     writeSummary();
-    writeFileSync(join(sessionDirectory, 'drift-report.json'), JSON.stringify({
-      version: 1,
-      passed: false,
-      score: 0.75,
-      changedFiles: [],
-      expectedFiles: [],
-      briefHash: null,
-      findings: [
-        { severity: 'warning', code: 'missing_expected_file', message: 'missing' },
-        { severity: 'error', code: 'out_of_scope_file', message: 'extra' },
-      ],
-    }));
-    writeFileSync(join(sessionDirectory, 'brief-quality.json'), JSON.stringify({
-      version: 1,
-      passed: true,
-      score: 0.95,
-      issues: [
-        { taskId: 'T001', severity: 'warning', code: 'missing_type_definitions', message: 'missing types' },
-      ],
-    }));
+    writeFileSync(
+      join(sessionDirectory, 'drift-report.json'),
+      JSON.stringify({
+        version: 1,
+        passed: false,
+        score: 0.75,
+        changedFiles: [],
+        expectedFiles: [],
+        briefHash: null,
+        findings: [
+          { severity: 'warning', code: 'missing_expected_file', message: 'missing' },
+          { severity: 'error', code: 'out_of_scope_file', message: 'extra' },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(sessionDirectory, 'brief-quality.json'),
+      JSON.stringify({
+        version: 1,
+        passed: true,
+        score: 0.95,
+        issues: [
+          {
+            taskId: 'T001',
+            severity: 'warning',
+            code: 'missing_type_definitions',
+            message: 'missing types',
+          },
+        ],
+      }),
+    );
 
     const result = collectExportData(sessionDirectory, 'test-session');
 
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') return;
-    expect(result.data.drift).toEqual({ passed: false, score: 0.75, errorCount: 1, warningCount: 1 });
-    expect(result.data.briefQuality).toEqual({ passed: true, score: 0.95, errorCount: 0, warningCount: 1 });
+    expect(result.data.drift).toEqual({
+      passed: false,
+      score: 0.75,
+      errorCount: 1,
+      warningCount: 1,
+    });
+    expect(result.data.briefQuality).toEqual({
+      passed: true,
+      score: 0.95,
+      errorCount: 0,
+      warningCount: 1,
+    });
   });
 });
 
@@ -166,7 +195,9 @@ describe('writeSessionHtmlReport', () => {
 
     expect(result.status).toBe('ok');
     expect(result.status === 'ok' ? result.path : '').toBe(join(sessionDirectory, 'report.html'));
-    expect(readFileSync(join(sessionDirectory, 'report.html'), 'utf-8')).toMatch(/^<!DOCTYPE html>/);
+    expect(readFileSync(join(sessionDirectory, 'report.html'), 'utf-8')).toMatch(
+      /^<!DOCTYPE html>/,
+    );
   });
 
   it('reports missing when summary.json does not exist', () => {

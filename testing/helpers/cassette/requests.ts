@@ -15,7 +15,10 @@ export function headersToRecord(headers: Headers): Record<string, string> {
   return result;
 }
 
-export function normalizeRequest(input: CassetteRequestInfo, init?: RequestInit): NormalizedCassetteRequest {
+export function normalizeRequest(
+  input: CassetteRequestInfo,
+  init?: RequestInit,
+): NormalizedCassetteRequest {
   return {
     url: requestUrl(input),
     method: requestMethod(input, init),

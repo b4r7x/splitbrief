@@ -24,7 +24,7 @@ export type BuildManifestOptions = {
 export function buildManifest(options: BuildManifestOptions): HandoffManifest {
   const briefHash = hashTaskBrief(options.tasks);
 
-  const taskFiles = options.packFiles.filter(f => f.startsWith('tasks/'));
+  const taskFiles = options.packFiles.filter((f) => f.startsWith('tasks/'));
 
   const artifacts: HandoffManifest['artifacts'] = {
     tasks: taskFiles,
@@ -42,7 +42,7 @@ export function buildManifest(options: BuildManifestOptions): HandoffManifest {
     ...(options.sourceCommit !== undefined && { sourceCommit: options.sourceCommit }),
     target: options.target,
     mode: options.mode,
-    taskIds: options.tasks.map(t => t.id),
+    taskIds: options.tasks.map((t) => t.id),
     artifacts,
     validation: options.validation ?? {},
   };

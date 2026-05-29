@@ -10,7 +10,9 @@ describe('findAffectedTestFile', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'test-disc-'));
     mkdirSync(join(tmpDir, 'src'), { recursive: true });
   });
-  afterEach(() => { rmSync(tmpDir, { recursive: true }); });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true });
+  });
 
   it('finds Go test file with custom pattern', () => {
     writeFileSync(join(tmpDir, 'src', 'handler_test.go'), '');

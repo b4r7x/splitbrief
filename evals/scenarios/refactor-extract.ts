@@ -67,7 +67,9 @@ function retryLogicIsExtracted(dir: string): QualityCheckResult {
   if (!body) return { passed: false, detail: 'processQueue body not found' };
 
   const hasRetryLoop = /\b(?:for|while)\s*\([^)]*\battempt\b/.test(body);
-  const hasBackoffSleep = /\b(?:setTimeout|sleep)\s*\(|\bbackoffFactor\b|\bdelayMs\s*[=*]/.test(body);
+  const hasBackoffSleep = /\b(?:setTimeout|sleep)\s*\(|\bbackoffFactor\b|\bdelayMs\s*[=*]/.test(
+    body,
+  );
 
   return hasRetryLoop && hasBackoffSleep
     ? { passed: false, detail: 'processQueue still contains inline retry loop and backoff sleep' }

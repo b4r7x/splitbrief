@@ -31,7 +31,14 @@ export function ScreenShell({
       padding={padding}
     >
       {header}
-      <Box flexDirection="column" flexGrow={1} justifyContent={justifyContent} alignItems={alignItems}>{children}</Box>
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        justifyContent={justifyContent}
+        alignItems={alignItems}
+      >
+        {children}
+      </Box>
       {footer}
     </Box>
   );

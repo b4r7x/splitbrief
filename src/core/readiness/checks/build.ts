@@ -33,13 +33,16 @@ export function buildReadinessReport(input: BuildReadinessReportInput): Readines
   const status = aggregateReadinessStatus(counts);
   const nextAction = selectNextAction(checks, status);
   const mode = input.config ? resolveMode({ config: input.config }) : undefined;
-  const approve = input.config && mode
-    ? resolveApproveLevel({
-      mode,
-      configApprove: input.config.workflow.approve,
-      legacyAutoFlag: input.config.workflow.autoApproveSpec === true && input.config.workflow.autoApprovePlan === true,
-    })
-    : undefined;
+  const approve =
+    input.config && mode
+      ? resolveApproveLevel({
+          mode,
+          configApprove: input.config.workflow.approve,
+          legacyAutoFlag:
+            input.config.workflow.autoApproveSpec === true &&
+            input.config.workflow.autoApprovePlan === true,
+        })
+      : undefined;
 
   return {
     generatedAt: new Date().toISOString(),

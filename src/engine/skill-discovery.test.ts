@@ -22,7 +22,9 @@ afterAll(() => {
 });
 
 // Dynamic import after HOME is set so homedir() picks it up
-const { parseFrontmatter, discoverSkills, loadSkillContent, buildSkillsSection } = await import('./skill-discovery.js');
+const { parseFrontmatter, discoverSkills, loadSkillContent, buildSkillsSection } = await import(
+  './skill-discovery.js'
+);
 
 describe('parseFrontmatter', () => {
   it('parses valid frontmatter', () => {
@@ -49,7 +51,10 @@ describe('discoverSkills', () => {
   it('discovers project claude-code skills from flat .md files', async () => {
     const skillsDir = join(TMP, '.claude', 'skills');
     mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'test-skill.md'), '---\nname: Test Skill\ndescription: A test\n---\nContent');
+    writeFileSync(
+      join(skillsDir, 'test-skill.md'),
+      '---\nname: Test Skill\ndescription: A test\n---\nContent',
+    );
 
     const skills = await discoverSkills('claude-code', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
@@ -63,7 +68,10 @@ describe('discoverSkills', () => {
   it('discovers claude-code skills from subdirectory SKILL.md', async () => {
     const skillDir = join(TMP, '.claude', 'skills', 'my-skill');
     mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: My Skill\ndescription: Sub skill\n---\nContent');
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      '---\nname: My Skill\ndescription: Sub skill\n---\nContent',
+    );
 
     const skills = await discoverSkills('claude-code', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
@@ -76,7 +84,10 @@ describe('discoverSkills', () => {
   it('discovers global claude-code skills', async () => {
     const globalDir = join(FAKE_HOME, '.claude', 'skills');
     mkdirSync(globalDir, { recursive: true });
-    writeFileSync(join(globalDir, 'global-skill.md'), '---\nname: Global Skill\ndescription: From home\n---\nContent');
+    writeFileSync(
+      join(globalDir, 'global-skill.md'),
+      '---\nname: Global Skill\ndescription: From home\n---\nContent',
+    );
 
     const skills = await discoverSkills('claude-code', TMP);
     expect(skills.length).toBe(1);
@@ -89,11 +100,17 @@ describe('discoverSkills', () => {
   it('project skills override global skills with same id', async () => {
     const globalDir = join(FAKE_HOME, '.claude', 'skills');
     mkdirSync(globalDir, { recursive: true });
-    writeFileSync(join(globalDir, 'shared.md'), '---\nname: Global Version\ndescription: From home\n---\nGlobal');
+    writeFileSync(
+      join(globalDir, 'shared.md'),
+      '---\nname: Global Version\ndescription: From home\n---\nGlobal',
+    );
 
     const projDir = join(TMP, '.claude', 'skills');
     mkdirSync(projDir, { recursive: true });
-    writeFileSync(join(projDir, 'shared.md'), '---\nname: Project Version\ndescription: From project\n---\nProject');
+    writeFileSync(
+      join(projDir, 'shared.md'),
+      '---\nname: Project Version\ndescription: From project\n---\nProject',
+    );
 
     const skills = await discoverSkills('claude-code', TMP);
     const shared = skills.filter((s: SkillMeta) => s.id === 'shared');
@@ -108,11 +125,17 @@ describe('discoverSkills', () => {
   it('merges global and project skills', async () => {
     const globalDir = join(FAKE_HOME, '.claude', 'skills');
     mkdirSync(globalDir, { recursive: true });
-    writeFileSync(join(globalDir, 'only-global.md'), '---\nname: Only Global\ndescription: G\n---\nContent');
+    writeFileSync(
+      join(globalDir, 'only-global.md'),
+      '---\nname: Only Global\ndescription: G\n---\nContent',
+    );
 
     const projDir = join(TMP, '.claude', 'skills');
     mkdirSync(projDir, { recursive: true });
-    writeFileSync(join(projDir, 'only-project.md'), '---\nname: Only Project\ndescription: P\n---\nContent');
+    writeFileSync(
+      join(projDir, 'only-project.md'),
+      '---\nname: Only Project\ndescription: P\n---\nContent',
+    );
 
     const skills = await discoverSkills('claude-code', TMP);
     expect(skills.length).toBe(2);
@@ -124,7 +147,10 @@ describe('discoverSkills', () => {
   });
 
   it('discovers codex AGENTS.md', async () => {
-    writeFileSync(join(TMP, 'AGENTS.md'), '---\nname: Agent Rules\ndescription: Root rules\n---\nContent');
+    writeFileSync(
+      join(TMP, 'AGENTS.md'),
+      '---\nname: Agent Rules\ndescription: Root rules\n---\nContent',
+    );
 
     const skills = await discoverSkills('codex', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
@@ -135,7 +161,10 @@ describe('discoverSkills', () => {
   });
 
   it('discovers aider CONVENTIONS.md', async () => {
-    writeFileSync(join(TMP, 'CONVENTIONS.md'), '---\nname: Conventions\ndescription: Project conventions\n---\nContent');
+    writeFileSync(
+      join(TMP, 'CONVENTIONS.md'),
+      '---\nname: Conventions\ndescription: Project conventions\n---\nContent',
+    );
 
     const skills = await discoverSkills('aider', TMP);
     expect(skills.length).toBe(1);
@@ -148,7 +177,10 @@ describe('discoverSkills', () => {
   it('falls back to .diptych/skills for shell planner', async () => {
     const skillsDir = join(TMP, DIPTYCH_DIR, 'skills');
     mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'custom.md'), '---\nname: Custom\ndescription: Custom skill\n---\nContent');
+    writeFileSync(
+      join(skillsDir, 'custom.md'),
+      '---\nname: Custom\ndescription: Custom skill\n---\nContent',
+    );
 
     const skills = await discoverSkills('shell', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
@@ -161,7 +193,10 @@ describe('discoverSkills', () => {
   it('discovers skills from symlinked directories', async () => {
     const realDir = join(TMP, '__real-skill');
     mkdirSync(realDir, { recursive: true });
-    writeFileSync(join(realDir, 'SKILL.md'), '---\nname: Symlinked\ndescription: Via symlink\n---\nContent');
+    writeFileSync(
+      join(realDir, 'SKILL.md'),
+      '---\nname: Symlinked\ndescription: Via symlink\n---\nContent',
+    );
 
     const globalDir = join(FAKE_HOME, '.claude', 'skills');
     mkdirSync(globalDir, { recursive: true });
@@ -203,15 +238,20 @@ describe('loadSkillContent', () => {
   it('loads skill content stripping frontmatter', async () => {
     const skillsDir = join(TMP, '.claude', 'skills');
     mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'test.md'), '---\nname: Test\ndescription: Desc\n---\n# Content here');
+    writeFileSync(
+      join(skillsDir, 'test.md'),
+      '---\nname: Test\ndescription: Desc\n---\n# Content here',
+    );
 
-    const skills: SkillMeta[] = [{
-      id: 'test',
-      name: 'Test',
-      description: 'Desc',
-      path: join(skillsDir, 'test.md'),
-      scope: 'project',
-    }];
+    const skills: SkillMeta[] = [
+      {
+        id: 'test',
+        name: 'Test',
+        description: 'Desc',
+        path: join(skillsDir, 'test.md'),
+        scope: 'project',
+      },
+    ];
 
     const content = await loadSkillContent(skills);
     expect(content).toContain('### Test');
@@ -225,15 +265,20 @@ describe('loadSkillContent', () => {
     const skillsDir = join(TMP, '.claude', 'skills');
     mkdirSync(skillsDir, { recursive: true });
     const bigContent = 'x'.repeat(20_000);
-    writeFileSync(join(skillsDir, 'big.md'), `---\nname: Big\ndescription: Huge\n---\n${bigContent}`);
+    writeFileSync(
+      join(skillsDir, 'big.md'),
+      `---\nname: Big\ndescription: Huge\n---\n${bigContent}`,
+    );
 
-    const skills: SkillMeta[] = [{
-      id: 'big',
-      name: 'Big',
-      description: 'Huge',
-      path: join(skillsDir, 'big.md'),
-      scope: 'project',
-    }];
+    const skills: SkillMeta[] = [
+      {
+        id: 'big',
+        name: 'Big',
+        description: 'Huge',
+        path: join(skillsDir, 'big.md'),
+        scope: 'project',
+      },
+    ];
 
     const content = await loadSkillContent(skills);
     expect(content).toContain('[... truncated]');
@@ -253,13 +298,15 @@ describe('buildSkillsSection', () => {
     mkdirSync(skillsDir, { recursive: true });
     writeFileSync(join(skillsDir, 'test.md'), '---\nname: Test\ndescription: Desc\n---\nBody');
 
-    const skills: SkillMeta[] = [{
-      id: 'test',
-      name: 'Test',
-      description: 'Desc',
-      path: join(skillsDir, 'test.md'),
-      scope: 'project',
-    }];
+    const skills: SkillMeta[] = [
+      {
+        id: 'test',
+        name: 'Test',
+        description: 'Desc',
+        path: join(skillsDir, 'test.md'),
+        scope: 'project',
+      },
+    ];
 
     const section = await buildSkillsSection(skills);
     expect(section.startsWith('## Active Project Skills')).toBeTruthy();

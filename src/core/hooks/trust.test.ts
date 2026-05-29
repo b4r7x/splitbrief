@@ -7,42 +7,58 @@ import { hashHooksConfig, isHooksConfigTrusted, markHooksConfigTrusted } from '.
 describe('trust', () => {
   let projectDir: string;
 
-  beforeEach(() => { projectDir = mkdtempSync(join(tmpdir(), 'diptych-trust-')); });
-  afterEach(() => { rmSync(projectDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'diptych-trust-'));
+  });
+  afterEach(() => {
+    rmSync(projectDir, { recursive: true, force: true });
+  });
 
   describe('hashHooksConfig', () => {
     it('returns a deterministic sha256 prefix for the same config', () => {
       const cfg = { pre_task: [{ command: 'prettier' }] };
-      const h1 = hashHooksConfig(cfg);
-      const h2 = hashHooksConfig(cfg);
+      const h1 = hashHooksConfig(projectDir, cfg);
+      const h2 = hashHooksConfig(projectDir, cfg);
       expect(h1).toBe(h2);
       expect(h1.startsWith('sha256:')).toBe(true);
     });
 
     it('returns different hashes for different configs', () => {
-      const a = hashHooksConfig({ pre_task: [{ command: 'prettier' }] });
-      const b = hashHooksConfig({ pre_task: [{ command: 'eslint' }] });
+      const a = hashHooksConfig(projectDir, { pre_task: [{ command: 'prettier' }] });
+      const b = hashHooksConfig(projectDir, { pre_task: [{ command: 'eslint' }] });
       expect(a).not.toBe(b);
     });
 
     it('is canonical — key order does not affect hash', () => {
-      const a = hashHooksConfig({ pre_task: [{ command: 'x' }], post_task: [{ command: 'y' }] });
-      const b = hashHooksConfig({ post_task: [{ command: 'y' }], pre_task: [{ command: 'x' }] });
+      const a = hashHooksConfig(projectDir, {
+        pre_task: [{ command: 'x' }],
+        post_task: [{ command: 'y' }],
+      });
+      const b = hashHooksConfig(projectDir, {
+        post_task: [{ command: 'y' }],
+        pre_task: [{ command: 'x' }],
+      });
       expect(a).toBe(b);
     });
 
     it('returns a known hash for undefined hooks', () => {
-      const h = hashHooksConfig(undefined);
+      const h = hashHooksConfig(projectDir, undefined);
       expect(h.startsWith('sha256:')).toBe(true);
     });
 
     it('changes when a module hook file changes', () => {
       mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "allow" });');
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        'export default () => ({ kind: "allow" });',
+      );
       const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
       const before = hashHooksConfig(projectDir, cfg);
 
-      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "deny" });');
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        'export default () => ({ kind: "deny" });',
+      );
 
       expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
     });
@@ -66,12 +82,18 @@ describe('trust', () => {
 
     it('returns false after a trusted module file changes', () => {
       mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "allow" });');
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        'export default () => ({ kind: "allow" });',
+      );
       const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
       markHooksConfigTrusted(projectDir, cfg);
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
 
-      writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), 'export default () => ({ kind: "deny" });');
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        'export default () => ({ kind: "deny" });',
+      );
 
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
     });

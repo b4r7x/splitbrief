@@ -1,7 +1,13 @@
 import { appendFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { SECURE_FILE_MODE, writeSecureFile } from '../../../lib/fs.js';
-import { TreeEntryEnvelopeSchema, TreeMetaSchema, type EntryId, type TreeEntryEnvelope, type TreeMeta } from './schemas.js';
+import {
+  TreeEntryEnvelopeSchema,
+  TreeMetaSchema,
+  type EntryId,
+  type TreeEntryEnvelope,
+  type TreeMeta,
+} from './schemas.js';
 import type { SessionTree } from './store.js';
 import { warnError, warnStderr } from '../../../lib/warn.js';
 
@@ -111,15 +117,16 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
 
   const resolvedLeafId = meta && entryMap.has(meta.leafId) ? meta.leafId : lastEntry.id;
 
-  const resolvedMeta: TreeMeta = meta && entryMap.has(meta.leafId)
-    ? meta
-    : {
-        leafId: resolvedLeafId,
-        entryCount: maxCount,
-        branchCount: countBranches(childMap),
-        createdAt: firstEntry.timestamp,
-        updatedAt: lastEntry.timestamp,
-      };
+  const resolvedMeta: TreeMeta =
+    meta && entryMap.has(meta.leafId)
+      ? meta
+      : {
+          leafId: resolvedLeafId,
+          entryCount: maxCount,
+          branchCount: countBranches(childMap),
+          createdAt: firstEntry.timestamp,
+          updatedAt: lastEntry.timestamp,
+        };
 
   return { entries: entryMap, children: childMap, meta: resolvedMeta };
 }

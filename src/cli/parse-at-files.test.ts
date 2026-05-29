@@ -149,42 +149,48 @@ describe('parseAtFiles', () => {
     }
   });
 
-  itUnix('reports outside-project error for image symlinks that resolve outside the project', () => {
-    const outside = createTempDir('parse-at-files-image-outside');
-    try {
-      writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
-      symlinkSync(join(outside, 'secret.png'), join(tmp, 'linked.png'));
+  itUnix(
+    'reports outside-project error for image symlinks that resolve outside the project',
+    () => {
+      const outside = createTempDir('parse-at-files-image-outside');
+      try {
+        writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
+        symlinkSync(join(outside, 'secret.png'), join(tmp, 'linked.png'));
 
-      const result = parseAtFiles('fix', ['@linked.png'], tmp);
+        const result = parseAtFiles('fix', ['@linked.png'], tmp);
 
-      expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
-      expect(result.attachments).toHaveLength(0);
-    } finally {
-      cleanupTempDir(outside);
-    }
-  });
+        expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
+        expect(result.attachments).toHaveLength(0);
+      } finally {
+        cleanupTempDir(outside);
+      }
+    },
+  );
 
-  itUnix('reports outside-project error for relative image symlinks into the home safe root', () => {
-    const root = join(
-      homedir(),
-      `.diptych-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    );
-    const project = join(root, 'project');
-    const outside = join(root, 'outside');
-    try {
-      mkdirSync(project, { recursive: true });
-      mkdirSync(outside, { recursive: true });
-      writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
-      symlinkSync(join(outside, 'secret.png'), join(project, 'linked.png'));
+  itUnix(
+    'reports outside-project error for relative image symlinks into the home safe root',
+    () => {
+      const root = join(
+        homedir(),
+        `.diptych-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const project = join(root, 'project');
+      const outside = join(root, 'outside');
+      try {
+        mkdirSync(project, { recursive: true });
+        mkdirSync(outside, { recursive: true });
+        writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
+        symlinkSync(join(outside, 'secret.png'), join(project, 'linked.png'));
 
-      const result = parseAtFiles('fix', ['@linked.png'], project);
+        const result = parseAtFiles('fix', ['@linked.png'], project);
 
-      expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
-      expect(result.attachments).toHaveLength(0);
-    } finally {
-      cleanupTempDir(root);
-    }
-  });
+        expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
+        expect(result.attachments).toHaveLength(0);
+      } finally {
+        cleanupTempDir(root);
+      }
+    },
+  );
 
   it('reports not-a-file error for directories', () => {
     mkdirSync(join(tmp, 'subdir'));

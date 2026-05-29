@@ -11,7 +11,14 @@ const dummySummary: Summary = {
   skipped: 0,
   failed: 0,
   totalTime: 1000,
-  tokenUsage: { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+  tokenUsage: {
+    plannerInput: 0,
+    plannerOutput: 0,
+    implementerInput: 0,
+    implementerOutput: 0,
+    escalationInput: 0,
+    escalationOutput: 0,
+  },
   estimatedCostSavings: '$0.00',
   escalationRate: 0,
 };

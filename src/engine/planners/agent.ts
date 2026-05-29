@@ -25,18 +25,16 @@ export function createAgentPlanner(config: Config): Planner {
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
     signal?: AbortSignal | undefined;
   }): Promise<InvokeResult> => {
-    const result = await invokeCommandBasedRunner(
-      {
-        command: plannerCfg.command,
-        args: plannerCfg.args ?? [],
-        outputFormat: plannerCfg.outputFormat ?? 'text',
-        notFoundMessage,
-      },
+    const result = await invokeCommandBasedRunner({
+      command: plannerCfg.command,
+      args: plannerCfg.args ?? [],
+      outputFormat: plannerCfg.outputFormat ?? 'text',
+      notFoundMessage,
       prompt,
       projectDir,
-      callbacks.onOutput,
+      onOutput: callbacks.onOutput,
       signal,
-    );
+    });
 
     if (callbacks.onQuestion) {
       const questions = extractQuestionsFromStream(result.stdout);

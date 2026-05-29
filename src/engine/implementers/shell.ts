@@ -3,7 +3,10 @@ import type { Implementer, ImplementerFactoryOptions } from './types.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
-export function createShellImplementer(initialConfig: Config, options?: ImplementerFactoryOptions): Implementer {
+export function createShellImplementer(
+  initialConfig: Config,
+  options?: ImplementerFactoryOptions,
+): Implementer {
   const shellConfig = assertImplementerKind(initialConfig, 'shell');
 
   return createCommandBasedImplementer(

@@ -55,7 +55,11 @@ function mergeModelMetadata(
   };
 }
 
-function toBundledEntry(providerId: ProviderId, entry: KnownModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
+function toBundledEntry(
+  providerId: ProviderId,
+  entry: KnownModel,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry {
   const apiPriced = isApiPricedProvider(providerId);
   const base: ResolvedModelCatalogEntry = {
     id: entry.name,
@@ -72,11 +76,18 @@ function toBundledEntry(providerId: ProviderId, entry: KnownModel, cache: ModelC
     providerId,
     base,
     undefined,
-    entry.catalogModelId ? findModelMetadata(entry.catalogProvider ?? providerId, entry.catalogModelId, cache) ?? undefined : undefined,
+    entry.catalogModelId
+      ? (findModelMetadata(entry.catalogProvider ?? providerId, entry.catalogModelId, cache) ??
+          undefined)
+      : undefined,
   );
 }
 
-function toRuntimeEntry(providerId: ProviderId, entry: DetectedModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
+function toRuntimeEntry(
+  providerId: ProviderId,
+  entry: DetectedModel,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry {
   return mergeModelMetadata(
     providerId,
     {
@@ -86,11 +97,17 @@ function toRuntimeEntry(providerId: ProviderId, entry: DetectedModel, cache: Mod
       isDetected: true,
     },
     entry,
-    isApiPricedProvider(providerId) ? findModelMetadata(providerId, entry.id, cache) ?? undefined : undefined,
+    isApiPricedProvider(providerId)
+      ? (findModelMetadata(providerId, entry.id, cache) ?? undefined)
+      : undefined,
   );
 }
 
-function toModelsDevEntry(providerId: ProviderId, entry: DetectedModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
+function toModelsDevEntry(
+  providerId: ProviderId,
+  entry: DetectedModel,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry {
   return mergeModelMetadata(
     providerId,
     {
@@ -105,9 +122,11 @@ function toModelsDevEntry(providerId: ProviderId, entry: DetectedModel, cache: M
 
 function mergeCatalogEntries(
   providerId: ProviderId,
-  bundled: ResolvedModelCatalogEntry[],
-  runtime: ResolvedModelCatalogEntry[],
-  modelsDev: ResolvedModelCatalogEntry[],
+  sources: {
+    bundled: ResolvedModelCatalogEntry[];
+    runtime: ResolvedModelCatalogEntry[];
+    modelsDev: ResolvedModelCatalogEntry[];
+  },
 ): ResolvedModelCatalogEntry[] {
   const byId = new Map<string, ResolvedModelCatalogEntry>();
   const keyIndex = new Map<string, string>();
@@ -127,11 +146,7 @@ function mergeCatalogEntries(
 
     const merged = mergeModelMetadata(
       providerId,
-      {
-        ...existing,
-        ...((existing.isDefault ?? entry.isDefault) !== undefined
-          && { isDefault: existing.isDefault ?? entry.isDefault }),
-      },
+      { ...existing },
       entry.source === 'runtime' ? entry : undefined,
       entry.source === 'models-dev' ? entry : undefined,
     );
@@ -148,9 +163,9 @@ function mergeCatalogEntries(
     for (const k of buildComparableKeys(merged.id)) keyIndex.set(k, merged.id);
   };
 
-  bundled.forEach(setEntry);
-  modelsDev.forEach(setEntry);
-  runtime.forEach(setEntry);
+  sources.bundled.forEach(setEntry);
+  sources.modelsDev.forEach(setEntry);
+  sources.runtime.forEach(setEntry);
 
   return [...byId.values()];
 }
@@ -170,7 +185,10 @@ function filterStaleBundled(
   });
 }
 
-function collectFreshIds(modelsDev: ResolvedModelCatalogEntry[], runtime: ResolvedModelCatalogEntry[]): Set<string> {
+function collectFreshIds(
+  modelsDev: ResolvedModelCatalogEntry[],
+  runtime: ResolvedModelCatalogEntry[],
+): Set<string> {
   const ids = new Set<string>();
   for (const e of modelsDev) ids.add(e.id);
   for (const e of runtime) ids.add(e.id);
@@ -182,28 +200,52 @@ function resolveCatalogEntries(
   cache: ModelCacheAccessor,
   opts: { runtimeProvider?: ProviderId; includeModelsDev?: boolean },
 ): ResolvedModelCatalogEntry[] {
-  const bundled = getBundledModels(providerId).map((entry) => toBundledEntry(providerId, entry, cache));
+  const bundled = getBundledModels(providerId).map((entry) =>
+    toBundledEntry(providerId, entry, cache),
+  );
   const modelsDev = opts.includeModelsDev
-    ? getModelsDevEntries(providerId, cache).map((entry) => toModelsDevEntry(providerId, entry, cache))
+    ? getModelsDevEntries(providerId, cache).map((entry) =>
+        toModelsDevEntry(providerId, entry, cache),
+      )
     : [];
   const runtimeSource: ProviderId = opts.runtimeProvider ?? providerId;
-  const runtime = (cache.getProviderModels(runtimeSource) ?? []).map((entry) => toRuntimeEntry(providerId, entry, cache));
-  return filterStaleBundled(mergeCatalogEntries(providerId, bundled, runtime, modelsDev), collectFreshIds(modelsDev, runtime));
+  const runtime = (cache.getProviderModels(runtimeSource) ?? []).map((entry) =>
+    toRuntimeEntry(providerId, entry, cache),
+  );
+  return filterStaleBundled(
+    mergeCatalogEntries(providerId, { bundled, runtime, modelsDev }),
+    collectFreshIds(modelsDev, runtime),
+  );
 }
 
-function resolveApiCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
-  return resolveCatalogEntries(providerId, cache, { runtimeProvider: getRuntimeLookupProvider(providerId), includeModelsDev: true });
+function resolveApiCatalog(
+  providerId: ProviderId,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry[] {
+  return resolveCatalogEntries(providerId, cache, {
+    runtimeProvider: getRuntimeLookupProvider(providerId),
+    includeModelsDev: true,
+  });
 }
 
-function resolveToolCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
+function resolveToolCatalog(
+  providerId: ProviderId,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry[] {
   return resolveCatalogEntries(providerId, cache, { includeModelsDev: true });
 }
 
-function resolveLocalCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
+function resolveLocalCatalog(
+  providerId: ProviderId,
+  cache: ModelCacheAccessor,
+): ResolvedModelCatalogEntry[] {
   return resolveCatalogEntries(providerId, cache, {});
 }
 
-export function resolveModelCatalog(providerId: string, cache: ModelCacheAccessor = NULL_CACHE): ResolvedModelCatalogEntry[] {
+export function resolveModelCatalog(
+  providerId: string,
+  cache: ModelCacheAccessor = NULL_CACHE,
+): ResolvedModelCatalogEntry[] {
   if (!isProviderId(providerId)) return [];
   if (isProviderLocal(providerId)) return resolveLocalCatalog(providerId, cache);
   if (isApiPricedProvider(providerId)) return resolveApiCatalog(providerId, cache);

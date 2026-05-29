@@ -7,20 +7,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { simpleGit } from 'simple-git';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
+import { decodeSnapshotPath, encodeSnapshotPath, generateSnapshotId } from './path-codec.js';
 import {
-  acquireSnapshotLock,
-  collectTrackedFiles,
-  createSnapshot,
-  decodeSnapshotPath,
-  encodeSnapshotPath,
-  generateSnapshotId,
   hasBaseline,
-  hashFile,
   listSnapshotIds,
   listSnapshots,
   readManifest,
   writeManifest,
-} from './store.js';
+} from './manifest.js';
+import { acquireSnapshotLock } from './lock.js';
+import { collectTrackedFiles, hashFile } from './files.js';
+import { createSnapshot } from './create.js';
 
 let tmp: string;
 
@@ -145,9 +142,9 @@ describe('collectTrackedFiles', () => {
     await writeFile(join(tmp, 'src.ts'), 'export {}');
 
     const files = await collectTrackedFiles(tmp);
-    expect(files.some(f => f.startsWith('.git/'))).toBe(false);
-    expect(files.some(f => f.startsWith('.diptych/'))).toBe(false);
-    expect(files.some(f => f.startsWith('node_modules/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('.git/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('.diptych/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
     expect(files).toContain('src.ts');
   });
 
@@ -160,7 +157,7 @@ describe('collectTrackedFiles', () => {
     await writeFile(join(tmp, 'src', 'index.ts'), '');
 
     const files = await collectTrackedFiles(tmp);
-    expect(files.some(f => f.startsWith('dist/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('dist/'))).toBe(false);
     expect(files).toContain('src/index.ts');
     expect(files).toContain('.gitignore');
   });
@@ -207,7 +204,7 @@ describe('collectTrackedFiles', () => {
 
       const files = await collectTrackedFiles(tmp);
       expect(files).toContain('real.ts');
-      expect(files.some(f => f.startsWith('linked-dir/'))).toBe(false);
+      expect(files.some((f) => f.startsWith('linked-dir/'))).toBe(false);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
@@ -280,8 +277,8 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(result.isFirstSnapshot).toBe(true);
     expect(result.manifest.id).toBe('baseline');
     expect(result.manifest.fileEntries.length).toBeGreaterThanOrEqual(2);
-    expect(result.manifest.fileEntries.some(e => e.path === 'foo.ts')).toBe(true);
-    expect(result.manifest.fileEntries.some(e => e.path === 'bar.ts')).toBe(true);
+    expect(result.manifest.fileEntries.some((e) => e.path === 'foo.ts')).toBe(true);
+    expect(result.manifest.fileEntries.some((e) => e.path === 'bar.ts')).toBe(true);
 
     const filesDir = join(result.snapshotDir, 'files');
     const written = await readdir(filesDir);
@@ -313,7 +310,7 @@ describe('createSnapshot — first call (baseline)', () => {
 
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    expect(result.manifest.fileEntries.every(e => !e.path.startsWith('.diptych/'))).toBe(true);
+    expect(result.manifest.fileEntries.every((e) => !e.path.startsWith('.diptych/'))).toBe(true);
     expect(result.manifest.fileHashes).not.toHaveProperty('.diptych/active');
   });
 
@@ -324,8 +321,10 @@ describe('createSnapshot — first call (baseline)', () => {
 
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    expect(result.manifest.fileEntries.every(e => !e.path.startsWith('.trees/'))).toBe(true);
-    expect(Object.keys(result.manifest.fileHashes).every(p => !p.startsWith('.trees/'))).toBe(true);
+    expect(result.manifest.fileEntries.every((e) => !e.path.startsWith('.trees/'))).toBe(true);
+    expect(Object.keys(result.manifest.fileHashes).every((p) => !p.startsWith('.trees/'))).toBe(
+      true,
+    );
   });
 
   it('round-trips two paths whose legacy encodings would have collided without losing data', async () => {
@@ -342,10 +341,10 @@ describe('createSnapshot — first call (baseline)', () => {
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     const entries = result.manifest.fileEntries.filter(
-      e => e.path === 'a__b.ts' || e.path === 'a/b.ts',
+      (e) => e.path === 'a__b.ts' || e.path === 'a/b.ts',
     );
     expect(entries).toHaveLength(2);
-    const encodedNames = new Set(entries.map(e => e.encodedName));
+    const encodedNames = new Set(entries.map((e) => e.encodedName));
     expect(encodedNames.size).toBe(2);
   });
 
@@ -384,8 +383,8 @@ describe('createSnapshot — second call (delta snapshot)', () => {
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     expect(result.isFirstSnapshot).toBe(false);
-    expect(result.manifest.fileEntries.some(e => e.path === 'changed.ts')).toBe(true);
-    expect(result.manifest.fileEntries.some(e => e.path === 'unchanged.ts')).toBe(false);
+    expect(result.manifest.fileEntries.some((e) => e.path === 'changed.ts')).toBe(true);
+    expect(result.manifest.fileEntries.some((e) => e.path === 'unchanged.ts')).toBe(false);
   });
 
   it('includes ALL tracked paths in fileHashes regardless of change status', async () => {
@@ -432,7 +431,7 @@ describe('listSnapshots', () => {
   it('EXCLUDES baseline from returned manifests', async () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
     const { manifests } = await listSnapshots(tmp, 'sess-01');
-    expect(manifests.every(m => m.id !== 'baseline')).toBe(true);
+    expect(manifests.every((m) => m.id !== 'baseline')).toBe(true);
   });
 
   it('returns manifests in ascending order across multiple snapshots', async () => {
@@ -458,7 +457,7 @@ describe('listSnapshots', () => {
 
     const { manifests, corruptedIds } = await listSnapshots(tmp, 'sess-01');
 
-    expect(manifests.every(m => m.id !== '0000-corrupt')).toBe(true);
+    expect(manifests.every((m) => m.id !== '0000-corrupt')).toBe(true);
     expect(corruptedIds).toEqual(['0000-corrupt']);
   });
 });

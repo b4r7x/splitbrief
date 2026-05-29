@@ -1,44 +1,25 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { RunSnapshotKind, RunSnapshotLedger, SnapshotManifest } from '../../core/schemas/snapshot.js';
+import type {
+  RunSnapshotKind,
+  RunSnapshotLedger,
+  SnapshotManifest,
+} from '../../core/schemas/snapshot.js';
 import { RunSnapshotLedgerSchema } from '../../core/schemas/snapshot.js';
-import {
-  SNAPSHOT_BASELINE_ID,
-  snapshotFilesDir,
-  snapshotsDir,
-} from '../../core/paths.js';
-import { ensureSecureDir, SECURE_FILE_MODE } from '../../lib/fs.js';
-import {
-  createSnapshot,
-  hashFile,
-  readManifest,
-} from './store.js';
+import { SNAPSHOT_BASELINE_ID, snapshotFilesDir, snapshotsDir } from '../../core/paths.js';
+import { writeSecureFileAsync } from '../../lib/fs.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
+import { createSnapshot } from './create.js';
+import { hashFile } from './files.js';
+import { readManifest } from './manifest.js';
+import type {
+  AcceptRunSnapshotResult,
+  RejectRunSnapshotResult,
+} from '../../core/runtime/commands/types.js';
 
 export const ACCEPTED_RUN_SNAPSHOT_NAME = 'accepted-run';
 const RUN_LEDGER_FILE = 'run-ledger.json';
-
-export type AcceptRunSnapshotResult = {
-  snapshotId: string;
-  isFirstSnapshot: boolean;
-};
-
-export type RejectRunSnapshotResult =
-  | {
-    status: 'empty';
-  }
-  | {
-    status: 'accepted';
-    snapshotId: string;
-  }
-  | {
-    status: 'rejected';
-    snapshotId: string;
-    restoredPaths: string[];
-    deletedPaths: string[];
-    conflictedPaths: string[];
-    missingSnapshotFiles: string[];
-  };
 
 function runLedgerPath(projectDir: string, sessionId: string): string {
   return join(snapshotsDir(projectDir, sessionId), RUN_LEDGER_FILE);
@@ -46,7 +27,9 @@ function runLedgerPath(projectDir: string, sessionId: string): string {
 
 function aggregateManifestHash(manifest: SnapshotManifest): string {
   const hash = createHash('sha256');
-  for (const [path, fileHash] of Object.entries(manifest.fileHashes).sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [path, fileHash] of Object.entries(manifest.fileHashes).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
     hash.update(path);
     hash.update('\0');
     hash.update(fileHash);
@@ -55,7 +38,10 @@ function aggregateManifestHash(manifest: SnapshotManifest): string {
   return hash.digest('hex');
 }
 
-async function readRunLedger(projectDir: string, sessionId: string): Promise<RunSnapshotLedger | null> {
+async function readRunLedger(
+  projectDir: string,
+  sessionId: string,
+): Promise<RunSnapshotLedger | null> {
   try {
     const raw = await readFile(runLedgerPath(projectDir, sessionId), 'utf-8');
     return RunSnapshotLedgerSchema.parse(JSON.parse(raw));
@@ -64,13 +50,13 @@ async function readRunLedger(projectDir: string, sessionId: string): Promise<Run
   }
 }
 
-async function writeRunLedger(projectDir: string, sessionId: string, ledger: RunSnapshotLedger): Promise<void> {
-  const dir = snapshotsDir(projectDir, sessionId);
-  ensureSecureDir(dir);
+async function writeRunLedger(
+  projectDir: string,
+  sessionId: string,
+  ledger: RunSnapshotLedger,
+): Promise<void> {
   const target = runLedgerPath(projectDir, sessionId);
-  const tmp = `${target}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(ledger, null, 2)}\n`, { mode: SECURE_FILE_MODE });
-  await rename(tmp, target);
+  await writeSecureFileAsync(target, `${JSON.stringify(ledger, null, 2)}\n`);
 }
 
 async function createRunLedger(opts: {
@@ -83,16 +69,17 @@ async function createRunLedger(opts: {
 }): Promise<RunSnapshotLedger> {
   let beforeHash: string | null = null;
   try {
-    beforeHash = aggregateManifestHash(await readManifest(opts.projectDir, opts.sessionId, SNAPSHOT_BASELINE_ID));
+    beforeHash = aggregateManifestHash(
+      await readManifest(opts.projectDir, opts.sessionId, SNAPSHOT_BASELINE_ID),
+    );
   } catch {
     beforeHash = null;
   }
 
   const previous = await readRunLedger(opts.projectDir, opts.sessionId);
-  const runSnapshotIds = [
-    ...(previous?.runSnapshotIds ?? []),
-    opts.runSnapshot.id,
-  ].filter((id, index, ids) => ids.indexOf(id) === index);
+  const runSnapshotIds = [...(previous?.runSnapshotIds ?? []), opts.runSnapshot.id].filter(
+    (id, index, ids) => ids.indexOf(id) === index,
+  );
   const runSnapshotKinds = {
     ...(previous?.runSnapshotKinds ?? {}),
     ...(opts.runSnapshotKind !== undefined && { [opts.runSnapshot.id]: opts.runSnapshotKind }),
@@ -168,6 +155,8 @@ async function restoreBaselineFile(opts: {
 }): Promise<boolean> {
   if (!opts.baselineEntry) return false;
 
+  assertPathConfined(opts.path, opts.projectDir);
+
   const sourcePath = join(
     snapshotFilesDir(opts.projectDir, opts.sessionId, SNAPSHOT_BASELINE_ID),
     opts.baselineEntry.encodedName,
@@ -226,7 +215,14 @@ export async function rejectRunSnapshot(
     return { status: 'accepted', snapshotId: ledger.runSnapshotIds.at(-1) ?? '' };
   }
   if (ledger?.rejected) {
-    return { status: 'rejected', snapshotId: ledger.runSnapshotIds.at(-1) ?? '', restoredPaths: [], deletedPaths: [], conflictedPaths: [], missingSnapshotFiles: [] };
+    return {
+      status: 'rejected',
+      snapshotId: ledger.runSnapshotIds.at(-1) ?? '',
+      restoredPaths: [],
+      deletedPaths: [],
+      conflictedPaths: [],
+      missingSnapshotFiles: [],
+    };
   }
 
   // Run rejection must operate on a snapshot recorded by the run ledger,
@@ -241,11 +237,8 @@ export async function rejectRunSnapshot(
   }
 
   const baseline = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
-  const baselineEntries = new Map(baseline.fileEntries.map(entry => [entry.path, entry]));
-  const paths = new Set([
-    ...Object.keys(baseline.fileHashes),
-    ...Object.keys(latest.fileHashes),
-  ]);
+  const baselineEntries = new Map(baseline.fileEntries.map((entry) => [entry.path, entry]));
+  const paths = new Set([...Object.keys(baseline.fileHashes), ...Object.keys(latest.fileHashes)]);
 
   const restoredPaths: string[] = [];
   const deletedPaths: string[] = [];
@@ -253,6 +246,8 @@ export async function rejectRunSnapshot(
   const missingSnapshotFiles: string[] = [];
 
   for (const path of [...paths].sort()) {
+    assertPathConfined(path, projectDir);
+
     const baselineHash = baseline.fileHashes[path];
     const latestHash = latest.fileHashes[path];
     if (baselineHash === latestHash) continue;

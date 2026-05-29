@@ -12,16 +12,19 @@ export const ImplementerCostTierSchema = z.enum([
   'unknown',
 ]);
 
-export const ImplementerProfileNameSchema = z.string()
+export const ImplementerProfileNameSchema = z
+  .string()
   .min(1)
   .max(64)
   .regex(/^[a-z][a-z0-9-]*$/, 'Use lowercase letters, numbers, and hyphens; start with a letter');
 
 export const ImplementerWriteModeSchema = z.enum(['extracted-code', 'direct']);
 
-export const ImplementerCapabilitiesSchema = z.object({
-  writesFiles: ImplementerWriteModeSchema.optional(),
-}).strict();
+export const ImplementerCapabilitiesSchema = z
+  .object({
+    writesFiles: ImplementerWriteModeSchema.optional(),
+  })
+  .strict();
 
 export function defaultImplementerWriteMode(kind: RunnerKind): ImplementerWriteMode {
   return kind === 'api' || kind === 'shell' ? 'extracted-code' : 'direct';
@@ -46,30 +49,31 @@ export const ImplementerProfileConfigSchema = createRunnerConfigSchema({
   }
 });
 
-export const ImplementerProfilesConfigSchema = z.object({
-  default: ImplementerProfileNameSchema.optional(),
-  profiles: z.record(ImplementerProfileNameSchema, ImplementerProfileConfigSchema),
-}).superRefine((value, ctx) => {
-  const profileNames = Object.keys(value.profiles);
-  if (profileNames.length === 0) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['profiles'],
-      message: 'Define at least one implementer profile',
-    });
-  }
-  if (value.default !== undefined && !profileNames.includes(value.default)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['default'],
-      message: `Default implementer profile "${value.default}" is not defined`,
-    });
-  }
-});
+export const ImplementerProfilesConfigSchema = z
+  .object({
+    default: ImplementerProfileNameSchema.optional(),
+    profiles: z.record(ImplementerProfileNameSchema, ImplementerProfileConfigSchema),
+  })
+  .superRefine((value, ctx) => {
+    const profileNames = Object.keys(value.profiles);
+    if (profileNames.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['profiles'],
+        message: 'Define at least one implementer profile',
+      });
+    }
+    if (value.default !== undefined && !profileNames.includes(value.default)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['default'],
+        message: `Default implementer profile "${value.default}" is not defined`,
+      });
+    }
+  });
 
 export type ImplementerConfig = z.infer<typeof ImplementerConfigSchema>;
 export type ImplementerCostTier = z.infer<typeof ImplementerCostTierSchema>;
-export type ImplementerProfileName = z.infer<typeof ImplementerProfileNameSchema>;
 export type ImplementerWriteMode = z.infer<typeof ImplementerWriteModeSchema>;
 export type ImplementerCapabilities = z.infer<typeof ImplementerCapabilitiesSchema>;
 export type ImplementerProfileConfig = z.infer<typeof ImplementerProfileConfigSchema>;

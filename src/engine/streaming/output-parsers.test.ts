@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseTextLine, parseJsonlLine, parseOpencodeLine } from './output-parsers.js';
+import { parseTextLine } from './parse-text.js';
+import { parseJsonlLine } from './parse-jsonl.js';
+import { parseOpencodeLine } from './parse-opencode.js';
 import { accumulateUsage } from './token-utils.js';
 
 describe('parseTextLine', () => {
@@ -56,7 +58,10 @@ describe('parseJsonlLine', () => {
       type: 'item.completed',
       item: {
         type: 'agent_message',
-        content: [{ type: 'text', text: 'hello' }, { type: 'output_text', text: ' world' }],
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'output_text', text: ' world' },
+        ],
       },
     };
     const result = parseJsonlLine(JSON.stringify(event));
@@ -142,7 +147,10 @@ describe('parseJsonlLine', () => {
       type: 'item.completed',
       item: {
         type: 'agent_message',
-        content: [{ type: 'text', text: '' }, { type: 'text', text: 'real text' }],
+        content: [
+          { type: 'text', text: '' },
+          { type: 'text', text: 'real text' },
+        ],
       },
     };
     const result = parseJsonlLine(JSON.stringify(event));
@@ -233,8 +241,9 @@ describe('accumulateUsage', () => {
 
   it('handles zero-value deltas', () => {
     const current = { inputTokens: 100, outputTokens: 50 };
-    expect(accumulateUsage(current, { inputTokens: 0, outputTokens: 0 }))
-      .toEqual({ inputTokens: 100, outputTokens: 50 });
+    expect(accumulateUsage(current, { inputTokens: 0, outputTokens: 0 })).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+    });
   });
 });
-

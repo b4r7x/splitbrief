@@ -7,7 +7,10 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
 import { createApiImplementer } from './api.js';
 
-function makeAnthropicSseResponse(text: string, usage: { input_tokens: number; output_tokens: number }): Response {
+function makeAnthropicSseResponse(
+  text: string,
+  usage: { input_tokens: number; output_tokens: number },
+): Response {
   const events = [
     `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: usage.input_tokens, output_tokens: 0 } } })}\n\n`,
     `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } })}\n\n`,
@@ -37,16 +40,22 @@ afterEach(() => {
 describe('api implementer — OpenAI-compatible path', () => {
   it('writes extracted code to disk and returns success with usage', async () => {
     const code = '```typescript\nexport function hello() {\n  return "hi";\n}\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: code },
-      { usage: { prompt_tokens: 100, completion_tokens: 50 } },
-    ]));
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([
+        { content: code },
+        { usage: { prompt_tokens: 100, completion_tokens: 50 } },
+      ]),
+    );
 
     const implementer = createApiImplementer(makeConfig());
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -58,15 +67,19 @@ describe('api implementer — OpenAI-compatible path', () => {
   });
 
   it('returns failure when the stream response has no extractable code', async () => {
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: 'I think you should try writing this yourself.' },
-    ]));
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([{ content: 'I think you should try writing this yourself.' }]),
+    );
 
     const implementer = createApiImplementer(makeConfig());
     const task = makeTask({ id: 'T002', file: 'src/nowrite.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -81,7 +94,11 @@ describe('api implementer — OpenAI-compatible path', () => {
     const task = makeTask({ id: 'T003', file: 'src/failed.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -94,16 +111,22 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   it('propagates token usage from the stream response to the result', async () => {
     const code = '```ts\nexport const answer = 42;\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: code },
-      { usage: { prompt_tokens: 777, completion_tokens: 333 } },
-    ]));
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([
+        { content: code },
+        { usage: { prompt_tokens: 777, completion_tokens: 333 } },
+      ]),
+    );
 
     const implementer = createApiImplementer(makeConfig());
     const task = makeTask({ id: 'T004', file: 'src/answer.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -112,18 +135,26 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   it('retry() bumps temperature for attempt N (local kind)', async () => {
     const code = '```ts\nexport const x = 1;\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: code },
-      { usage: { prompt_tokens: 10, completion_tokens: 5 } },
-    ]));
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([
+        { content: code },
+        { usage: { prompt_tokens: 10, completion_tokens: 5 } },
+      ]),
+    );
 
     const cfg = makeConfig({ implementer: { temperature: 0.2 } });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T005', file: 'src/retry.ts', action: 'create' });
 
     const result = await implementer.retry({
-      task, projectDir, config: cfg, context: defaultContext,
-      onOutput: vi.fn(), error: 'previous failure', attempt: 2, kind: 'local',
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'previous failure',
+      attempt: 2,
+      kind: 'local',
     });
 
     expect(result.success).toBe(true);
@@ -131,13 +162,22 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   it('returns failure when model is "auto" for an unknown provider', async () => {
     const cfg = makeConfig({
-      implementer: { model: 'auto', provider: 'custom-unknown-provider' as never, apiBase: 'http://localhost:9999', apiKey: 'x' },
+      implementer: {
+        model: 'auto',
+        provider: 'custom-unknown-provider' as never,
+        apiBase: 'http://localhost:9999',
+        apiKey: 'x',
+      },
     });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T006', file: 'src/auto.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -146,16 +186,18 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   it('clamps max_tokens to within the configured contextLength', async () => {
     const code = '```ts\nexport const x = 1;\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: code },
-    ]));
+    fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({ implementer: { contextLength: 2048 } });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T007', file: 'src/clamp.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -170,7 +212,8 @@ describe('api implementer — OpenAI-compatible path', () => {
     try {
       const cfg = makeConfig({
         implementer: {
-          provider: 'openrouter', model: 'openrouter/claude-3.5-sonnet',
+          provider: 'openrouter',
+          model: 'openrouter/claude-3.5-sonnet',
           apiBase: 'https://openrouter.ai/api/v1',
         },
       });
@@ -178,7 +221,11 @@ describe('api implementer — OpenAI-compatible path', () => {
       const task = makeTask({ id: 'T008', file: 'src/or.ts', action: 'create' });
 
       const result = await implementer.implement({
-        task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+        task,
+        projectDir,
+        config: cfg,
+        context: defaultContext,
+        onOutput: vi.fn(),
       });
 
       expect(result.success).toBe(true);
@@ -192,7 +239,9 @@ describe('api implementer — OpenAI-compatible path', () => {
 describe('api implementer — Anthropic path', () => {
   it('uses the Anthropic streaming path (direct fetch, x-api-key header)', async () => {
     const code = '```ts\nexport const answer = 42;\n```';
-    fetchMock.mockResolvedValue(makeAnthropicSseResponse(code, { input_tokens: 88, output_tokens: 44 }));
+    fetchMock.mockResolvedValue(
+      makeAnthropicSseResponse(code, { input_tokens: 88, output_tokens: 44 }),
+    );
 
     const cfg = makeConfig({
       implementer: {
@@ -206,7 +255,11 @@ describe('api implementer — Anthropic path', () => {
     const task = makeTask({ id: 'T-anthropic', file: 'src/anthropic.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -215,18 +268,30 @@ describe('api implementer — Anthropic path', () => {
 
   it('picks up ANTHROPIC_API_KEY from env when no apiKey is configured', async () => {
     const code = '```ts\nexport const x = 1;\n```';
-    fetchMock.mockResolvedValue(makeAnthropicSseResponse(code, { input_tokens: 1, output_tokens: 1 }));
+    fetchMock.mockResolvedValue(
+      makeAnthropicSseResponse(code, { input_tokens: 1, output_tokens: 1 }),
+    );
 
     const orig = process.env['ANTHROPIC_API_KEY'];
     process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env-key';
     try {
       const cfg = makeConfig({
-        implementer: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', apiBase: 'https://api.anthropic.com/v1' },
+        implementer: {
+          provider: 'anthropic',
+          model: 'claude-3-5-sonnet-20241022',
+          apiBase: 'https://api.anthropic.com/v1',
+        },
       });
       const implementer = createApiImplementer(cfg);
       const task = makeTask({ id: 'T-ant', file: 'src/ant.ts', action: 'create' });
 
-      const result = await implementer.implement({ task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn() });
+      const result = await implementer.implement({
+        task,
+        projectDir,
+        config: cfg,
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
 
       expect(result.success).toBe(true);
     } finally {

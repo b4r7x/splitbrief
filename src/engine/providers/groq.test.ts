@@ -10,10 +10,9 @@ describe('createGroqProvider metadata', () => {
 
   it('listModelsWithMetadata maps context_window to contextLength', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ data: [{ id: 'llama3-70b-8192', context_window: 8192 }] }),
-        { status: 200 },
-      ),
+      new Response(JSON.stringify({ data: [{ id: 'llama3-70b-8192', context_window: 8192 }] }), {
+        status: 200,
+      }),
     );
 
     const models = await createGroqProvider().listModelsWithMetadata();

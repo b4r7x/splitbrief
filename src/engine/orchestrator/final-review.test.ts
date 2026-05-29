@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
@@ -72,7 +76,7 @@ describe('runFinalReviewPhase', () => {
   it('runs the planner review, writes review.md, emits workflow_complete, transitions to complete', async () => {
     const { projectDir, sessionId } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
 
     const reviewText = '### Verdict\npass\n\n### Findings\nNone.';
     const reviewPrompts: string[] = [];
@@ -81,7 +85,9 @@ describe('runFinalReviewPhase', () => {
       return { text: reviewText, usage: { inputTokens: 200, outputTokens: 40 } };
     };
     const completions: Summary[] = [];
-    const onComplete = (s: Summary) => { completions.push(s); };
+    const onComplete = (s: Summary) => {
+      completions.push(s);
+    };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
@@ -90,7 +96,16 @@ describe('runFinalReviewPhase', () => {
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner, metadata: TEST_METADATA },
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state,
+        planner,
+        metadata: TEST_METADATA,
+      },
       SUMMARY_BASE,
       [] satisfies TaskTokenUsage[],
       phaseTimings,
@@ -122,18 +137,22 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
     expect(packet.finalReview.status).toBe('written');
-    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE))).toBe(true);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE))).toBe(
+      true,
+    );
   });
 
   it('still advances to complete, records phase timing, and calls onComplete even when the planner review throws', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const review = async () => {
       throw new Error('planner crashed');
     };
     const completions: Summary[] = [];
-    const onComplete = (s: Summary) => { completions.push(s); };
+    const onComplete = (s: Summary) => {
+      completions.push(s);
+    };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
@@ -142,7 +161,16 @@ describe('runFinalReviewPhase', () => {
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner, metadata: TEST_METADATA },
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state,
+        planner,
+        metadata: TEST_METADATA,
+      },
       SUMMARY_BASE,
       [],
       phaseTimings,
@@ -172,11 +200,15 @@ describe('runFinalReviewPhase', () => {
 
   it('does not emit workflow completion when final review is aborted', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const controller = new AbortController();
     const completions: Summary[] = [];
-    const { callbacks } = makeCallbacks({ onComplete: (summary) => { completions.push(summary); } });
+    const { callbacks } = makeCallbacks({
+      onComplete: (summary) => {
+        completions.push(summary);
+      },
+    });
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
       review: async () => {
@@ -205,14 +237,14 @@ describe('runFinalReviewPhase', () => {
 
     expect(summary).toBeDefined();
     expect(completions).toEqual([]);
-    expect(events.some(event => event.type === 'workflow_complete')).toBe(false);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
   });
 
   it('works without a phaseTimings map (metadata argument remains optional)', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -233,25 +265,35 @@ describe('runFinalReviewPhase', () => {
 
   it('writes active briefHash into the drift report artifact', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
     const tasks = [makeTask({ id: 'T001', status: 'done' })];
 
     await runFinalReviewPhase(
-      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state: allTasksDoneState(tasks), planner },
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState(tasks),
+        planner,
+      },
       SUMMARY_BASE,
       [],
     );
 
-    const drift = JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'));
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
     expect(drift.briefHash).toBe(hashTaskBrief(tasks));
   });
 
   it('records the real pre-final-review auto snapshot in the run ledger', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
@@ -306,7 +348,12 @@ describe('shutdownWorkflow', () => {
   it('is safe when there is no tracked state and no current task', async () => {
     const { projectDir, sessionId } = setupProject();
     await expect(
-      shutdownWorkflow(projectDir, sessionId, () => undefined, () => undefined),
+      shutdownWorkflow(
+        projectDir,
+        sessionId,
+        () => undefined,
+        () => undefined,
+      ),
     ).resolves.toBeUndefined();
   });
 

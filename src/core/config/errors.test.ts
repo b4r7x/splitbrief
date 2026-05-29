@@ -46,7 +46,7 @@ describe('configError factories', () => {
     const err = configError.unsupportedVersion(9);
     expect(err.kind).toBe('config-unsupported-version');
     expect(err.message).toContain('9');
-    expect(err.message).toContain('Expected 2 or 3');
+    expect(err.message).toContain('Supported: 1 (migrated), 2 (deprecated), 3');
     expect(err.data).toEqual({ version: 9 });
   });
 

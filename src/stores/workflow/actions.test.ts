@@ -43,7 +43,7 @@ describe('markCancelled', () => {
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));
     markCancelled();
     const events = eventsStore.get().events;
-    const status = events.find(e => e.type === 'planner_status');
+    const status = events.find((e) => e.type === 'planner_status');
     expect(status && 'status' in status ? status.status : undefined).toBe('done');
   });
 
@@ -79,13 +79,13 @@ describe('addEvent — cancelled gate', () => {
   it('drops error events after cancel', () => {
     markCancelled();
     addEvent({ type: 'error', ts: Date.now(), phase: 'implementing', message: 'noise' });
-    expect(eventsStore.get().events.filter(e => e.type === 'error')).toHaveLength(0);
+    expect(eventsStore.get().events.filter((e) => e.type === 'error')).toHaveLength(0);
   });
 
   it('drops planner_status events after cancel', () => {
     markCancelled();
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));
-    expect(eventsStore.get().events.filter(e => e.type === 'planner_status')).toHaveLength(0);
+    expect(eventsStore.get().events.filter((e) => e.type === 'planner_status')).toHaveLength(0);
   });
 
   it('does not mutate tasks store after cancel', () => {
@@ -144,7 +144,14 @@ describe('resetWorkflow', () => {
       ],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
@@ -164,7 +171,7 @@ describe('resetWorkflow', () => {
     expect(lifecycleStore.get().queueDepth).toBe(1);
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(3);
-    expect(tasksStore.get().tasks.map(task => [task.id, task.status])).toEqual([
+    expect(tasksStore.get().tasks.map((task) => [task.id, task.status])).toEqual([
       ['T1', 'done'],
       ['T2', 'done'],
       ['T3', 'pending'],
@@ -199,15 +206,31 @@ describe('resetWorkflow', () => {
       tasks: [makeTask({ id: 'T1', status: 'pending' })],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: { plannerInput: 100, plannerOutput: 50, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+      tokenUsage: {
+        plannerInput: 100,
+        plannerOutput: 50,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
       awaitingContinue: false,
       messageQueue: [],
     });
 
-    addEvent(makeCostUpdate({
-      phase: 'planning',
-      tokenUsage: { plannerInput: 150, plannerOutput: 75, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
-    }));
+    addEvent(
+      makeCostUpdate({
+        phase: 'planning',
+        tokenUsage: {
+          plannerInput: 150,
+          plannerOutput: 75,
+          implementerInput: 0,
+          implementerOutput: 0,
+          escalationInput: 0,
+          escalationOutput: 0,
+        },
+      }),
+    );
 
     expect(tokensStore.get().perPhase['planning']).toMatchObject({
       inputTokens: 50,

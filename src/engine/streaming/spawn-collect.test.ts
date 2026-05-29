@@ -9,7 +9,7 @@ describe('spawnAndCollect', () => {
       args: ['collected'],
       cwd: '.',
       notFoundMessage: 'echo not found',
-      parseLine: (line) => line.trim() ? { text: line + '\n' } : {},
+      parseLine: (line) => (line.trim() ? { text: line + '\n' } : {}),
       onText: (text) => outputChunks.push(text),
     });
 
@@ -25,8 +25,10 @@ describe('spawnAndCollect', () => {
       cwd: '.',
       notFoundMessage: 'node not found',
       parseLine: (line) => {
-        if (line.includes('line1')) return { text: 'a', usage: { inputTokens: 10, outputTokens: 5 } };
-        if (line.includes('line2')) return { text: 'b', usage: { inputTokens: 20, outputTokens: 10 } };
+        if (line.includes('line1'))
+          return { text: 'a', usage: { inputTokens: 10, outputTokens: 5 } };
+        if (line.includes('line2'))
+          return { text: 'b', usage: { inputTokens: 20, outputTokens: 10 } };
         return {};
       },
       onText: () => {},

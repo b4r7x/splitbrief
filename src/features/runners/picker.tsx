@@ -20,7 +20,8 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
   const catalog = usePickerCatalog(role, viewState.preservedLeftIndex);
   const actions = usePickerActions(role, onConfirm, catalog, viewState, dispatchView);
   const t = useTheme();
-  const isTextInput = viewState.view.kind === 'custom-command' || viewState.view.kind === 'custom-model';
+  const isTextInput =
+    viewState.view.kind === 'custom-command' || viewState.view.kind === 'custom-model';
 
   useInput(
     (_input, key) => {
@@ -49,7 +50,9 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
       <TextInputOverlay
         title={`Custom ${catalog.roleLabel} Model`}
         label={
-          <>Enter a custom model ID for <Text color={t.accent}>{item.displayName}</Text>:</>
+          <>
+            Enter a custom model ID for <Text color={t.accent}>{item.displayName}</Text>:
+          </>
         }
         placeholder="e.g. my-org/custom-model or llama3.3:latest"
         examples={[

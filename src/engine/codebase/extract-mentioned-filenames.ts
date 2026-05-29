@@ -7,7 +7,7 @@ const PATH_PATTERN = /(?:\.{1,2}\/)?(?:[\w./-]+\/)?[\w-]+\.(tsx|ts|jsx|js|py|go|
 export function extractMentionedFilenames(
   text: string,
   projectDir: string,
-  discoveredFiles?: string[],
+  discoveredFiles: string[],
 ): string[] {
   const matches = text.match(PATH_PATTERN) ?? [];
   const results: string[] = [];
@@ -17,11 +17,9 @@ export function extractMentionedFilenames(
       results.push(m);
       continue;
     }
-    if (discoveredFiles) {
-      const base = basename(m);
-      const found = discoveredFiles.find(f => basename(f) === base);
-      if (found) results.push(found);
-    }
+    const base = basename(m);
+    const found = discoveredFiles.find((f) => basename(f) === base);
+    if (found) results.push(found);
   }
   return results;
 }

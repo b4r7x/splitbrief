@@ -6,12 +6,11 @@ import { HandoffPackSchema } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { resolveFromProject } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 
 export type RendererFunction = (input: HandoffRendererInput) => Promise<HandoffPack> | HandoffPack;
 
-export type LoadRendererResult =
-  | { ok: true; fn: RendererFunction }
-  | { ok: false; reason: string };
+export type LoadRendererResult = { ok: true; fn: RendererFunction } | { ok: false; reason: string };
 
 type RendererCandidate = (input: HandoffRendererInput) => Promise<unknown> | unknown;
 
@@ -47,12 +46,12 @@ export async function loadRenderer(
 }
 
 export function listCustomRenderers(projectDir: string): string[] {
-  const renderersDir = join(projectDir, '.diptych', 'handoff-renderers');
+  const renderersDir = join(projectDir, DIPTYCH_DIR, 'handoff-renderers');
   if (!existsSync(renderersDir)) {
     return [];
   }
   const entries = readdirSync(renderersDir);
   return entries
-    .filter(name => name.endsWith('.ts') || name.endsWith('.js'))
-    .map(name => name.replace(/\.(ts|js)$/, ''));
+    .filter((name) => name.endsWith('.ts') || name.endsWith('.js'))
+    .map((name) => name.replace(/\.(ts|js)$/, ''));
 }

@@ -1,5 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
-import type { EngineEvent, EventBus } from '../events/types.js';
+import type { EventBus } from '../events/types.js';
+import { eventPhase } from '../events/schema.js';
 import type { QueueHandler, WorkflowSinks } from '../orchestrator/types.js';
 
 export type IpcWorkflowBridge = {
@@ -10,10 +11,6 @@ export type IpcWorkflowBridge = {
   close(): void;
 };
 
-function phaseFromEvent(event: EngineEvent): Phase | null {
-  return 'phase' in event ? event.phase : null;
-}
-
 export function createIpcWorkflowBridge(bus: EventBus): IpcWorkflowBridge {
   let currentPhase: Phase = 'idle';
   let queueHandler: QueueHandler | null = null;
@@ -21,7 +18,7 @@ export function createIpcWorkflowBridge(bus: EventBus): IpcWorkflowBridge {
   const controller = new AbortController();
 
   const unsubscribe = bus.subscribe((event) => {
-    const phase = phaseFromEvent(event);
+    const phase = eventPhase(event);
     if (phase) currentPhase = phase;
   });
 

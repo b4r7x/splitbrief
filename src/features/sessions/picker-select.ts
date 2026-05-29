@@ -6,7 +6,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
-export function handleSelect(session: Session, projectDir: string) {
+export function handleSessionSelect(session: Session, projectDir: string) {
   if (session.status === 'interrupted') {
     let resumeState: WorkflowState | null;
     try {
@@ -16,11 +16,18 @@ export function handleSelect(session: Session, projectDir: string) {
       return;
     }
     if (!resumeState) {
-      feedbackStore.setError(`Cannot resume "${session.feature}": saved workflow state is missing or invalid`);
+      feedbackStore.setError(
+        `Cannot resume "${session.feature}": saved workflow state is missing or invalid`,
+      );
       return;
     }
     overlayStore.close();
-    routerStore.navigate({ to: 'workflow', feature: resumeState.feature, resumeState, sessionId: session.id });
+    routerStore.navigate({
+      to: 'workflow',
+      feature: resumeState.feature,
+      resumeState,
+      sessionId: session.id,
+    });
     return;
   }
   if (session.summary) {

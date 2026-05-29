@@ -6,12 +6,10 @@ import { isRecord } from '../../utils/type-guards.js';
 
 export type ReplayOptions = {
   sessionJsonlPath: string;
-  fromTs?: number;
 };
 
 export type ReplayResult = {
   events: EngineEvent[];
-  count: number;
   firstTs: number | null;
   lastTs: number | null;
 };
@@ -32,9 +30,7 @@ function entryToEvent(raw: unknown): EngineEvent | null {
   } else {
     return null;
   }
-  const data = isRecord(entry['data'])
-    ? entry['data']
-    : {};
+  const data = isRecord(entry['data']) ? entry['data'] : {};
   const phase = entry['phase'];
   const taskId = entry['taskId'];
   if (type.length === 0) return null;
@@ -45,10 +41,10 @@ function entryToEvent(raw: unknown): EngineEvent | null {
 }
 
 export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResult> {
-  const { sessionJsonlPath, fromTs } = opts;
+  const { sessionJsonlPath } = opts;
 
   if (!existsSync(sessionJsonlPath)) {
-    return { events: [], count: 0, firstTs: null, lastTs: null };
+    return { events: [], firstTs: null, lastTs: null };
   }
 
   const events: EngineEvent[] = [];
@@ -65,7 +61,6 @@ export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResul
     }
     const event = entryToEvent(raw);
     if (!event) continue;
-    if (fromTs !== undefined && event.ts < fromTs) continue;
     events.push(event);
   }
 
@@ -74,5 +69,5 @@ export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResul
   const firstTs = first ? first.ts : null;
   const lastTs = last ? last.ts : null;
 
-  return { events, count: events.length, firstTs, lastTs };
+  return { events, firstTs, lastTs };
 }

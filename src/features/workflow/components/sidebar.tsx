@@ -7,20 +7,12 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
+import { STATUS_GLYPH } from '../status-glyph.js';
 import { CostDisplay } from './cost/display.js';
 
 interface SidebarProps {
   width: number;
 }
-
-const statusIcon: Record<WorkflowTask['status'], string> = {
-  done: '✓',
-  failed: '✗',
-  escalated: '⚠',
-  in_progress: '◉',
-  pending: '○',
-  skipped: '○',
-};
 
 function statusColor(status: WorkflowTask['status'], t: Theme): string {
   switch (status) {
@@ -42,27 +34,43 @@ function statusColor(status: WorkflowTask['status'], t: Theme): string {
 
 export function Sidebar({ width }: SidebarProps) {
   const t = useTheme();
-  const tasks = tasksStore.use(s => s.tasks);
-  const mode = configStore.use(s => s.config?.workflow?.mode);
+  const tasks = tasksStore.use((s) => s.tasks);
+  const mode = configStore.use((s) => s.config?.workflow?.mode);
   const advisory = useAdvisory();
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 
-  const escalatedCount = tasks.filter(tk => tk.status === 'escalated').length;
+  const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const localCount = doneCount;
 
   return (
-    <Box flexDirection="column" width={width} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} borderColor={t.border}>
+    <Box
+      flexDirection="column"
+      width={width}
+      borderStyle="single"
+      borderLeft
+      borderTop={false}
+      borderBottom={false}
+      borderRight={false}
+      borderColor={t.border}
+    >
       <Box paddingX={1}>
-        <Text bold color={t.text}>Tasks</Text>
-        <Text color={t.textDim}> {doneCount}/{tasks.length}</Text>
+        <Text bold color={t.text}>
+          Tasks
+        </Text>
+        <Text color={t.textDim}>
+          {' '}
+          {doneCount}/{tasks.length}
+        </Text>
       </Box>
 
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
         {tasks.map((task) => (
           <Box key={task.id}>
-            <Text color={statusColor(task.status, t)}>{statusIcon[task.status]} </Text>
-            <Text color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}>
+            <Text color={statusColor(task.status, t)}>{STATUS_GLYPH[task.status]} </Text>
+            <Text
+              color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}
+            >
               {truncateWithEllipsis(task.title, Math.max(labelWidth - 2, 10))}
             </Text>
           </Box>
@@ -75,9 +83,13 @@ export function Sidebar({ width }: SidebarProps) {
           <Text color={t.warning}>risk {advisory.risk}</Text>
         )}
         {escalatedCount > 0 && (
-          <Text color={t.textDim}>{localCount} local · {escalatedCount} escalated</Text>
+          <Text color={t.textDim}>
+            {localCount} local · {escalatedCount} escalated
+          </Text>
         )}
-        <Text bold color={t.text}>Cost</Text>
+        <Text bold color={t.text}>
+          Cost
+        </Text>
         <CostDisplay />
       </Box>
     </Box>

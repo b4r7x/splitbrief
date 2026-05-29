@@ -6,11 +6,11 @@ import { useStores } from '../../../stores/use-stores.js';
 
 export function FeedbackRow() {
   const [{ message, isError }] = useStores(feedbackStore);
-  const abortPending = abortStore.use(s => s.pending);
+  const abortPending = abortStore.use((s) => s.pending);
   const t = useTheme();
 
   const displayMessage = abortPending ? 'Ctrl+C again within 2s to exit' : message;
-  const displayColor = abortPending ? t.warning : (isError ? t.error : t.info);
+  const displayColor = abortPending ? t.warning : isError ? t.error : t.info;
 
   return (
     <Box height={1} paddingX={2} flexShrink={0}>

@@ -2,13 +2,11 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
 import { uniqueSorted } from '../../../utils/collections.js';
-import type {
-  DeterministicEstimate,
-  ExplainArtifactInputs,
-  RunExplainRoute,
-} from './types.js';
+import type { DeterministicEstimate, ExplainArtifactInputs, RunExplainRoute } from './types.js';
 
-export function buildRoutes(opts: Pick<ExplainArtifactInputs, 'summary' | 'reviewPacket' | 'state' | 'events'>): RunExplainRoute[] {
+export function buildRoutes(
+  opts: Pick<ExplainArtifactInputs, 'summary' | 'reviewPacket' | 'state' | 'events'>,
+): RunExplainRoute[] {
   const routes = new Map<string, RunExplainRoute>();
   for (const task of opts.state?.tasks ?? []) {
     const route = upsertRoute(routes, task.id);
@@ -58,7 +56,10 @@ function upsertRoute(routes: Map<string, RunExplainRoute>, taskId: string): RunE
   return route;
 }
 
-function mergeEstimateRoute(route: RunExplainRoute, estimate: DeterministicEstimate['tasks'][number]): void {
+function mergeEstimateRoute(
+  route: RunExplainRoute,
+  estimate: DeterministicEstimate['tasks'][number],
+): void {
   route.title = route.title ?? estimate.title;
   route.selectedProfile = route.selectedProfile ?? estimate.selectedProfileId;
   route.contextFit = route.contextFit ?? estimate.contextFit;
@@ -85,16 +86,24 @@ function mergeActualRoute(route: RunExplainRoute, routing: TaskTokenUsage): void
 
 function mergeEventRoute(route: RunExplainRoute, event: SessionLogEventEntry): void {
   const data = narrowRecord(event.data);
-  route.title = optionalString(data?.title, { trim: true, nonEmpty: true }) ?? optionalString(data?.taskTitle, { trim: true, nonEmpty: true }) ?? route.title;
+  route.title =
+    optionalString(data?.title, { trim: true, nonEmpty: true }) ??
+    optionalString(data?.taskTitle, { trim: true, nonEmpty: true }) ??
+    route.title;
   route.method = optionalString(data?.method, { trim: true, nonEmpty: true }) ?? route.method;
-  route.selectedProfile = optionalString(data?.implementerProfile, { trim: true, nonEmpty: true }) ?? route.selectedProfile;
+  route.selectedProfile =
+    optionalString(data?.implementerProfile, { trim: true, nonEmpty: true }) ??
+    route.selectedProfile;
   route.tool = optionalString(data?.tool, { trim: true, nonEmpty: true }) ?? route.tool;
   route.model = optionalString(data?.model, { trim: true, nonEmpty: true }) ?? route.model;
-  route.contextFit = optionalString(data?.contextFit, { trim: true, nonEmpty: true }) ?? route.contextFit;
+  route.contextFit =
+    optionalString(data?.contextFit, { trim: true, nonEmpty: true }) ?? route.contextFit;
   route.estimatedTokens = numberValue(data?.estimatedTokens) ?? route.estimatedTokens;
   route.contextLength = numberValue(data?.contextLength) ?? route.contextLength;
-  route.costPosture = optionalString(data?.costPosture, { trim: true, nonEmpty: true }) ?? route.costPosture;
-  route.routingReason = optionalString(data?.routingReason, { trim: true, nonEmpty: true }) ?? route.routingReason;
+  route.costPosture =
+    optionalString(data?.costPosture, { trim: true, nonEmpty: true }) ?? route.costPosture;
+  route.routingReason =
+    optionalString(data?.routingReason, { trim: true, nonEmpty: true }) ?? route.routingReason;
   addSource(route, 'session-log');
 }
 
@@ -102,9 +111,12 @@ function routeNotes(route: RunExplainRoute): string[] {
   const notes: string[] = [];
   if (route.contextFit === 'tight') notes.push('tight context fit');
   if (route.contextFit === 'overflow') notes.push('context overflow');
-  if (route.contextConfidence === 'context-conservative-fallback') notes.push('context length used conservative fallback');
-  if (route.contextConfidence === 'profile-unavailable') notes.push('no usable profile context metadata');
-  if (route.priceConfidence && route.priceConfidence !== 'price-known') notes.push('pricing unknown');
+  if (route.contextConfidence === 'context-conservative-fallback')
+    notes.push('context length used conservative fallback');
+  if (route.contextConfidence === 'profile-unavailable')
+    notes.push('no usable profile context metadata');
+  if (route.priceConfidence && route.priceConfidence !== 'price-known')
+    notes.push('pricing unknown');
   if (route.costPosture?.includes('No capable')) notes.push(route.costPosture);
   if (route.routingReason) notes.push(route.routingReason);
   return uniqueSorted(notes, { trim: true, nonEmpty: true });

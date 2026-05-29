@@ -1,6 +1,13 @@
 import { buildPrompt, instructionsSection } from './shared.js';
 
-export function buildAnalyzePrompt(spec: string, plan: string, tasks: string): string {
+export interface AnalyzePromptInput {
+  spec: string;
+  plan: string;
+  tasks: string;
+}
+
+export function buildAnalyzePrompt(input: AnalyzePromptInput): string {
+  const { spec, plan, tasks } = input;
   return buildPrompt({
     title: 'Spec ↔ Plan ↔ Tasks Analysis',
     intro:

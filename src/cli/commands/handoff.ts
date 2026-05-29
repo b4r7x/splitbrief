@@ -1,14 +1,14 @@
 import type { Command } from 'commander';
-import { join } from 'node:path';
 import { resolveProjectDir } from '../setup.js';
 import { HANDOFF_TARGETS, validateHandoffTargetName } from '../../core/handoff/targets.js';
+import { getDiptychPath } from '../../core/paths.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
+import { includes } from '../../utils/type-guards.js';
 
 const VALID_MODES = ['default', 'append', 'overwrite'] as const;
-type WriteMode = (typeof VALID_MODES)[number];
 
 export type HandoffDeps = {
   listCustomRenderers: typeof listCustomRenderers;
@@ -34,9 +34,17 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
     .action(
       async (
         target: string = 'spec-kit',
-        opts: { session?: string; out?: string; task?: string; mode?: string; project?: string; list?: boolean; allowCustomRenderer?: boolean },
-      ) => {
-        try {
+        opts: {
+          session?: string;
+          out?: string;
+          task?: string;
+          mode?: string;
+          project?: string;
+          list?: boolean;
+          allowCustomRenderer?: boolean;
+        },
+      ) =>
+        withCliErrors(async () => {
           const projectDir = resolveProjectDir(opts.project);
 
           if (opts.list) {
@@ -57,24 +65,22 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
           const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
           const rawMode = opts.mode;
-          if (!VALID_MODES.includes(rawMode as WriteMode)) {
+          if (!includes(VALID_MODES, rawMode)) {
             throw cliError(
               `Unknown --mode: "${rawMode}". Valid modes: ${VALID_MODES.join(', ')}`,
               1,
             );
           }
-          const mode = rawMode as WriteMode;
+          const mode = rawMode;
 
           const targetValidation = validateHandoffTargetName(target);
           if (!targetValidation.ok) {
             throw cliError(`Invalid target "${target}": ${targetValidation.reason}`, 1);
           }
 
-          const outDir = opts.out ?? join(projectDir, '.diptych', 'handoffs', target);
+          const outDir = opts.out ?? getDiptychPath(projectDir, 'handoffs', target);
 
-          const selectedTaskIds = opts.task
-            ? opts.task.split(',').map((s) => s.trim())
-            : undefined;
+          const selectedTaskIds = opts.task ? opts.task.split(',').map((s) => s.trim()) : undefined;
 
           const result = await deps.writeHandoffPack({
             projectDir,
@@ -83,16 +89,15 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             outDir,
             ...(selectedTaskIds !== undefined && { selectedTaskIds }),
             mode,
-            ...(opts.allowCustomRenderer !== undefined && { allowCustomRenderer: opts.allowCustomRenderer }),
+            ...(opts.allowCustomRenderer !== undefined && {
+              allowCustomRenderer: opts.allowCustomRenderer,
+            }),
           });
 
           console.log(`Handoff written to: ${result.outputDir}`);
           for (const file of result.files) {
             console.log(`  ${file}`);
           }
-        } catch (err) {
-          rethrowAsCli(err);
-        }
-      },
+        }),
     );
 }

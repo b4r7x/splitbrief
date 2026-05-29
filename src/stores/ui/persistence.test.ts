@@ -58,11 +58,7 @@ describe('loadHistoryFromDisk', () => {
     seedHistoryFile('add user authentication\n/skills\nfix login bug');
 
     const { loadHistoryFromDisk } = await loadModules();
-    expect(loadHistoryFromDisk()).toEqual([
-      'add user authentication',
-      '/skills',
-      'fix login bug',
-    ]);
+    expect(loadHistoryFromDisk()).toEqual(['add user authentication', '/skills', 'fix login bug']);
   });
 
   it('returns empty array when file is missing', async () => {

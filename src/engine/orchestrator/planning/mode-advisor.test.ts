@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import {
-  adviseMode,
-  formatAdvisoryText,
-} from './mode-advisor.js';
+import { adviseMode, formatAdvisoryText } from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
   it('typo in standard suggests instant (downgrade)', () => {
@@ -27,13 +24,19 @@ describe('adviseMode — risk classification', () => {
   });
 
   it('non-trivial prompt without area/file/module emits missing-context', () => {
-    const result = adviseMode('add a better retry behavior with clearer failure handling and assertions', 'standard');
+    const result = adviseMode(
+      'add a better retry behavior with clearer failure handling and assertions',
+      'standard',
+    );
     expect(result.kind).toBe('missing-context');
     expect(result.missing).toContain('no area/file/module');
   });
 
   it('flags no validation hint and no done criteria', () => {
-    const result = adviseMode('improve workflow state handling around queued messages for edge cases', 'standard');
+    const result = adviseMode(
+      'improve workflow state handling around queued messages for edge cases',
+      'standard',
+    );
     expect(result.kind).toBe('missing-context');
     expect(result.missing).toContain('no validation hint');
     expect(result.missing).toContain('no done criteria');
@@ -120,7 +123,7 @@ describe('adviseMode — confidence and factors', () => {
   it('includes factors array with matched signals', () => {
     const result = adviseMode('fix typo in comment', 'standard');
     expect(result.factors.length).toBeGreaterThan(0);
-    expect(result.factors.some(f => f.startsWith('matched:'))).toBe(true);
+    expect(result.factors.some((f) => f.startsWith('matched:'))).toBe(true);
   });
 
   it('confidence is >= 0.65 when upgrade or downgrade fires', () => {

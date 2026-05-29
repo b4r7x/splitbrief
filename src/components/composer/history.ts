@@ -14,20 +14,22 @@ export const INITIAL_INPUT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState
   draftValue: '',
 };
 
-export function stepInputHistory(
-  entries: string[],
-  state: InputHistoryNavigationState,
-  direction: 'up' | 'down',
-  currentValue: string,
-): InputHistoryNavigationResult {
+export interface StepInputHistoryInput {
+  entries: string[];
+  state: InputHistoryNavigationState;
+  direction: 'up' | 'down';
+  currentValue: string;
+}
+
+export function stepInputHistory(input: StepInputHistoryInput): InputHistoryNavigationResult {
+  const { entries, state, direction, currentValue } = input;
   if (entries.length === 0) {
     return { changed: false, nextValue: currentValue, nextState: state };
   }
 
   if (direction === 'up') {
-    const nextIndex = state.historyIndex === null
-      ? 0
-      : Math.min(state.historyIndex + 1, entries.length - 1);
+    const nextIndex =
+      state.historyIndex === null ? 0 : Math.min(state.historyIndex + 1, entries.length - 1);
 
     if (state.historyIndex === nextIndex) {
       return { changed: false, nextValue: currentValue, nextState: state };

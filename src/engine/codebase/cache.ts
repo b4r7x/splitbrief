@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, type Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { FileNode } from './types.js';
@@ -8,7 +8,10 @@ const PARSE_VERSION = 2;
 export type Metrics = { hits: number; misses: number };
 
 export interface ParseCache {
-  getOrParse(absPath: string, parse: (p: string) => Promise<FileNode | null>): Promise<FileNode | null>;
+  getOrParse(
+    absPath: string,
+    parse: (p: string, s: Stats) => Promise<FileNode | null>,
+  ): Promise<FileNode | null>;
   metrics: Metrics;
   close(): void;
 }
@@ -55,7 +58,10 @@ export async function createParseCache(dbPath: string): Promise<ParseCache> {
 
   const metrics: Metrics = { hits: 0, misses: 0 };
 
-  async function getOrParse(absPath: string, parse: (p: string) => Promise<FileNode | null>): Promise<FileNode | null> {
+  async function getOrParse(
+    absPath: string,
+    parse: (p: string, s: Stats) => Promise<FileNode | null>,
+  ): Promise<FileNode | null> {
     const fileStat = await stat(absPath);
     const row = select.get(absPath);
 
@@ -76,9 +82,16 @@ export async function createParseCache(dbPath: string): Promise<ParseCache> {
     }
 
     metrics.misses++;
-    const node = await parse(absPath);
+    const node = await parse(absPath, fileStat);
     if (node === null) return null;
-    upsert.run(absPath, fileStat.mtimeMs, fileStat.size, JSON.stringify(node.symbols), JSON.stringify(node.imports), PARSE_VERSION);
+    upsert.run(
+      absPath,
+      fileStat.mtimeMs,
+      fileStat.size,
+      JSON.stringify(node.symbols),
+      JSON.stringify(node.imports),
+      PARSE_VERSION,
+    );
     return node;
   }
 

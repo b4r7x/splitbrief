@@ -6,8 +6,9 @@ import { assertPathConfined } from '../../../lib/path-confinement.js';
 import {
   readEvidenceLedger,
   writeEvidenceLedger,
-} from '../../orchestrator/evidence/persistence.js';
-import { uniquePush } from '../../orchestrator/evidence/task-evidence.js';
+  withUpdatedTask,
+} from '../../../core/evidence/ledger.js';
+import { uniquePush } from '../../../utils/collections.js';
 import {
   MarkTaskDoneInputSchema,
   ReportErrorInputSchema,
@@ -20,13 +21,13 @@ import type { ToolCallResult } from '../types.js';
 type EvidenceTask = EvidenceLedger['tasks'][number];
 
 function invalidInput(issues: Array<{ message: string }>): ToolCallResult {
-  return { ok: false, error: `Invalid input: ${issues.map(issue => issue.message).join(', ')}` };
+  return { ok: false, error: `Invalid input: ${issues.map((issue) => issue.message).join(', ')}` };
 }
 
 function hasUnsafeSessionPathSegment(sessionId: string): boolean {
   return sessionId
     .split(/[\\/]+/)
-    .some(segment => segment.length === 0 || segment === '.' || segment === '..');
+    .some((segment) => segment.length === 0 || segment === '.' || segment === '..');
 }
 
 function assertSessionConfined(projectDir: string, sessionId: string): string | null {
@@ -49,29 +50,10 @@ function assertSessionExists(projectDir: string, sessionId: string): string | nu
 
 function assertTaskExists(ledger: EvidenceLedger | null, taskId: TaskId): string | null {
   if (ledger === null) return 'Evidence ledger not found for this session';
-  if (!ledger.tasks.some(task => task.id === taskId)) {
+  if (!ledger.tasks.some((task) => task.id === taskId)) {
     return `Task not found in evidence ledger: ${taskId}`;
   }
   return null;
-}
-
-function findTask(
-  ledger: EvidenceLedger,
-  taskId: TaskId,
-): EvidenceTask | null {
-  return ledger.tasks.find(task => task.id === taskId) ?? null;
-}
-
-function replaceLedgerTask(
-  ledger: EvidenceLedger,
-  updated: EvidenceTask,
-): EvidenceLedger {
-  const tasks = ledger.tasks.map(task => (task.id === updated.id ? updated : task));
-  return {
-    ...ledger,
-    tasks,
-    generatedAt: new Date().toISOString(),
-  };
 }
 
 export function readCheckedLedger(
@@ -90,8 +72,10 @@ export function readCheckedLedger(
   if (taskError !== null) return { ok: false, error: taskError };
   if (ledger === null) return { ok: false, error: 'Evidence ledger not found for this session' };
 
-  const task = findTask(ledger, taskId);
-  if (task === null) return { ok: false, error: `Task not found in evidence ledger: ${taskId}` };
+  const task = ledger.tasks.find((t) => t.id === taskId);
+  if (task === undefined) {
+    return { ok: false, error: `Task not found in evidence ledger: ${taskId}` };
+  }
 
   return { ok: true, ledger, task };
 }
@@ -107,16 +91,24 @@ export function handleReportEvidence(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  const updated: EvidenceTask = {
-    ...loaded.task,
-    observedEvidence: [...loaded.task.observedEvidence],
-    changedFiles: [...loaded.task.changedFiles],
+  writeEvidenceLedger(
+    projectDir,
+    sessionId,
+    withUpdatedTask(loaded.ledger, taskId, (task) => {
+      const updated: EvidenceTask = {
+        ...task,
+        observedEvidence: [...task.observedEvidence],
+        changedFiles: [...task.changedFiles],
+      };
+      for (const evidence of observedEvidence) uniquePush(updated.observedEvidence, evidence);
+      for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
+      return updated;
+    }),
+  );
+  return {
+    ok: true,
+    content: `Recorded ${observedEvidence.length} evidence item(s) for ${taskId}`,
   };
-  for (const evidence of observedEvidence) uniquePush(updated.observedEvidence, evidence);
-  for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
-
-  writeEvidenceLedger(projectDir, sessionId, replaceLedgerTask(loaded.ledger, updated));
-  return { ok: true, content: `Recorded ${observedEvidence.length} evidence item(s) for ${taskId}` };
 }
 
 export function handleReportProgress(
@@ -130,17 +122,20 @@ export function handleReportProgress(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  const progressEntry = percentComplete !== undefined
-    ? `progress: ${message} (${percentComplete}%)`
-    : `progress: ${message}`;
+  const progressEntry =
+    percentComplete !== undefined
+      ? `progress: ${message} (${percentComplete}%)`
+      : `progress: ${message}`;
 
-  const updated: EvidenceTask = {
-    ...loaded.task,
-    observedEvidence: [...loaded.task.observedEvidence],
-  };
-  uniquePush(updated.observedEvidence, progressEntry);
-
-  writeEvidenceLedger(projectDir, sessionId, replaceLedgerTask(loaded.ledger, updated));
+  writeEvidenceLedger(
+    projectDir,
+    sessionId,
+    withUpdatedTask(loaded.ledger, taskId, (task) => {
+      const updated: EvidenceTask = { ...task, observedEvidence: [...task.observedEvidence] };
+      uniquePush(updated.observedEvidence, progressEntry);
+      return updated;
+    }),
+  );
   return { ok: true, content: `Progress recorded for ${taskId}: ${message}` };
 }
 
@@ -155,25 +150,28 @@ export function handleMarkTaskDone(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  const updated: EvidenceTask = {
-    ...loaded.task,
-    status: 'done',
-    method: 'mcp-tool',
-    changedFiles: [...loaded.task.changedFiles],
-    observedEvidence: [...loaded.task.observedEvidence],
+  writeEvidenceLedger(
+    projectDir,
+    sessionId,
+    withUpdatedTask(loaded.ledger, taskId, (task) => {
+      const updated: EvidenceTask = {
+        ...task,
+        status: 'done',
+        method: 'mcp-tool',
+        changedFiles: [...task.changedFiles],
+        observedEvidence: [...task.observedEvidence],
+      };
+      for (const file of changedFiles) uniquePush(updated.changedFiles, file);
+      uniquePush(updated.observedEvidence, 'task reached done');
+      if (summary !== undefined) uniquePush(updated.observedEvidence, `summary: ${summary}`);
+      for (const evidence of observedEvidence ?? []) uniquePush(updated.observedEvidence, evidence);
+      return updated;
+    }),
+  );
+  return {
+    ok: true,
+    content: `Task ${taskId} marked done. ${changedFiles.length} file(s) recorded.`,
   };
-
-  for (const file of changedFiles) uniquePush(updated.changedFiles, file);
-  uniquePush(updated.observedEvidence, 'task reached done');
-  if (summary !== undefined) uniquePush(updated.observedEvidence, `summary: ${summary}`);
-  for (const evidence of observedEvidence ?? []) uniquePush(updated.observedEvidence, evidence);
-
-  const updatedLedger = replaceLedgerTask(loaded.ledger, updated);
-  writeEvidenceLedger(projectDir, sessionId, {
-    ...updatedLedger,
-    validationSummary: recomputeValidationSummary(updatedLedger.tasks),
-  });
-  return { ok: true, content: `Task ${taskId} marked done. ${changedFiles.length} file(s) recorded.` };
 }
 
 export function handleReportValidationResult(
@@ -193,17 +191,21 @@ export function handleReportValidationResult(
     entry.changedFiles = [...changedFiles];
   }
 
-  const updated: EvidenceTask = {
-    ...loaded.task,
-    validation: [...loaded.task.validation, entry],
-    observedEvidence: [...loaded.task.observedEvidence],
-    changedFiles: [...loaded.task.changedFiles],
-  };
-
-  if (passed) uniquePush(updated.observedEvidence, `${stage} passed`);
-  for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
-
-  writeEvidenceLedger(projectDir, sessionId, replaceLedgerTask(loaded.ledger, updated));
+  writeEvidenceLedger(
+    projectDir,
+    sessionId,
+    withUpdatedTask(loaded.ledger, taskId, (task) => {
+      const updated: EvidenceTask = {
+        ...task,
+        validation: [...task.validation, entry],
+        observedEvidence: [...task.observedEvidence],
+        changedFiles: [...task.changedFiles],
+      };
+      if (passed) uniquePush(updated.observedEvidence, `${stage} passed`);
+      for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
+      return updated;
+    }),
+  );
   const statusLabel = passed ? 'passed' : 'failed';
   return { ok: true, content: `Validation ${stage} ${statusLabel} for ${taskId}` };
 }
@@ -219,41 +221,24 @@ export function handleReportError(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  const updated: EvidenceTask = {
-    ...loaded.task,
-    status: 'failed',
-    observedEvidence: [...loaded.task.observedEvidence],
-    changedFiles: [...loaded.task.changedFiles],
-  };
-
-  uniquePush(updated.observedEvidence, `error: ${error}`);
-  if (recoverable === true) uniquePush(updated.observedEvidence, 'agent reports: recoverable');
-  if (recoverable === false) uniquePush(updated.observedEvidence, 'agent reports: unrecoverable');
-  for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
-
-  const updatedLedger = replaceLedgerTask(loaded.ledger, updated);
-  writeEvidenceLedger(projectDir, sessionId, {
-    ...updatedLedger,
-    validationSummary: recomputeValidationSummary(updatedLedger.tasks),
-  });
+  writeEvidenceLedger(
+    projectDir,
+    sessionId,
+    withUpdatedTask(loaded.ledger, taskId, (task) => {
+      const updated: EvidenceTask = {
+        ...task,
+        status: 'failed',
+        observedEvidence: [...task.observedEvidence],
+        changedFiles: [...task.changedFiles],
+      };
+      uniquePush(updated.observedEvidence, `error: ${error}`);
+      if (recoverable === true) uniquePush(updated.observedEvidence, 'agent reports: recoverable');
+      if (recoverable === false) {
+        uniquePush(updated.observedEvidence, 'agent reports: unrecoverable');
+      }
+      for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
+      return updated;
+    }),
+  );
   return { ok: true, content: `Error recorded for ${taskId}: ${error}` };
-}
-
-function recomputeValidationSummary(
-  tasks: EvidenceLedger['tasks'],
-): EvidenceLedger['validationSummary'] {
-  const summary = { passed: 0, failed: 0, skipped: 0, escalated: 0 };
-  for (const task of tasks) {
-    if (task.status === 'skipped') {
-      summary.skipped += 1;
-      continue;
-    }
-    if (task.status === 'escalated') summary.escalated += 1;
-    if (task.status === 'done') {
-      summary.passed += 1;
-      continue;
-    }
-    if (task.status === 'failed') summary.failed += 1;
-  }
-  return summary;
 }

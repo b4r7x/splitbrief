@@ -8,7 +8,7 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
-import { runPlannerCallInContinuationLoop } from './shared.js';
+import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
 import type { PlannerCallbacksContext } from '../types.js';
 
 let dirs: string[] = [];
@@ -32,7 +32,11 @@ function planningState() {
   return state;
 }
 
-function makeWctx(projectDir: string, sessionId: string, overrides?: Partial<PlannerCallbacksContext>): PlannerCallbacksContext {
+function makeWctx(
+  projectDir: string,
+  sessionId: string,
+  overrides?: Partial<PlannerCallbacksContext>,
+): PlannerCallbacksContext {
   const { bus } = makeBusRecorder();
   const config = makeConfig({
     workflow: { mode: 'quick', persistTranscript: false },
@@ -56,8 +60,12 @@ function makeWctx(projectDir: string, sessionId: string, overrides?: Partial<Pla
 }
 
 describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('stops heartbeat timers even when the planner throws', async () => {
     const { projectDir, sessionId } = setupSession();
@@ -81,11 +89,11 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('planner crashed');
 
-    const heartbeatsAfterError = events.filter(e => e.type === 'planner_heartbeat').length;
+    const heartbeatsAfterError = events.filter((e) => e.type === 'planner_heartbeat').length;
 
     vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS + HEARTBEAT_INTERVAL_MS * 3);
 
-    const heartbeatsAfterDelay = events.filter(e => e.type === 'planner_heartbeat').length;
+    const heartbeatsAfterDelay = events.filter((e) => e.type === 'planner_heartbeat').length;
     expect(heartbeatsAfterDelay).toBe(heartbeatsAfterError);
   });
 });
@@ -95,8 +103,9 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
     const { projectDir, sessionId } = setupSession();
     let capturedCallbacks: PlannerCallbacks | undefined;
     const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(
-        async (_prompt: string, _dir: string, callbacks: PlannerCallbacks) => {
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
           capturedCallbacks = callbacks;
           return {
             spec: '',
@@ -104,8 +113,7 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
             tasks: [makeTask()],
             usage: null,
           };
-        },
-      ),
+        }),
     });
     const wctx = makeWctx(projectDir, sessionId);
 

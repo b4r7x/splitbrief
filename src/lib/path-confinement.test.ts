@@ -2,7 +2,11 @@ import { afterEach, describe, it, expect } from 'vitest';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { assertExistingPathConfined, assertPathConfined, assertWritablePathConfined } from './path-confinement.js';
+import {
+  assertExistingPathConfined,
+  assertPathConfined,
+  assertWritablePathConfined,
+} from './path-confinement.js';
 
 const ROOT = '/safe/root/dir';
 const itUnix = process.platform === 'win32' ? it.skip : it;

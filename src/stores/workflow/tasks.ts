@@ -69,7 +69,8 @@ export function updateTaskMap(
     return next;
   }
   if (event.type === 'task_completed' || event.type === 'task_skipped') {
-    const status = event.type === 'task_completed' ? statusFromCompletionMethod(event.method) : 'skipped';
+    const status =
+      event.type === 'task_completed' ? statusFromCompletionMethod(event.method) : 'skipped';
     const existing = taskMap.get(event.taskId);
     if (!existing || existing.status === status) return taskMap;
     const next = new Map(taskMap);

@@ -11,9 +11,10 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
 import { throwMappedError } from '../streaming/stream-errors.js';
-import { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
+import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../constants.js';
 import { attachImagesToLastUserMessage } from './image-attach.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -33,8 +34,14 @@ interface StreamChunk {
   } | null;
 }
 
-interface OpenAITextPart { type: 'text'; text: string }
-interface OpenAIImagePart { type: 'image_url'; image_url: { url: string } }
+interface OpenAITextPart {
+  type: 'text';
+  text: string;
+}
+interface OpenAIImagePart {
+  type: 'image_url';
+  image_url: { url: string };
+}
 type OpenAIContentPart = OpenAITextPart | OpenAIImagePart;
 
 type ChatMessage = {
@@ -65,7 +72,7 @@ export interface StreamClient {
 
 function textOnlyContent(content: string | OpenAIContentPart[]): string | OpenAITextPart[] {
   if (typeof content === 'string') return content;
-  return content.filter(part => part.type === 'text');
+  return content.filter((part) => part.type === 'text');
 }
 
 function toOpenAIMessage(message: ChatMessage): ChatCompletionMessageParam {
@@ -76,6 +83,8 @@ function toOpenAIMessage(message: ChatMessage): ChatCompletionMessageParam {
       return { role: 'user', content: message.content };
     case 'assistant':
       return { role: 'assistant', content: textOnlyContent(message.content) };
+    default:
+      return assertNever(message.role);
   }
 }
 
@@ -93,7 +102,7 @@ function toOpenAIRequest(body: StreamRequestBody): ChatCompletionCreateParamsStr
 
 function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
   return {
-    choices: chunk.choices.map(choice => ({
+    choices: chunk.choices.map((choice) => ({
       delta: choice.delta.content === undefined ? {} : { content: choice.delta.content },
     })),
     usage: chunk.usage
@@ -105,7 +114,9 @@ function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
   };
 }
 
-async function* adaptOpenAIStream(stream: AsyncIterable<ChatCompletionChunk>): AsyncIterable<StreamChunk> {
+async function* adaptOpenAIStream(
+  stream: AsyncIterable<ChatCompletionChunk>,
+): AsyncIterable<StreamChunk> {
   for await (const chunk of stream) {
     yield toStreamChunk(chunk);
   }
@@ -118,19 +129,23 @@ export async function streamCompletion(
   opts: StreamCompletionOptions,
 ): Promise<InvokeResult> {
   const { temperature, onProgress, endpoint, maxTokens, signal, effort, images } = opts;
-  const baseMessages: ChatMessage[] = messages.map(m => ({ role: m.role, content: m.content }));
-  const finalMessages = images && images.length > 0
-    ? await attachImagesToLastUserMessage<ChatMessage, OpenAIContentPart, OpenAIImagePart>(baseMessages, {
-        images,
-        imagePlacement: 'after-existing',
-        mapText: text => ({ type: 'text', text }),
-        mapImage: ({ mime, data }) => ({
-          type: 'image_url',
-          image_url: { url: `data:${mime};base64,${data}` },
-        }),
-        createUserMessage: content => ({ role: 'user', content }),
-      })
-    : baseMessages;
+  const baseMessages: ChatMessage[] = messages.map((m) => ({ role: m.role, content: m.content }));
+  const finalMessages =
+    images && images.length > 0
+      ? await attachImagesToLastUserMessage<ChatMessage, OpenAIContentPart, OpenAIImagePart>(
+          baseMessages,
+          {
+            images,
+            imagePlacement: 'after-existing',
+            mapText: (text) => ({ type: 'text', text }),
+            mapImage: ({ mime, data }) => ({
+              type: 'image_url',
+              image_url: { url: `data:${mime};base64,${data}` },
+            }),
+            createUserMessage: (content) => ({ role: 'user', content }),
+          },
+        )
+      : baseMessages;
   let stream: AsyncIterable<StreamChunk>;
   try {
     stream = await client.chat.completions.create(
@@ -143,9 +158,7 @@ export async function streamCompletion(
         ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
         ...(effort !== undefined ? { reasoning_effort: effort } : {}),
       },
-      // OpenAI SDK v6 forwards `signal` to the underlying fetch so an abort
-      // during the initial POST cancels the in-flight request, not just the
-      // chunk-iteration loop below.
+      // Forwarded to fetch so an abort cancels the initial POST, not just the chunk loop.
       signal ? { signal } : undefined,
     );
   } catch (err: unknown) {
@@ -156,7 +169,11 @@ export async function streamCompletion(
   let usage: TokenDelta | null = null;
 
   try {
-    for await (const chunk of withIdleTimeout(stream, STREAM_IDLE_TIMEOUT_MS, 'Model response timed out')) {
+    for await (const chunk of withIdleTimeout(
+      stream,
+      STREAM_IDLE_TIMEOUT_MS,
+      STREAM_IDLE_TIMEOUT_MESSAGE,
+    )) {
       throwIfAborted(opts.signal);
       const content = chunk.choices?.[0]?.delta?.content;
       if (content) {

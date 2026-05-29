@@ -18,35 +18,38 @@ import { toStreamClient, type StreamClient } from '../providers/openai-stream.js
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefined): ChatMessage[] {
-  const history: ChatMessage[] = (priorMessages ?? []).map(m => ({ role: m.role, content: m.content }));
+  const history: ChatMessage[] = (priorMessages ?? []).map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
   history.push({ role: 'user', content: prompt });
   return history;
 }
 
-async function invokeApi(
-  client: StreamClient | null,
-  model: string,
-  planner: { provider: string; apiBase?: string | undefined; apiKey: string },
-  prompt: string,
-  onOutput: (text: string) => void,
-  priorMessages?: PriorMessage[] | undefined,
-  effort?: EffortLevel | undefined,
-  images?: Attachment[] | undefined,
-  signal?: AbortSignal | undefined,
-): Promise<InvokeResult> {
-  const messages = buildMessages(prompt, priorMessages);
+async function invokeApi(opts: {
+  client: StreamClient | null;
+  model: string;
+  planner: { provider: string; apiBase?: string | undefined; apiKey: string };
+  prompt: string;
+  onOutput: (text: string) => void;
+  priorMessages?: PriorMessage[] | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
+  signal?: AbortSignal | undefined;
+}): Promise<InvokeResult> {
+  const messages = buildMessages(opts.prompt, opts.priorMessages);
   return dispatchStreamCompletion({
-    provider: planner.provider,
-    client,
-    apiKey: planner.apiKey,
-    apiBase: planner.apiBase ?? '',
-    model,
+    provider: opts.planner.provider,
+    client: opts.client,
+    apiKey: opts.planner.apiKey,
+    apiBase: opts.planner.apiBase ?? '',
+    model: opts.model,
     messages,
     temperature: 0.3,
-    onProgress: onOutput,
-    effort,
-    images,
-    signal,
+    onProgress: opts.onOutput,
+    effort: opts.effort,
+    images: opts.images,
+    signal: opts.signal,
   });
 }
 
@@ -60,13 +63,20 @@ export function createApiPlanner(config: Config): Planner {
     apiKey: plannerCfg.apiKey,
   });
 
-  const client: StreamClient | null = provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
+  const client: StreamClient | null =
+    provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
   const effort = plannerCfg.effort;
   const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
   const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
   const supportsImages = providerId !== null && modelSupportsImages(providerId, model);
 
-  const invoke = ({ prompt, callbacks, priorMessages, images, signal }: {
+  const invoke = ({
+    prompt,
+    callbacks,
+    priorMessages,
+    images,
+    signal,
+  }: {
     prompt: string;
     projectDir: string;
     callbacks: { onOutput: (text: string) => void };
@@ -74,17 +84,17 @@ export function createApiPlanner(config: Config): Planner {
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
   }) =>
-    invokeApi(
+    invokeApi({
       client,
       model,
-      { provider, apiBase: resolved.baseURL, apiKey: resolved.apiKey() },
+      planner: { provider, apiBase: resolved.baseURL, apiKey: resolved.apiKey() },
       prompt,
-      callbacks.onOutput,
+      onOutput: callbacks.onOutput,
       priorMessages,
-      supportsEffort ? effort : undefined,
-      supportsImages ? images : undefined,
+      effort: supportsEffort ? effort : undefined,
+      images: supportsImages ? images : undefined,
       signal,
-    );
+    });
 
   return createPlannerBase({
     invokePlan: invoke,
@@ -94,7 +104,8 @@ export function createApiPlanner(config: Config): Planner {
     async isAvailable() {
       try {
         return (await resolved.listModels()).length > 0;
-      } catch { /* API unreachable — treat as unavailable */
+      } catch {
+        /* API unreachable — treat as unavailable */
         return false;
       }
     },

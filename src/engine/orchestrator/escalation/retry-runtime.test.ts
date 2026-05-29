@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeImplementer, makePlanner, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeImplementer,
+  makePlanner,
+  makeCallbacks,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import { createValidator } from '../validation.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { retryConfigForProfile, stateForRetryProfile, createRetryRuntime } from './retry-runtime.js';
+import { stateForRetryProfile, createRetryRuntime } from './retry-runtime.js';
+import { configForProfile } from '../task/routing.js';
 import type { EscalationContext } from './types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'standard',
+} as const;
 
 const TEST_SINKS = {
   setAbortHandler: () => {},
@@ -51,17 +61,25 @@ function configWithProfiles() {
   };
 }
 
-describe('retryConfigForProfile', () => {
+describe('configForProfile', () => {
   it('overrides implementer config with profile config', () => {
     const config = makeNoValidationConfig();
     const profile = {
       name: 'test',
-      config: { kind: 'api' as const, provider: 'openai', apiBase: 'https://api.openai.com/v1', apiKey: 'key', model: 'gpt-4', costTier: 'frontier' as const, contextLength: 8192 },
+      config: {
+        kind: 'api' as const,
+        provider: 'openai',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'key',
+        model: 'gpt-4',
+        costTier: 'frontier' as const,
+        contextLength: 8192,
+      },
       costTier: 'frontier' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
     };
-    const result = retryConfigForProfile(config, profile);
+    const result = configForProfile(config, profile);
     expect(result.implementer).toEqual(profile.config);
   });
 });
@@ -71,7 +89,15 @@ describe('stateForRetryProfile', () => {
     const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
     const profile = {
       name: 'test',
-      config: { kind: 'api' as const, provider: 'openai', apiBase: 'https://api.openai.com/v1', apiKey: 'key', model: 'gpt-4', costTier: 'frontier' as const, contextLength: 8192 },
+      config: {
+        kind: 'api' as const,
+        provider: 'openai',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'key',
+        model: 'gpt-4',
+        costTier: 'frontier' as const,
+        contextLength: 8192,
+      },
       costTier: 'frontier' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
@@ -85,7 +111,15 @@ describe('stateForRetryProfile', () => {
     const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
     const profile = {
       name: 'test',
-      config: { kind: 'api' as const, provider: 'openai', apiBase: 'https://api.openai.com/v1', apiKey: 'key', model: 'qwen', costTier: 'frontier' as const, contextLength: 8192 },
+      config: {
+        kind: 'api' as const,
+        provider: 'openai',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'key',
+        model: 'qwen',
+        costTier: 'frontier' as const,
+        contextLength: 8192,
+      },
       costTier: 'frontier' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,

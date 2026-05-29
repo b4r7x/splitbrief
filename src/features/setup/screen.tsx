@@ -27,12 +27,14 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   const t = useTheme();
   const { exit } = useApp();
   const [{ planners }, { projectDir }] = useStores(detectionStore, configStore);
-  const onComplete = routerStore.use(s => s.screen === 'setup' ? s.onComplete : undefined);
-  const pendingFeature = routerStore.use(s => s.screen === 'setup' ? s.feature : undefined);
-  const pendingPlannerContext = routerStore.use(s => s.screen === 'setup' ? s.plannerContext : undefined);
+  const onComplete = routerStore.use((s) => (s.screen === 'setup' ? s.onComplete : undefined));
+  const pendingFeature = routerStore.use((s) => (s.screen === 'setup' ? s.feature : undefined));
+  const pendingPlannerContext = routerStore.use((s) =>
+    s.screen === 'setup' ? s.plannerContext : undefined,
+  );
 
   const [step, setStep] = useState<Step>(() =>
-    planners.filter(p => p.available).length === 0 ? 'no-planners' : 'planner',
+    planners.filter((p) => p.available).length === 0 ? 'no-planners' : 'planner',
   );
 
   const finalize = (finalConfig: Config) => {
@@ -43,7 +45,11 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
       return;
     }
     if (onComplete === 'workflow' && pendingFeature) {
-      routerStore.navigate({ to: 'workflow', feature: pendingFeature, plannerContext: pendingPlannerContext });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: pendingFeature,
+        plannerContext: pendingPlannerContext,
+      });
     } else {
       routerStore.navigate({ to: 'home' });
     }
@@ -54,9 +60,11 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
       <OverlayPanel title="Setup — Planner" hint="Install a planner, then run init again">
         <Text color={t.warning}>No planner tools detected.</Text>
         <Text color={t.textDim}>Install one of:</Text>
-        <Text color={t.text}>  npm i -g @anthropic-ai/claude-code</Text>
-        <Text color={t.text}>  npm i -g @openai/codex</Text>
-        <Text color={t.textDim}>Then run <Text bold>diptych init</Text> again.</Text>
+        <Text color={t.text}> npm i -g @anthropic-ai/claude-code</Text>
+        <Text color={t.text}> npm i -g @openai/codex</Text>
+        <Text color={t.textDim}>
+          Then run <Text bold>diptych init</Text> again.
+        </Text>
       </OverlayPanel>
     );
   }

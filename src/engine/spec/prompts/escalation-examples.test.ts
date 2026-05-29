@@ -20,29 +20,26 @@ describe('selectRelevantExamples', () => {
       tsCtx,
     );
     expect(examples.length).toBeGreaterThanOrEqual(1);
-    expect(examples.some(e => e.label.includes('type'))).toBe(true);
+    expect(examples.some((e) => e.label.includes('type'))).toBe(true);
   });
 
   it('returns empty array when no keywords match', () => {
-    const examples = selectRelevantExamples(
-      'completely novel error xyz123',
-      tsCtx,
-    );
+    const examples = selectRelevantExamples('completely novel error xyz123', tsCtx);
     expect(examples).toEqual([]);
   });
 
   it('returns Python examples for Python context', () => {
     const pyCtx = buildLanguageContext('python');
-    const examples = selectRelevantExamples(
-      "ModuleNotFoundError: No module named 'foo'",
-      pyCtx,
-    );
+    const examples = selectRelevantExamples("ModuleNotFoundError: No module named 'foo'", pyCtx);
     expect(examples[0]!.label).toContain('Import');
   });
 
   it('returns generic examples for unknown language context', () => {
     const haskellCtx = buildLanguageContext('Haskell');
-    const examples = selectRelevantExamples('SyntaxError: Unexpected token near line 5', haskellCtx);
+    const examples = selectRelevantExamples(
+      'SyntaxError: Unexpected token near line 5',
+      haskellCtx,
+    );
     expect(examples.length).toBeGreaterThanOrEqual(1);
     expect(examples[0]!.label).toBe('Syntax error');
   });

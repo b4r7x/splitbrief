@@ -3,9 +3,7 @@ import { extractFencedBlocks, hasCodePrefix, stripMarkdownFences } from './code-
 
 export type ExtractedCode = { code: string; confidence: 'high' | 'medium' | 'low' };
 
-export type ExtractionResult =
-  | ExtractedCode
-  | { error: string };
+export type ExtractionResult = ExtractedCode | { error: string };
 
 export function extractCode(response: string): ExtractionResult {
   const trimmed = response.trim();

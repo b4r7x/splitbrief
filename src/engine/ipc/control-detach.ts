@@ -54,7 +54,11 @@ export function tryControlDetach(opts: ControlDetachOptions): void {
     if (msg.kind === 'detach') {
       const attached = currentSocket();
       if (attached) {
-        try { attached.destroy(); } catch { /* ignore */ }
+        try {
+          attached.destroy();
+        } catch {
+          /* ignore */
+        }
       }
       socket.destroy();
       return;

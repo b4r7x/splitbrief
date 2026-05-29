@@ -1,6 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { getOrCreateLedger, writeEvidenceLedger } from '../evidence/persistence.js';
+import { getOrCreateLedger } from '../evidence/persistence.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval-evidence.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
 import type { EscalationContext } from './types.js';
@@ -37,9 +38,20 @@ export function persistRetryRejectionEvidence(
   decision: GateDecision,
 ): void {
   const rejectedTier = decision.tier;
-  if (!rejectedTier || rejectedTier === 'auto' || !decision.actionClass || !decision.actionDescription) return;
+  if (
+    !rejectedTier ||
+    rejectedTier === 'auto' ||
+    !decision.actionClass ||
+    !decision.actionDescription
+  )
+    return;
   try {
-    const ledger = getOrCreateLedger(ctx.projectDir, ctx.sessionId, state, ctx.config.workflow.mode);
+    const ledger = getOrCreateLedger(
+      ctx.projectDir,
+      ctx.sessionId,
+      state,
+      ctx.config.workflow.mode,
+    );
     const updated = recordRejectionEvidence({
       ledger,
       tier: rejectedTier,

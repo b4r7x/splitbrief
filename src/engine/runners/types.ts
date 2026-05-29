@@ -6,9 +6,27 @@ export interface ToolUseInfo {
 }
 
 export type ParsedLine =
-  | { text: string; usage?: TokenDelta | undefined; isResult?: boolean | undefined; sessionId?: string | undefined; toolUse?: ToolUseInfo[] | undefined }
-  | { text?: undefined; usage: TokenDelta; isResult?: boolean | undefined; sessionId?: string | undefined; toolUse?: ToolUseInfo[] | undefined }
-  | { text?: undefined; usage?: undefined; isResult?: undefined; sessionId?: string | undefined; toolUse?: ToolUseInfo[] | undefined };
+  | {
+      text: string;
+      usage?: TokenDelta | undefined;
+      isResult?: boolean | undefined;
+      sessionId?: string | undefined;
+      toolUse?: ToolUseInfo[] | undefined;
+    }
+  | {
+      text?: undefined;
+      usage: TokenDelta;
+      isResult?: boolean | undefined;
+      sessionId?: string | undefined;
+      toolUse?: ToolUseInfo[] | undefined;
+    }
+  | {
+      text?: undefined;
+      usage?: undefined;
+      isResult?: undefined;
+      sessionId?: string | undefined;
+      toolUse?: ToolUseInfo[] | undefined;
+    };
 
 export interface InvokeResult {
   text: string;

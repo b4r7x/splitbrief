@@ -64,8 +64,18 @@ describe('worktree list — empty', () => {
 describe('worktree list — with entries', () => {
   it('prints headers, rows, and session metadata for WorktreeInfo entries', async () => {
     mockListWorktrees.mockResolvedValue([
-      makeWorktree({ name: 'my-feature', branch: 'diptych/my-feature', status: 'none', sessionId: null }),
-      makeWorktree({ name: 'quick-fix', branch: 'diptych/quick-fix', status: 'none', sessionId: null }),
+      makeWorktree({
+        name: 'my-feature',
+        branch: 'diptych/my-feature',
+        status: 'none',
+        sessionId: null,
+      }),
+      makeWorktree({
+        name: 'quick-fix',
+        branch: 'diptych/quick-fix',
+        status: 'none',
+        sessionId: null,
+      }),
       makeWorktree({
         name: 'active-wt',
         branch: 'diptych/active-wt',
@@ -74,7 +84,12 @@ describe('worktree list — with entries', () => {
         phase: 'implementing',
         lastUpdated: '2026-04-27T10:00:00.000Z',
       }),
-      makeWorktree({ name: 'idle-wt', branch: 'diptych/idle-wt', status: 'idle', sessionId: 'dip-def456' }),
+      makeWorktree({
+        name: 'idle-wt',
+        branch: 'diptych/idle-wt',
+        status: 'idle',
+        sessionId: 'dip-def456',
+      }),
     ]);
 
     await runWorktree(['list']);
@@ -108,9 +123,7 @@ describe('worktree list — with entries', () => {
 
 describe('worktree switch', () => {
   it('prints cd hint when worktree exists', async () => {
-    mockListWorktrees.mockResolvedValue([
-      makeWorktree({ name: 'my-feature' }),
-    ]);
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
     await runWorktree(['switch', 'my-feature']);
 

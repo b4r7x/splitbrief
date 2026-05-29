@@ -29,7 +29,7 @@ function readLogLines(): string[] {
 }
 
 function readLogEntries(): Array<Record<string, unknown>> {
-  return readLogLines().map(line => JSON.parse(line) as Record<string, unknown>);
+  return readLogLines().map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 describe('compactTranscript', () => {
@@ -52,7 +52,12 @@ describe('compactTranscript', () => {
       },
     };
 
-    const result = await compactTranscript({ sessionDir, planner, keepRecentCount: 2, format: 'freeform' });
+    const result = await compactTranscript({
+      sessionDir,
+      planner,
+      keepRecentCount: 2,
+      format: 'freeform',
+    });
 
     expect(result).toEqual({ summary: '## Summary\nOlder work', entriesRemoved: 3 });
     expect(summarizedInput).toEqual([
@@ -237,7 +242,9 @@ describe('compactTranscript', () => {
       summarizeStructured: async () => ({ text: 'not json', structured: null }),
     };
     const fallbackTexts: string[] = [];
-    const onFallback = (text: string) => { fallbackTexts.push(text); };
+    const onFallback = (text: string) => {
+      fallbackTexts.push(text);
+    };
 
     const result = await compactTranscript({
       sessionDir,
@@ -260,9 +267,19 @@ describe('compactTranscript', () => {
 
 describe('readCompactedMessages', () => {
   it('returns all messages when no summary exists', async () => {
-    appendEntry({ ts: '2024-01-01T00:00:00.000Z', kind: 'event', type: 'workflow_started', data: {} });
+    appendEntry({
+      ts: '2024-01-01T00:00:00.000Z',
+      kind: 'event',
+      type: 'workflow_started',
+      data: {},
+    });
     appendEntry({ ts: '2024-01-01T00:00:01.000Z', kind: 'message', role: 'user', text: 'spec' });
-    appendEntry({ ts: '2024-01-01T00:00:02.000Z', kind: 'message', role: 'assistant', text: 'plan' });
+    appendEntry({
+      ts: '2024-01-01T00:00:02.000Z',
+      kind: 'message',
+      role: 'assistant',
+      text: 'plan',
+    });
 
     const messages = await readCompactedMessages(sessionDir);
 
@@ -286,7 +303,7 @@ describe('readCompactedMessages', () => {
 
     const messages = await readCompactedMessages(sessionDir);
 
-    expect(messages.map(message => ({ role: message.role, text: message.text }))).toEqual([
+    expect(messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: 'user', text: 'latest summary' },
       { role: 'user', text: 'msg 4' },
       { role: 'assistant', text: 'msg 5' },
@@ -315,7 +332,7 @@ describe('readCompactedMessages', () => {
 
     const messages = await readCompactedMessages(sessionDir);
 
-    expect(messages.map(message => ({ role: message.role, text: message.text }))).toEqual([
+    expect(messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: 'user', text: JSON.stringify(structured) },
       { role: 'user', text: 'recent' },
     ]);

@@ -13,7 +13,10 @@ function Harness({ capture }: { capture: { current: UseInputModeResult | null } 
   return <Text>{`${inputMode.mode}:${inputMode.hint}`}</Text>;
 }
 
-async function waitForMode(capture: { current: UseInputModeResult | null }, mode: UseInputModeResult['mode']) {
+async function waitForMode(
+  capture: { current: UseInputModeResult | null },
+  mode: UseInputModeResult['mode'],
+) {
   for (let i = 0; i < 5; i += 1) {
     await tick();
     if (capture.current?.mode === mode) return;

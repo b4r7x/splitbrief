@@ -20,6 +20,7 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
     "types": ["node", "react"]
   },
   "include": ["src/**/*"],

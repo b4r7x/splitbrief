@@ -55,7 +55,7 @@ describe('applyEdits', () => {
 
   it('does not mutate the original config', () => {
     const original = structuredClone(mockConfig);
-    applyEdits(mockConfig, { 'theme': 'mono' });
+    applyEdits(mockConfig, { theme: 'mono' });
     expect(mockConfig).toEqual(original);
   });
 

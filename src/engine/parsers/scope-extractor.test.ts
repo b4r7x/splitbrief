@@ -119,11 +119,7 @@ describe('extractFunctionContext', () => {
   });
 
   it('returns null when function name is not found', () => {
-    const file = [
-      'export function existing() {',
-      '  return 1;',
-      '}',
-    ].join('\n');
+    const file = ['export function existing() {', '  return 1;', '}'].join('\n');
 
     const result = extractFunctionContext(file, 'nonExistent', 0);
     expect(result).toBe(null);

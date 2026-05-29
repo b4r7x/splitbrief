@@ -44,21 +44,25 @@ function setupSession(name: string): string {
 function writeReadiness(projectDir: string): void {
   writeSecureFile(
     join(sessionDir(projectDir, SESSION_ID), READINESS_FILE),
-    JSON.stringify({
-      type: 'start-readiness',
-      generatedAt: '2026-04-29T08:00:00.000Z',
-      status: 'ready-with-warnings',
-      nextAction: 'continue',
-      blockerCount: 0,
-      warningCount: 1,
-      checks: [
-        {
-          id: 'repo.dirty',
-          severity: 'warning',
-          summary: 'Repository has local edits before the run.',
-        },
-      ],
-    }, null, 2) + '\n',
+    JSON.stringify(
+      {
+        type: 'start-readiness',
+        generatedAt: '2026-04-29T08:00:00.000Z',
+        status: 'ready-with-warnings',
+        nextAction: 'continue',
+        blockerCount: 0,
+        warningCount: 1,
+        checks: [
+          {
+            id: 'repo.dirty',
+            severity: 'warning',
+            summary: 'Repository has local edits before the run.',
+          },
+        ],
+      },
+      null,
+      2,
+    ) + '\n',
   );
 }
 
@@ -72,7 +76,12 @@ async function writeRichArtifacts(): Promise<string> {
     ...createInitialState('explain feature'),
     phase: 'complete' as const,
     tasks,
-    tokenUsage: makeUsage({ plannerInput: 1000, plannerOutput: 500, implementerInput: 2000, implementerOutput: 1000 }),
+    tokenUsage: makeUsage({
+      plannerInput: 1000,
+      plannerOutput: 500,
+      implementerInput: 2000,
+      implementerOutput: 1000,
+    }),
     plannerTool: 'claude-code',
     plannerModel: 'sonnet',
     implementerTool: 'ollama',
@@ -123,7 +132,7 @@ async function writeRichArtifacts(): Promise<string> {
     priceConfidenceCounts: { priceKnown: 1, priceUnknown: 1, profileUnavailable: 0 },
     tasks: [
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         title: 'Local task',
         estimatedPromptTokens: 1200,
         selectedProfileId: 'local-small',
@@ -134,7 +143,7 @@ async function writeRichArtifacts(): Promise<string> {
         hypotheticalPlannerCost: 0.12,
       },
       {
-        taskId: 'T002',
+        taskId: taskId('T002'),
         title: 'Tight task',
         estimatedPromptTokens: 7000,
         selectedProfileId: 'cheap-api',
@@ -218,7 +227,8 @@ async function writeRichArtifacts(): Promise<string> {
         contextFit: 'tight',
         estimatedTokens: 7000,
         contextLength: 8192,
-        routingReason: 'Selected cheapest capable profile cheap-api using conservative context-length fallback',
+        routingReason:
+          'Selected cheapest capable profile cheap-api using conservative context-length fallback',
       },
     ],
   });
@@ -229,15 +239,20 @@ async function writeRichArtifacts(): Promise<string> {
     state,
     finalReviewStatus: 'written',
   });
-  saveSummary({ projectDir: projectDir, sessionId: SESSION_ID }, makeSession({ id: SESSION_ID, status: 'complete', summary }));
+  saveSummary(
+    { projectDir: projectDir, sessionId: SESSION_ID },
+    makeSession({ id: SESSION_ID, status: 'complete', summary }),
+  );
   return projectDir;
 }
 
 function readArtifactContents(projectDir: string, files: string[]): Record<string, string> {
-  return Object.fromEntries(files.map((file) => [
-    file,
-    readFileSync(join(sessionDir(projectDir, SESSION_ID), file), 'utf8'),
-  ]));
+  return Object.fromEntries(
+    files.map((file) => [
+      file,
+      readFileSync(join(sessionDir(projectDir, SESSION_ID), file), 'utf8'),
+    ]),
+  );
 }
 
 describe('buildRunExplain', () => {
@@ -248,25 +263,37 @@ describe('buildRunExplain', () => {
 
     expect(explain.cost.actual).toContain('unknown');
     expect(explain.cost.confidence).toBe('partial');
-    expect(explain.cost.unknownPricing).toEqual(expect.arrayContaining([
-      'implementer price unknown',
-      'T002: price-unknown',
-    ]));
+    expect(explain.cost.unknownPricing).toEqual(
+      expect.arrayContaining(['implementer price unknown', 'T002: price-unknown']),
+    );
     expect(explain.routing.find((route) => route.taskId === 'T002')).toMatchObject({
       selectedProfile: 'cheap-api',
       contextFit: 'tight',
       contextConfidence: 'context-conservative-fallback',
       priceConfidence: 'price-unknown',
     });
-    expect(explain.routing.find((route) => route.taskId === 'T002')?.notes).toEqual(expect.arrayContaining([
-      'context length used conservative fallback',
-      'pricing unknown',
-    ]));
-    expect(explain.activity.retries).toContainEqual({ taskId: 'T002', retryCount: 1, lastError: 'test failed' });
-    expect(explain.activity.escalatedTasks).toContainEqual({ taskId: 'T002', title: 'Tight task', method: 'escalated-full' });
-    expect(explain.review.taskReview).toMatchObject({ triggeredCount: 1, taskIds: ['T001'], status: 'triggered' });
+    expect(explain.routing.find((route) => route.taskId === 'T002')?.notes).toEqual(
+      expect.arrayContaining(['context length used conservative fallback', 'pricing unknown']),
+    );
+    expect(explain.activity.retries).toContainEqual({
+      taskId: 'T002',
+      retryCount: 1,
+      lastError: 'test failed',
+    });
+    expect(explain.activity.escalatedTasks).toContainEqual({
+      taskId: 'T002',
+      title: 'Tight task',
+      method: 'escalated-full',
+    });
+    expect(explain.review.taskReview).toMatchObject({
+      triggeredCount: 1,
+      taskIds: ['T001'],
+      status: 'triggered',
+    });
     expect(explain.review.finalReview.status).toBe('written');
-    expect(explain.warnings.silentReadinessWarnings).toContain('repo.dirty: Repository has local edits before the run.');
+    expect(explain.warnings.silentReadinessWarnings).toContain(
+      'repo.dirty: Repository has local edits before the run.',
+    );
     expect(explain.warnings.runtimeWarnings).toContain('warning: context fit was tight');
     expect(explain.artifacts).toContainEqual({
       key: 'reviewPacketJson',
@@ -308,11 +335,13 @@ describe('buildRunExplain', () => {
     expect(explain.cost.actual).toBe('unavailable');
     expect(explain.cost.confidence).toBe('unavailable');
     expect(explain.review.finalReview.status).toBe('not-reached');
-    expect(explain.routing).toContainEqual(expect.objectContaining({
-      taskId: 'T001',
-      selectedProfile: 'local-small',
-      contextFit: 'fits',
-    }));
+    expect(explain.routing).toContainEqual(
+      expect.objectContaining({
+        taskId: 'T001',
+        selectedProfile: 'local-small',
+        contextFit: 'fits',
+      }),
+    );
     expect(explain.artifacts).toContainEqual({
       key: 'reviewPacketJson',
       path: `.diptych/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,

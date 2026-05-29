@@ -4,7 +4,10 @@ import { buildCrashDiagnostic, type CrashDiagnostic } from '../engine/ipc/crash-
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return 'unknown';
   const d = new Date(ms);
-  return d.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+  return d
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\.\d{3}Z$/, ' UTC');
 }
 
 export function formatCrashDiagnostic(diag: CrashDiagnostic): string {
@@ -23,7 +26,8 @@ export function formatCrashDiagnostic(diag: CrashDiagnostic): string {
   if (diag.pid !== null) lines.push(`  PID          : ${diag.pid}`);
   else lines.push('  PID          : unknown');
   if (diag.startedAt !== null) lines.push(`  Started      : ${formatTimestamp(diag.startedAt)}`);
-  if (diag.lastAliveAt !== null) lines.push(`  Last alive   : ${formatTimestamp(diag.lastAliveAt)}`);
+  if (diag.lastAliveAt !== null)
+    lines.push(`  Last alive   : ${formatTimestamp(diag.lastAliveAt)}`);
   if (diag.exitedAt !== null) lines.push(`  Exited at    : ${formatTimestamp(diag.exitedAt)}`);
   if (diag.signal !== null) lines.push(`  Exit signal  : ${diag.signal}`);
   if (diag.exitCode !== null) lines.push(`  Exit code    : ${diag.exitCode}`);
@@ -76,9 +80,7 @@ export async function showCrashDiagnostic(
 
   const key = await waitForKey();
   if (key === '1') {
-    process.stdout.write(
-      'Exiting. Run `diptych start` to begin a new workflow.\n',
-    );
+    process.stdout.write('Exiting. Run `diptych start` to begin a new workflow.\n');
     process.exit(0);
   }
   process.exit(0);

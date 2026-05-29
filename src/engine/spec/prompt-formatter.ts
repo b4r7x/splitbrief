@@ -7,6 +7,7 @@ import { truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { buildLanguageContext, type LanguageContext } from './prompts/language-context.js';
 import { buildSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
+import { TASK_BRIEF_HEADINGS } from './headings.js';
 
 const CLOSING_CONSTRAINTS = [
   'Do NOT invent new functions not described in the task',
@@ -25,7 +26,7 @@ function resolveCodeContext(
   }
 
   if (functionName) {
-    const extracted = extractFunctionContext(fileContent, functionName);
+    const extracted = extractFunctionContext(fileContent, functionName, 5);
     if (extracted) {
       const functionContent = extracted.imports + '\n\n' + extracted.targetFunction;
       const functionTokens = estimateTokens(functionContent);
@@ -51,7 +52,7 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
   const sections: string[] = [];
 
   if (context) {
-    sections.push(`## Project: ${context.name}`, `## Runtime: ${context.runtime}`, '');
+    sections.push(`## Project: ${context.name}`, '');
   }
 
   sections.push(
@@ -59,52 +60,67 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
     `### Action: ${task.action}`,
     `### File: ${task.file}`,
     '',
-    '### Description',
+    TASK_BRIEF_HEADINGS.description.heading,
     task.description,
   );
 
   if (task.signature) {
-    sections.push('', '### Signature', task.signature);
+    sections.push('', TASK_BRIEF_HEADINGS.signature.heading, task.signature);
   }
   if (task.typeDefs) {
-    sections.push('', '### Type Definitions', task.typeDefs);
+    sections.push('', TASK_BRIEF_HEADINGS.typeDefs.heading, task.typeDefs);
   }
   if (task.pattern) {
-    sections.push('', '### Pattern', task.pattern);
+    sections.push('', TASK_BRIEF_HEADINGS.pattern.heading, task.pattern);
   }
   if (task.implementationSteps.length > 0) {
-    sections.push('', '### Implementation Steps', ...task.implementationSteps.map((s, i) => `${i + 1}. ${s}`));
+    sections.push(
+      '',
+      TASK_BRIEF_HEADINGS.implementationSteps.heading,
+      ...task.implementationSteps.map((s, i) => `${i + 1}. ${s}`),
+    );
   }
   if (task.tests.length > 0) {
-    sections.push('', '### Tests', ...task.tests.map(t => `- ${t}`));
+    sections.push('', TASK_BRIEF_HEADINGS.tests.heading, ...task.tests.map((t) => `- ${t}`));
   }
 
   const scopeLines = buildScopeLines(task.scope);
   if (scopeLines.length > 0) {
-    sections.push('', '### Scope', ...scopeLines);
+    sections.push('', TASK_BRIEF_HEADINGS.scope.heading, ...scopeLines);
   }
   if (task.escalation && task.escalation.length > 0) {
-    sections.push('', '### Escalation', ...task.escalation.map(e => `- ${e}`));
+    sections.push(
+      '',
+      TASK_BRIEF_HEADINGS.escalation.heading,
+      ...task.escalation.map((e) => `- ${e}`),
+    );
   }
   if (task.evidence && task.evidence.length > 0) {
-    sections.push('', '### Evidence', ...task.evidence.map(e => `- ${e}`));
+    sections.push('', TASK_BRIEF_HEADINGS.evidence.heading, ...task.evidence.map((e) => `- ${e}`));
   }
 
   const allConstraints = [...task.constraints, ...CLOSING_CONSTRAINTS];
-  sections.push('', '### Constraints', ...allConstraints.map(c => `- ${c}`));
-  sections.push('', `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`);
+  sections.push(
+    '',
+    TASK_BRIEF_HEADINGS.constraints.heading,
+    ...allConstraints.map((c) => `- ${c}`),
+  );
+  sections.push(
+    '',
+    `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`,
+  );
 
   return sections;
 }
 
 function findCodeContextInsertIndex(sections: string[]): number {
   const headingsAfterCodeContext = [
-    '### Implementation Steps',
-    '### Tests',
-    '### Scope',
-    '### Escalation',
-    '### Evidence',
-    '### Constraints',
+    TASK_BRIEF_HEADINGS.implementationSteps.heading,
+    TASK_BRIEF_HEADINGS.tests.heading,
+    TASK_BRIEF_HEADINGS.scope.heading,
+    TASK_BRIEF_HEADINGS.escalation.heading,
+    TASK_BRIEF_HEADINGS.evidence.heading,
+    TASK_BRIEF_HEADINGS.constraints.heading,
   ];
 
   for (const heading of headingsAfterCodeContext) {
@@ -128,7 +144,11 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   if (!task.currentCode) return;
 
   if (!budget) {
-    insertCodeContextSection(sections, ['', '### Current Code', task.currentCode]);
+    insertCodeContextSection(sections, [
+      '',
+      TASK_BRIEF_HEADINGS.currentCode.heading,
+      task.currentCode,
+    ]);
     return;
   }
 
@@ -142,22 +162,32 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
 
   if (codeCtx.mode === 'function-level') {
     insertCodeContextSection(sections, [
-      '', '### Current Code (relevant section)',
-      '#### Imports', codeCtx.imports, '',
-      '#### Target Function', codeCtx.targetFunction, '',
+      '',
+      '### Current Code (relevant section)',
+      '#### Imports',
+      codeCtx.imports,
+      '',
+      '#### Target Function',
+      codeCtx.targetFunction,
+      '',
       `#### Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
     ]);
   } else {
-    insertCodeContextSection(sections, ['', '### Current Code', codeCtx.content]);
+    insertCodeContextSection(sections, [
+      '',
+      TASK_BRIEF_HEADINGS.currentCode.heading,
+      codeCtx.content,
+    ]);
   }
 }
 
-export function formatTaskPrompt(
-  task: Task,
-  context: ProjectContext,
-  contextLength?: number,
-  languageContext?: LanguageContext,
-): string {
+export function formatTaskPrompt(opts: {
+  task: Task;
+  context: ProjectContext;
+  contextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
+}): string {
+  const { task, context, contextLength, languageContext } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const sections = buildTaskSections(task, context);
 
@@ -166,7 +196,11 @@ export function formatTaskPrompt(
     return sections.join('\n');
   }
 
-  const budget = computeTokenBudget(buildSystemPreamble(ctx), sections.join('\n'), contextLength);
+  const budget = computeTokenBudget({
+    system: buildSystemPreamble(ctx),
+    taskBody: sections.join('\n'),
+    contextLength,
+  });
 
   if (task.action === 'modify') {
     insertCodeContext(sections, task, budget);
@@ -175,14 +209,15 @@ export function formatTaskPrompt(
   return sections.join('\n');
 }
 
-export function formatRetryPrompt(
-  task: Task,
-  context: ProjectContext,
-  error: string,
-  attempt: number,
-  contextLength?: number,
-  languageContext?: LanguageContext,
-): string {
+export function formatRetryPrompt(opts: {
+  task: Task;
+  context: ProjectContext;
+  error: string;
+  attempt: number;
+  contextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
+}): string {
+  const { task, context, error, attempt, contextLength, languageContext } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',
@@ -197,7 +232,11 @@ export function formatRetryPrompt(
 
   if (task.currentCode) {
     const budget = contextLength
-      ? computeTokenBudget(buildSystemPreamble(ctx), sections.join('\n'), contextLength)
+      ? computeTokenBudget({
+          system: buildSystemPreamble(ctx),
+          taskBody: sections.join('\n'),
+          contextLength,
+        })
       : undefined;
     insertCodeContext(sections, task, budget);
   }

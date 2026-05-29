@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ImplementerConfigSchema,
-  ImplementerProfilesConfigSchema,
-} from './implementer-config.js';
+import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
 
 describe('ImplementerConfigSchema', () => {
   it('requires implementers to declare a model', () => {
@@ -39,7 +36,7 @@ describe('ImplementerProfilesConfigSchema', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues.some(issue => issue.path.join('.') === 'default')).toBe(true);
+      expect(result.error.issues.some((issue) => issue.path.join('.') === 'default')).toBe(true);
     }
   });
 });

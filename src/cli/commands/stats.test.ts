@@ -53,7 +53,10 @@ describe('stats command', () => {
 
     await runStats(['--project', projectDir, '--json']);
 
-    const output = JSON.parse(chunks.join('')) as { type?: string; stats?: { totalSessions?: number; totalTasks?: number } };
+    const output = JSON.parse(chunks.join('')) as {
+      type?: string;
+      stats?: { totalSessions?: number; totalTasks?: number };
+    };
     expect(output.type).toBe('stats');
     expect(output.stats?.totalSessions).toBe(1);
     expect(output.stats?.totalTasks).toBe(3);
@@ -64,7 +67,10 @@ describe('stats command', () => {
 
     await runStats(['--project', projectDir, '--json']);
 
-    const output = JSON.parse(chunks.join('')) as { type?: string; stats?: { totalSessions?: number } };
+    const output = JSON.parse(chunks.join('')) as {
+      type?: string;
+      stats?: { totalSessions?: number };
+    };
     expect(output).toMatchObject({ type: 'stats', stats: { totalSessions: 0 } });
   });
 });

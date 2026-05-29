@@ -15,10 +15,7 @@ describe('planEditorStore', () => {
   beforeEach(resetEditor);
 
   it('loads a plan as a clean snapshot and keeps runtime editor mode', () => {
-    const tasks = [
-      makeTask({ id: 'T001', title: 'Original title' }),
-      makeTask({ id: 'T002' }),
-    ];
+    const tasks = [makeTask({ id: 'T001', title: 'Original title' }), makeTask({ id: 'T002' })];
 
     planEditorStore.setRuntimeRichMode(true);
     planEditorStore.initEditor(tasks);
@@ -47,7 +44,9 @@ describe('planEditorStore', () => {
     const edited = { ...task, title: 'Edited title' };
 
     planEditorStore.initEditor([task]);
-    planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+    planEditorStore.setReviewMetadata([
+      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+    ]);
     planEditorStore.setSaveError('old parse error');
     planEditorStore.setTasks([edited]);
     edited.title = 'Mutated after edit';
@@ -184,7 +183,9 @@ describe('planEditorStore', () => {
     const reviewed = makeTask({ id: 'T001', title: 'Reviewed title' });
 
     planEditorStore.initEditor([reviewed]);
-    planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+    planEditorStore.setReviewMetadata([
+      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+    ]);
     planEditorStore.initEditor([reviewed]);
 
     expect(planEditorStore.get().reviewMetadata.get('T001')?.workerProfile).toBe('cheap-cloud');
@@ -200,7 +201,11 @@ describe('planEditorStore', () => {
       { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
     ]);
 
-    planEditorStore.upsertTaskReviewMetadata({ taskId: 'T001', contextFit: 'overflow', risk: 'high' });
+    planEditorStore.upsertTaskReviewMetadata({
+      taskId: 'T001',
+      contextFit: 'overflow',
+      risk: 'high',
+    });
 
     expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
       workerProfile: 'cheap-cloud',
@@ -223,10 +228,10 @@ describe('planEditorStore', () => {
     planEditorStore.toggleFlag('T003');
 
     expect(planEditorStore.get().dirty).toBe(false);
-    expect(planEditorStore.getFlaggedTasks().map(t => t.id)).toEqual(['T001', 'T003']);
+    expect(planEditorStore.getFlaggedTasks().map((t) => t.id)).toEqual(['T001', 'T003']);
 
     planEditorStore.toggleFlag('T001');
-    expect(planEditorStore.getFlaggedTasks().map(t => t.id)).toEqual(['T003']);
+    expect(planEditorStore.getFlaggedTasks().map((t) => t.id)).toEqual(['T003']);
 
     planEditorStore.clearFlags();
     expect(planEditorStore.getFlaggedTasks()).toEqual([]);

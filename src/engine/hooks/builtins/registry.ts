@@ -12,8 +12,13 @@ export interface BuiltinHook {
 }
 
 export const BUILTIN_HOOKS: BuiltinHook[] = [
-  { name: 'prettier-on-change', event: 'post_task',   enabledByDefault: false, run: prettierOnChange },
-  { name: 'block-secrets',      event: 'pre_commit',  enabledByDefault: false, run: blockSecrets },
+  {
+    name: 'prettier-on-change',
+    event: 'post_task',
+    enabledByDefault: false,
+    run: prettierOnChange,
+  },
+  { name: 'block-secrets', event: 'pre_commit', enabledByDefault: false, run: blockSecrets },
 ];
 
 export function activeBuiltinsFor(event: HookEvent, hooks: HooksConfig | undefined): BuiltinHook[] {

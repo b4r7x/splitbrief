@@ -96,7 +96,10 @@ export function ControlledMultilineInput({
     scrollOffsetRef.current = scrollOffset;
   }, [scrollOffset]);
 
-  const resolvedHighlightStyle: TextStyle = highlightStyle ?? { backgroundColor: t.highlight.bg, color: t.highlight.fg };
+  const resolvedHighlightStyle: TextStyle = highlightStyle ?? {
+    backgroundColor: t.highlight.bg,
+    color: t.highlight.fg,
+  };
 
   const getStyle = (type: SegmentType): TextStyle => {
     switch (type) {
@@ -114,7 +117,13 @@ export function ControlledMultilineInput({
   };
 
   return (
-    <Box height={effectiveVisibleRows} overflow="hidden" flexDirection="column" flexGrow={0} flexShrink={0}>
+    <Box
+      height={effectiveVisibleRows}
+      overflow="hidden"
+      flexDirection="column"
+      flexGrow={0}
+      flexShrink={0}
+    >
       <Box flexDirection="column">
         <Box height={effectiveVisibleRows} overflowY="hidden" flexShrink={0} flexDirection="column">
           <Box marginTop={-scrollOffset} flexDirection="column">

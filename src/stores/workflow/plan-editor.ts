@@ -1,40 +1,19 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
+import type {
+  PlanReviewRisk,
+  PlanReviewContextFit,
+  PlanReviewEstimateStatus,
+  PlanTaskReviewMetadata,
+} from '../../core/schemas/plan-review.js';
 import { deepEqual } from '../../utils/deep-equal.js';
 
-export type PlanReviewRisk = 'low' | 'medium' | 'high';
-export type PlanReviewContextFit = 'fits' | 'tight' | 'overflow';
-export type PlanReviewCostTier = ImplementerCostTier;
-export type PlanReviewEstimateStatus =
-  | 'refreshed-current-code'
-  | 'brief-current-code'
-  | 'missing-current-code'
-  | 'current-code-unavailable';
-
-interface PlanReviewConflictMetadata {
-  kind: string;
-  files: string[];
-  affectedTaskIds?: string[] | undefined;
-  note?: string | undefined;
-}
-
-export interface PlanTaskReviewMetadata {
-  taskId: string;
-  workerProfile?: string | undefined;
-  selectedCostTier?: PlanReviewCostTier | undefined;
-  costPosture?: string | undefined;
-  contextFit?: PlanReviewContextFit | undefined;
-  estimatedTokens?: number | undefined;
-  contextLength?: number | undefined;
-  estimateStatus?: PlanReviewEstimateStatus | undefined;
-  routingReason?: string | undefined;
-  validationStatus?: 'pending' | 'pass' | 'warn' | 'fail' | undefined;
-  risk?: PlanReviewRisk | undefined;
-  stale?: boolean | undefined;
-  conflict?: PlanReviewConflictMetadata | undefined;
-  checkpoint?: string | undefined;
-}
+export type {
+  PlanReviewRisk,
+  PlanReviewContextFit,
+  PlanReviewEstimateStatus,
+  PlanTaskReviewMetadata,
+};
 
 export interface PlanEditorState {
   tasks: Task[];
@@ -103,31 +82,34 @@ function __testReset(next?: Partial<PlanEditorState>): void {
     ...next,
     tasks: next.tasks ? cloneTasks(next.tasks) : base.tasks,
     expandedIds: next.expandedIds ? new Set(next.expandedIds) : base.expandedIds,
-    reviewMetadata: next.reviewMetadata ? cloneReviewMetadataMap(next.reviewMetadata) : base.reviewMetadata,
+    reviewMetadata: next.reviewMetadata
+      ? cloneReviewMetadataMap(next.reviewMetadata)
+      : base.reviewMetadata,
     flaggedIds: next.flaggedIds ? new Set(next.flaggedIds) : base.flaggedIds,
   });
 }
 
 function initEditor(tasks: Task[]): void {
   const nextTasks = cloneTasks(tasks);
-  store.set(s => ({
+  store.set((s) => ({
     ...s,
     tasks: nextTasks,
     cursor: 0,
     expandedIds: new Set<string>(),
     dirty: false,
     saveError: null,
-    reviewMetadata: sameTasks(s.tasks, nextTasks) ? s.reviewMetadata : new Map<string, PlanTaskReviewMetadata>(),
+    reviewMetadata: sameTasks(s.tasks, nextTasks)
+      ? s.reviewMetadata
+      : new Map<string, PlanTaskReviewMetadata>(),
     flaggedIds: sameTasks(s.tasks, nextTasks) ? s.flaggedIds : new Set<string>(),
   }));
 }
 
 function moveCursor(direction: 'up' | 'down'): void {
-  store.set(s => {
+  store.set((s) => {
     if (s.tasks.length === 0) return s;
-    const next = direction === 'down'
-      ? Math.min(s.cursor + 1, s.tasks.length - 1)
-      : Math.max(s.cursor - 1, 0);
+    const next =
+      direction === 'down' ? Math.min(s.cursor + 1, s.tasks.length - 1) : Math.max(s.cursor - 1, 0);
     if (next === s.cursor) return s;
     return { ...s, cursor: next };
   });
@@ -141,7 +123,7 @@ function sameTasks(a: Task[], b: Task[]): boolean {
 
 function setTasks(tasks: Task[]): void {
   const nextTasks = cloneTasks(tasks);
-  store.set(s => {
+  store.set((s) => {
     if (sameTasks(s.tasks, nextTasks)) return s;
     return {
       ...s,
@@ -154,7 +136,7 @@ function setTasks(tasks: Task[]): void {
 }
 
 function toggleExpand(taskId: string): void {
-  store.set(s => {
+  store.set((s) => {
     const next = new Set(s.expandedIds);
     if (next.has(taskId)) {
       next.delete(taskId);
@@ -166,11 +148,11 @@ function toggleExpand(taskId: string): void {
 }
 
 function setRuntimeRichMode(value: boolean): void {
-  store.set(s => (s.runtimeRichMode === value ? s : { ...s, runtimeRichMode: value }));
+  store.set((s) => (s.runtimeRichMode === value ? s : { ...s, runtimeRichMode: value }));
 }
 
 function setCursor(n: number): void {
-  store.set(s => {
+  store.set((s) => {
     const clamped = s.tasks.length === 0 ? 0 : Math.max(0, Math.min(n, s.tasks.length - 1));
     if (clamped === s.cursor) return s;
     return { ...s, cursor: clamped };
@@ -178,11 +160,11 @@ function setCursor(n: number): void {
 }
 
 function setSaveError(message: string | null): void {
-  store.set(s => (s.saveError === message ? s : { ...s, saveError: message }));
+  store.set((s) => (s.saveError === message ? s : { ...s, saveError: message }));
 }
 
 function toggleFlag(taskId: string): void {
-  store.set(s => {
+  store.set((s) => {
     const next = new Set(s.flaggedIds);
     if (next.has(taskId)) {
       next.delete(taskId);
@@ -194,7 +176,7 @@ function toggleFlag(taskId: string): void {
 }
 
 function clearFlags(): void {
-  store.set(s => {
+  store.set((s) => {
     if (s.flaggedIds.size === 0) return s;
     return { ...s, flaggedIds: new Set<string>() };
   });
@@ -202,11 +184,11 @@ function clearFlags(): void {
 
 function getFlaggedTasks(): Task[] {
   const { tasks, flaggedIds } = store.get();
-  return tasks.filter(t => flaggedIds.has(t.id));
+  return tasks.filter((t) => flaggedIds.has(t.id));
 }
 
 function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
-  store.set(s => {
+  store.set((s) => {
     const next = new Map<string, PlanTaskReviewMetadata>();
     for (const item of metadata) {
       next.set(item.taskId, cloneReviewMetadata(item));
@@ -217,7 +199,7 @@ function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
 }
 
 function upsertTaskReviewMetadata(metadata: PlanTaskReviewMetadata): void {
-  store.set(s => {
+  store.set((s) => {
     const current = s.reviewMetadata.get(metadata.taskId);
     const merged = cloneReviewMetadata(mergeReviewMetadata(current, metadata));
     if (current && deepEqual(current, merged)) return s;
@@ -248,7 +230,7 @@ function sameReviewMetadata(
 }
 
 function markSaved(): void {
-  store.set(s => {
+  store.set((s) => {
     if (!s.dirty && s.saveError === null) return s;
     return { ...s, dirty: false, saveError: null };
   });

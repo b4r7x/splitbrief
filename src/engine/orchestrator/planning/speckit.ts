@@ -14,51 +14,31 @@ import {
 import { readFileOrEmpty, writeSecureFile } from '../../../lib/fs.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
-import { runBriefQualityGate, runBriefsApprovalLoop } from './shared.js';
+import { runBriefQualityGate, runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
-import type { ConstitutionCheckResult, ConstitutionViolation } from '../../../core/schemas/constitution.js';
+import type {
+  ConstitutionCheckResult,
+  ConstitutionViolation,
+} from '../../../core/schemas/constitution.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
+import { extractJsonBlock } from '../../../utils/extract-json-block.js';
+import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
 
+export { extractJsonBlock };
+
 const DEFAULT_MIN_COVERAGE = 0.9;
-
-export function extractJsonBlock(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-  const candidate = fenced ? fenced[1] : findFirstBalancedObject(text);
-  if (!candidate) return {};
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return {};
-  }
-}
-
-function findFirstBalancedObject(text: string): string | null {
-  const start = text.indexOf('{');
-  if (start < 0) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\') { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return null;
-}
 
 function parseConstitutionCheck(text: string): ConstitutionCheckResult {
   const obj = narrowRecord(extractJsonBlock(text));
   if (!obj) {
-    return { passed: true, violations: [{ principle: 'meta', reason: 'constitution check output malformed', severity: 'soft' }] };
+    return {
+      passed: true,
+      violations: [
+        { principle: 'meta', reason: 'constitution check output malformed', severity: 'soft' },
+      ],
+    };
   }
   const passed = typeof obj.passed === 'boolean' ? obj.passed : true;
   const rawViolations = Array.isArray(obj.violations) ? obj.violations : [];
@@ -86,9 +66,10 @@ function parseAnalyze(text: string): AnalyzeResult {
   if (!obj) return fallback;
   const num = (v: unknown, def: number): number => {
     if (typeof v !== 'number' || Number.isNaN(v)) return def;
-    return Math.max(0, Math.min(1, v));
+    return clamp01(v);
   };
-  const strArr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  const strArr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
   return {
     specTaskCoverage: num(obj.specTaskCoverage, 0),
     planTaskCoverage: num(obj.planTaskCoverage, 0),
@@ -134,18 +115,38 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   if (constitutionContent.trim() === '') {
     constitutionResult = { passed: true, violations: [] };
   } else {
-    const prompt = buildConstitutionPrompt(opts.feature, '', constitutionContent);
-    const review = await runPlannerReview({ planner, prompt, projectDir, sessionId, bus, state, signal: wctx.signal });
+    const prompt = buildConstitutionPrompt({
+      feature: opts.feature,
+      spec: '',
+      constitutionContent,
+    });
+    const review = await runPlannerReview({
+      planner,
+      prompt,
+      projectDir,
+      sessionId,
+      bus,
+      state,
+      signal: wctx.signal,
+    });
     state = review.state;
     constitutionResult = parseConstitutionCheck(review.text);
   }
   writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
 
-  const hardViolation = constitutionResult.violations.find(v => v.severity === 'hard');
+  const hardViolation = constitutionResult.violations.find((v) => v.severity === 'hard');
   if (hardViolation || !constitutionResult.passed) {
     const reason = hardViolation?.reason ?? 'constitution check failed';
-    bus.publish({ type: 'warning', ts: Date.now(), phase: state.phase, message: `constitution check failed: ${reason}` });
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'CONSTITUTION_CHECK_FAIL', reason });
+    bus.publish({
+      type: 'warning',
+      ts: Date.now(),
+      phase: state.phase,
+      message: `constitution check failed: ${reason}`,
+    });
+    state = transitionAndSave(projectDir, sessionId, state, {
+      type: 'CONSTITUTION_CHECK_FAIL',
+      reason,
+    });
     publishPlannerStatus(bus, state, 'done');
     return { state, tasks: [], cancelled: true };
   }
@@ -165,8 +166,16 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     readArtifact(dir, PLAN_FILE),
     readArtifact(dir, TASKS_FILE),
   ]);
-  const analyzePrompt = buildAnalyzePrompt(specText, planText, tasksText);
-  const review = await runPlannerReview({ planner, prompt: analyzePrompt, projectDir, sessionId, bus, state, signal: wctx.signal });
+  const analyzePrompt = buildAnalyzePrompt({ spec: specText, plan: planText, tasks: tasksText });
+  const review = await runPlannerReview({
+    planner,
+    prompt: analyzePrompt,
+    projectDir,
+    sessionId,
+    bus,
+    state,
+    signal: wctx.signal,
+  });
   state = review.state;
   const analysis = parseAnalyze(review.text);
   writeSecureFile(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2));
@@ -184,7 +193,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
-  runBriefQualityGate(tasks, projectDir, sessionId, bus, state.phase);
+  runBriefQualityGate({ tasks, projectDir, sessionId, bus, phase: state.phase });
 
   const briefsLoop = await runBriefsApprovalLoop({
     tasks,

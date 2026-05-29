@@ -15,7 +15,15 @@ let tmp: string;
 let originalIsTTY: boolean | undefined;
 
 const hooks: HooksConfig = {
-  pre_task: [{ kind: 'command', command: 'prettier', args: ['--check'], timeout_ms: 5000, on_failure: 'warn' }],
+  pre_task: [
+    {
+      kind: 'command',
+      command: 'prettier',
+      args: ['--check'],
+      timeout_ms: 5000,
+      on_failure: 'warn',
+    },
+  ],
 };
 
 function setStdinIsTTY(value: boolean | undefined): void {
@@ -36,19 +44,25 @@ afterEach(() => {
 
 describe('ensureHooksTrusted', () => {
   it('allows runs with no hooks configured', async () => {
-    await expect(ensureHooksTrusted({ projectDir: tmp, hooks: undefined, allowHooks: false })).resolves.toBeUndefined();
+    await expect(
+      ensureHooksTrusted({ projectDir: tmp, hooks: undefined, allowHooks: false }),
+    ).resolves.toBeUndefined();
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
   });
 
   it('allows already trusted hooks config without prompting again', async () => {
     markHooksConfigTrusted(tmp, hooks);
-    await expect(ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false })).resolves.toBeUndefined();
+    await expect(
+      ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false }),
+    ).resolves.toBeUndefined();
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
   });
 
   it('marks trusted and proceeds when --allow-hooks flag is set', async () => {
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
-    await expect(ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: true })).resolves.toBeUndefined();
+    await expect(
+      ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: true }),
+    ).resolves.toBeUndefined();
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
   });
 
@@ -86,14 +100,19 @@ describe('ensureHooksTrusted', () => {
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
   });
 
-  it.each(['y', 'yes'])('marks trusted and proceeds when user answers %s on TTY', async (answer) => {
+  it.each([
+    'y',
+    'yes',
+  ])('marks trusted and proceeds when user answers %s on TTY', async (answer) => {
     setStdinIsTTY(true);
 
     const rl = { question: vi.fn().mockResolvedValue(answer), close: vi.fn() };
     const { createInterface } = await import('node:readline/promises');
     vi.mocked(createInterface).mockReturnValue(rl as never);
 
-    await expect(ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false })).resolves.toBeUndefined();
+    await expect(
+      ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false }),
+    ).resolves.toBeUndefined();
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
   });
 });

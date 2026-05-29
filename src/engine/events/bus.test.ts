@@ -3,7 +3,13 @@ import { createEventBus } from './bus.js';
 import type { EngineEvent } from './types.js';
 
 function ev(overrides: Partial<EngineEvent> = {}): EngineEvent {
-  return { type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x', ...overrides } as EngineEvent;
+  return {
+    type: 'workflow_started',
+    ts: 1,
+    phase: 'idle',
+    feature: 'x',
+    ...overrides,
+  } as EngineEvent;
 }
 
 describe('eventBus', () => {
@@ -42,7 +48,9 @@ describe('eventBus', () => {
   it('a throwing sink does not block other sinks', () => {
     const bus = createEventBus();
     const seen: EngineEvent[] = [];
-    bus.subscribe(() => { throw new Error('boom'); });
+    bus.subscribe(() => {
+      throw new Error('boom');
+    });
     bus.subscribe((e) => seen.push(e));
     expect(() => bus.publish(ev())).not.toThrow();
     expect(seen).toHaveLength(1);

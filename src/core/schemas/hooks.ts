@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { isRecord } from '../../utils/type-guards.js';
 
-export const HookEventSchema = z.enum([
+export const HOOK_EVENTS = [
   'pre_planning',
   'pre_task',
   'post_task',
@@ -13,7 +13,8 @@ export const HookEventSchema = z.enum([
   'pre_compact',
   'on_error',
   'on_complete',
-]);
+] as const;
+export const HookEventSchema = z.enum(HOOK_EVENTS);
 export type HookEvent = z.infer<typeof HookEventSchema>;
 
 const FailureModeSchema = z.enum(['block', 'warn', 'ignore']);
@@ -25,11 +26,9 @@ const HookCommandEntrySchema = z
     command: z
       .string()
       .min(1)
-      .refine(
-        (cmd) =>
-          cmd !== 'sh' && cmd !== 'bash' && cmd !== '/bin/sh' && cmd !== '/bin/bash',
-        { message: 'inline shell (sh/bash) is not allowed as hook command — use a script file' },
-      ),
+      .refine((cmd) => cmd !== 'sh' && cmd !== 'bash' && cmd !== '/bin/sh' && cmd !== '/bin/bash', {
+        message: 'inline shell (sh/bash) is not allowed as hook command — use a script file',
+      }),
     args: z.array(z.string()).default([]),
     timeout_ms: z.number().int().positive().max(300_000).default(30_000),
     on_failure: FailureModeSchema.default('warn'),
@@ -51,10 +50,7 @@ function isObjectWithoutKind(value: unknown): value is Record<string, unknown> {
 }
 
 export const HookEntrySchema = z.preprocess(
-  (val) =>
-    isObjectWithoutKind(val)
-      ? { ...val, kind: 'command' }
-      : val,
+  (val) => (isObjectWithoutKind(val) ? { ...val, kind: 'command' } : val),
   z.discriminatedUnion('kind', [HookCommandEntrySchema, HookModuleEntrySchema]),
 );
 export type HookCommandEntry = z.infer<typeof HookCommandEntrySchema>;

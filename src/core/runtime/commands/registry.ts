@@ -3,28 +3,10 @@ import { EFFORT_LEVELS, WORKFLOW_MODES } from '../../schemas/enums.js';
 import type { RuntimeCommandDef, RuntimeCommandContext } from './types.js';
 import { getShortcutKey } from '../../keybindings/registry.js';
 import { includes } from '../../../utils/type-guards.js';
-import type { Phase } from '../../schemas/enums.js';
-import { PHASES } from '../../schemas/enums.js';
+import { canRedoTask, canRevisePlan, canReviseSpec } from '../../phases.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-
-export function phaseOrder(phase: Phase): number {
-  return PHASES.indexOf(phase);
-}
-
-const TERMINAL: ReadonlySet<Phase> = new Set(['idle', 'complete']);
-
-export function canReviseSpec(phase: Phase): boolean {
-  return !TERMINAL.has(phase) && phaseOrder(phase) >= phaseOrder('reviewing-spec');
-}
-
-export function canRevisePlan(phase: Phase): boolean {
-  return !TERMINAL.has(phase) && phaseOrder(phase) >= phaseOrder('reviewing-plan');
-}
-
-export function canRedoTask(phase: Phase): boolean {
-  return phase === 'implementing' || phase === 'validating-task' || phase === 'escalating';
-}
+import { formatRejectRunMessage } from './messages.js';
 
 export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
@@ -76,7 +58,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/mode',
       label: 'Mode',
-      description: 'Select workflow mode \u2192',
+      description: 'Select workflow mode →',
       validScreens: ALL_SCREENS,
       handler: (args) => {
         if (!args) {
@@ -149,8 +131,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
         try {
           await ctx.refreshDetection();
           ctx.setFeedbackMessage('Tool detection refreshed');
-        } catch {
-          ctx.setFeedbackError('Tool detection failed');
+        } catch (err) {
+          ctx.setFeedbackError(toErrorMessage(err));
         }
       },
     },
@@ -284,12 +266,16 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
         try {
           const result = await ctx.compactTranscript();
           if (result.status === 'unsupported') {
-            ctx.setFeedbackMessage(`Planner "${result.plannerName}" does not support transcript compaction.`);
+            ctx.setFeedbackMessage(
+              `Planner "${result.plannerName}" does not support transcript compaction.`,
+            );
             return;
           }
           const count = result.entriesRemoved;
           const plural = count === 1 ? '' : 's';
-          ctx.setFeedbackMessage(`Transcript compacted: ${count} older message${plural} summarized.`);
+          ctx.setFeedbackMessage(
+            `Transcript compacted: ${count} older message${plural} summarized.`,
+          );
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));
         }
@@ -307,12 +293,14 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           try {
             const result = await ctx.rebuildRepomap();
             if (result.deleted) {
-              ctx.setFeedbackMessage('Repomap cache cleared. Next planner phase will parse from scratch.');
+              ctx.setFeedbackMessage(
+                'Repomap cache cleared. Next planner phase will parse from scratch.',
+              );
             } else {
               ctx.setFeedbackMessage('Repomap cache was not present.');
             }
-          } catch {
-            ctx.setFeedbackError('Failed to clear repomap cache.');
+          } catch (err) {
+            ctx.setFeedbackError(toErrorMessage(err));
           }
           return;
         }
@@ -387,7 +375,9 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           ctx.setFeedbackMessage(`Cleared ${count} approval grant(s).`);
           return;
         }
-        ctx.setFeedbackError(`Unknown approval command: ${sub}. Use: /approval list or /approval clear`);
+        ctx.setFeedbackError(
+          `Unknown approval command: ${sub}. Use: /approval list or /approval clear`,
+        );
       },
     },
     {
@@ -426,14 +416,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
             ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
             return;
           }
-          const changedCount = result.restoredPaths.length + result.deletedPaths.length;
-          const conflictText = result.conflictedPaths.length > 0
-            ? `, ${result.conflictedPaths.length} conflict(s)`
-            : '';
-          const missingText = result.missingSnapshotFiles.length > 0
-            ? `, ${result.missingSnapshotFiles.length} missing snapshot file(s)`
-            : '';
-          const message = `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.`;
+          const message = formatRejectRunMessage(result);
           if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
             ctx.setFeedbackError(message);
           } else {

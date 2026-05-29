@@ -8,9 +8,10 @@ type PlanPromptSpec = {
 };
 
 function outputInstruction(hasClarifications: boolean, ctx: LanguageContext): string {
-  const base = ctx.language === 'TypeScript'
-    ? 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type definitions from the project.'
-    : 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type or data-shape definitions from the project.';
+  const base =
+    ctx.language === 'TypeScript'
+      ? 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type definitions from the project.'
+      : 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type or data-shape definitions from the project.';
   if (!hasClarifications) return base;
 
   return `${base}
@@ -73,10 +74,14 @@ export function buildPlanPrompt(
 
   return buildPrompt({
     title: 'Write Implementation Plan',
-    intro: 'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature, and feeds the next phase: compiling Product Task Briefs the implementer model will execute against. Be concrete enough that brief compilation does not need to invent decisions.',
+    intro:
+      'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature, and feeds the next phase: compiling Product Task Briefs the implementer model will execute against. Be concrete enough that brief compilation does not need to invent decisions.',
     sections: [
       { heading: 'Specification', body: spec.content },
-      { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },
+      {
+        heading: 'Project Context',
+        body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}`,
+      },
       instructionsSection(
         'Write a complete `plan.md` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.',
       ),
@@ -87,7 +92,11 @@ export function buildPlanPrompt(
   });
 }
 
-export function buildRegeneratePrompt(artifactType: 'spec' | 'plan', currentContent: string, feedback: string): string {
+export function buildRegeneratePrompt(
+  artifactType: 'spec' | 'plan',
+  currentContent: string,
+  feedback: string,
+): string {
   const label = artifactType === 'spec' ? 'Specification' : 'Implementation Plan';
   return buildPrompt({
     title: `Regenerate ${label}`,

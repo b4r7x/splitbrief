@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -47,7 +52,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        expect(events.some(event => event.type === 'cost_prediction')).toBe(true);
+        expect(events.some((event) => event.type === 'cost_prediction')).toBe(true);
         return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
       }),
     });
@@ -87,7 +92,13 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         planner,
         context: defaultContext,
         implementer,
-        metadata: { plannerTool: 'anthropic', plannerModel: 'claude-opus-4-6', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
         sinks: TEST_SINKS,
         validator: createValidator(),
       },
@@ -105,9 +116,9 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const predictionIndex = events.findIndex(event => event.type === 'cost_prediction');
-    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
-    const prediction = events.find(event => event.type === 'cost_prediction');
+    const predictionIndex = events.findIndex((event) => event.type === 'cost_prediction');
+    const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
+    const prediction = events.find((event) => event.type === 'cost_prediction');
 
     expect(predictionIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(predictionIndex);
@@ -141,7 +152,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       currentCode: hugeTaskBody,
     });
     const state = makeImplState([task]);
-    const review = vi.fn()
+    const review = vi
+      .fn()
       .mockResolvedValueOnce({
         text: JSON.stringify({
           classification: 'split-suggested',
@@ -192,7 +204,13 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         planner,
         context: defaultContext,
         implementer: makeImplementer(),
-        metadata: { plannerTool: 'anthropic', plannerModel: 'claude-opus-4-6', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
         sinks: TEST_SINKS,
         validator: createValidator(),
       },
@@ -210,16 +228,34 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const predictions = events.filter(event => event.type === 'cost_prediction');
-    const completedPredictionIndex = events.findIndex(event =>
-      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'completed'
+    const predictions = events.filter((event) => event.type === 'cost_prediction');
+    const completedPredictionIndex = events.findIndex(
+      (event) =>
+        event.type === 'cost_prediction' &&
+        event.prediction.plannerEstimateReview?.status === 'completed',
     );
-    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+    const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
 
-    expect(review).toHaveBeenCalledWith(expect.stringContaining('Planner Estimate Review'), expect.anything(), expect.anything());
-    expect(review).toHaveBeenCalledWith(expect.stringContaining('"taskId": "T001"'), expect.anything(), expect.anything());
-    expect(review).toHaveBeenCalledWith(expect.stringContaining('"title": "Large task"'), expect.anything(), expect.anything());
-    expect(review).toHaveBeenCalledWith(expect.not.stringContaining(hugeTaskBody), expect.anything(), expect.anything());
+    expect(review).toHaveBeenCalledWith(
+      expect.stringContaining('Planner Estimate Review'),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(review).toHaveBeenCalledWith(
+      expect.stringContaining('"taskId": "T001"'),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(review).toHaveBeenCalledWith(
+      expect.stringContaining('"title": "Large task"'),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(review).toHaveBeenCalledWith(
+      expect.not.stringContaining(hugeTaskBody),
+      expect.anything(),
+      expect.anything(),
+    );
     expect(predictions[0]?.prediction.plannerEstimateReview).toMatchObject({
       status: 'running',
       extraPlannerCall: true,
@@ -242,10 +278,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       title: 'Split parser work',
       file: 'src/parser.ts',
       description: 'Update parser behavior in src/parser.ts.',
-      tests: [
-        'src/parser.ts preserves quoted values',
-        'src/parser.ts reports invalid escapes',
-      ],
+      tests: ['src/parser.ts preserves quoted values', 'src/parser.ts reports invalid escapes'],
       implementationSteps: [
         `Update src/parser.ts token handling. ${'Preserve the existing parse contract while narrowing the quoted-value branch. '.repeat(12)}`,
         `Update src/parser.ts error reporting. ${'Keep diagnostics deterministic and avoid changing renderer behavior. '.repeat(12)}`,
@@ -256,7 +289,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const state = makeImplState([task]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockResolvedValueOnce({
           text: JSON.stringify({
             classification: 'split-suggested',
@@ -270,12 +304,14 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const approvalCalls: string[] = [];
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
-        approvalCalls.push(type);
-        const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
-        expect(reviewedTasks).toHaveLength(2);
-        return { approved: true };
-      }),
+      onApprovalNeeded: vi
+        .fn()
+        .mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
+          approvalCalls.push(type);
+          const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
+          expect(reviewedTasks).toHaveLength(2);
+          return { approved: true };
+        }),
     });
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
@@ -316,7 +352,12 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         planner,
         context: defaultContext,
         implementer,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        metadata: {
+          plannerTool: 'claude-code',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
         sinks: TEST_SINKS,
         validator: createValidator(),
       },
@@ -333,9 +374,14 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const tasksMarkdown = await readFile(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf8');
-    const splitPreviewIndex = events.findIndex(event => event.type === 'warning' && event.message.includes('Auto-split overflow produced'));
-    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+    const tasksMarkdown = await readFile(
+      join(sessionDir(projectDir, sessionId), TASKS_FILE),
+      'utf8',
+    );
+    const splitPreviewIndex = events.findIndex(
+      (event) => event.type === 'warning' && event.message.includes('Auto-split overflow produced'),
+    );
+    const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
 
     expect(result.summary.totalTasks).toBe(2);
     expect(parseTasks(tasksMarkdown)).toHaveLength(2);
@@ -356,7 +402,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const state = makeImplState([task]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockResolvedValueOnce({
           text: JSON.stringify({
             classification: 'split-suggested',
@@ -373,11 +420,16 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (request: { task: Task }) => {
         expect(request.task.id).toBe('T001');
-        expect(events.some(event =>
-          event.type === 'warning'
-          && event.message.includes('Auto-split overflow skipped T001:')
-          && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
-        )).toBe(true);
+        expect(
+          events.some(
+            (event) =>
+              event.type === 'warning' &&
+              event.message.includes('Auto-split overflow skipped T001:') &&
+              event.message.includes(
+                'Original task will continue unless routing/recovery requires a different action.',
+              ),
+          ),
+        ).toBe(true);
         return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
       }),
     });
@@ -415,12 +467,15 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const skipWarningIndex = events.findIndex(event =>
-      event.type === 'warning'
-      && event.message.includes('Auto-split overflow skipped T001:')
-      && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
+    const skipWarningIndex = events.findIndex(
+      (event) =>
+        event.type === 'warning' &&
+        event.message.includes('Auto-split overflow skipped T001:') &&
+        event.message.includes(
+          'Original task will continue unless routing/recovery requires a different action.',
+        ),
     );
-    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+    const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
 
     expect(result.completed).toBe(true);
     expect(result.summary.totalTasks).toBe(1);
@@ -436,10 +491,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       title: 'Split parser work',
       file: 'src/parser.ts',
       description: 'Update parser behavior in src/parser.ts.',
-      tests: [
-        'src/parser.ts preserves quoted values',
-        'src/parser.ts reports invalid escapes',
-      ],
+      tests: ['src/parser.ts preserves quoted values', 'src/parser.ts reports invalid escapes'],
       implementationSteps: [
         'Update src/parser.ts token handling.',
         'Update src/parser.ts error reporting.',
@@ -459,7 +511,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const state = makeImplState([splittableTask, skippedTask]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockResolvedValueOnce({
           text: JSON.stringify({
             classification: 'split-suggested',
@@ -473,12 +526,14 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const approvalCalls: string[] = [];
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
-        approvalCalls.push(type);
-        const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
-        expect(reviewedTasks.map(task => task.id)).toEqual(['T003', 'T004', 'T002']);
-        return { approved: true };
-      }),
+      onApprovalNeeded: vi
+        .fn()
+        .mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
+          approvalCalls.push(type);
+          const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
+          expect(reviewedTasks.map((task) => task.id)).toEqual(['T003', 'T004', 'T002']);
+          return { approved: true };
+        }),
     });
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
@@ -521,14 +576,21 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const skipWarningIndex = events.findIndex(event =>
-      event.type === 'warning'
-      && event.message.includes('Auto-split overflow skipped T002:')
-      && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
+    const skipWarningIndex = events.findIndex(
+      (event) =>
+        event.type === 'warning' &&
+        event.message.includes('Auto-split overflow skipped T002:') &&
+        event.message.includes(
+          'Original task will continue unless routing/recovery requires a different action.',
+        ),
     );
-    const splitPreviewIndex = events.findIndex(event => event.type === 'warning' && event.message.includes('Auto-split overflow produced 3 Task Briefs'));
-    const firstTaskStartIndex = events.findIndex(event => event.type === 'task_started');
-    const taskStartEvents = events.filter(event => event.type === 'task_started');
+    const splitPreviewIndex = events.findIndex(
+      (event) =>
+        event.type === 'warning' &&
+        event.message.includes('Auto-split overflow produced 3 Task Briefs'),
+    );
+    const firstTaskStartIndex = events.findIndex((event) => event.type === 'task_started');
+    const taskStartEvents = events.filter((event) => event.type === 'task_started');
 
     expect(result.completed).toBe(true);
     expect(result.summary.totalTasks).toBe(3);
@@ -536,7 +598,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(skipWarningIndex).toBeGreaterThanOrEqual(0);
     expect(splitPreviewIndex).toBeGreaterThan(skipWarningIndex);
     expect(firstTaskStartIndex).toBeGreaterThan(splitPreviewIndex);
-    expect(taskStartEvents.map(event => event.taskId)).toEqual(['T003', 'T004', 'T002']);
+    expect(taskStartEvents.map((event) => event.taskId)).toEqual(['T003', 'T004', 'T002']);
   }, 20_000);
 
   it('cancels through rejected briefs when auto-split output is rejected', async () => {
@@ -546,10 +608,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       title: 'Split parser work',
       file: 'src/parser.ts',
       description: 'Update parser behavior in src/parser.ts.',
-      tests: [
-        'src/parser.ts preserves quoted values',
-        'src/parser.ts reports invalid escapes',
-      ],
+      tests: ['src/parser.ts preserves quoted values', 'src/parser.ts reports invalid escapes'],
       implementationSteps: [
         `Update src/parser.ts token handling. ${'Preserve the existing parse contract while narrowing the quoted-value branch. '.repeat(12)}`,
         `Update src/parser.ts error reporting. ${'Keep diagnostics deterministic and avoid changing renderer behavior. '.repeat(12)}`,
@@ -560,7 +619,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     });
     const state = makeImplState([task]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockResolvedValueOnce({
           text: JSON.stringify({
             classification: 'split-suggested',
@@ -607,7 +667,12 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         planner,
         context: defaultContext,
         implementer: makeImplementer(),
-        metadata: { plannerTool: 'claude-code', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        metadata: {
+          plannerTool: 'claude-code',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
         sinks: TEST_SINKS,
         validator: createValidator(),
       },
@@ -627,8 +692,12 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(result.completed).toBe(false);
     expect(result.summary.totalTasks).toBe(0);
     expect(loadState(projectDir, sessionId)?.phase).toBe('idle');
-    expect(events.find(event => event.type === 'task_started')).toBeUndefined();
-    expect(events.find(event => event.type === 'error' && event.message.includes('Auto-split overflow rejected'))).toBeDefined();
+    expect(events.find((event) => event.type === 'task_started')).toBeUndefined();
+    expect(
+      events.find(
+        (event) => event.type === 'error' && event.message.includes('Auto-split overflow rejected'),
+      ),
+    ).toBeDefined();
   });
 
   it('falls back to the deterministic estimate when opt-in planner estimate review fails', async () => {
@@ -636,7 +705,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockRejectedValueOnce(new Error('planner offline'))
         .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
     });
@@ -673,8 +743,10 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const unavailablePrediction = events.find(event =>
-      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'unavailable'
+    const unavailablePrediction = events.find(
+      (event) =>
+        event.type === 'cost_prediction' &&
+        event.prediction.plannerEstimateReview?.status === 'unavailable',
     );
 
     expect(result.completed).toBe(true);
@@ -689,8 +761,13 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         },
       },
     });
-    expect(events.find(event => event.type === 'task_started')).toBeDefined();
-    expect(events.find(event => event.type === 'warning' && event.message.includes('Planner estimate review failed'))).toBeDefined();
+    expect(events.find((event) => event.type === 'task_started')).toBeDefined();
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'warning' && event.message.includes('Planner estimate review failed'),
+      ),
+    ).toBeDefined();
   });
 
   it('treats incomplete planner estimate review JSON as unavailable without blocking execution', async () => {
@@ -698,7 +775,8 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
     const planner = makePlanner({
-      review: vi.fn()
+      review: vi
+        .fn()
         .mockResolvedValueOnce({
           text: JSON.stringify({
             classification: 'risk',
@@ -742,8 +820,10 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    const unavailablePrediction = events.find(event =>
-      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'unavailable'
+    const unavailablePrediction = events.find(
+      (event) =>
+        event.type === 'cost_prediction' &&
+        event.prediction.plannerEstimateReview?.status === 'unavailable',
     );
 
     expect(result.completed).toBe(true);
@@ -759,7 +839,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         },
       },
     });
-    expect(events.find(event => event.type === 'task_started')).toBeDefined();
+    expect(events.find((event) => event.type === 'task_started')).toBeDefined();
   });
 
   it('does not run final review when the task loop stops before completion', async () => {
@@ -813,11 +893,14 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(result.completed).toBe(false);
     expect(planner.review).not.toHaveBeenCalled();
     expect(callbacks.onComplete).not.toHaveBeenCalled();
-    expect(events.find(event => event.type === 'all_tasks_done')).toBeUndefined();
-    expect(events.find(event => event.type === 'workflow_complete')).toBeUndefined();
-    expect(events.find(event =>
-      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview !== undefined
-    )).toBeUndefined();
+    expect(events.find((event) => event.type === 'all_tasks_done')).toBeUndefined();
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'cost_prediction' && event.prediction.plannerEstimateReview !== undefined,
+      ),
+    ).toBeUndefined();
     expect(result.summary.totalTasks).toBe(1);
   });
 });

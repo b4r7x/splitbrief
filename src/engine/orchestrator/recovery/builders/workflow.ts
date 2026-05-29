@@ -2,21 +2,17 @@ import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
-import { uniqueIds } from '../../../../utils/collections.js';
-import type { RecoveryBuilderBase } from './shared.js';
+import { uniqueSortedIds } from '../../../../utils/collections.js';
+import type { RecoveryBuilderBase } from './recovery-issue.js';
+import { budgetPercentOf, formatCostFact, formatPercent } from '../../../../core/formatting.js';
+import { compactFacts, createRecoveryIssue } from './recovery-issue.js';
 import {
-  budgetPercentOf,
   chooseRecommended,
   chooseUserEditRecommendation,
-  compactFacts,
-  createRecoveryIssue,
-  fileConflictDetails,
-  formatCostFact,
-  formatPercent,
   mapUserEditAction,
   orderedActions,
-  taskFiles,
-} from './shared.js';
+} from './recovery-actions.js';
+import { fileConflictDetails, taskFiles } from './recovery-details.js';
 
 export interface UserEditConflictRecoveryOptions extends RecoveryBuilderBase {
   conflict: UserEditConflict;
@@ -41,19 +37,23 @@ export interface BudgetRecoveryOptions extends RecoveryBuilderBase {
   allowSkipNextTask?: boolean | undefined;
 }
 
-export function buildUserEditConflictRecoveryIssue(opts: UserEditConflictRecoveryOptions): RecoveryIssue {
+export function buildUserEditConflictRecoveryIssue(
+  opts: UserEditConflictRecoveryOptions,
+): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
-  const hasCurrentTask = opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
+  const hasCurrentTask =
+    opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
   const actions = orderedActions(
     opts.conflict.availableActions
       .map(mapUserEditAction)
-      .filter(action =>
-        (hasCurrentTask || action !== 'skip-current-task')
-        && (opts.conflict.safeToContinue || action !== 'continue')
+      .filter(
+        (action) =>
+          (hasCurrentTask || action !== 'skip-current-task') &&
+          (opts.conflict.safeToContinue || action !== 'continue'),
       ),
   );
   const recommendedAction = chooseUserEditRecommendation(opts.conflict, actions);
-  const affectedTaskIds = uniqueIds([
+  const affectedTaskIds = uniqueSortedIds([
     ...opts.conflict.affectedTaskIds,
     ...(opts.conflict.currentTaskId ? [opts.conflict.currentTaskId] : []),
   ]);
@@ -81,15 +81,20 @@ export function buildUserEditConflictRecoveryIssue(opts: UserEditConflictRecover
   });
 }
 
-export function buildApprovalPromotionConflictRecoveryIssue(opts: ApprovalPromotionConflictRecoveryOptions): RecoveryIssue {
+export function buildApprovalPromotionConflictRecoveryIssue(
+  opts: ApprovalPromotionConflictRecoveryOptions,
+): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
-  const hasCurrentTask = opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
+  const hasCurrentTask =
+    opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
   const actions = orderedActions(
     opts.conflict.availableActions
       .map(mapUserEditAction)
-      .filter(action => action !== 'continue' && (hasCurrentTask || action !== 'skip-current-task')),
+      .filter(
+        (action) => action !== 'continue' && (hasCurrentTask || action !== 'skip-current-task'),
+      ),
   );
-  const affectedTaskIds = uniqueIds([
+  const affectedTaskIds = uniqueSortedIds([
     ...opts.conflict.affectedTaskIds,
     ...(opts.conflict.currentTaskId ? [opts.conflict.currentTaskId] : []),
   ]);
@@ -137,9 +142,13 @@ export function buildBudgetPausedRecoveryIssue(opts: BudgetRecoveryOptions): Rec
     message: `Budget pause at ${formatPercent(budgetPercent)}`,
     details: [
       `Spent ${formatCostFact(opts.currentCost)} of ${formatCostFact(opts.maxBudget)}`,
-      ...(opts.projectedCost !== undefined ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`] : []),
+      ...(opts.projectedCost !== undefined
+        ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`]
+        : []),
       ...(opts.blockedStep !== undefined ? [`Blocked step: ${opts.blockedStep}`] : []),
-      ...(opts.threshold !== undefined ? [`Pause threshold: ${formatPercent(opts.threshold * 100)}`] : []),
+      ...(opts.threshold !== undefined
+        ? [`Pause threshold: ${formatPercent(opts.threshold * 100)}`]
+        : []),
     ],
     facts: compactFacts({
       currentCost: opts.currentCost,
@@ -171,7 +180,9 @@ export function buildBudgetExceededRecoveryIssue(opts: BudgetRecoveryOptions): R
     message: `Budget exceeded at ${formatPercent(budgetPercent)}`,
     details: [
       `Spent ${formatCostFact(opts.currentCost)} of ${formatCostFact(opts.maxBudget)}`,
-      ...(opts.projectedCost !== undefined ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`] : []),
+      ...(opts.projectedCost !== undefined
+        ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`]
+        : []),
       ...(opts.blockedStep !== undefined ? [`Blocked step: ${opts.blockedStep}`] : []),
       'Continuing requires a separate raise-budget flow.',
     ],
@@ -194,7 +205,10 @@ function userEditMessage(conflict: UserEditConflict, currentTask: Task | undefin
   return 'User edits require a recovery decision';
 }
 
-function approvalPromotionMessage(conflict: UserEditConflict, currentTask: Task | undefined): string {
+function approvalPromotionMessage(
+  conflict: UserEditConflict,
+  currentTask: Task | undefined,
+): string {
   if (currentTask) return `Approval promotion blocked for ${currentTask.id}`;
   if (conflict.currentTaskId) return `Approval promotion blocked for ${conflict.currentTaskId}`;
   return 'Approval promotion blocked by changed files';

@@ -33,7 +33,9 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
     const first50 = readme.split('\n').slice(0, 50).join('\n');
     parts.push('\n## README (first 50 lines)');
     parts.push(first50);
-  } catch { /* README missing or unreadable */ }
+  } catch {
+    /* README missing or unreadable */
+  }
 
   const srcDir = join(projectDir, 'src');
   try {
@@ -45,12 +47,20 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
     if (counter.count >= MAX_LISTED_ENTRIES) {
       parts.push(`[... listing truncated at ${MAX_LISTED_ENTRIES} entries]`);
     }
-  } catch { /* no src/ directory */ }
+  } catch {
+    /* no src/ directory */
+  }
 
   return parts.join('\n');
 }
 
-async function listDir(dir: string, root: string, depth: number, maxDepth: number, counter: { count: number }): Promise<string> {
+async function listDir(
+  dir: string,
+  root: string,
+  depth: number,
+  maxDepth: number,
+  counter: { count: number },
+): Promise<string> {
   if (depth >= maxDepth) return '';
 
   let entries: Dirent[];

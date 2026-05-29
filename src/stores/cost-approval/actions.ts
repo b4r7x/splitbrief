@@ -1,25 +1,20 @@
 import type { CostPrediction } from '../../core/schemas/summary.js';
+import { createPromptChannel } from '../shared/prompt-channel.js';
 import { _costApprovalInternal } from './store.js';
 
+const channel = createPromptChannel<CostPrediction, boolean>({
+  get: () => _costApprovalInternal.get(),
+  setPending: (prediction, resolve) =>
+    _costApprovalInternal.set({ status: 'pending', prediction, resolve }),
+  setIdle: () => _costApprovalInternal.set({ status: 'idle' }),
+  supersededValue: false,
+  cancelledValue: false,
+});
+
 export function openCostApprovalPrompt(prediction: CostPrediction): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    const current = _costApprovalInternal.get();
-
-    if (current.status === 'pending') {
-      const previousResolve = current.resolve;
-      _costApprovalInternal.set({ status: 'pending', prediction, resolve });
-      previousResolve(false);
-      return;
-    }
-
-    _costApprovalInternal.set({ status: 'pending', prediction, resolve });
-  });
+  return channel.open(prediction);
 }
 
 export function closeCostApprovalPrompt(approved: boolean): void {
-  const current = _costApprovalInternal.get();
-  _costApprovalInternal.set({ status: 'idle' });
-  if (current.status === 'pending') {
-    current.resolve(approved);
-  }
+  channel.close(approved);
 }

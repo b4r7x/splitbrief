@@ -1,1 +1,3 @@
-export function d1(): string { return 'd'; }
+export function d1(): string {
+  return 'd';
+}

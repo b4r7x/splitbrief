@@ -1,11 +1,72 @@
 import { describe, it, expect } from 'vitest';
-import { createRuntimeCommands, canReviseSpec, canRevisePlan, canRedoTask } from './registry.js';
+import { createRuntimeCommands } from './registry.js';
+import { canReviseSpec, canRevisePlan, canRedoTask } from '../../phases.js';
 import { executeRuntimeCommand as runRuntimeCommand } from './dispatch.js';
 import type { RuntimeCommandDef, RuntimeCommandContext } from './types.js';
 import { PHASES, type Phase } from '../../schemas/enums.js';
 
 const noop = () => {};
 const noopTrue = () => true;
+
+const PHASE_GUARDS = {
+  canReviseSpec: {
+    fn: canReviseSpec,
+    allowed: [
+      'reviewing-spec',
+      'clarifying',
+      'constitution-check',
+      'planning',
+      'reviewing-plan',
+      'reviewing-briefs',
+      'analyzing',
+      'implementing',
+      'validating-task',
+      'escalating',
+      'final-review',
+    ] as Phase[],
+    denied: ['idle', 'researching', 'specifying', 'complete'] as Phase[],
+  },
+  canRevisePlan: {
+    fn: canRevisePlan,
+    allowed: [
+      'reviewing-plan',
+      'reviewing-briefs',
+      'analyzing',
+      'implementing',
+      'validating-task',
+      'escalating',
+      'final-review',
+    ] as Phase[],
+    denied: [
+      'idle',
+      'researching',
+      'specifying',
+      'reviewing-spec',
+      'clarifying',
+      'constitution-check',
+      'planning',
+      'complete',
+    ] as Phase[],
+  },
+  canRedoTask: {
+    fn: canRedoTask,
+    allowed: ['implementing', 'validating-task', 'escalating'] as Phase[],
+    denied: [
+      'idle',
+      'researching',
+      'specifying',
+      'reviewing-spec',
+      'clarifying',
+      'constitution-check',
+      'planning',
+      'reviewing-plan',
+      'reviewing-briefs',
+      'analyzing',
+      'final-review',
+      'complete',
+    ] as Phase[],
+  },
+} as const;
 
 function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): RuntimeCommandContext {
   return {
@@ -60,7 +121,15 @@ describe('executeRuntimeCommand', () => {
   it('runs the command when it is valid on the current screen', () => {
     let called = false;
     const cmds: RuntimeCommandDef[] = [
-      { kind: 'noarg', name: '/test', description: 'test', validScreens: ['home'], handler: () => { called = true; } },
+      {
+        kind: 'noarg',
+        name: '/test',
+        description: 'test',
+        validScreens: ['home'],
+        handler: () => {
+          called = true;
+        },
+      },
     ];
     executeRuntimeCommand(cmds, '/test', 'home', noop);
     expect(called).toBeTruthy();
@@ -68,7 +137,9 @@ describe('executeRuntimeCommand', () => {
 
   it('reports an error for an unknown command', () => {
     let errorMsg = '';
-    executeRuntimeCommand([], '/nope', 'home', (msg) => { errorMsg = msg; });
+    executeRuntimeCommand([], '/nope', 'home', (msg) => {
+      errorMsg = msg;
+    });
     expect(errorMsg).toContain('Unknown command');
   });
 
@@ -76,15 +147,35 @@ describe('executeRuntimeCommand', () => {
     const calls: string[] = [];
     let errorMsg = '';
     const cmds: RuntimeCommandDef[] = [
-      { kind: 'noarg', name: '/mode', description: 'mode', validScreens: ['home'], handler: () => { calls.push('mode'); } },
-      { kind: 'arg', name: '/reject-run', description: 'reject run', validScreens: ['home'], handler: (args) => { calls.push(`reject:${args ?? ''}`); } },
+      {
+        kind: 'noarg',
+        name: '/mode',
+        description: 'mode',
+        validScreens: ['home'],
+        handler: () => {
+          calls.push('mode');
+        },
+      },
+      {
+        kind: 'arg',
+        name: '/reject-run',
+        description: 'reject run',
+        validScreens: ['home'],
+        handler: (args) => {
+          calls.push(`reject:${args ?? ''}`);
+        },
+      },
     ];
 
-    await executeRuntimeCommand(cmds, '/mde', 'home', (msg) => { errorMsg = msg; });
+    await executeRuntimeCommand(cmds, '/mde', 'home', (msg) => {
+      errorMsg = msg;
+    });
     expect(calls).toEqual(['mode']);
     expect(errorMsg).toBe('');
 
-    await executeRuntimeCommand(cmds, '/reject-rn confirm', 'home', (msg) => { errorMsg = msg; });
+    await executeRuntimeCommand(cmds, '/reject-rn confirm', 'home', (msg) => {
+      errorMsg = msg;
+    });
     expect(calls).toEqual(['mode', 'reject:confirm']);
     expect(errorMsg).toBe('');
   });
@@ -92,16 +183,32 @@ describe('executeRuntimeCommand', () => {
   it('reports an error when the command is not valid on the current screen', () => {
     let errorMsg = '';
     const cmds: RuntimeCommandDef[] = [
-      { kind: 'noarg', name: '/test-home-only', description: 'test', validScreens: ['home'], handler: noop },
+      {
+        kind: 'noarg',
+        name: '/test-home-only',
+        description: 'test',
+        validScreens: ['home'],
+        handler: noop,
+      },
     ];
-    executeRuntimeCommand(cmds, '/test-home-only', 'workflow', (msg) => { errorMsg = msg; });
+    executeRuntimeCommand(cmds, '/test-home-only', 'workflow', (msg) => {
+      errorMsg = msg;
+    });
     expect(errorMsg).toContain('only available');
   });
 
   it('passes args to handler', () => {
     let receivedArgs: string | undefined;
     const cmds: RuntimeCommandDef[] = [
-      { kind: 'arg', name: '/test', description: 'test', validScreens: ['home'], handler: (args) => { receivedArgs = args; } },
+      {
+        kind: 'arg',
+        name: '/test',
+        description: 'test',
+        validScreens: ['home'],
+        handler: (args) => {
+          receivedArgs = args;
+        },
+      },
     ];
     executeRuntimeCommand(cmds, '/test hello world', 'home', noop);
     expect(receivedArgs).toBe('hello world');
@@ -110,7 +217,15 @@ describe('executeRuntimeCommand', () => {
   it('passes undefined args when no args given', () => {
     let receivedArgs: string | undefined = 'initial';
     const cmds: RuntimeCommandDef[] = [
-      { kind: 'arg', name: '/test', description: 'test', validScreens: ['home'], handler: (args) => { receivedArgs = args; } },
+      {
+        kind: 'arg',
+        name: '/test',
+        description: 'test',
+        validScreens: ['home'],
+        handler: (args) => {
+          receivedArgs = args;
+        },
+      },
     ];
     executeRuntimeCommand(cmds, '/test', 'home', noop);
     expect(receivedArgs).toBeUndefined();
@@ -126,10 +241,20 @@ describe('executeRuntimeCommand', () => {
         description: 'test',
         validScreens: ['workflow'],
         phaseGuard: (phase) => phase === 'implementing',
-        handler: () => { called = true; },
+        handler: () => {
+          called = true;
+        },
       },
     ];
-    await executeRuntimeCommand(cmds, '/guarded', 'workflow', (msg) => { errorMsg = msg; }, 'planning');
+    await executeRuntimeCommand(
+      cmds,
+      '/guarded',
+      'workflow',
+      (msg) => {
+        errorMsg = msg;
+      },
+      'planning',
+    );
     expect(called).toBe(false);
     expect(errorMsg).toContain('planning');
   });
@@ -142,7 +267,9 @@ describe('executeRuntimeCommand', () => {
         name: '/async',
         description: 'test',
         validScreens: ['home'],
-        handler: async () => { called = true; },
+        handler: async () => {
+          called = true;
+        },
       },
     ];
     await executeRuntimeCommand(cmds, '/async', 'home', noop);
@@ -153,9 +280,13 @@ describe('executeRuntimeCommand', () => {
 describe('/mode command', () => {
   it('opens mode-selector overlay when called without args', () => {
     let openedOverlay: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      openOverlay: (type) => { openedOverlay = type; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type) => {
+          openedOverlay = type;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/mode', 'home', noop);
     expect(openedOverlay).toBe('mode-selector');
   });
@@ -164,11 +295,20 @@ describe('/mode command', () => {
     let savedMode: string | undefined;
     let feedback: string | undefined;
     let openedOverlay: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      openOverlay: (type) => { openedOverlay = type; },
-      setWorkflowMode: (m) => { savedMode = m; return true; },
-      setFeedbackMessage: (m) => { feedback = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type) => {
+          openedOverlay = type;
+        },
+        setWorkflowMode: (m) => {
+          savedMode = m;
+          return true;
+        },
+        setFeedbackMessage: (m) => {
+          feedback = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/mode quick', 'home', noop);
     expect(savedMode).toBe('quick');
     expect(feedback).toMatch(/quick/);
@@ -177,19 +317,28 @@ describe('/mode command', () => {
 
   it('sets mode to speckit', () => {
     let savedMode: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      setWorkflowMode: (m) => { savedMode = m; return true; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setWorkflowMode: (m) => {
+          savedMode = m;
+          return true;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/mode speckit', 'home', noop);
     expect(savedMode).toBe('speckit');
   });
 
   it('does not show success feedback when setWorkflowMode reports failure', () => {
     let feedback: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      setWorkflowMode: () => false,
-      setFeedbackMessage: (m) => { feedback = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setWorkflowMode: () => false,
+        setFeedbackMessage: (m) => {
+          feedback = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/mode quick', 'home', noop);
     expect(feedback).toBeUndefined();
   });
@@ -197,10 +346,17 @@ describe('/mode command', () => {
   it('rejects invalid mode and surfaces an error', () => {
     let savedMode: string | undefined;
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      setWorkflowMode: (m) => { savedMode = m; return true; },
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setWorkflowMode: (m) => {
+          savedMode = m;
+          return true;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/mode turbo', 'home', noop);
     expect(savedMode).toBeUndefined();
     expect(error).toMatch(/invalid/i);
@@ -211,10 +367,16 @@ describe('/refresh command', () => {
   it('runs detection and surfaces a status message to the user', async () => {
     let refreshRan = false;
     const messages: string[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      refreshDetection: async () => { refreshRan = true; },
-      setFeedbackMessage: (m) => { messages.push(m); },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        refreshDetection: async () => {
+          refreshRan = true;
+        },
+        setFeedbackMessage: (m) => {
+          messages.push(m);
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/refresh', 'home', noop);
     // /refresh chains an async: we wait a microtask for the promise chain to complete.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -226,9 +388,13 @@ describe('/refresh command', () => {
 describe('/planner command', () => {
   it('opens the planner-picker overlay', () => {
     let openedOverlay: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      openOverlay: (type) => { openedOverlay = type; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type) => {
+          openedOverlay = type;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/planner', 'home', noop);
     expect(openedOverlay).toBe('planner-picker');
   });
@@ -240,20 +406,36 @@ type RedoCall = { taskId: string };
 describe('/revise-spec command', () => {
   it('forwards target=spec and the trimmed comment to the engine', () => {
     const rewinds: RewindCall[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
-      getCurrentPhase: () => 'implementing',
-    }));
-    executeRuntimeCommand(commands, '/revise-spec needs more detail', 'workflow', noop, 'implementing');
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: (target, comment) => {
+          rewinds.push({ target, comment });
+          return true;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
+    executeRuntimeCommand(
+      commands,
+      '/revise-spec needs more detail',
+      'workflow',
+      noop,
+      'implementing',
+    );
     expect(rewinds).toEqual([{ target: 'spec', comment: 'needs more detail' }]);
   });
 
   it('forwards target=spec with no comment when none is given', () => {
     const rewinds: RewindCall[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
-      getCurrentPhase: () => 'implementing',
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: (target, comment) => {
+          rewinds.push({ target, comment });
+          return true;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
     executeRuntimeCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
     expect(rewinds).toEqual([{ target: 'spec', comment: undefined }]);
   });
@@ -261,23 +443,42 @@ describe('/revise-spec command', () => {
   it('does NOT call the engine and surfaces a guard error when phase is too early', () => {
     const rewinds: RewindCall[] = [];
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
-      setFeedbackError: (m) => { error = m; },
-      getCurrentPhase: () => 'researching',
-    }));
-    executeRuntimeCommand(commands, '/revise-spec', 'workflow', (m) => { error = m; }, 'researching');
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: (t, c) => {
+          rewinds.push({ target: t, comment: c });
+          return true;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+        getCurrentPhase: () => 'researching',
+      }),
+    );
+    executeRuntimeCommand(
+      commands,
+      '/revise-spec',
+      'workflow',
+      (m) => {
+        error = m;
+      },
+      'researching',
+    );
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/only available|not available|cannot/i);
   });
 
   it('surfaces a guard error when the engine rejects the rewind', () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: () => false,
-      setFeedbackError: (m) => { error = m; },
-      getCurrentPhase: () => 'implementing',
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: () => false,
+        setFeedbackError: (m) => {
+          error = m;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
     executeRuntimeCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
     expect(error).toMatch(/cannot rewind|no active/i);
   });
@@ -286,23 +487,49 @@ describe('/revise-spec command', () => {
 describe('/revise-plan command', () => {
   it('forwards target=plan and the trimmed comment to the engine', () => {
     const rewinds: RewindCall[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
-      getCurrentPhase: () => 'implementing',
-    }));
-    executeRuntimeCommand(commands, '/revise-plan too many tasks', 'workflow', noop, 'implementing');
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: (t, c) => {
+          rewinds.push({ target: t, comment: c });
+          return true;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
+    executeRuntimeCommand(
+      commands,
+      '/revise-plan too many tasks',
+      'workflow',
+      noop,
+      'implementing',
+    );
     expect(rewinds).toEqual([{ target: 'plan', comment: 'too many tasks' }]);
   });
 
   it('does NOT call the engine and surfaces a guard error when phase is too early', () => {
     const rewinds: RewindCall[] = [];
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
-      setFeedbackError: (m) => { error = m; },
-      getCurrentPhase: () => 'specifying',
-    }));
-    executeRuntimeCommand(commands, '/revise-plan', 'workflow', (m) => { error = m; }, 'specifying');
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestRewind: (t, c) => {
+          rewinds.push({ target: t, comment: c });
+          return true;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+        getCurrentPhase: () => 'specifying',
+      }),
+    );
+    executeRuntimeCommand(
+      commands,
+      '/revise-plan',
+      'workflow',
+      (m) => {
+        error = m;
+      },
+      'specifying',
+    );
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/only available|not available|cannot/i);
   });
@@ -311,10 +538,15 @@ describe('/revise-plan command', () => {
 describe('/redo-task command', () => {
   it('forwards the task ID to the engine', () => {
     const redos: RedoCall[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
-      getCurrentPhase: () => 'implementing',
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestTaskRedo: (id) => {
+          redos.push({ taskId: id });
+          return true;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
     executeRuntimeCommand(commands, '/redo-task T001', 'workflow', noop, 'implementing');
     expect(redos).toEqual([{ taskId: 'T001' }]);
   });
@@ -322,11 +554,18 @@ describe('/redo-task command', () => {
   it('does NOT call the engine and surfaces a usage error when no task ID is given', () => {
     const redos: RedoCall[] = [];
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
-      setFeedbackError: (m) => { error = m; },
-      getCurrentPhase: () => 'implementing',
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestTaskRedo: (id) => {
+          redos.push({ taskId: id });
+          return true;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+        getCurrentPhase: () => 'implementing',
+      }),
+    );
     executeRuntimeCommand(commands, '/redo-task', 'workflow', noop, 'implementing');
     expect(redos).toEqual([]);
     expect(error).toMatch(/task id/i);
@@ -335,50 +574,63 @@ describe('/redo-task command', () => {
   it('does NOT call the engine and surfaces a guard error when phase does not allow redo', () => {
     const redos: RedoCall[] = [];
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
-      setFeedbackError: (m) => { error = m; },
-      getCurrentPhase: () => 'planning',
-    }));
-    executeRuntimeCommand(commands, '/redo-task T001', 'workflow', (m) => { error = m; }, 'planning');
+    const commands = createRuntimeCommands(
+      makeCtx({
+        requestTaskRedo: (id) => {
+          redos.push({ taskId: id });
+          return true;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+        getCurrentPhase: () => 'planning',
+      }),
+    );
+    executeRuntimeCommand(
+      commands,
+      '/redo-task T001',
+      'workflow',
+      (m) => {
+        error = m;
+      },
+      'planning',
+    );
     expect(redos).toEqual([]);
     expect(error).toMatch(/only available|not available/i);
   });
 });
 
 describe('canReviseSpec', () => {
-  const allowed: Phase[] = ['reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'];
-  const denied: Phase[] = ['idle', 'researching', 'specifying', 'complete'];
-
-  it.each(allowed)('returns true for %s', (phase) => {
-    expect(canReviseSpec(phase)).toBe(true);
+  it.each(PHASE_GUARDS.canReviseSpec.allowed)('returns true for %s', (phase) => {
+    expect(PHASE_GUARDS.canReviseSpec.fn(phase)).toBe(true);
   });
 
-  it.each(denied)('returns false for %s', (phase) => {
-    expect(canReviseSpec(phase)).toBe(false);
+  it.each(PHASE_GUARDS.canReviseSpec.denied)('returns false for %s', (phase) => {
+    expect(PHASE_GUARDS.canReviseSpec.fn(phase)).toBe(false);
   });
 });
 
 describe('canRevisePlan', () => {
-  const allowed: Phase[] = ['reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'];
-  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'complete'];
-
-  it.each(allowed)('returns true for %s', (phase) => {
-    expect(canRevisePlan(phase)).toBe(true);
+  it.each(PHASE_GUARDS.canRevisePlan.allowed)('returns true for %s', (phase) => {
+    expect(PHASE_GUARDS.canRevisePlan.fn(phase)).toBe(true);
   });
 
-  it.each(denied)('returns false for %s', (phase) => {
-    expect(canRevisePlan(phase)).toBe(false);
+  it.each(PHASE_GUARDS.canRevisePlan.denied)('returns false for %s', (phase) => {
+    expect(PHASE_GUARDS.canRevisePlan.fn(phase)).toBe(false);
   });
 });
 
 describe('/repomap rebuild command', () => {
   it('calls rebuildRepomap and surfaces success message when cache was present', async () => {
     const messages: string[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      rebuildRepomap: async () => ({ deleted: true, files: ['/proj/.diptych/repomap.sqlite'] }),
-      setFeedbackMessage: (m) => { messages.push(m); },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rebuildRepomap: async () => ({ deleted: true, files: ['/proj/.diptych/repomap.sqlite'] }),
+        setFeedbackMessage: (m) => {
+          messages.push(m);
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/repomap rebuild', 'home', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(messages.length).toBeGreaterThan(0);
@@ -387,10 +639,14 @@ describe('/repomap rebuild command', () => {
 
   it('calls rebuildRepomap and surfaces not-present message when no cache exists', async () => {
     const messages: string[] = [];
-    const commands = createRuntimeCommands(makeCtx({
-      rebuildRepomap: async () => ({ deleted: false, files: [] }),
-      setFeedbackMessage: (m) => { messages.push(m); },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rebuildRepomap: async () => ({ deleted: false, files: [] }),
+        setFeedbackMessage: (m) => {
+          messages.push(m);
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/repomap rebuild', 'home', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(messages.length).toBeGreaterThan(0);
@@ -399,57 +655,44 @@ describe('/repomap rebuild command', () => {
 
   it('surfaces a usage error for unknown sub-commands', () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/repomap purge', 'home', noop);
     expect(error).toMatch(/unknown repomap/i);
   });
 
   it('surfaces a usage error when called with no sub-command', () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/repomap', 'home', noop);
     expect(error).toMatch(/unknown repomap/i);
   });
 });
 
 describe('canRedoTask', () => {
-  const allowed: Phase[] = ['implementing', 'validating-task', 'escalating'];
-  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'final-review', 'complete'];
-
-  it.each(allowed)('returns true for %s', (phase) => {
-    expect(canRedoTask(phase)).toBe(true);
+  it.each(PHASE_GUARDS.canRedoTask.allowed)('returns true for %s', (phase) => {
+    expect(PHASE_GUARDS.canRedoTask.fn(phase)).toBe(true);
   });
 
-  it.each(denied)('returns false for %s', (phase) => {
-    expect(canRedoTask(phase)).toBe(false);
+  it.each(PHASE_GUARDS.canRedoTask.denied)('returns false for %s', (phase) => {
+    expect(PHASE_GUARDS.canRedoTask.fn(phase)).toBe(false);
   });
 });
 
 describe('phase guard coverage', () => {
-  const phaseGuards: Array<[string, Phase[], Phase[]]> = [
-    [
-      'canReviseSpec',
-      ['reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'],
-      ['idle', 'researching', 'specifying', 'complete'],
-    ],
-    [
-      'canRevisePlan',
-      ['reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'],
-      ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'complete'],
-    ],
-    [
-      'canRedoTask',
-      ['implementing', 'validating-task', 'escalating'],
-      ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'final-review', 'complete'],
-    ],
-  ];
-
-  it.each(phaseGuards)('%s covers all phases', (_name, allowed, denied) => {
-    expect([...allowed, ...denied].sort()).toEqual([...PHASES].sort());
+  it.each(Object.entries(PHASE_GUARDS))('%s covers all phases', (_name, guard) => {
+    expect([...guard.allowed, ...guard.denied].sort()).toEqual([...PHASES].sort());
   });
 });
 
@@ -464,14 +707,26 @@ describe('/handoff command', () => {
 
   it('calls setFeedbackError with usage hint when no args given', () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({ setFeedbackError: (m) => { error = m; } }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff', 'workflow', noop);
     expect(error).toMatch(/usage/i);
   });
 
   it('calls setFeedbackError mentioning valid targets for unknown target', () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({ setFeedbackError: (m) => { error = m; } }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff unknown-target', 'workflow', noop);
     expect(error).toMatch(/valid/i);
     expect(error).toContain('spec-kit');
@@ -479,9 +734,14 @@ describe('/handoff command', () => {
 
   it('calls writeHandoff with spec-kit and no taskId', async () => {
     const calls: Array<{ target: string; taskId: string | undefined }> = [];
-    const commands = createRuntimeCommands(makeCtx({
-      writeHandoff: async (target, taskId) => { calls.push({ target, taskId }); return { outputDir: '/fake' }; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async (target, taskId) => {
+          calls.push({ target, taskId });
+          return { outputDir: '/fake' };
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
@@ -489,9 +749,14 @@ describe('/handoff command', () => {
 
   it('calls writeHandoff with claude-code and task id T003', async () => {
     const calls: Array<{ target: string; taskId: string | undefined }> = [];
-    const commands = createRuntimeCommands(makeCtx({
-      writeHandoff: async (target, taskId) => { calls.push({ target, taskId }); return { outputDir: '/fake' }; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async (target, taskId) => {
+          calls.push({ target, taskId });
+          return { outputDir: '/fake' };
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff claude-code T003', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
@@ -499,10 +764,14 @@ describe('/handoff command', () => {
 
   it('calls setFeedbackMessage containing output path on success', async () => {
     let message: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      writeHandoff: async () => ({ outputDir: '/proj/.diptych/sessions/s1/handoffs/spec-kit' }),
-      setFeedbackMessage: (m) => { message = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async () => ({ outputDir: '/proj/.diptych/sessions/s1/handoffs/spec-kit' }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(message).toContain('/proj/.diptych/sessions/s1/handoffs/spec-kit');
@@ -510,10 +779,16 @@ describe('/handoff command', () => {
 
   it('calls setFeedbackError when writeHandoff rejects', async () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      writeHandoff: async () => { throw new Error('No active session for handoff'); },
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async () => {
+          throw new Error('No active session for handoff');
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(error).toContain('No active session for handoff');
@@ -530,10 +805,17 @@ describe('/export command', () => {
 
   it('exports the session and reports the output path', async () => {
     let message: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      exportSession: async () => ({ status: 'ok', path: '/proj/.diptych/sessions/s1/report.html' }),
-      setFeedbackMessage: (m) => { message = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        exportSession: async () => ({
+          status: 'ok',
+          path: '/proj/.diptych/sessions/s1/report.html',
+        }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
 
     await executeRuntimeCommand(commands, '/export', 'workflow', noop);
 
@@ -542,10 +824,17 @@ describe('/export command', () => {
 
   it('surfaces export errors from the context', async () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      exportSession: async () => ({ status: 'error', error: 'No summary.json found for session' }),
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        exportSession: async () => ({
+          status: 'error',
+          error: 'No summary.json found for session',
+        }),
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
 
     await executeRuntimeCommand(commands, '/export', 'summary', noop);
 
@@ -563,14 +852,18 @@ describe('/compact-transcript command', () => {
 
   it('compacts the transcript and reports summarized message count', async () => {
     let message: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      compactTranscript: async () => ({
-        status: 'compacted',
-        summary: '## Summary\nProgress preserved',
-        entriesRemoved: 12,
+    const commands = createRuntimeCommands(
+      makeCtx({
+        compactTranscript: async () => ({
+          status: 'compacted',
+          summary: '## Summary\nProgress preserved',
+          entriesRemoved: 12,
+        }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
       }),
-      setFeedbackMessage: (m) => { message = m; },
-    }));
+    );
 
     await executeRuntimeCommand(commands, '/compact-transcript', 'workflow', noop);
 
@@ -580,11 +873,17 @@ describe('/compact-transcript command', () => {
   it('reports unsupported planners without treating it as a command failure', async () => {
     let message: string | undefined;
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      compactTranscript: async () => ({ status: 'unsupported', plannerName: 'shell' }),
-      setFeedbackMessage: (m) => { message = m; },
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        compactTranscript: async () => ({ status: 'unsupported', plannerName: 'shell' }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
 
     await executeRuntimeCommand(commands, '/compact-transcript', 'workflow', noop);
 
@@ -594,10 +893,16 @@ describe('/compact-transcript command', () => {
 
   it('surfaces compaction errors from the context', async () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      compactTranscript: async () => { throw new Error('No active session for /compact-transcript'); },
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        compactTranscript: async () => {
+          throw new Error('No active session for /compact-transcript');
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
 
     await executeRuntimeCommand(commands, '/compact-transcript', 'summary', noop);
 
@@ -611,8 +916,12 @@ describe('/yolo command', () => {
     let feedback: string | undefined;
     const ctx = makeCtx({
       getApprovalEnabled: () => approvalEnabled,
-      setApprovalEnabled: (value) => { approvalEnabled = value; },
-      setFeedbackMessage: (message) => { feedback = message; },
+      setApprovalEnabled: (value) => {
+        approvalEnabled = value;
+      },
+      setFeedbackMessage: (message) => {
+        feedback = message;
+      },
     });
     const commands = createRuntimeCommands(ctx);
     const yolo = commands.find((command) => command.name === '/yolo');
@@ -632,10 +941,14 @@ describe('/yolo command', () => {
 describe('run snapshot runtime commands', () => {
   it('accepts the current run and surfaces the snapshot id', async () => {
     let message: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      acceptRunSnapshot: async () => ({ snapshotId: 'snap-1', isFirstSnapshot: false }),
-      setFeedbackMessage: (m) => { message = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        acceptRunSnapshot: async () => ({ snapshotId: 'snap-1', isFirstSnapshot: false }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/accept-run', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(message).toContain('snap-1');
@@ -644,13 +957,17 @@ describe('run snapshot runtime commands', () => {
   it('requires explicit confirmation before rejecting a run', () => {
     let called = false;
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      rejectRunSnapshot: async () => {
-        called = true;
-        return { status: 'empty' };
-      },
-      setFeedbackError: (m) => { error = m; },
-    }));
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => {
+          called = true;
+          return { status: 'empty' };
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
     executeRuntimeCommand(commands, '/reject-run', 'workflow', noop);
     expect(called).toBe(false);
     expect(error).toMatch(/confirm/i);
@@ -658,17 +975,21 @@ describe('run snapshot runtime commands', () => {
 
   it('rejects the current run after confirmation and reports changed files', async () => {
     let message: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      rejectRunSnapshot: async () => ({
-        status: 'rejected',
-        snapshotId: 'snap-2',
-        restoredPaths: ['src/a.ts'],
-        deletedPaths: ['src/b.ts'],
-        conflictedPaths: [],
-        missingSnapshotFiles: [],
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => ({
+          status: 'rejected',
+          snapshotId: 'snap-2',
+          restoredPaths: ['src/a.ts'],
+          deletedPaths: ['src/b.ts'],
+          conflictedPaths: [],
+          missingSnapshotFiles: [],
+        }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
       }),
-      setFeedbackMessage: (m) => { message = m; },
-    }));
+    );
     executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(message).toContain('2 file(s)');
@@ -677,17 +998,21 @@ describe('run snapshot runtime commands', () => {
 
   it('surfaces conflicts as an error when rejecting a run', async () => {
     let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx({
-      rejectRunSnapshot: async () => ({
-        status: 'rejected',
-        snapshotId: 'snap-3',
-        restoredPaths: [],
-        deletedPaths: [],
-        conflictedPaths: ['src/a.ts'],
-        missingSnapshotFiles: [],
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => ({
+          status: 'rejected',
+          snapshotId: 'snap-3',
+          restoredPaths: [],
+          deletedPaths: [],
+          conflictedPaths: ['src/a.ts'],
+          missingSnapshotFiles: [],
+        }),
+        setFeedbackError: (m) => {
+          error = m;
+        },
       }),
-      setFeedbackError: (m) => { error = m; },
-    }));
+    );
     executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(error).toMatch(/conflict/i);

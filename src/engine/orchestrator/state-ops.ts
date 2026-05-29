@@ -11,22 +11,30 @@ import { transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishPlannerStatus } from './events.js';
+import type { WorkflowPersistenceContext } from './types.js';
 
-export function mergePersistedMessageQueue(projectDir: string, sessionId: string, state: WorkflowState): WorkflowState {
+export function mergePersistedMessageQueue(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+): WorkflowState {
   const persisted = loadState(projectDir, sessionId);
   if (!persisted) return state;
 
-  const byId = new Map(persisted.messageQueue.map(message => [message.id, message]));
+  const byId = new Map(persisted.messageQueue.map((message) => [message.id, message]));
   for (const current of state.messageQueue) {
     const persistedMessage = byId.get(current.id);
-    byId.set(current.id, persistedMessage
-      ? {
-        ...persistedMessage,
-        ...current,
-        deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
-        drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
-      }
-      : current);
+    byId.set(
+      current.id,
+      persistedMessage
+        ? {
+            ...persistedMessage,
+            ...current,
+            deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
+            drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
+          }
+        : current,
+    );
   }
 
   return { ...state, messageQueue: [...byId.values()] };
@@ -40,7 +48,7 @@ export function transitionAndSave(
   maxRetries?: number,
 ): WorkflowState {
   const base = mergePersistedMessageQueue(projectDir, sessionId, state);
-  const next = transition(base, action, maxRetries);
+  const next = transition(base, action, { maxRetries });
   saveState(projectDir, sessionId, next);
   return next;
 }
@@ -61,26 +69,38 @@ async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task>
 }
 
 export async function refreshAndPersistCode(
-  task: Task, projectDir: string, sessionId: string, state: WorkflowState,
+  task: Task,
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
 ): Promise<{ task: Task; state: WorkflowState }> {
   const refreshed = await refreshCurrentCode(task, projectDir);
   if (refreshed.currentCode !== undefined) {
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
+    state = transitionAndSave(projectDir, sessionId, state, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: refreshed.id,
+      code: refreshed.currentCode,
+    });
   } else if (task.currentCode !== undefined) {
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'CLEAR_TASK_CODE', taskId: refreshed.id });
+    state = transitionAndSave(projectDir, sessionId, state, {
+      type: 'CLEAR_TASK_CODE',
+      taskId: refreshed.id,
+    });
   }
   return { task: refreshed, state };
 }
 
 export function addUsageAndSave(
-  projectDir: string, sessionId: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
-  bus: EventBus,
+  ctx: WorkflowPersistenceContext,
+  state: WorkflowState,
+  category: UsageCategory,
+  usage: TokenDelta | null | undefined,
 ): WorkflowState {
-  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const base = mergePersistedMessageQueue(ctx.projectDir, ctx.sessionId, state);
   const next = addUsage(base, category, usage);
-  saveState(projectDir, sessionId, next);
+  saveState(ctx.projectDir, ctx.sessionId, next);
   if (usage) {
-    publishCostUpdate({ bus: bus, phase: next.phase }, next.tokenUsage);
+    publishCostUpdate({ bus: ctx.bus, phase: next.phase }, next.tokenUsage);
   }
   return next;
 }

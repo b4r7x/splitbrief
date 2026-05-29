@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTreeRecorderSink } from './tree-recorder.js';
-import { reconstructTree, readTreeMeta, treeJsonlPath, treeMetaPath } from '../../../core/sessions/tree/io.js';
+import {
+  reconstructTree,
+  readTreeMeta,
+  treeJsonlPath,
+  treeMetaPath,
+} from '../../../core/sessions/tree/io.js';
 import type { EngineEvent } from '../types.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 
@@ -45,17 +50,22 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Create utils.ts', index: 0, total: 3,
-      file: 'src/utils.ts', action: 'create',
+      title: 'Create utils.ts',
+      index: 0,
+      total: 3,
+      file: 'src/utils.ts',
+      action: 'create',
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     expect(tree!.meta.entryCount).toBe(2);
     const entries = [...tree!.entries.values()];
-    const planStep = entries.find(e => e.type === 'plan-step');
+    const planStep = entries.find((e) => e.type === 'plan-step');
     expect(planStep).toBeDefined();
     expect((planStep!.payload as { title: string }).title).toBe('Create utils.ts');
   });
@@ -64,21 +74,32 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Create utils.ts', index: 0, total: 1,
-      file: 'src/utils.ts', action: 'create',
+      title: 'Create utils.ts',
+      index: 0,
+      total: 1,
+      file: 'src/utils.ts',
+      action: 'create',
     });
     sink({
-      type: 'task_completed', ts: 5000, phase: 'implementing',
-      taskId: 'T001' as unknown as TaskId, title: 'Create utils.ts',
-      method: 'local', retries: 0, duration: 3000, tool: 'claude-code',
+      type: 'task_completed',
+      ts: 5000,
+      phase: 'implementing',
+      taskId: 'T001' as unknown as TaskId,
+      title: 'Create utils.ts',
+      method: 'local',
+      retries: 0,
+      duration: 3000,
+      tool: 'claude-code',
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     const entries = [...tree!.entries.values()];
-    const invocation = entries.find(e => e.type === 'agent-invocation');
+    const invocation = entries.find((e) => e.type === 'agent-invocation');
     expect(invocation).toBeDefined();
     const payload = invocation!.payload as { status: string; durationMs: number; tool: string };
     expect(payload.status).toBe('completed');
@@ -90,25 +111,40 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Foo', index: 0, total: 1,
-      file: 'a.ts', action: 'create',
+      title: 'Foo',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
     });
     sink({
-      type: 'task_tokens', ts: 4000, phase: 'implementing',
+      type: 'task_tokens',
+      ts: 4000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      method: 'local', implementerTokens: 500, escalationTokens: 100, retryCount: 0,
+      method: 'local',
+      implementerTokens: 500,
+      escalationTokens: 100,
+      retryCount: 0,
     });
     sink({
-      type: 'task_completed', ts: 5000, phase: 'implementing',
-      taskId: 'T001' as unknown as TaskId, title: 'Foo',
-      method: 'local', retries: 0, duration: 3000,
+      type: 'task_completed',
+      ts: 5000,
+      phase: 'implementing',
+      taskId: 'T001' as unknown as TaskId,
+      title: 'Foo',
+      method: 'local',
+      retries: 0,
+      duration: 3000,
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
-    const invocation = entries.find(e => e.type === 'agent-invocation');
+    const invocation = entries.find((e) => e.type === 'agent-invocation');
     const payload = invocation!.payload as { tokensUsed: number };
     expect(payload.tokensUsed).toBe(600);
   });
@@ -117,19 +153,26 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Modify config.ts', index: 0, total: 1,
-      file: 'config.ts', action: 'modify',
+      title: 'Modify config.ts',
+      index: 0,
+      total: 1,
+      file: 'config.ts',
+      action: 'modify',
     });
     sink({
-      type: 'task_full_fail', ts: 4000, phase: 'implementing',
+      type: 'task_full_fail',
+      ts: 4000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
-    const invocation = entries.find(e => e.type === 'agent-invocation');
+    const invocation = entries.find((e) => e.type === 'agent-invocation');
     expect(invocation).toBeDefined();
     const payload = invocation!.payload as { status: string; durationMs: number };
     expect(payload.status).toBe('failed');
@@ -140,13 +183,17 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'recovery_action_selected', ts: 3000, phase: 'implementing',
-      issueId: 'issue-1', reason: 'validation-failed', action: 'skip-current-task',
+      type: 'recovery_action_selected',
+      ts: 3000,
+      phase: 'implementing',
+      issueId: 'issue-1',
+      reason: 'validation-failed',
+      action: 'skip-current-task',
     } as EngineEvent);
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
-    const recovery = entries.find(e => e.type === 'recovery-decision');
+    const recovery = entries.find((e) => e.type === 'recovery-decision');
     expect(recovery).toBeDefined();
     expect(tree!.meta.branchCount).toBe(0);
   });
@@ -155,14 +202,23 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'A', index: 0, total: 1,
-      file: 'a.ts', action: 'create',
+      title: 'A',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
     });
     sink({
-      type: 'recovery_action_selected', ts: 3000, phase: 'implementing',
-      issueId: 'issue-1', reason: 'validation-failed', action: 'retry-same-worker',
+      type: 'recovery_action_selected',
+      ts: 3000,
+      phase: 'implementing',
+      issueId: 'issue-1',
+      reason: 'validation-failed',
+      action: 'retry-same-worker',
     } as EngineEvent);
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
@@ -173,17 +229,22 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
-      type: 'cost_update', ts: 2000, phase: 'implementing',
+      type: 'cost_update',
+      ts: 2000,
+      phase: 'implementing',
       tokenUsage: {
-        plannerInput: 100, plannerOutput: 50,
-        implementerInput: 200, implementerOutput: 80,
-        escalationInput: 10, escalationOutput: 5,
+        plannerInput: 100,
+        plannerOutput: 50,
+        implementerInput: 200,
+        implementerOutput: 80,
+        escalationInput: 10,
+        escalationOutput: 5,
       },
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
-    const cost = entries.find(e => e.type === 'cost-checkpoint');
+    const cost = entries.find((e) => e.type === 'cost-checkpoint');
     expect(cost).toBeDefined();
     const payload = cost!.payload as { inputTokens: number; outputTokens: number };
     expect(payload.inputTokens).toBe(310);
@@ -195,19 +256,29 @@ describe('createTreeRecorderSink', () => {
     const sink1 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink1({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink1({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Create a.ts', index: 0, total: 1,
-      file: 'a.ts', action: 'create',
+      title: 'Create a.ts',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
     });
 
     // Second sink (simulating restart) receives workflow_resumed
     const sink2 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink2({ type: 'workflow_resumed', ts: 3000, phase: 'implementing' });
     sink2({
-      type: 'task_completed', ts: 4000, phase: 'implementing',
-      taskId: 'T001' as unknown as TaskId, title: 'Create a.ts',
-      method: 'local', retries: 0, duration: 2000,
+      type: 'task_completed',
+      ts: 4000,
+      phase: 'implementing',
+      taskId: 'T001' as unknown as TaskId,
+      title: 'Create a.ts',
+      method: 'local',
+      retries: 0,
+      duration: 2000,
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
@@ -219,10 +290,15 @@ describe('createTreeRecorderSink', () => {
   it('is a no-op before workflow_started', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'A', index: 0, total: 1,
-      file: 'a.ts', action: 'create',
+      title: 'A',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
@@ -233,34 +309,59 @@ describe('createTreeRecorderSink', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'add feature' });
     sink({
-      type: 'task_started', ts: 2000, phase: 'implementing',
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
-      title: 'Create foo.ts', index: 0, total: 2,
-      file: 'foo.ts', action: 'create',
+      title: 'Create foo.ts',
+      index: 0,
+      total: 2,
+      file: 'foo.ts',
+      action: 'create',
     });
     sink({
-      type: 'task_completed', ts: 5000, phase: 'implementing',
-      taskId: 'T001' as unknown as TaskId, title: 'Create foo.ts',
-      method: 'local', retries: 0, duration: 3000,
+      type: 'task_completed',
+      ts: 5000,
+      phase: 'implementing',
+      taskId: 'T001' as unknown as TaskId,
+      title: 'Create foo.ts',
+      method: 'local',
+      retries: 0,
+      duration: 3000,
     });
     sink({
-      type: 'task_started', ts: 6000, phase: 'implementing',
+      type: 'task_started',
+      ts: 6000,
+      phase: 'implementing',
       taskId: 'T002' as unknown as TaskId,
-      title: 'Modify bar.ts', index: 1, total: 2,
-      file: 'bar.ts', action: 'modify',
+      title: 'Modify bar.ts',
+      index: 1,
+      total: 2,
+      file: 'bar.ts',
+      action: 'modify',
     });
     sink({
-      type: 'cost_update', ts: 7000, phase: 'implementing',
+      type: 'cost_update',
+      ts: 7000,
+      phase: 'implementing',
       tokenUsage: {
-        plannerInput: 500, plannerOutput: 200,
-        implementerInput: 1000, implementerOutput: 400,
-        escalationInput: 0, escalationOutput: 0,
+        plannerInput: 500,
+        plannerOutput: 200,
+        implementerInput: 1000,
+        implementerOutput: 400,
+        escalationInput: 0,
+        escalationOutput: 0,
       },
     });
     sink({
-      type: 'task_completed', ts: 9000, phase: 'implementing',
-      taskId: 'T002' as unknown as TaskId, title: 'Modify bar.ts',
-      method: 'local', retries: 0, duration: 3000,
+      type: 'task_completed',
+      ts: 9000,
+      phase: 'implementing',
+      taskId: 'T002' as unknown as TaskId,
+      title: 'Modify bar.ts',
+      method: 'local',
+      retries: 0,
+      duration: 3000,
     });
 
     const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));

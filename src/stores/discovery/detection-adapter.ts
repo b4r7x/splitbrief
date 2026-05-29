@@ -1,6 +1,10 @@
 import { modelCacheStore } from './model-cache.js';
 import { isProviderId } from '../../core/schemas/enums.js';
-import type { DetectionDeps, DetectionServiceResult, DetectionService } from '../../engine/detection/service.js';
+import type {
+  DetectionDeps,
+  DetectionServiceResult,
+  DetectionService,
+} from '../../engine/detection/service.js';
 
 export interface DetectionStoreWriter {
   setDetection: (detection: DetectionServiceResult['detection']) => void;

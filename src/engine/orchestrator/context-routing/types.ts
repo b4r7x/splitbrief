@@ -1,5 +1,8 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import type { ImplementerCostTier, ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type {
+  ImplementerCostTier,
+  ImplementerWriteMode,
+} from '../../../core/schemas/implementer-config.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -72,7 +75,12 @@ export interface ProfileFit {
   capabilityFailure?: string | undefined;
 }
 
-export type ContextLengthSource = 'explicit' | 'models-dev' | 'runtime' | 'known-catalog' | 'conservative-fallback';
+export type ContextLengthSource =
+  | 'explicit'
+  | 'models-dev'
+  | 'runtime'
+  | 'known-catalog'
+  | 'conservative-fallback';
 
 export interface ResolvedProfileContextLength {
   contextLength: number;

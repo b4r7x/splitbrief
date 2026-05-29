@@ -542,6 +542,7 @@ See [CLAUDE.md](../CLAUDE.md) for the full comment policy.
 ## References
 
 - [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
+- [`CODE-STANDARD.md`](./CODE-STANDARD.md) — the SOTA review bar; consolidates the file-length triggers here into the split recipe and the reviewer checklist.
 - [`HOOKS.md`](./HOOKS.md) — hook placement rules; companion to this doc.
 - [`STORES.md`](./STORES.md) — state architecture; same colocation principle.
 - [`TYPES.md`](./TYPES.md) — type placement and Zod schema conventions.

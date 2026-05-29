@@ -1,15 +1,18 @@
-import type { ActiveDriftChain, DriftChainState, EmittedChain } from '../../../core/schemas/drift-chain.js';
-import type { Task } from '../../../core/schemas/task.js';
+import type {
+  ActiveDriftChain,
+  DriftChainState,
+  EmittedChain,
+} from '../../../core/schemas/drift-chain.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
+import { emptyActiveChain } from './chain-state.js';
+import { clamp01 } from '../../../utils/math.js';
 
 export type DriftChainUpdate = {
   state: DriftChainState;
   emitted: EmittedChain | undefined;
 };
 
-export function computePerTaskOutOfBounds(
-  task: Task,
-  taskChangedFiles: string[],
-): Set<string> {
+export function computePerTaskOutOfBounds(task: Task, taskChangedFiles: string[]): Set<string> {
   if (taskChangedFiles.length === 0) return new Set();
 
   const outOfBoundsPatterns = task.scope?.outOfBounds ?? [];
@@ -36,7 +39,7 @@ function computeScore(chain: ActiveDriftChain, overlapCount: number, unionSize: 
   const lengthTerm = (Math.min(chain.entries.length, 5) / 5) * 0.3;
   const overlapTerm = chain.entries.length < 2 ? 0 : (overlapCount / unionSize) * 0.5;
   const newFilesTerm = (Math.min(chain.uniqueFiles.length, 10) / 10) * 0.2;
-  return Math.max(0, Math.min(1, lengthTerm + overlapTerm + newFilesTerm));
+  return clamp01(lengthTerm + overlapTerm + newFilesTerm);
 }
 
 function representativePath(entries: ActiveDriftChain['entries']): string {
@@ -61,14 +64,13 @@ function representativePath(entries: ActiveDriftChain['entries']): string {
 
 export function analyzeDriftChain(
   state: DriftChainState,
-  taskId: string,
+  taskId: TaskId,
   outOfBoundsFiles: Set<string>,
   threshold: number,
 ): DriftChainUpdate {
   if (outOfBoundsFiles.size === 0) {
-    const resetChain: ActiveDriftChain = { entries: [], uniqueFiles: [], score: 0 };
     return {
-      state: { ...state, activeChain: resetChain },
+      state: { ...state, activeChain: emptyActiveChain() },
       emitted: undefined,
     };
   }

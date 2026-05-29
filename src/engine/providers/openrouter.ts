@@ -4,7 +4,7 @@ import type { DetectedModel } from '../../core/types/config-options.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { createMetadataProvider } from './client.js';
 import { stripV1Suffix } from './constants.js';
-import { perTokenToPerMillion } from './metadata.js';
+import { perTokenToPerMillion, pricingFieldsFromResolved } from './metadata.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.openrouter;
 
@@ -43,24 +43,18 @@ export function toDetectedModel(m: OpenRouterModel): DetectedModel {
   const inputPrice = parsePrice(m.pricing?.prompt);
   const outputPrice = parsePrice(m.pricing?.completion);
   const hasCompletePricing = inputPrice !== undefined && outputPrice !== undefined;
-  const isFree = m.id.endsWith(':free') || (hasCompletePricing ? inputPrice === 0 && outputPrice === 0 : undefined);
+  const isFree =
+    m.id.endsWith(':free') ||
+    (hasCompletePricing ? inputPrice === 0 && outputPrice === 0 : undefined);
 
   const capabilities: string[] = [];
   if (m.architecture?.modality?.input?.includes('image')) capabilities.push('vision');
 
   const result: DetectedModel = {
     id: m.id,
+    ...pricingFieldsFromResolved(inputPrice, outputPrice, isFree),
   };
 
-  if (isFree !== undefined) {
-    result.isFree = isFree;
-  }
-  if (inputPrice !== undefined) {
-    result.pricingInput = inputPrice;
-  }
-  if (outputPrice !== undefined) {
-    result.pricingOutput = outputPrice;
-  }
   if (m.context_length !== undefined) {
     result.contextLength = m.context_length;
   }

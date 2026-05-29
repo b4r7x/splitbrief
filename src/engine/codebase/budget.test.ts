@@ -22,7 +22,10 @@ describe('formatWithBudget', () => {
   it('emits highest-ranked files first', () => {
     const a = fn('src/a.ts', 1);
     const b = fn('src/b.ts', 1);
-    const ranks = new Map<string, number>([['src/b.ts', 0.9], ['src/a.ts', 0.1]]);
+    const ranks = new Map<string, number>([
+      ['src/b.ts', 0.9],
+      ['src/a.ts', 0.1],
+    ]);
     const out = formatWithBudget([a, b], ranks, 10_000);
     expect(out.indexOf('src/b.ts')).toBeLessThan(out.indexOf('src/a.ts'));
   });
@@ -30,7 +33,10 @@ describe('formatWithBudget', () => {
   it('drops lowest-ranked files when budget tight (never partial files)', () => {
     const big = fn('src/big.ts', 50); // many symbols → many chars
     const small = fn('src/small.ts', 1);
-    const ranks = new Map<string, number>([['src/big.ts', 0.9], ['src/small.ts', 0.1]]);
+    const ranks = new Map<string, number>([
+      ['src/big.ts', 0.9],
+      ['src/small.ts', 0.1],
+    ]);
     const out = formatWithBudget([big, small], ranks, 100); // tiny budget — only big fits
     expect(out).toContain('src/big.ts');
     expect(out).not.toContain('src/small.ts');

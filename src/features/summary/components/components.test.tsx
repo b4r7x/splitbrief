@@ -51,11 +51,7 @@ describe('SummaryCostBreakdown', () => {
     };
 
     const ui = renderFeature(
-      <SummaryCostBreakdown
-        costBreakdown={costBreakdown}
-        labelWidth={28}
-        isSmall={false}
-      />,
+      <SummaryCostBreakdown costBreakdown={costBreakdown} labelWidth={28} isSmall={false} />,
     );
     const frame = ui.lastFrame() ?? '';
 
@@ -94,11 +90,7 @@ describe('SummaryCostBreakdown', () => {
     };
 
     const ui = renderFeature(
-      <SummaryCostBreakdown
-        costBreakdown={costBreakdown}
-        labelWidth={28}
-        isSmall={false}
-      />,
+      <SummaryCostBreakdown costBreakdown={costBreakdown} labelWidth={28} isSmall={false} />,
     );
     const frame = ui.lastFrame() ?? '';
 

@@ -1,12 +1,21 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import type { IpcClientStatus } from './hooks/use-ipc-client.js';
+import type { IpcClientStatus } from './hooks/ipc-client-connection.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 
-export function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: InputMode, phase: Phase): string {
+export interface InputHintInput {
+  cancelled: boolean;
+  inputHint: string;
+  inputMode: InputMode;
+  phase: Phase;
+}
+
+export function resolveInputHint(input: InputHintInput): string {
+  const { cancelled, inputHint, inputMode, phase } = input;
   if (cancelled) return 'Enter to resume, ESC for home, /quit to exit';
   if (inputHint) return inputHint;
-  if (inputMode === 'review') return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
+  if (inputMode === 'review')
+    return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
   return '';
 }
 

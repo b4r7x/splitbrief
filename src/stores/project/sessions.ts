@@ -12,11 +12,11 @@ const initial: SessionsState = { sessions: [], allSessions: [] };
 const store = createStore<SessionsState>(initial);
 
 function load(projectDir: string) {
-  store.set(s => ({ ...s, sessions: listSessions(projectDir) }));
+  store.set((s) => ({ ...s, sessions: listSessions(projectDir) }));
 }
 
 function loadAll(projectDir: string) {
-  store.set(s => ({ ...s, allSessions: listAllSessions(projectDir) }));
+  store.set((s) => ({ ...s, allSessions: listAllSessions(projectDir) }));
 }
 
 export const sessionsStore = { ...storeBase(store), load, loadAll };

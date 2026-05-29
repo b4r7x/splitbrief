@@ -6,8 +6,16 @@ describe('formatFileNode', () => {
   it('emits file path header followed by indented symbol signatures', () => {
     const node = makeFileNode('src/foo.ts', {
       symbols: [
-        makeSymbol('add', { kind: 'function', signature: 'export function add(a: number, b: number): number', line: 1 }),
-        makeSymbol('Vec', { kind: 'type', signature: 'export type Vec = readonly number[]', line: 3 }),
+        makeSymbol('add', {
+          kind: 'function',
+          signature: 'export function add(a: number, b: number): number',
+          line: 1,
+        }),
+        makeSymbol('Vec', {
+          kind: 'type',
+          signature: 'export type Vec = readonly number[]',
+          line: 3,
+        }),
       ],
       sizeBytes: 100,
     });
@@ -25,7 +33,9 @@ describe('formatFileNode', () => {
 
   it('emits non-exported symbols too (the budget caller decides what to include)', () => {
     const node = makeFileNode('src/x.ts', {
-      symbols: [makeSymbol('priv', { kind: 'function', signature: 'function priv()', exported: false })],
+      symbols: [
+        makeSymbol('priv', { kind: 'function', signature: 'function priv()', exported: false }),
+      ],
       sizeBytes: 10,
     });
     expect(formatFileNode(node)).toContain('  function priv()');

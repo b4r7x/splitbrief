@@ -13,7 +13,7 @@ function redactSensitiveKeys(value: unknown, seen = new WeakSet<object>()): unkn
   seen.add(value);
 
   if (Array.isArray(value)) {
-    const redactedArray = value.map(item => redactSensitiveKeys(item, seen));
+    const redactedArray = value.map((item) => redactSensitiveKeys(item, seen));
     seen.delete(value);
     return redactedArray;
   }
@@ -44,11 +44,9 @@ export const configError = {
   validationFailed: (path: string, issues: string[]) =>
     error('config-validation-failed', issues.join('\n'), { path, issues }),
   loadNotCalled: (operation: string) =>
-    error(
-      'config-load-not-called',
-      `configStore.load must be called before ${operation}`,
-      { operation },
-    ),
+    error('config-load-not-called', `configStore.load must be called before ${operation}`, {
+      operation,
+    }),
   saveFailed: (path: string, cause: unknown) =>
     error('config-save-failed', `Failed to save config to ${path}`, { path }, cause),
   notAnObject: (context: string) =>
@@ -56,7 +54,7 @@ export const configError = {
   unsupportedVersion: (version: unknown) =>
     error(
       'config-unsupported-version',
-      `Unsupported config version: ${String(version)}. Expected 2 or 3.`,
+      `Unsupported config version: ${String(version)}. Supported: 1 (migrated), 2 (deprecated), 3.`,
       { version },
     ),
   runnerKindIndeterminate: (role: Role, opts: unknown) =>
@@ -66,17 +64,15 @@ export const configError = {
       { role, opts: redactSensitiveKeys(opts) },
     ),
   runnerMissingField: (role: Role, kind: string, field: string) =>
-    error(
-      'config-runner-missing-field',
-      `${role} ${kind} kind requires '${field}' field`,
-      { role, kind, field },
-    ),
+    error('config-runner-missing-field', `${role} ${kind} kind requires '${field}' field`, {
+      role,
+      kind,
+      field,
+    }),
   runnerMissingModel: (role: Role) =>
-    error(
-      'config-runner-missing-model',
-      `${role}: 'model' is required but was not provided.`,
-      { role },
-    ),
+    error('config-runner-missing-model', `${role}: 'model' is required but was not provided.`, {
+      role,
+    }),
   unknownCliTool: (tool: string, allowed: readonly string[]) =>
     error(
       'config-unknown-cli-tool',
@@ -90,17 +86,16 @@ export const configError = {
       { provider, allowed, role },
     ),
   invalidOverride: (field: string, value: unknown, reason: string) =>
-    error(
-      'config-invalid-override',
-      `Invalid ${field}: ${String(value)}. ${reason}`,
-      { field, value, reason },
-    ),
+    error('config-invalid-override', `Invalid ${field}: ${String(value)}. ${reason}`, {
+      field,
+      value,
+      reason,
+    }),
   kindMismatch: (role: Role, expectedKind: string) =>
-    error(
-      'config-kind-mismatch',
-      `Expected ${expectedKind} ${role} config`,
-      { role, expectedKind },
-    ),
+    error('config-kind-mismatch', `Expected ${expectedKind} ${role} config`, {
+      role,
+      expectedKind,
+    }),
   profileNotFound: (defaultName: string) =>
     error(
       'config-profile-not-found',

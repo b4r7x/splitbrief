@@ -1,10 +1,8 @@
 import type { HandoffInput, HandoffPack } from '../types.js';
-import { buildBaseFiles, taskLink } from './shared.js';
+import { buildBaseFiles, buildTaskListSection } from './shared.js';
 
 export function renderClaudeCode(input: HandoffInput): HandoffPack {
   const base = buildBaseFiles(input);
-
-  const taskLines = input.tasks.map(taskLink).join('\n');
 
   const claudeMd = `# Claude Instructions
 
@@ -12,10 +10,7 @@ Read \`CLAUDE.md\` in the source repo first before making any changes.
 
 Work through the tasks in dependency order. Do not stage or commit. Await review.
 
-## Tasks
-
-${taskLines}
-`;
+${buildTaskListSection(input.tasks)}`;
 
   const agentDef = `# diptych-handoff Agent
 

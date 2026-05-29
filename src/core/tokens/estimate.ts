@@ -21,7 +21,8 @@ export function resolveCharsPerToken(modelId?: string): number {
   const lower = modelId.toLowerCase();
   for (const [family, ratio] of Object.entries(MODEL_FAMILY_RATIOS)) {
     if (family.length <= 2) {
-      if (lower.startsWith(family) || lower.includes(`-${family}`) || lower.includes(`/${family}`)) return ratio;
+      if (lower.startsWith(family) || lower.includes(`-${family}`) || lower.includes(`/${family}`))
+        return ratio;
     } else {
       if (lower.includes(family)) return ratio;
     }

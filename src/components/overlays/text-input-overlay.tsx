@@ -5,7 +5,7 @@ import { OverlayPanel } from './overlay-panel.js';
 import { MultilineInput } from '../input/multiline-input.js';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth } from '../../core/layout/terminal-width.js';
+import { getClampedTerminalWidth } from '../../features/workflow/layout/terminal-width.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 
 interface TextInputOverlayProps {
@@ -30,12 +30,14 @@ export function TextInputOverlay({
   onSubmit,
 }: TextInputOverlayProps) {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
+  const cols = terminalSizeStore.use((s) => s.cols);
   const [value, setValue] = useState(initialValue);
 
   useEffect(() => {
     overlayStore.setExclusive(true);
-    return () => { overlayStore.setExclusive(false); };
+    return () => {
+      overlayStore.setExclusive(false);
+    };
   }, []);
 
   const handleSubmit = (text: string) => {
@@ -44,12 +46,7 @@ export function TextInputOverlay({
   };
 
   return (
-    <OverlayPanel
-      title={title}
-      hint="Enter to save  Esc to go back"
-      width="auto"
-      maxWidth={70}
-    >
+    <OverlayPanel title={title} hint="Enter to save  Esc to go back" width="auto" maxWidth={70}>
       <Box flexDirection="column" gap={1}>
         <Text color={t.textDim}>{label}</Text>
         <Box
@@ -75,9 +72,14 @@ export function TextInputOverlay({
         </Box>
         {examples && examples.length > 0 && (
           <Box marginTop={1} flexDirection="column">
-            <Text color={t.textDim} dimColor>Examples:</Text>
+            <Text color={t.textDim} dimColor>
+              Examples:
+            </Text>
             {examples.map((ex) => (
-              <Text key={ex} color={t.textDim} dimColor>  {ex}</Text>
+              <Text key={ex} color={t.textDim} dimColor>
+                {' '}
+                {ex}
+              </Text>
             ))}
           </Box>
         )}

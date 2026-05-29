@@ -14,15 +14,15 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
-import type { RuntimeCommandContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandContext,
+  RuntimeCommandDef,
+} from '../../core/runtime/commands/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { tick } from '#testing/helpers/ink.js';
 import { CommandPaletteOverlay } from './overlay.js';
 
-function write(
-  instance: ReturnType<typeof render>,
-  chars: string,
-): void {
+function write(instance: ReturnType<typeof render>, chars: string): void {
   instance.stdin.write(chars);
 }
 
@@ -76,11 +76,13 @@ function renderCommandPalette(): ReturnType<typeof render> {
   return render(
     <CommandPaletteOverlay
       commands={commands}
-      onRuntimeCommand={(raw) => executeRuntimeCommand(commands, raw, {
-        screen: routerStore.get().screen,
-        phase: lifecycleStore.get().phase,
-        onError: feedbackStore.setError,
-      })}
+      onRuntimeCommand={(raw) =>
+        executeRuntimeCommand(commands, raw, {
+          screen: routerStore.get().screen,
+          phase: lifecycleStore.get().phase,
+          onError: feedbackStore.setError,
+        })
+      }
       onWorkflowMode={setWorkflowModeForTest}
     />,
   );
@@ -123,7 +125,8 @@ afterEach(() => {
 describe('CommandPaletteOverlay', () => {
   it('renders the palette shell with default command sources', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('Command Palette');
     expect(frame).toContain('navigate');
@@ -134,14 +137,17 @@ describe('CommandPaletteOverlay', () => {
 
   it('typing and backspace update the query text shown on screen', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'hel');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(instance.lastFrame() ?? '').toContain('hel_');
     write(instance, BACKSPACE);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('he_');
@@ -151,10 +157,12 @@ describe('CommandPaletteOverlay', () => {
 
   it('shows "No matching commands" when query has no matches', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'xyzzyxyzzy');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.toLowerCase()).toContain('no matching commands');
@@ -163,11 +171,13 @@ describe('CommandPaletteOverlay', () => {
 
   it('Escape closes the overlay', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('command-palette');
     write(instance, ESC);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('none');
     instance.unmount();
@@ -175,14 +185,17 @@ describe('CommandPaletteOverlay', () => {
 
   it('arrow keys move the visible cursor between results', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const initial = instance.lastFrame() ?? '';
     write(instance, DOWN);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     const afterDown = instance.lastFrame() ?? '';
     write(instance, UP);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     const afterUp = instance.lastFrame() ?? '';
 
     expect(afterDown).not.toBe(initial);
@@ -192,13 +205,15 @@ describe('CommandPaletteOverlay', () => {
 
   it('Enter selects the highlighted command, records MRU, and closes the palette', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('command-palette');
     expect(commandPaletteMruStore.get().ids).toHaveLength(0);
 
     write(instance, ENTER);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('help');
     expect(commandPaletteMruStore.get().ids).toEqual(['command:Help']);
@@ -206,14 +221,21 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('session items from disk appear in results when query matches', async () => {
-    const session = makeSession({ id: 'sess-abc', feature: 'add login form', status: 'interrupted', summary: null });
+    const session = makeSession({
+      id: 'sess-abc',
+      feature: 'add login form',
+      status: 'interrupted',
+      summary: null,
+    });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
 
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'add login');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('[session]');
@@ -228,7 +250,12 @@ describe('CommandPaletteOverlay', () => {
         ...baseConfig,
         palette: {
           customActions: [
-            { id: 'my-cmd', label: 'SuperUniquePaletteAction', description: 'zxqwerty', command: '/refresh' },
+            {
+              id: 'my-cmd',
+              label: 'SuperUniquePaletteAction',
+              description: 'zxqwerty',
+              command: '/refresh',
+            },
           ],
         },
       },
@@ -236,10 +263,12 @@ describe('CommandPaletteOverlay', () => {
     });
 
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'SuperUniquePaletteAction');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('SuperUniquePaletteAction');
@@ -254,7 +283,11 @@ describe('CommandPaletteOverlay', () => {
         ...baseConfig,
         palette: {
           customActions: [
-            { id: 'open-settings-custom', label: 'Open Settings Custom Action', command: '/settings' },
+            {
+              id: 'open-settings-custom',
+              label: 'Open Settings Custom Action',
+              command: '/settings',
+            },
           ],
         },
       },
@@ -262,12 +295,15 @@ describe('CommandPaletteOverlay', () => {
     });
 
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'Open Settings Custom Action');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     write(instance, ENTER);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('settings');
     instance.unmount();
@@ -279,13 +315,17 @@ describe('CommandPaletteOverlay', () => {
     { phase: 'validating-task', showsTask: true },
     { phase: 'escalating', showsTask: true },
   ] as const)('task item visibility follows the $phase phase', async ({ phase, showsTask }) => {
-    tasksStore.__testReset({ tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }] });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }],
+    });
     lifecycleStore.__testReset({ phase });
 
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     write(instance, 'uniquetasktitle123');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     if (showsTask) {
@@ -298,10 +338,12 @@ describe('CommandPaletteOverlay', () => {
 
   it('mode items are shown in results', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'standard');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('[mode]');
     instance.unmount();
@@ -309,12 +351,15 @@ describe('CommandPaletteOverlay', () => {
 
   it('executes the injected workflow mode action', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'instant');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     write(instance, ENTER);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(configStore.get().config?.workflow.mode).toBe('instant');
     expect(overlayStore.get().active).toBe('none');
@@ -323,10 +368,12 @@ describe('CommandPaletteOverlay', () => {
 
   it('picker items are shown in results', async () => {
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, 'Settings');
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
     const frame = instance.lastFrame() ?? '';
     expect(frame).toMatch(/Settings/);
     instance.unmount();
@@ -334,7 +381,12 @@ describe('CommandPaletteOverlay', () => {
 
   it('session action does not double-close overlay (underlying overlay survives)', async () => {
     const uniqueFeature = 'uniquefeaturexyz987';
-    const session = makeSession({ id: 'sess-regression', feature: uniqueFeature, status: 'interrupted', summary: null });
+    const session = makeSession({
+      id: 'sess-regression',
+      feature: uniqueFeature,
+      status: 'interrupted',
+      summary: null,
+    });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
 
     overlayStore.reset();
@@ -342,16 +394,19 @@ describe('CommandPaletteOverlay', () => {
     overlayStore.open('command-palette');
 
     const instance = renderCommandPalette();
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     write(instance, uniqueFeature);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('[session]');
 
     write(instance, ENTER);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     expect(overlayStore.get().active).toBe('settings');
 

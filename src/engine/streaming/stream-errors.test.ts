@@ -12,7 +12,9 @@ describe('streamError factories', () => {
   });
 
   test('connectionRefused threads cause', () => {
-    const cause = Object.assign(new Error('ECONNREFUSED 127.0.0.1:11434'), { code: 'ECONNREFUSED' });
+    const cause = Object.assign(new Error('ECONNREFUSED 127.0.0.1:11434'), {
+      code: 'ECONNREFUSED',
+    });
     const err = streamError.connectionRefused('ollama', 'http://localhost:11434', cause);
     expect(err.cause).toBe(cause);
   });
@@ -36,7 +38,11 @@ describe('streamError factories', () => {
   });
 
   test('httpStatus redacts secrets in message', () => {
-    const err = streamError.httpStatus('openai', 500, 'leaked sk-ant-1234567890abcdefghijklmnopqrstuvwxyz boom');
+    const err = streamError.httpStatus(
+      'openai',
+      500,
+      'leaked sk-ant-1234567890abcdefghijklmnopqrstuvwxyz boom',
+    );
     expect(err.message).not.toContain('sk-ant-1234567890abcdefghijklmnopqrstuvwxyz');
     expect(err.message).toContain('***REDACTED***');
     expect(err.data.detail).not.toContain('sk-ant-1234567890abcdefghijklmnopqrstuvwxyz');

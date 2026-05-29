@@ -8,10 +8,12 @@ import { buildPricingFields } from './metadata.js';
 const TogetherModelSchema = z.object({
   id: z.string(),
   context_length: z.number().optional(),
-  pricing: z.object({
-    input: z.number().optional(),
-    output: z.number().optional(),
-  }).optional(),
+  pricing: z
+    .object({
+      input: z.number().optional(),
+      output: z.number().optional(),
+    })
+    .optional(),
 });
 
 type TogetherModel = z.infer<typeof TogetherModelSchema>;

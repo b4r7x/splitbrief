@@ -62,7 +62,9 @@ describe('loadRenderer', () => {
     const result = await loadRenderer(join(tmp, 'does-not-exist.js'), tmp);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason.toLowerCase()).toMatch(/not found|enoent|cannot find module|no such file/i);
+      expect(result.reason.toLowerCase()).toMatch(
+        /not found|enoent|cannot find module|no such file/i,
+      );
     }
   });
 
@@ -115,7 +117,7 @@ describe('renderHandoffWithCustom', () => {
   it('delegates to sync renderHandoff for built-in targets without loading a file', async () => {
     const pack = await renderHandoffWithCustom({ ...baseInput, target: 'spec-kit' }, tmp);
     expect(pack.files.length).toBeGreaterThan(0);
-    expect(pack.files.some(f => f.path.startsWith('tasks/'))).toBe(true);
+    expect(pack.files.some((f) => f.path.startsWith('tasks/'))).toBe(true);
   });
 
   it('loads and calls a custom renderer for an unknown target when trusted', async () => {
@@ -128,7 +130,9 @@ describe('renderHandoffWithCustom', () => {
       }`,
     );
 
-    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'my-custom' }, tmp, { trustCustomRenderers: true });
+    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'my-custom' }, tmp, {
+      trustCustomRenderers: true,
+    });
     expect(pack.files).toHaveLength(1);
     expect(pack.files[0]?.path).toBe('custom.md');
     expect(pack.files[0]?.content).toBe('from custom renderer');
@@ -151,7 +155,9 @@ describe('renderHandoffWithCustom', () => {
 
   it('throws with "unknown target" message when no built-in or custom renderer found', async () => {
     await expect(
-      renderHandoffWithCustom({ ...baseInput, target: 'no-such-renderer' }, tmp, { trustCustomRenderers: true }),
+      renderHandoffWithCustom({ ...baseInput, target: 'no-such-renderer' }, tmp, {
+        trustCustomRenderers: true,
+      }),
     ).rejects.toThrow('unknown target: no-such-renderer. No built-in or custom renderer found.');
   });
 });

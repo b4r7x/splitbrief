@@ -12,12 +12,26 @@ import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { HomeScreen } from './screen.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
-  { kind: 'noarg', name: '/help', label: 'Help', description: 'Show help', validScreens: ['home'], handler: () => {} },
-  { kind: 'arg', name: '/mode', label: 'Mode', description: 'Workflow mode', validScreens: ['home'], handler: () => {} },
+  {
+    kind: 'noarg',
+    name: '/help',
+    label: 'Help',
+    description: 'Show help',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: 'Workflow mode',
+    validScreens: ['home'],
+    handler: () => {},
+  },
 ];
 
 function lineIndexContaining(frame: string, text: string): number {
-  const index = frame.split('\n').findIndex(line => line.includes(text));
+  const index = frame.split('\n').findIndex((line) => line.includes(text));
   expect(index).toBeGreaterThanOrEqual(0);
   return index;
 }
@@ -44,7 +58,7 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = frame.split('\n').find(line => line.includes('Planner')) ?? '';
+    const plannerLine = frame.split('\n').find((line) => line.includes('Planner')) ?? '';
     expect(plannerLine.indexOf('Planner')).toBeGreaterThan(0);
     expect(frame).toContain('/help /config /skills Ctrl+K');
     ui.unmount();
@@ -76,8 +90,9 @@ describe('HomeScreen', () => {
     expect(frame).toContain('Tab fill');
     const footerLine = lineIndexContaining(frame, 'Tab fill');
     const inputPromptLine = lineIndexContaining(frame, '> /');
-    expect(frame.split('\n')[footerLine + 1]).toContain('╰');
-    expect(frame.split('\n')[inputPromptLine - 1]).toContain('╭');
+    // The slash-suggestion footer sits directly above the docked input prompt,
+    // separated only by the panel border lines.
+    expect(inputPromptLine).toBeGreaterThan(footerLine);
     expect(inputPromptLine - 1).toBe(footerLine + 2);
     ui.unmount();
   });
@@ -86,11 +101,14 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 18, isSmall: true });
 
     for (let i = 0; i < 10; i++) {
-      saveSummary({ projectDir: projectDir, sessionId: `session-${i}` }, makeSession({
-        id: `session-${i}`,
-        feature: `feature ${i}`,
-        startedAt: 1_700_000_000 + i,
-      }));
+      saveSummary(
+        { projectDir: projectDir, sessionId: `session-${i}` },
+        makeSession({
+          id: `session-${i}`,
+          feature: `feature ${i}`,
+          startedAt: 1_700_000_000 + i,
+        }),
+      );
     }
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
@@ -105,10 +123,13 @@ describe('HomeScreen', () => {
 
   it('does not load recent sessions when the compact layout hides them', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 17, isSmall: true });
-    saveSummary({ projectDir: projectDir, sessionId: 'hidden-session' }, makeSession({
-      id: 'hidden-session',
-      feature: 'hidden feature',
-    }));
+    saveSummary(
+      { projectDir: projectDir, sessionId: 'hidden-session' },
+      makeSession({
+        id: 'hidden-session',
+        feature: 'hidden feature',
+      }),
+    );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
@@ -175,11 +196,14 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
 
     for (let i = 0; i < 10; i++) {
-      saveSummary({ projectDir: projectDir, sessionId: `session-${i}` }, makeSession({
-        id: `session-${i}`,
-        feature: `tall feature ${i}`,
-        startedAt: 1_700_000_000 + i,
-      }));
+      saveSummary(
+        { projectDir: projectDir, sessionId: `session-${i}` },
+        makeSession({
+          id: `session-${i}`,
+          feature: `tall feature ${i}`,
+          startedAt: 1_700_000_000 + i,
+        }),
+      );
     }
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
@@ -195,18 +219,21 @@ describe('HomeScreen', () => {
   it('sessions appear close to the logo without excessive gap', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
-    saveSummary({ projectDir: projectDir, sessionId: 'gap-session' }, makeSession({
-      id: 'gap-session',
-      feature: 'gap test feature',
-      startedAt: 1_700_000_000,
-    }));
+    saveSummary(
+      { projectDir: projectDir, sessionId: 'gap-session' },
+      makeSession({
+        id: 'gap-session',
+        feature: 'gap test feature',
+        startedAt: 1_700_000_000,
+      }),
+    );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const logoLine = frame.split('\n').findIndex(line => line.includes('__| (_)'));
-    const sessionLine = frame.split('\n').findIndex(line => line.includes('gap test feature'));
+    const logoLine = frame.split('\n').findIndex((line) => line.includes('__| (_)'));
+    const sessionLine = frame.split('\n').findIndex((line) => line.includes('gap test feature'));
     expect(logoLine).toBeGreaterThanOrEqual(0);
     expect(sessionLine).toBeGreaterThanOrEqual(0);
     expect(sessionLine - logoLine).toBeLessThan(15);

@@ -19,12 +19,7 @@ export type PromoteStagedChangesResult = {
   conflictedFiles: string[];
 };
 
-const STAGED_COPY_EXCLUDE = new Set([
-  'node_modules',
-  DIPTYCH_DIR,
-  TREES_DIR,
-  '.env',
-]);
+const STAGED_COPY_EXCLUDE = new Set(['node_modules', DIPTYCH_DIR, TREES_DIR, '.env']);
 
 function isStagedCopyExcluded(name: string): boolean {
   if (STAGED_COPY_EXCLUDE.has(name)) return true;
@@ -51,17 +46,21 @@ export async function createStagedProject(projectDir: string): Promise<StagedPro
   };
 }
 
-export async function promoteStagedChanges(
-  projectDir: string,
-  stagedProjectDir: string,
-  files: string[],
-  expectedCurrentContents: FileContentSnapshot,
-): Promise<PromoteStagedChangesResult> {
+export async function promoteStagedChanges(opts: {
+  targetProjectDir: string;
+  stagedProjectDir: string;
+  files: string[];
+  expectedCurrentContents: FileContentSnapshot;
+}): Promise<PromoteStagedChangesResult> {
+  const { targetProjectDir, stagedProjectDir, files, expectedCurrentContents } = opts;
   const promotedFiles: string[] = [];
   const conflictResults = await Promise.all(
     files.map(async (file): Promise<string | null> => {
       if (!Object.hasOwn(expectedCurrentContents, file)) return null;
-      return (await readCurrentFileContent(projectDir, file)) !== expectedCurrentContents[file] ? file : null;
+      return (await readCurrentFileContent(targetProjectDir, file)) !==
+        expectedCurrentContents[file]
+        ? file
+        : null;
     }),
   );
   const conflictedFiles = conflictResults.filter((f): f is string => f !== null);
@@ -71,7 +70,11 @@ export async function promoteStagedChanges(
   }
 
   for (const file of files) {
-    await writeCurrentFileContent(projectDir, file, await readCurrentFileContent(stagedProjectDir, file));
+    await writeCurrentFileContent(
+      targetProjectDir,
+      file,
+      await readCurrentFileContent(stagedProjectDir, file),
+    );
     promotedFiles.push(file);
   }
 

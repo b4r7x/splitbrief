@@ -1,9 +1,8 @@
-import type OpenAI from 'openai';
 import type { ProviderDef, ProviderOverrides } from './types.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/types/config-options.js';
-import { createClientFromProvider, validateProviderBaseURL } from './client.js';
+import { validateProviderBaseURL } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenRouterProvider } from './openrouter.js';
@@ -11,7 +10,7 @@ import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic/adapter.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
-import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
+import { PROVIDER_CATALOG, isSameOrigin } from '../../core/providers/catalog.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
@@ -37,7 +36,12 @@ function buildOpenAICompatFactories(): Partial<Record<ProviderId, ProviderFactor
     if (!info.baseURL || !info.apiKeyEnv) continue;
     const { id, baseURL, apiKeyEnv } = info;
     out[id] = (overrides?: ProviderOverrides) =>
-      createOpenAICompatProvider(id, baseURL, apiKeyEnv, false, overrides);
+      createOpenAICompatProvider({
+        name: id,
+        defaultBaseURL: baseURL,
+        envKeyName: apiKeyEnv,
+        overrides,
+      });
   }
   return out;
 }
@@ -60,25 +64,23 @@ export function getProvider(name: string, overrides?: ProviderOverrides): Provid
   }
   if (!overrides?.apiBase) throw providerError.unknownNeedsApiBase(name);
   if (!overrides.apiKey) throw providerError.unknownNeedsApiKey(name);
-  return createOpenAICompatProvider(name, overrides.apiBase, '', false, overrides);
+  return createOpenAICompatProvider({
+    name,
+    defaultBaseURL: overrides.apiBase,
+    envKeyName: '',
+    overrides,
+  });
 }
 
 function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): void {
   if (!isProviderId(name)) return;
   const info = PROVIDER_CATALOG[name];
   if (!info.apiKeyEnv) return;
-  if (info.baseURL && isSameProviderBaseURL(overrides.apiBase, info.baseURL)) return;
+  if (info.baseURL && overrides.apiBase && isSameOrigin(overrides.apiBase, info.baseURL)) return;
   if (overrides.apiKey) return;
   const envKey = process.env[info.apiKeyEnv];
   if (!envKey) return;
   throw providerError.apiBaseExfiltration(name, info.apiKeyEnv);
-}
-
-function isSameProviderBaseURL(candidate: string | undefined, expected: string): boolean {
-  if (!candidate) return false;
-  const candidateUrl = new URL(candidate);
-  const expectedUrl = new URL(expected);
-  return candidateUrl.origin === expectedUrl.origin;
 }
 
 function getImplementerProvider(config: Config): ProviderDef {
@@ -88,12 +90,6 @@ function getImplementerProvider(config: Config): ProviderDef {
     apiBase: impl.apiBase,
     apiKey: impl.apiKey,
   });
-}
-
-export function createClient(config: Config): OpenAI {
-  const provider = getImplementerProvider(config);
-  if (provider.name === 'anthropic') throw providerError.anthropicNotOpenAICompat();
-  return createClientFromProvider(provider);
 }
 
 export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {

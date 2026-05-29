@@ -1,9 +1,17 @@
-import { trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Context, type TracerProvider } from '@opentelemetry/api';
+import {
+  trace,
+  ROOT_CONTEXT,
+  SpanKind,
+  SpanStatusCode,
+  type Span,
+  type Context,
+  type TracerProvider,
+} from '@opentelemetry/api';
 import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import { redactSecrets } from '../../../utils/redact.js';
-import * as typeGuards from '../../../utils/type-guards.js';
+import { assertNever } from '../../../utils/type-guards.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
@@ -24,10 +32,14 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
   return (event: EngineEvent) => {
     switch (event.type) {
       case 'workflow_started': {
-        workflowSpan = tracer.startSpan('diptych.workflow', {
-          kind: SpanKind.INTERNAL,
-          attributes: { 'diptych.feature': event.feature },
-        }, ROOT_CONTEXT);
+        workflowSpan = tracer.startSpan(
+          'diptych.workflow',
+          {
+            kind: SpanKind.INTERNAL,
+            attributes: { 'diptych.feature': event.feature },
+          },
+          ROOT_CONTEXT,
+        );
         workflowCtx = trace.setSpan(ROOT_CONTEXT, workflowSpan);
         return;
       }
@@ -35,16 +47,21 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         if (workflowSpan) {
           workflowSpan.setAttribute('diptych.mode', event.mode);
           workflowSpan.setAttribute('diptych.planner.tool', event.plannerTool);
-          if (event.plannerModel) workflowSpan.setAttribute('diptych.planner.model', event.plannerModel);
+          if (event.plannerModel)
+            workflowSpan.setAttribute('diptych.planner.model', event.plannerModel);
           workflowSpan.setAttribute('diptych.implementer.tool', event.implementerTool);
-          if (event.implementerModel) workflowSpan.setAttribute('diptych.implementer.model', event.implementerModel);
+          if (event.implementerModel)
+            workflowSpan.setAttribute('diptych.implementer.model', event.implementerModel);
         }
         return;
       }
       case 'workflow_complete': {
         for (const t of taskSpans.values()) t.end();
         taskSpans.clear();
-        if (phaseSpan) { phaseSpan.end(); phaseSpan = null; }
+        if (phaseSpan) {
+          phaseSpan.end();
+          phaseSpan = null;
+        }
         if (workflowSpan) {
           workflowSpan.setStatus({ code: SpanStatusCode.OK });
           workflowSpan.end();
@@ -73,9 +90,13 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'planner_status': {
         if (event.status === 'running' && event.phase !== lastPhase && workflowSpan) {
           if (phaseSpan) phaseSpan.end();
-          phaseSpan = tracer.startSpan(`diptych.phase.${event.phase}`, {
-            attributes: { 'diptych.phase': event.phase },
-          }, workflowCtx);
+          phaseSpan = tracer.startSpan(
+            `diptych.phase.${event.phase}`,
+            {
+              attributes: { 'diptych.phase': event.phase },
+            },
+            workflowCtx,
+          );
           phaseCtx = trace.setSpan(workflowCtx, phaseSpan);
           lastPhase = event.phase;
         }
@@ -89,16 +110,20 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'task_started': {
         if (workflowSpan) {
           const parentCtx = phaseSpan ? phaseCtx : workflowCtx;
-          const span = tracer.startSpan('diptych.task', {
-            attributes: {
-              'diptych.task.id': taskIdToString(event.taskId),
-              'diptych.task.title': event.title,
-              'diptych.task.file': event.file,
-              'diptych.task.action': event.action,
-              'diptych.task.index': event.index,
-              'diptych.task.total': event.total,
+          const span = tracer.startSpan(
+            'diptych.task',
+            {
+              attributes: {
+                'diptych.task.id': taskIdToString(event.taskId),
+                'diptych.task.title': event.title,
+                'diptych.task.file': event.file,
+                'diptych.task.action': event.action,
+                'diptych.task.index': event.index,
+                'diptych.task.total': event.total,
+              },
             },
-          }, parentCtx);
+            parentCtx,
+          );
           taskSpans.set(taskIdToString(event.taskId), span);
         }
         return;
@@ -135,8 +160,14 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'cost_update': {
         if (workflowSpan) {
-          workflowSpan.setAttribute('diptych.cost.input_tokens', totalInputTokens(event.tokenUsage));
-          workflowSpan.setAttribute('diptych.cost.output_tokens', totalOutputTokens(event.tokenUsage));
+          workflowSpan.setAttribute(
+            'diptych.cost.input_tokens',
+            totalInputTokens(event.tokenUsage),
+          );
+          workflowSpan.setAttribute(
+            'diptych.cost.output_tokens',
+            totalOutputTokens(event.tokenUsage),
+          );
         }
         return;
       }
@@ -161,7 +192,9 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'warning': {
         if (workflowSpan) {
-          workflowSpan.addEvent('diptych.warning', { 'diptych.warning.message': redactSecrets(event.message) });
+          workflowSpan.addEvent('diptych.warning', {
+            'diptych.warning.message': redactSecrets(event.message),
+          });
         }
         return;
       }
@@ -231,7 +264,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'replay_complete':
         return;
       default:
-        return typeGuards.assertNever(event);
+        return assertNever(event);
     }
   };
 }

@@ -5,7 +5,9 @@ import { SessionSchema } from '../../core/schemas/session.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../core/schemas/evidence.js';
 import { BRIEF_QUALITY_FILE, DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
+import { countBySeverity } from '../../utils/collections.js';
 import { isBriefQualityReport } from '../spec/brief-quality.js';
+import { buildEvidenceSummary } from '../orchestrator/evidence/reporting.js';
 import { isDriftReport } from '../../core/schemas/drift.js';
 import { renderSessionHtml } from './html-renderer.js';
 import type { BriefQualityExport, DriftExport, EvidenceExport, ExportData } from './types.js';
@@ -24,10 +26,12 @@ export function collectExportData(sessionDirectory: string, sessionId: string): 
   if (!existsSync(summaryPath)) return { status: 'missing' };
 
   const raw = readJsonSafe(summaryPath);
-  if (raw === null) return { status: 'invalid', reason: 'summary.json exists but could not be parsed as JSON' };
+  if (raw === null)
+    return { status: 'invalid', reason: 'summary.json exists but could not be parsed as JSON' };
 
   const base = readSummaryExport(raw, sessionId);
-  if (!base) return { status: 'invalid', reason: 'summary.json does not match the expected schema' };
+  if (!base)
+    return { status: 'invalid', reason: 'summary.json does not match the expected schema' };
 
   const evidence = readEvidenceExport(sessionDirectory);
   const drift = readDriftExport(sessionDirectory);
@@ -50,14 +54,18 @@ export function writeSessionHtmlReport(
   outPath = join(sessionDirectory, 'report.html'),
 ): WriteSessionHtmlReportResult {
   const result = collectExportData(sessionDirectory, sessionId);
-  if (result.status === 'missing') return { status: 'error', error: 'No summary.json found for session' };
+  if (result.status === 'missing')
+    return { status: 'error', error: 'No summary.json found for session' };
   if (result.status === 'invalid') return { status: 'error', error: result.reason };
 
   writeSecureFile(outPath, renderSessionHtml(result.data));
   return { status: 'ok', path: outPath };
 }
 
-function readSummaryExport(raw: unknown, sessionId: string): Omit<ExportData, 'evidence' | 'drift' | 'briefQuality'> | null {
+function readSummaryExport(
+  raw: unknown,
+  sessionId: string,
+): Omit<ExportData, 'evidence' | 'drift' | 'briefQuality'> | null {
   const session = SessionSchema.safeParse(raw);
   if (session.success && session.data.summary) {
     const { completedAt } = session.data;
@@ -92,11 +100,12 @@ function readEvidenceExport(sessionDirectory: string): EvidenceExport | null {
 }
 
 function evidenceToExport(ledger: EvidenceLedger): EvidenceExport {
+  const summary = buildEvidenceSummary(ledger);
   return {
-    totalTasks: ledger.tasks.length,
-    tasksWithValidationEvidence: ledger.tasks.filter(task => task.validation.some(entry => entry.passed)).length,
-    escalatedTasks: ledger.tasks.filter(task => task.status === 'escalated' || task.escalated).length,
-    failedTasks: ledger.tasks.filter(task => task.status === 'failed').length,
+    totalTasks: summary.totalTasks,
+    tasksWithValidationEvidence: summary.tasksWithValidationEvidence,
+    escalatedTasks: summary.escalatedTasks,
+    failedTasks: summary.failedTasks,
   };
 }
 
@@ -104,11 +113,12 @@ function readDriftExport(sessionDirectory: string): DriftExport | null {
   const raw = readJsonSafe(join(sessionDirectory, DRIFT_REPORT_FILE));
   if (!isDriftReport(raw)) return null;
 
+  const counts = countBySeverity(raw.findings);
   return {
     passed: raw.passed,
     score: raw.score,
-    errorCount: raw.findings.filter(finding => finding.severity === 'error').length,
-    warningCount: raw.findings.filter(finding => finding.severity === 'warning').length,
+    errorCount: counts.error,
+    warningCount: counts.warning,
   };
 }
 
@@ -116,11 +126,11 @@ function readBriefQualityExport(sessionDirectory: string): BriefQualityExport | 
   const raw = readJsonSafe(join(sessionDirectory, BRIEF_QUALITY_FILE));
   if (!isBriefQualityReport(raw)) return null;
 
+  const counts = countBySeverity(raw.issues);
   return {
     score: raw.score,
     passed: raw.passed,
-    errorCount: raw.issues.filter(issue => issue.severity === 'error').length,
-    warningCount: raw.issues.filter(issue => issue.severity === 'warning').length,
+    errorCount: counts.error,
+    warningCount: counts.warning,
   };
 }
-

@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
-import type { HandoffTarget } from '../../core/handoff/targets.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
+import type { Config } from '../../core/schemas/config.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SessionSchema } from '../../core/schemas/session.js';
 import { renderHandoffWithCustom } from './render.js';
@@ -14,13 +14,14 @@ import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
 import { assertPathConfined } from '../../lib/path-confinement.js';
+import { getCurrentCommitSha } from '../../lib/git.js';
 import { error, matches } from '../../utils/error.js';
 
 export type WriteHandoffOptions = {
   projectDir: string;
   sessionId: string;
-  // Widened to string to support custom renderers alongside built-in HandoffTarget values
-  target: HandoffTarget | string;
+  // String to support custom renderers alongside the built-in targets.
+  target: string;
   outDir: string;
   selectedTaskIds?: string[];
   mode: 'default' | 'append' | 'overwrite';
@@ -33,7 +34,8 @@ export type WriteHandoffResult = {
 };
 
 export const handoffWriteError = {
-  stateNotFound: (sessionId: string) => error('handoff-state-not-found', `no state found for session: ${sessionId}`, { sessionId }),
+  stateNotFound: (sessionId: string) =>
+    error('handoff-state-not-found', `no state found for session: ${sessionId}`, { sessionId }),
   unknownTaskId: (id: string) => error('handoff-unknown-task-id', `unknown task id: ${id}`, { id }),
   outputDirectoryExists: (outDir: string) =>
     error(
@@ -74,21 +76,6 @@ function assertSafeOverwriteTarget(outDir: string, projectDir: string): void {
   throw handoffWriteError.unsafeOverwriteTarget(outDir);
 }
 
-function resolveValidationCommands(projectDir: string): {
-  validation: { typecheck?: string; lint?: string; test?: string };
-  configMode?: WorkflowMode;
-} {
-  const { config } = loadConfig(projectDir);
-  return {
-    validation: {
-      ...(config.validation.typecheck ? { typecheck: 'npm run typecheck' } : {}),
-      ...(config.validation.lint ? { lint: 'npm run lint' } : {}),
-      ...(config.validation.test ? { test: config.validation.testCommand ?? 'npm test' } : {}),
-    },
-    ...(config.workflow.mode !== undefined ? { configMode: config.workflow.mode } : {}),
-  };
-}
-
 export async function writeHandoffPack(options: WriteHandoffOptions): Promise<WriteHandoffResult> {
   const { projectDir, sessionId, target, outDir, selectedTaskIds, mode } = options;
 
@@ -100,15 +87,23 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   const specContent = readSpecFile(projectDir, sessionId, SPEC_FILE) ?? undefined;
   const planContent = readSpecFile(projectDir, sessionId, PLAN_FILE) ?? undefined;
 
-  let validation: { typecheck?: string; lint?: string; test?: string } = {};
-  let configMode: WorkflowMode | undefined;
+  let loadedConfig: Config | undefined;
   try {
-    const resolved = resolveValidationCommands(projectDir);
-    validation = resolved.validation;
-    configMode = resolved.configMode;
+    loadedConfig = loadConfig(projectDir).config;
   } catch {
-    // config absent or invalid — use empty validation
+    // config absent or invalid — use empty validation and untrusted renderers
   }
+
+  const validation: { typecheck?: string; lint?: string; test?: string } = loadedConfig
+    ? {
+        ...(loadedConfig.validation.typecheck ? { typecheck: 'npm run typecheck' } : {}),
+        ...(loadedConfig.validation.lint ? { lint: 'npm run lint' } : {}),
+        ...(loadedConfig.validation.test
+          ? { test: loadedConfig.validation.testCommand ?? 'npm test' }
+          : {}),
+      }
+    : {};
+  const configMode: WorkflowMode | undefined = loadedConfig?.workflow.mode;
 
   let summaryMode: WorkflowMode | undefined;
   try {
@@ -134,8 +129,8 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   const brandedTaskIds = selectedTaskIds?.map(taskId);
   const filteredTasks = brandedTaskIds
-    ? brandedTaskIds.map(id => {
-        const task = state.tasks.find(t => t.id === id);
+    ? brandedTaskIds.map((id) => {
+        const task = state.tasks.find((t) => t.id === id);
         if (!task) throw handoffWriteError.unknownTaskId(id);
         return task;
       })
@@ -145,25 +140,24 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   let trustCustomRenderers = options.allowCustomRenderer ?? false;
   if (!trustCustomRenderers) {
-    try {
-      const { config: currentConfig } = loadConfig(projectDir);
-      trustCustomRenderers = currentConfig.trust?.customRenderers ?? false;
-    } catch {
-      // config absent or invalid — default to untrusted
-    }
+    trustCustomRenderers = loadedConfig?.trust?.customRenderers ?? false;
   }
 
-  const pack = await renderHandoffWithCustom({
-    target,
-    sessionId,
-    feature: state.feature,
-    mode: resolvedMode,
-    tasks: filteredTasks,
-    ...(specContent !== undefined && { spec: specContent }),
-    ...(planContent !== undefined && { plan: planContent }),
-    ...(constitutionContent !== undefined && { constitution: constitutionContent }),
-    validation,
-  }, projectDir, { trustCustomRenderers });
+  const pack = await renderHandoffWithCustom(
+    {
+      target,
+      sessionId,
+      feature: state.feature,
+      mode: resolvedMode,
+      tasks: filteredTasks,
+      ...(specContent !== undefined && { spec: specContent }),
+      ...(planContent !== undefined && { plan: planContent }),
+      ...(constitutionContent !== undefined && { constitution: constitutionContent }),
+      validation,
+    },
+    projectDir,
+    { trustCustomRenderers },
+  );
 
   if (mode === 'default' && existsSync(outDir)) {
     throw handoffWriteError.outputDirectoryExists(outDir);
@@ -198,8 +192,8 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   }
 
   const manifestPackFiles = pack.files
-    .map(file => file.path)
-    .filter(path => existsSync(join(outDir, path)));
+    .map((file) => file.path)
+    .filter((path) => existsSync(join(outDir, path)));
 
   const sourceCommit = await tryReadGitHead(projectDir);
   const manifest = buildManifest({
@@ -222,14 +216,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
 async function tryReadGitHead(projectDir: string): Promise<string | undefined> {
   try {
-    const headPath = join(projectDir, '.git', 'HEAD');
-    const head = (await readFile(headPath, 'utf-8')).trim();
-    if (head.startsWith('ref: ')) {
-      const ref = head.slice('ref: '.length);
-      const refPath = join(projectDir, '.git', ref);
-      return (await readFile(refPath, 'utf-8')).trim();
-    }
-    return head;
+    return await getCurrentCommitSha(projectDir);
   } catch {
     return undefined;
   }

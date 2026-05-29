@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStreamingFeed, noopStreamingSink } from '../../../src/engine/orchestrator/task/streaming-feed.js';
+import {
+  createStreamingFeed,
+  noopStreamingSink,
+} from '../../../src/engine/orchestrator/task/streaming-feed.js';
 import type { StreamingSink } from '../../../src/engine/orchestrator/task/streaming-feed.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 
@@ -8,9 +11,15 @@ function fakeSink(): StreamingSink & { lines: string[][]; started: boolean; stop
     lines: [] as string[][],
     started: false,
     stopped: false,
-    start: vi.fn(() => { sink.started = true; }),
-    pushLines: vi.fn((l: string[]) => { sink.lines.push([...l]); }),
-    stop: vi.fn(() => { sink.stopped = true; }),
+    start: vi.fn(() => {
+      sink.started = true;
+    }),
+    replaceLines: vi.fn((l: string[]) => {
+      sink.lines.push([...l]);
+    }),
+    stop: vi.fn(() => {
+      sink.stopped = true;
+    }),
   };
   return sink;
 }

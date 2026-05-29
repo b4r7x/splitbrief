@@ -9,7 +9,7 @@ import {
   calculateCostBreakdown,
   calculateTaskUsageCost,
   isTaskUsageCostKnown,
-} from '../providers/pricing.js';
+} from '../providers/cost.js';
 import { formatCost } from '../../core/formatting.js';
 import {
   getCompletedTaskIds,
@@ -17,18 +17,35 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from '../../core/state/selectors.js';
-import { readEvidenceLedger } from './evidence/persistence.js';
+import { readEvidenceLedger } from '../../core/evidence/ledger.js';
 import { buildEvidenceSummary } from './evidence/reporting.js';
-import { readDriftReport } from './drift/drift.js';
+import { readDriftReport } from './drift/io.js';
 import { readDriftChainState } from './drift/chain-state.js';
-import { BRIEF_QUALITY_FILE, REVIEW_PACKET_JSON_FILE, REVIEW_PACKET_MARKDOWN_FILE, reviewPacketJsonPath, sessionDir } from '../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  REVIEW_PACKET_JSON_FILE,
+  REVIEW_PACKET_MARKDOWN_FILE,
+  reviewPacketJsonPath,
+  sessionDir,
+} from '../../core/paths.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../spec/brief-quality.js';
 import { readJsonSafe } from '../../lib/fs.js';
 import { countBySeverity } from '../../utils/collections.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
-export type SummaryBase = { feature: string; startTime: number; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string; mode?: WorkflowMode; projectDir?: string; sessionId?: string; costPrediction?: CostPrediction | undefined };
+export type SummaryBase = {
+  feature: string;
+  startTime: number;
+  plannerTool: string;
+  plannerModel?: string;
+  implementerTool: string;
+  implementerModel?: string;
+  mode?: WorkflowMode;
+  projectDir?: string;
+  sessionId?: string;
+  costPrediction?: CostPrediction | undefined;
+};
 
 type BuildSummaryOptions = {
   feature: string;
@@ -96,7 +113,21 @@ function checkpointKindLabel(checkpoint: ReviewPacketCheckpoint | null): string 
 }
 
 export function buildSummary(opts: BuildSummaryOptions): Summary {
-  const { feature, state, startTime, taskBreakdowns, plannerTool, plannerModel, implementerTool, implementerModel, phaseTimings, mode, projectDir, sessionId, costPrediction } = opts;
+  const {
+    feature,
+    state,
+    startTime,
+    taskBreakdowns,
+    plannerTool,
+    plannerModel,
+    implementerTool,
+    implementerModel,
+    phaseTimings,
+    mode,
+    projectDir,
+    sessionId,
+    costPrediction,
+  } = opts;
   const totalTasks = state.tasks.length;
   const completedByLocal = getCompletedTaskIds(state).length;
   const escalatedToPlanner = getEscalatedTaskIds(state).length;
@@ -119,20 +150,28 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ? formatCost(costBreakdown.savingsAmount)
     : 'unavailable';
 
-  const costedBreakdowns = taskBreakdowns?.map(task => {
-    const isCostKnown = isTaskUsageCostKnown(task, implementerTool, plannerTool, implementerModel, plannerModel);
+  const costedBreakdowns = taskBreakdowns?.map((task) => {
+    const isCostKnown = isTaskUsageCostKnown(
+      task,
+      implementerTool,
+      plannerTool,
+      implementerModel,
+      plannerModel,
+    );
     const { cost: _cost, ...rest } = task;
     return {
       ...rest,
       ...(isCostKnown
-        ? { cost: calculateTaskUsageCost({
-          task: task,
-          tokenUsage: state.tokenUsage,
-          implementerTool: implementerTool,
-          plannerTool: plannerTool,
-          implementerModel: implementerModel,
-          plannerModel: plannerModel,
-        }) }
+        ? {
+            cost: calculateTaskUsageCost({
+              task: task,
+              tokenUsage: state.tokenUsage,
+              implementerTool: implementerTool,
+              plannerTool: plannerTool,
+              implementerModel: implementerModel,
+              plannerModel: plannerModel,
+            }),
+          }
         : { costPosture: task.costPosture ?? 'unknown-price' }),
     };
   });
@@ -171,7 +210,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
 
     const chainState = readDriftChainState(projectDir, sessionId);
     if (chainState && chainState.emittedChains.length > 0) {
-      const best = chainState.emittedChains.reduce((a, b) => a.score >= b.score ? a : b);
+      const best = chainState.emittedChains.reduce((a, b) => (a.score >= b.score ? a : b));
       chainDriftSummary = {
         score: best.score,
         chainLength: best.chainLength,

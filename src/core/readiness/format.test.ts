@@ -43,7 +43,7 @@ describe('readiness formatting', () => {
       status: 'ready-with-warnings',
       warningCount: expect.any(Number),
     });
-    expect(record.checks.some(check => check.id === 'validation.disabled')).toBe(true);
+    expect(record.checks.some((check) => check.id === 'validation.disabled')).toBe(true);
   });
 
   it('summarizes blocker messages for CLI errors', () => {

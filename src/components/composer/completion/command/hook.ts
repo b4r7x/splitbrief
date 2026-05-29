@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { useInput } from 'ink';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { Screen } from '../../../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
@@ -7,10 +5,11 @@ import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
+import { useCompletionNavigation } from '../use-completion-navigation.js';
 
 function matchesCommandQuery(cmd: RuntimeCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
-  return cmd.aliases?.some(a => a.toLowerCase().startsWith(query)) ?? false;
+  return cmd.aliases?.some((a) => a.toLowerCase().startsWith(query)) ?? false;
 }
 
 interface UseCommandCompletionOptions {
@@ -38,18 +37,21 @@ interface LatestCommandState {
   fuzzyMatch: RuntimeCommandDef | null;
 }
 
-function buildSelectionKey(
-  currentScreen: Screen,
-  phase: Phase,
-  query: string,
-  filtered: RuntimeCommandDef[],
-  fuzzyMatch: RuntimeCommandDef | null,
-): string {
+interface SelectionKeyInput {
+  currentScreen: Screen;
+  phase: Phase;
+  query: string;
+  filtered: RuntimeCommandDef[];
+  fuzzyMatch: RuntimeCommandDef | null;
+}
+
+function buildSelectionKey(input: SelectionKeyInput): string {
+  const { currentScreen, phase, query, filtered, fuzzyMatch } = input;
   return [
     currentScreen,
     phase,
     query,
-    filtered.map(cmd => cmd.name).join('\u0000'),
+    filtered.map((cmd) => cmd.name).join('\u0000'),
     fuzzyMatch?.name ?? '',
   ].join('\u0001');
 }
@@ -62,8 +64,7 @@ export function useCommandCompletion({
   onRuntimeCommand,
   disabled,
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
-  const [inputKey, setInputKey] = useState(0);
-  const phase = lifecycleStore.use(s => s.phase);
+  const phase = lifecycleStore.use((s) => s.phase);
 
   const commandMode = value.startsWith('/');
   const query = '/' + value.slice(1).toLowerCase();
@@ -76,62 +77,47 @@ export function useCommandCompletion({
     ? validCommands.filter((cmd) => matchesCommandQuery(cmd, query))
     : [];
 
-  const fuzzyMatch = commandMode && filtered.length === 0
-    ? suggestRuntimeCommand(validCommands, query)
-    : null;
+  const fuzzyMatch =
+    commandMode && filtered.length === 0 ? suggestRuntimeCommand(validCommands, query) : null;
   const showSuggestions = commandMode && (filtered.length > 0 || fuzzyMatch !== null);
-  const selectionKey = buildSelectionKey(currentScreen, phase, query, filtered, fuzzyMatch);
-  const { effectiveSelectedIndex, latestRef, moveSelection } = useCompletionSelection<LatestCommandState>({
-    currentScreen,
-    selectionKey,
-    itemCount: filtered.length,
-    filtered,
-    fuzzyMatch,
-  });
+  const selectionKey = buildSelectionKey({ currentScreen, phase, query, filtered, fuzzyMatch });
+  const { effectiveSelectedIndex, latestRef, moveSelection } =
+    useCompletionSelection<LatestCommandState>({
+      currentScreen,
+      selectionKey,
+      itemCount: filtered.length,
+      filtered,
+      fuzzyMatch,
+    });
 
-  useInput(
-    (_input, key) => {
-      const latest = latestRef.current;
-      if (!latest) return;
-
-      if (key.escape) {
-        setValue('');
-        return;
-      }
-      if (key.upArrow) {
-        moveSelection(latest, -1);
-        return;
-      }
-      if (key.downArrow) {
-        moveSelection(latest, 1);
-        return;
-      }
-      if (key.tab) {
-        const selected = latest.filtered[latest.effectiveSelectedIndex];
-        if (selected) {
-          setValue(selected.name);
-          setInputKey((k) => k + 1);
-        } else if (latest.fuzzyMatch) {
-          setValue(latest.fuzzyMatch.name);
-          setInputKey((k) => k + 1);
-        }
-        return;
-      }
-      if (key.return) {
-        const selected = latest.filtered[latest.effectiveSelectedIndex];
-        const command = selected?.name ?? latest.fuzzyMatch?.name;
-        if (command) {
-          if (latest.currentScreen === 'home') {
-            inputHistoryStore.push(command);
-          }
-          onRuntimeCommand(command);
-          setValue('');
-        }
-        return;
+  const { inputKey, bumpInputKey } = useCompletionNavigation({
+    isActive: showSuggestions && !disabled,
+    latestRef,
+    hasItems: (l) => l.filtered.length > 0 || l.fuzzyMatch !== null,
+    onMove: (l, dir) => moveSelection(l, dir),
+    onTab: (l) => {
+      const selected = l.filtered[l.effectiveSelectedIndex];
+      if (selected) {
+        setValue(selected.name);
+        bumpInputKey();
+      } else if (l.fuzzyMatch) {
+        setValue(l.fuzzyMatch.name);
+        bumpInputKey();
       }
     },
-    { isActive: showSuggestions && !disabled },
-  );
+    onReturn: (l) => {
+      const command = l.filtered[l.effectiveSelectedIndex]?.name ?? l.fuzzyMatch?.name;
+      if (command) {
+        if (l.currentScreen === 'home') {
+          inputHistoryStore.push(command);
+        }
+        onRuntimeCommand(command);
+        setValue('');
+      }
+    },
+    onSelect: () => {},
+    onEscape: () => setValue(''),
+  });
 
   return { filtered, fuzzyMatch, selectedIndex: effectiveSelectedIndex, showSuggestions, inputKey };
 }

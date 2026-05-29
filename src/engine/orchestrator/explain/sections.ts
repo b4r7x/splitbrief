@@ -21,19 +21,31 @@ export function sessionStatus(summary: Summary | null, state: WorkflowState | nu
   return summary ? 'complete' : null;
 }
 
-export function buildCost(summary: Summary | null, packet: ReviewPacket | null, routes: RunExplainRoute[]): RunExplain['cost'] {
+export function buildCost(
+  summary: Summary | null,
+  packet: ReviewPacket | null,
+  routes: RunExplainRoute[],
+): RunExplain['cost'] {
   const costBreakdown = summary?.costBreakdown ?? packet?.cost.costBreakdown ?? null;
   const deterministic = summary?.costPrediction?.deterministic;
-  const unknownPricing = uniqueSorted([
-    ...unknownCostReasons(deterministic),
-    ...unknownCostFlags(costBreakdown),
-    ...routes.flatMap((route) => route.priceConfidence && route.priceConfidence !== 'price-known'
-      ? [`${route.taskId}: ${route.priceConfidence}`]
-      : []),
-  ], { trim: true, nonEmpty: true });
-  const confidence = costBreakdown || deterministic
-    ? unknownPricing.length > 0 ? 'partial' : 'known'
-    : 'unavailable';
+  const unknownPricing = uniqueSorted(
+    [
+      ...unknownCostReasons(deterministic),
+      ...unknownCostFlags(costBreakdown),
+      ...routes.flatMap((route) =>
+        route.priceConfidence && route.priceConfidence !== 'price-known'
+          ? [`${route.taskId}: ${route.priceConfidence}`]
+          : [],
+      ),
+    ],
+    { trim: true, nonEmpty: true },
+  );
+  const confidence =
+    costBreakdown || deterministic
+      ? unknownPricing.length > 0
+        ? 'partial'
+        : 'known'
+      : 'unavailable';
 
   return {
     actual: actualCostLabel(costBreakdown),
@@ -51,33 +63,48 @@ export function buildCost(summary: Summary | null, packet: ReviewPacket | null, 
   };
 }
 
-export function buildActivity(
-  packet: ReviewPacket | null,
-  state: WorkflowState | null,
-  events: SessionLogEventEntry[],
-): RunExplain['activity'] {
+export interface ActivityInput {
+  packet: ReviewPacket | null;
+  state: WorkflowState | null;
+  events: SessionLogEventEntry[];
+}
+
+export function buildActivity(input: ActivityInput): RunExplain['activity'] {
+  const { packet, state, events } = input;
   if (packet) return activityFromPacket(packet);
   return {
     retries: retryActivity(events),
-    escalatedTasks: taskStatusActivity(state, events, ['escalated'], ['task_escalating', 'escalate']),
+    escalatedTasks: taskStatusActivity(
+      state,
+      events,
+      ['escalated'],
+      ['task_escalating', 'escalate'],
+    ),
     skippedTasks: skippedActivity(state, events),
     failedTasks: taskStatusActivity(state, events, ['failed'], ['task_full_fail']),
     recoveryRisks: state?.pendingRecovery ? [state.pendingRecovery.message] : [],
   };
 }
 
-export function buildReview(
-  sessionId: string,
-  packet: ReviewPacket | null,
-  state: WorkflowState | null,
-  events: SessionLogEventEntry[],
-  artifacts: RunExplainArtifact[],
-): RunExplain['review'] {
+export interface ReviewInput {
+  sessionId: string;
+  packet: ReviewPacket | null;
+  state: WorkflowState | null;
+  events: SessionLogEventEntry[];
+  artifacts: RunExplainArtifact[];
+}
+
+export function buildReview(input: ReviewInput): RunExplain['review'] {
+  const { sessionId, packet, state, events, artifacts } = input;
   const taskReviewEvents = events.filter((event) => event.type === 'task_review_needed');
-  const taskReviewIds = uniqueSorted(taskReviewEvents.flatMap((event) => event.taskId ? [event.taskId] : []), { trim: true, nonEmpty: true });
+  const taskReviewIds = uniqueSorted(
+    taskReviewEvents.flatMap((event) => (event.taskId ? [event.taskId] : [])),
+    { trim: true, nonEmpty: true },
+  );
   const reviewPresent = artifacts.find((artifact) => artifact.key === 'review')?.present === true;
-  const finalReviewStatus = packet?.finalReview.status
-    ?? (reviewPresent ? 'written' : state?.phase === 'complete' ? 'unavailable' : 'not-reached');
+  const finalReviewStatus =
+    packet?.finalReview.status ??
+    (reviewPresent ? 'written' : state?.phase === 'complete' ? 'unavailable' : 'not-reached');
 
   return {
     taskReview: {
@@ -103,14 +130,23 @@ export function buildWarnings(
   packet: ReviewPacket | null,
   events: SessionLogEventEntry[],
 ): RunExplain['warnings'] {
-  const readinessWarnings = readiness?.checks
-    .filter((check) => check.severity === 'warning')
-    .map((check) => `${check.id}: ${check.summary}`) ?? [];
+  const readinessWarnings =
+    readiness?.checks
+      .filter((check) => check.severity === 'warning')
+      .map((check) => `${check.id}: ${check.summary}`) ?? [];
   const runtimeWarnings = packet
-    ? packet.escalations.warnings.flatMap((event) => event.message ? [`${event.type}: ${event.message}`] : [event.type])
+    ? packet.escalations.warnings.flatMap((event) =>
+        event.message ? [`${event.type}: ${event.message}`] : [event.type],
+      )
     : events
-      .filter((event) => event.type === 'warning' || event.type === 'budget_warning' || event.type === 'budget_paused' || event.type === 'budget_exceeded')
-      .map((event) => `${event.type}: ${eventMessage(event) ?? 'see session log'}`);
+        .filter(
+          (event) =>
+            event.type === 'warning' ||
+            event.type === 'budget_warning' ||
+            event.type === 'budget_paused' ||
+            event.type === 'budget_exceeded',
+        )
+        .map((event) => `${event.type}: ${eventMessage(event) ?? 'see session log'}`);
 
   return {
     readinessStatus: readiness?.status ?? null,
@@ -135,7 +171,9 @@ function activityFromPacket(packet: ReviewPacket): RunExplain['activity'] {
   };
 }
 
-function actualCostLabel(costBreakdown: Summary['costBreakdown'] | ReviewPacket['cost']['costBreakdown'] | null): string {
+function actualCostLabel(
+  costBreakdown: Summary['costBreakdown'] | ReviewPacket['cost']['costBreakdown'] | null,
+): string {
   if (!costBreakdown) return 'unavailable';
   const cost = formatCost(costBreakdown.totalActualCost);
   return costBreakdown.isTotalActualCostKnown === false ? `${cost} + unknown` : cost;
@@ -170,22 +208,32 @@ function savingsLabel(
 }
 
 function unknownCostReasons(deterministic: DeterministicEstimate | undefined): string[] {
-  return deterministic?.totals.unknownCostReason.map((reason) => {
-    switch (reason) {
-      case 'implementer-price-unknown': return 'implementer price unknown';
-      case 'planner-price-unknown':     return 'planner baseline price unknown';
-      case 'profile-unavailable':       return 'profile unavailable';
-      default:                          return reason;
-    }
-  }) ?? [];
+  return (
+    deterministic?.totals.unknownCostReason.map((reason) => {
+      switch (reason) {
+        case 'implementer-price-unknown':
+          return 'implementer price unknown';
+        case 'planner-price-unknown':
+          return 'planner baseline price unknown';
+        case 'profile-unavailable':
+          return 'profile unavailable';
+        default:
+          return reason;
+      }
+    }) ?? []
+  );
 }
 
-function unknownCostFlags(costBreakdown: Summary['costBreakdown'] | ReviewPacket['cost']['costBreakdown'] | null): string[] {
+function unknownCostFlags(
+  costBreakdown: Summary['costBreakdown'] | ReviewPacket['cost']['costBreakdown'] | null,
+): string[] {
   if (!costBreakdown) return [];
   const reasons: string[] = [];
   if (costBreakdown.hasUnpricedUsage) reasons.push('run has unpriced usage');
-  if (costBreakdown.isTotalActualCostKnown === false) reasons.push('actual cost is partially unknown');
-  if (costBreakdown.isAllPlannerBaselineKnown === false) reasons.push('all-planner baseline is partially unknown');
+  if (costBreakdown.isTotalActualCostKnown === false)
+    reasons.push('actual cost is partially unknown');
+  if (costBreakdown.isAllPlannerBaselineKnown === false)
+    reasons.push('all-planner baseline is partially unknown');
   if (costBreakdown.hasSavingsEstimate === false) reasons.push('savings estimate unavailable');
   return reasons;
 }
@@ -197,50 +245,78 @@ function retryActivity(events: SessionLogEventEntry[]): RunExplain['activity']['
     .sort((left, right) => left.taskId.localeCompare(right.taskId));
 }
 
+function mergeTaskActivity<T extends { taskId: string }>(opts: {
+  state: WorkflowState | null;
+  events: SessionLogEventEntry[];
+  statuses: string[];
+  eventTypes: string[];
+  seed: (task: { id: string; title: string }) => T;
+  overlay: (event: SessionLogEventEntry, previous: T | undefined) => T;
+}): T[] {
+  const tasks = new Map<string, T>();
+  for (const task of opts.state?.tasks ?? []) {
+    if (opts.statuses.includes(task.status)) tasks.set(task.id, opts.seed(task));
+  }
+  for (const event of opts.events) {
+    if (!event.taskId || !opts.eventTypes.includes(event.type)) continue;
+    tasks.set(event.taskId, opts.overlay(event, tasks.get(event.taskId)));
+  }
+  return [...tasks.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
+}
+
 function taskStatusActivity(
   state: WorkflowState | null,
   events: SessionLogEventEntry[],
   statuses: string[],
   eventTypes: string[],
 ): Array<{ taskId: string; title: string | null; method: string | null }> {
-  const tasks = new Map<string, { taskId: string; title: string | null; method: string | null }>();
-  for (const task of state?.tasks ?? []) {
-    if (statuses.includes(task.status)) tasks.set(task.id, { taskId: task.id, title: task.title, method: null });
-  }
-  for (const event of events) {
-    if (!event.taskId || !eventTypes.includes(event.type)) continue;
-    const data = narrowRecord(event.data);
-    tasks.set(event.taskId, {
-      taskId: event.taskId,
-      title: optionalString(data?.title, { trim: true, nonEmpty: true }) ?? tasks.get(event.taskId)?.title ?? null,
-      method: optionalString(data?.method, { trim: true, nonEmpty: true }) ?? null,
-    });
-  }
-  return [...tasks.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
+  return mergeTaskActivity<{ taskId: string; title: string | null; method: string | null }>({
+    state,
+    events,
+    statuses,
+    eventTypes,
+    seed: (task) => ({ taskId: task.id, title: task.title, method: null }),
+    overlay: (event, previous) => {
+      const data = narrowRecord(event.data);
+      return {
+        taskId: event.taskId ?? previous?.taskId ?? '',
+        title:
+          optionalString(data?.title, { trim: true, nonEmpty: true }) ?? previous?.title ?? null,
+        method: optionalString(data?.method, { trim: true, nonEmpty: true }) ?? null,
+      };
+    },
+  });
 }
 
-function skippedActivity(state: WorkflowState | null, events: SessionLogEventEntry[]): RunExplain['activity']['skippedTasks'] {
-  const tasks = new Map<string, { taskId: string; title: string | null; reason: string | null }>();
-  for (const task of state?.tasks ?? []) {
-    if (task.status === 'skipped') tasks.set(task.id, { taskId: task.id, title: task.title, reason: null });
-  }
-  for (const event of events) {
-    if (event.type !== 'task_skipped' || !event.taskId) continue;
-    const data = narrowRecord(event.data);
-    tasks.set(event.taskId, {
-      taskId: event.taskId,
-      title: optionalString(data?.title, { trim: true, nonEmpty: true }) ?? tasks.get(event.taskId)?.title ?? null,
-      reason: optionalString(data?.reason, { trim: true, nonEmpty: true }) ?? eventMessage(event),
-    });
-  }
-  return [...tasks.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
+function skippedActivity(
+  state: WorkflowState | null,
+  events: SessionLogEventEntry[],
+): RunExplain['activity']['skippedTasks'] {
+  return mergeTaskActivity<{ taskId: string; title: string | null; reason: string | null }>({
+    state,
+    events,
+    statuses: ['skipped'],
+    eventTypes: ['task_skipped'],
+    seed: (task) => ({ taskId: task.id, title: task.title, reason: null }),
+    overlay: (event, previous) => {
+      const data = narrowRecord(event.data);
+      return {
+        taskId: event.taskId ?? previous?.taskId ?? '',
+        title:
+          optionalString(data?.title, { trim: true, nonEmpty: true }) ?? previous?.title ?? null,
+        reason: optionalString(data?.reason, { trim: true, nonEmpty: true }) ?? eventMessage(event),
+      };
+    },
+  });
 }
 
 function eventMessage(event: SessionLogEventEntry): string | null {
   const data = narrowRecord(event.data);
-  return optionalString(data?.message, { trim: true, nonEmpty: true })
-    ?? optionalString(data?.error, { trim: true, nonEmpty: true })
-    ?? optionalString(data?.reason, { trim: true, nonEmpty: true })
-    ?? optionalString(data?.routingReason, { trim: true, nonEmpty: true })
-    ?? null;
+  return (
+    optionalString(data?.message, { trim: true, nonEmpty: true }) ??
+    optionalString(data?.error, { trim: true, nonEmpty: true }) ??
+    optionalString(data?.reason, { trim: true, nonEmpty: true }) ??
+    optionalString(data?.routingReason, { trim: true, nonEmpty: true }) ??
+    null
+  );
 }

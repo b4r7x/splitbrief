@@ -10,46 +10,66 @@ import { runClaudePlannerStream, runClaudeOneShot } from '../claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 
-export function createClaudeCodePlanner(model?: string, initialSessionId?: string | null, effort?: EffortLevel): Planner {
+export function createClaudeCodePlanner(opts: {
+  model?: string | undefined;
+  initialSessionId?: string | null | undefined;
+  effort?: EffortLevel | undefined;
+}): Planner {
+  const { model, initialSessionId, effort } = opts;
   const resolvedModel = resolveAutoModel(model, 'claude-code');
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
-	  async function invokeWithSessionFallback(
-	    prompt: string,
-	    projectDir: string,
-	    callbacks: { onOutput: (text: string) => void; onSessionId?: ((id: string) => void) | undefined; onSessionExpired?: ((id: string) => void) | undefined; onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined },
-	    images?: Attachment[] | undefined,
-	    signal?: AbortSignal | undefined,
-	  ) {
+  async function invokeWithSessionFallback(
+    prompt: string,
+    projectDir: string,
+    callbacks: {
+      onOutput: (text: string) => void;
+      onSessionId?: ((id: string) => void) | undefined;
+      onSessionExpired?: ((id: string) => void) | undefined;
+      onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined;
+    },
+    images?: Attachment[] | undefined,
+    signal?: AbortSignal | undefined,
+  ) {
     const priorId = session.getResumeId();
     return runWithResumeFallback(
       session,
-      (resumeId) => runClaudePlannerStream({
-        prompt, projectDir, sessionId: resumeId ?? null,
-	        onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
-	        ...(effort !== undefined && { effort }),
-	        ...(images && images.length > 0 ? { images } : {}),
-	        ...(signal !== undefined && { signal }),
-	      }),
-      () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
+      (resumeId) =>
+        runClaudePlannerStream({
+          prompt,
+          projectDir,
+          sessionId: resumeId ?? null,
+          onOutput: callbacks.onOutput,
+          onQuestion: callbacks.onQuestion,
+          model: resolvedModel,
+          ...(effort !== undefined && { effort }),
+          ...(images && images.length > 0 ? { images } : {}),
+          ...(signal !== undefined && { signal }),
+        }),
+      () => {
+        if (priorId) callbacks.onSessionExpired?.(priorId);
+      },
     );
   }
 
   return createPlannerBase({
-	    async invokePlan({ prompt, projectDir, callbacks, images, signal }) {
-	      const result = await invokeWithSessionFallback(prompt, projectDir, callbacks, images, signal);
+    async invokePlan({ prompt, projectDir, callbacks, images, signal }) {
+      const result = await invokeWithSessionFallback(prompt, projectDir, callbacks, images, signal);
       session.capture(result.sessionId);
       if (result.sessionId) callbacks.onSessionId?.(result.sessionId);
       return { text: result.text, usage: result.usage };
     },
 
-	    async invokeEscalate({ prompt, projectDir, callbacks, signal }) {
-	      return runClaudeOneShot({
-	        prompt, projectDir, onOutput: callbacks.onOutput, model: resolvedModel,
-	        ...(effort !== undefined && { effort }),
-	        ...(signal !== undefined && { signal }),
-	      });
+    async invokeEscalate({ prompt, projectDir, callbacks, signal }) {
+      return runClaudeOneShot({
+        prompt,
+        projectDir,
+        onOutput: callbacks.onOutput,
+        model: resolvedModel,
+        ...(effort !== undefined && { effort }),
+        ...(signal !== undefined && { signal }),
+      });
     },
 
     ...createCommandAvailability('claude'),

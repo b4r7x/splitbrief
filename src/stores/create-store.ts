@@ -19,7 +19,7 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   const listeners = new Set<Listener>();
 
   const notify = () => {
-    listeners.forEach(listener => {
+    listeners.forEach((listener) => {
       listener();
     });
   };
@@ -35,7 +35,9 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
 
   const subscribe = (listener: Listener) => {
     listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    return () => {
+      listeners.delete(listener);
+    };
   };
 
   const use = <S>(selector: (s: T) => S): S => {
@@ -61,4 +63,9 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   return { get, set, subscribe, use, reset };
 }
 
-export const storeBase = <T>(s: Store<T>) => ({ use: s.use, get: s.get, subscribe: s.subscribe, reset: s.reset });
+export const storeBase = <T>(s: Store<T>) => ({
+  use: s.use,
+  get: s.get,
+  subscribe: s.subscribe,
+  reset: s.reset,
+});

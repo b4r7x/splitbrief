@@ -5,7 +5,11 @@ export function compactValue(value: string | number | undefined): string {
 }
 
 export function compactExcerpt(text: string): string {
-  return text.split('\n').map(line => line.trim()).filter(Boolean).join(' / ');
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' / ');
 }
 
 export function taskWithoutCurrentCode(task: Task): Task {

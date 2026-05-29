@@ -1,6 +1,6 @@
 import { parseTasks } from '../../../../engine/spec/parser.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import { taskId } from '../../../../core/schemas/task.js';
+import { formatTaskId } from '../../../../core/schemas/task.js';
 import { topoSort } from '../../../../core/state/topo-sort.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 
@@ -9,13 +9,13 @@ export function renumberTasks(tasks: Task[]): Task[] {
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
     if (!task) continue;
-    const newId = taskId(`T${String(i + 1).padStart(3, '0')}`);
+    const newId = formatTaskId(i + 1);
     idMap.set(task.id, newId);
   }
-  return tasks.map(task => ({
+  return tasks.map((task) => ({
     ...task,
     id: idMap.get(task.id) ?? task.id,
-    dependsOn: task.dependsOn.map(dep => idMap.get(dep) ?? dep),
+    dependsOn: task.dependsOn.map((dep) => idMap.get(dep) ?? dep),
   }));
 }
 
@@ -24,19 +24,16 @@ export function relinkAfterDelete(
   deletedId: TaskId,
   deletedDependsOn: TaskId[],
 ): Task[] {
-  return tasks.map(task => {
+  return tasks.map((task) => {
     if (!task.dependsOn.includes(deletedId)) return task;
-    const inherited = deletedDependsOn.filter(dep => dep !== deletedId);
-    const without = task.dependsOn.filter(dep => dep !== deletedId);
+    const inherited = deletedDependsOn.filter((dep) => dep !== deletedId);
+    const without = task.dependsOn.filter((dep) => dep !== deletedId);
     const merged = Array.from(new Set([...without, ...inherited]));
     return { ...task, dependsOn: merged };
   });
 }
 
-export function deleteTask(
-  tasks: Task[],
-  cursor: number,
-): { tasks: Task[]; cursor: number } {
+export function deleteTask(tasks: Task[], cursor: number): { tasks: Task[]; cursor: number } {
   if (tasks.length === 0 || cursor < 0 || cursor >= tasks.length) {
     return { tasks, cursor };
   }
@@ -49,19 +46,10 @@ export function deleteTask(
   return { tasks: result, cursor: clampedCursor };
 }
 
-function mergeScope(
-  prev: Task['scope'],
-  curr: Task['scope'],
-): Task['scope'] {
+function mergeScope(prev: Task['scope'], curr: Task['scope']): Task['scope'] {
   if (!prev && !curr) return undefined;
-  const inBounds = [
-    ...(prev?.inBounds ?? []),
-    ...(curr?.inBounds ?? []),
-  ];
-  const outOfBounds = [
-    ...(prev?.outOfBounds ?? []),
-    ...(curr?.outOfBounds ?? []),
-  ];
+  const inBounds = [...(prev?.inBounds ?? []), ...(curr?.inBounds ?? [])];
+  const outOfBounds = [...(prev?.outOfBounds ?? []), ...(curr?.outOfBounds ?? [])];
   const result: NonNullable<Task['scope']> = {};
   if (inBounds.length > 0) result.inBounds = inBounds;
   if (outOfBounds.length > 0) result.outOfBounds = outOfBounds;
@@ -87,9 +75,9 @@ export function mergeWithPrevious(
   const curr = tasks[cursor];
   if (!prev || !curr) return { tasks, cursor };
 
-  const dependsOn = Array.from(
-    new Set([...prev.dependsOn, ...curr.dependsOn]),
-  ).filter(dep => dep !== curr.id && dep !== prev.id);
+  const dependsOn = Array.from(new Set([...prev.dependsOn, ...curr.dependsOn])).filter(
+    (dep) => dep !== curr.id && dep !== prev.id,
+  );
 
   const merged: Task = {
     id: prev.id,
@@ -115,20 +103,13 @@ export function mergeWithPrevious(
     status: 'pending',
   };
 
-  const updated = [
-    ...tasks.slice(0, cursor - 1),
-    merged,
-    ...tasks.slice(cursor + 1),
-  ];
+  const updated = [...tasks.slice(0, cursor - 1), merged, ...tasks.slice(cursor + 1)];
   const relinked = relinkAfterDelete(updated, curr.id, [prev.id]);
   const result = renumberTasks(topoSort(relinked));
   return { tasks: result, cursor: cursor - 1 };
 }
 
-export function moveTaskDown(
-  tasks: Task[],
-  cursor: number,
-): { tasks: Task[]; cursor: number } {
+export function moveTaskDown(tasks: Task[], cursor: number): { tasks: Task[]; cursor: number } {
   if (cursor < 0 || cursor >= tasks.length - 1) {
     return { tasks, cursor };
   }
@@ -141,10 +122,7 @@ export function moveTaskDown(
   return { tasks: renumberTasks(result), cursor: cursor + 1 };
 }
 
-export function moveTaskUp(
-  tasks: Task[],
-  cursor: number,
-): { tasks: Task[]; cursor: number } {
+export function moveTaskUp(tasks: Task[], cursor: number): { tasks: Task[]; cursor: number } {
   if (cursor <= 0 || cursor >= tasks.length) {
     return { tasks, cursor };
   }
@@ -157,9 +135,7 @@ export function moveTaskUp(
   return { tasks: renumberTasks(result), cursor: cursor - 1 };
 }
 
-export function parseSplitResult(
-  markdown: string,
-): Task[] | { error: string } {
+export function parseSplitResult(markdown: string): Task[] | { error: string } {
   let parsed: Task[];
   try {
     parsed = parseTasks(markdown);
@@ -169,5 +145,5 @@ export function parseSplitResult(
   if (parsed.length === 0) {
     return { error: 'split produced no tasks' };
   }
-  return parsed.map(task => ({ ...task, status: 'pending' as const }));
+  return parsed.map((task) => ({ ...task, status: 'pending' as const }));
 }

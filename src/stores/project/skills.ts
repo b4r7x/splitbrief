@@ -16,15 +16,15 @@ function cloneSkill(skill: SkillMeta): SkillMeta {
 
 function setAvailable(available: SkillMeta[]) {
   const cloned = available.map(cloneSkill);
-  const availableIds = new Set(available.map(s => s.id));
-  store.set(s => ({
+  const availableIds = new Set(available.map((s) => s.id));
+  store.set((s) => ({
     available: cloned,
-    selected: new Set([...s.selected].filter(id => availableIds.has(id))),
+    selected: new Set([...s.selected].filter((id) => availableIds.has(id))),
   }));
 }
 
 function setSelected(ids: Set<string>) {
-  store.set(s => ({ ...s, selected: new Set(ids) }));
+  store.set((s) => ({ ...s, selected: new Set(ids) }));
 }
 
 export const skillsStore = { ...storeBase(store), setAvailable, setSelected };

@@ -1,14 +1,14 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { taskId as parseTaskId } from '../../core/schemas/task.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
-import { createCommandContext } from '../command-context-factory.js';
+import { createCommandContext } from '../../app/command-context-factory.js';
+import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { error } from '../../utils/error.js';
 
 const rpcCommandContextError = {
@@ -59,9 +59,7 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const action = request.target === 'spec'
-        ? { type: 'REWIND_TO_SPEC' as const, ...(request.comment ? { comment: request.comment } : {}) }
-        : { type: 'REWIND_TO_PLAN' as const, ...(request.comment ? { comment: request.comment } : {}) };
+      const { action } = buildRewindAction(request, opts.projectDir, sessionId, state);
       transitionAndSave(opts.projectDir, sessionId, state, action);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
@@ -70,7 +68,13 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      transitionAndSave(opts.projectDir, sessionId, state, { type: 'RESET_TASK', taskId: parseTaskId(taskId) });
+      const { action } = buildRewindAction(
+        { target: 'task', taskId },
+        opts.projectDir,
+        sessionId,
+        state,
+      );
+      transitionAndSave(opts.projectDir, sessionId, state, action);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },

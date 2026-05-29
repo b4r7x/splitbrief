@@ -25,7 +25,14 @@ describe('slugify', () => {
 
   it('does not truncate when maxLength is omitted', () => {
     const input = `${'Feature '.repeat(10)}Done`;
-    expect(slugify(input)).toBe('feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done');
-    expect(slugify(input, 40)).toBe('feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done'.slice(0, 40));
+    expect(slugify(input)).toBe(
+      'feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done',
+    );
+    expect(slugify(input, 40)).toBe(
+      'feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done'.slice(
+        0,
+        40,
+      ),
+    );
   });
 });

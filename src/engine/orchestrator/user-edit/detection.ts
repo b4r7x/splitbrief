@@ -3,14 +3,24 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
+import { classifyUserEditConflict, normalizeUserEditConflictAction } from './conflicts.js';
 import {
-  classifyUserEditConflict,
-  normalizeUserEditConflictAction,
-} from './conflicts.js';
-import { publishRecoveryPrompted, publishUserEditConflict, publishWarning, publishWarningFromError } from '../events.js';
+  publishRecoveryPrompted,
+  publishUserEditConflict,
+  publishWarning,
+  publishWarningFromError,
+} from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { transitionAndSave } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
+
+const CURRENT_TASK_CONFLICT_ACTIONS = [
+  'regenerate-rebase',
+  'pause',
+  'skip-current-task',
+  'abort-workflow',
+] as const;
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;
@@ -24,8 +34,29 @@ export async function checkUserEditConflicts(opts: {
   acknowledgedUserEditFiles: Set<string>;
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<{ state: WorkflowState; stopped: boolean }> {
-  const { projectDir, sessionId, callbacks, bus, task, taskIndex, baseline, acknowledgedUserEditFiles, setTrackedState } = opts;
-  let { state } = opts;
+  const {
+    projectDir,
+    sessionId,
+    callbacks,
+    bus,
+    task,
+    taskIndex,
+    baseline,
+    acknowledgedUserEditFiles,
+    setTrackedState,
+  } = opts;
+  const { state } = opts;
+
+  const promptRecovery = (issue: RecoveryIssue): { state: WorkflowState; stopped: boolean } => {
+    const next = transitionAndSave(projectDir, sessionId, state, {
+      type: 'SET_PENDING_RECOVERY',
+      issue,
+    });
+    publishRecoveryPrompted(bus, issue);
+    setTrackedState(next);
+    return { state: next, stopped: true };
+  };
+
   try {
     const changedFiles = await changedFilesSinceBaseline(projectDir, baseline);
     if (changedFiles.length === 0) return { state, stopped: false };
@@ -66,7 +97,8 @@ export async function checkUserEditConflicts(opts: {
     }
 
     if (selectedAction === 'regenerate-rebase') {
-      publishWarning({ bus: bus, phase: state.phase },
+      publishWarning(
+        { bus: bus, phase: state.phase },
         'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
       );
     }
@@ -77,12 +109,13 @@ export async function checkUserEditConflicts(opts: {
       phase: state.phase,
       createdAt: nowIso(),
     });
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
-    publishRecoveryPrompted(bus, issue);
-    setTrackedState(state);
-    return { state, stopped: true };
+    return promptRecovery(issue);
   } catch (err) {
-    publishWarningFromError({ bus: bus, phase: state.phase }, 'Failed to check user edit conflicts', err);
+    publishWarningFromError(
+      { bus: bus, phase: state.phase },
+      'Failed to check user edit conflicts',
+      err,
+    );
   }
   const issue = buildUserEditConflictRecoveryIssue({
     conflict: {
@@ -92,14 +125,11 @@ export async function checkUserEditConflicts(opts: {
       currentTaskId: task.id,
       fileConflicts: [],
       safeToContinue: false,
-      availableActions: ['regenerate-rebase', 'pause', 'skip-current-task', 'abort-workflow'],
+      availableActions: [...CURRENT_TASK_CONFLICT_ACTIONS],
     },
     currentTask: task,
     phase: state.phase,
     createdAt: nowIso(),
   });
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
-  publishRecoveryPrompted(bus, issue);
-  setTrackedState(state);
-  return { state, stopped: true };
+  return promptRecovery(issue);
 }

@@ -22,7 +22,10 @@ const setError = (msg: string | null) => {
 const setMessage = (msg: string | null) => {
   clearTimeout(clearTimer);
   if (msg) {
-    clearTimer = setTimeout(() => store.set({ message: null, isError: false }), FEEDBACK_AUTO_CLEAR_MS);
+    clearTimer = setTimeout(
+      () => store.set({ message: null, isError: false }),
+      FEEDBACK_AUTO_CLEAR_MS,
+    );
   }
   store.set({ message: msg, isError: false });
 };

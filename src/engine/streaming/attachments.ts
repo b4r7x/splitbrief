@@ -7,8 +7,10 @@ export interface ImageBase64 {
 }
 
 export async function readImagesAsBase64(images: Attachment[]): Promise<ImageBase64[]> {
-  return Promise.all(images.map(async img => ({
-    mime: img.mimeType,
-    data: (await readFile(img.path)).toString('base64'),
-  })));
+  return Promise.all(
+    images.map(async (img) => ({
+      mime: img.mimeType,
+      data: (await readFile(img.path)).toString('base64'),
+    })),
+  );
 }

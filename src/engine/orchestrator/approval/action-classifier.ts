@@ -27,6 +27,10 @@ export const DEFAULT_TIER_MAP: Record<ActionClass, ApprovalTier> = {
   package_change: 'confirm',
 };
 
+function resolveTier(actionClass: ActionClass, overrides?: TierMap): ApprovalTier {
+  return overrides?.[actionClass] ?? DEFAULT_TIER_MAP[actionClass];
+}
+
 const DESTRUCTIVE_PATTERNS = [
   'rm -rf',
   'rm -r',
@@ -53,14 +57,7 @@ const DESTRUCTIVE_PATTERNS = [
   'rake db:migrate',
 ];
 
-const NETWORK_PATTERNS = [
-  'curl ',
-  'wget ',
-  'fetch(',
-  'npm publish',
-  'http://',
-  'https://',
-];
+const NETWORK_PATTERNS = ['curl ', 'wget ', 'fetch(', 'npm publish', 'http://', 'https://'];
 
 const PACKAGE_CHANGE_PATTERNS = [
   'npm install',
@@ -114,7 +111,16 @@ const VALIDATION_PATTERNS = [
   'npm run lint',
 ];
 
-const WRITE_VERBS = ['write', 'create', 'edit', 'modify', 'update', 'change', 'patch', 'apply diff'];
+const WRITE_VERBS = [
+  'write',
+  'create',
+  'edit',
+  'modify',
+  'update',
+  'change',
+  'patch',
+  'apply diff',
+];
 
 const PATH_PREFIXES = ['src/', 'test/', 'tests/', 'docs/', './'];
 
@@ -203,10 +209,7 @@ function matchesGlob(filePath: string, pattern: string): boolean {
     const starIdx = pattern.indexOf('*');
     const beforeStar = pattern.slice(0, starIdx);
     const afterStar = pattern.slice(starIdx + 1);
-    return (
-      filePath.startsWith(beforeStar) &&
-      (afterStar === '' || filePath.endsWith(afterStar))
-    );
+    return filePath.startsWith(beforeStar) && (afterStar === '' || filePath.endsWith(afterStar));
   }
 
   return false;
@@ -215,8 +218,18 @@ function matchesGlob(filePath: string, pattern: string): boolean {
 function isInScope(filePath: string, input: ClassifyInput): boolean {
   const normalized = normalizeProjectPath(filePath, input.projectDir);
   if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
-  if (input.dependsOnFiles.map((file) => normalizeProjectPath(file, input.projectDir)).includes(normalized)) return true;
-  if (input.taskInBounds.some((glob) => matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)))) return true;
+  if (
+    input.dependsOnFiles
+      .map((file) => normalizeProjectPath(file, input.projectDir))
+      .includes(normalized)
+  )
+    return true;
+  if (
+    input.taskInBounds.some((glob) =>
+      matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)),
+    )
+  )
+    return true;
   if (input.allowedPaths?.some((glob) => matchesGlob(normalized, glob))) return true;
   return false;
 }
@@ -235,50 +248,45 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
   const desc = input.actionDescription;
 
   if (hasPattern(desc, DESTRUCTIVE_PATTERNS)) {
-    const tier = tierOverrides?.destructive ?? DEFAULT_TIER_MAP.destructive;
-    return { actionClass: 'destructive', tier };
+    return { actionClass: 'destructive', tier: resolveTier('destructive', tierOverrides) };
   }
 
   if (hasPattern(desc, NETWORK_PATTERNS)) {
-    const tier = tierOverrides?.network ?? DEFAULT_TIER_MAP.network;
-    return { actionClass: 'network', tier };
+    return { actionClass: 'network', tier: resolveTier('network', tierOverrides) };
   }
 
   if (hasPattern(desc, PACKAGE_CHANGE_PATTERNS)) {
-    const tier = tierOverrides?.package_change ?? DEFAULT_TIER_MAP.package_change;
-    return { actionClass: 'package_change', tier };
+    return { actionClass: 'package_change', tier: resolveTier('package_change', tierOverrides) };
   }
 
   if (hasPattern(desc, VALIDATION_PATTERNS)) {
-    const tier = tierOverrides?.validation ?? DEFAULT_TIER_MAP.validation;
-    return { actionClass: 'validation', tier };
+    return { actionClass: 'validation', tier: resolveTier('validation', tierOverrides) };
   }
 
   const lower = desc.toLowerCase();
 
-  const startsWithRead = PATH_PREFIXES.some((p) => lower.startsWith(p)) === false &&
+  const startsWithRead =
+    PATH_PREFIXES.some((p) => lower.startsWith(p)) === false &&
     ['read ', 'cat ', 'ls ', 'find ', 'grep '].some((p) => lower.startsWith(p));
   if (startsWithRead) {
-    const tier = tierOverrides?.read ?? DEFAULT_TIER_MAP.read;
-    return { actionClass: 'read', tier };
+    return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
   }
 
   const hasWriteVerb = WRITE_VERBS.some((v) => lower.includes(v));
   if (hasWriteVerb) {
     const targetPath = extractPath(desc, input);
     if (targetPath !== null && isKnownPackagePath(targetPath)) {
-      const tier = tierOverrides?.package_change ?? DEFAULT_TIER_MAP.package_change;
-      return { actionClass: 'package_change', tier };
+      return { actionClass: 'package_change', tier: resolveTier('package_change', tierOverrides) };
     }
     if (targetPath !== null && isInScope(targetPath, input)) {
-      const tier = tierOverrides?.write_in_scope ?? DEFAULT_TIER_MAP.write_in_scope;
-      return { actionClass: 'write_in_scope', tier };
+      return { actionClass: 'write_in_scope', tier: resolveTier('write_in_scope', tierOverrides) };
     }
-    const tier = tierOverrides?.write_out_of_scope ?? DEFAULT_TIER_MAP.write_out_of_scope;
-    return { actionClass: 'write_out_of_scope', tier };
+    return {
+      actionClass: 'write_out_of_scope',
+      tier: resolveTier('write_out_of_scope', tierOverrides),
+    };
   }
 
   // Escalation: no write verb and no other pattern → read to avoid false positives
-  const tier = tierOverrides?.read ?? DEFAULT_TIER_MAP.read;
-  return { actionClass: 'read', tier };
+  return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
 }

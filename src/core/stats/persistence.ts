@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { getDiptychPath } from '../paths.js';
 import { StatsSchema, emptyStats, type Stats } from '../schemas/stats.js';
-import { writeSecureFile } from '../../lib/fs.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { writeSecureFile, readValidatedJson } from '../../lib/fs.js';
 import type { CostBreakdown } from '../schemas/summary.js';
 import { accumulateProviderCosts } from './provider-costs.js';
 
@@ -13,16 +11,15 @@ function statsPath(projectDir: string): string {
 }
 
 export function readStats(projectDir: string): Stats {
-  try {
-    const raw = readFileSync(statsPath(projectDir), 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    const result = StatsSchema.safeParse(parsed);
-    if (!result.success) return emptyStats();
-    return result.data;
-  } catch (err) {
-    if (isENOENT(err)) return emptyStats();
-    return emptyStats();
-  }
+  return readValidatedJson(
+    statsPath(projectDir),
+    (v) => {
+      const r = StatsSchema.safeParse(v);
+      return r.success ? r.data : null;
+    },
+    emptyStats(),
+    'stats: unreadable file',
+  );
 }
 
 function writeStats(projectDir: string, stats: Stats): void {
@@ -45,8 +42,10 @@ function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
     totalSessions: stats.totalSessions + 1,
     totalCost: stats.totalCost + input.costBreakdown.totalActualCost,
     totalSavings: stats.totalSavings + input.costBreakdown.savingsAmount,
-    totalHypotheticalCost: stats.totalHypotheticalCost +
-      input.costBreakdown.hypotheticalCost + input.costBreakdown.actualPlannerCost,
+    totalHypotheticalCost:
+      stats.totalHypotheticalCost +
+      input.costBreakdown.hypotheticalCost +
+      input.costBreakdown.actualPlannerCost,
     averageSavingsPercentage: 0,
     totalTasks: stats.totalTasks + input.totalTasks,
     totalLocalTasks: stats.totalLocalTasks + input.completedByLocal,

@@ -15,7 +15,7 @@ export function HomeConfigSummary() {
   const theme = useTheme();
   const [{ rows, isSmall }] = useStores(terminalSizeStore);
   const config = configStore.useConfig();
-  const selectedSkillCount = skillsStore.use(s => s.selected.size);
+  const selectedSkillCount = skillsStore.use((s) => s.selected.size);
   const plannerToolName = getRunnerDisplayName(config.planner);
   const plannerModel = config.planner.model;
   const implToolName = getRunnerDisplayName(config.implementer);
@@ -31,16 +31,14 @@ export function HomeConfigSummary() {
     return (
       <Box marginBottom={1} flexWrap="wrap">
         <Text color={theme.planner}>{plannerText}</Text>
-        <Text color={theme.textDim}>  │  </Text>
+        <Text color={theme.textDim}> │ </Text>
         <Text color={theme.implementer}>{implText}</Text>
-        {isProviderLocal(implToolName) && (
-          <Text color={theme.textDim}> (local)</Text>
-        )}
-        <Text color={theme.textDim}>  │  </Text>
+        {isProviderLocal(implToolName) && <Text color={theme.textDim}> (local)</Text>}
+        <Text color={theme.textDim}> │ </Text>
         <Text color={theme.text}>{mode}</Text>
         {selectedSkillCount > 0 && (
           <>
-            <Text color={theme.textDim}>  │  </Text>
+            <Text color={theme.textDim}> │ </Text>
             <Text color={theme.accent}>{selectedSkillCount} skills</Text>
           </>
         )}
@@ -52,28 +50,24 @@ export function HomeConfigSummary() {
     <Box flexDirection="column" marginBottom={1}>
       <LabeledRow label="Planner">
         <Text color={theme.planner}>{getProviderDisplayName(plannerToolName)}</Text>
-        {plannerModel && (
-          <Text color={theme.planner}> › {formatModelName(plannerModel)}</Text>
-        )}
-        <Text color={theme.textDim}>  /planner</Text>
+        {plannerModel && <Text color={theme.planner}> › {formatModelName(plannerModel)}</Text>}
+        <Text color={theme.textDim}> /planner</Text>
       </LabeledRow>
       <LabeledRow label="Implementer">
         <Text color={theme.implementer}>{getProviderDisplayName(implToolName)}</Text>
         <Text color={theme.textDim}> › </Text>
         <Text color={theme.implementer}>{formatModelName(implModel)}</Text>
-        {isProviderLocal(implToolName) && (
-          <Text color={theme.textDim}> (local)</Text>
-        )}
-        <Text color={theme.textDim}>  /implementer</Text>
+        {isProviderLocal(implToolName) && <Text color={theme.textDim}> (local)</Text>}
+        <Text color={theme.textDim}> /implementer</Text>
       </LabeledRow>
       <LabeledRow label="Mode">
         <Text color={theme.text}>{mode}</Text>
-        <Text color={theme.textDim}>  /mode</Text>
+        <Text color={theme.textDim}> /mode</Text>
       </LabeledRow>
       {selectedSkillCount > 0 && (
         <LabeledRow label="Skills">
           <Text color={theme.accent}>{selectedSkillCount} active</Text>
-          <Text color={theme.textDim}>  /skills</Text>
+          <Text color={theme.textDim}> /skills</Text>
         </LabeledRow>
       )}
     </Box>

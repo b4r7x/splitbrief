@@ -22,8 +22,9 @@ describe('substituteEventFields', () => {
   });
 
   it('replaces multiple fields in one string', () => {
-    expect(substituteEventFields(`${S('event.file')} for task ${S('event.taskId')}`, baseEvent))
-      .toBe('src/login.ts for task T001');
+    expect(
+      substituteEventFields(`${S('event.file')} for task ${S('event.taskId')}`, baseEvent),
+    ).toBe('src/login.ts for task T001');
   });
 
   it('replaces numeric fields as decimal strings', () => {
@@ -35,22 +36,44 @@ describe('substituteEventFields', () => {
   });
 
   it('JSON-stringifies object/array values', () => {
-    const event: EngineEvent = { type: 'validate', ts: 1, phase: 'validating-task', taskId: 'T1' as never, status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true } };
-    expect(substituteEventFields(S('event.stages'), event)).toBe('{"typecheck":true,"lint":true,"test":true}');
+    const event: EngineEvent = {
+      type: 'validate',
+      ts: 1,
+      phase: 'validating-task',
+      taskId: 'T1' as never,
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
+    };
+    expect(substituteEventFields(S('event.stages'), event)).toBe(
+      '{"typecheck":true,"lint":true,"test":true}',
+    );
   });
 
   it('leaves non-event-placeholder text unchanged', () => {
-    expect(substituteEventFields('plain text no substitutions', baseEvent)).toBe('plain text no substitutions');
+    expect(substituteEventFields('plain text no substitutions', baseEvent)).toBe(
+      'plain text no substitutions',
+    );
   });
 
   it('does NOT use eval — preserves arbitrary characters in values', () => {
-    const event: EngineEvent = { type: 'warning', ts: 1, phase: 'idle', message: '$(rm -rf /); echo pwned' };
+    const event: EngineEvent = {
+      type: 'warning',
+      ts: 1,
+      phase: 'idle',
+      message: '$(rm -rf /); echo pwned',
+    };
     // Value is substituted as-is. Spawn layer (not us) handles argv quoting.
     expect(substituteEventFields(S('event.message'), event)).toBe('$(rm -rf /); echo pwned');
   });
 
   it('handles nested object access via dot path', () => {
-    const event: EngineEvent = { type: 'cost_prediction', ts: 1, phase: 'planning', prediction: { totalCost: 1.23 } as never };
+    const event: EngineEvent = {
+      type: 'cost_prediction',
+      ts: 1,
+      phase: 'planning',
+      prediction: { totalCost: 1.23 } as never,
+    };
     expect(substituteEventFields(S('event.prediction.totalCost'), event)).toBe('1.23');
   });
 });

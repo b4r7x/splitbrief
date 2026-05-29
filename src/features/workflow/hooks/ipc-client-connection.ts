@@ -1,6 +1,10 @@
 import { createConnection, type Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
+import type {
+  IpcPromptRequest,
+  IpcPromptResponse,
+  ServerMessage,
+} from '../../../engine/ipc/protocol.js';
 import { parseServerMessage } from '../../../engine/ipc/protocol.js';
 import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -32,7 +36,9 @@ export function backoffDelay(attempt: number): number {
   return Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
 }
 
-type SetIpcClientState = (next: IpcClientState | ((prev: IpcClientState) => IpcClientState)) => void;
+type SetIpcClientState = (
+  next: IpcClientState | ((prev: IpcClientState) => IpcClientState),
+) => void;
 
 type ServerMessageCallbacks = {
   socket: Socket;
@@ -60,21 +66,35 @@ export function handleServerMessage(msg: ServerMessage, callbacks: ServerMessage
     onEvent(msg.payload);
   } else if (msg.kind === 'prompt_request') {
     if (!callbacks.hasPromptHandler()) {
-      onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: no prompt handler for ${msg.request.kind}` });
+      onEvent({
+        type: 'warning',
+        ts: Date.now(),
+        phase: 'idle',
+        message: `IPC: no prompt handler for ${msg.request.kind}`,
+      });
       return;
     }
-    void callbacks.handlePromptRequest(msg.request)
+    void callbacks
+      .handlePromptRequest(msg.request)
       .then((response: IpcPromptResponse) => {
         if (!callbacks.ownsSocket(socket) || socket.destroyed) return;
-        socket.write(JSON.stringify({ kind: 'prompt_response', requestId: msg.request.requestId, response }) + '\n');
+        socket.write(
+          JSON.stringify({ kind: 'prompt_response', requestId: msg.request.requestId, response }) +
+            '\n',
+        );
       })
       .catch((err: unknown) => {
         if (!callbacks.canMutate(socket)) return;
-        onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: prompt handler failed: ${toErrorMessage(err)}` });
+        onEvent({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: `IPC: prompt handler failed: ${toErrorMessage(err)}`,
+        });
       });
   } else if (msg.kind === 'error') {
     callbacks.markDetached();
-    setState(prev => ({ ...prev, status: 'failed' }));
+    setState((prev) => ({ ...prev, status: 'failed' }));
     onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: msg.message });
     socket.destroy();
   }
@@ -96,12 +116,22 @@ export function createIpcConnection(opts: {
     try {
       parsed = JSON.parse(trimmed);
     } catch {
-      onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: 'IPC: malformed server message' });
+      onEvent({
+        type: 'warning',
+        ts: Date.now(),
+        phase: 'idle',
+        message: 'IPC: malformed server message',
+      });
       return;
     }
     const msg = parseServerMessage(parsed);
     if (msg === null) {
-      onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: 'IPC: invalid server message structure' });
+      onEvent({
+        type: 'warning',
+        ts: Date.now(),
+        phase: 'idle',
+        message: 'IPC: invalid server message structure',
+      });
       return;
     }
     handleServerMessage(msg, { ...callbacks, socket });
@@ -140,12 +170,18 @@ export function handleIpcConnectionClose(opts: {
   opts.clearCurrentSocket(socket);
   const attempt = opts.getAttempt();
   if (attempt >= MAX_ATTEMPTS) {
-    setState(prev => ({ ...prev, status: 'failed' }));
+    setState((prev) => ({ ...prev, status: 'failed' }));
     onEvent({ type: 'ipc_reconnect_failed', ts: Date.now(), phase: 'idle' });
     return;
   }
-  setState(prev => ({ ...prev, status: 'reconnecting' }));
-  onEvent({ type: 'ipc_reconnect_attempt', ts: Date.now(), phase: 'idle', attempt, maxAttempts: MAX_ATTEMPTS });
+  setState((prev) => ({ ...prev, status: 'reconnecting' }));
+  onEvent({
+    type: 'ipc_reconnect_attempt',
+    ts: Date.now(),
+    phase: 'idle',
+    attempt,
+    maxAttempts: MAX_ATTEMPTS,
+  });
   opts.setAttempt(attempt + 1);
   opts.reconnect(opts.backoff(attempt));
 }
@@ -164,7 +200,10 @@ export function scheduleIpcReconnect(
   timers.add(timer);
 }
 
-export function destroyIpcSockets(sockets: Set<Socket>, socketRef: { current: Socket | null }): void {
+export function destroyIpcSockets(
+  sockets: Set<Socket>,
+  socketRef: { current: Socket | null },
+): void {
   for (const socket of sockets) {
     if (socketRef.current === socket) socketRef.current = null;
     socket.destroy();

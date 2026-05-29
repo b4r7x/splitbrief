@@ -10,7 +10,12 @@ const EMPTY_STORE: ApprovalsStore = { version: 1, grants: [] };
 
 export const approvalsStoreError = {
   corrupt: (reason: string, cause?: unknown) =>
-    error('approval-store-corrupt', `approval store is corrupt and cannot be read: ${reason}`, { reason }, cause),
+    error(
+      'approval-store-corrupt',
+      `approval store is corrupt and cannot be read: ${reason}`,
+      { reason },
+      cause,
+    ),
 } as const;
 
 export function readApprovalsStore(projectDir: string): ApprovalsStore {
@@ -36,8 +41,6 @@ export function clearGrantsByScope(
   scope: 'session' | 'always' | 'all',
 ): ApprovalsStore {
   const grants: ApprovalGrant[] =
-    scope === 'all'
-      ? []
-      : store.grants.filter((g) => g.scope !== scope);
+    scope === 'all' ? [] : store.grants.filter((g) => g.scope !== scope);
   return { ...store, grants };
 }

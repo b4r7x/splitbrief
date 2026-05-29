@@ -10,11 +10,18 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
-    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, kind: 'agent', command: 'echo', ...extra },
+    implementer: {
+      model: 'test',
+      contextLength: 8192,
+      temperature: 0.3,
+      kind: 'agent',
+      command: 'echo',
+      ...extra,
+    },
   });
 }
 
-const context = { ...defaultContext, runtime: 'node' };
+const context = { ...defaultContext };
 
 let testDir: string;
 

@@ -7,7 +7,12 @@ import type { Task } from '../../core/schemas/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 function makeTask(overrides: Partial<Task> = {}): Task {
-  return makeBaseTask({ title: 'Test task', file: 'src/test.ts', description: 'test', ...overrides });
+  return makeBaseTask({
+    title: 'Test task',
+    file: 'src/test.ts',
+    description: 'test',
+    ...overrides,
+  });
 }
 
 describe('applyCode', () => {
@@ -54,7 +59,8 @@ describe('applyCode', () => {
     lines[10] = 'export const old = true;';
     writeFileSync(filePath, lines.join('\n'));
 
-    const patchCode = '<<<<<<< SEARCH\nexport const old = true;\n=======\nexport const patched = true;\n>>>>>>> REPLACE';
+    const patchCode =
+      '<<<<<<< SEARCH\nexport const old = true;\n=======\nexport const patched = true;\n>>>>>>> REPLACE';
     const result = await applyCode(patchCode, task, tempDir);
 
     expect(result.success).toBe(true);
@@ -93,7 +99,8 @@ describe('applyCode', () => {
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
     writeFileSync(filePath, lines.join('\n'));
 
-    const patchCode = '<<<<<<< SEARCH\nthis text does not exist in the file\n=======\nreplacement\n>>>>>>> REPLACE';
+    const patchCode =
+      '<<<<<<< SEARCH\nthis text does not exist in the file\n=======\nreplacement\n>>>>>>> REPLACE';
     const result = await applyCode(patchCode, task, tempDir);
 
     expect(result.success).toBe(false);

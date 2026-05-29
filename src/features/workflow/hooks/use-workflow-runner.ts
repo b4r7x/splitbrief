@@ -30,9 +30,13 @@ import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import { buildRewindAction } from './build-rewind-action.js';
+import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { usePromptCallbacks } from './use-prompt-callbacks.js';
 import { useRecoveryDriver } from './use-recovery-driver.js';
+
+function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
+  return controller.signal.aborted || ref.current;
+}
 
 interface UseWorkflowRunnerOptions {
   feature: string;
@@ -109,7 +113,7 @@ export function useWorkflowRunner({
       pendingRewindEventRef.current = event;
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
       setInlineResume(next);
-      setRunId(id => id + 1);
+      setRunId((id) => id + 1);
     });
 
     const promptPendingRecovery = createRecoveryDriver({
@@ -123,7 +127,7 @@ export function useWorkflowRunner({
     try {
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
-      while (!controller.signal.aborted && !abortedRef.current) {
+      while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery) {
           activeSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
           if (!activeSessionId) {
@@ -145,7 +149,7 @@ export function useWorkflowRunner({
 
         const storeStreamingSink: StreamingSink = {
           start: (tid) => streamingOutputStore.startStreaming(tid),
-          pushLines: (lines) => streamingOutputStore.pushLines(lines),
+          replaceLines: (lines) => streamingOutputStore.replaceLines(lines),
           stop: () => streamingOutputStore.stopStreaming(),
         };
 
@@ -175,7 +179,7 @@ export function useWorkflowRunner({
         retryProfileOverride = undefined;
         retryProfileOverrideTaskId = undefined;
 
-        if (controller.signal.aborted || abortedRef.current) return;
+        if (isWorkflowAborted(controller, abortedRef)) return;
 
         const savedSessionId = readActive(projectDir) ?? activeSessionId;
         const saved = savedSessionId ? loadState(projectDir, savedSessionId) : null;
@@ -187,8 +191,13 @@ export function useWorkflowRunner({
         recoveryPromptAlreadyPublished = true;
       }
     } catch (err) {
-      if (!controller.signal.aborted && !abortedRef.current && !lifecycleStore.get().cancelled) {
-        addEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message: toErrorMessage(err) });
+      if (!isWorkflowAborted(controller, abortedRef) && !lifecycleStore.get().cancelled) {
+        addEvent({
+          type: 'error',
+          ts: Date.now(),
+          phase: lifecycleStore.get().phase,
+          message: toErrorMessage(err),
+        });
       }
     }
   });
@@ -206,9 +215,9 @@ export function useWorkflowRunner({
       clearAllHandlers();
       killAllProcesses();
     };
-  // config is intentionally excluded from the dep array: config changes mid-workflow
-  // should NOT restart the workflow. The latest config is captured via useEffectEvent
-  // when startWorkflow fires.
+    // config is intentionally excluded from the dep array: config changes mid-workflow
+    // should NOT restart the workflow. The latest config is captured via useEffectEvent
+    // when startWorkflow fires.
   }, [enabled, feature, projectDir, runId]);
 
   const handleResume = () => {
@@ -219,7 +228,7 @@ export function useWorkflowRunner({
       return;
     }
     setInlineResume(saved);
-    setRunId(id => id + 1);
+    setRunId((id) => id + 1);
   };
 
   return { startedAt, handleResume };

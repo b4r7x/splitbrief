@@ -1,5 +1,9 @@
 import { trace } from '@opentelemetry/api';
-import { BasicTracerProvider, SimpleSpanProcessor, ConsoleSpanExporter } from '@opentelemetry/sdk-trace-base';
+import {
+  BasicTracerProvider,
+  SimpleSpanProcessor,
+  ConsoleSpanExporter,
+} from '@opentelemetry/sdk-trace-base';
 
 export function bootstrapOtel(): void {
   const exporterName = resolveExporter();

@@ -6,7 +6,11 @@ import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-fa
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import type { ResumeContextHolder } from './types.js';
-import { applyRebuiltContext, autoCompactResumeContext, createSessionExpiredHandler } from './resume-context.js';
+import {
+  applyRebuiltContext,
+  autoCompactResumeContext,
+  createSessionExpiredHandler,
+} from './resume-context.js';
 
 function workflowConfig(persistTranscript: boolean, compactionThreshold?: number) {
   return {
@@ -114,7 +118,9 @@ describe('applyRebuiltContext', () => {
     expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'pre-existing' }]);
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
-    expect(warning && 'message' in warning ? warning.message : '').toMatch(/expired|no transcript/i);
+    expect(warning && 'message' in warning ? warning.message : '').toMatch(
+      /expired|no transcript/i,
+    );
   });
 
   it('skips populating the holder when requireNonEmpty is set and no messages were rebuilt', async () => {
@@ -203,7 +209,10 @@ describe('autoCompactResumeContext', () => {
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
-    const entries = readFileSync(file, 'utf-8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+    const entries = readFileSync(file, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
 
     expect(summarizedBatches).toHaveLength(1);
     expect(summarizedBatches[0]).toHaveLength(3);
@@ -213,7 +222,7 @@ describe('autoCompactResumeContext', () => {
       text: '## Summary\nCompacted older work',
       summarizedUpTo: '1002',
     });
-    expect(events.find(event => event.type === 'warning')).toBeUndefined();
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
 
   it('uses structured compaction for api planners in auto mode', async () => {
@@ -251,14 +260,17 @@ describe('autoCompactResumeContext', () => {
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
-    const entries = readFileSync(file, 'utf-8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+    const entries = readFileSync(file, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
 
     expect(entries.at(-1)).toMatchObject({
       kind: 'summary',
       text: JSON.stringify(structured),
       structured,
     });
-    expect(events.find(event => event.type === 'warning')).toBeUndefined();
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
 
   it('emits a warning when structured compaction falls back to freeform text', async () => {
@@ -287,7 +299,7 @@ describe('autoCompactResumeContext', () => {
       },
     });
 
-    const warning = events.find(event => event.type === 'warning');
+    const warning = events.find((event) => event.type === 'warning');
     expect(warning && 'message' in warning ? warning.message : '').toMatch(/invalid JSON/i);
   });
 
@@ -344,9 +356,7 @@ describe('createSessionExpiredHandler', () => {
 
     const warnings = events.filter((e) => e.type === 'warning');
     expect(warnings.length).toBeGreaterThanOrEqual(1);
-    expect(
-      warnings.some((w) => 'message' in w && /rebuild/i.test(w.message)),
-    ).toBe(true);
+    expect(warnings.some((w) => 'message' in w && /rebuild/i.test(w.message))).toBe(true);
     expect(resumeHolder.messages).toEqual([
       { role: 'user', content: 'first turn' },
       { role: 'assistant', content: 'ack' },

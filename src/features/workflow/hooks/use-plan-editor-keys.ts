@@ -8,6 +8,7 @@ import {
   moveTaskUp,
 } from '../components/plan-editor/actions.js';
 import { openExternalEditor } from '../components/plan-editor/external-editor.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import type { Task } from '../../../core/schemas/task.js';
 
 export type PlanEditorAction =
@@ -65,13 +66,15 @@ export function applyPlanEditorAction(
   onTogglePacketPreview?: (() => void) | undefined,
 ): void {
   switch (action.type) {
-    case 'none': return;
-    case 'move-cursor': planEditorStore.moveCursor(action.direction); return;
+    case 'none':
+      return;
+    case 'move-cursor':
+      planEditorStore.moveCursor(action.direction);
+      return;
     case 'move-task': {
       const { tasks, cursor } = planEditorStore.get();
-      const result = action.direction === 'down'
-        ? moveTaskDown(tasks, cursor)
-        : moveTaskUp(tasks, cursor);
+      const result =
+        action.direction === 'down' ? moveTaskDown(tasks, cursor) : moveTaskUp(tasks, cursor);
       applyTaskResult(tasks, cursor, result);
       return;
     }
@@ -84,7 +87,10 @@ export function applyPlanEditorAction(
     case 'merge-task': {
       const { tasks, cursor } = planEditorStore.get();
       const result = mergeWithPrevious(tasks, cursor);
-      if (result.error) { planEditorStore.setSaveError(result.error); return; }
+      if (result.error) {
+        planEditorStore.setSaveError(result.error);
+        return;
+      }
       applyTaskResult(tasks, cursor, result);
       return;
     }
@@ -103,29 +109,42 @@ export function applyPlanEditorAction(
     case 'regenerate-flagged': {
       return;
     }
-    case 'toggle-packet-preview': onTogglePacketPreview?.(); return;
-    case 'open-help': overlayStore.open('plan-editor-help'); return;
-    case 'open-editor': return;
-    case 'save': void onSave(); return;
+    case 'toggle-packet-preview':
+      onTogglePacketPreview?.();
+      return;
+    case 'open-help':
+      overlayStore.open('plan-editor-help');
+      return;
+    case 'open-editor':
+      return;
+    case 'save':
+      void onSave();
+      return;
     case 'discard': {
       planEditorStore.reset();
       return;
     }
+    default:
+      assertNever(action);
   }
 }
 
-export function usePlanEditorKeys(
-  isActive: boolean,
-  onSave: () => Promise<void>,
-  sessionDir: string,
-  onTogglePacketPreview?: (() => void) | undefined,
-  onRegenerateFlagged?: (() => Promise<void>) | undefined,
-): void {
-  const isOverlayOpen = overlayStore.use(s => s.active !== 'none');
+export interface PlanEditorKeysOptions {
+  onSave: () => Promise<void>;
+  sessionDir: string;
+  onTogglePacketPreview?: (() => void) | undefined;
+  onRegenerateFlagged?: (() => Promise<void>) | undefined;
+}
+
+export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
+  const { onSave, sessionDir, onTogglePacketPreview, onRegenerateFlagged } = options;
+  const isOverlayOpen = overlayStore.use((s) => s.active !== 'none');
 
   useInput(
-    (_input, _key) => { overlayStore.close(); },
-    { isActive: overlayStore.use(s => s.active === 'plan-editor-help') },
+    (_input, _key) => {
+      overlayStore.close();
+    },
+    { isActive: overlayStore.use((s) => s.active === 'plan-editor-help') },
   );
 
   useInput(
@@ -144,6 +163,6 @@ export function usePlanEditorKeys(
       }
       applyPlanEditorAction(action, onSave, onTogglePacketPreview);
     },
-    { isActive: isActive && !isOverlayOpen },
+    { isActive: !isOverlayOpen },
   );
 }

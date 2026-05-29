@@ -14,7 +14,9 @@ import type { WorkflowSinks } from './types.js';
 function makeSinks(): WorkflowSinks & { trigger: () => boolean; hasHandler: () => boolean } {
   let abortHandler: (() => void) | null = null;
   return {
-    setAbortHandler: (h) => { abortHandler = h; },
+    setAbortHandler: (h) => {
+      abortHandler = h;
+    },
     setQueueHandler: () => {},
     hasHandler: () => abortHandler !== null,
     trigger: () => {
@@ -157,7 +159,9 @@ describe('withContinuationLoop', () => {
       withContinuationLoop<number>({
         ctx: { projectDir, sessionId, callbacks, sinks },
         state,
-        body: async () => { throw err; },
+        body: async () => {
+          throw err;
+        },
       }),
     ).rejects.toBe(err);
   });
@@ -202,7 +206,9 @@ describe('withContinuationLoop', () => {
       withContinuationLoop<number>({
         ctx: { projectDir, sessionId, callbacks, sinks },
         state,
-        body: async () => { throw new Error('boom'); },
+        body: async () => {
+          throw new Error('boom');
+        },
       }),
     ).rejects.toThrow('boom');
     expect(sinks.hasHandler()).toBe(false);

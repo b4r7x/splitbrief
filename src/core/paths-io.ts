@@ -78,24 +78,42 @@ export function validateFilename(filename: string): void {
   }
 }
 
-export function writeSpecFile(projectDir: string, sessionId: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
+export interface SpecFileRef {
+  projectDir: string;
+  sessionId: string;
+}
+
+export function writeSpecFile(
+  ref: SpecFileRef,
+  filename: string,
+  content: string,
+  metadata?: SpecMetadata | null,
+): void {
   validateFilename(filename);
-  ensureSessionDir(projectDir, sessionId);
+  ensureSessionDir(ref.projectDir, ref.sessionId);
   let finalContent = content;
   if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
-  writeSecureFile(join(sessionDir(projectDir, sessionId), filename), finalContent);
+  writeSecureFile(join(sessionDir(ref.projectDir, ref.sessionId), filename), finalContent);
 }
 
-export function readSpecFile(projectDir: string, sessionId: string, filename: string): string | null {
+export function readSpecFile(
+  projectDir: string,
+  sessionId: string,
+  filename: string,
+): string | null {
   validateFilename(filename);
   const filePath = join(sessionDir(projectDir, sessionId), filename);
   if (!existsSync(filePath)) return null;
   return readFileSync(filePath, 'utf-8');
 }
 
-export function readSpecFileOrEmpty(projectDir: string, sessionId: string, filename: string): string {
+export function readSpecFileOrEmpty(
+  projectDir: string,
+  sessionId: string,
+  filename: string,
+): string {
   return readSpecFile(projectDir, sessionId, filename) ?? '';
 }
 

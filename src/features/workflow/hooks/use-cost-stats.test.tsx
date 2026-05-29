@@ -47,11 +47,13 @@ describe('useCostStats', () => {
 
     expect(ui.lastFrame()).toBe('n/a');
 
-    modelCacheStore.setProviderModels('openai', [{
-      id: 'runtime-priced-model',
-      pricingInput: 1,
-      pricingOutput: 2,
-    }]);
+    modelCacheStore.setProviderModels('openai', [
+      {
+        id: 'runtime-priced-model',
+        pricingInput: 1,
+        pricingOutput: 2,
+      },
+    ]);
     await tick();
 
     expect(ui.lastFrame()).toBe('mixed');

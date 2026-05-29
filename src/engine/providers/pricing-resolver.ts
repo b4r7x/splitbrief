@@ -1,4 +1,10 @@
-import { API_PROVIDER_IDS, CLI_TOOL_IDS, META_PROVIDER_IDS, isProviderId, type ProviderId } from '../../core/schemas/enums.js';
+import {
+  API_PROVIDER_IDS,
+  CLI_TOOL_IDS,
+  META_PROVIDER_IDS,
+  isProviderId,
+  type ProviderId,
+} from '../../core/schemas/enums.js';
 import { isProviderLocal, isProviderSubscription } from '../../core/providers/catalog.js';
 import {
   NULL_CACHE,
@@ -56,7 +62,8 @@ function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
 }
 
 function pickUnpricedMode(providerId: string): PricingMode {
-  if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId)) return 'unpriced-cli';
+  if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId))
+    return 'unpriced-cli';
   if (META_UNPRICED_IDS.has(providerId)) return 'unpriced-meta';
   return 'unpriced-unknown';
 }
@@ -68,18 +75,20 @@ export function isApiPricedProvider(providerId: string): providerId is ProviderI
 export function getPricingMode(providerId: ProviderId): PricingMode {
   if (isProviderLocal(providerId)) return 'unpriced-local';
   if (isApiPricedProvider(providerId)) return 'api-priced';
-  if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId)) return 'unpriced-cli';
+  if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId))
+    return 'unpriced-cli';
   return 'unpriced-meta';
 }
 
-function makePricedResult(
-  modelId: string,
-  input: number,
-  output: number,
-  source: ResolvedPricing['source'],
-  cacheRead?: number,
-  cacheWrite?: number,
-): ResolvedPricing {
+function makePricedResult(opts: {
+  modelId: string;
+  input: number;
+  output: number;
+  source: ResolvedPricing['source'];
+  cacheRead?: number | undefined;
+  cacheWrite?: number | undefined;
+}): ResolvedPricing {
+  const { modelId, input, output, source, cacheRead, cacheWrite } = opts;
   return {
     inputPer1M: input,
     outputPer1M: output,
@@ -93,7 +102,11 @@ function makePricedResult(
   };
 }
 
-export function resolvePricing(providerId: string, cache: ModelCacheAccessor = NULL_CACHE, modelId?: string): ResolvedPricing {
+export function resolvePricing(
+  providerId: string,
+  cache: ModelCacheAccessor = NULL_CACHE,
+  modelId?: string,
+): ResolvedPricing {
   if (!isProviderId(providerId)) return makeUnpriced(providerId, modelId);
   if (!isApiPricedProvider(providerId)) return makeUnpriced(providerId, modelId);
 
@@ -107,37 +120,37 @@ export function resolvePricing(providerId: string, cache: ModelCacheAccessor = N
 
   const modelsDev = lookupModelsDevModel(providerId, effectiveModelId, cache);
   if (modelsDev?.pricingInput !== undefined && modelsDev.pricingOutput !== undefined) {
-    return makePricedResult(
-      effectiveModelId,
-      modelsDev.pricingInput,
-      modelsDev.pricingOutput,
-      'models-dev',
-      bundled?.pricingCacheRead,
-      bundled?.pricingCacheWrite,
-    );
+    return makePricedResult({
+      modelId: effectiveModelId,
+      input: modelsDev.pricingInput,
+      output: modelsDev.pricingOutput,
+      source: 'models-dev',
+      cacheRead: bundled?.pricingCacheRead,
+      cacheWrite: bundled?.pricingCacheWrite,
+    });
   }
 
   const runtime = lookupRuntimeModel(providerId, effectiveModelId, cache);
   if (runtime?.pricingInput !== undefined && runtime.pricingOutput !== undefined) {
-    return makePricedResult(
-      effectiveModelId,
-      runtime.pricingInput,
-      runtime.pricingOutput,
-      'runtime',
-      bundled?.pricingCacheRead,
-      bundled?.pricingCacheWrite,
-    );
+    return makePricedResult({
+      modelId: effectiveModelId,
+      input: runtime.pricingInput,
+      output: runtime.pricingOutput,
+      source: 'runtime',
+      cacheRead: bundled?.pricingCacheRead,
+      cacheWrite: bundled?.pricingCacheWrite,
+    });
   }
 
   if (bundled?.pricingInput !== undefined && bundled.pricingOutput !== undefined) {
-    return makePricedResult(
-      effectiveModelId,
-      bundled.pricingInput,
-      bundled.pricingOutput,
-      'bundled-fallback',
-      bundled.pricingCacheRead,
-      bundled.pricingCacheWrite,
-    );
+    return makePricedResult({
+      modelId: effectiveModelId,
+      input: bundled.pricingInput,
+      output: bundled.pricingOutput,
+      source: 'bundled-fallback',
+      cacheRead: bundled.pricingCacheRead,
+      cacheWrite: bundled.pricingCacheWrite,
+    });
   }
 
   return makeUnpriced(providerId, effectiveModelId);

@@ -1,10 +1,15 @@
 import { formatCost } from '../../../core/formatting.js';
 import { formatModelName } from '../../../core/model-display.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { pluralize } from '../../../utils/format.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { getGutterRole } from '../event-role.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
-import { formatExternalChangesValue, formatTaskStartedValue, validationRow } from './event-format.js';
+import {
+  formatExternalChangesValue,
+  formatTaskStartedValue,
+  validationRow,
+} from './event-format.js';
 import { implementerDoneRows, runningImplementerRows } from './implementer-rows.js';
 import type { ConversationRow, RowBuildContext } from './types.js';
 import { cardRows, prefixedWrappedRows, row, rowText, wrapRows } from './row-format.js';
@@ -65,89 +70,334 @@ export function eventRows(
         row(`${keyPrefix}-resume`, 'Resume with: diptych resume', 'textDim'),
       ];
     case 'paused_external_changes':
-      return cardRows(keyPrefix, 'user edits', formatExternalChangesValue(event), ctx.width, event.conflict?.safeToContinue ? 'warning' : 'error');
+      return cardRows({
+        keyPrefix,
+        label: 'user edits',
+        value: formatExternalChangesValue(event),
+        width: ctx.width,
+        labelTone: event.conflict?.safeToContinue ? 'warning' : 'error',
+      });
     case 'recovery_prompted':
-      return cardRows(keyPrefix, 'recovery', `${event.reason}${event.taskId ? ` · ${event.taskId}` : ''} · recommended ${event.recommendedAction}`, ctx.width, 'warning', 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'recovery',
+        value: `${event.reason}${event.taskId ? ` · ${event.taskId}` : ''} · recommended ${event.recommendedAction}`,
+        width: ctx.width,
+        labelTone: 'warning',
+        valueTone: 'warning',
+      });
     case 'recovery_action_selected':
-      return cardRows(keyPrefix, 'recovery', `selected ${event.action} for ${event.reason}`, ctx.width, 'info');
+      return cardRows({
+        keyPrefix,
+        label: 'recovery',
+        value: `selected ${event.action} for ${event.reason}`,
+        width: ctx.width,
+        labelTone: 'info',
+      });
     case 'recovery_action_failed':
-      return cardRows(keyPrefix, 'recovery', `${event.action} blocked: ${event.message}`, ctx.width, 'error', 'error');
+      return cardRows({
+        keyPrefix,
+        label: 'recovery',
+        value: `${event.action} blocked: ${event.message}`,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'error',
+      });
     case 'recovery_resolved':
-      return cardRows(keyPrefix, 'recovery', `${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`, ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'recovery',
+        value: `${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'planner_text':
-      return prefixedWrappedRows(keyPrefix, event.text, ctx.width, 'text', role);
+      return prefixedWrappedRows({
+        keyPrefix,
+        text: event.text,
+        width: ctx.width,
+        tone: 'text',
+        role,
+      });
     case 'rewind_to_spec':
-      return cardRows(keyPrefix, 'rewind → spec', event.comment || undefined, ctx.width, 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'rewind → spec',
+        value: event.comment || undefined,
+        width: ctx.width,
+        labelTone: 'warning',
+      });
     case 'rewind_to_plan':
-      return cardRows(keyPrefix, 'rewind → plan', event.comment || undefined, ctx.width, 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'rewind → plan',
+        value: event.comment || undefined,
+        width: ctx.width,
+        labelTone: 'warning',
+      });
     case 'brief_quality_passed':
-      return cardRows(keyPrefix, 'brief quality', `score ${event.score.toFixed(2)} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`, ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'brief quality',
+        value: `score ${event.score.toFixed(2)} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'brief_quality_failed':
-      return cardRows(keyPrefix, 'brief quality', `score ${event.score.toFixed(2)} · ${event.errorCount} error${event.errorCount === 1 ? '' : 's'} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`, ctx.width, 'error', 'error');
+      return cardRows({
+        keyPrefix,
+        label: 'brief quality',
+        value: `score ${event.score.toFixed(2)} · ${event.errorCount} ${pluralize(event.errorCount, 'error')} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'error',
+      });
     case 'drift_report':
-      return cardRows(keyPrefix, 'drift', `score ${event.score.toFixed(2)} · ${event.errorCount} error${event.errorCount === 1 ? '' : 's'} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`, ctx.width, event.passed ? 'success' : 'warning', event.passed ? 'textDim' : 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'drift',
+        value: `score ${event.score.toFixed(2)} · ${event.errorCount} ${pluralize(event.errorCount, 'error')} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        width: ctx.width,
+        labelTone: event.passed ? 'success' : 'warning',
+        valueTone: event.passed ? 'textDim' : 'warning',
+      });
     case 'mode_downgrade_advised':
-      return wrapRows([row(keyPrefix, `This looks trivial. Consider --mode ${event.suggestedMode} instead of --mode ${event.currentMode}.`, 'warning')], ctx.width);
+      return wrapRows(
+        [
+          row(
+            keyPrefix,
+            `This looks trivial. Consider --mode ${event.suggestedMode} instead of --mode ${event.currentMode}.`,
+            'warning',
+          ),
+        ],
+        ctx.width,
+      );
     case 'task_started':
-      return prefixedWrappedRows(keyPrefix, `T${event.index + 1}: ${event.title}  ${formatTaskStartedValue(event)}`, ctx.width, 'text', role, true);
+      return prefixedWrappedRows({
+        keyPrefix,
+        text: `T${event.index + 1}: ${event.title}  ${formatTaskStartedValue(event)}`,
+        width: ctx.width,
+        tone: 'text',
+        role,
+        bold: true,
+      });
     case 'task_skipped':
-      return cardRows(keyPrefix, 'skipped', `T${event.taskId} ${event.title}: ${event.reason}`, ctx.width, 'textDim');
+      return cardRows({
+        keyPrefix,
+        label: 'skipped',
+        value: `T${event.taskId} ${event.title}: ${event.reason}`,
+        width: ctx.width,
+        labelTone: 'textDim',
+      });
     case 'task_retry':
-      return prefixedWrappedRows(keyPrefix, `retry  attempt ${event.attempt}/${event.maxRetries}`, ctx.width, 'warning', role);
+      return prefixedWrappedRows({
+        keyPrefix,
+        text: `retry  attempt ${event.attempt}/${event.maxRetries}`,
+        width: ctx.width,
+        tone: 'warning',
+        role,
+      });
     case 'task_reset':
-      return cardRows(keyPrefix, 'task reset', `Task ${event.taskId} set to pending`, ctx.width, 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'task reset',
+        value: `Task ${event.taskId} set to pending`,
+        width: ctx.width,
+        labelTone: 'warning',
+      });
     case 'implementer_generate_running':
-      return runningImplementerRows(keyPrefix, event, ctx.streaming)
-        .flatMap((sourceRow, index) => prefixedWrappedRows(`${sourceRow.key}-${index}`, rowText(sourceRow), ctx.width, sourceRow.segments[0]?.tone ?? 'text', role));
+      return runningImplementerRows(keyPrefix, event, ctx.streaming).flatMap((sourceRow, index) =>
+        prefixedWrappedRows({
+          keyPrefix: `${sourceRow.key}-${index}`,
+          text: rowText(sourceRow),
+          width: ctx.width,
+          tone: sourceRow.segments[0]?.tone ?? 'text',
+          role,
+        }),
+      );
     case 'implementer_generate_done':
-      return implementerDoneRows(keyPrefix, event, ctx, expanded)
-        .flatMap((sourceRow, index) => prefixedWrappedRows(`${sourceRow.key}-${index}`, rowText(sourceRow), ctx.width, sourceRow.segments[0]?.tone ?? 'text', role));
+      return implementerDoneRows(keyPrefix, event, ctx, expanded).flatMap((sourceRow, index) =>
+        prefixedWrappedRows({
+          keyPrefix: `${sourceRow.key}-${index}`,
+          text: rowText(sourceRow),
+          width: ctx.width,
+          tone: sourceRow.segments[0]?.tone ?? 'text',
+          role,
+        }),
+      );
     case 'implementer_generate_failed':
-      return prefixedWrappedRows(keyPrefix, `${formatModelName(event.model)}  failed`, ctx.width, 'error', role);
+      return prefixedWrappedRows({
+        keyPrefix,
+        text: `${formatModelName(event.model)}  failed`,
+        width: ctx.width,
+        tone: 'error',
+        role,
+      });
     case 'validate': {
-      const rows = prefixedWrappedRows(keyPrefix, validationRow(event), ctx.width, event.passed ? 'success' : 'validator', role);
+      const rows = prefixedWrappedRows({
+        keyPrefix,
+        text: validationRow(event),
+        width: ctx.width,
+        tone: event.passed ? 'success' : 'validator',
+        role,
+      });
       if (event.status === 'done' && !event.passed && event.error) {
-        rows.push(...prefixedWrappedRows(`${keyPrefix}-error`, `  ${event.error}`, ctx.width, 'error', role));
+        rows.push(
+          ...prefixedWrappedRows({
+            keyPrefix: `${keyPrefix}-error`,
+            text: `  ${event.error}`,
+            width: ctx.width,
+            tone: 'error',
+            role,
+          }),
+        );
       }
       return rows;
     }
     case 'escalate': {
-      const rows = prefixedWrappedRows(keyPrefix, `escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`, ctx.width, 'planner', role, true);
-      if (event.hint) rows.push(...prefixedWrappedRows(`${keyPrefix}-hint`, `  ${event.hint}`, ctx.width, 'textDim', role));
+      const rows = prefixedWrappedRows({
+        keyPrefix,
+        text: `escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`,
+        width: ctx.width,
+        tone: 'planner',
+        role,
+        bold: true,
+      });
+      if (event.hint)
+        rows.push(
+          ...prefixedWrappedRows({
+            keyPrefix: `${keyPrefix}-hint`,
+            text: `  ${event.hint}`,
+            width: ctx.width,
+            tone: 'textDim',
+            role,
+          }),
+        );
       return rows;
     }
     case 'git_commit':
-      return cardRows(keyPrefix, 'committed', event.message, ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'committed',
+        value: event.message,
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'git_checkpoint':
-      return cardRows(keyPrefix, 'checkpoint', event.tag, ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'checkpoint',
+        value: event.tag,
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'git_branch_created':
-      return cardRows(keyPrefix, 'branch', event.name, ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'branch',
+        value: event.name,
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'message_queued':
-      return cardRows(keyPrefix, 'queued', `Message queued during ${event.phase}`, ctx.width, 'info');
+      return cardRows({
+        keyPrefix,
+        label: 'queued',
+        value: `Message queued during ${event.phase}`,
+        width: ctx.width,
+        labelTone: 'info',
+      });
     case 'message_injected_native':
-      return cardRows(keyPrefix, 'injected', 'Message delivered to live session', ctx.width, 'success');
+      return cardRows({
+        keyPrefix,
+        label: 'injected',
+        value: 'Message delivered to live session',
+        width: ctx.width,
+        labelTone: 'success',
+      });
     case 'queue_drained':
-      return cardRows(keyPrefix, 'drained', `${event.count} queued message${event.count === 1 ? '' : 's'} folded into next prompt`, ctx.width, 'info');
+      return cardRows({
+        keyPrefix,
+        label: 'drained',
+        value: `${event.count} queued ${pluralize(event.count, 'message')} folded into next prompt`,
+        width: ctx.width,
+        labelTone: 'info',
+      });
     case 'queue_cleared':
-      return cardRows(keyPrefix, 'queue cleared', `${event.count} pending message${event.count === 1 ? '' : 's'} removed`, ctx.width, 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'queue cleared',
+        value: `${event.count} pending ${pluralize(event.count, 'message')} removed`,
+        width: ctx.width,
+        labelTone: 'warning',
+      });
     case 'user_message':
       return wrapRows([row(keyPrefix, `❯ ${event.text}`, 'accent', true)], ctx.width);
     case 'planner_attachments_dropped':
-      return cardRows(keyPrefix, 'attachments dropped', `${event.count} image${event.count === 1 ? '' : 's'} dropped (${event.reason})`, ctx.width, 'warning', 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'attachments dropped',
+        value: `${event.count} ${pluralize(event.count, 'image')} dropped (${event.reason})`,
+        width: ctx.width,
+        labelTone: 'warning',
+        valueTone: 'warning',
+      });
     case 'warning':
-      return cardRows(keyPrefix, 'warning', event.message, ctx.width, 'warning', 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'warning',
+        value: event.message,
+        width: ctx.width,
+        labelTone: 'warning',
+        valueTone: 'warning',
+      });
     case 'error':
-      return cardRows(keyPrefix, 'error', event.message, ctx.width, 'error', 'error');
+      return cardRows({
+        keyPrefix,
+        label: 'error',
+        value: event.message,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'error',
+      });
     case 'cost_prediction':
       return costPredictionRows(keyPrefix, event, ctx.width);
     case 'budget_warning':
-      return cardRows(keyPrefix, 'budget', `80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`, ctx.width, 'warning', 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'budget',
+        value: `80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
+        width: ctx.width,
+        labelTone: 'warning',
+        valueTone: 'warning',
+      });
     case 'budget_paused':
-      return cardRows(keyPrefix, 'budget', `Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`, ctx.width, 'warning', 'warning');
+      return cardRows({
+        keyPrefix,
+        label: 'budget',
+        value: `Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
+        width: ctx.width,
+        labelTone: 'warning',
+        valueTone: 'warning',
+      });
     case 'budget_exceeded':
-      return cardRows(keyPrefix, 'budget', `Exceeded: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`, ctx.width, 'error', 'error');
+      return cardRows({
+        keyPrefix,
+        label: 'budget',
+        value: `Exceeded: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'error',
+      });
     case 'approval_mode_changed':
-      return cardRows(keyPrefix, 'approval', event.mode === 'yolo' ? 'tiered approvals disabled' : 'tiered approvals restored', ctx.width, event.mode === 'yolo' ? 'warning' : 'textDim', event.mode === 'yolo' ? 'warning' : 'textDim');
+      return cardRows({
+        keyPrefix,
+        label: 'approval',
+        value: event.mode === 'yolo' ? 'tiered approvals disabled' : 'tiered approvals restored',
+        width: ctx.width,
+        labelTone: event.mode === 'yolo' ? 'warning' : 'textDim',
+        valueTone: event.mode === 'yolo' ? 'warning' : 'textDim',
+      });
     default:
       return assertNever(event);
   }

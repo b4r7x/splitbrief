@@ -5,8 +5,8 @@ import type { PlanResult } from '../../engine/planners/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../setup.js';
-import { rethrowAsCli } from '../errors.js';
-import { warnStderr } from '../../lib/warn.js';
+import { withCliErrors } from '../errors.js';
+import { printConfigWarnings } from '../build-overrides.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
@@ -34,7 +34,7 @@ export function registerSpecCommand(program: Command): void {
       const mergedHooks = await resolveHooksConfig(projectDir, baseConfig.hooks);
       await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
       rejectUntrustedRunners(baseConfig, projectDir, opts.allowHooks);
-      for (const w of warnings) warnStderr(`⚠ ${w}`);
+      printConfigWarnings(warnings);
       const config = opts.auto
         ? {
             ...baseConfig,
@@ -46,25 +46,28 @@ export function registerSpecCommand(program: Command): void {
 
       const planner = await createPlanner(config);
 
-      console.log(`Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`);
+      console.log(
+        `Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`,
+      );
 
-      let result: PlanResult;
-      try {
-        result = await planner.plan(feature, projectDir, {
-          onOutput(text: string) {
-            process.stdout.write(text);
+      const result: PlanResult = await withCliErrors(() =>
+        planner.plan({
+          feature,
+          projectDir,
+          callbacks: {
+            onOutput(text: string) {
+              process.stdout.write(text);
+            },
+            onPhase(phase: Phase) {
+              console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
+            },
+            sessionId,
           },
-          onPhase(phase: Phase) {
-            console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
-          },
-          sessionId,
-        });
-      } catch (err) {
-        rethrowAsCli(err);
-      }
+        }),
+      );
 
       for (const phase of result.phases ?? []) {
-        writeSpecFile(projectDir, sessionId, phase.filename, phase.text);
+        writeSpecFile({ projectDir, sessionId }, phase.filename, phase.text);
       }
 
       const sessionPath = sessionDir(projectDir, sessionId);
@@ -72,6 +75,8 @@ export function registerSpecCommand(program: Command): void {
       console.log(`  Session: ${ansis.dim(sessionId)}`);
       console.log(`  Spec:  ${ansis.dim(`${sessionPath}/${SPEC_FILE}`)}`);
       console.log(`  Plan:  ${ansis.dim(`${sessionPath}/${PLAN_FILE}`)}`);
-      console.log(`  Tasks: ${ansis.dim(`${sessionPath}/${TASKS_FILE}`)} (${result.tasks.length} tasks)`);
+      console.log(
+        `  Tasks: ${ansis.dim(`${sessionPath}/${TASKS_FILE}`)} (${result.tasks.length} tasks)`,
+      );
     });
 }

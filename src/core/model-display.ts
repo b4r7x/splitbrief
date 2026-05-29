@@ -8,10 +8,10 @@ export function formatToolModel(tool?: string, model?: string): string {
 }
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'auto': 'Auto',
-  'sonnet': 'Sonnet',
-  'opus': 'Opus',
-  'opusplan': 'OpusPlan',
+  auto: 'Auto',
+  sonnet: 'Sonnet',
+  opus: 'Opus',
+  opusplan: 'OpusPlan',
   'deepseek-chat': 'DeepSeek V3',
   'deepseek-reasoner': 'DeepSeek R1',
   'deepseek-r1-0528': 'DeepSeek R1',
@@ -38,10 +38,19 @@ const BRAND_ENTRIES = Object.entries(BRANDS).sort((a, b) => b[0].length - a[0].l
 const DROP_TOKENS = new Set(['latest']);
 
 const SUFFIXES: Record<string, string> = {
-  mini: 'Mini', turbo: 'Turbo', pro: 'Pro', flash: 'Flash',
-  nano: 'Nano', max: 'Max', spark: 'Spark', scout: 'Scout',
-  instruct: 'Instruct', preview: 'Preview', cloud: 'Cloud',
-  coder: 'Coder', chat: 'Chat',
+  mini: 'Mini',
+  turbo: 'Turbo',
+  pro: 'Pro',
+  flash: 'Flash',
+  nano: 'Nano',
+  max: 'Max',
+  spark: 'Spark',
+  scout: 'Scout',
+  instruct: 'Instruct',
+  preview: 'Preview',
+  cloud: 'Cloud',
+  coder: 'Coder',
+  chat: 'Chat',
 };
 
 const SIZE_RE = /^\d+(?:\.\d+)?b$/i;
@@ -66,10 +75,14 @@ function tryCompoundBrand(token: string): string | null {
 
 function formatTag(tag: string): string {
   if (!tag || tag === 'latest') return '';
-  return tag.split('-').map(part => {
-    if (SIZE_RE.test(part)) return part.toUpperCase();
-    return part.charAt(0).toUpperCase() + part.slice(1);
-  }).filter(Boolean).join(' ');
+  return tag
+    .split('-')
+    .map((part) => {
+      if (SIZE_RE.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .filter(Boolean)
+    .join(' ');
 }
 
 function parseModelName(rawId: string): string {
@@ -95,21 +108,43 @@ function parseModelName(rawId: string): string {
     if (DROP_TOKENS.has(lower)) continue;
 
     if (i === 0) {
-      if (O_SERIES_RE.test(lower)) { parts.push(lower); continue; }
+      if (O_SERIES_RE.test(lower)) {
+        parts.push(lower);
+        continue;
+      }
 
       const brand = BRANDS[lower];
-      if (brand) { parts.push(brand); if (lower === 'gpt') isGpt = true; continue; }
+      if (brand) {
+        parts.push(brand);
+        if (lower === 'gpt') isGpt = true;
+        continue;
+      }
 
       const compound = tryCompoundBrand(lower);
-      if (compound) { parts.push(compound); continue; }
+      if (compound) {
+        parts.push(compound);
+        continue;
+      }
     }
 
-    if (SIZE_RE.test(raw)) { parts.push(raw.toUpperCase()); continue; }
-    if (VERSION_RE.test(raw)) { parts.push(raw); continue; }
-    if (VERSION_PREFIX_RE.test(raw)) { parts.push('V' + raw.slice(1)); continue; }
+    if (SIZE_RE.test(raw)) {
+      parts.push(raw.toUpperCase());
+      continue;
+    }
+    if (VERSION_RE.test(raw)) {
+      parts.push(raw);
+      continue;
+    }
+    if (VERSION_PREFIX_RE.test(raw)) {
+      parts.push('V' + raw.slice(1));
+      continue;
+    }
 
     const suffix = SUFFIXES[lower];
-    if (suffix) { parts.push(suffix); continue; }
+    if (suffix) {
+      parts.push(suffix);
+      continue;
+    }
 
     parts.push(raw.charAt(0).toUpperCase() + raw.slice(1));
   }
@@ -122,9 +157,8 @@ function parseModelName(rawId: string): string {
     }
   }
 
-  const name = isGpt && parts.length > 1
-    ? parts[0] + '-' + parts.slice(1).join(' ')
-    : parts.join(' ');
+  const name =
+    isGpt && parts.length > 1 ? parts[0] + '-' + parts.slice(1).join(' ') : parts.join(' ');
 
   return tag ? `${name} ${tag}` : name;
 }

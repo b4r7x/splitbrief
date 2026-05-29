@@ -30,22 +30,31 @@ interface SessionRowProps {
   featureColWidth?: number;
 }
 
-export function SessionRow({ session, showCursor = false, isCursor = false, featureColWidth }: SessionRowProps) {
+export function SessionRow({
+  session,
+  showCursor = false,
+  isCursor = false,
+  featureColWidth,
+}: SessionRowProps) {
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
-  const feature = featureColWidth !== undefined
-    ? truncateWithEllipsis(session.feature, featureColWidth).padEnd(featureColWidth)
-    : session.feature;
+  const feature =
+    featureColWidth !== undefined
+      ? truncateWithEllipsis(session.feature, featureColWidth).padEnd(featureColWidth)
+      : session.feature;
   const time = formatRelativeTime(session.startedAt);
-  const featureColor = showCursor
-    ? (isCursor ? t.accent : t.text)
-    : t.text;
+  const featureColor = showCursor ? (isCursor ? t.accent : t.text) : t.text;
   return (
     <Box>
       {showCursor && <CursorCell isCursor={isCursor} />}
       <Text color={display.color}>{display.icon} </Text>
-      <Text color={featureColor} bold={showCursor && isCursor}>{feature}</Text>
-      <Text color={t.textDim}>{showCursor ? '  ' : ' '}{time}</Text>
+      <Text color={featureColor} bold={showCursor && isCursor}>
+        {feature}
+      </Text>
+      <Text color={t.textDim}>
+        {showCursor ? '  ' : ' '}
+        {time}
+      </Text>
     </Box>
   );
 }

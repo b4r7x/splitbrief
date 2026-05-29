@@ -9,13 +9,22 @@ import { loadState } from '../../../core/state/persistence.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runRetryStep } from './step.js';
 import { validateAndCommit } from './validate-and-commit.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'standard',
+} as const;
 
 const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},
@@ -109,7 +118,9 @@ describe('runRetryStep', () => {
       invokeRetry,
     });
 
-    expect(invokeRetry).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+    expect(invokeRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal }),
+    );
   });
 
   it('does not commit retry results when the signal aborts during validation', async () => {
@@ -121,15 +132,14 @@ describe('runRetryStep', () => {
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const controller = new AbortController();
     const validator = {
-      findAffectedTestFile: vi.fn().mockReturnValue(null),
       runValidation: vi.fn().mockImplementation(async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         return [{ stage: 'test' as const, passed: true }];
       }),
     };
 
-    const result = await validateAndCommit(
-      {
+    const result = await validateAndCommit({
+      ctx: {
         projectDir,
         sessionId,
         config: configWithProfiles(),
@@ -147,12 +157,11 @@ describe('runRetryStep', () => {
       },
       task,
       state,
-      'local',
-      'VALIDATION_PASS',
-      1,
-      undefined,
-      [task.file],
-    );
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      retryCount: 1,
+      preApprovedChangedFiles: [task.file],
+    });
 
     expect(result).toMatchObject({
       completed: false,
@@ -175,12 +184,13 @@ describe('runRetryStep', () => {
     const overrideRetry = async ({ config: retryConfig, error, attempt, kind }: RetryOptions) => {
       const implementer = retryConfig.implementer;
       return {
-        success: implementer.kind === 'api'
-          && implementer.provider === 'deepseek'
-          && implementer.model === 'deepseek-chat'
-          && error === 'validation failed'
-          && attempt === 1
-          && kind === 'local',
+        success:
+          implementer.kind === 'api' &&
+          implementer.provider === 'deepseek' &&
+          implementer.model === 'deepseek-chat' &&
+          error === 'validation failed' &&
+          attempt === 1 &&
+          kind === 'local',
         output: 'fixed',
         usage: { inputTokens: 12, outputTokens: 6 },
       };
@@ -215,7 +225,14 @@ describe('runRetryStep', () => {
       usageCategory: 'implementer',
       retryFailureFallback: 'retry failed',
       profileOverride: 'cheap-large',
-      invokeRetry: ({ task: retryTask, lastError, attempts, projectDir: retryProjectDir, config: retryConfig, implementer }) =>
+      invokeRetry: ({
+        task: retryTask,
+        lastError,
+        attempts,
+        projectDir: retryProjectDir,
+        config: retryConfig,
+        implementer,
+      }) =>
         implementer.retry({
           task: retryTask,
           projectDir: retryProjectDir,
@@ -225,13 +242,12 @@ describe('runRetryStep', () => {
           attempt: attempts,
           kind: 'local',
           onOutput: () => {},
-          bus,
           phase: state.phase,
         }),
     });
 
     expect(outcome.result).toEqual({ completed: true, method: 'local', attempts: 1 });
-    expect(events.find(event => event.type === 'task_completed')).toMatchObject({
+    expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
       type: 'task_completed',
       taskId: 'T001',
       method: 'local',
@@ -255,45 +271,53 @@ describe('runRetryStep', () => {
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const defaultImplementer = makeImplementer();
 
-    await expect(runRetryStep({
-      ctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        context: defaultContext,
-        implementer: defaultImplementer,
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'retry failed',
-      profileOverride: 'nonexistent-profile',
-      invokeRetry: ({ implementer, task: retryTask, lastError, attempts, projectDir: retryProjectDir, config: retryConfig }) =>
-        implementer.retry({
+    await expect(
+      runRetryStep({
+        ctx: {
+          projectDir,
+          sessionId,
+          config,
+          callbacks,
+          bus,
+          planner: makePlanner(),
+          context: defaultContext,
+          implementer: defaultImplementer,
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+          taskStartSnapshot,
+          dependsOnFiles: [],
+        },
+        task,
+        state,
+        lastError: 'validation failed',
+        attempts: 1,
+        method: 'local',
+        transitionType: 'VALIDATION_PASS',
+        usageCategory: 'implementer',
+        retryFailureFallback: 'retry failed',
+        profileOverride: 'nonexistent-profile',
+        invokeRetry: ({
+          implementer,
           task: retryTask,
+          lastError,
+          attempts,
           projectDir: retryProjectDir,
           config: retryConfig,
-          context: defaultContext,
-          error: lastError,
-          attempt: attempts,
-          kind: 'local',
-          onOutput: () => {},
-          bus,
-          phase: state.phase,
-        }),
-    })).rejects.toThrow(/nonexistent-profile/);
+        }) =>
+          implementer.retry({
+            task: retryTask,
+            projectDir: retryProjectDir,
+            config: retryConfig,
+            context: defaultContext,
+            error: lastError,
+            attempt: attempts,
+            kind: 'local',
+            onOutput: () => {},
+            phase: state.phase,
+          }),
+      }),
+    ).rejects.toThrow(/nonexistent-profile/);
   });
 
   it('uses the default implementer when profileOverride is undefined', async () => {
@@ -340,7 +364,14 @@ describe('runRetryStep', () => {
       usageCategory: 'implementer',
       retryFailureFallback: 'retry failed',
       profileOverride: undefined,
-      invokeRetry: ({ implementer, task: retryTask, lastError, attempts, projectDir: retryProjectDir, config: retryConfig }) =>
+      invokeRetry: ({
+        implementer,
+        task: retryTask,
+        lastError,
+        attempts,
+        projectDir: retryProjectDir,
+        config: retryConfig,
+      }) =>
         implementer.retry({
           task: retryTask,
           projectDir: retryProjectDir,
@@ -350,7 +381,6 @@ describe('runRetryStep', () => {
           attempt: attempts,
           kind: 'local',
           onOutput: () => {},
-          bus,
           phase: state.phase,
         }),
     });

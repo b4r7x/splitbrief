@@ -1,4 +1,4 @@
-import wrapAnsi from 'wrap-ansi';
+import { wrapHard } from '../../utils/wrap.js';
 import { normalizeLineEndings } from './segments.js';
 
 export interface EditResult {
@@ -36,8 +36,7 @@ export function findVisualLineStart(value: string, cursor: number, columns: numb
   // Insert cursor space to match Ink rendering (segments are squashed then wrapped).
   const lineWithCursor = logicalLine.slice(0, cursorInLine) + ' ' + logicalLine.slice(cursorInLine);
 
-  const wrapped = wrapAnsi(lineWithCursor, columns, { trim: false, hard: true });
-  const visualLines = wrapped.split('\n');
+  const visualLines = wrapHard(lineWithCursor, columns).split('\n');
 
   let offset = 0;
   for (let i = 0; i < visualLines.length; i++) {
@@ -62,9 +61,10 @@ function toNfc(value: string, cursor: number): { value: string; cursor: number }
 
 export function deleteLineBackward(value: string, cursor: number, columns?: number): EditResult {
   const nfc = toNfc(value, cursor);
-  const lineStart = columns != null && columns > 0
-    ? findVisualLineStart(nfc.value, nfc.cursor, columns)
-    : nfc.value.lastIndexOf('\n', nfc.cursor - 1) + 1;
+  const lineStart =
+    columns != null && columns > 0
+      ? findVisualLineStart(nfc.value, nfc.cursor, columns)
+      : nfc.value.lastIndexOf('\n', nfc.cursor - 1) + 1;
 
   if (nfc.cursor === lineStart) {
     if (nfc.cursor > 0) {
@@ -84,9 +84,10 @@ export function deleteLineBackward(value: string, cursor: number, columns?: numb
 
 export function moveToLineStart(value: string, cursor: number, columns?: number): EditResult {
   const nfc = toNfc(value, cursor);
-  const lineStart = columns != null && columns > 0
-    ? findVisualLineStart(nfc.value, nfc.cursor, columns)
-    : nfc.value.lastIndexOf('\n', nfc.cursor - 1) + 1;
+  const lineStart =
+    columns != null && columns > 0
+      ? findVisualLineStart(nfc.value, nfc.cursor, columns)
+      : nfc.value.lastIndexOf('\n', nfc.cursor - 1) + 1;
   return { value: nfc.value, cursor: lineStart };
 }
 
@@ -114,10 +115,10 @@ const editHandlers: Record<
   NonNullable<EditAction>,
   (value: string, cursor: number, columns?: number) => EditResult
 > = {
-  'delete-word-backward': (value, cursor) => deleteWordBackward(value, cursor),
-  'delete-line-backward': (value, cursor, columns) => deleteLineBackward(value, cursor, columns),
-  'move-line-start': (value, cursor, columns) => moveToLineStart(value, cursor, columns),
-  'move-line-end': (value, cursor) => moveToLineEnd(value, cursor),
+  'delete-word-backward': deleteWordBackward,
+  'delete-line-backward': deleteLineBackward,
+  'move-line-start': moveToLineStart,
+  'move-line-end': moveToLineEnd,
 };
 
 export function applyEditAction(
@@ -151,13 +152,9 @@ export function navigateVertically(
     }
     currentPos = lineEnd + 1;
   }
-  const canMove = direction === 'up'
-    ? currentLineIndex > 0
-    : currentLineIndex < lines.length - 1;
+  const canMove = direction === 'up' ? currentLineIndex > 0 : currentLineIndex < lines.length - 1;
   if (!canMove) return undefined;
-  const targetLineIndex = direction === 'up'
-    ? currentLineIndex - 1
-    : currentLineIndex + 1;
+  const targetLineIndex = direction === 'up' ? currentLineIndex - 1 : currentLineIndex + 1;
   const targetLine = lines[targetLineIndex];
   if (targetLine === undefined) return undefined;
   const newCol = Math.min(col, targetLine.length);

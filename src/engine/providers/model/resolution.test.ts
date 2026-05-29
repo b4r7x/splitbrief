@@ -8,7 +8,6 @@ import {
   lookupRuntimeModel,
   findModelMetadata,
   findKnownModel,
-  getDefaultKnownModel,
   getEffectiveModelId,
 } from './resolution.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
@@ -69,18 +68,6 @@ describe('findKnownModel', () => {
     const found = findKnownModel('claude-code', 'claude-opus-4-6');
     expect(found?.name).toBe('opus');
     expect(found?.catalogModelId).toBe('claude-opus-4-6');
-  });
-});
-
-describe('getDefaultKnownModel', () => {
-  it('returns entry flagged isDefault', () => {
-    const def = getDefaultKnownModel('anthropic');
-    expect(def?.isDefault).toBe(true);
-    expect(def?.name).toBe('claude-sonnet-4-6');
-  });
-
-  it('returns undefined when no default is flagged', () => {
-    expect(getDefaultKnownModel('groq')).toBeUndefined();
   });
 });
 

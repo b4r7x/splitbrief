@@ -1,6 +1,11 @@
 import { resolve } from 'node:path';
 import type { Command } from 'commander';
-import { migrateCommand, type MigrationResult } from '../../core/migration/executor.js';
+import {
+  maybeMigrate,
+  migrateCommand,
+  type MigrationResult,
+} from '../../core/migration/executor.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export function printMigrationResult(
   result: MigrationResult,
@@ -19,7 +24,17 @@ export function printMigrationResult(
     case 'migrated':
       console.log(`Migrated ${result.sessionId}. Run 'diptych resume' to continue.`);
       return;
+    default:
+      assertNever(result);
   }
+}
+
+export async function maybeMigrateAndReport(
+  projectDir: string,
+  opts: { json?: boolean; rpc?: boolean },
+): Promise<void> {
+  const migration = await maybeMigrate(projectDir);
+  if (!opts.json && !opts.rpc) printMigrationResult(migration);
 }
 
 export function registerMigrateCommand(program: Command): void {

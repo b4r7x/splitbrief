@@ -5,15 +5,29 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE } from '../../../core/paths.js';
+import {
+  sessionDir,
+  TASKS_FILE,
+  SPEC_FILE,
+  PLAN_FILE,
+  RESEARCH_FILE,
+} from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'instant' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'instant',
+} as const;
 
 const SAMPLE_TASKS_MD = `---
 id: T001
@@ -57,12 +71,14 @@ function instantPlanResult(overrides?: Partial<PlanResult>): PlanResult {
   return {
     spec: '',
     plan: '',
-    tasks: [makeTask({
-      id: 'T-INSTANT',
-      scope: { inBounds: ['src/foo.ts'], outOfBounds: ['other files'] },
-      evidence: ['brief-quality.json recorded a passing gate'],
-      typeDefs: 'type RenameTask = { file: string }',
-    })],
+    tasks: [
+      makeTask({
+        id: 'T-INSTANT',
+        scope: { inBounds: ['src/foo.ts'], outOfBounds: ['other files'] },
+        evidence: ['brief-quality.json recorded a passing gate'],
+        typeDefs: 'type RenameTask = { file: string }',
+      }),
+    ],
     usage: { inputTokens: 30, outputTokens: 15 },
     phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
     ...overrides,
@@ -93,7 +109,12 @@ async function runInstant(plannerOverrides?: Partial<Planner>) {
   const state: WorkflowState = { ...initial, phase: 'idle' };
   const result = await runPlanningPhase({
     wctx: {
-      projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+      projectDir,
+      config,
+      callbacks,
+      metadata: TEST_METADATA,
+      sessionId,
+      bus,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     },
     planner,
@@ -124,12 +145,14 @@ describe('runInstantPlanning', () => {
 
   it('publishes mode_resolved and instant_plan_received events', async () => {
     const { events } = await runInstant();
-    const modeResolved = events.find(e => e.type === 'mode_resolved');
-    const instantReceived = events.find(e => e.type === 'instant_plan_received');
+    const modeResolved = events.find((e) => e.type === 'mode_resolved');
+    const instantReceived = events.find((e) => e.type === 'instant_plan_received');
     expect(modeResolved).toBeDefined();
     expect(modeResolved && 'mode' in modeResolved ? modeResolved.mode : null).toBe('instant');
     expect(instantReceived).toBeDefined();
-    expect(instantReceived && 'taskCount' in instantReceived ? instantReceived.taskCount : 0).toBe(1);
+    expect(instantReceived && 'taskCount' in instantReceived ? instantReceived.taskCount : 0).toBe(
+      1,
+    );
   });
 
   it('reaches implementation without opening approval gates', async () => {
@@ -145,7 +168,12 @@ describe('runInstantPlanning', () => {
     const initial = createInitialState('feature');
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -167,7 +195,12 @@ describe('runInstantPlanning', () => {
     const initial = createInitialState('feature');
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -179,7 +212,11 @@ describe('runInstantPlanning', () => {
 
   it('cancels when planner returns zero tasks', async () => {
     const { result } = await runInstant({
-      instantPlan: vi.fn().mockResolvedValue(instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] })),
+      instantPlan: vi
+        .fn()
+        .mockResolvedValue(
+          instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+        ),
     });
     expect(result.cancelled).toBe(true);
     expect(result.state.phase).toBe('idle');
@@ -195,14 +232,19 @@ describe('runInstantPlanning', () => {
     const initial = createInitialState('feature');
     await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
       state: { ...initial, phase: 'idle' },
       feature: 'feature',
     });
-    const warning = events.find(e => e.type === 'warning');
+    const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
     if (warning && 'message' in warning) {
       expect(warning.message).toContain('instant');
@@ -222,7 +264,12 @@ describe('runInstantPlanning', () => {
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,

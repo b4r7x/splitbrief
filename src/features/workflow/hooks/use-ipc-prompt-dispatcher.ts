@@ -2,7 +2,11 @@ import type { IpcPromptRequest, IpcPromptResponse } from '../../../engine/ipc/pr
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from '../review-parser.js';
-import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
+import {
+  formatUserEditConflictPrompt,
+  parseUserEditConflictAnswer,
+} from '../user-edit-conflict-prompt.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
 export function useIpcPromptDispatcher(
@@ -28,7 +32,9 @@ export function useIpcPromptDispatcher(
     }
 
     if (request.kind === 'user_edit_conflict') {
-      const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(request.conflict));
+      const answer = await inputMode.setQuestionMode(
+        formatUserEditConflictPrompt(request.conflict),
+      );
       return {
         kind: 'user_edit_conflict',
         selectedAction: parseUserEditConflictAnswer(answer, request.conflict.availableActions),
@@ -36,7 +42,9 @@ export function useIpcPromptDispatcher(
     }
 
     if (request.kind === 'question_asked') {
-      const answer = await inputMode.setQuestionMode(`Question ${request.num}/${request.total}: ${request.question.text}`);
+      const answer = await inputMode.setQuestionMode(
+        `Question ${request.num}/${request.total}: ${request.question.text}`,
+      );
       return { kind: 'question_asked', answer };
     }
 
@@ -55,7 +63,9 @@ export function useIpcPromptDispatcher(
     }
 
     if (request.kind === 'continuation_needed') {
-      const text = await inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):');
+      const text = await inputMode.setQuestionMode(
+        'Task interrupted. Enter instructions to continue (or press Enter to retry):',
+      );
       return { kind: 'continuation_needed', text };
     }
 
@@ -65,11 +75,17 @@ export function useIpcPromptDispatcher(
     }
 
     if (request.kind === 'task_review') {
-      const result = await inputMode.setReviewMode(`Review task ${request.request.taskId}: continue / abort`);
+      const result = await inputMode.setReviewMode(
+        `Review task ${request.request.taskId}: continue / abort`,
+      );
       return { kind: 'task_review', response: { action: result.approved ? 'continue' : 'abort' } };
     }
 
-    const response = await openApprovalPrompt(request.request);
-    return { kind: 'tiered_approval', response };
+    if (request.kind === 'tiered_approval') {
+      const response = await openApprovalPrompt(request.request);
+      return { kind: 'tiered_approval', response };
+    }
+
+    return assertNever(request);
   };
 }

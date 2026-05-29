@@ -1,7 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readActive, writeActive, clearActive, isSessionLive, generateSessionId } from './lifecycle.js';
+import {
+  readActive,
+  writeActive,
+  clearActive,
+  isSessionLive,
+  generateSessionId,
+} from './lifecycle.js';
 import { DIPTYCH_DIR } from '../paths.js';
 import { sessionDir } from '../paths.js';
 import { STATE_FILE } from '../paths.js';
@@ -37,7 +43,9 @@ describe('writeActive / readActive round-trip', () => {
   it('rejects invalid session ids', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
-    expect(() => writeActive({ projectDir: dir, sessionId: '../outside' })).toThrow('Invalid session id');
+    expect(() => writeActive({ projectDir: dir, sessionId: '../outside' })).toThrow(
+      'Invalid session id',
+    );
   });
 });
 
@@ -113,7 +121,9 @@ describe('isSessionLive', () => {
 
   it('rejects invalid session ids before reading state', () => {
     const dir = makeTmp();
-    expect(() => isSessionLive({ projectDir: dir, sessionId: '../outside' })).toThrow('Invalid session id');
+    expect(() => isSessionLive({ projectDir: dir, sessionId: '../outside' })).toThrow(
+      'Invalid session id',
+    );
   });
 });
 
@@ -159,7 +169,8 @@ describe('generateSessionId', () => {
 
   it('truncates slug to 50 characters', () => {
     const dir = makeTmp();
-    const longFeature = 'this is a very long feature description that exceeds fifty characters easily';
+    const longFeature =
+      'this is a very long feature description that exceeds fifty characters easily';
     const id = generateSessionId(dir, longFeature, new Date('2026-04-14T00:00:00'));
     const slug = id.slice('2026-04-14-'.length);
     expect(slug.length).toBeLessThanOrEqual(50);

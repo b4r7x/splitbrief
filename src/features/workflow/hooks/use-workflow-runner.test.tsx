@@ -14,12 +14,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import {
-  abortTurn,
-  requestCancel,
-  requestRewind,
-  clearAllHandlers,
-} from '../handlers.js';
+import { abortTurn, requestCancel, requestRewind, clearAllHandlers } from '../handlers.js';
 import { writeActive } from '../../../core/sessions/lifecycle.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';

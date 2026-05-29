@@ -11,10 +11,7 @@ describe('parseShellCommand', () => {
     ['echo "say \\"hello\\""', ['echo', 'say "hello"']],
     ["echo 'a\\b'", ['echo', 'a\\b']],
     ['echo "hello"world', ['echo', 'helloworld']],
-    [
-      'echo foo | wc -c && echo "$HOME"',
-      ['echo', 'foo', '|', 'wc', '-c', '&&', 'echo', '$HOME'],
-    ],
+    ['echo foo | wc -c && echo "$HOME"', ['echo', 'foo', '|', 'wc', '-c', '&&', 'echo', '$HOME']],
     ['', []],
     ['   ', []],
   ])('splits command text into argv tokens', (input, expected) => {

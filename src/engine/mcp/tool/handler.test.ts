@@ -5,8 +5,7 @@ import { join } from 'node:path';
 import { DIPTYCH_DIR, EVIDENCE_FILE, SESSIONS_DIR } from '../../../core/paths.js';
 import { EvidenceLedgerSchema } from '../../../core/schemas/evidence.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { createEvidenceLedger } from '../../orchestrator/evidence/ledger.js';
-import { writeEvidenceLedger } from '../../orchestrator/evidence/persistence.js';
+import { createEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { createToolHandler } from './handler.js';
 import type { ToolCallResult } from '../types.js';
 
@@ -65,7 +64,7 @@ function readLedger(projectDir: string, sessionId: string): ParsedLedger {
 }
 
 function findTask(ledger: ParsedLedger, id: string): ParsedTask {
-  const task = ledger.tasks.find(t => t.id === id);
+  const task = ledger.tasks.find((t) => t.id === id);
   if (task === undefined) {
     throw new Error(`Expected task ${id} to exist`);
   }
@@ -100,7 +99,7 @@ describe('MCP tool handler', () => {
     const handler = createToolHandler(projectDir);
     const tools = handler.listTools();
     expect(tools).toHaveLength(5);
-    const names = tools.map(t => t.name);
+    const names = tools.map((t) => t.name);
     expect(names).toContain('report_evidence');
     expect(names).toContain('report_progress');
     expect(names).toContain('mark_task_done');
@@ -291,7 +290,7 @@ describe('MCP tool handler', () => {
 
     const ledger = readLedger(projectDir, 'sess-001');
     const task = findTask(ledger, 'T001');
-    const checkACount = task.observedEvidence.filter(e => e === 'check A').length;
+    const checkACount = task.observedEvidence.filter((e) => e === 'check A').length;
     expect(checkACount).toBe(1);
     expect(task.observedEvidence).toContain('check B');
   });

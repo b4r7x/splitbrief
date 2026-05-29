@@ -21,18 +21,17 @@ export type MigrationResult =
   | { status: 'skipped'; sourceDir: string; warnings: string[] }
   | { status: 'migrated'; sourceDir: string; sessionId: string; warnings: string[] };
 
-export async function migrateCommand(projectDir: string): Promise<MigrationResult> {
-  const legacyCurrent = join(projectDir, DIPTYCH_DIR, 'current');
-  const tinySpecCurrent = join(projectDir, '.tiny-spec', 'current');
+function findLegacySourceDir(projectDir: string): string | null {
+  const candidates = [
+    join(projectDir, DIPTYCH_DIR, 'current'),
+    join(projectDir, '.tiny-spec', 'current'),
+  ];
+  return candidates.find((dir) => existsSync(dir)) ?? null;
+}
 
-  let sourceDir: string;
-  if (existsSync(legacyCurrent)) {
-    sourceDir = legacyCurrent;
-  } else if (existsSync(tinySpecCurrent)) {
-    sourceDir = tinySpecCurrent;
-  } else {
-    return { status: 'not-needed' };
-  }
+export async function migrateCommand(projectDir: string): Promise<MigrationResult> {
+  const sourceDir = findLegacySourceDir(projectDir);
+  if (sourceDir === null) return { status: 'not-needed' };
 
   let oldState: Record<string, unknown>;
   try {
@@ -42,7 +41,9 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
       return {
         status: 'skipped',
         sourceDir,
-        warnings: [`Legacy state at ${sourceDir}/${STATE_FILE} is not an object. Skipping migration.`],
+        warnings: [
+          `Legacy state at ${sourceDir}/${STATE_FILE} is not an object. Skipping migration.`,
+        ],
       };
     }
     oldState = parsed;
@@ -59,7 +60,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
 
   const feature = String(oldState.feature ?? 'unknown');
   const startedAt = String(oldState.startedAt ?? new Date().toISOString());
-  const sessionId = deriveSessionId(feature, startedAt, projectDir);
+  const sessionId = deriveSessionId({ feature, startedAt, projectDir });
 
   const tempDir = `${sessionDir(projectDir, sessionId)}.tmp`;
   const finalDir = sessionDir(projectDir, sessionId);
@@ -98,8 +99,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
 }
 
 export async function maybeMigrate(projectDir: string): Promise<MigrationResult> {
-  const legacyCurrent = join(projectDir, DIPTYCH_DIR, 'current');
-  const tinySpecCurrent = join(projectDir, '.tiny-spec', 'current');
-  if (!existsSync(legacyCurrent) && !existsSync(tinySpecCurrent)) return { status: 'not-needed' };
-  return migrateCommand(projectDir);
+  return findLegacySourceDir(projectDir) === null
+    ? { status: 'not-needed' }
+    : migrateCommand(projectDir);
 }

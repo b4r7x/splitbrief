@@ -34,7 +34,10 @@ beforeEach(() => {
 afterEach(() => {
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
-  Object.defineProperty(process.stdout, 'isTTY', { value: originalStdoutIsTTY, configurable: true });
+  Object.defineProperty(process.stdout, 'isTTY', {
+    value: originalStdoutIsTTY,
+    configurable: true,
+  });
 });
 
 describe('attachCommand', () => {
@@ -133,7 +136,9 @@ describe('attachCommand', () => {
       },
     });
 
-    await expect(attachCommand(undefined, { projectDir: testDir }, fakeDeps)).resolves.toBeUndefined();
+    await expect(
+      attachCommand(undefined, { projectDir: testDir }, fakeDeps),
+    ).resolves.toBeUndefined();
 
     expect(routerStore.get()).toMatchObject({
       screen: 'workflow',

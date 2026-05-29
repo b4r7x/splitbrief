@@ -3,7 +3,12 @@ import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../picker-utils.js';
 import { handleKeyboardInput } from './two-column-keyboard.js';
 import { useColumnState } from './use-column-state.js';
-import { CUSTOM_ROW_ID, isRealRightItem, isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
+import {
+  CUSTOM_ROW_ID,
+  isRealRightItem,
+  isVirtualCustomItem,
+  type RightItemOrVirtual,
+} from './virtual-items.js';
 
 const noop = () => {};
 
@@ -11,7 +16,10 @@ export interface LeftColumnProps<L> {
   items: L[];
   label?: string | undefined;
   filterBy?: ((item: L, query: string) => boolean) | undefined;
-  renderRow: (item: L, meta: { isCursor: boolean; isSelected: boolean; maxWidth: number }) => ReactNode;
+  renderRow: (
+    item: L,
+    meta: { isCursor: boolean; isSelected: boolean; maxWidth: number },
+  ) => ReactNode;
   getKey: (item: L) => string;
   isSpecial?: ((item: L) => boolean) | undefined;
   isDisabled?: ((item: L) => boolean) | undefined;
@@ -92,22 +100,25 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const onDeleteRight = rightProps.customRow?.onDelete;
 
   const initialLeftItem = leftItems[initialLeftIndex];
-  const initialLeftDisabled = initialLeftItem ? (isLeftItemDisabled?.(initialLeftItem) ?? false) : false;
-  const effectiveInitialColumn = initialColumn === 'right' && initialLeftDisabled ? 'left' : initialColumn;
+  const initialLeftDisabled = initialLeftItem
+    ? (isLeftItemDisabled?.(initialLeftItem) ?? false)
+    : false;
+  const effectiveInitialColumn =
+    initialColumn === 'right' && initialLeftDisabled ? 'left' : initialColumn;
 
   const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(effectiveInitialColumn);
   const [selectedLeftKey, setSelectedLeftKey] = useState<string | null>(null);
 
-  const leftCol = useColumnState<L>(
-    leftItems,
-    leftProps.filterBy ?? defaultLeftFilter,
-    initialLeftIndex,
-  );
-  const rightCol = useColumnState<R>(
-    rightItems,
-    rightProps.filterBy ?? defaultRightFilter,
-    initialRightIndex,
-  );
+  const leftCol = useColumnState<L>({
+    source: leftItems,
+    filterFn: leftProps.filterBy ?? defaultLeftFilter,
+    initialIndex: initialLeftIndex,
+  });
+  const rightCol = useColumnState<R>({
+    source: rightItems,
+    filterFn: rightProps.filterBy ?? defaultRightFilter,
+    initialIndex: initialRightIndex,
+  });
 
   const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
     ? [{ id: CUSTOM_ROW_ID, isVirtual: true as const }, ...rightCol.items]
@@ -115,13 +126,21 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightEffectiveIndex = Math.min(rightCol.index, Math.max(0, filteredRight.length - 1));
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
-  const isSpecial = leftCol.currentItem ? (isLeftItemSpecial?.(leftCol.currentItem) ?? false) : false;
-  const isDisabled = leftCol.currentItem ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false) : false;
+  const isSpecial = leftCol.currentItem
+    ? (isLeftItemSpecial?.(leftCol.currentItem) ?? false)
+    : false;
+  const isDisabled = leftCol.currentItem
+    ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false)
+    : false;
   const leftActive = activeColumn === 'left';
   const rightActive = activeColumn === 'right';
   const isOnVirtual = !!rightCurrentItem && isVirtualCustomItem(rightCurrentItem);
-  const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
-    && isRealRightItem(rightCurrentItem) && (isRightItemCustom?.(rightCurrentItem) ?? false);
+  const currentRightIsCustom =
+    rightActive &&
+    !!rightCurrentItem &&
+    !isOnVirtual &&
+    isRealRightItem(rightCurrentItem) &&
+    (isRightItemCustom?.(rightCurrentItem) ?? false);
 
   const currentLeftKey = leftCol.currentItem ? leftGetKey(leftCol.currentItem) : null;
   const syncLeftItem = useEffectEvent(() => {
@@ -138,15 +157,28 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   useInput((input, key) => {
     handleKeyboardInput(input, key, {
-      leftActive, rightActive, isSpecial, isDisabled, isOnVirtual, currentRightIsCustom,
+      leftActive,
+      rightActive,
+      isSpecial,
+      isDisabled,
+      isOnVirtual,
+      currentRightIsCustom,
       leftCurrentItem: leftCol.currentItem,
       leftFiltered: leftCol.items,
       filteredRight,
       leftEffectiveIndex: leftCol.effectiveIndex,
       rightEffectiveIndex,
-      rightItems, rightPlaceholder, leftGetKey, isRightItemCustom, onDeleteRight,
-      onCustomRightOverlay, onConfirm, onCancel, onRefresh: params.onRefresh,
-      setActiveColumn, setSelectedLeftKey,
+      rightItems,
+      rightPlaceholder,
+      leftGetKey,
+      isRightItemCustom,
+      onDeleteRight,
+      onCustomRightOverlay,
+      onConfirm,
+      onCancel,
+      onRefresh: params.onRefresh,
+      setActiveColumn,
+      setSelectedLeftKey,
       setLeftFilter: leftCol.setFilter,
       setRightFilter: rightCol.setFilter,
       setLeftIndex: leftCol.setIndex,

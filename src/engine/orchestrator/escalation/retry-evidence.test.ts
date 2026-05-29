@@ -2,17 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  makeImplementer,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import { createValidator } from '../validation.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
-import { readEvidenceLedger } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import type { EscalationContext } from './types.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'standard',
+} as const;
 
 const TEST_SINKS = {
   setAbortHandler: () => {},
@@ -57,7 +66,14 @@ describe('persistRetryApprovalEvidence', () => {
     const decision = {
       allow: true,
       changedFiles: ['src/test.ts'],
-      confirmApprovals: [{ tier: 'confirm' as const, actionClass: 'write_in_scope' as const, actionDescription: 'edit file', reason: 'approved' }],
+      confirmApprovals: [
+        {
+          tier: 'confirm' as const,
+          actionClass: 'write_in_scope' as const,
+          actionDescription: 'edit file',
+          reason: 'approved',
+        },
+      ],
     };
 
     persistRetryApprovalEvidence(ctx, state, task, decision);

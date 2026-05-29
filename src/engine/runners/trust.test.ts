@@ -53,7 +53,14 @@ describe('checkRunnerTrust', () => {
   });
 
   it('ignores non-shell/agent runners', () => {
-    const config = makeConfig({ implementer: { kind: 'api', provider: 'ollama', model: 'test', apiBase: 'http://localhost:11434/v1' } });
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'test',
+        apiBase: 'http://localhost:11434/v1',
+      },
+    });
     const result = checkRunnerTrust(config, '/tmp/project');
     expect(result.untrustedCommands).toEqual([]);
   });
@@ -62,7 +69,9 @@ describe('checkRunnerTrust', () => {
 describe('rejectUntrustedRunners', () => {
   it('throws for repo-local commands without allowHooks', () => {
     const config = makeConfig(shellConfig('./scripts/evil'));
-    expect(() => rejectUntrustedRunners(config, '/tmp/project', false)).toThrow(/repo-local runner/i);
+    expect(() => rejectUntrustedRunners(config, '/tmp/project', false)).toThrow(
+      /repo-local runner/i,
+    );
   });
 
   it('allows repo-local commands when allowHooks is true', () => {

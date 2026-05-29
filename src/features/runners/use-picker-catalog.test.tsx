@@ -20,11 +20,15 @@ function CatalogProbe({
 
   useEffect(() => {
     if (!selectItemId) return;
-    const item = catalog.items.find(candidate => candidate.id === selectItemId);
+    const item = catalog.items.find((candidate) => candidate.id === selectItemId);
     if (item) catalog.setCurrentItem(item);
   }, [selectItemId]);
 
-  return <Text>{role}:{catalog.currentItem?.id ?? 'none'}</Text>;
+  return (
+    <Text>
+      {role}:{catalog.currentItem?.id ?? 'none'}
+    </Text>
+  );
 }
 
 describe('usePickerCatalog', () => {

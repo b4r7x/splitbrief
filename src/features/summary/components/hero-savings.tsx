@@ -26,12 +26,19 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
   const pct = Math.round(costBreakdown.savingsPercentage);
 
   return (
-    <Box justifyContent="center" width="100%" marginTop={1} flexDirection="column" alignItems="center">
+    <Box
+      justifyContent="center"
+      width="100%"
+      marginTop={1}
+      flexDirection="column"
+      alignItems="center"
+    >
       <Text bold color={t.success}>
         {actual} actual vs {baseline} all-planner — {pct}% saved
       </Text>
       <Text color={t.textDim}>
-        Saved {formatCost(costBreakdown.savingsAmount)} by routing {Math.round(costBreakdown.localCompletionRate * 100)}% of tasks to cheap implementer
+        Saved {formatCost(costBreakdown.savingsAmount)} by routing{' '}
+        {Math.round(costBreakdown.localCompletionRate * 100)}% of tasks to cheap implementer
       </Text>
     </Box>
   );

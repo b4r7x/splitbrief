@@ -4,8 +4,8 @@ import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../spec/prompts/escalation.js';
-import { buildProjectLanguageContext, type LanguageContext } from '../spec/prompts/language-context.js';
-import type { EscalationResult, PlannerOutputCallbacks } from './types.js';
+import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
+import type { EscalateOptions, EscalationResult, PlannerOutputCallbacks } from './types.js';
 
 type PlannerEscalationConfig = {
   invokeEscalate: (opts: {
@@ -17,50 +17,71 @@ type PlannerEscalationConfig = {
   capabilities: { supportsHintEscalation: boolean };
   hintSuccessMode?: 'text' | 'files';
   escalateFullMode?: 'text' | 'files';
-  escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
+  escalateFullPostProcess?: (
+    task: Task,
+    result: InvokeResult,
+    extracted: { code: string },
+    projectDir: string,
+  ) => EscalationResult;
 };
 
 export async function escalateHint(
   config: PlannerEscalationConfig,
-  task: Task,
-  error: string,
-  projectDir: string,
-  callbacks: PlannerOutputCallbacks,
-  languageContext?: LanguageContext,
+  opts: EscalateOptions,
 ): Promise<EscalationResult> {
+  const { task, error, projectDir, callbacks, languageContext } = opts;
   if (config.capabilities.supportsHintEscalation === false) {
     return { success: false, output: '', code: null, usage: null };
   }
-  const hintPrompt = buildHintPrompt(task, error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
+  const hintPrompt = buildHintPrompt(
+    task,
+    error,
+    languageContext ?? buildProjectLanguageContext(projectDir, undefined),
+  );
   const useFiles = config.hintSuccessMode === 'files';
   const detect = useFiles ? createChangeDetector('Hint escalation') : null;
   const filesBefore = useFiles ? await getCurrentChangedFiles(projectDir) : [];
-  const result = await config.invokeEscalate({ prompt: hintPrompt, projectDir, callbacks, signal: callbacks.signal });
-  const success = detect
-    ? (await detect(projectDir, filesBefore)).changed
-    : result.text.length > 0;
+  const result = await config.invokeEscalate({
+    prompt: hintPrompt,
+    projectDir,
+    callbacks,
+    signal: callbacks.signal,
+  });
+  const success = detect ? (await detect(projectDir, filesBefore)).changed : result.text.length > 0;
   return { success, output: result.text, code: null, usage: result.usage };
 }
 
 export async function escalateFull(
   config: PlannerEscalationConfig,
-  task: Task,
-  error: string,
-  projectDir: string,
-  callbacks: PlannerOutputCallbacks,
-  languageContext?: LanguageContext,
+  opts: EscalateOptions,
 ): Promise<EscalationResult> {
-  const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
+  const { task, error, projectDir, callbacks, languageContext } = opts;
+  const escalationPrompt = buildEscalationPrompt(
+    task,
+    task.currentCode ?? '',
+    error,
+    languageContext ?? buildProjectLanguageContext(projectDir, undefined),
+  );
 
   if (config.escalateFullMode === 'files') {
     const detect = createChangeDetector('Full escalation');
     const filesBefore = await getCurrentChangedFiles(projectDir);
-    const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks, signal: callbacks.signal });
+    const result = await config.invokeEscalate({
+      prompt: escalationPrompt,
+      projectDir,
+      callbacks,
+      signal: callbacks.signal,
+    });
     const { changed } = await detect(projectDir, filesBefore);
     return { success: changed, output: result.text, code: null, usage: result.usage };
   }
 
-  const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks, signal: callbacks.signal });
+  const result = await config.invokeEscalate({
+    prompt: escalationPrompt,
+    projectDir,
+    callbacks,
+    signal: callbacks.signal,
+  });
 
   const extracted = extractCode(result.text);
   if ('error' in extracted) {

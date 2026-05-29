@@ -35,9 +35,12 @@ describe('withTimeout', () => {
     expect(result).toBe(42);
   });
 
-  test('rejects with timeout error when promise does not resolve in time', async () => {
+  test('rejects with a timeout-elapsed error carrying the elapsed ms', async () => {
     const slow = new Promise((resolve) => setTimeout(resolve, 1000));
-    await expect(withTimeout(slow, 20)).rejects.toThrow('timeout');
+    await expect(withTimeout(slow, 20)).rejects.toMatchObject({
+      kind: 'timeout-elapsed',
+      data: { ms: 20 },
+    });
   });
 
   test('propagates original rejection if it fires before timeout', async () => {
@@ -94,11 +97,13 @@ describe('withIdleTimeout', () => {
       [Symbol.asyncIterator]: () => iterator,
     };
 
-    await expect((async () => {
-      for await (const value of withIdleTimeout(iterable, 20)) {
-        expect(value).toBeUndefined();
-      }
-    })()).rejects.toSatisfy(timeoutError.isIdle);
+    await expect(
+      (async () => {
+        for await (const value of withIdleTimeout(iterable, 20)) {
+          expect(value).toBeUndefined();
+        }
+      })(),
+    ).rejects.toSatisfy(timeoutError.isIdle);
     expect(returnCalled).toBe(true);
   });
 
@@ -118,11 +123,13 @@ describe('withIdleTimeout', () => {
       [Symbol.asyncIterator]: () => iterator,
     };
 
-    await expect((async () => {
-      for await (const value of withIdleTimeout(iterable, 100)) {
-        expect(value).toBeUndefined();
-      }
-    })()).rejects.toBe(original);
+    await expect(
+      (async () => {
+        for await (const value of withIdleTimeout(iterable, 100)) {
+          expect(value).toBeUndefined();
+        }
+      })(),
+    ).rejects.toBe(original);
     expect(returnCalled).toBe(true);
   });
 
@@ -138,11 +145,13 @@ describe('withIdleTimeout', () => {
       }
     }
 
-    await expect((async () => {
-      for await (const value of withIdleTimeout(cleanupGenerator(), 10)) {
-        expect(value).toBe(1);
-      }
-    })()).rejects.toSatisfy(timeoutError.isIdle);
+    await expect(
+      (async () => {
+        for await (const value of withIdleTimeout(cleanupGenerator(), 10)) {
+          expect(value).toBe(1);
+        }
+      })(),
+    ).rejects.toSatisfy(timeoutError.isIdle);
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(cleanedUp).toBe(true);
   });

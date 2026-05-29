@@ -3,7 +3,7 @@ import type { TaskId } from '../schemas/task.js';
 import type { TaskStatus } from '../schemas/enums.js';
 
 function getTaskIdsByStatus(state: Pick<WorkflowState, 'tasks'>, status: TaskStatus): TaskId[] {
-  return state.tasks.filter(t => t.status === status).map(t => t.id);
+  return state.tasks.filter((t) => t.status === status).map((t) => t.id);
 }
 
 export function getCompletedTaskIds(state: Pick<WorkflowState, 'tasks'>): TaskId[] {

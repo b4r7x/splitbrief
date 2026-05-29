@@ -6,9 +6,12 @@ export function findRuntimeCommand(
   name: string,
 ): RuntimeCommandDef | null {
   const lower = name.toLowerCase();
-  return commands.find((cmd) =>
-    cmd.name.toLowerCase() === lower || cmd.aliases?.some(a => a.toLowerCase() === lower),
-  ) ?? null;
+  return (
+    commands.find(
+      (cmd) =>
+        cmd.name.toLowerCase() === lower || cmd.aliases?.some((a) => a.toLowerCase() === lower),
+    ) ?? null
+  );
 }
 
 export function suggestRuntimeCommand(

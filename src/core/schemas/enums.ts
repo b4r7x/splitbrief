@@ -1,9 +1,23 @@
 import { z } from 'zod';
 import { includes } from '../../utils/type-guards.js';
 
-export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
+export const CLI_TOOL_IDS = [
+  'claude-code',
+  'codex',
+  'opencode',
+  'aider',
+  'copilot',
+  'kilo-code',
+] as const;
 // agent-sdk is NOT here — it is unpriced (subscription, no per-token billing).
-export const API_PROVIDER_IDS = ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
+export const API_PROVIDER_IDS = [
+  'anthropic',
+  'openrouter',
+  'deepseek',
+  'openai',
+  'groq',
+  'together',
+] as const;
 export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
 export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
@@ -58,14 +72,20 @@ export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const FileActionSchema = z.enum(['create', 'modify']);
-export type FileAction = z.infer<typeof FileActionSchema>;
 
-const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'escalated-hint', 'escalated-full', 'failed', 'skipped', 'mcp-tool'] as const;
+const TASK_COMPLETION_METHODS = [
+  'local',
+  'escalated-intermediate',
+  'escalated-hint',
+  'escalated-full',
+  'failed',
+  'skipped',
+  'mcp-tool',
+] as const;
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
 export const ValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
-export type ValidationStage = z.infer<typeof ValidationStageSchema>;
 
 export const RECOVERY_REASONS = [
   'implementation-error',
@@ -95,6 +115,39 @@ export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 
 const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
 export const RecoveryStatusSchema = z.enum(RECOVERY_STATUSES);
+
+export const USER_EDIT_CONFLICT_KINDS = [
+  'unrelated',
+  'current-task-conflict',
+  'future-task-stale-input',
+  'dependency-file-conflict',
+  'changed-during-approval-promotion',
+] as const;
+export const UserEditConflictKindSchema = z.enum(USER_EDIT_CONFLICT_KINDS);
+export type UserEditConflictKind = z.infer<typeof UserEditConflictKindSchema>;
+
+export const USER_EDIT_CONFLICT_ACTIONS = [
+  'continue-unrelated',
+  'regenerate-rebase',
+  'pause',
+  'skip-current-task',
+  'abort-workflow',
+] as const;
+export const UserEditConflictActionSchema = z.enum(USER_EDIT_CONFLICT_ACTIONS);
+export type UserEditConflictAction = z.infer<typeof UserEditConflictActionSchema>;
+
+export const TASK_CONTEXT_FITS = ['fits', 'tight', 'overflow'] as const;
+export const TaskContextFitSchema = z.enum(TASK_CONTEXT_FITS);
+export type TaskContextFit = z.infer<typeof TaskContextFitSchema>;
+
+export const CURRENT_CODE_CONTEXT_MODES = [
+  'none',
+  'whole-file',
+  'function-level',
+  'truncated',
+] as const;
+export const CurrentCodeContextModeSchema = z.enum(CURRENT_CODE_CONTEXT_MODES);
+export type CurrentCodeContextMode = z.infer<typeof CurrentCodeContextModeSchema>;
 
 export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as const;
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);

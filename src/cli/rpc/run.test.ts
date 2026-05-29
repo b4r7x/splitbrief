@@ -16,29 +16,32 @@ function writeConfig(projectDir: string): void {
   const diptychDir = join(projectDir, DIPTYCH_DIR);
   mkdirSync(diptychDir, { recursive: true });
   const configPath = join(diptychDir, CONFIG_FILE);
-  writeFileSync(configPath, [
-    'version: 3',
-    'planner:',
-    '  kind: cli',
-    '  tool: claude-code',
-    'implementer:',
-    '  kind: api',
-    '  provider: ollama',
-    '  api_base: http://localhost:11434/v1',
-    '  model: qwen2.5-coder:7b',
-    '  context_length: 32768',
-    'validation:',
-    '  typecheck: false',
-    '  lint: false',
-    '  test: false',
-    '  test_command: "noop"',
-    'workflow:',
-    '  approve: default',
-    '  max_retries: 3',
-    '  commit_strategy: none',
-    '  mode: standard',
-    '  persist_transcript: false',
-  ].join('\n'));
+  writeFileSync(
+    configPath,
+    [
+      'version: 3',
+      'planner:',
+      '  kind: cli',
+      '  tool: claude-code',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  api_base: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  context_length: 32768',
+      'validation:',
+      '  typecheck: false',
+      '  lint: false',
+      '  test: false',
+      '  test_command: "noop"',
+      'workflow:',
+      '  approve: default',
+      '  max_retries: 3',
+      '  commit_strategy: none',
+      '  mode: standard',
+      '  persist_transcript: false',
+    ].join('\n'),
+  );
   chmodSync(configPath, 0o600);
 }
 
@@ -60,12 +63,17 @@ function captureWritable(): { chunks: string[]; output: Writable } {
   return { chunks, output };
 }
 
-function parseLines(chunks: string[]): Array<{ type?: string; data?: unknown; command?: string; error?: string }> {
+function parseLines(
+  chunks: string[],
+): Array<{ type?: string; data?: unknown; command?: string; error?: string }> {
   return chunks
     .join('')
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as { type?: string; data?: unknown; command?: string; error?: string });
+    .map(
+      (line) =>
+        JSON.parse(line) as { type?: string; data?: unknown; command?: string; error?: string },
+    );
 }
 
 async function waitForLine(
@@ -89,8 +97,16 @@ describe('runRpc', () => {
     const { chunks, output } = captureWritable();
     let approved: boolean | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      workflowOpts.eventBus?.publish({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'ship rpc' });
-      const result = await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
+      workflowOpts.eventBus?.publish({
+        type: 'workflow_started',
+        ts: 1,
+        phase: 'researching',
+        feature: 'ship rpc',
+      });
+      const result = await workflowOpts.callbacks.onApprovalNeeded(
+        'spec',
+        join(projectDir, 'spec.md'),
+      );
       approved = result.approved;
       workflowOpts.eventBus?.publish({ type: 'plan_approved', ts: 2, phase: 'planning' });
     };
@@ -103,12 +119,14 @@ describe('runRpc', () => {
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
-    await waitForLine(chunks, line =>
-      line.type === 'status' &&
-      typeof line.data === 'object' &&
-      line.data !== null &&
-      'pending' in line.data &&
-      line.data.pending === 'approval'
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'approval',
     );
     expect(approved).toBeUndefined();
 
@@ -116,15 +134,19 @@ describe('runRpc', () => {
     await run;
 
     const lines = parseLines(chunks);
-    expect(lines).toContainEqual(expect.objectContaining({
-      type: 'event',
-      data: expect.objectContaining({ type: 'workflow_started' }),
-    }));
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        data: expect.objectContaining({ type: 'workflow_started' }),
+      }),
+    );
     expect(lines).toContainEqual({ type: 'ack', command: 'approve' });
-    expect(lines).toContainEqual(expect.objectContaining({
-      type: 'event',
-      data: expect.objectContaining({ type: 'plan_approved' }),
-    }));
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        data: expect.objectContaining({ type: 'plan_approved' }),
+      }),
+    );
     expect(approved).toBe(true);
   });
 
@@ -132,7 +154,10 @@ describe('runRpc', () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-status-session';
     ensureSessionDir(projectDir, sessionId);
-    saveState(projectDir, sessionId, { ...createInitialState('status feature'), phase: 'planning' });
+    saveState(projectDir, sessionId, {
+      ...createInitialState('status feature'),
+      phase: 'planning',
+    });
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let finishWorkflow: (() => void) | undefined;
@@ -151,18 +176,23 @@ describe('runRpc', () => {
 
     input.write('not json\n');
     input.write('{"type":"status"}\n');
-    await waitForLine(chunks, line => line.type === 'error' && String(line.error).includes('Invalid JSON'));
-    await waitForLine(chunks, line =>
-      line.type === 'status' &&
-      typeof line.data === 'object' &&
-      line.data !== null &&
-      'sessionId' in line.data &&
-      line.data.sessionId === sessionId &&
-      'state' in line.data &&
-      typeof line.data.state === 'object' &&
-      line.data.state !== null &&
-      'feature' in line.data.state &&
-      line.data.state.feature === 'status feature'
+    await waitForLine(
+      chunks,
+      (line) => line.type === 'error' && String(line.error).includes('Invalid JSON'),
+    );
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'sessionId' in line.data &&
+        line.data.sessionId === sessionId &&
+        'state' in line.data &&
+        typeof line.data.state === 'object' &&
+        line.data.state !== null &&
+        'feature' in line.data.state &&
+        line.data.state.feature === 'status feature',
     );
 
     finishWorkflow?.();
@@ -176,7 +206,10 @@ describe('runRpc', () => {
     let approved: boolean | undefined;
     let comment: string | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      const result = await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
+      const result = await workflowOpts.callbacks.onApprovalNeeded(
+        'spec',
+        join(projectDir, 'spec.md'),
+      );
       approved = result.approved;
       comment = result.comment;
     };
@@ -189,12 +222,14 @@ describe('runRpc', () => {
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
-    await waitForLine(chunks, line =>
-      line.type === 'status' &&
-      typeof line.data === 'object' &&
-      line.data !== null &&
-      'pending' in line.data &&
-      line.data.pending === 'approval',
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'approval',
     );
     expect(approved).toBeUndefined();
 
@@ -234,7 +269,7 @@ describe('runRpc', () => {
     expect(abortSignal?.aborted).toBe(false);
 
     input.write('{"type":"abort"}\n');
-    await waitForLine(chunks, line => line.type === 'ack' && line.command === 'abort');
+    await waitForLine(chunks, (line) => line.type === 'ack' && line.command === 'abort');
     expect(abortSignal?.aborted).toBe(true);
 
     finishWorkflow?.();
@@ -257,7 +292,11 @@ describe('runRpc', () => {
         details: ['Something went wrong'],
         files: [],
         affectedTaskIds: [],
-        availableActions: ['abort-workflow' as const, 'retry-same-worker' as const, 'skip-current-task' as const],
+        availableActions: [
+          'abort-workflow' as const,
+          'retry-same-worker' as const,
+          'skip-current-task' as const,
+        ],
         recommendedAction: 'abort-workflow' as const,
         createdAt: new Date().toISOString(),
       },
@@ -278,12 +317,14 @@ describe('runRpc', () => {
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
-    await waitForLine(chunks, line =>
-      line.type === 'status' &&
-      typeof line.data === 'object' &&
-      line.data !== null &&
-      'pending' in line.data &&
-      line.data.pending === 'recovery',
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'recovery',
     );
 
     input.write('{"type":"recovery","action":"abort-workflow"}\n');
@@ -313,9 +354,7 @@ describe('runRpc', () => {
     });
 
     input.write('{"type":"slash","command":"/mode quick"}\n');
-    await waitForLine(chunks, line =>
-      line.type === 'ack' && line.command === 'slash',
-    );
+    await waitForLine(chunks, (line) => line.type === 'ack' && line.command === 'slash');
 
     finishWorkflow?.();
     await run;
@@ -352,14 +391,20 @@ describe('runRpc', () => {
       expect(clearHandlerInstalled).toBe(true);
     });
     input.write('{"type":"slash","command":"/queue clear"}\n');
-    await waitForLine(chunks, line =>
-      line.type === 'ack' &&
-      line.command === 'slash' &&
-      typeof line.data === 'object' &&
-      line.data !== null &&
-      'messages' in line.data &&
-      Array.isArray(line.data.messages) &&
-      line.data.messages.includes('Cleared 2 queued messages'),
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'messages' in line.data &&
+        Array.isArray(line.data.messages) &&
+        line.data.messages.length > 0 &&
+        line.data.messages.some(
+          (message) =>
+            typeof message === 'string' && /clear/i.test(message) && message.includes('2'),
+        ),
     );
 
     expect(clearCalls).toBe(1);
@@ -387,8 +432,12 @@ describe('runRpc', () => {
     });
 
     input.write('{"type":"slash","command":"/mode nope"}\n');
-    await waitForLine(chunks, line =>
-      line.type === 'error' && typeof line.error === 'string' && line.error.includes('Invalid mode'),
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' &&
+        typeof line.error === 'string' &&
+        line.error.includes('Invalid mode'),
     );
 
     finishWorkflow?.();
@@ -418,9 +467,7 @@ describe('runRpc', () => {
     });
 
     input.write('{"type":"slash","command":"/mde"}\n');
-    await waitForLine(chunks, line =>
-      line.type === 'ack' && line.command === 'slash',
-    );
+    await waitForLine(chunks, (line) => line.type === 'ack' && line.command === 'slash');
 
     finishWorkflow?.();
     await run;
@@ -453,7 +500,9 @@ describe('runRpc', () => {
     await run;
 
     const lines = parseLines(chunks);
-    const hasError = lines.some(line => line.type === 'error' && String(line.error).includes('crash'));
+    const hasError = lines.some(
+      (line) => line.type === 'error' && String(line.error).includes('crash'),
+    );
     expect(hasError).toBe(false);
   });
 

@@ -1,6 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
+import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
 interface ProviderModelCache {
@@ -31,10 +32,7 @@ function isStale(fetchedAt: number): boolean {
 }
 
 function cloneModels(models: DetectedModel[]): DetectedModel[] {
-  return models.map(model => ({
-    ...model,
-    ...(model.capabilities ? { capabilities: [...model.capabilities] } : {}),
-  }));
+  return models.map(cloneDetectedModel);
 }
 
 function cloneCatalog(catalog: ModelsDevCatalog): ModelsDevCatalog {
@@ -46,7 +44,7 @@ export const modelCacheStore = {
 
   setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
     const cloned = cloneModels(models);
-    store.set(prev => ({
+    store.set((prev) => ({
       ...prev,
       providers: {
         ...prev.providers,
@@ -64,7 +62,7 @@ export const modelCacheStore = {
 
   // Object.entries is safe here: runs inside store.set(), not inside useStores() Proxy tracking.
   invalidateAll(): void {
-    store.set(prev => {
+    store.set((prev) => {
       const providers: Partial<Record<ProviderId, ProviderModelCache>> = {};
       for (const [k, v] of Object.entries(prev.providers)) {
         if (!isProviderId(k)) continue;
@@ -75,7 +73,11 @@ export const modelCacheStore = {
   },
 
   setModelsDevCatalog(catalog: ModelsDevCatalog): void {
-    store.set(prev => ({ ...prev, modelsDevCatalog: cloneCatalog(catalog), modelsDevFetchedAt: Date.now() }));
+    store.set((prev) => ({
+      ...prev,
+      modelsDevCatalog: cloneCatalog(catalog),
+      modelsDevFetchedAt: Date.now(),
+    }));
   },
 
   getModelsDevCatalog(): ModelsDevCatalog | null {

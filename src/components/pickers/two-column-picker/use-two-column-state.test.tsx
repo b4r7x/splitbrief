@@ -5,8 +5,15 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TwoColumnPicker } from './picker.js';
 
-interface Tool { id: string; displayName: string; disabled?: boolean }
-interface Model { id: string; displayName: string }
+interface Tool {
+  id: string;
+  displayName: string;
+  disabled?: boolean;
+}
+interface Model {
+  id: string;
+  displayName: string;
+}
 
 const TOOLS: Tool[] = [
   { id: 'alpha', displayName: 'Alpha' },
@@ -15,7 +22,10 @@ const TOOLS: Tool[] = [
 ];
 
 const MODELS_BY_TOOL: Record<string, Model[]> = {
-  alpha: [{ id: 'a-1', displayName: 'alpha-1' }, { id: 'a-2', displayName: 'alpha-2' }],
+  alpha: [
+    { id: 'a-1', displayName: 'alpha-1' },
+    { id: 'a-2', displayName: 'alpha-2' },
+  ],
   gamma: [{ id: 'g-1', displayName: 'gamma-1' }],
 };
 
@@ -38,9 +48,13 @@ describe('useTwoColumnState via TwoColumnPicker', () => {
           items: [],
           getKey: (m) => m.id,
           renderRow: (m) => <Text>{m.displayName}</Text>,
-          onLeftChange: (t) => { leftChanges.push(t.id); },
+          onLeftChange: (t) => {
+            leftChanges.push(t.id);
+          },
         }}
-        onConfirm={(l) => { confirms.push(l.id); }}
+        onConfirm={(l) => {
+          confirms.push(l.id);
+        }}
         onCancel={() => {}}
       />,
     );
@@ -72,14 +86,23 @@ describe('useTwoColumnState via TwoColumnPicker', () => {
       return (
         <TwoColumnPicker<Tool, Model>
           title="Picker"
-          leftProps={{ items: TOOLS, getKey: (t) => t.id, isDisabled: (t) => !!t.disabled, renderRow: (t) => <Text>{t.displayName}</Text> }}
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
             renderRow: (m) => <Text>{m.displayName}</Text>,
-            onLeftChange: (t) => { setLeftId(t.id); },
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
           }}
-          onConfirm={(l, r) => { confirms.push({ l: l.id, r: r?.id ?? null }); }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
           onCancel={() => {}}
         />
       );
@@ -102,10 +125,20 @@ describe('useTwoColumnState via TwoColumnPicker', () => {
     const ui = renderFeature(
       <TwoColumnPicker<Tool, Model>
         title="Picker"
-        leftProps={{ items: [], getKey: (t) => t.id, renderRow: (t) => <Text>{t.displayName}</Text> }}
-        rightProps={{ items: [], getKey: (m) => m.id, renderRow: (m) => <Text>{m.displayName}</Text> }}
+        leftProps={{
+          items: [],
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
         onConfirm={() => {}}
-        onCancel={() => { cancelled++; }}
+        onCancel={() => {
+          cancelled++;
+        }}
       />,
     );
     await tick(20);

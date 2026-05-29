@@ -16,16 +16,24 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 function detectProvider(url: string, headers: Record<string, string>): string {
   const headerKeys = new Set(Object.keys(headers).map((key) => key.toLowerCase()));
   if (url.includes('anthropic') || headerKeys.has('x-api-key')) return 'anthropic';
-  if (url.includes('openai') || url.includes('openrouter') || headerKeys.has('authorization')) return 'openai';
+  if (url.includes('openai') || url.includes('openrouter') || headerKeys.has('authorization'))
+    return 'openai';
   return 'unknown';
 }
 
-export function createCassetteRecorder(cassettePath: string, name: string, meta?: Record<string, unknown>) {
+export function createCassetteRecorder(
+  cassettePath: string,
+  name: string,
+  meta?: Record<string, unknown>,
+) {
   const entries: CassetteEntry[] = [];
   const originalFetch = globalThis.fetch;
 
   function install(): void {
-    globalThis.fetch = async (input: CassetteRequestInfo, init?: RequestInit): Promise<Response> => {
+    globalThis.fetch = async (
+      input: CassetteRequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
       const request = normalizeRequest(input, init);
       const recordedRequestHeaders = headersToRecord(request.headers);
       const start = Date.now();

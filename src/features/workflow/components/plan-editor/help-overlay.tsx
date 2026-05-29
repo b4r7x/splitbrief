@@ -21,7 +21,7 @@ const HELP_ROWS: Array<[string, string]> = [
 
 export function PlanEditorHelpOverlay() {
   const t = useTheme();
-  const isActive = overlayStore.use(s => s.active === 'plan-editor-help');
+  const isActive = overlayStore.use((s) => s.active === 'plan-editor-help');
   if (!isActive) return null;
 
   return (

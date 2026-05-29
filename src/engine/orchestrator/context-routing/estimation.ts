@@ -8,10 +8,20 @@ import type { TaskPromptEstimateOptions, ContextFitOptions } from './types.js';
 const DEFAULT_SAFETY_MARGIN = 0.15;
 const DEFAULT_TIGHT_THRESHOLD = 0.8;
 
-export function estimateFormattedTaskPromptTokens(opts: TaskPromptEstimateOptions & { modelId?: string | undefined }): number {
+export function estimateFormattedTaskPromptTokens(
+  opts: TaskPromptEstimateOptions & { modelId?: string | undefined },
+): number {
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
-  const prompt = formatTaskPrompt(opts.task, opts.context, opts.contextLength, languageContext);
-  return estimateTokens(buildSystemPreamble(languageContext), opts.modelId) + estimateTokens(prompt, opts.modelId);
+  const prompt = formatTaskPrompt({
+    task: opts.task,
+    context: opts.context,
+    contextLength: opts.contextLength,
+    languageContext,
+  });
+  return (
+    estimateTokens(buildSystemPreamble(languageContext), opts.modelId) +
+    estimateTokens(prompt, opts.modelId)
+  );
 }
 
 export function classifyContextFit(

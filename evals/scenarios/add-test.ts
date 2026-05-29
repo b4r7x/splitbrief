@@ -62,7 +62,10 @@ function hasPattern(content: string, patterns: RegExp[]): boolean {
 function emailValidationTestExists(dir: string): QualityCheckResult {
   const testFiles = findEmailTestFiles(dir);
   if (testFiles.length > 0) {
-    return { passed: true, detail: `Found ${testFiles.map((path) => path.replace(`${dir}/`, '')).join(', ')}` };
+    return {
+      passed: true,
+      detail: `Found ${testFiles.map((path) => path.replace(`${dir}/`, '')).join(', ')}`,
+    };
   }
 
   return { passed: false, detail: 'No email validation test file found' };
@@ -71,7 +74,8 @@ function emailValidationTestExists(dir: string): QualityCheckResult {
 function validEmailCasesCovered(dir: string): QualityCheckResult {
   const content = readEmailTestContent(dir);
   const hasValidAddress = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(content);
-  const hasValidSignal = /\b(valid|accepts?|allows?|returns true|toBe\(true\)|toEqual\(true\))\b/i.test(content);
+  const hasValidSignal =
+    /\b(valid|accepts?|allows?|returns true|toBe\(true\)|toEqual\(true\))\b/i.test(content);
 
   return hasValidAddress && hasValidSignal
     ? { passed: true, detail: 'Valid email cases covered' }
@@ -80,7 +84,8 @@ function validEmailCasesCovered(dir: string): QualityCheckResult {
 
 function invalidFormatCasesCovered(dir: string): QualityCheckResult {
   const content = readEmailTestContent(dir);
-  const hasInvalidSignal = /\b(invalid|rejects?|denies?|returns false|toBe\(false\)|toEqual\(false\))\b/i.test(content);
+  const hasInvalidSignal =
+    /\b(invalid|rejects?|denies?|returns false|toBe\(false\)|toEqual\(false\))\b/i.test(content);
   const hasInvalidExample = hasPattern(content, [
     /not[-_ ]?an[-_ ]?email/i,
     /\bplain\b/i,
@@ -138,7 +143,8 @@ const qualityChecks: QualityCheck[] = [
 export const addTestScenario: EvalScenario = {
   id: 'add-test',
   name: 'Add test coverage',
-  feature: 'Add tests for the validateEmail function - cover valid emails, invalid formats, and edge cases',
+  feature:
+    'Add tests for the validateEmail function - cover valid emails, invalid formats, and edge cases',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/add-test'),
   qualityChecks,
 };

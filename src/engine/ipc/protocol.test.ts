@@ -42,24 +42,30 @@ describe('parseIpcPromptResponse — task_review', () => {
   });
 
   it('rejects task_review with invalid action', () => {
-    expect(parseIpcPromptResponse({
-      kind: 'task_review',
-      response: { action: 'invalid-action' },
-    })).toBeNull();
+    expect(
+      parseIpcPromptResponse({
+        kind: 'task_review',
+        response: { action: 'invalid-action' },
+      }),
+    ).toBeNull();
   });
 
   it('rejects task_review with non-object response', () => {
-    expect(parseIpcPromptResponse({
-      kind: 'task_review',
-      response: 'continue',
-    })).toBeNull();
+    expect(
+      parseIpcPromptResponse({
+        kind: 'task_review',
+        response: 'continue',
+      }),
+    ).toBeNull();
   });
 
   it('rejects task_review with non-string notes', () => {
-    expect(parseIpcPromptResponse({
-      kind: 'task_review',
-      response: { action: 'continue', notes: 42 },
-    })).toBeNull();
+    expect(
+      parseIpcPromptResponse({
+        kind: 'task_review',
+        response: { action: 'continue', notes: 42 },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -104,17 +110,21 @@ describe('parseServerMessage', () => {
   });
 
   it('rejects event with unknown payload type', () => {
-    expect(parseServerMessage({
-      kind: 'event',
-      payload: { type: 'not_real', ts: 1000, phase: 'planning' },
-    })).toBeNull();
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: { type: 'not_real', ts: 1000, phase: 'planning' },
+      }),
+    ).toBeNull();
   });
 
   it('rejects event with missing variant fields', () => {
-    expect(parseServerMessage({
-      kind: 'event',
-      payload: { type: 'task_completed', ts: 1000, phase: 'implementing' },
-    })).toBeNull();
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: { type: 'task_completed', ts: 1000, phase: 'implementing' },
+      }),
+    ).toBeNull();
   });
 
   it('rejects event with non-object payload', () => {
@@ -138,7 +148,9 @@ describe('parseServerMessage', () => {
   });
 
   it('rejects prompt_request with missing requestId', () => {
-    expect(parseServerMessage({ kind: 'prompt_request', request: { kind: 'external_changes' } })).toBeNull();
+    expect(
+      parseServerMessage({ kind: 'prompt_request', request: { kind: 'external_changes' } }),
+    ).toBeNull();
   });
 
   it('parses valid replay_meta message', () => {

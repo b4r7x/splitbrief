@@ -15,7 +15,7 @@ function fakeSink(): StreamingSink & {
     start: vi.fn(() => {
       sink.started = true;
     }),
-    pushLines: vi.fn((l: string[]) => {
+    replaceLines: vi.fn((l: string[]) => {
       sink.lines.push([...l]);
     }),
     stop: vi.fn(() => {

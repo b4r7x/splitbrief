@@ -1,17 +1,24 @@
 import { error, matches } from './error.js';
 
 export const timeoutError = {
-  idle: (message = 'Idle timeout') =>
-    error('idle-timeout', message, { message }),
+  idle: (message = 'Idle timeout') => error('idle-timeout', message, { message }),
   isIdle: matches('idle-timeout'),
+  elapsed: (ms: number) => error('timeout-elapsed', `Timed out after ${ms}ms`, { ms }),
+  isElapsed: matches('timeout-elapsed'),
 } as const;
 
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    const timer = setTimeout(() => reject(timeoutError.elapsed(ms)), ms);
     promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
     );
   });
 }

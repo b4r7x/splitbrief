@@ -2,8 +2,8 @@ import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
-import type { Phase } from '../schemas/enums.js';
-import type { TaskId } from '../schemas/task.js';
+import { PhaseSchema } from '../schemas/enums.js';
+import { TaskIdSchema } from '../schemas/task.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
@@ -48,7 +48,9 @@ function appendLine(
       ensureSecureDir(dir);
       ensuredDirs.add(dir);
     }
-    appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
+    appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', {
+      mode: SECURE_FILE_MODE,
+    });
   } catch (err) {
     warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
   }
@@ -61,22 +63,31 @@ export function appendMessage(
   persistTranscript: boolean,
 ): void {
   if (!persistTranscript) return;
-  const entry: SessionLogMessageEntry = { kind: 'message', ts: new Date().toISOString(), ...message };
+  const entry: SessionLogMessageEntry = {
+    kind: 'message',
+    ts: new Date().toISOString(),
+    ...message,
+  };
   appendLine(projectDir, sessionId, entry);
 }
 
 export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
   projectDir: string,
   sessionId: string,
-  event: TEvent & { phase?: Phase; taskId?: TaskId },
+  event: TEvent,
 ): void {
-  const { type, ts, phase, taskId, ...data } = event;
+  const { type, ts, ...rest } = event;
+  const data: Record<string, unknown> = { ...rest };
+  const phase = PhaseSchema.safeParse(data['phase']);
+  const taskId = TaskIdSchema.safeParse(data['taskId']);
+  delete data['phase'];
+  delete data['taskId'];
   const entry = {
     kind: 'event' as const,
     ts: new Date(ts).toISOString(),
     type,
-    ...(phase !== undefined && { phase }),
-    ...(taskId !== undefined && { taskId }),
+    ...(phase.success && { phase: phase.data }),
+    ...(taskId.success && { taskId: taskId.data }),
     data,
   };
   appendLine(projectDir, sessionId, entry);

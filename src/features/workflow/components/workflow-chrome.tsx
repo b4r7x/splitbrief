@@ -11,13 +11,16 @@ import { InputFooter } from './input-footer.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { createLatestEventByTypeSelector } from './latest-event-selector.js';
-import { getWorkflowConfigDensity, WorkflowConfigCard } from './event-cards/workflow-config-card.js';
-import { getChromeContentWidth, INLINE_CONFIG_MIN_COLS } from '../../../core/layout/chrome-rows.js';
+import {
+  getWorkflowConfigDensity,
+  WorkflowConfigCard,
+} from './event-cards/workflow-config-card.js';
+import { getChromeContentWidth, INLINE_CONFIG_MIN_COLS } from '../layout/chrome-rows.js';
 
 const selectLatestWorkflowConfig = createLatestEventByTypeSelector('workflow_config');
 
 function WorkflowMetaRow() {
-  const cols = terminalSizeStore.use(s => s.cols);
+  const cols = terminalSizeStore.use((s) => s.cols);
   const configEvent = eventsStore.use(selectLatestWorkflowConfig);
   const canInlineConfig = configEvent !== undefined && cols >= INLINE_CONFIG_MIN_COLS;
 
@@ -39,9 +42,19 @@ function WorkflowMetaRow() {
   const configWidth = Math.max(20, contentWidth - costWidth - 4);
 
   return (
-    <Box width="100%" height={1} overflow="hidden" paddingX={1} justifyContent="space-between" flexShrink={0}>
+    <Box
+      width="100%"
+      height={1}
+      overflow="hidden"
+      paddingX={1}
+      justifyContent="space-between"
+      flexShrink={0}
+    >
       <Box width={configWidth} height={1} overflow="hidden">
-        <WorkflowConfigCard event={configEvent} density={getWorkflowConfigDensity(configEvent, configWidth)} />
+        <WorkflowConfigCard
+          event={configEvent}
+          density={getWorkflowConfigDensity(configEvent, configWidth)}
+        />
       </Box>
       <CostStatusLine maxWidth={costWidth} paddingX={0} align="right" />
     </Box>

@@ -6,7 +6,7 @@ import { createResolver } from '../../engine/mcp/resolver.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
 import { createToolHandler } from '../../engine/mcp/tool/handler.js';
 import { getDiptychVersion } from '../../core/paths-io.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 
 const DEFAULT_PORT = 4321;
 
@@ -19,9 +19,7 @@ const defaultDeps: McpDeps = {
 };
 
 export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps): void {
-  const mcp = program
-    .command('mcp')
-    .description('MCP resource and evidence-tool server commands');
+  const mcp = program.command('mcp').description('MCP resource and evidence-tool server commands');
 
   mcp
     .command('serve')
@@ -31,7 +29,12 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
     .option('--all-sessions', 'Serve all sessions in the project')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(
-      async (opts: { port?: string; session?: string; allSessions?: boolean; project?: string }) => {
+      async (opts: {
+        port?: string;
+        session?: string;
+        allSessions?: boolean;
+        project?: string;
+      }) => {
         const projectDir = resolveProjectDir(opts.project);
 
         if (opts.session !== undefined && opts.allSessions) {
@@ -47,34 +50,28 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
           );
         }
 
-        let sessionIds: string[];
-        try {
-          sessionIds = resolveSessionIds(projectDir, {
+        const sessionIds = await withCliErrors(() =>
+          resolveSessionIds(projectDir, {
             ...(opts.session !== undefined && { session: opts.session }),
             ...(opts.allSessions && { allSessions: opts.allSessions }),
-          });
-        } catch (err) {
-          rethrowAsCli(err);
-        }
+          }),
+        );
 
         const token = generateToken();
         const diptychVersion = getDiptychVersion();
         const resolver = createResolver({ projectDir, sessionIds, diptychVersion });
         const toolHandler = createToolHandler(projectDir, sessionIds);
 
-        let handle: Awaited<ReturnType<typeof startMcpServer>>;
-        try {
-          handle = await deps.startMcpServer({
+        const handle = await withCliErrors(() =>
+          deps.startMcpServer({
             port,
             host: '127.0.0.1',
             token,
             resolver,
             serverVersion: diptychVersion,
             toolHandler,
-          });
-        } catch (err) {
-          rethrowAsCli(err);
-        }
+          }),
+        );
 
         const actualPort = handle.port;
         const sessionsLabel = opts.allSessions ? 'all' : sessionIds.join(', ');

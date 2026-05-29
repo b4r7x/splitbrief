@@ -3,11 +3,21 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } from '../agent-sdk-backend.js';
+import {
+  createAgentSdkBackend,
+  isAgentSdkAvailable,
+  PLANNER_ALLOWED_TOOLS,
+} from '../agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
-export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSessionId?: string | null, effort?: EffortLevel): Planner {
+export function createAgentSdkPlanner(opts: {
+  model?: string | undefined;
+  apiKey?: string | undefined;
+  initialSessionId?: string | null | undefined;
+  effort?: EffortLevel | undefined;
+}): Planner {
+  const { model, apiKey, initialSessionId, effort } = opts;
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
     allowedTools: [...PLANNER_ALLOWED_TOOLS],
@@ -15,7 +25,13 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSe
     initialSessionId: initialSessionId ?? null,
   });
 
-  const invoke = ({ prompt, projectDir, callbacks, images, signal }: {
+  const invoke = ({
+    prompt,
+    projectDir,
+    callbacks,
+    images,
+    signal,
+  }: {
     prompt: string;
     projectDir: string;
     callbacks: {

@@ -3,13 +3,19 @@ import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
-import { makeCallbacks as makeSharedCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks as makeSharedCallbacks,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { taskId } from '../../../core/schemas/task.js';
 
 const zeroUsage: TokenUsage = {
-  plannerInput: 0, plannerOutput: 0,
-  implementerInput: 0, implementerOutput: 0,
-  escalationInput: 0, escalationOutput: 0,
+  plannerInput: 0,
+  plannerOutput: 0,
+  implementerInput: 0,
+  implementerOutput: 0,
+  escalationInput: 0,
+  escalationOutput: 0,
 };
 
 const emptyPricingCache: ModelCacheAccessor = {
@@ -23,39 +29,45 @@ function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): Orchestrator
 
 describe('checkBudget', () => {
   it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
-    ['cost below 80%', 0.50, 1.00, undefined, { action: 'ok' }],
-    ['cost at exactly 79%', 0.79, 1.00, undefined, { action: 'ok' }],
-    ['NaN currentCost (safe default)', NaN, 1.00, undefined, { action: 'ok' }],
-    ['negative currentCost', -0.50, 1.00, undefined, { action: 'ok' }],
+    ['cost below 80%', 0.5, 1.0, undefined, { action: 'ok' }],
+    ['cost at exactly 79%', 0.79, 1.0, undefined, { action: 'ok' }],
+    ['NaN currentCost (safe default)', NaN, 1.0, undefined, { action: 'ok' }],
+    ['negative currentCost', -0.5, 1.0, undefined, { action: 'ok' }],
   ])('ok — %s', (_label, cost, budget, pause, expected) => {
     expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
   it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
-    ['at 80% threshold', 0.80, 1.00, undefined, { action: 'warning' }],
-    ['between 80% and 85%', 0.82, 1.00, undefined, { action: 'warning' }],
-    ['at 85% with custom pauseThreshold 90%', 0.85, 1.00, 0.90, { action: 'warning' }],
+    ['at 80% threshold', 0.8, 1.0, undefined, { action: 'warning' }],
+    ['between 80% and 85%', 0.82, 1.0, undefined, { action: 'warning' }],
+    ['at 85% with custom pauseThreshold 90%', 0.85, 1.0, 0.9, { action: 'warning' }],
   ])('warning — %s', (_label, cost, budget, pause, expected) => {
     expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
   it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
-    ['at exactly 85%', 0.85, 1.00, undefined, { action: 'paused' }],
-    ['between 85% and 100%', 0.95, 1.00, undefined, { action: 'paused' }],
-    ['at custom pauseThreshold 90%', 0.90, 1.00, 0.90, { action: 'paused' }],
+    ['at exactly 85%', 0.85, 1.0, undefined, { action: 'paused' }],
+    ['between 85% and 100%', 0.95, 1.0, undefined, { action: 'paused' }],
+    ['at custom pauseThreshold 90%', 0.9, 1.0, 0.9, { action: 'paused' }],
   ])('paused — %s', (_label, cost, budget, pause, expected) => {
     expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
   it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
-    ['at 100%', 1.00, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
-    ['over 100%', 1.50, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+    ['at 100%', 1.0, 1.0, undefined, { action: 'exceeded', shouldStop: true }],
+    ['over 100%', 1.5, 1.0, undefined, { action: 'exceeded', shouldStop: true }],
     ['NaN budget', 0, NaN, undefined, { action: 'exceeded', shouldStop: true }],
     ['zero budget', 0, 0, undefined, { action: 'exceeded', shouldStop: true }],
     ['negative budget', 0, -1, undefined, { action: 'exceeded', shouldStop: true }],
     ['Infinity budget', 0, Infinity, undefined, { action: 'exceeded', shouldStop: true }],
-    ['Infinity currentCost', Infinity, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
-    ['negative Infinity currentCost', -Infinity, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+    ['Infinity currentCost', Infinity, 1.0, undefined, { action: 'exceeded', shouldStop: true }],
+    [
+      'negative Infinity currentCost',
+      -Infinity,
+      1.0,
+      undefined,
+      { action: 'exceeded', shouldStop: true },
+    ],
   ])('exceeded — %s', (_label, cost, budget, pause, expected) => {
     expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
@@ -63,13 +75,15 @@ describe('checkBudget', () => {
 
 describe('getCurrentCost', () => {
   it('returns 0 for zero usage with local tools', () => {
-    expect(getCurrentCost({
-      tokenUsage: zeroUsage,
-      totalTasks: 1,
-      escalatedCount: 0,
-      plannerTool: 'ollama',
-      implementerTool: 'ollama',
-    })).toBe(0);
+    expect(
+      getCurrentCost({
+        tokenUsage: zeroUsage,
+        totalTasks: 1,
+        escalatedCount: 0,
+        plannerTool: 'ollama',
+        implementerTool: 'ollama',
+      }),
+    ).toBe(0);
   });
 
   it('returns positive cost for API-priced providers', () => {
@@ -91,13 +105,16 @@ describe('getCurrentCost', () => {
   it('uses runtime-only model cache pricing when calculating current cost', () => {
     const pricingCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) => providerId === 'anthropic'
-        ? [{
-            id: 'claude-runtime-budget-only',
-            pricingInput: 10,
-            pricingOutput: 30,
-          }]
-        : null,
+      getProviderModels: (providerId) =>
+        providerId === 'anthropic'
+          ? [
+              {
+                id: 'claude-runtime-budget-only',
+                pricingInput: 10,
+                pricingOutput: 30,
+              },
+            ]
+          : null,
     };
     const usage: TokenUsage = {
       ...zeroUsage,
@@ -141,8 +158,26 @@ describe('getCurrentCost', () => {
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
       taskBreakdowns: [
-        { taskId: taskId('T001'), taskTitle: 'local task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local' },
-        { taskId: taskId('T002'), taskTitle: 'paid task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'deepseek', model: 'deepseek-chat' },
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'local task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'ollama',
+          model: 'qwen-local',
+        },
+        {
+          taskId: taskId('T002'),
+          taskTitle: 'paid task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'deepseek',
+          model: 'deepseek-chat',
+        },
       ],
     });
 
@@ -164,7 +199,16 @@ describe('getCurrentCost', () => {
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
       taskBreakdowns: [
-        { taskId: taskId('T001'), taskTitle: 'local task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local' },
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'local task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'ollama',
+          model: 'qwen-local',
+        },
       ],
     });
 
@@ -185,7 +229,7 @@ describe('enforceBudget', () => {
     const result = await enforceBudget({
       ...baseOpts,
       tokenUsage: zeroUsage,
-      maxBudget: 1.00,
+      maxBudget: 1.0,
       callbacks: makeCallbacks(),
       bus,
       warningEmitted: false,
@@ -223,7 +267,7 @@ describe('enforceBudget', () => {
 
     expect(result.stop).toBe(false);
     expect(result.warningEmitted).toBe(true);
-    expect(events.some(e => e.type === 'budget_warning')).toBe(true);
+    expect(events.some((e) => e.type === 'budget_warning')).toBe(true);
   });
 
   it('does not re-emit warning if already emitted', async () => {
@@ -253,7 +297,7 @@ describe('enforceBudget', () => {
     });
 
     expect(result.stop).toBe(false);
-    expect(events.some(e => e.type === 'budget_warning')).toBe(false);
+    expect(events.some((e) => e.type === 'budget_warning')).toBe(false);
   });
 
   it('stops with budget exceeded recovery regardless of legacy prompt behavior', async () => {
@@ -270,9 +314,8 @@ describe('enforceBudget', () => {
     const budget = cost * 0.5;
 
     for (const legacyResponse of [undefined, true, false] as const) {
-      const onBudgetExceeded = legacyResponse === undefined
-        ? undefined
-        : vi.fn().mockResolvedValue(legacyResponse);
+      const onBudgetExceeded =
+        legacyResponse === undefined ? undefined : vi.fn().mockResolvedValue(legacyResponse);
       const callbacks = makeCallbacks(onBudgetExceeded ? { onBudgetExceeded } : undefined);
       const { bus, events } = makeBusRecorder();
 
@@ -294,7 +337,7 @@ describe('enforceBudget', () => {
         reason: 'budget-exceeded',
         maxBudget: budget,
       });
-      expect(events.some(e => e.type === 'budget_exceeded')).toBe(true);
+      expect(events.some((e) => e.type === 'budget_exceeded')).toBe(true);
     }
   });
 
@@ -312,9 +355,8 @@ describe('enforceBudget', () => {
     const budget = cost / 0.87;
 
     for (const legacyResponse of [undefined, 'continue', 'abort', 'raise'] as const) {
-      const onBudgetPaused = legacyResponse === undefined
-        ? undefined
-        : vi.fn().mockResolvedValue(legacyResponse);
+      const onBudgetPaused =
+        legacyResponse === undefined ? undefined : vi.fn().mockResolvedValue(legacyResponse);
       const callbacks = makeCallbacks(onBudgetPaused ? { onBudgetPaused } : undefined);
       const { bus, events } = makeBusRecorder();
 
@@ -333,8 +375,8 @@ describe('enforceBudget', () => {
       expect(result.stop).toBe(true);
       expect(result.pauseEmitted).toBe(true);
       expect(result.recovery).toMatchObject({ reason: 'budget-paused', threshold: 0.85 });
-      expect(events.find(e => e.type === 'budget_paused')).toMatchObject({ threshold: 0.85 });
-      expect(events.some(e => e.type === 'warning')).toBe(true);
+      expect(events.find((e) => e.type === 'budget_paused')).toMatchObject({ threshold: 0.85 });
+      expect(events.some((e) => e.type === 'warning')).toBe(true);
     }
   });
 
@@ -367,7 +409,7 @@ describe('enforceBudget', () => {
 
     expect(result.stop).toBe(false);
     expect(onBudgetPaused).not.toHaveBeenCalled();
-    expect(events.some(e => e.type === 'budget_paused')).toBe(false);
+    expect(events.some((e) => e.type === 'budget_paused')).toBe(false);
   });
 
   it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {
@@ -393,8 +435,8 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    const warningIdx = events.findIndex(e => e.type === 'budget_warning');
-    const pausedIdx = events.findIndex(e => e.type === 'budget_paused');
+    const warningIdx = events.findIndex((e) => e.type === 'budget_warning');
+    const pausedIdx = events.findIndex((e) => e.type === 'budget_paused');
     expect(warningIdx).toBeGreaterThanOrEqual(0);
     expect(pausedIdx).toBeGreaterThanOrEqual(0);
     expect(warningIdx).toBeLessThan(pausedIdx);
@@ -423,8 +465,8 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    const warningIdx = events.findIndex(e => e.type === 'budget_warning');
-    const exceededIdx = events.findIndex(e => e.type === 'budget_exceeded');
+    const warningIdx = events.findIndex((e) => e.type === 'budget_warning');
+    const exceededIdx = events.findIndex((e) => e.type === 'budget_exceeded');
     expect(warningIdx).toBeGreaterThanOrEqual(0);
     expect(exceededIdx).toBeGreaterThanOrEqual(0);
     expect(warningIdx).toBeLessThan(exceededIdx);
@@ -440,10 +482,16 @@ describe('enforceBudget', () => {
       plannerOutput: 20_000,
     };
     const sonnetCost = getCurrentCost({
-      ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic', plannerModel: 'claude-sonnet-4-6',
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
     });
     const unknownCost = getCurrentCost({
-      ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic', plannerModel: 'definitely-not-a-real-model-xyz',
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'definitely-not-a-real-model-xyz',
     });
     expect(sonnetCost).toBeGreaterThan(0);
     expect(unknownCost).toBe(0);
@@ -472,9 +520,9 @@ describe('enforceBudget', () => {
     });
 
     expect(sonnetResult.pauseEmitted).toBe(true);
-    expect(eSonnet.some(e => e.type === 'budget_paused')).toBe(true);
+    expect(eSonnet.some((e) => e.type === 'budget_paused')).toBe(true);
     expect(unknownResult.pauseEmitted).toBe(false);
-    expect(eHaiku.some(e => e.type === 'budget_paused')).toBe(false);
+    expect(eHaiku.some((e) => e.type === 'budget_paused')).toBe(false);
   });
 
   it('pauses for a priced runtime-only selected model from the pricing cache', async () => {
@@ -482,13 +530,16 @@ describe('enforceBudget', () => {
     const { bus, events } = makeBusRecorder();
     const pricingCache: ModelCacheAccessor = {
       ...emptyPricingCache,
-      getProviderModels: (providerId) => providerId === 'anthropic'
-        ? [{
-            id: 'claude-runtime-budget-only',
-            pricingInput: 10,
-            pricingOutput: 30,
-          }]
-        : null,
+      getProviderModels: (providerId) =>
+        providerId === 'anthropic'
+          ? [
+              {
+                id: 'claude-runtime-budget-only',
+                pricingInput: 10,
+                pricingOutput: 30,
+              },
+            ]
+          : null,
     };
     const usage: TokenUsage = {
       ...zeroUsage,
@@ -511,6 +562,8 @@ describe('enforceBudget', () => {
 
     expect(result.stop).toBe(true);
     expect(result.pauseEmitted).toBe(true);
-    expect(events.map(e => e.type)).toEqual(expect.arrayContaining(['budget_warning', 'budget_paused']));
+    expect(events.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['budget_warning', 'budget_paused']),
+    );
   });
 });

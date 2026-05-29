@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  classifyContextFit,
-  estimateFormattedTaskPromptTokens,
-} from './estimation.js';
+import { classifyContextFit, estimateFormattedTaskPromptTokens } from './estimation.js';
 import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../spec/prompts/system.js';
@@ -13,7 +10,7 @@ import { estimateTokens } from '../../../core/tokens/estimate.js';
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'Node.js 22',
+  runtime: 'node',
   testCommand: 'npm test',
 };
 
@@ -32,9 +29,18 @@ describe('estimateFormattedTaskPromptTokens', () => {
     const task = makeTask();
     const languageContext = buildLanguageContext('python');
 
-    const estimatedTokens = estimateFormattedTaskPromptTokens({ task, context, contextLength: 10_000, languageContext });
-    const promptOnlyTokens = estimateTokens(formatTaskPrompt(task, context, 10_000, languageContext));
+    const estimatedTokens = estimateFormattedTaskPromptTokens({
+      task,
+      context,
+      contextLength: 10_000,
+      languageContext,
+    });
+    const promptOnlyTokens = estimateTokens(
+      formatTaskPrompt({ task, context, contextLength: 10_000, languageContext }),
+    );
 
-    expect(estimatedTokens).toBe(promptOnlyTokens + estimateTokens(buildSystemPreamble(languageContext)));
+    expect(estimatedTokens).toBe(
+      promptOnlyTokens + estimateTokens(buildSystemPreamble(languageContext)),
+    );
   });
 });

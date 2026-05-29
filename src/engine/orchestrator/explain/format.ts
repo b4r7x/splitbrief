@@ -34,7 +34,10 @@ export function formatRunExplain(explain: RunExplain): string {
     ...listLines('runtime warnings', explain.warnings.runtimeWarnings),
     '',
     'Artifacts:',
-    ...explain.artifacts.map((artifact) => `- ${artifact.key}: ${artifact.present ? artifact.path : `${artifact.path} (missing)`}`),
+    ...explain.artifacts.map(
+      (artifact) =>
+        `- ${artifact.key}: ${artifact.present ? artifact.path : `${artifact.path} (missing)`}`,
+    ),
     '',
   ].join('\n');
 }
@@ -59,7 +62,10 @@ function routingLines(routes: RunExplainRoute[]): string[] {
   const visible = routes.slice(0, MAX_ROUTING_LINES).map(formatRoute);
   const hidden = routes.length - visible.length;
   return hidden > 0
-    ? [...visible, `- ${hidden} more task route(s) omitted; see summary.json or review-packet.json.`]
+    ? [
+        ...visible,
+        `- ${hidden} more task route(s) omitted; see summary.json or review-packet.json.`,
+      ]
     : visible;
 }
 
@@ -75,17 +81,19 @@ function formatRoute(route: RunExplainRoute): string {
 
 function activityLines(explain: RunExplain): string[] {
   const lines = [
-    ...explain.activity.retries.map((retry) =>
-      `- retry ${retry.taskId}: ${retry.retryCount}${retry.lastError ? ` (${retry.lastError})` : ''}`
+    ...explain.activity.retries.map(
+      (retry) =>
+        `- retry ${retry.taskId}: ${retry.retryCount}${retry.lastError ? ` (${retry.lastError})` : ''}`,
     ),
-    ...explain.activity.escalatedTasks.map((task) =>
-      `- escalated ${task.taskId}${task.method ? ` via ${task.method}` : ''}${task.title ? `: ${task.title}` : ''}`
+    ...explain.activity.escalatedTasks.map(
+      (task) =>
+        `- escalated ${task.taskId}${task.method ? ` via ${task.method}` : ''}${task.title ? `: ${task.title}` : ''}`,
     ),
-    ...explain.activity.skippedTasks.map((task) =>
-      `- skipped ${task.taskId}${task.reason ? `: ${task.reason}` : ''}`
+    ...explain.activity.skippedTasks.map(
+      (task) => `- skipped ${task.taskId}${task.reason ? `: ${task.reason}` : ''}`,
     ),
-    ...explain.activity.failedTasks.map((task) =>
-      `- failed ${task.taskId}${task.title ? `: ${task.title}` : ''}`
+    ...explain.activity.failedTasks.map(
+      (task) => `- failed ${task.taskId}${task.title ? `: ${task.title}` : ''}`,
     ),
     ...explain.activity.recoveryRisks.map((risk) => `- recovery risk: ${risk}`),
   ];
@@ -94,9 +102,10 @@ function activityLines(explain: RunExplain): string[] {
 
 function taskReviewLine(explain: RunExplain): string {
   if (explain.review.taskReview.triggeredCount === 0) return explain.review.taskReview.status;
-  const ids = explain.review.taskReview.taskIds.length > 0
-    ? ` (${explain.review.taskReview.taskIds.join(', ')})`
-    : '';
+  const ids =
+    explain.review.taskReview.taskIds.length > 0
+      ? ` (${explain.review.taskReview.taskIds.join(', ')})`
+      : '';
   return `${explain.review.taskReview.triggeredCount} gate(s) triggered${ids}`;
 }
 

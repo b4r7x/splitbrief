@@ -23,7 +23,9 @@ describe('createStagedProject', () => {
       let cleaned = false;
       try {
         expect(staged.projectDir).not.toBe(dir);
-        expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe('export const app = true;\n');
+        expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
+          'export const app = true;\n',
+        );
         expect(existsSync(join(staged.projectDir, 'node_modules'))).toBe(false);
         expect(existsSync(join(staged.projectDir, '.diptych'))).toBe(false);
         expect(existsSync(join(staged.projectDir, '.trees'))).toBe(false);
@@ -76,8 +78,11 @@ describe('promoteStagedChanges', () => {
       writeFileSync(join(projectDir, 'src', 'app.ts'), 'original\n');
       writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
 
-      const promoted = await promoteStagedChanges(projectDir, stagedDir, ['src/app.ts'], {
-        'src/app.ts': 'original\n',
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['src/app.ts'],
+        expectedCurrentContents: { 'src/app.ts': 'original\n' },
       });
 
       expect(promoted).toEqual({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
@@ -97,8 +102,11 @@ describe('promoteStagedChanges', () => {
       writeFileSync(join(projectDir, 'src', 'app.ts'), 'user edit\n');
       writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
 
-      const promoted = await promoteStagedChanges(projectDir, stagedDir, ['src/app.ts'], {
-        'src/app.ts': 'original\n',
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['src/app.ts'],
+        expectedCurrentContents: { 'src/app.ts': 'original\n' },
       });
 
       expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['src/app.ts'] });

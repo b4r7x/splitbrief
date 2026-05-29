@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 import {
   fetchJsonWithTimeout,
-  extractOpenAIModelList,
-  isOpenAIModelList,
   fetchModelList,
   createMetadataProvider,
   createProviderShell,
@@ -21,31 +19,6 @@ describe('createProviderShell', () => {
   });
 });
 
-describe('isOpenAIModelList / extractOpenAIModelList', () => {
-  it('isOpenAIModelList accepts canonical shape', () => {
-    expect(isOpenAIModelList({ data: [{ id: 'a' }, { id: 'b' }] })).toBe(true);
-  });
-
-  it('isOpenAIModelList rejects non-canonical shapes', () => {
-    expect(isOpenAIModelList({ models: [{ id: 'a' }] })).toBe(false);
-    expect(isOpenAIModelList(null)).toBe(false);
-    expect(isOpenAIModelList('nope')).toBe(false);
-    expect(isOpenAIModelList({ data: 'nope' })).toBe(false);
-  });
-
-  it('extractOpenAIModelList maps each entry via mapper', () => {
-    const ids = extractOpenAIModelList(
-      { data: [{ id: 'a', extra: 1 }, { id: 'b' }] },
-      (m: { id: string }) => m.id.toUpperCase(),
-    );
-    expect(ids).toEqual(['A', 'B']);
-  });
-
-  it('extractOpenAIModelList returns [] for invalid input', () => {
-    expect(extractOpenAIModelList({ bad: 'shape' }, (m: { id: string }) => m.id)).toEqual([]);
-  });
-});
-
 describe('fetchJsonWithTimeout', () => {
   setupFetchMock();
 
@@ -59,7 +32,9 @@ describe('fetchJsonWithTimeout', () => {
 
   it('throws on non-ok status with HTTP code in message', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(new Response('err', { status: 503 }));
-    await expect(fetchJsonWithTimeout('https://api.example.com/v1', 1000)).rejects.toThrow('HTTP 503');
+    await expect(fetchJsonWithTimeout('https://api.example.com/v1', 1000)).rejects.toThrow(
+      'HTTP 503',
+    );
   });
 
   it('aborts with a AbortError when the timeout fires before response', async () => {
@@ -74,7 +49,9 @@ describe('fetchJsonWithTimeout', () => {
       });
     });
 
-    await expect(fetchJsonWithTimeout('https://slow.example.com', 5)).rejects.toThrow(/abort|timeout/i);
+    await expect(fetchJsonWithTimeout('https://slow.example.com', 5)).rejects.toThrow(
+      /abort|timeout/i,
+    );
     // The controller attached to the request should be aborted after timeout elapses.
     expect(signalRef?.aborted).toBe(true);
   });
@@ -84,8 +61,10 @@ describe('fetchModelList', () => {
   setupFetchMock();
 
   const defaultExtract = (data: unknown): Array<{ id: string }> | null => {
-    if (!isOpenAIModelList(data)) return null;
-    return extractOpenAIModelList(data, (m: { id: string }) => ({ id: m.id }));
+    if (typeof data !== 'object' || data === null) return null;
+    const list = (data as { data?: unknown }).data;
+    if (!Array.isArray(list)) return null;
+    return list.map((entry) => ({ id: (entry as { id: string }).id }));
   };
 
   it('returns extracted models on 200 + valid payload and clears error on onError', async () => {
@@ -114,7 +93,10 @@ describe('fetchModelList', () => {
       headers: { 'x-api-key': 'custom' },
       extractModels: defaultExtract,
     });
-    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: { 'x-api-key': 'custom' } }));
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ headers: { 'x-api-key': 'custom' } }),
+    );
   });
 
   it('returns [] on non-ok and reports HTTP status via onError', async () => {
@@ -168,7 +150,6 @@ describe('fetchModelList', () => {
     expect(result).toEqual([]);
     expect(errors).toContain('Invalid response payload');
   });
-
 });
 
 describe('createMetadataProvider', () => {
@@ -198,10 +179,21 @@ describe('createMetadataProvider', () => {
   it('listModels returns IDs on happy path', async () => {
     process.env['CUSTOM_API_KEY'] = 'key';
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: 'a' }, { id: 'b', context: 100 }] }), { status: 200 }),
+      new Response(JSON.stringify({ data: [{ id: 'a' }, { id: 'b', context: 100 }] }), {
+        status: 200,
+      }),
     );
     const p = createMetadataProvider(opts);
     expect(await p.listModels()).toEqual(['a', 'b']);
+  });
+
+  it('returns [] when the built-in OpenAI extractor sees a non-canonical list shape', async () => {
+    process.env['CUSTOM_API_KEY'] = 'key';
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ models: [{ id: 'a' }] }), { status: 200 }),
+    );
+    const p = createMetadataProvider(opts);
+    expect(await p.listModels()).toEqual([]);
   });
 
   it('returns [] without calling fetch when non-local provider has no API key', async () => {
@@ -225,7 +217,10 @@ describe('createMetadataProvider', () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
     );
-    const p = createMetadataProvider(opts, { apiBase: 'https://override.example/v1', apiKey: 'override-key' });
+    const p = createMetadataProvider(opts, {
+      apiBase: 'https://override.example/v1',
+      apiKey: 'override-key',
+    });
     expect(p.baseURL).toBe('https://override.example/v1');
     expect(p.apiKey()).toBe('override-key');
   });
@@ -234,17 +229,25 @@ describe('createMetadataProvider', () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
     );
-    const p = createMetadataProvider({
-      ...opts,
-      modelsUrl: (base) => `${base}/custom/models/path`,
-    }, { apiKey: 'k' });
+    const p = createMetadataProvider(
+      {
+        ...opts,
+        modelsUrl: (base) => `${base}/custom/models/path`,
+      },
+      { apiKey: 'k' },
+    );
     await p.listModels();
-    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith('https://api.custom.com/v1/custom/models/path', expect.anything());
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
+      'https://api.custom.com/v1/custom/models/path',
+      expect.anything(),
+    );
   });
 
   it('uses custom extractModels for non-OpenAI list shapes', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ models: [{ name: 'qwen:7b' }, { name: 'llama:8b' }] }), { status: 200 }),
+      new Response(JSON.stringify({ models: [{ name: 'qwen:7b' }, { name: 'llama:8b' }] }), {
+        status: 200,
+      }),
     );
     const p = createMetadataProvider({
       ...opts,
@@ -264,12 +267,12 @@ describe('createMetadataProvider', () => {
     type StrictRaw = z.infer<typeof StrictSchema>;
 
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({
-        data: [
-          { id: 'ok-1', version: 1 },
-          { id: 'bad-1' /* missing version → fallback */ },
-        ],
-      }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'ok-1', version: 1 }, { id: 'bad-1' /* missing version → fallback */ }],
+        }),
+        { status: 200 },
+      ),
     );
 
     let fallbackCount = 0;
@@ -306,12 +309,12 @@ describe('createMetadataProvider', () => {
   it('detectContextLength returns mapped context for matching model, null otherwise', async () => {
     process.env['CUSTOM_API_KEY'] = 'key';
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({
-        data: [
-          { id: 'alpha', context: 32768 },
-          { id: 'beta' },
-        ],
-      }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'alpha', context: 32768 }, { id: 'beta' }],
+        }),
+        { status: 200 },
+      ),
     );
     const p = createMetadataProvider(opts);
     expect(await p.detectContextLength('alpha')).toBe(32768);

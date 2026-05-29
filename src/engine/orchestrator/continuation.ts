@@ -45,7 +45,9 @@ export interface WithContinuationLoopOpts<T> {
   body: (args: ContinuationLoopBodyArgs) => Promise<AttemptResult<T>>;
 }
 
-export async function withContinuationLoop<T>(opts: WithContinuationLoopOpts<T>): Promise<{ state: WorkflowState; value: T }> {
+export async function withContinuationLoop<T>(
+  opts: WithContinuationLoopOpts<T>,
+): Promise<{ state: WorkflowState; value: T }> {
   const { ctx, onStateChange, body } = opts;
   const { projectDir, sessionId, callbacks, sinks } = ctx;
   let state = opts.state;
@@ -57,7 +59,9 @@ export async function withContinuationLoop<T>(opts: WithContinuationLoopOpts<T>)
     onStateChange?.(next);
   };
 
-  const recordOutput = (text: string) => { partialOutput += text; };
+  const recordOutput = (text: string) => {
+    partialOutput += text;
+  };
 
   while (true) {
     const callController = new AbortController();
@@ -87,7 +91,12 @@ export async function withContinuationLoop<T>(opts: WithContinuationLoopOpts<T>)
 
     sinks.setAbortHandler(null);
 
-    if (attempt.continueIfAborted && callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
+    if (
+      attempt.continueIfAborted &&
+      callController.signal.aborted &&
+      !ctx.signal?.aborted &&
+      callbacks.onContinuationNeeded
+    ) {
       applyState(transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' }));
       const userText = await callbacks.onContinuationNeeded(partialOutput);
       applyState(transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' }));
@@ -115,8 +124,14 @@ export type RegenerateFromFeedbackCtx = {
 type PlanRegenResult = { kind: 'plan'; state: WorkflowState; plan: string };
 type TasksRegenResult = { kind: 'tasks'; state: WorkflowState; tasks: Task[] };
 
-export async function regenerateFromFeedback(kind: 'plan', ctx: RegenerateFromFeedbackCtx): Promise<PlanRegenResult>;
-export async function regenerateFromFeedback(kind: 'tasks', ctx: RegenerateFromFeedbackCtx): Promise<TasksRegenResult>;
+export async function regenerateFromFeedback(
+  kind: 'plan',
+  ctx: RegenerateFromFeedbackCtx,
+): Promise<PlanRegenResult>;
+export async function regenerateFromFeedback(
+  kind: 'tasks',
+  ctx: RegenerateFromFeedbackCtx,
+): Promise<TasksRegenResult>;
 export async function regenerateFromFeedback(
   kind: 'plan' | 'tasks',
   ctx: RegenerateFromFeedbackCtx,
@@ -129,11 +144,19 @@ export async function regenerateFromFeedback(
   const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
   const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
-  const languageContext = buildProjectLanguageContext(projectDir, state.discoveredValidation?.language);
+  const languageContext = buildProjectLanguageContext(
+    projectDir,
+    state.discoveredValidation?.language,
+  );
 
   if (kind === 'plan') {
     const projectContext = await buildProjectContextMarkdown(projectDir);
-    const basePrompt = buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext, languageContext);
+    const basePrompt = buildPlanPrompt(
+      { content: spec, hasClarifications: spec.includes('## Clarifications') },
+      projectContext,
+      skillsContext,
+      languageContext,
+    );
     const result = await runPlannerReview({
       planner,
       prompt: prefix ? prefix + basePrompt : basePrompt,

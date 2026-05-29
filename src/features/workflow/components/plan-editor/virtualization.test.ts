@@ -4,15 +4,25 @@ import type { PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-ed
 import { getTaskEditorRowHeight, getVisibleTaskWindow } from './virtualization.js';
 
 function tasks(count: number) {
-  return Array.from({ length: count }, (_, i) => makeTask({
-    id: `T${String(i + 1).padStart(3, '0')}`,
-    title: `Task ${i + 1}`,
-  }));
+  return Array.from({ length: count }, (_, i) =>
+    makeTask({
+      id: `T${String(i + 1).padStart(3, '0')}`,
+      title: `Task ${i + 1}`,
+    }),
+  );
 }
 
 describe('plan editor virtualization', () => {
   it('returns an empty window for empty task lists', () => {
-    expect(getVisibleTaskWindow([], 0, new Set(), new Map(), 10)).toEqual({
+    expect(
+      getVisibleTaskWindow({
+        tasks: [],
+        cursor: 0,
+        expandedIds: new Set(),
+        metadata: new Map(),
+        rowBudget: 10,
+      }),
+    ).toEqual({
       scrollOffset: 0,
       visibleTasks: [],
     });
@@ -21,10 +31,16 @@ describe('plan editor virtualization', () => {
   it('keeps the cursor visible while filling rows around it', () => {
     const list = tasks(5);
 
-    const result = getVisibleTaskWindow(list, 3, new Set(), new Map(), 9);
+    const result = getVisibleTaskWindow({
+      tasks: list,
+      cursor: 3,
+      expandedIds: new Set(),
+      metadata: new Map(),
+      rowBudget: 9,
+    });
 
     expect(result.scrollOffset).toBe(1);
-    expect(result.visibleTasks.map(task => task.id)).toEqual(['T002', 'T003', 'T004']);
+    expect(result.visibleTasks.map((task) => task.id)).toEqual(['T002', 'T003', 'T004']);
   });
 
   it('accounts for expanded task detail rows', () => {

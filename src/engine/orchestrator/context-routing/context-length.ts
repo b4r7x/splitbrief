@@ -1,6 +1,13 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
-import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { assertNever } from '../../../utils/type-guards.js';
+import {
+  findKnownModel,
+  getEffectiveModelId,
+  lookupModelsDevModel,
+  lookupRuntimeModel,
+  type ModelCacheAccessor,
+} from '../../providers/model/resolution.js';
 import type { ResolvedProfileContextLength } from './types.js';
 
 export const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
@@ -8,12 +15,18 @@ export const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
 export function profileProviderId(profile: ResolvedImplementerProfile): string {
   const { config } = profile;
   switch (config.kind) {
-    case 'api':       return config.provider;
-    case 'cli':       return config.tool;
-    case 'shell':     return 'shell';
-    case 'agent':     return 'agent';
-    case 'agent-sdk': return 'agent-sdk';
-    default:          return 'unknown';
+    case 'api':
+      return config.provider;
+    case 'cli':
+      return config.tool;
+    case 'shell':
+      return 'shell';
+    case 'agent':
+      return 'agent';
+    case 'agent-sdk':
+      return 'agent-sdk';
+    default:
+      return assertNever(config);
   }
 }
 
@@ -29,28 +42,48 @@ export function resolveProfileContextLength(
 
   const providerId = profileProviderId(profile);
   if (!isProviderId(providerId)) {
-    return { contextLength: conservativeContextLength, source: 'conservative-fallback', usedConservativeContextLength: true };
+    return {
+      contextLength: conservativeContextLength,
+      source: 'conservative-fallback',
+      usedConservativeContextLength: true,
+    };
   }
 
   const modelId = getEffectiveModelId(providerId, profile.config.model);
   if (cache && modelId) {
     const modelsDev = lookupModelsDevModel(providerId, modelId, cache);
     if (modelsDev?.contextLength !== undefined) {
-      return { contextLength: modelsDev.contextLength, source: 'models-dev', usedConservativeContextLength: false };
+      return {
+        contextLength: modelsDev.contextLength,
+        source: 'models-dev',
+        usedConservativeContextLength: false,
+      };
     }
 
     const runtime = lookupRuntimeModel(providerId, modelId, cache);
     if (runtime?.contextLength !== undefined) {
-      return { contextLength: runtime.contextLength, source: 'runtime', usedConservativeContextLength: false };
+      return {
+        contextLength: runtime.contextLength,
+        source: 'runtime',
+        usedConservativeContextLength: false,
+      };
     }
   }
 
   if (modelId) {
     const known = findKnownModel(providerId, modelId);
     if (known?.contextLength !== undefined) {
-      return { contextLength: known.contextLength, source: 'known-catalog', usedConservativeContextLength: false };
+      return {
+        contextLength: known.contextLength,
+        source: 'known-catalog',
+        usedConservativeContextLength: false,
+      };
     }
   }
 
-  return { contextLength: conservativeContextLength, source: 'conservative-fallback', usedConservativeContextLength: true };
+  return {
+    contextLength: conservativeContextLength,
+    source: 'conservative-fallback',
+    usedConservativeContextLength: true,
+  };
 }

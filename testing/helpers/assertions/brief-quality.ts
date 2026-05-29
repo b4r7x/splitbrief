@@ -17,5 +17,5 @@ export function expectBriefQualityBlocked(
   expect(existsSync(reportPath)).toBe(true);
   const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
   expect(persisted.passed).toBe(false);
-  expect(events.find(e => e.type === 'brief_quality_failed')).toBeDefined();
+  expect(events.find((e) => e.type === 'brief_quality_failed')).toBeDefined();
 }

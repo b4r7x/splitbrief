@@ -3,10 +3,21 @@ import { taskIdToString } from '../../../core/schemas/task.js';
 import type { TreeEntryEnvelope } from '../../../core/sessions/tree/schemas.js';
 import type { SessionTree } from '../../../core/sessions/tree/store.js';
 import { createEmptyTree, appendEntry, branchFrom } from '../../../core/sessions/tree/store.js';
-import { persistAppend, writeTreeMeta, appendTreeEntry, reconstructTree } from '../../../core/sessions/tree/io.js';
+import {
+  persistAppend,
+  writeTreeMeta,
+  appendTreeEntry,
+  reconstructTree,
+} from '../../../core/sessions/tree/io.js';
 import { sessionDir } from '../../../core/paths.js';
+import { warnError } from '../../../lib/warn.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
-import type { AgentInvocationPayload, CostCheckpointPayload, PlanStepPayload, RecoveryDecisionPayload } from '../../../core/sessions/tree/entry-types.js';
+import type {
+  AgentInvocationPayload,
+  CostCheckpointPayload,
+  PlanStepPayload,
+  RecoveryDecisionPayload,
+} from '../../../core/sessions/tree/entry-types.js';
 import * as typeGuards from '../../../utils/type-guards.js';
 
 export interface TreeRecorderOptions {
@@ -14,7 +25,11 @@ export interface TreeRecorderOptions {
   sessionId: string;
 }
 
-const BRANCHING_ACTIONS = new Set(['retry-same-worker', 'route-bigger-worker', 'planner-split-rebase']);
+const BRANCHING_ACTIONS = new Set([
+  'retry-same-worker',
+  'route-bigger-worker',
+  'planner-split-rebase',
+]);
 
 // All disk I/O is wrapped in try/catch — persistence failures must not crash the workflow.
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
@@ -28,19 +43,23 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     if (!tree) return;
     try {
       persistAppend(dir, entry, tree.meta);
-    } catch {}
+    } catch (err) {
+      warnError('session-tree: persist failed', err);
+    }
   }
-
 
   return (event: EngineEvent) => {
     switch (event.type) {
       case 'workflow_started': {
         tree = createEmptyTree(event.ts);
-        const root = tree.entries.get(tree.meta.leafId)!;
+        const root = tree.entries.get(tree.meta.leafId);
+        if (!root) return;
         try {
           appendTreeEntry(dir, root);
           writeTreeMeta(dir, tree.meta);
-        } catch {}
+        } catch (err) {
+          warnError('session-tree: initial write failed', err);
+        }
         return;
       }
 
@@ -51,11 +70,14 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
             tree = existing;
           } else {
             tree = createEmptyTree(event.ts);
-            const root = tree.entries.get(tree.meta.leafId)!;
+            const root = tree.entries.get(tree.meta.leafId);
+            if (!root) return;
             try {
               appendTreeEntry(dir, root);
               writeTreeMeta(dir, tree.meta);
-            } catch {}
+            } catch (err) {
+              warnError('session-tree: initial write failed', err);
+            }
           }
         }
         return;
@@ -86,7 +108,10 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
 
       case 'task_tokens': {
         if (!tree) return;
-        taskTokens.set(taskIdToString(event.taskId), event.implementerTokens + event.escalationTokens);
+        taskTokens.set(
+          taskIdToString(event.taskId),
+          event.implementerTokens + event.escalationTokens,
+        );
         return;
       }
 
@@ -175,7 +200,6 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'cost_update': {
         if (!tree) return;
         const payload: CostCheckpointPayload = {
-          totalCost: 0,
           inputTokens: totalInputTokens(event.tokenUsage),
           outputTokens: totalOutputTokens(event.tokenUsage),
           phase: event.phase,

@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { entryId } from './schemas.js';
-import {
-  activePath,
-  appendEntry,
-  branchFrom,
-  childrenOf,
-  createEmptyTree,
-  isOnActivePath,
-  pathToRoot,
-} from './store.js';
+import { appendEntry, branchFrom, createEmptyTree } from './store.js';
 
 describe('session tree store', () => {
   it('starts a session and appends entries along the active path without mutating prior trees', () => {
@@ -45,12 +37,6 @@ describe('session tree store', () => {
       createdAt: 1000,
       updatedAt: 3000,
     });
-    expect(activePath(second.tree).map(entry => entry.id)).toEqual([
-      second.entry.id,
-      first.entry.id,
-      entryId('E0001'),
-    ]);
-    expect(childrenOf(second.tree, first.entry.id).map(entry => entry.id)).toEqual([second.entry.id]);
   });
 
   it('branches from an earlier entry and makes the new branch active', () => {
@@ -74,20 +60,10 @@ describe('session tree store', () => {
       branchCount: 1,
       updatedAt: 4000,
     });
-    expect(childrenOf(branched.tree, entryId('E0001')).map(entry => entry.id)).toEqual([
-      main.entry.id,
-      branched.entry.id,
-    ]);
-    expect(activePath(branched.tree).map(entry => entry.id)).toEqual([
-      branched.entry.id,
-      entryId('E0001'),
-    ]);
-    expect(isOnActivePath(branched.tree, branched.entry.id)).toBe(true);
-    expect(isOnActivePath(branched.tree, main.entry.id)).toBe(false);
     expect(tree.meta.branchCount).toBe(0);
   });
 
-  it('reports missing branch and path lookups predictably', () => {
+  it('reports missing branch lookups predictably', () => {
     const tree = createEmptyTree(1000);
 
     expect(() =>
@@ -98,7 +74,5 @@ describe('session tree store', () => {
         timestamp: 2000,
       }),
     ).toThrow('Cannot branch from unknown entry');
-    expect(pathToRoot(tree, entryId('E9999'))).toEqual([]);
-    expect(childrenOf(tree, entryId('E9999'))).toEqual([]);
   });
 });

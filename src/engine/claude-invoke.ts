@@ -4,7 +4,7 @@ import type { ClarificationQuestion } from '../core/schemas/question.js';
 import type { EffortLevel } from '../core/schemas/enums.js';
 import type { Attachment } from '../core/schemas/attachment.js';
 import { spawnWithStdin } from '../lib/process/spawn.js';
-import { parseStreamLine } from './streaming/output-parsers.js';
+import { parseStreamLine } from './streaming/parse-stream-json.js';
 import type { ToolUseInfo } from './runners/types.js';
 import { createQuestionAccumulator } from './parsers/question-parser.js';
 
@@ -17,17 +17,17 @@ interface ToolFormat {
 }
 
 const TOOL_FORMATS: Record<string, ToolFormat> = {
-  Read:         { field: 'file_path' },
-  Write:        { field: 'file_path' },
-  Edit:         { field: 'file_path' },
-  Glob:         { field: 'pattern' },
-  Skill:        { field: 'skill' },
+  Read: { field: 'file_path' },
+  Write: { field: 'file_path' },
+  Edit: { field: 'file_path' },
+  Glob: { field: 'pattern' },
+  Skill: { field: 'skill' },
   NotebookEdit: { field: 'file_path' },
-  Grep:         { field: 'pattern', quoted: true },
-  WebSearch:    { field: 'query', quoted: true },
-  ToolSearch:   { field: 'query', quoted: true },
-  Bash:         { field: 'command', maxLen: 60 },
-  WebFetch:     { field: 'url', maxLen: 80 },
+  Grep: { field: 'pattern', quoted: true },
+  WebSearch: { field: 'query', quoted: true },
+  ToolSearch: { field: 'query', quoted: true },
+  Bash: { field: 'command', maxLen: 60 },
+  WebFetch: { field: 'url', maxLen: 80 },
 };
 
 function formatToolUse(tool: ToolUseInfo): string {
@@ -43,7 +43,7 @@ function formatToolUse(tool: ToolUseInfo): string {
     return fmt.quoted ? `→ ${tool.name} "${value}"` : `→ ${tool.name} ${value}`;
   }
 
-  const hint = Object.values(tool.input).find(v => typeof v === 'string');
+  const hint = Object.values(tool.input).find((v) => typeof v === 'string');
   return `→ ${tool.name}${hint ? ' ' + String(hint).slice(0, 60) : ''}`;
 }
 
@@ -101,11 +101,8 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 }
 
 interface BuildArgsOpts {
-  prompt?: string | undefined;
   sessionId?: string | null;
   model?: string | undefined;
-  useStdin?: boolean | undefined;
-  effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
 }
 
@@ -115,11 +112,8 @@ function applyEffortPrefix(prompt: string, effort: EffortLevel | undefined): str
 }
 
 function buildClaudeArgs(opts: BuildArgsOpts): string[] {
-  const { prompt, sessionId, model, useStdin, effort, images } = opts;
-  const effectivePrompt = applyEffortPrefix(prompt ?? '', effort);
-  const args: string[] = useStdin
-    ? ['-p', '--output-format', 'stream-json', '--verbose']
-    : ['-p', effectivePrompt, '--output-format', 'stream-json', '--verbose'];
+  const { sessionId, model, images } = opts;
+  const args: string[] = ['-p', '--output-format', 'stream-json', '--verbose'];
 
   if (model) args.push('--model', model);
   if (sessionId) args.push('--session-id', sessionId);
@@ -149,9 +143,16 @@ export interface ClaudePlannerStreamOpts {
   signal?: AbortSignal | undefined;
 }
 
-export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Promise<ClaudePlannerStreamResult> {
-  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images, signal } = opts;
-  const args = buildClaudeArgs({ useStdin: true, sessionId, model, effort, ...(images ? { images } : {}) });
+export async function runClaudePlannerStream(
+  opts: ClaudePlannerStreamOpts,
+): Promise<ClaudePlannerStreamResult> {
+  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images, signal } =
+    opts;
+  const args = buildClaudeArgs({
+    sessionId,
+    model,
+    ...(images ? { images } : {}),
+  });
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
   state.sessionId = sessionId;
@@ -181,7 +182,7 @@ export interface ClaudeOneShotOpts {
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
   const { prompt, projectDir, onOutput, model, effort, signal } = opts;
   const { state, handleLine } = createStreamHandler({ onOutput });
-  const args = buildClaudeArgs({ useStdin: true, model, effort });
+  const args = buildClaudeArgs({ model });
 
   await spawnWithStdin({
     command: 'claude',

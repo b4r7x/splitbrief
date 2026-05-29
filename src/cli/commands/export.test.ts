@@ -22,14 +22,19 @@ afterEach(() => {
 function writeSession(sessionId: string, startedAt = 1_000): void {
   const sessionDirectory = join(projectDir, '.diptych', 'sessions', sessionId);
   mkdirSync(sessionDirectory, { recursive: true });
-  writeFileSync(join(sessionDirectory, 'summary.json'), JSON.stringify(makeSession({
-    id: sessionId,
-    status: 'complete',
-    feature: sessionId,
-    startedAt,
-    completedAt: Date.parse('2026-05-04T12:00:00Z'),
-    summary: makeSummary({ feature: sessionId, totalTasks: 1, completedByLocal: 1 }),
-  })));
+  writeFileSync(
+    join(sessionDirectory, 'summary.json'),
+    JSON.stringify(
+      makeSession({
+        id: sessionId,
+        status: 'complete',
+        feature: sessionId,
+        startedAt,
+        completedAt: Date.parse('2026-05-04T12:00:00Z'),
+        summary: makeSummary({ feature: sessionId, totalTasks: 1, completedByLocal: 1 }),
+      }),
+    ),
+  );
 }
 
 async function runExport(args: string[]): Promise<void> {
@@ -44,7 +49,9 @@ describe('export command', () => {
   it('writes report.html for an explicit session', async () => {
     writeSession('session-one');
     const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((message) => { logs.push(message); });
+    vi.spyOn(console, 'log').mockImplementation((message) => {
+      logs.push(message);
+    });
 
     await runExport(['session-one', '--project', projectDir]);
 

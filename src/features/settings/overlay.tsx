@@ -6,17 +6,16 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { computeScrollWindow } from '../../components/pickers/picker-utils.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import type { SettingDef } from '../../core/settings/catalog.js';
-import { displayValue, valueColor } from '../../core/settings/presentation.js';
+import { displayValue, valueColor } from './presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth } from '../../core/layout/terminal-width.js';
+import { getClampedTerminalWidth } from '../workflow/layout/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
 import { ScrollIndicator } from '../../components/scroll-indicator.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { toSectionedList } from '../../utils/sectioned-list.js';
 
-const MIN_VISIBLE_ROWS = 3;
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
 const BASE_CHROME_ROWS = 9;
@@ -38,23 +37,20 @@ export function SettingsOverlay() {
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
   };
 
-  const {
-    filter,
+  const { filter, filtered, effectiveIndex, editingId, editBuffer, selectedDef, getValue } =
+    useSettingsEditor({
+      config,
+      focusSetting,
+      onClose,
+      onOpenSubPicker: openSubPicker,
+    });
+
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow(
     filtered,
     effectiveIndex,
-    editingId,
-    editBuffer,
-    selectedDef,
-    getValue,
-  } = useSettingsEditor({
-    config,
-    focusSetting,
-    onClose,
-    onOpenSubPicker: openSubPicker,
-  });
-
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
-    computeScrollWindow(filtered, effectiveIndex, rows, chrome, MIN_VISIBLE_ROWS);
+    rows,
+    chrome,
+  );
 
   const sectionedVisible = toSectionedList(visibleSlice, (def) => def.section);
 
@@ -80,15 +76,15 @@ export function SettingsOverlay() {
             <Box key={def.id} flexDirection="column">
               {showSection && (
                 <Box marginTop={i > 0 ? 1 : 0}>
-                  <Text bold color={t.text}>{sectionHeader}</Text>
+                  <Text bold color={t.text}>
+                    {sectionHeader}
+                  </Text>
                 </Box>
               )}
               <Box justifyContent="space-between">
                 <Box>
                   <CursorCell isCursor={isSelected} dimWhenInactive />
-                  <Text color={!isSelected ? t.textDim : t.text}>
-                    {def.label}
-                  </Text>
+                  <Text color={!isSelected ? t.textDim : t.text}>{def.label}</Text>
                 </Box>
 
                 {isEditing ? (

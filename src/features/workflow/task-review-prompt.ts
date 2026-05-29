@@ -1,4 +1,5 @@
 import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/workflow-events.js';
+import { formatTruncatedList } from '../../core/formatting.js';
 
 const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
   c: 'continue',
@@ -41,7 +42,11 @@ export function parseTaskReviewAnswer(input: string): TaskReviewResponse {
   if (lower.startsWith('notes ') || lower.startsWith('note ') || lower.startsWith('edit ')) {
     return { action: 'continue', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() };
   }
-  if (lower.startsWith('revise-plan ') || lower.startsWith('revise ') || lower.startsWith('plan ')) {
+  if (
+    lower.startsWith('revise-plan ') ||
+    lower.startsWith('revise ') ||
+    lower.startsWith('plan ')
+  ) {
     return { action: 'revise-plan', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() };
   }
 
@@ -68,9 +73,10 @@ function formatCostLines(request: TaskReviewRequest): string[] {
 function formatRoutingLines(request: TaskReviewRequest): string[] {
   const routing = request.routing;
   if (!routing) return [];
-  const context = routing.contextLength === undefined
-    ? `${routing.estimatedTokens} tokens`
-    : `${routing.estimatedTokens}/${routing.contextLength} tokens`;
+  const context =
+    routing.contextLength === undefined
+      ? `${routing.estimatedTokens} tokens`
+      : `${routing.estimatedTokens}/${routing.contextLength} tokens`;
   return [`Route: ${routing.fit} ${context} - ${routing.reason}`];
 }
 
@@ -84,7 +90,5 @@ function formatRecoveryLines(request: TaskReviewRequest): string[] {
 
 function formatList(values: string[], max = 4): string {
   if (values.length === 0) return 'none';
-  const shown = values.slice(0, max).join(', ');
-  const hidden = values.length - max;
-  return hidden > 0 ? `${shown}, +${hidden} more` : shown;
+  return formatTruncatedList(values, max);
 }

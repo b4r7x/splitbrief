@@ -3,16 +3,18 @@ import { parseEngineEvent } from './schema.js';
 
 describe('parseEngineEvent', () => {
   it('accepts known events with required variant fields', () => {
-    expect(parseEngineEvent({
-      type: 'task_completed',
-      ts: 1,
-      phase: 'implementing',
-      taskId: 'T001',
-      title: 'Finish task',
-      method: 'local',
-      retries: 0,
-      duration: 10,
-    })).toEqual(expect.objectContaining({ type: 'task_completed' }));
+    expect(
+      parseEngineEvent({
+        type: 'task_completed',
+        ts: 1,
+        phase: 'implementing',
+        taskId: 'T001',
+        title: 'Finish task',
+        method: 'local',
+        retries: 0,
+        duration: 10,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'task_completed' }));
   });
 
   it('rejects unknown event types', () => {

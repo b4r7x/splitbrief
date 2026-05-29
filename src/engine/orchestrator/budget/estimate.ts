@@ -1,15 +1,25 @@
-import { resolveImplementerProfiles, type ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
+import {
+  resolveImplementerProfiles,
+  type ResolvedImplementerProfile,
+} from '../../../core/config/accessors/implementer-profiles.js';
+import {
+  getRunnerDisplayName,
+  getRunnerModelName,
+} from '../../../core/config/accessors/runner-config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
-import { calculateCost } from '../../providers/pricing.js';
+import { calculateCost } from '../../providers/cost-math.js';
+import { countByValue } from '../../../utils/collections.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
-import { DEFAULT_CONSERVATIVE_CONTEXT_LENGTH, resolveProfileContextLength } from '../context-routing/context-length.js';
+import {
+  DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
+  resolveProfileContextLength,
+} from '../context-routing/context-length.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource } from '../context-routing/types.js';
 import type { TaskContextFit } from '../../events/workflow-events.js';
@@ -77,7 +87,7 @@ function profileForContextConfidence(
   profiles: ResolvedImplementerProfile[],
   profileName: string | undefined,
 ): ResolvedImplementerProfile | undefined {
-  if (profileName) return profiles.find(profile => profile.name === profileName);
+  if (profileName) return profiles.find((profile) => profile.name === profileName);
   return profiles.at(0);
 }
 
@@ -99,7 +109,11 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
   const hasPlannerPrice = plannerCost !== null;
 
   if (!opts.profiles || opts.profiles.length === 0) {
-    const estimatedPromptTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context, languageContext: opts.languageContext });
+    const estimatedPromptTokens = estimateFormattedTaskPromptTokens({
+      task: opts.task,
+      context: opts.context,
+      languageContext: opts.languageContext,
+    });
     return {
       taskId: opts.task.id,
       title: opts.task.title,
@@ -110,7 +124,12 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
       priceConfidence: 'profile-unavailable',
       estimatedImplementerCost: null,
       hypotheticalPlannerCost: hasPlannerPrice
-        ? estimatePromptOnlyCost(plannerTool, estimatedPromptTokens, plannerModel, opts.pricingCache)
+        ? estimatePromptOnlyCost(
+            plannerTool,
+            estimatedPromptTokens,
+            plannerModel,
+            opts.pricingCache,
+          )
         : null,
     };
   }
@@ -119,32 +138,41 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
     task: opts.task,
     context: opts.context,
     profiles: opts.profiles,
-    ...(opts.conservativeContextLength !== undefined && { conservativeContextLength: opts.conservativeContextLength }),
+    ...(opts.conservativeContextLength !== undefined && {
+      conservativeContextLength: opts.conservativeContextLength,
+    }),
     ...(opts.pricingCache !== undefined && { contextCache: opts.pricingCache }),
     ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
   });
-  const selectedProfile = opts.profiles.find(profile => profile.name === decision.selectedProfile);
-  const confidenceProfile = profileForContextConfidence(opts.profiles, decision.selectedProfile ?? decision.rejected.at(0)?.profile);
+  const selectedProfile = opts.profiles.find(
+    (profile) => profile.name === decision.selectedProfile,
+  );
+  const confidenceProfile = profileForContextConfidence(
+    opts.profiles,
+    decision.selectedProfile ?? decision.rejected.at(0)?.profile,
+  );
   const contextSource = confidenceProfile
     ? resolveProfileContextLength(
-      confidenceProfile,
-      opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
-      opts.pricingCache,
-    ).source
+        confidenceProfile,
+        opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
+        opts.pricingCache,
+      ).source
     : null;
   const implementerCost = selectedProfile
     ? estimatePromptOnlyCost(
-      getRunnerDisplayName(selectedProfile.config),
-      decision.estimatedTokens,
-      getRunnerModelName(selectedProfile.config),
-      opts.pricingCache,
-    )
+        getRunnerDisplayName(selectedProfile.config),
+        decision.estimatedTokens,
+        getRunnerModelName(selectedProfile.config),
+        opts.pricingCache,
+      )
     : null;
   const hypotheticalPlannerCost = hasPlannerPrice
     ? estimatePromptOnlyCost(plannerTool, decision.estimatedTokens, plannerModel, opts.pricingCache)
     : null;
   const priceConfidence = selectedProfile
-    ? implementerCost !== null && hypotheticalPlannerCost !== null ? 'price-known' : 'price-unknown'
+    ? implementerCost !== null && hypotheticalPlannerCost !== null
+      ? 'price-known'
+      : 'price-unknown'
     : 'profile-unavailable';
 
   return {
@@ -169,7 +197,10 @@ function estimateTotals(tasks: DeterministicTaskEstimate[]): DeterministicEstima
     if (task.selectedProfileId === null) pushUnique(unknownCostReason, 'profile-unavailable');
 
     if (task.estimatedImplementerCost === null) {
-      pushUnique(unknownCostReason, task.selectedProfileId === null ? 'profile-unavailable' : 'implementer-price-unknown');
+      pushUnique(
+        unknownCostReason,
+        task.selectedProfileId === null ? 'profile-unavailable' : 'implementer-price-unknown',
+      );
     } else {
       actual += task.estimatedImplementerCost;
     }
@@ -181,13 +212,18 @@ function estimateTotals(tasks: DeterministicTaskEstimate[]): DeterministicEstima
     }
   }
 
-  const knownActualEstimate = unknownCostReason.includes('implementer-price-unknown') || unknownCostReason.includes('profile-unavailable')
+  const knownActualEstimate =
+    unknownCostReason.includes('implementer-price-unknown') ||
+    unknownCostReason.includes('profile-unavailable')
+      ? null
+      : actual;
+  const hypotheticalAllPlanner = unknownCostReason.includes('planner-price-unknown')
     ? null
-    : actual;
-  const hypotheticalAllPlanner = unknownCostReason.includes('planner-price-unknown') ? null : planner;
-  const estimatedSavings = knownActualEstimate === null || hypotheticalAllPlanner === null
-    ? null
-    : hypotheticalAllPlanner - knownActualEstimate;
+    : planner;
+  const estimatedSavings =
+    knownActualEstimate === null || hypotheticalAllPlanner === null
+      ? null
+      : hypotheticalAllPlanner - knownActualEstimate;
 
   return {
     knownActualEstimate,
@@ -198,33 +234,42 @@ function estimateTotals(tasks: DeterministicTaskEstimate[]): DeterministicEstima
 }
 
 function fitCounts(tasks: DeterministicTaskEstimate[]): DeterministicEstimate['taskFitCounts'] {
+  const counts = countByValue(tasks, (task) => task.contextFit);
   return {
-    fits: tasks.filter(task => task.contextFit === 'fits').length,
-    tight: tasks.filter(task => task.contextFit === 'tight').length,
-    overflow: tasks.filter(task => task.contextFit === 'overflow').length,
-    unknown: tasks.filter(task => task.contextFit === 'unknown').length,
+    fits: counts.fits ?? 0,
+    tight: counts.tight ?? 0,
+    overflow: counts.overflow ?? 0,
+    unknown: counts.unknown ?? 0,
   };
 }
 
-function contextConfidenceCounts(tasks: DeterministicTaskEstimate[]): DeterministicEstimate['contextConfidenceCounts'] {
+function contextConfidenceCounts(
+  tasks: DeterministicTaskEstimate[],
+): DeterministicEstimate['contextConfidenceCounts'] {
+  const counts = countByValue(tasks, (task) => task.contextConfidence);
   return {
-    contextExplicit: tasks.filter(task => task.contextConfidence === 'context-explicit').length,
-    contextKnownCatalog: tasks.filter(task => task.contextConfidence === 'context-known-catalog').length,
-    contextCachedProvider: tasks.filter(task => task.contextConfidence === 'context-cached-provider').length,
-    contextConservativeFallback: tasks.filter(task => task.contextConfidence === 'context-conservative-fallback').length,
-    profileUnavailable: tasks.filter(task => task.contextConfidence === 'profile-unavailable').length,
+    contextExplicit: counts['context-explicit'] ?? 0,
+    contextKnownCatalog: counts['context-known-catalog'] ?? 0,
+    contextCachedProvider: counts['context-cached-provider'] ?? 0,
+    contextConservativeFallback: counts['context-conservative-fallback'] ?? 0,
+    profileUnavailable: counts['profile-unavailable'] ?? 0,
   };
 }
 
-function priceConfidenceCounts(tasks: DeterministicTaskEstimate[]): DeterministicEstimate['priceConfidenceCounts'] {
+function priceConfidenceCounts(
+  tasks: DeterministicTaskEstimate[],
+): DeterministicEstimate['priceConfidenceCounts'] {
+  const counts = countByValue(tasks, (task) => task.priceConfidence);
   return {
-    priceKnown: tasks.filter(task => task.priceConfidence === 'price-known').length,
-    priceUnknown: tasks.filter(task => task.priceConfidence === 'price-unknown').length,
-    profileUnavailable: tasks.filter(task => task.priceConfidence === 'profile-unavailable').length,
+    priceKnown: counts['price-known'] ?? 0,
+    priceUnknown: counts['price-unknown'] ?? 0,
+    profileUnavailable: counts['profile-unavailable'] ?? 0,
   };
 }
 
-export function estimateDeterministicCost(opts: EstimateDeterministicCostOptions): DeterministicEstimate {
+export function estimateDeterministicCost(
+  opts: EstimateDeterministicCostOptions,
+): DeterministicEstimate {
   let profiles: ResolvedImplementerProfile[] | null = null;
   try {
     profiles = resolveImplementerProfiles(opts.config).profiles;
@@ -232,15 +277,19 @@ export function estimateDeterministicCost(opts: EstimateDeterministicCostOptions
     profiles = null;
   }
 
-  const tasks = opts.tasks.map(task => estimateTask({
-    task,
-    context: opts.context,
-    config: opts.config,
-    profiles,
-    ...(opts.pricingCache !== undefined && { pricingCache: opts.pricingCache }),
-    ...(opts.conservativeContextLength !== undefined && { conservativeContextLength: opts.conservativeContextLength }),
-    ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
-  }));
+  const tasks = opts.tasks.map((task) =>
+    estimateTask({
+      task,
+      context: opts.context,
+      config: opts.config,
+      profiles,
+      ...(opts.pricingCache !== undefined && { pricingCache: opts.pricingCache }),
+      ...(opts.conservativeContextLength !== undefined && {
+        conservativeContextLength: opts.conservativeContextLength,
+      }),
+      ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
+    }),
+  );
 
   return {
     taskCount: tasks.length,

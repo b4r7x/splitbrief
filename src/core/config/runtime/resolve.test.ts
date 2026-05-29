@@ -1,17 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMode, resolveApproveLevel, resolveEffortLevel, blocksSpecGate, blocksPlanGate } from './resolve.js';
+import {
+  resolveMode,
+  resolveApproveLevel,
+  resolveEffortLevel,
+  blocksSpecGate,
+  blocksPlanGate,
+} from './resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { ApproveLevel, EffortLevel, WorkflowMode } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const baseConfig = (mode?: WorkflowMode): Config => makeConfig({
-  workflow: {
-    approve: 'default',
-    ...(mode ? { mode } : {}),
-    git: { commitStrategy: 'none' },
-    speckit: { minCoverage: 0.9 },
-  },
-});
+const baseConfig = (mode?: WorkflowMode): Config =>
+  makeConfig({
+    workflow: {
+      approve: 'default',
+      ...(mode ? { mode } : {}),
+      git: { commitStrategy: 'none' },
+      speckit: { minCoverage: 0.9 },
+    },
+  });
 
 describe('resolveMode', () => {
   it('returns CLI override when present', () => {
@@ -39,17 +46,28 @@ describe('resolveApproveLevel', () => {
     expect(resolveApproveLevel({ mode: 'standard', configApprove: 'default' })).toBe('spec');
   });
   it('CLI override beats config and mode default', () => {
-    expect(resolveApproveLevel({ mode: 'speckit', configApprove: 'spec', cliOverride: 'none' })).toBe('none');
+    expect(
+      resolveApproveLevel({ mode: 'speckit', configApprove: 'spec', cliOverride: 'none' }),
+    ).toBe('none');
   });
   it('config approve beats mode default when CLI omitted', () => {
     expect(resolveApproveLevel({ mode: 'speckit', configApprove: 'plan' })).toBe('plan');
   });
   it('legacy --auto flag forces "none"', () => {
-    expect(resolveApproveLevel({ mode: 'speckit', configApprove: 'all', cliOverride: 'all', legacyAutoFlag: true })).toBe('none');
+    expect(
+      resolveApproveLevel({
+        mode: 'speckit',
+        configApprove: 'all',
+        cliOverride: 'all',
+        legacyAutoFlag: true,
+      }),
+    ).toBe('none');
   });
   it('CLI "default" falls through to config / mode default', () => {
     expect(resolveApproveLevel({ mode: 'speckit', cliOverride: 'default' })).toBe('all');
-    expect(resolveApproveLevel({ mode: 'speckit', configApprove: 'plan', cliOverride: 'default' })).toBe('plan');
+    expect(
+      resolveApproveLevel({ mode: 'speckit', configApprove: 'plan', cliOverride: 'default' }),
+    ).toBe('plan');
   });
 });
 

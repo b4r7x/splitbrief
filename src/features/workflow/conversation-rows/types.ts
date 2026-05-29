@@ -1,4 +1,4 @@
-import type { Section } from '../../../core/layout/event-sections.js';
+import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 

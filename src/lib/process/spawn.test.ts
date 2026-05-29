@@ -30,9 +30,10 @@ describe('runCommand', () => {
     expect(result.code).toBe(0);
   });
 
-  it('returns nonzero exit code on failure', async () => {
-    const result = await runCommand('node', ['-e', 'process.exit(42)']);
-    expect(result.code).toBe(42);
+  it('rejects with a process-output error on nonzero exit', async () => {
+    await expect(runCommand('node', ['-e', 'process.exit(42)'])).rejects.toMatchObject({
+      kind: 'process-output',
+    });
   });
 });
 
@@ -95,6 +96,18 @@ describe('spawnWithTimeout', () => {
     expect(result.timedOut).toBe(true);
   });
 
+  it('rejects with a process-output error on nonzero exit when not timed out', async () => {
+    await expect(
+      spawnWithTimeout({
+        command: 'node',
+        args: ['-e', 'process.exit(3)'],
+        cwd: process.cwd(),
+        timeout: 5000,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ kind: 'process-output' });
+  });
+
   it('writes stdinInput when provided', async () => {
     const result = await spawnWithTimeout({
       command: 'node',
@@ -125,7 +138,7 @@ describe('spawnWithTimeout', () => {
     const controller = new AbortController();
     const chunks: string[] = [];
     let resolveOutput: () => void = () => {};
-    const outputSeen = new Promise<void>(resolve => {
+    const outputSeen = new Promise<void>((resolve) => {
       resolveOutput = resolve;
     });
     const promise = spawnWithTimeout({
@@ -150,7 +163,7 @@ describe('spawnWithTimeout', () => {
   it('resolves abort promptly without waiting for timeout', async () => {
     const controller = new AbortController();
     let resolveOutput: () => void = () => {};
-    const outputSeen = new Promise<void>(resolve => {
+    const outputSeen = new Promise<void>((resolve) => {
       resolveOutput = resolve;
     });
 
@@ -185,7 +198,7 @@ describe('spawnWithStdin', () => {
 
     expect(result.text).toContain('hello world');
     expect(result.code).toBe(0);
-    expect(lines.some(l => l.includes('hello world'))).toBe(true);
+    expect(lines.some((l) => l.includes('hello world'))).toBe(true);
   });
 
   it('writes stdin to process', async () => {
@@ -200,7 +213,7 @@ describe('spawnWithStdin', () => {
     });
 
     expect(result.text).toContain('piped input');
-    expect(lines.some(l => l.includes('piped input'))).toBe(true);
+    expect(lines.some((l) => l.includes('piped input'))).toBe(true);
   });
 
   it('captures stderr', async () => {
@@ -261,7 +274,7 @@ describe('spawnWithStdin', () => {
     const controller = new AbortController();
     const lines: string[] = [];
     let resolveLine: () => void = () => {};
-    const lineSeen = new Promise<void>(resolve => {
+    const lineSeen = new Promise<void>((resolve) => {
       resolveLine = resolve;
     });
     const promise = spawnWithStdin({

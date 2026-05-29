@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  makeImplementer,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -29,7 +34,7 @@ describe('handleApprovalTimeUserEditConflict', () => {
     const state = makeImplState([]);
     const task = makeTask({ id: 'T001', file: 'src/test.ts' });
     const { callbacks } = makeCallbacks();
-    const trackedStates: typeof state[] = [];
+    const trackedStates: (typeof state)[] = [];
     const ctx: WorkflowContext = {
       projectDir,
       sessionId,
@@ -41,7 +46,7 @@ describe('handleApprovalTimeUserEditConflict', () => {
       implementer: makeImplementer(),
       metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      validator: { findAffectedTestFile: () => null, runValidation: async () => [] },
+      validator: { runValidation: async () => [] },
     };
 
     const nextState = await handleApprovalTimeUserEditConflict({
@@ -49,13 +54,13 @@ describe('handleApprovalTimeUserEditConflict', () => {
       state,
       task,
       files: ['src/test.ts'],
-      setTrackedState: next => trackedStates.push(next),
+      setTrackedState: (next) => trackedStates.push(next),
     });
 
     expect(nextState.pendingRecovery).toBeDefined();
     expect(trackedStates).toEqual([nextState]);
-    expect(events.some(e => e.type === 'paused_external_changes')).toBe(true);
-    expect(events.some(e => e.type === 'recovery_prompted')).toBe(true);
+    expect(events.some((e) => e.type === 'paused_external_changes')).toBe(true);
+    expect(events.some((e) => e.type === 'recovery_prompted')).toBe(true);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeDefined();
   });
 });

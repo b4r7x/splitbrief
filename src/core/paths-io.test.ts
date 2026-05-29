@@ -88,7 +88,7 @@ describe('sessionDir', () => {
 describe('writeSpecFile', () => {
   it('writes content to .diptych/sessions/<id>/<filename>', async () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'spec.md', '# Spec');
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Spec');
     const written = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md');
     expect(existsSync(written)).toBe(true);
     expect(await readFileOrEmpty(written)).toBe('# Spec');
@@ -96,20 +96,22 @@ describe('writeSpecFile', () => {
 
   it('creates dir if needed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'plan.md', '# Plan');
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'plan.md', '# Plan');
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'plan.md'))).toBe(true);
   });
 
   it('rejects filenames with path traversal', () => {
     const dir = makeTmp();
-    expect(() => writeSpecFile(dir, SESSION_ID, '../outside.md', 'x')).toThrow('Invalid filename');
+    expect(() =>
+      writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, '../outside.md', 'x'),
+    ).toThrow('Invalid filename');
   });
 });
 
 describe('readSpecFile', () => {
   it('reads content from .diptych/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'tasks.md', '- task 1');
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'tasks.md', '- task 1');
     expect(readSpecFile(dir, SESSION_ID, 'tasks.md')).toBe('- task 1');
   });
 
@@ -128,7 +130,7 @@ describe('readSpecFile', () => {
 describe('readSpecFileOrEmpty', () => {
   it('returns content for an existing file', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'spec.md', '# My Spec');
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# My Spec');
     expect(readSpecFileOrEmpty(dir, SESSION_ID, 'spec.md')).toBe('# My Spec');
   });
 
@@ -257,11 +259,15 @@ describe('buildSpecFrontmatter', () => {
 });
 
 describe('writeSpecFile with metadata', () => {
-  const meta: SpecMetadata = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+  const meta: SpecMetadata = {
+    plannerTool: 'claude-code',
+    implementerTool: 'ollama',
+    mode: 'standard',
+  };
 
   it('prepends frontmatter to spec files when metadata is passed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'spec.md', '# My Spec', meta);
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# My Spec', meta);
     const content = readSpecFile(dir, SESSION_ID, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');
     expect(content).toMatch(/^---\n/);
@@ -271,14 +277,14 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not prepend frontmatter to non-spec files', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'research.md', '# Research', meta);
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'research.md', '# Research', meta);
     expect(readSpecFile(dir, SESSION_ID, 'research.md')).toBe('# Research');
   });
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
     const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
-    writeSpecFile(dir, SESSION_ID, 'spec.md', existing, meta);
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', existing, meta);
     const content = readSpecFile(dir, SESSION_ID, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');
     const fmCount = (content.match(/generated_by:/g) ?? []).length;
@@ -287,7 +293,7 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not prepend when metadata is not passed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, SESSION_ID, 'spec.md', '# Plain Spec');
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Plain Spec');
     expect(readSpecFile(dir, SESSION_ID, 'spec.md')).toBe('# Plain Spec');
   });
 });

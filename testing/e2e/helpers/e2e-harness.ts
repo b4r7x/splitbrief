@@ -60,11 +60,7 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
 
     const diptychDir = join(ctx.projectDir, '.diptych');
     mkdirSync(diptychDir, { recursive: true });
-    writeFileSync(
-      join(diptychDir, 'config.yaml'),
-      YAML.stringify(scenario.config),
-      'utf-8',
-    );
+    writeFileSync(join(diptychDir, 'config.yaml'), YAML.stringify(scenario.config), 'utf-8');
 
     const cassettePath = join(CASSETTE_DIR, `${scenario.cassetteName}.json`);
 

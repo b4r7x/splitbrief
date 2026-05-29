@@ -12,7 +12,9 @@ export function useReadinessFetch(opts: {
   config: Config;
 }): ReadinessReport | undefined {
   const { isAttachedClient, routeReadiness, projectDir, config } = opts;
-  const [computedReadiness, setComputedReadiness] = useState<ReadinessReport | undefined>(routeReadiness);
+  const [computedReadiness, setComputedReadiness] = useState<ReadinessReport | undefined>(
+    routeReadiness,
+  );
 
   useEffect(() => {
     if (isAttachedClient || routeReadiness || !projectDir) return undefined;

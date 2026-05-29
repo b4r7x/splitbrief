@@ -2,7 +2,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
 import { SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './approval.js';
@@ -20,7 +24,7 @@ function setupProject(): { projectDir: string; sessionId: string; specPath: stri
   const sessionId = 'sess-approval';
   ensureSessionDir(projectDir, sessionId);
   // Seed a real spec file so readSpecFileOrEmpty finds real content during regen.
-  writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n\nFirst draft.\n', null);
+  writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nFirst draft.\n', null);
   return { projectDir, sessionId, specPath: '/tmp/mock-spec.md' };
 }
 
@@ -35,7 +39,9 @@ function prepareState(): WorkflowState {
 describe('runApprovalLoop', () => {
   it('returns not-rejected when user approves', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }) });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+    });
     const { bus } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
@@ -54,7 +60,9 @@ describe('runApprovalLoop', () => {
 
   it('rejects when user declines without comment — state transitions and spec_rejected event fires', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+    });
     const { bus, events } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
@@ -68,7 +76,9 @@ describe('runApprovalLoop', () => {
       persistTranscript: false,
     });
     expect(result.rejected).toBe(true);
-    expect(events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done')).toBe(true);
+    expect(
+      events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done'),
+    ).toBe(true);
   });
 
   it('returns not-rejected immediately when AbortSignal is already aborted', async () => {
@@ -142,8 +152,8 @@ describe('runApprovalLoop', () => {
 
     const regenCalls: Array<[string, string]> = [];
     const planner = makePlanner({
-      regenerate: async (prompt: string, target: 'spec' | 'plan') => {
-        regenCalls.push([prompt, target]);
+      regenerate: async (opts) => {
+        regenCalls.push([opts.prompt, opts.artifactType]);
         return { text: 'regenerated', usage: null };
       },
     });
@@ -172,15 +182,16 @@ describe('runApprovalLoop', () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const controller = new AbortController();
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn()
+      onApprovalNeeded: vi
+        .fn()
         .mockResolvedValueOnce({ approved: false, comment: 'revise' })
         .mockResolvedValueOnce({ approved: true }),
     });
     const { bus } = makeBusRecorder();
     let capturedSignal: AbortSignal | undefined;
     const planner = makePlanner({
-      regenerate: async (_prompt, _target, _projectDir, regenCallbacks) => {
-        capturedSignal = regenCallbacks.signal;
+      regenerate: async (opts) => {
+        capturedSignal = opts.callbacks.signal;
         return { text: 'regenerated', usage: null };
       },
     });

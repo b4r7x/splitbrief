@@ -44,12 +44,21 @@ const MAX_COLLISION_ATTEMPTS = 999;
 
 function findUniqueId(projectDir: string, base: string): string {
   const root = sessionsRoot(projectDir);
-  const id = findUnusedId(root, base, (candidateBase, collisionIndex) => `${candidateBase}-${collisionIndex + 1}`, MAX_COLLISION_ATTEMPTS - 1);
+  const id = findUnusedId({
+    root,
+    base,
+    suffixer: (candidateBase, collisionIndex) => `${candidateBase}-${collisionIndex + 1}`,
+    maxCollisionAttempts: MAX_COLLISION_ATTEMPTS - 1,
+  });
   if (id !== null) return id;
   throw sessionError.idCollision(base, MAX_COLLISION_ATTEMPTS);
 }
 
-export function generateSessionId(projectDir: string, feature: string, now: Date = new Date()): string {
+export function generateSessionId(
+  projectDir: string,
+  feature: string,
+  now: Date = new Date(),
+): string {
   const date = now.toLocaleDateString('sv-SE');
   const slug = slugify(feature).slice(0, MAX_SLUG_LENGTH);
   const base = `${date}-${slug}`;

@@ -16,10 +16,20 @@ describe('detection cache', () => {
   });
 
   const planners = [
-    { tool: 'claude-code' as const, type: 'cli' as const, available: true, description: 'Claude Code CLI' },
+    {
+      tool: 'claude-code' as const,
+      type: 'cli' as const,
+      available: true,
+      description: 'Claude Code CLI',
+    },
   ];
   const implementers = [
-    { provider: 'ollama' as const, available: true, isLocal: true, models: [{ id: 'qwen2.5-coder:7b' }] },
+    {
+      provider: 'ollama' as const,
+      available: true,
+      isLocal: true,
+      models: [{ id: 'qwen2.5-coder:7b' }],
+    },
   ];
 
   it('returns null when no cache exists', async () => {
@@ -76,8 +86,9 @@ describe('detection cache', () => {
   });
 
   it('does not throw when save target is read-only', async () => {
-    await expect(saveDetectionCache('/nonexistent/readonly/path', planners, implementers))
-      .resolves.toBeUndefined();
+    await expect(
+      saveDetectionCache('/nonexistent/readonly/path', planners, implementers),
+    ).resolves.toBeUndefined();
   });
 
   describe('invalidateCache', () => {

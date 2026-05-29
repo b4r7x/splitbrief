@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
-import { WorkflowModeSchema } from './enums.js';
+import { TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
+import { TaskIdSchema } from './task.js';
 
 export const ChainDriftSummarySchema = z.object({
   score: z.number().min(0).max(1),
@@ -9,8 +10,6 @@ export const ChainDriftSummarySchema = z.object({
   representativePath: z.string(),
   emittedChainCount: z.number().int().nonnegative(),
 });
-
-export type ChainDriftSummary = z.infer<typeof ChainDriftSummarySchema>;
 
 export const BriefQualitySummarySchema = z.object({
   score: z.number().min(0).max(1),
@@ -53,7 +52,12 @@ export const CostBreakdownSchema = z.object({
   cacheWriteTokens: z.number().nonnegative().optional(),
 });
 
-export const PlannerEstimateReviewClassificationSchema = z.enum(['ok', 'split-suggested', 'risk', 'needs-user-decision']);
+export const PlannerEstimateReviewClassificationSchema = z.enum([
+  'ok',
+  'split-suggested',
+  'risk',
+  'needs-user-decision',
+]);
 
 export const PlannerEstimateReviewSchema = z.object({
   extraPlannerCall: z.boolean(),
@@ -72,54 +76,56 @@ export const CostPredictionSchema = z.object({
   highCost: z.number().nonnegative(),
   plannerTool: z.string(),
   implementerTool: z.string(),
-  deterministic: z.object({
-    taskCount: z.number().int().nonnegative(),
-    taskFitCounts: z.object({
-      fits: z.number().int().nonnegative(),
-      tight: z.number().int().nonnegative(),
-      overflow: z.number().int().nonnegative(),
-      unknown: z.number().int().nonnegative(),
-    }),
-    contextConfidenceCounts: z.object({
-      contextExplicit: z.number().int().nonnegative(),
-      contextKnownCatalog: z.number().int().nonnegative(),
-      contextCachedProvider: z.number().int().nonnegative(),
-      contextConservativeFallback: z.number().int().nonnegative(),
-      profileUnavailable: z.number().int().nonnegative(),
-    }),
-    priceConfidenceCounts: z.object({
-      priceKnown: z.number().int().nonnegative(),
-      priceUnknown: z.number().int().nonnegative(),
-      profileUnavailable: z.number().int().nonnegative(),
-    }),
-    tasks: z.array(z.object({
-      taskId: z.string(),
-      title: z.string(),
-      estimatedPromptTokens: z.number().int().nonnegative(),
-      selectedProfileId: z.string().nullable(),
-      contextFit: z.enum(['fits', 'tight', 'overflow', 'unknown']),
-      contextConfidence: z.enum([
-        'context-explicit',
-        'context-known-catalog',
-        'context-cached-provider',
-        'context-conservative-fallback',
-        'profile-unavailable',
-      ]),
-      priceConfidence: z.enum(['price-known', 'price-unknown', 'profile-unavailable']),
-      estimatedImplementerCost: z.number().nonnegative().nullable(),
-      hypotheticalPlannerCost: z.number().nonnegative().nullable(),
-    })),
-    totals: z.object({
-      knownActualEstimate: z.number().nonnegative().nullable(),
-      hypotheticalAllPlanner: z.number().nonnegative().nullable(),
-      estimatedSavings: z.number().nullable(),
-      unknownCostReason: z.array(z.enum([
-        'implementer-price-unknown',
-        'planner-price-unknown',
-        'profile-unavailable',
-      ])),
-    }),
-  }).optional(),
+  deterministic: z
+    .object({
+      taskCount: z.number().int().nonnegative(),
+      taskFitCounts: z.object({
+        fits: z.number().int().nonnegative(),
+        tight: z.number().int().nonnegative(),
+        overflow: z.number().int().nonnegative(),
+        unknown: z.number().int().nonnegative(),
+      }),
+      contextConfidenceCounts: z.object({
+        contextExplicit: z.number().int().nonnegative(),
+        contextKnownCatalog: z.number().int().nonnegative(),
+        contextCachedProvider: z.number().int().nonnegative(),
+        contextConservativeFallback: z.number().int().nonnegative(),
+        profileUnavailable: z.number().int().nonnegative(),
+      }),
+      priceConfidenceCounts: z.object({
+        priceKnown: z.number().int().nonnegative(),
+        priceUnknown: z.number().int().nonnegative(),
+        profileUnavailable: z.number().int().nonnegative(),
+      }),
+      tasks: z.array(
+        z.object({
+          taskId: TaskIdSchema,
+          title: z.string(),
+          estimatedPromptTokens: z.number().int().nonnegative(),
+          selectedProfileId: z.string().nullable(),
+          contextFit: z.enum([...TASK_CONTEXT_FITS, 'unknown']),
+          contextConfidence: z.enum([
+            'context-explicit',
+            'context-known-catalog',
+            'context-cached-provider',
+            'context-conservative-fallback',
+            'profile-unavailable',
+          ]),
+          priceConfidence: z.enum(['price-known', 'price-unknown', 'profile-unavailable']),
+          estimatedImplementerCost: z.number().nonnegative().nullable(),
+          hypotheticalPlannerCost: z.number().nonnegative().nullable(),
+        }),
+      ),
+      totals: z.object({
+        knownActualEstimate: z.number().nonnegative().nullable(),
+        hypotheticalAllPlanner: z.number().nonnegative().nullable(),
+        estimatedSavings: z.number().nullable(),
+        unknownCostReason: z.array(
+          z.enum(['implementer-price-unknown', 'planner-price-unknown', 'profile-unavailable']),
+        ),
+      }),
+    })
+    .optional(),
   plannerEstimateReview: PlannerEstimateReviewSchema.optional(),
 });
 
@@ -166,14 +172,16 @@ export const SummarySchema = z.object({
   implementerModel: z.string().optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
   mode: WorkflowModeSchema.optional(),
-  evidenceSummary: z.object({
-    path: z.string(),
-    totalTasks: z.number().nonnegative(),
-    tasksWithValidationEvidence: z.number().nonnegative(),
-    escalatedTasks: z.number().nonnegative(),
-    failedTasks: z.number().nonnegative(),
-    rejectionCount: z.number().nonnegative().optional(),
-  }).optional(),
+  evidenceSummary: z
+    .object({
+      path: z.string(),
+      totalTasks: z.number().nonnegative(),
+      tasksWithValidationEvidence: z.number().nonnegative(),
+      escalatedTasks: z.number().nonnegative(),
+      failedTasks: z.number().nonnegative(),
+      rejectionCount: z.number().nonnegative().optional(),
+    })
+    .optional(),
   briefQuality: BriefQualitySummarySchema.optional(),
   driftSummary: DriftSummarySchema.optional(),
   chainDriftSummary: ChainDriftSummarySchema.optional(),
@@ -182,12 +190,12 @@ export const SummarySchema = z.object({
   reviewPacket: ReviewPacketSummarySchema.optional(),
 });
 
-export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
-export type DriftSummary = z.infer<typeof DriftSummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
 export type CostPrediction = z.infer<typeof CostPredictionSchema>;
-export type PlannerEstimateReviewClassification = z.infer<typeof PlannerEstimateReviewClassificationSchema>;
+export type PlannerEstimateReviewClassification = z.infer<
+  typeof PlannerEstimateReviewClassificationSchema
+>;
 export type PlannerEstimateReview = z.infer<typeof PlannerEstimateReviewSchema>;
 export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;
@@ -200,13 +208,14 @@ export interface CostKnownFlags {
 }
 
 export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
-  const plannerCostKnown = breakdown.isActualPlannerCostKnown
-    ?? !(breakdown.hasUnpricedUsage === true && breakdown.hasPricedUsage !== true);
-  const implementerCostKnown = breakdown.isActualImplementerCostKnown
-    ?? !(breakdown.hasUnpricedUsage === true);
-  const totalCostKnown = breakdown.isTotalActualCostKnown
-    ?? (plannerCostKnown && implementerCostKnown);
-  const allPlannerBaselineKnown = breakdown.isAllPlannerBaselineKnown
-    ?? (breakdown.hasSavingsEstimate ?? true);
+  const plannerCostKnown =
+    breakdown.isActualPlannerCostKnown ??
+    !(breakdown.hasUnpricedUsage === true && breakdown.hasPricedUsage !== true);
+  const implementerCostKnown =
+    breakdown.isActualImplementerCostKnown ?? !(breakdown.hasUnpricedUsage === true);
+  const totalCostKnown =
+    breakdown.isTotalActualCostKnown ?? (plannerCostKnown && implementerCostKnown);
+  const allPlannerBaselineKnown =
+    breakdown.isAllPlannerBaselineKnown ?? breakdown.hasSavingsEstimate ?? true;
   return { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown };
 }

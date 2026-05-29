@@ -7,42 +7,18 @@ describe('redactSecrets', () => {
       'Error: invalid key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
       'Error: invalid key sk-ant-***REDACTED***',
     ],
-    [
-      'Auth failed with sk-proj-abcdefghijklmnopqrstuvwxyz',
-      'Auth failed with sk-***REDACTED***',
-    ],
+    ['Auth failed with sk-proj-abcdefghijklmnopqrstuvwxyz', 'Auth failed with sk-***REDACTED***'],
     [
       'Header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature',
       'Header: Bearer ***REDACTED***',
     ],
-    [
-      'Error with gsk_abcdefghijklmnopqrstuvwxyz123456',
-      'Error with gsk_***REDACTED***',
-    ],
-    [
-      'Failed: xai-abcdefghijklmnopqrstuvwxyz123456',
-      'Failed: xai-***REDACTED***',
-    ],
-    [
-      'token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij',
-      'token: ghp_***REDACTED***',
-    ],
-    [
-      'token: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij',
-      'token: gho_***REDACTED***',
-    ],
-    [
-      'token: github_pat_ABCDEFGHIJKLMNOPQRSTUV22',
-      'token: github_pat_***REDACTED***',
-    ],
-    [
-      'aws_key: AKIAIOSFODNN7EXAMPLE',
-      'aws_key: AKIA***REDACTED***',
-    ],
-    [
-      'slack: xoxb-abcdefghijklmnop',
-      'slack: xoxb-***REDACTED***',
-    ],
+    ['Error with gsk_abcdefghijklmnopqrstuvwxyz123456', 'Error with gsk_***REDACTED***'],
+    ['Failed: xai-abcdefghijklmnopqrstuvwxyz123456', 'Failed: xai-***REDACTED***'],
+    ['token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij', 'token: ghp_***REDACTED***'],
+    ['token: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij', 'token: gho_***REDACTED***'],
+    ['token: github_pat_ABCDEFGHIJKLMNOPQRSTUV22', 'token: github_pat_***REDACTED***'],
+    ['aws_key: AKIAIOSFODNN7EXAMPLE', 'aws_key: AKIA***REDACTED***'],
+    ['slack: xoxb-abcdefghijklmnop', 'slack: xoxb-***REDACTED***'],
   ])('redacts known secret shapes', (input, expected) => {
     expect(redactSecrets(input)).toBe(expected);
   });
@@ -71,12 +47,14 @@ describe('redactSecrets', () => {
   });
 
   it('redacts URL credentials and private keys through the shared policy', () => {
-    const result = redactSecretsWithMetadata([
-      'postgres://user:password@example.com/app',
-      '-----BEGIN OPENSSH PRIVATE KEY-----',
-      'secret-key-body',
-      '-----END OPENSSH PRIVATE KEY-----',
-    ].join('\n'));
+    const result = redactSecretsWithMetadata(
+      [
+        'postgres://user:password@example.com/app',
+        '-----BEGIN OPENSSH PRIVATE KEY-----',
+        'secret-key-body',
+        '-----END OPENSSH PRIVATE KEY-----',
+      ].join('\n'),
+    );
 
     expect(result.redacted).toBe(true);
     expect(result.text).not.toContain('user:password@example.com');

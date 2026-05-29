@@ -7,24 +7,37 @@ import { autoSplitOverflowTasks } from './auto-split-overflow.js';
 
 type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
 
-function estimateFor(tasks: Array<{ taskId: TaskId; contextFit: 'fits' | 'tight' | 'overflow' | 'unknown'; contextConfidence?: DeterministicEstimate['tasks'][number]['contextConfidence'] }>): DeterministicEstimate {
+function estimateFor(
+  tasks: Array<{
+    taskId: TaskId;
+    contextFit: 'fits' | 'tight' | 'overflow' | 'unknown';
+    contextConfidence?: DeterministicEstimate['tasks'][number]['contextConfidence'];
+  }>,
+): DeterministicEstimate {
   return {
     taskCount: tasks.length,
     taskFitCounts: {
-      fits: tasks.filter(task => task.contextFit === 'fits').length,
-      tight: tasks.filter(task => task.contextFit === 'tight').length,
-      overflow: tasks.filter(task => task.contextFit === 'overflow').length,
-      unknown: tasks.filter(task => task.contextFit === 'unknown').length,
+      fits: tasks.filter((task) => task.contextFit === 'fits').length,
+      tight: tasks.filter((task) => task.contextFit === 'tight').length,
+      overflow: tasks.filter((task) => task.contextFit === 'overflow').length,
+      unknown: tasks.filter((task) => task.contextFit === 'unknown').length,
     },
     contextConfidenceCounts: {
-      contextExplicit: tasks.filter(task => (task.contextConfidence ?? 'context-explicit') === 'context-explicit').length,
+      contextExplicit: tasks.filter(
+        (task) => (task.contextConfidence ?? 'context-explicit') === 'context-explicit',
+      ).length,
       contextKnownCatalog: 0,
-      contextCachedProvider: tasks.filter(task => task.contextConfidence === 'context-cached-provider').length,
-      contextConservativeFallback: tasks.filter(task => task.contextConfidence === 'context-conservative-fallback').length,
-      profileUnavailable: tasks.filter(task => task.contextConfidence === 'profile-unavailable').length,
+      contextCachedProvider: tasks.filter(
+        (task) => task.contextConfidence === 'context-cached-provider',
+      ).length,
+      contextConservativeFallback: tasks.filter(
+        (task) => task.contextConfidence === 'context-conservative-fallback',
+      ).length,
+      profileUnavailable: tasks.filter((task) => task.contextConfidence === 'profile-unavailable')
+        .length,
     },
     priceConfidenceCounts: { priceKnown: tasks.length, priceUnknown: 0, profileUnavailable: 0 },
-    tasks: tasks.map(task => ({
+    tasks: tasks.map((task) => ({
       taskId: task.taskId,
       title: `Task ${task.taskId}`,
       estimatedPromptTokens: 1000,
@@ -50,10 +63,7 @@ function splittableTask() {
     title: 'Update parser behavior',
     description: 'Update parser behavior in src/parser.ts without changing unrelated files.',
     file: 'src/parser.ts',
-    tests: [
-      'src/parser.ts preserves quoted values',
-      'src/parser.ts reports invalid escapes',
-    ],
+    tests: ['src/parser.ts preserves quoted values', 'src/parser.ts reports invalid escapes'],
     implementationSteps: [
       'Update src/parser.ts token handling.',
       'Update src/parser.ts error reporting.',
@@ -86,11 +96,15 @@ describe('autoSplitOverflowTasks', () => {
     });
 
     expect(result.changed).toBe(true);
-    expect(result.previews).toEqual([{ parentTaskId: task.id, childTaskIds: [taskId('T002'), taskId('T003')], reason: 'overflow' }]);
+    expect(result.previews).toEqual([
+      { parentTaskId: task.id, childTaskIds: [taskId('T002'), taskId('T003')], reason: 'overflow' },
+    ]);
     expect(result.tasks).toHaveLength(2);
-    expect(result.tasks.map(child => child.id)).toEqual([taskId('T002'), taskId('T003')]);
-    expect(result.tasks.map(child => child.file)).toEqual(['src/parser.ts', 'src/parser.ts']);
-    expect(result.tasks.every(child => child.description.includes('Parent T001 intent'))).toBe(true);
+    expect(result.tasks.map((child) => child.id)).toEqual([taskId('T002'), taskId('T003')]);
+    expect(result.tasks.map((child) => child.file)).toEqual(['src/parser.ts', 'src/parser.ts']);
+    expect(result.tasks.every((child) => child.description.includes('Parent T001 intent'))).toBe(
+      true,
+    );
   });
 
   it('does not split a task that already fits the selected worker', () => {
@@ -111,17 +125,28 @@ describe('autoSplitOverflowTasks', () => {
     const explicit = autoSplitOverflowTasks({
       enabled: true,
       tasks: [task],
-      estimate: estimateFor([{ taskId: task.id, contextFit: 'tight', contextConfidence: 'context-explicit' }]),
+      estimate: estimateFor([
+        { taskId: task.id, contextFit: 'tight', contextConfidence: 'context-explicit' },
+      ]),
     });
     const fallback = autoSplitOverflowTasks({
       enabled: true,
       tasks: [task],
-      estimate: estimateFor([{ taskId: task.id, contextFit: 'tight', contextConfidence: 'context-conservative-fallback' }]),
+      estimate: estimateFor([
+        {
+          taskId: task.id,
+          contextFit: 'tight',
+          contextConfidence: 'context-conservative-fallback',
+        },
+      ]),
     });
 
     expect(explicit.changed).toBe(false);
     expect(fallback.changed).toBe(true);
-    expect(fallback.previews[0]).toMatchObject({ parentTaskId: task.id, reason: 'tight-low-confidence' });
+    expect(fallback.previews[0]).toMatchObject({
+      parentTaskId: task.id,
+      reason: 'tight-low-confidence',
+    });
   });
 
   it('preserves parent acceptance criteria across child tasks', () => {
@@ -132,7 +157,9 @@ describe('autoSplitOverflowTasks', () => {
       estimate: estimateFor([{ taskId: task.id, contextFit: 'overflow' }]),
     });
 
-    expect([...result.tasks.flatMap(child => child.tests)].sort()).toEqual([...task.tests].sort());
+    expect([...result.tasks.flatMap((child) => child.tests)].sort()).toEqual(
+      [...task.tests].sort(),
+    );
   });
 
   it('keeps unchanged task ids stable and rewrites removed parent dependencies to fresh child ids', () => {
@@ -155,11 +182,22 @@ describe('autoSplitOverflowTasks', () => {
       ]),
     });
 
-    const taskById = new Map(result.tasks.map(task => [task.id, task]));
+    const taskById = new Map(result.tasks.map((task) => [task.id, task]));
 
     expect(result.changed).toBe(true);
-    expect(result.previews).toEqual([{ parentTaskId: parent.id, childTaskIds: [taskId('T004'), taskId('T005')], reason: 'overflow' }]);
-    expect(result.tasks.map(task => task.id)).toEqual([taskId('T001'), taskId('T004'), taskId('T005'), taskId('T003')]);
+    expect(result.previews).toEqual([
+      {
+        parentTaskId: parent.id,
+        childTaskIds: [taskId('T004'), taskId('T005')],
+        reason: 'overflow',
+      },
+    ]);
+    expect(result.tasks.map((task) => task.id)).toEqual([
+      taskId('T001'),
+      taskId('T004'),
+      taskId('T005'),
+      taskId('T003'),
+    ]);
     expect(taskById.get(setup.id)?.title).toBe('Setup shared helper');
     expect(taskById.get(downstream.id)?.title).toBe('Use parser behavior');
     expect(taskById.has(parent.id)).toBe(false);
@@ -184,14 +222,18 @@ describe('autoSplitOverflowTasks', () => {
 
     expect(result.changed).toBe(false);
     expect(result.tasks).toEqual([task]);
-    expect(result.skippedSplits[0]).toMatchObject({ taskId: task.id, code: 'excessive-duplicated-ownership' });
+    expect(result.skippedSplits[0]).toMatchObject({
+      taskId: task.id,
+      code: 'excessive-duplicated-ownership',
+    });
   });
 
   it('skips file-group splits that would create too many child tasks', () => {
     const task = makeTask({
       id: 'T001',
       file: 'src/parser.ts',
-      description: 'Update src/parser.ts, src/writer.ts, src/compiler.ts, src/review.ts, and src/router.ts.',
+      description:
+        'Update src/parser.ts, src/writer.ts, src/compiler.ts, src/review.ts, and src/router.ts.',
       tests: ['all named files keep their public behavior'],
       implementationSteps: ['Apply the coordinated change to the named files.'],
     });
@@ -204,7 +246,10 @@ describe('autoSplitOverflowTasks', () => {
 
     expect(result.changed).toBe(false);
     expect(result.tasks).toEqual([task]);
-    expect(result.skippedSplits[0]).toMatchObject({ taskId: task.id, code: 'too-many-child-tasks' });
+    expect(result.skippedSplits[0]).toMatchObject({
+      taskId: task.id,
+      code: 'too-many-child-tasks',
+    });
   });
 
   it('splits planner-review split-suggested tasks even when deterministic fit is not overflow', () => {
@@ -226,6 +271,9 @@ describe('autoSplitOverflowTasks', () => {
     });
 
     expect(result.changed).toBe(true);
-    expect(result.previews[0]).toMatchObject({ parentTaskId: task.id, reason: 'planner-split-suggested' });
+    expect(result.previews[0]).toMatchObject({
+      parentTaskId: task.id,
+      reason: 'planner-split-suggested',
+    });
   });
 });

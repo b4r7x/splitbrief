@@ -52,7 +52,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Eval: ${scenarios.length} scenarios | planner=${plannerModel} | baseline=${baselineModel} | routed=${routedModel}`);
+  console.log(
+    `Eval: ${scenarios.length} scenarios | planner=${plannerModel} | baseline=${baselineModel} | routed=${routedModel}`,
+  );
   if (record) console.log('Recording cassettes...');
   if (replay) console.log('Replaying from cassettes...');
 

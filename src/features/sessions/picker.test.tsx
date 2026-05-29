@@ -16,7 +16,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { Session } from '../../core/schemas/session.js';
 import { SessionsPicker } from './picker.js';
 import { tick } from '#testing/helpers/ink.js';
-import { handleSelect } from './picker-select.js';
+import { handleSessionSelect } from './picker-select.js';
 
 let tmp: string;
 
@@ -48,11 +48,28 @@ afterEach(() => {
 
 describe('SessionsPicker', () => {
   it('renders session feature names from disk once the store loads them', async () => {
-    writeSessionSummary(tmp, makeSession({ id: 'sess-alpha', feature: 'add authentication', status: 'interrupted', summary: null }));
-    writeSessionSummary(tmp, makeSession({ id: 'sess-beta', feature: 'refactor payments', status: 'interrupted', summary: null }));
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-alpha',
+        feature: 'add authentication',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-beta',
+        feature: 'refactor payments',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
 
     const instance = render(<SessionsPicker />);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     // User-observable: the features appear in the rendered frame.
     const frame = instance.lastFrame() ?? '';
@@ -66,7 +83,8 @@ describe('SessionsPicker', () => {
 
   it('shows an empty-state hint when there are no sessions on disk', async () => {
     const instance = render(<SessionsPicker />);
-    await tick(1); await tick(1);
+    await tick(1);
+    await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('(0)');
@@ -77,19 +95,24 @@ describe('SessionsPicker', () => {
 });
 
 /**
- * handleSelect is the routing logic triggered by Enter on a row. We test it by
+ * handleSessionSelect is the routing logic triggered by Enter on a row. We test it by
  * invoking the real function against real stores — no internal mocks.
  * The three branches of the union (interrupted / complete-with-summary /
  * failed-without-summary) are the user-observable decisions the feature makes.
  */
-describe('SessionsPicker handleSelect (Enter routing)', () => {
+describe('SessionsPicker handleSessionSelect (Enter routing)', () => {
   it('navigates to the workflow screen with saved state for an interrupted session', () => {
     overlayStore.open('sessions');
-    const session = makeSession({ id: 'sess-resume', feature: 'add auth', status: 'interrupted', summary: null });
+    const session = makeSession({
+      id: 'sess-resume',
+      feature: 'add auth',
+      status: 'interrupted',
+      summary: null,
+    });
     const savedState = { ...createInitialState('saved add auth'), phase: 'implementing' as const };
     saveState(tmp, session.id, savedState);
 
-    handleSelect(session, tmp);
+    handleSessionSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
@@ -104,9 +127,14 @@ describe('SessionsPicker handleSelect (Enter routing)', () => {
 
   it('keeps the picker open and surfaces feedback when an interrupted session has no valid state', () => {
     overlayStore.open('sessions');
-    const session = makeSession({ id: 'sess-missing-state', feature: 'add auth', status: 'interrupted', summary: null });
+    const session = makeSession({
+      id: 'sess-missing-state',
+      feature: 'add auth',
+      status: 'interrupted',
+      summary: null,
+    });
 
-    handleSelect(session, tmp);
+    handleSessionSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('sessions');
     expect(routerStore.get().screen).toBe('home');
@@ -122,7 +150,7 @@ describe('SessionsPicker handleSelect (Enter routing)', () => {
     const summary = makeSummary({ feature: 'refactor payments' });
     const session = makeSession({ status: 'complete', summary });
 
-    handleSelect(session, tmp);
+    handleSessionSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
@@ -135,7 +163,7 @@ describe('SessionsPicker handleSelect (Enter routing)', () => {
     overlayStore.open('sessions');
     const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
 
-    handleSelect(session, tmp);
+    handleSessionSelect(session, tmp);
 
     // Overlay still open and router unchanged — user stays on the picker.
     expect(overlayStore.get().active).toBe('sessions');

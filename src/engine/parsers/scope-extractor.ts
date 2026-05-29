@@ -1,4 +1,9 @@
-import { EXPORT_BOUNDARY_RE, EXPORT_DEFAULT_NAME_RE, EXPORT_NAME_PATTERNS } from './code-patterns.js';
+import {
+  EXPORT_BOUNDARY_RE,
+  EXPORT_DEFAULT_NAME_RE,
+  EXPORT_NAME_PATTERNS,
+} from './code-patterns.js';
+import { escapeRegExp } from '../../utils/regexp.js';
 
 function isImportLine(line: string): boolean {
   return line.trimStart().startsWith('import ');
@@ -30,7 +35,7 @@ function extractExportName(line: string): string | null {
 export function extractFunctionContext(
   fileContent: string,
   functionName: string,
-  surroundingLines: number = 5,
+  surroundingLines: number,
 ): { imports: string; targetFunction: string; otherExports: string[] } | null {
   const lines = fileContent.split('\n');
 
@@ -53,7 +58,7 @@ export function extractFunctionContext(
 
   if (boundaries.length === 0) return null;
 
-  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegExp(functionName);
   const wordBoundaryRegex = new RegExp(`\\b${escaped}\\b`);
   const targetIndex = boundaries.findIndex(
     (b) => b.name !== null && wordBoundaryRegex.test(b.name),

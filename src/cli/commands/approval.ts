@@ -1,23 +1,25 @@
 import type { Command } from 'commander';
-import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../core/approval/store.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import {
+  readApprovalsStore,
+  writeApprovalsStore,
+  clearGrantsByScope,
+} from '../../core/approval/store.js';
+import { cliError, withCliErrors } from '../errors.js';
+import { renderTable } from '../render-table.js';
+import { includes } from '../../utils/type-guards.js';
 
 const VALID_SCOPES = ['session', 'always', 'all'] as const;
-type ClearScope = (typeof VALID_SCOPES)[number];
 
 export function registerApprovalCommand(program: Command): void {
-  const approval = program
-    .command('approval')
-    .description('Manage sticky approval grants');
+  const approval = program.command('approval').description('Manage sticky approval grants');
 
   approval
     .command('list')
     .description('List all sticky approval grants')
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .action((opts: { project?: string }) => {
-      try {
+    .action((opts: { project?: string }) =>
+      withCliErrors(() => {
         const projectDir = resolveProjectDir(opts.project);
         const store = readApprovalsStore(projectDir);
 
@@ -26,68 +28,45 @@ export function registerApprovalCommand(program: Command): void {
           return;
         }
 
-        const colWidths = {
-          pattern: Math.max(7, ...store.grants.map((g) => g.pattern.length)),
-          cls: Math.max(5, ...store.grants.map((g) => g.class.length)),
-          scope: 7,
-          sessionId: Math.max(9, ...store.grants.map((g) => g.sessionId?.length ?? 0)),
-        };
-
-        const sepWidth =
-          colWidths.pattern + 2 + colWidths.cls + 2 + colWidths.scope + 2 + colWidths.sessionId + 2 + 'grantedAt'.length;
-
-        console.log(
-          [
-            ansis.bold('pattern'.padEnd(colWidths.pattern)),
-            ansis.bold('class'.padEnd(colWidths.cls)),
-            ansis.bold('scope'.padEnd(colWidths.scope)),
-            ansis.bold('sessionId'.padEnd(colWidths.sessionId)),
-            ansis.bold('grantedAt'),
-          ].join('  '),
-        );
-        console.log(ansis.dim('-'.repeat(sepWidth)));
-
-        for (const g of store.grants) {
-          console.log(
-            [
-              g.pattern.padEnd(colWidths.pattern),
-              g.class.padEnd(colWidths.cls),
-              g.scope.padEnd(colWidths.scope),
-              (g.sessionId ?? '').padEnd(colWidths.sessionId),
-              g.grantedAt,
-            ].join('  '),
-          );
-        }
-      } catch (err) {
-        rethrowAsCli(err);
-      }
-    });
+        const lines = renderTable({
+          columns: [
+            { header: 'pattern', min: 7, value: (g) => g.pattern },
+            { header: 'class', min: 5, value: (g) => g.class },
+            { header: 'scope', min: 7, value: (g) => g.scope },
+            { header: 'sessionId', min: 9, value: (g) => g.sessionId ?? '' },
+            { header: 'grantedAt', min: 0, value: (g) => g.grantedAt },
+          ],
+          rows: store.grants,
+          boldHeader: true,
+          separator: true,
+        });
+        for (const line of lines) console.log(line);
+      }),
+    );
 
   approval
     .command('clear')
     .description('Clear approval grants by scope')
     .option('--scope <scope>', 'session | always | all (default: all)', 'all')
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .action((opts: { scope?: string; project?: string }) => {
-      try {
+    .action((opts: { scope?: string; project?: string }) =>
+      withCliErrors(() => {
         const projectDir = resolveProjectDir(opts.project);
         const rawScope = opts.scope ?? 'all';
 
-        if (!VALID_SCOPES.includes(rawScope as ClearScope)) {
+        if (!includes(VALID_SCOPES, rawScope)) {
           throw cliError(
             `Unknown --scope: "${rawScope}". Valid scopes: ${VALID_SCOPES.join(', ')}`,
             1,
           );
         }
 
-        const scope = rawScope as ClearScope;
+        const scope = rawScope;
         const before = readApprovalsStore(projectDir);
         const after = clearGrantsByScope(before, scope);
         writeApprovalsStore(projectDir, after);
         const count = before.grants.length - after.grants.length;
         console.log(`Cleared ${count} approval grant(s).`);
-      } catch (err) {
-        rethrowAsCli(err);
-      }
-    });
+      }),
+    );
 }

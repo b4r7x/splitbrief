@@ -4,7 +4,8 @@ import { runQuickPlanning } from './quick.js';
 import { runInstantPlanning } from './instant.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
-import { adviseMode, setAdvisory } from './mode-advisor.js';
+import { adviseMode } from './mode-advisor.js';
+import { setAdvisory } from './mode-advisor-store.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
@@ -47,15 +48,16 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     approve: approveLevel,
   });
 
-  const codebaseContext = config.codebase?.enabled !== false
-    ? await buildRepoMap(projectDir, {
-        featureText: opts.feature,
-        tokenBudget: config.codebase?.tokenBudget ?? 4000,
-        ...(config.codebase?.cacheDir !== undefined && { cacheDir: config.codebase.cacheDir }),
-        ...(config.codebase?.include && { include: config.codebase.include }),
-        ...(config.codebase?.exclude && { exclude: config.codebase.exclude }),
-      })
-    : undefined;
+  const codebaseContext =
+    config.codebase?.enabled !== false
+      ? await buildRepoMap(projectDir, {
+          featureText: opts.feature,
+          tokenBudget: config.codebase?.tokenBudget ?? 4000,
+          ...(config.codebase?.cacheDir !== undefined && { cacheDir: config.codebase.cacheDir }),
+          ...(config.codebase?.include && { include: config.codebase.include }),
+          ...(config.codebase?.exclude && { exclude: config.codebase.exclude }),
+        })
+      : undefined;
 
   const drainedAttachments = wctx.drainPendingAttachments ? wctx.drainPendingAttachments() : [];
   let attachments = drainedAttachments;

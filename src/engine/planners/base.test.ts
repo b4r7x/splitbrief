@@ -60,7 +60,11 @@ describe('createPlannerBase — phase artifact content', () => {
       readPhaseOutput: (_filename, _resultText, _projectDir) => '# Resolved artifact content',
     });
 
-    const result = await planner.plan('feature', projectDir, { onOutput: () => {} });
+    const result = await planner.plan({
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     for (const phase of result.phases ?? []) {
       expect(phase.text).toBe('# Resolved artifact content');
       expect(phase.rawOutput).toBe('raw stdout noise');
@@ -75,7 +79,11 @@ describe('createPlannerBase — phase artifact content', () => {
       capabilities: defaultCapabilities,
     });
 
-    const result = await planner.plan('feature', projectDir, { onOutput: () => {} });
+    const result = await planner.plan({
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     for (const phase of result.phases ?? []) {
       expect(phase.text).toBe('# Direct stdout content');
       expect(phase.rawOutput).toBeUndefined();
@@ -106,7 +114,11 @@ A test task.
 `,
     });
 
-    const result = await planner.quickPlan('feature', projectDir, { onOutput: () => {} });
+    const result = await planner.quickPlan({
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.phases).toHaveLength(1);
     expect(result.phases![0]!.text).toContain('id: t1');
     expect(result.phases![0]!.rawOutput).toBe('raw quick output');
@@ -123,7 +135,11 @@ A test task.
     const instantPlan = planner.instantPlan;
     if (!instantPlan) throw new Error('Expected instantPlan to be implemented');
 
-    const result = await instantPlan('feature', projectDir, { onOutput: () => {}, onPhase });
+    const result = await instantPlan({
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {}, onPhase },
+    });
 
     expect(result.tasks).toBeDefined();
   });
@@ -152,7 +168,7 @@ A test task.
       capabilities: defaultCapabilities,
     });
 
-    await planner.plan('feature', projectDir, { onOutput: () => {} });
+    await planner.plan({ feature: 'feature', projectDir, callbacks: { onOutput: () => {} } });
 
     expect(captured[2]).toContain('Python');
     expect(captured[2]).toContain('PEP 484');
@@ -174,7 +190,7 @@ A test task.
       capabilities: defaultCapabilities,
     });
 
-    await planner.quickPlan('feature', projectDir, { onOutput: () => {} });
+    await planner.quickPlan({ feature: 'feature', projectDir, callbacks: { onOutput: () => {} } });
 
     expect(captured).toContain('Python');
     expect(captured).toContain('file: src/path/to/file.py');
@@ -196,7 +212,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       hintSuccessMode: 'files',
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(true);
   });
 
@@ -209,7 +230,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       hintSuccessMode: 'files',
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(false);
   });
 
@@ -221,7 +247,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       capabilities: defaultCapabilities,
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(true);
   });
 
@@ -233,7 +264,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       capabilities: defaultCapabilities,
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(false);
   });
 
@@ -252,7 +288,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       },
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(false);
   });
 
@@ -274,7 +315,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       hintSuccessMode: 'files',
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     // The new file is what triggered success — pre-existing dirty file is baseline, not a signal
     expect(result.success).toBe(true);
   });
@@ -292,7 +338,12 @@ describe('createPlannerBase — hintSuccessMode', () => {
       hintSuccessMode: 'files',
     });
 
-    const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
+    const result = await planner.escalateHint({
+      task: minimalTask,
+      error: 'error',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.success).toBe(false);
   });
 });
@@ -314,7 +365,11 @@ describe('createPlannerBase — structured summarization', () => {
       capabilities: defaultCapabilities,
     });
 
-    const result = await planner.summarizeStructured?.([{ role: 'user', text: 'compact this' }], undefined, projectDir);
+    const result = await planner.summarizeStructured?.(
+      [{ role: 'user', text: 'compact this' }],
+      undefined,
+      projectDir,
+    );
 
     expect(result).toEqual({ text: JSON.stringify(structured), structured });
   });
@@ -339,7 +394,11 @@ describe('createPlannerBase — structured summarization', () => {
       capabilities: defaultCapabilities,
     });
 
-    await planner.summarizeStructured?.([{ role: 'assistant', text: 'new work' }], previous, projectDir);
+    await planner.summarizeStructured?.(
+      [{ role: 'assistant', text: 'new work' }],
+      previous,
+      projectDir,
+    );
 
     expect(prompt).toContain('Previous summary:');
     expect(prompt).toContain(JSON.stringify(previous));
@@ -351,18 +410,25 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
   it('prepends a <!-- prior conversation --> block to the first phase prompt for CLI-style backends', async () => {
     const captured: string[] = [];
     const planner = createPlannerBase({
-      invokePlan: async ({ prompt }) => { captured.push(prompt); return { text: 'ok', usage: null }; },
+      invokePlan: async ({ prompt }) => {
+        captured.push(prompt);
+        return { text: 'ok', usage: null };
+      },
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
 
-    await planner.plan('feature', projectDir, {
-      onOutput: () => {},
-      priorMessages: [
-        { role: 'user', content: 'first turn' },
-        { role: 'assistant', content: 'first answer' },
-      ],
+    await planner.plan({
+      feature: 'feature',
+      projectDir,
+      callbacks: {
+        onOutput: () => {},
+        priorMessages: [
+          { role: 'user', content: 'first turn' },
+          { role: 'assistant', content: 'first answer' },
+        ],
+      },
     });
 
     // First phase (research) gets the prefix
@@ -391,9 +457,13 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
       consumesPriorMessages: true,
     });
 
-    await planner.plan('feature', projectDir, {
-      onOutput: () => {},
-      priorMessages: [{ role: 'user', content: 'raw turn' }],
+    await planner.plan({
+      feature: 'feature',
+      projectDir,
+      callbacks: {
+        onOutput: () => {},
+        priorMessages: [{ role: 'user', content: 'raw turn' }],
+      },
     });
 
     expect(captured[0]).not.toContain('<!-- prior conversation -->');

@@ -1,5 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { PlannerTool, PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { createDefaultConfig } from '../../core/config/load/load.js';
 import { createPlanner } from '../runners/factory.js';
@@ -10,7 +10,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
-import { isPlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
+import { isPlannerToolId, type PlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
 import { typedEntries } from '../../utils/type-guards.js';
 
 function providerDescription(id: ProviderId): string {
@@ -18,22 +18,24 @@ function providerDescription(id: ProviderId): string {
   return info.isLocal ? `${info.displayName} (local)` : `${info.displayName} API`;
 }
 
-const CLI_PLANNERS: Array<{ tool: PlannerTool; description: string }> =
-  typedEntries(CLI_TOOLS).map(([tool, meta]) => ({ tool, description: meta.description }));
+const CLI_PLANNERS: Array<{ tool: PlannerToolId; description: string }> = typedEntries(
+  CLI_TOOLS,
+).map(([tool, meta]) => ({ tool, description: meta.description }));
 
-const API_PLANNERS: { tool: PlannerTool; description: string }[] = [
+const API_PLANNERS: { tool: PlannerToolId; description: string }[] = [
   { tool: 'anthropic', description: providerDescription('anthropic') },
 ];
 
 const API_PLANNER_TOOLS = new Set(API_PLANNERS.map(({ tool }) => tool));
 
-const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] =
-  Object.keys(KNOWN_PROVIDERS)
-    .filter(isPlannerToolId)
-    .filter(id => !API_PLANNER_TOOLS.has(id))
-    .map(id => ({ tool: id, description: providerDescription(id) }));
+const PROVIDER_PLANNERS: { tool: PlannerToolId; description: string }[] = Object.keys(
+  KNOWN_PROVIDERS,
+)
+  .filter(isPlannerToolId)
+  .filter((id) => !API_PLANNER_TOOLS.has(id))
+  .map((id) => ({ tool: id, description: providerDescription(id) }));
 
-function minimalConfig(tool: PlannerTool): Config {
+function minimalConfig(tool: PlannerToolId): Config {
   const defaults = createDefaultConfig();
   return {
     ...defaults,
@@ -43,7 +45,7 @@ function minimalConfig(tool: PlannerTool): Config {
 
 function mapProviderDetectionsToPlannerDetections(cached: ProviderDetection[]): PlannerDetection[] {
   return PROVIDER_PLANNERS.map(({ tool, description }) => {
-    const detected = cached.find(d => d.provider === tool);
+    const detected = cached.find((d) => d.provider === tool);
     return {
       tool,
       type: 'api' as const,
@@ -67,7 +69,9 @@ interface DetectPlannersOptions {
   providerResults?: ProviderDetection[];
 }
 
-export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}): Promise<PlannerDetection[]> {
+export async function detectAvailablePlanners(
+  opts: DetectPlannersOptions = {},
+): Promise<PlannerDetection[]> {
   const cliResults = await Promise.all(
     CLI_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
       try {
@@ -77,7 +81,7 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
         let error: string | undefined;
         if (available) {
           try {
-            version = await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS) ?? undefined;
+            version = (await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS)) ?? undefined;
           } catch (err) {
             error = `Version probe failed: ${toErrorMessage(err)}`;
             warnError(`planner.getVersion(${tool})`, err);
@@ -118,14 +122,6 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
   return [...cliResults, ...apiResults, ...providerResults, shellResult];
 }
 
-interface DetectImplementersOptions {
-  providerResults?: ProviderDetection[];
-}
-
-export async function detectAvailableImplementers(opts: DetectImplementersOptions = {}): Promise<ProviderDetection[]> {
-  return opts.providerResults ?? detectAvailableProviders();
-}
-
 export interface DetectAllResult {
   planners: PlannerDetection[];
   implementers: ProviderDetection[];
@@ -133,9 +129,6 @@ export interface DetectAllResult {
 
 export async function detectAll(): Promise<DetectAllResult> {
   const providerResults = await detectAvailableProviders();
-  const [planners, implementers] = await Promise.all([
-    detectAvailablePlanners({ providerResults }),
-    detectAvailableImplementers({ providerResults }),
-  ]);
-  return { planners, implementers };
+  const planners = await detectAvailablePlanners({ providerResults });
+  return { planners, implementers: providerResults };
 }

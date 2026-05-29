@@ -3,17 +3,14 @@ import { error, matches } from '../../utils/error.js';
 
 export const topoError = {
   circularDependency: (cycle: string[]) =>
-    error(
-      'topo-circular-dependency',
-      `Circular dependency detected: ${cycle.join(' → ')}`,
-      { cycle },
-    ),
+    error('topo-circular-dependency', `Circular dependency detected: ${cycle.join(' → ')}`, {
+      cycle,
+    }),
   unknownDependency: (taskId: string, dependencyId: string) =>
-    error(
-      'topo-unknown-dependency',
-      `Task ${taskId} depends on unknown task ${dependencyId}`,
-      { taskId, dependencyId },
-    ),
+    error('topo-unknown-dependency', `Task ${taskId} depends on unknown task ${dependencyId}`, {
+      taskId,
+      dependencyId,
+    }),
   isCircularDependency: matches('topo-circular-dependency'),
   isUnknownDependency: matches('topo-unknown-dependency'),
 } as const;

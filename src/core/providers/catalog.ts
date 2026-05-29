@@ -25,6 +25,14 @@ export function resolveDefaultApiBase(providerId: string): string | null {
   return urls[providerId] ?? null;
 }
 
+export function isSameOrigin(candidate: string, expected: string): boolean {
+  try {
+    return new URL(candidate).origin === new URL(expected).origin;
+  } catch {
+    return false;
+  }
+}
+
 type ProviderIdWithBaseURL = keyof typeof KNOWN_PROVIDER_BASE_URLS;
 
 function hasKnownBaseURL(id: ProviderId): id is ProviderId & ProviderIdWithBaseURL {

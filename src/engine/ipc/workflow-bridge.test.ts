@@ -8,7 +8,9 @@ describe('createIpcWorkflowBridge', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     const calls: Array<[string, Phase]> = [];
-    const queue = (text: string, phase: Phase) => { calls.push([text, phase]); };
+    const queue = (text: string, phase: Phase) => {
+      calls.push([text, phase]);
+    };
 
     bridge.sinks.setQueueHandler(queue);
     bus.publish({ type: 'planner_status', ts: Date.now(), phase: 'planning', status: 'running' });
@@ -23,10 +25,17 @@ describe('createIpcWorkflowBridge', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     const calls: Array<[string, Phase]> = [];
-    const queue = (text: string, phase: Phase) => { calls.push([text, phase]); };
+    const queue = (text: string, phase: Phase) => {
+      calls.push([text, phase]);
+    };
 
     bridge.sinks.setQueueHandler(queue);
-    bus.publish({ type: 'warning', ts: Date.now(), phase: 'implementing', message: 'phase update' });
+    bus.publish({
+      type: 'warning',
+      ts: Date.now(),
+      phase: 'implementing',
+      message: 'phase update',
+    });
 
     bridge.onUserInput('follow-up');
 
@@ -74,7 +83,9 @@ describe('createIpcWorkflowBridge', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     let handlerCalled = false;
-    bridge.sinks.setAbortHandler(() => { handlerCalled = true; });
+    bridge.sinks.setAbortHandler(() => {
+      handlerCalled = true;
+    });
 
     bridge.abort();
 
@@ -86,7 +97,9 @@ describe('createIpcWorkflowBridge', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     let callCount = 0;
-    bridge.sinks.setAbortHandler(() => { callCount++; });
+    bridge.sinks.setAbortHandler(() => {
+      callCount++;
+    });
 
     bridge.abort();
     bridge.abort();
@@ -99,7 +112,9 @@ describe('createIpcWorkflowBridge', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     let handlerCalled = false;
-    bridge.sinks.setAbortHandler(() => { handlerCalled = true; });
+    bridge.sinks.setAbortHandler(() => {
+      handlerCalled = true;
+    });
     bridge.sinks.setAbortHandler(null);
 
     bridge.abort();

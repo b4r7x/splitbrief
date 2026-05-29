@@ -3,15 +3,33 @@ import { taskId } from '../../src/core/schemas/task.js';
 
 type EventOfType<T extends EngineEvent['type']> = Extract<EngineEvent, { type: T }>;
 
-export function makePlannerStatus(overrides?: Partial<EventOfType<'planner_status'>>): EventOfType<'planner_status'> {
-  return { type: 'planner_status', ts: Date.now(), phase: 'implementing', status: 'running', ...overrides };
+export function makePlannerStatus(
+  overrides?: Partial<EventOfType<'planner_status'>>,
+): EventOfType<'planner_status'> {
+  return {
+    type: 'planner_status',
+    ts: Date.now(),
+    phase: 'implementing',
+    status: 'running',
+    ...overrides,
+  };
 }
 
-export function makePlannerText(overrides?: Partial<EventOfType<'planner_text'>>): EventOfType<'planner_text'> {
-  return { type: 'planner_text', ts: Date.now(), phase: 'implementing', text: 'Planning...', ...overrides };
+export function makePlannerText(
+  overrides?: Partial<EventOfType<'planner_text'>>,
+): EventOfType<'planner_text'> {
+  return {
+    type: 'planner_text',
+    ts: Date.now(),
+    phase: 'implementing',
+    text: 'Planning...',
+    ...overrides,
+  };
 }
 
-export function makeTaskStart(overrides?: Partial<EventOfType<'task_started'>>): EventOfType<'task_started'> {
+export function makeTaskStart(
+  overrides?: Partial<EventOfType<'task_started'>>,
+): EventOfType<'task_started'> {
   return {
     type: 'task_started',
     ts: Date.now(),
@@ -26,7 +44,9 @@ export function makeTaskStart(overrides?: Partial<EventOfType<'task_started'>>):
   };
 }
 
-export function makeTaskComplete(overrides?: Partial<EventOfType<'task_completed'>>): EventOfType<'task_completed'> {
+export function makeTaskComplete(
+  overrides?: Partial<EventOfType<'task_completed'>>,
+): EventOfType<'task_completed'> {
   return {
     type: 'task_completed',
     ts: Date.now(),
@@ -40,7 +60,9 @@ export function makeTaskComplete(overrides?: Partial<EventOfType<'task_completed
   };
 }
 
-export function makeTaskSkipped(overrides?: Partial<EventOfType<'task_skipped'>>): EventOfType<'task_skipped'> {
+export function makeTaskSkipped(
+  overrides?: Partial<EventOfType<'task_skipped'>>,
+): EventOfType<'task_skipped'> {
   return {
     type: 'task_skipped',
     ts: Date.now(),
@@ -54,17 +76,26 @@ export function makeTaskSkipped(overrides?: Partial<EventOfType<'task_skipped'>>
 
 type ImplementerGenerateEvent = Extract<
   EngineEvent,
-  { type: 'implementer_generate_running' | 'implementer_generate_done' | 'implementer_generate_failed' }
+  {
+    type:
+      | 'implementer_generate_running'
+      | 'implementer_generate_done'
+      | 'implementer_generate_failed';
+  }
 >;
 type ImplementerGenerateRunningEvent = EventOfType<'implementer_generate_running'>;
 type ImplementerGenerateDoneEvent = EventOfType<'implementer_generate_done'>;
 type ImplementerGenerateFailedEvent = EventOfType<'implementer_generate_failed'>;
 
-type RunningOverrides = Partial<Omit<ImplementerGenerateRunningEvent, 'type'>> & { status: 'running' };
+type RunningOverrides = Partial<Omit<ImplementerGenerateRunningEvent, 'type'>> & {
+  status: 'running';
+};
 type DoneOverrides = Partial<Omit<ImplementerGenerateDoneEvent, 'type'>> & { status?: 'done' };
 type FailedOverrides = Partial<Omit<ImplementerGenerateFailedEvent, 'type'>> & { status: 'failed' };
 
-export function makeImplementerGenerate(overrides: RunningOverrides): ImplementerGenerateRunningEvent;
+export function makeImplementerGenerate(
+  overrides: RunningOverrides,
+): ImplementerGenerateRunningEvent;
 export function makeImplementerGenerate(overrides: FailedOverrides): ImplementerGenerateFailedEvent;
 export function makeImplementerGenerate(overrides?: DoneOverrides): ImplementerGenerateDoneEvent;
 export function makeImplementerGenerate(
@@ -105,16 +136,44 @@ export function makeImplementerGenerate(
   };
 }
 
-export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): EventOfType<'validate'> {
-  return { type: 'validate', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true }, ...overrides };
+export function makeValidate(
+  overrides?: Partial<EventOfType<'validate'>>,
+): EventOfType<'validate'> {
+  return {
+    type: 'validate',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    status: 'done',
+    passed: true,
+    stages: { typecheck: true, lint: true, test: true },
+    ...overrides,
+  };
 }
 
-export function makeRetry(overrides?: Partial<EventOfType<'task_retry'>>): EventOfType<'task_retry'> {
-  return { type: 'task_retry', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), attempt: 1, maxRetries: 3, error: '', ...overrides };
+export function makeRetry(
+  overrides?: Partial<EventOfType<'task_retry'>>,
+): EventOfType<'task_retry'> {
+  return {
+    type: 'task_retry',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    attempt: 1,
+    maxRetries: 3,
+    error: '',
+    ...overrides,
+  };
 }
 
 export function makeErrorEvent(overrides?: Partial<EventOfType<'error'>>): EventOfType<'error'> {
-  return { type: 'error', ts: Date.now(), phase: 'implementing', message: 'Something went wrong', ...overrides };
+  return {
+    type: 'error',
+    ts: Date.now(),
+    phase: 'implementing',
+    message: 'Something went wrong',
+    ...overrides,
+  };
 }
 
 const DEFAULT_TOKEN_USAGE = {
@@ -126,8 +185,16 @@ const DEFAULT_TOKEN_USAGE = {
   escalationOutput: 0,
 };
 
-export function makeCostUpdate(overrides?: Partial<EventOfType<'cost_update'>>): EventOfType<'cost_update'> {
-  return { type: 'cost_update', ts: Date.now(), phase: 'implementing', tokenUsage: DEFAULT_TOKEN_USAGE, ...overrides };
+export function makeCostUpdate(
+  overrides?: Partial<EventOfType<'cost_update'>>,
+): EventOfType<'cost_update'> {
+  return {
+    type: 'cost_update',
+    ts: Date.now(),
+    phase: 'implementing',
+    tokenUsage: DEFAULT_TOKEN_USAGE,
+    ...overrides,
+  };
 }
 
 export function makeWorkflowCancelled(ts = Date.now()): EngineEvent {

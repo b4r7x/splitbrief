@@ -18,8 +18,11 @@ export type HandleResult =
   | { kind: 'error'; body: McpError }
   | { kind: 'notification' };
 
-const JsonRpcParamsSchema = z.record(z.string(), z.unknown()).optional().nullable().transform(value => value ?? {});
-const ToolArgumentsSchema = z.record(z.string(), z.unknown()).optional().nullable().transform(value => value ?? {});
+const JsonRpcRecordSchema = z
+  .record(z.string(), z.unknown())
+  .optional()
+  .nullable()
+  .transform((value) => value ?? {});
 
 function jsonRpcError(code: number, message: string, id: string | number | null): McpError {
   return { jsonrpc: '2.0', id, error: { code, message } };
@@ -68,7 +71,7 @@ export async function handleMessage(
 
   const id = rawId;
   const method = msg['method'];
-  const paramsResult = JsonRpcParamsSchema.safeParse(msg['params']);
+  const paramsResult = JsonRpcRecordSchema.safeParse(msg['params']);
   if (!paramsResult.success) {
     return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Invalid params', id) };
   }
@@ -153,7 +156,7 @@ export async function handleMessage(
     if (typeof name !== 'string') {
       return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Missing tool name', id) };
     }
-    const toolArgsResult = ToolArgumentsSchema.safeParse(params['arguments']);
+    const toolArgsResult = JsonRpcRecordSchema.safeParse(params['arguments']);
     if (!toolArgsResult.success) {
       return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Invalid tool arguments', id) };
     }

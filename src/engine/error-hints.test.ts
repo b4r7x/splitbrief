@@ -12,7 +12,11 @@ describe('getErrorHint', () => {
     ['getaddrinfo ENOTFOUND api.example.com', 'Cannot reach host', 'network'],
     ['model "llama3" not found', 'Model not available', 'ollama pull'],
     ['Error: model_not_found', 'Model not available', undefined],
-    ["context_length_exceeded: model's max context length is 8192", 'Input too long for model', 'larger context'],
+    [
+      "context_length_exceeded: model's max context length is 8192",
+      'Input too long for model',
+      'larger context',
+    ],
   ])('matches %j -> %s', (input, expectedMessage, hintSubstring) => {
     const hint = getErrorHint(input);
     expect(hint?.message).toBe(expectedMessage);

@@ -32,12 +32,14 @@ export async function reviewTaskIfNeeded(opts: {
     routingDecision: opts.routingDecision,
     implementerProfile: opts.implementerProfile,
   });
-  if (!shouldReviewTask({
-    mode: opts.wctx.config.workflow.taskReview,
-    request,
-    taskIndex: opts.taskIndex,
-    currentTaskIndex: opts.state.currentTaskIndex,
-  })) {
+  if (
+    !shouldReviewTask({
+      mode: opts.wctx.config.workflow.taskReview,
+      request,
+      taskIndex: opts.taskIndex,
+      currentTaskIndex: opts.state.currentTaskIndex,
+    })
+  ) {
     return { state: opts.state, decision: 'continue' };
   }
   publishTaskReviewNeeded({ bus: opts.wctx.bus, phase: opts.state.phase }, request);

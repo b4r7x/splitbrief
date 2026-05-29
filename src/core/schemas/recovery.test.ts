@@ -4,13 +4,15 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 describe('RecoveryIssueSchema', () => {
   it('parses a durable recovery issue with task, actions, and context facts', () => {
-    const result = RecoveryIssueSchema.safeParse(makeRecoveryIssue({
-      facts: {
-        spend: 4.36,
-        budgetPercent: 87,
-        contextLimit: 32_768,
-      },
-    }));
+    const result = RecoveryIssueSchema.safeParse(
+      makeRecoveryIssue({
+        facts: {
+          spend: 4.36,
+          budgetPercent: 87,
+          contextLimit: 32_768,
+        },
+      }),
+    );
 
     expect(result.success).toBe(true);
     if (!result.success) return;

@@ -13,13 +13,17 @@ export const MAX_HINT_ERROR_LENGTH = 4000;
 
 export type RetryResult =
   | {
-    completed: true;
-    method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
-    attempts: number;
-    validationResults?: ValidationResult[] | undefined;
-    changedFiles?: string[] | undefined;
-  }
+      completed: true;
+      method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
+      attempts: number;
+      validationResults?: ValidationResult[] | undefined;
+      changedFiles?: string[] | undefined;
+    }
   | { completed: false; method: 'failed'; attempts: number };
+
+export function failedRetry(attempts: number): RetryResult {
+  return { completed: false, method: 'failed', attempts };
+}
 
 export type EscalationContext = WorkflowContext & {
   taskStartTime?: number | undefined;
@@ -60,6 +64,10 @@ export type RetryStepOpts = {
   usageCategory: UsageCategory;
   retryFailureFallback: string;
   profileOverride?: string | undefined;
-  invokeRetry: (args: RetryInvokeArgs) => Promise<{ success: boolean; error?: string | undefined; usage?: TokenDelta | null | undefined }>;
+  invokeRetry: (args: RetryInvokeArgs) => Promise<{
+    success: boolean;
+    error?: string | undefined;
+    usage?: TokenDelta | null | undefined;
+  }>;
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };

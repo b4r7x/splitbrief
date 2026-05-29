@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import {
-  SETTINGS_DEFS,
-  type SettingDef,
-} from '../../../core/settings/catalog.js';
-import { validateNumber } from '../../../core/settings/presentation.js';
+import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
+import { validateNumber } from '../presentation.js';
 
 interface UseEditBufferParams {
   onCommit: (def: SettingDef, value: unknown) => void;
@@ -49,9 +46,18 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
 
   useInput(
     (input, key) => {
-      if (key.escape) { finishEditing(false); return; }
-      if (key.return) { finishEditing(true); return; }
-      if (key.backspace || key.delete) { setEditBuffer((prev) => prev.slice(0, -1)); return; }
+      if (key.escape) {
+        finishEditing(false);
+        return;
+      }
+      if (key.return) {
+        finishEditing(true);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setEditBuffer((prev) => prev.slice(0, -1));
+        return;
+      }
       if (input && !key.ctrl && !key.meta) setEditBuffer((prev) => prev + input);
     },
     { isActive: isEditing },

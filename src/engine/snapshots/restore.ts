@@ -5,13 +5,10 @@ import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
 import { error } from '../../utils/error.js';
 import { assertPathConfined } from '../../lib/path-confinement.js';
-import {
-  acquireSnapshotLock,
-  decodeSnapshotPath,
-  hashFile,
-  listSnapshotIds,
-  readManifest,
-} from './store.js';
+import { acquireSnapshotLock } from './lock.js';
+import { decodeSnapshotPath } from './path-codec.js';
+import { hashFile } from './files.js';
+import { listSnapshotIds, readManifest } from './manifest.js';
 
 export type RestoreResult = {
   snapshotId: string;
@@ -33,9 +30,17 @@ export const snapshotRestoreError = {
   notFound: (idOrName: string) =>
     error('snapshot-not-found', `No snapshot found with id or name: ${idOrName}`, { idOrName }),
   ambiguousName: (idOrName: string, ids: string) =>
-    error('snapshot-name-ambiguous', `Ambiguous snapshot name '${idOrName}': matches ${ids}. Use the snapshot ID directly.`, { idOrName, ids }),
+    error(
+      'snapshot-name-ambiguous',
+      `Ambiguous snapshot name '${idOrName}': matches ${ids}. Use the snapshot ID directly.`,
+      { idOrName, ids },
+    ),
   baselineMissing: (sessionId: string) =>
-    error('snapshot-baseline-missing', `Baseline snapshot missing for session ${sessionId}. Cannot restore.`, { sessionId }),
+    error(
+      'snapshot-baseline-missing',
+      `Baseline snapshot missing for session ${sessionId}. Cannot restore.`,
+      { sessionId },
+    ),
 } as const;
 
 export async function resolveSnapshot(
@@ -64,7 +69,7 @@ export async function resolveSnapshot(
   }
 
   if (matches.length > 1) {
-    const ids = matches.map(m => m.id).join(', ');
+    const ids = matches.map((m) => m.id).join(', ');
     throw snapshotRestoreError.ambiguousName(idOrName, ids);
   }
   const [first] = matches;
@@ -93,8 +98,8 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
       throw snapshotRestoreError.baselineMissing(sessionId);
     }
 
-    const snapshotEntryByPath = new Map(manifest.fileEntries.map(e => [e.path, e]));
-    const baselineEntryByPath = new Map(baselineManifest.fileEntries.map(e => [e.path, e]));
+    const snapshotEntryByPath = new Map(manifest.fileEntries.map((e) => [e.path, e]));
+    const baselineEntryByPath = new Map(baselineManifest.fileEntries.map((e) => [e.path, e]));
 
     const VALID_ENCODED_NAME = /^[0-9a-f]+$/;
 

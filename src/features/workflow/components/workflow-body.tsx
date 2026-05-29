@@ -9,7 +9,7 @@ import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import { buildTargetedRejectionComment } from '../../../engine/orchestrator/planning/regen-targeted.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { Section } from '../../../core/layout/event-sections.js';
+import type { Section } from '../../../core/sections/event-sections.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 
 export function WorkflowBody({
@@ -35,10 +35,11 @@ export function WorkflowBody({
 }) {
   return (
     <Box flexDirection="row" flexGrow={1}>
-      {showSidebar && (
-        <Sidebar width={sidebarWidth} />
-      )}
-      {inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' && useRichEditor ? (
+      {showSidebar && <Sidebar width={sidebarWidth} />}
+      {inputMode.mode === 'review' &&
+      reviewFilePath &&
+      phase === 'reviewing-briefs' &&
+      useRichEditor ? (
         <PlanEditorComponent
           filePath={reviewFilePath}
           height={contentHeight}

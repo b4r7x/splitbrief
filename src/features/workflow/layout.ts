@@ -1,11 +1,11 @@
-import { getChromeHeight } from '../../core/layout/chrome-rows.js';
+import { getChromeHeight } from './layout/chrome-rows.js';
 import {
-  getReviewContentHeight,
+  getReviewContentLayout,
   getWorkflowContentRect,
   getWorkflowContentWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
-} from '../../core/layout/workflow-rect.js';
+} from './layout/workflow-rect.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../stores/workflow/events.js';
@@ -50,7 +50,7 @@ export function readReviewContentHeight(): number {
     0,
     terminalSizeStore.get().rows - readWorkflowChromeHeight() - readWorkflowPromptRows(),
   );
-  return getReviewContentHeight(viewportHeight, reviewStore.get().lineCount);
+  return getReviewContentLayout(viewportHeight, reviewStore.get().lineCount).contentHeight;
 }
 
 export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
@@ -67,7 +67,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     cols,
   );
   const sidebarVisible = controlsStore.get().sidebarVisible;
-  const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
+  const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,

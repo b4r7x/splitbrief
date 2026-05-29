@@ -13,7 +13,10 @@ export function createCassetteReplayer(cassette: Cassette) {
   const originalFetch = globalThis.fetch;
 
   function install(): void {
-    globalThis.fetch = async (input: CassetteRequestInfo, init?: RequestInit): Promise<Response> => {
+    globalThis.fetch = async (
+      input: CassetteRequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
       const request = normalizeRequest(input, init);
       const method = request.method.toUpperCase();
 
