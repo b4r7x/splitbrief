@@ -5,7 +5,6 @@ import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { setHighlightTheme } from '../lib/highlight.js';
 import { warnError, warnStderr } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/registry.js';
 import { detectAll } from '../engine/detection/detect.js';
@@ -44,13 +43,12 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   if (rawMode === 'full' && process.env.DIPTYCH_QUIET !== '1') {
     warnStderr('--mode full is deprecated; use --mode speckit');
   }
-  const normalizedMode = rawMode ? normalizeLegacyMode(rawMode) ?? undefined : undefined;
+  const normalizedMode = rawMode ? (normalizeLegacyMode(rawMode) ?? undefined) : undefined;
   const overrides = buildCLIOverrides(opts);
   overrides.mode = normalizedMode;
   configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');
-  if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(projectDir);
   installHistoryPersistence();
 }
@@ -75,9 +73,14 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   }
 
   await Promise.all([
-    discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
+    discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then((skills) => {
       skillsStore.setAvailable(skills);
     }),
-    loadDetectionIntoStores(getDefaultDetectionService(), { detectAll, fetchModelsDevCatalog, discoverAllCliTools }, detectionStore, projectDir),
+    loadDetectionIntoStores(
+      getDefaultDetectionService(),
+      { detectAll, fetchModelsDevCatalog, discoverAllCliTools },
+      detectionStore,
+      projectDir,
+    ),
   ]);
 }

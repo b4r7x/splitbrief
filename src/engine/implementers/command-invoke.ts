@@ -16,11 +16,16 @@ export interface CommandBasedImplementerOpts {
     outputFormat?: OutputFormat | undefined;
     timeout?: number | undefined;
   };
-  detectChanges?: ((projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>) | undefined;
+  detectChanges?:
+    | ((projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>)
+    | undefined;
   shouldThrow?: ((err: unknown) => boolean) | undefined;
 }
 
-export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts, options?: ImplementerFactoryOptions): Implementer {
+export function createCommandBasedImplementer(
+  opts: CommandBasedImplementerOpts,
+  options?: ImplementerFactoryOptions,
+): Implementer {
   const notFoundMessage = `${opts.label} command not found: ${opts.initialCommand}`;
 
   return createImplementerBase({
@@ -31,20 +36,18 @@ export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts,
       const { prompt, projectDir, config, onOutput, signal } = invokeOpts;
       const cfg = opts.getRunnerConfig(config);
 
-      const result = await invokeCommandBasedRunner(
-        {
-          command: cfg.command,
-          args: cfg.args ?? [],
-          ...(cfg.outputFormat && { outputFormat: cfg.outputFormat }),
-          ...(opts.supportPromptPlaceholder && { supportPromptPlaceholder: true }),
-          ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),
-          notFoundMessage,
-        },
+      const result = await invokeCommandBasedRunner({
+        command: cfg.command,
+        args: cfg.args ?? [],
+        ...(cfg.outputFormat && { outputFormat: cfg.outputFormat }),
+        ...(opts.supportPromptPlaceholder && { supportPromptPlaceholder: true }),
+        ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),
+        notFoundMessage,
         prompt,
         projectDir,
         onOutput,
         signal,
-      );
+      });
 
       return { text: result.stdout, usage: result.usage ?? null };
     },

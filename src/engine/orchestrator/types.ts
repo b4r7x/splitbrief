@@ -10,21 +10,38 @@ import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation.js';
 import type { EventBus } from '../events/types.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
-import type { UserEditConflict, UserEditConflictAction, TaskReviewRequest, TaskReviewResponse } from '../events/workflow-events.js';
+import type {
+  UserEditConflict,
+  UserEditConflictAction,
+  TaskReviewRequest,
+  TaskReviewResponse,
+} from '../events/workflow-events.js';
 import type { RoutingDecision } from './context-routing/types.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 
 export interface OrchestratorCallbacks {
-  onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
-  onUserEditConflict?: ((conflict: UserEditConflict) => Promise<UserEditConflictAction>) | undefined;
-  onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
+  onApprovalNeeded: (
+    type: 'spec' | 'plan' | 'briefs',
+    filePath: string,
+  ) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
+  onUserEditConflict?:
+    | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
+    | undefined;
+  onQuestionAsked?:
+    | ((question: ClarificationQuestion, num: number, total: number) => Promise<string>)
+    | undefined;
   onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;
-  onBudgetPaused?: ((currentCost: number, maxBudget: number) => Promise<'continue' | 'abort' | 'raise'>) | undefined;
+  onBudgetPaused?:
+    | ((currentCost: number, maxBudget: number) => Promise<'continue' | 'abort' | 'raise'>)
+    | undefined;
   onCostApprovalNeeded?: ((prediction: CostPrediction) => Promise<boolean>) | undefined;
   onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
-  onTieredApproval?: ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>) | undefined;
+  onTieredApproval?:
+    | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
+    | undefined;
   onTaskReviewNeeded?: ((request: TaskReviewRequest) => Promise<TaskReviewResponse>) | undefined;
   onComplete: (summary: Summary) => void;
 }
@@ -51,7 +68,9 @@ export interface WorkflowContext {
   planner: Planner;
   context: ProjectContext;
   implementer: Implementer;
-  createImplementer?: ((config: Config, options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>) | undefined;
+  createImplementer?:
+    | ((config: Config, options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>)
+    | undefined;
   implementerProfile?: string | undefined;
   retryProfileOverride?: string | undefined;
   retryProfileOverrideTaskId?: TaskId | undefined;
@@ -67,4 +86,18 @@ export interface WorkflowContext {
   plannerContext?: string | undefined;
 }
 
-export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'callbacks' | 'bus' | 'signal' | 'metadata' | 'resumeHolder' | 'sinks' | 'drainPendingAttachments'>;
+export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };
+
+export type PlannerCallbacksContext = Pick<
+  WorkflowContext,
+  | 'projectDir'
+  | 'sessionId'
+  | 'config'
+  | 'callbacks'
+  | 'bus'
+  | 'signal'
+  | 'metadata'
+  | 'resumeHolder'
+  | 'sinks'
+  | 'drainPendingAttachments'
+>;

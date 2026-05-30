@@ -8,13 +8,17 @@ import { buildPlanReviewScorecard } from './plan-review-scorecard.js';
 function quality(issues: BriefQualityIssue[] = []): BriefQualityReport {
   return {
     version: 1,
-    passed: issues.every(issue => issue.severity !== 'error'),
+    passed: issues.every((issue) => issue.severity !== 'error'),
     score: issues.length === 0 ? 1 : 0.5,
     issues,
   };
 }
 
-function issue(task: TaskId, code: BriefQualityIssue['code'], severity: BriefQualityIssue['severity'] = 'error'): BriefQualityIssue {
+function issue(
+  task: TaskId,
+  code: BriefQualityIssue['code'],
+  severity: BriefQualityIssue['severity'] = 'error',
+): BriefQualityIssue {
   return {
     taskId: task,
     severity,
@@ -23,7 +27,10 @@ function issue(task: TaskId, code: BriefQualityIssue['code'], severity: BriefQua
   };
 }
 
-function readyMetadata(taskIdValue: TaskId, overrides: Partial<PlanTaskReviewMetadata> = {}): PlanTaskReviewMetadata {
+function readyMetadata(
+  taskIdValue: TaskId,
+  overrides: Partial<PlanTaskReviewMetadata> = {},
+): PlanTaskReviewMetadata {
   return {
     taskId: taskIdValue,
     workerProfile: 'local-qwen',
@@ -36,14 +43,14 @@ function readyMetadata(taskIdValue: TaskId, overrides: Partial<PlanTaskReviewMet
 }
 
 function metadataMap(items: PlanTaskReviewMetadata[]): ReadonlyMap<string, PlanTaskReviewMetadata> {
-  return new Map(items.map(item => [item.taskId, item]));
+  return new Map(items.map((item) => [item.taskId, item]));
 }
 
 describe('buildPlanReviewScorecard', () => {
   it('returns zeroed buckets in stable display order for an empty plan', () => {
     const scorecard = buildPlanReviewScorecard([], null, new Map());
 
-    expect(scorecard.buckets.map(bucket => bucket.bucket)).toEqual([
+    expect(scorecard.buckets.map((bucket) => bucket.bucket)).toEqual([
       'ready',
       'routingPending',
       'splitOverflow',
@@ -51,7 +58,7 @@ describe('buildPlanReviewScorecard', () => {
       'staleConflict',
       'missingChecks',
     ]);
-    expect(scorecard.buckets.map(bucket => bucket.label)).toEqual([
+    expect(scorecard.buckets.map((bucket) => bucket.label)).toEqual([
       'ready 0',
       'routing pending 0',
       'split/overflow 0',
@@ -59,7 +66,9 @@ describe('buildPlanReviewScorecard', () => {
       'stale/conflict 0',
       'missing checks 0',
     ]);
-    expect(scorecard.buckets.every(bucket => bucket.count === 0 && bucket.taskIds.length === 0)).toBe(true);
+    expect(
+      scorecard.buckets.every((bucket) => bucket.count === 0 && bucket.taskIds.length === 0),
+    ).toBe(true);
   });
 
   it('marks only fully reviewed tasks ready', () => {
@@ -135,11 +144,16 @@ describe('buildPlanReviewScorecard', () => {
       ]),
       metadataMap([
         readyMetadata(overflow.id, { contextFit: 'overflow', workerProfile: undefined }),
-        readyMetadata(noCapable.id, { workerProfile: undefined, routingReason: 'No capable implementer profile can fit this task prompt' }),
+        readyMetadata(noCapable.id, {
+          workerProfile: undefined,
+          routingReason: 'No capable implementer profile can fit this task prompt',
+        }),
         readyMetadata(multiFile.id),
         readyMetadata(tight.id, { contextFit: 'tight', risk: 'high', validationStatus: 'warn' }),
         readyMetadata(staleMissingCode.id, { estimateStatus: 'missing-current-code' }),
-        readyMetadata(conflictNoTests.id, { conflict: { kind: 'user-edit', files: ['src/hello.ts'] } }),
+        readyMetadata(conflictNoTests.id, {
+          conflict: { kind: 'current-task-conflict', files: ['src/hello.ts'] },
+        }),
       ]),
     );
 

@@ -2,7 +2,11 @@ import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
 import { warnError } from '../lib/warn.js';
-import { createFilteredStdin, type FilteredStdin, setActiveFilteredStdin } from '../lib/terminal/mouse.js';
+import {
+  createFilteredStdin,
+  type FilteredStdin,
+  setActiveFilteredStdin,
+} from '../lib/terminal/mouse.js';
 import { detectKittyKeyboardFlags } from '../lib/terminal/kitty-keyboard.js';
 
 interface RenderOptions {

@@ -73,7 +73,6 @@ function optionalSectionsYaml(): Record<string, unknown> {
 }
 
 describe('config loading', () => {
-
   describe('loadConfig', () => {
     it('returns defaults when no config file exists', () => {
       const dir = join(TMP, 'no-config');
@@ -216,7 +215,9 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       writeConfig(dir, config);
 
-      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      const written = YAML.parse(
+        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
       expect(written.codebase).toBeDefined();
       expect(written.hooks).toBeDefined();
       expect(written.otel).toBeDefined();
@@ -265,7 +266,9 @@ describe('config loading', () => {
       expect(config.implementerProfiles?.profiles['agent-cli']?.label).toBe('Codex CLI');
 
       writeConfig(dir, config);
-      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      const written = YAML.parse(
+        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
       expect(written.implementer_profiles).toBeDefined();
       const profiles = written.implementer_profiles as Record<string, unknown>;
       expect(profiles.default).toBe('local-qwen');
@@ -287,7 +290,9 @@ describe('config loading', () => {
       expect(config.workflow.commitStrategy).toBe('none');
 
       writeConfig(dir, config);
-      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      const written = YAML.parse(
+        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
       expect(written.planner_estimate_review).toBe(true);
       expect(written.auto_split_overflow).toBe(true);
     });
@@ -340,7 +345,7 @@ describe('config loading', () => {
         });
 
         const { warnings } = loadConfig(dir);
-        expect(warnings.some(w => w.includes('ANTHROPIC_API_KEY'))).toBe(true);
+        expect(warnings.some((w) => w.includes('ANTHROPIC_API_KEY'))).toBe(true);
       } finally {
         if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
         else process.env['ANTHROPIC_API_KEY'] = orig;
@@ -434,7 +439,11 @@ describe('config loading', () => {
       const dir = join(TMP, 'malformed-yaml');
       const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(join(configDir, 'config.yaml'), 'implementer:\n  model: "unmatched quote\n  tool: broken:', 'utf-8');
+      writeFileSync(
+        join(configDir, 'config.yaml'),
+        'implementer:\n  model: "unmatched quote\n  tool: broken:',
+        'utf-8',
+      );
 
       expect(() => loadConfig(dir)).toThrow(/Malformed YAML/);
     });
@@ -453,11 +462,21 @@ describe('config loading', () => {
       const dir = join(TMP, 'wrong-type-temperature');
       writeConfigYaml(dir, {
         version: 3,
-        implementer: { kind: 'api', provider: 'ollama', model: 'llama3', api_base: 'http://localhost:11434/v1', temperature: 'hot' },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          model: 'llama3',
+          api_base: 'http://localhost:11434/v1',
+          temperature: 'hot',
+        },
       });
 
       let thrownMessage = '';
-      try { loadConfig(dir); } catch (err) { thrownMessage = (err as Error).message; }
+      try {
+        loadConfig(dir);
+      } catch (err) {
+        thrownMessage = (err as Error).message;
+      }
       expect(thrownMessage).toContain('implementer.temperature');
       expect(thrownMessage).toMatch(/number|type/i);
     });
@@ -470,7 +489,11 @@ describe('config loading', () => {
       });
 
       let thrownMessage = '';
-      try { loadConfig(dir); } catch (err) { thrownMessage = (err as Error).message; }
+      try {
+        loadConfig(dir);
+      } catch (err) {
+        thrownMessage = (err as Error).message;
+      }
       expect(thrownMessage).toContain('implementer.kind');
       expect(thrownMessage).toMatch(/invalid|expected|discriminator/i);
     });
@@ -505,5 +528,4 @@ describe('config loading', () => {
       expect(workflow.maxRetries).toBeUndefined();
     });
   });
-
 });

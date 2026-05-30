@@ -15,9 +15,20 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
   mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
   const base = {
     planner: { tool: 'claude-code' },
-    implementer: { tool: 'ollama', model: 'qwen2.5-coder:7b', context_length: 8192, temperature: 0.3 },
+    implementer: {
+      tool: 'ollama',
+      model: 'qwen2.5-coder:7b',
+      context_length: 8192,
+      temperature: 0.3,
+    },
     validation: { typecheck: true, lint: true, test: true, test_command: 'npm test' },
-    workflow: { auto_approve_spec: false, auto_approve_plan: false, max_retries: 3, commit_strategy: 'none', mode: 'standard' },
+    workflow: {
+      auto_approve_spec: false,
+      auto_approve_plan: false,
+      max_retries: 3,
+      commit_strategy: 'none',
+      mode: 'standard',
+    },
     theme: 'terminal',
     sessions: { scope: 'project' },
     ...extras,
@@ -128,13 +139,20 @@ describe('configStore.load', () => {
   });
 
   it('autoApprove undefined preserves config-file values', () => {
-    writeConfigYaml({ workflow: { auto_approve_spec: true, auto_approve_plan: true, max_retries: 3, commit_strategy: 'none', mode: 'standard' } });
+    writeConfigYaml({
+      workflow: {
+        auto_approve_spec: true,
+        auto_approve_plan: true,
+        max_retries: 3,
+        commit_strategy: 'none',
+        mode: 'standard',
+      },
+    });
     configStore.load(tmpDir, { autoApprove: undefined });
     const config = loadedConfig();
     expect(config.workflow.autoApproveSpec).toBe(true);
     expect(config.workflow.autoApprovePlan).toBe(true);
   });
-
 });
 
 describe('configStore.setApprovalEnabled', () => {
@@ -206,7 +224,9 @@ describe('configStore.save', () => {
   });
 
   it('throws when save is called before load', () => {
-    expect(() => configStore.save(createDefaultConfig())).toThrow('configStore.load must be called before save');
+    expect(() => configStore.save(createDefaultConfig())).toThrow(
+      'configStore.load must be called before save',
+    );
   });
 
   it('writes config to disk and updates store', () => {
@@ -227,9 +247,12 @@ describe('configStore.save', () => {
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save(structuredClone({ ...loadedConfig(), theme: 'mono' as const }), {
-      changedPaths: ['theme'],
-    });
+    const result = configStore.save(
+      structuredClone({ ...loadedConfig(), theme: 'mono' as const }),
+      {
+        changedPaths: ['theme'],
+      },
+    );
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
@@ -243,15 +266,18 @@ describe('configStore.save', () => {
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save({
-      ...loadedConfig(),
-      implementer: {
-        ...loadedConfig().implementer,
-        temperature: 0.7,
+    const result = configStore.save(
+      {
+        ...loadedConfig(),
+        implementer: {
+          ...loadedConfig().implementer,
+          temperature: 0.7,
+        },
       },
-    }, {
-      changedPaths: ['implementer.temperature'],
-    });
+      {
+        changedPaths: ['implementer.temperature'],
+      },
+    );
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
@@ -266,15 +292,18 @@ describe('configStore.save', () => {
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save({
-      ...loadedConfig(),
-      implementer: {
-        ...loadedConfig().implementer,
-        model: 'cli-override',
+    const result = configStore.save(
+      {
+        ...loadedConfig(),
+        implementer: {
+          ...loadedConfig().implementer,
+          model: 'cli-override',
+        },
       },
-    }, {
-      changedPaths: ['implementer.model'],
-    });
+      {
+        changedPaths: ['implementer.model'],
+      },
+    );
 
     expect(result.ok).toBe(true);
     const { config: diskConfig } = loadConfig(tmpDir);
@@ -301,7 +330,11 @@ describe('configStore.save', () => {
     configStore.load(tmpDir);
     // Replace projectDir with a path containing a null byte to force mkdirSync to throw
     const loaded = configStore.get();
-    configStore.__testReset({ config: loaded.config, projectDir: '/tmp/\0invalid', overrides: loaded.overrides });
+    configStore.__testReset({
+      config: loaded.config,
+      projectDir: '/tmp/\0invalid',
+      overrides: loaded.overrides,
+    });
     const result = configStore.save(loadedConfig());
     expect(result.ok).toBe(false);
     expect(result.error).toBeInstanceOf(Error);
@@ -316,5 +349,4 @@ describe('configStore.save', () => {
     configStore.save(updated);
     expect(loadedConfig().implementer.model).toBe('picker-choice');
   });
-
 });

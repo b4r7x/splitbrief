@@ -1,4 +1,10 @@
-import type { ApproveLevel, EffortLevel, PlannerToolId, ProviderId, WorkflowMode } from '../schemas/enums.js';
+import type {
+  ApproveLevel,
+  EffortLevel,
+  PlannerToolId,
+  ProviderId,
+  WorkflowMode,
+} from '../schemas/enums.js';
 
 export interface DetectedModel {
   id: string;
@@ -9,8 +15,6 @@ export interface DetectedModel {
   capabilities?: string[];
   releaseDate?: string;
 }
-
-export type PlannerTool = PlannerToolId;
 
 export interface WorkflowOpts {
   auto?: boolean;
@@ -42,7 +46,7 @@ export interface WorkflowOpts {
 }
 
 export interface PlannerDetection {
-  tool: PlannerTool;
+  tool: PlannerToolId;
   // agent-sdk excluded: it's programmatic (not detectable via CLI probe).
   type: 'cli' | 'api' | 'shell';
   available: boolean;

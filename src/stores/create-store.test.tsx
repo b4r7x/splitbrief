@@ -12,7 +12,7 @@ describe('createStore.use', () => {
 
     function Harness() {
       renderCount += 1;
-      const selected = store.use(state => ({ value: state.value }));
+      const selected = store.use((state) => ({ value: state.value }));
       return <Text>{selected.value}</Text>;
     }
 

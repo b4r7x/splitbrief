@@ -2,9 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner } from '../planners/types.js';
 import { warnStderr } from '../../lib/warn.js';
-import { runnerConfigError } from './errors.js';
-
-const AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
+import { assertNever } from '../../utils/type-guards.js';
 
 function lazy<T>(load: () => Promise<T>): () => Promise<T> {
   let p: Promise<T> | undefined;
@@ -22,22 +20,6 @@ const loadApiImplementer = lazy(() => import('../implementers/api.js'));
 const loadShellImplementer = lazy(() => import('../implementers/shell.js'));
 const loadAgentImplementer = lazy(() => import('../implementers/agent.js'));
 const loadAgentSdkImplementer = lazy(() => import('../implementers/agent-sdk.js'));
-const loadAgentSdkPackage = lazy(() => import(AGENT_SDK_PACKAGE));
-
-function agentSdkMissingError(err: unknown): Error {
-  return new Error(
-    'agent-sdk runner requires @anthropic-ai/claude-agent-sdk; install it with: npm install @anthropic-ai/claude-agent-sdk',
-    { cause: err },
-  );
-}
-
-async function ensureAgentSdkPackage(): Promise<void> {
-  try {
-    await loadAgentSdkPackage();
-  } catch (err) {
-    throw agentSdkMissingError(err);
-  }
-}
 
 async function loadPlanner(config: Config, initialSessionId?: string | null): Promise<Planner> {
   const kind = config.planner.kind;
@@ -45,7 +27,11 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
     case 'cli': {
       if (config.planner.tool === 'claude-code') {
         const mod = await loadClaudeCodePlanner();
-        return mod.createClaudeCodePlanner(config.planner.model, initialSessionId, config.planner.effort);
+        return mod.createClaudeCodePlanner({
+          model: config.planner.model,
+          initialSessionId,
+          effort: config.planner.effort,
+        });
       }
       const mod = await loadCliPlanner();
       return mod.createCliPlanner(config, initialSessionId);
@@ -63,16 +49,23 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
       return mod.createAgentPlanner(config);
     }
     case 'agent-sdk': {
-      await ensureAgentSdkPackage();
       const mod = await loadAgentSdkPlanner();
-      return mod.createAgentSdkPlanner(config.planner.model, config.planner.apiKey, initialSessionId, config.planner.effort);
+      return mod.createAgentSdkPlanner({
+        model: config.planner.model,
+        apiKey: config.planner.apiKey,
+        initialSessionId,
+        effort: config.planner.effort,
+      });
     }
     default:
-      throw runnerConfigError.invalidKind(String(kind), 'planner');
+      return assertNever(kind);
   }
 }
 
-export async function createPlanner(config: Config, initialSessionId?: string | null): Promise<Planner> {
+export async function createPlanner(
+  config: Config,
+  initialSessionId?: string | null,
+): Promise<Planner> {
   const planner = await loadPlanner(config, initialSessionId);
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
@@ -80,7 +73,10 @@ export async function createPlanner(config: Config, initialSessionId?: string | 
   return planner;
 }
 
-export async function createImplementer(config: Config, options?: ImplementerFactoryOptions): Promise<Implementer> {
+export async function createImplementer(
+  config: Config,
+  options?: ImplementerFactoryOptions,
+): Promise<Implementer> {
   const kind = config.implementer.kind;
   switch (kind) {
     case 'cli': {
@@ -100,11 +96,10 @@ export async function createImplementer(config: Config, options?: ImplementerFac
       return mod.createAgentImplementer(config, options);
     }
     case 'agent-sdk': {
-      await ensureAgentSdkPackage();
       const mod = await loadAgentSdkImplementer();
       return mod.createAgentSdkImplementer(config, options);
     }
     default:
-      throw runnerConfigError.invalidKind(String(kind), 'implementer');
+      return assertNever(kind);
   }
 }

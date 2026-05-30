@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePricing, isApiPricedProvider, getPricingMode, LOCAL_PRICING } from './pricing-resolver.js';
+import {
+  resolvePricing,
+  isApiPricedProvider,
+  getPricingMode,
+  LOCAL_PRICING,
+} from './pricing-resolver.js';
 import { NULL_CACHE } from './model/resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
@@ -59,14 +64,14 @@ describe('pricing-resolver', () => {
     it('resolvePricing for claude-sonnet-4-6 returns verified cache prices', () => {
       const result = resolvePricing('anthropic', NULL_CACHE, 'claude-sonnet-4-6');
       expect(result.isPriced).toBe(true);
-      expect(result.cacheReadPer1M).toBe(0.30);
+      expect(result.cacheReadPer1M).toBe(0.3);
       expect(result.cacheWritePer1M).toBe(3.75);
     });
 
     it('resolvePricing for claude-opus-4-6 returns verified cache prices', () => {
       const result = resolvePricing('anthropic', NULL_CACHE, 'claude-opus-4-6');
       expect(result.isPriced).toBe(true);
-      expect(result.cacheReadPer1M).toBe(0.50);
+      expect(result.cacheReadPer1M).toBe(0.5);
       expect(result.cacheWritePer1M).toBe(6.25);
     });
 
@@ -89,7 +94,7 @@ describe('pricing-resolver', () => {
       const result = resolvePricing('anthropic', cache, 'claude-sonnet-4-6');
       expect(result.isPriced).toBe(true);
       expect(result.source).toBe('runtime');
-      expect(result.cacheReadPer1M).toBe(0.30);
+      expect(result.cacheReadPer1M).toBe(0.3);
       expect(result.cacheWritePer1M).toBe(3.75);
     });
   });
@@ -151,7 +156,12 @@ describe('pricing-resolver', () => {
       const cache = makeModelCacheAccessor({
         providerModels: {
           anthropic: [
-            { id: 'claude-opus-4-6', pricingInput: 77, pricingOutput: 177, contextLength: 1_000_000 },
+            {
+              id: 'claude-opus-4-6',
+              pricingInput: 77,
+              pricingOutput: 177,
+              contextLength: 1_000_000,
+            },
           ],
         },
       });

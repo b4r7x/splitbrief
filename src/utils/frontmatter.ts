@@ -18,9 +18,10 @@ export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | nul
   }
 }
 
-export function extractFrontmatter(
-  raw: string,
-): { frontmatter: FrontmatterRecord | null; body: string } {
+export function extractFrontmatter(raw: string): {
+  frontmatter: FrontmatterRecord | null;
+  body: string;
+} {
   const match = raw.match(FRONTMATTER_WITH_TRAILER_RE);
   if (!match) return { frontmatter: null, body: raw };
   const frontmatter = parseSimpleYamlFrontmatter(raw);

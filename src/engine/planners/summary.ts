@@ -1,4 +1,7 @@
-import { tryParseStructuredSummary, type StructuredSummary } from '../../core/schemas/compaction.js';
+import {
+  tryParseStructuredSummary,
+  type StructuredSummary,
+} from '../../core/schemas/compaction.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { PlannerSummaryMessage } from './types.js';
 
@@ -10,7 +13,8 @@ type PlannerSummaryConfig = {
   }) => Promise<InvokeResult>;
 };
 
-const SUMMARY_PROMPT = 'Summarize this conversation compactly. Preserve: feature goal, key decisions, progress (phases/tasks done), files modified, active constraints, pending items. Output as structured markdown.';
+const SUMMARY_PROMPT =
+  'Summarize this conversation compactly. Preserve: feature goal, key decisions, progress (phases/tasks done), files modified, active constraints, pending items. Output as structured markdown.';
 const STRUCTURED_SUMMARY_PROMPT = `Summarize this conversation as JSON with exactly these fields:
 {
   "goal": "what feature is being built",
@@ -29,9 +33,7 @@ Previous summary:
 `;
 
 function formatSummaryTranscript(messages: PlannerSummaryMessage[]): string {
-  return messages
-    .map(message => `[${message.role}]\n${message.text}`)
-    .join('\n\n');
+  return messages.map((message) => `[${message.role}]\n${message.text}`).join('\n\n');
 }
 
 function buildSummaryPrompt(messages: PlannerSummaryMessage[]): string {

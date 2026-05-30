@@ -12,7 +12,9 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 describe('EventBus end-to-end flow', () => {
   it('publishes a coherent event sequence for a one-task quick-mode workflow', async () => {

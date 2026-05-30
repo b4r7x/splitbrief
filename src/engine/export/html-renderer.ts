@@ -2,133 +2,8 @@ import { formatCost } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { costKnownFlags, type CostBreakdown } from '../../core/schemas/summary.js';
 import { formatTime } from '../../utils/format-time.js';
+import { REPORT_CSS } from './report-styles.js';
 import type { BriefQualityExport, DriftExport, EvidenceExport, ExportData } from './types.js';
-
-const CSS = `
-:root {
-  color-scheme: dark;
-  --bg: #0a0a0a;
-  --panel: #141414;
-  --panel-2: #1e1e1e;
-  --text: #e0e0e0;
-  --muted: #8c8c8c;
-  --accent: #00bcd4;
-  --success: #5bd46f;
-  --warning: #ffd166;
-  --danger: #ff6b6b;
-  --border: #2a2a2a;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-}
-main {
-  width: min(800px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 36px 0;
-}
-a { color: var(--accent); }
-.report-header, .report-section, .footer {
-  border-left: 3px solid var(--accent);
-  background: var(--panel);
-  padding: 18px 20px;
-  margin-bottom: 16px;
-}
-.report-section { background: var(--panel-2); }
-.logo {
-  color: var(--success);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-h1, h2, p { margin: 0; }
-h1 {
-  margin-top: 6px;
-  font-size: 24px;
-  line-height: 1.25;
-}
-h2 {
-  margin-bottom: 10px;
-  color: var(--text);
-  font-size: 16px;
-}
-.muted { color: var(--muted); }
-.hero {
-  color: var(--success);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-.hero-subtext { margin-top: 6px; color: var(--muted); }
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-th, td {
-  border-bottom: 1px solid var(--border);
-  padding: 8px 0;
-  text-align: left;
-  vertical-align: top;
-}
-th {
-  width: 34%;
-  color: var(--muted);
-  font-weight: 400;
-}
-.badge {
-  display: inline-block;
-  margin: 4px 8px 0 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 7px;
-  background: #101010;
-}
-.success { color: var(--success); }
-.warning { color: var(--warning); }
-.danger { color: var(--danger); }
-.score {
-  display: inline-block;
-  min-width: 54px;
-  margin-right: 8px;
-  border-radius: 4px;
-  padding: 2px 6px;
-  background: #101010;
-  text-align: center;
-  font-weight: 700;
-}
-.phase-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.phase-row {
-  display: grid;
-  grid-template-columns: minmax(110px, 1fr) 3fr 70px;
-  gap: 10px;
-  align-items: center;
-}
-.phase-track {
-  height: 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #0f0f0f;
-}
-.phase-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-.footer {
-  color: var(--muted);
-  font-size: 12px;
-}
-`;
 
 export function renderSessionHtml(data: ExportData): string {
   return `<!DOCTYPE html>
@@ -137,7 +12,7 @@ export function renderSessionHtml(data: ExportData): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>diptych — ${escapeHtml(data.feature)}</title>
-<style>${CSS}</style>
+<style>${REPORT_CSS}</style>
 </head>
 <body>
 <main>
@@ -146,8 +21,8 @@ ${renderHeroSavings(data)}
 ${renderMetadata(data)}
 ${renderTaskSummary(data)}
 ${data.evidence ? renderEvidence(data.evidence) : ''}
-${data.drift ? renderDrift(data.drift) : ''}
-${data.briefQuality ? renderBriefQuality(data.briefQuality) : ''}
+${data.drift ? renderScoredResult('Drift', data.drift) : ''}
+${data.briefQuality ? renderScoredResult('Brief quality', data.briefQuality) : ''}
 ${renderPhaseTiming(data)}
 ${renderFooter(data)}
 </main>
@@ -156,9 +31,10 @@ ${renderFooter(data)}
 }
 
 function renderHeader(data: ExportData): string {
-  const completionLabel = data.isComplete && data.completedAt
-    ? `Completed ${escapeHtml(formatDateTime(data.completedAt))}`
-    : 'In progress';
+  const completionLabel =
+    data.isComplete && data.completedAt
+      ? `Completed ${escapeHtml(formatDateTime(data.completedAt))}`
+      : 'In progress';
   return `<header class="report-header">
 <div class="logo">diptych ${data.isComplete ? 'complete' : 'in progress'}</div>
 <h1>${escapeHtml(data.feature)}</h1>
@@ -225,19 +101,11 @@ function renderEvidence(evidence: EvidenceExport): string {
 </section>`;
 }
 
-function renderDrift(drift: DriftExport): string {
+function renderScoredResult(title: string, result: DriftExport | BriefQualityExport): string {
   return `<section class="report-section">
-<h2>Drift</h2>
-<p><span class="score ${getResultTone(drift)}">${drift.score.toFixed(2)}</span>${drift.passed ? 'Passed' : 'Failed'}</p>
-<p class="muted">${drift.errorCount} errors · ${drift.warningCount} warnings</p>
-</section>`;
-}
-
-function renderBriefQuality(briefQuality: BriefQualityExport): string {
-  return `<section class="report-section">
-<h2>Brief quality</h2>
-<p><span class="score ${getResultTone(briefQuality)}">${briefQuality.score.toFixed(2)}</span>${briefQuality.passed ? 'Passed' : 'Failed'}</p>
-<p class="muted">${briefQuality.errorCount} errors · ${briefQuality.warningCount} warnings</p>
+<h2>${title}</h2>
+<p><span class="score ${getResultTone(result)}">${result.score.toFixed(2)}</span>${result.passed ? 'Passed' : 'Failed'}</p>
+<p class="muted">${result.errorCount} errors · ${result.warningCount} warnings</p>
 </section>`;
 }
 
@@ -246,8 +114,13 @@ function renderPhaseTiming(data: ExportData): string {
   if (entries.length === 0) return '';
 
   const total = entries.reduce((sum, [, duration]) => sum + Math.max(0, duration), 0);
-  const widths = normalizePhaseWidths(entries.map(([, duration]) => duration), total);
-  const rows = entries.map(([phase, duration], i) => renderPhaseRow(phase, duration, widths[i] ?? 0)).join('\n');
+  const widths = normalizePhaseWidths(
+    entries.map(([, duration]) => duration),
+    total,
+  );
+  const rows = entries
+    .map(([phase, duration], i) => renderPhaseRow(phase, duration, widths[i] ?? 0))
+    .join('\n');
 
   return `<section class="report-section">
 <h2>Phase timing</h2>
@@ -268,7 +141,7 @@ function renderTableRow(label: string, value: string): string {
 
 function normalizePhaseWidths(durations: number[], total: number): number[] {
   if (total <= 0) return durations.map(() => 0);
-  const widths = durations.map(d => Math.max(1, Math.round((Math.max(0, d) / total) * 100)));
+  const widths = durations.map((d) => Math.max(1, Math.round((Math.max(0, d) / total) * 100)));
   const sum = widths.reduce((a, b) => a + b, 0);
   if (sum > 100 && widths.length > 0) {
     let largestIndex = 0;
@@ -307,5 +180,9 @@ function formatDateTime(value: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

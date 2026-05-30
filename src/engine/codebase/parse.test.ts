@@ -6,13 +6,18 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 describe('parse', () => {
-  beforeAll(async () => { await initParser(); });
+  beforeAll(async () => {
+    await initParser();
+  });
 
   it('extracts exported symbols from a TS file', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
     expect(node).not.toBeNull();
     if (node === null) return;
-    const exportedNames = node.symbols.filter(s => s.exported).map(s => s.name).sort();
+    const exportedNames = node.symbols
+      .filter((s) => s.exported)
+      .map((s) => s.name)
+      .sort();
     expect(exportedNames).toEqual(['PI', 'Point', 'Vec', 'add']);
   });
 
@@ -20,18 +25,18 @@ describe('parse', () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
     expect(node).not.toBeNull();
     if (node === null) return;
-    const add = node.symbols.find(s => s.name === 'add');
+    const add = node.symbols.find((s) => s.name === 'add');
     expect(add?.exported).toBe(true);
     expect(add?.kind).toBe('function');
 
-    const point = node.symbols.find(s => s.name === 'Point');
+    const point = node.symbols.find((s) => s.name === 'Point');
     expect(point?.kind).toBe('interface');
     expect(point?.exported).toBe(true);
 
-    const vec = node.symbols.find(s => s.name === 'Vec');
+    const vec = node.symbols.find((s) => s.name === 'Vec');
     expect(vec?.kind).toBe('type');
 
-    const pi = node.symbols.find(s => s.name === 'PI');
+    const pi = node.symbols.find((s) => s.name === 'PI');
     expect(pi?.kind).toBe('const');
   });
 

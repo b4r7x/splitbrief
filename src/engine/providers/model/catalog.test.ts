@@ -84,7 +84,9 @@ describe('resolveModelCatalog', () => {
     const models = resolveModelCatalog('agent-sdk', cache);
     expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
     expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBeUndefined();
-    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingMode).toBe('unpriced-meta');
+    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingMode).toBe(
+      'unpriced-meta',
+    );
   });
 
   it('hydrates codex catalog from filtered openai models.dev entries', () => {
@@ -148,7 +150,9 @@ describe('resolveModelCatalog', () => {
     const models = resolveModelCatalog('opencode', cache);
     expect(models.some((entry) => entry.id === 'auto')).toBe(true);
     expect(models.some((entry) => entry.id === 'anthropic/claude-sonnet-4.6')).toBe(true);
-    expect(models.find((entry) => entry.id === 'anthropic/claude-sonnet-4.6')?.source).toBe('models-dev');
+    expect(models.find((entry) => entry.id === 'anthropic/claude-sonnet-4.6')?.source).toBe(
+      'models-dev',
+    );
   });
 
   it('hydrates copilot and kilo-code catalogs from direct models.dev providers', () => {
@@ -181,7 +185,9 @@ describe('resolveModelCatalog', () => {
     const kiloModels = resolveModelCatalog('kilo-code', cache);
 
     expect(copilotModels.some((entry) => entry.id === 'claude-opus-4.6')).toBe(true);
-    expect(copilotModels.find((entry) => entry.id === 'claude-opus-4.6')?.source).toBe('models-dev');
+    expect(copilotModels.find((entry) => entry.id === 'claude-opus-4.6')?.source).toBe(
+      'models-dev',
+    );
     expect(kiloModels.some((entry) => entry.id === 'kimi-k2.5')).toBe(true);
     expect(kiloModels.find((entry) => entry.id === 'kimi-k2.5')?.source).toBe('models-dev');
   });

@@ -27,7 +27,8 @@ afterEach(() => {
   cleanupTempDir(projectDir);
 });
 
-const defaultAgentConfig = () => makeConfig({ planner: { kind: 'agent', command: 'echo', args: ['test output'] } });
+const defaultAgentConfig = () =>
+  makeConfig({ planner: { kind: 'agent', command: 'echo', args: ['test output'] } });
 
 describe('createAgentPlanner', () => {
   it('throws for wrong config kind', () => {
@@ -40,42 +41,73 @@ describe('createAgentPlanner', () => {
     const planner = createAgentPlanner(config);
     const callbacks = { onOutput: vi.fn() };
 
-    const result = await planner.regenerate('test prompt', 'spec', projectDir, callbacks);
+    const result = await planner.regenerate({
+      prompt: 'test prompt',
+      artifactType: 'spec',
+      projectDir,
+      callbacks,
+    });
     expect(result.text).toContain('test output');
     expect(result.usage).toBe(null);
   });
 
   it('supports escalateHint — success when agent writes files', async () => {
     const outFile = join(projectDir, 'hint-out.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// hint" > ${outFile}`], capabilities: { supportsHintEscalation: true } } });
+    const config = makeConfig({
+      planner: {
+        kind: 'agent',
+        command: 'bash',
+        args: ['-c', `echo "// hint" > ${outFile}`],
+        capabilities: { supportsHintEscalation: true },
+      },
+    });
     const planner = createAgentPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };
 
-    const result = await planner.escalateHint(task, 'error message', projectDir, callbacks);
+    const result = await planner.escalateHint({
+      task,
+      error: 'error message',
+      projectDir,
+      callbacks,
+    });
     expect(result.success).toBe(true);
     expect(result.code).toBe(null);
   });
 
   it('supports escalateHint — failure when agent writes no files', async () => {
-    const config = makeConfig({ planner: { kind: 'agent', command: 'echo', args: ['test output'] } });
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'echo', args: ['test output'] },
+    });
     const planner = createAgentPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };
 
-    const result = await planner.escalateHint(task, 'error message', projectDir, callbacks);
+    const result = await planner.escalateHint({
+      task,
+      error: 'error message',
+      projectDir,
+      callbacks,
+    });
     expect(result.success).toBe(false);
     expect(result.code).toBe(null);
   });
 
   it('supports escalateFull — success when agent writes files', async () => {
     const outFile = join(projectDir, 'full-out.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// full" > ${outFile}`] } });
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// full" > ${outFile}`] },
+    });
     const planner = createAgentPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };
 
-    const result = await planner.escalateFull(task, 'error message', projectDir, callbacks);
+    const result = await planner.escalateFull({
+      task,
+      error: 'error message',
+      projectDir,
+      callbacks,
+    });
     expect(result.success).toBe(true);
     expect(result.code).toBe(null);
   });
@@ -114,7 +146,7 @@ Create a test file.
 `;
     setupMockFiles(projectDir, SESSION_ID, { 'tasks.md': tasksContent });
 
-    const result = await planner.quickPlan('test feature', projectDir, callbacks);
+    const result = await planner.quickPlan({ feature: 'test feature', projectDir, callbacks });
     expect(result.spec).toBe('');
     expect(result.plan).toBe('');
     expect(result.tasks).toHaveLength(1);
@@ -151,7 +183,7 @@ Create the main feature.
     };
     setupMockFiles(projectDir, SESSION_ID, mockFiles);
 
-    const result = await planner.plan('test feature', projectDir, callbacks);
+    const result = await planner.plan({ feature: 'test feature', projectDir, callbacks });
     expect(result.spec).toContain('Feature requirements');
     expect(result.plan).toContain('Implementation strategy');
     expect(result.tasks).toHaveLength(1);
@@ -164,8 +196,9 @@ Create the main feature.
     const planner = createAgentPlanner(config);
     const callbacks = { onOutput: vi.fn() };
 
-    await expect(planner.review('test', projectDir, callbacks))
-      .rejects.toThrow('Agent planner command not found: nonexistent-command-12345');
+    await expect(planner.review('test', projectDir, callbacks)).rejects.toThrow(
+      'Agent planner command not found: nonexistent-command-12345',
+    );
   });
 
   it('escalateFull ignores pre-existing dirty files and succeeds only on new writes', async () => {
@@ -174,18 +207,32 @@ Create the main feature.
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };
 
-    const noChangePlanner = createAgentPlanner(makeConfig({
-      planner: { kind: 'agent', command: 'echo', args: ['no changes'] },
-    }));
+    const noChangePlanner = createAgentPlanner(
+      makeConfig({
+        planner: { kind: 'agent', command: 'echo', args: ['no changes'] },
+      }),
+    );
 
-    const noChange = await noChangePlanner.escalateFull(task, 'error message', projectDir, callbacks);
+    const noChange = await noChangePlanner.escalateFull({
+      task,
+      error: 'error message',
+      projectDir,
+      callbacks,
+    });
     expect(noChange.success).toBe(false);
 
     const newFile = join(projectDir, 'new-from-escalation.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] } });
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] },
+    });
     const planner = createAgentPlanner(config);
 
-    const result = await planner.escalateFull(task, 'error message', projectDir, callbacks);
+    const result = await planner.escalateFull({
+      task,
+      error: 'error message',
+      projectDir,
+      callbacks,
+    });
     expect(result.success).toBe(true);
     expect(readFileSync(preExistingFile, 'utf-8')).toBe('// pre-existing');
     expect(readFileSync(newFile, 'utf-8')).toBe('// escalated\n');

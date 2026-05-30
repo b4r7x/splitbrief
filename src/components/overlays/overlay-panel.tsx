@@ -2,7 +2,10 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth, getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
+import {
+  getClampedTerminalWidth,
+  getResponsivePanelWidth,
+} from '../../features/workflow/layout/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
 
 interface OverlayPanelProps {
@@ -30,13 +33,14 @@ export function OverlayPanel({
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const resolvedMaxWidth = maxWidth ?? getResponsivePanelWidth(cols, isSmall);
-  const resolvedWidth = widthProp === 'auto'
-    ? undefined
-    : getClampedTerminalWidth(cols, widthProp ?? resolvedMaxWidth);
+  const resolvedWidth =
+    widthProp === 'auto' ? undefined : getClampedTerminalWidth(cols, widthProp ?? resolvedMaxWidth);
 
   const titleNode = title && (
     <Box justifyContent="center" marginBottom={1}>
-      <Text bold color={t.accent}>{title}</Text>
+      <Text bold color={t.accent}>
+        {title}
+      </Text>
     </Box>
   );
 
@@ -71,12 +75,7 @@ export function OverlayPanel({
   );
 
   return (
-    <Box
-      width={cols}
-      height={rows}
-      alignItems="center"
-      justifyContent="center"
-    >
+    <Box width={cols} height={rows} alignItems="center" justifyContent="center">
       {inner}
     </Box>
   );

@@ -9,7 +9,7 @@ import { estimateDeterministicCost } from './estimate.js';
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'Node.js 22',
+  runtime: 'node',
   testCommand: 'npm test',
 };
 
@@ -30,7 +30,11 @@ describe('estimateDeterministicCost', () => {
     const config = withProfiles(
       makeConfig({
         planner: { kind: 'shell', command: 'missing-planner-command', model: 'planner-model' },
-        implementer: { kind: 'agent', command: 'missing-implementer-command', model: 'worker-model' },
+        implementer: {
+          kind: 'agent',
+          command: 'missing-implementer-command',
+          model: 'worker-model',
+        },
       }),
       {
         default: 'agent-worker',
@@ -47,8 +51,18 @@ describe('estimateDeterministicCost', () => {
     );
     const task = makeTask();
 
-    const first = estimateDeterministicCost({ tasks: [task], context, config, pricingCache: nullCache });
-    const second = estimateDeterministicCost({ tasks: [task], context, config, pricingCache: nullCache });
+    const first = estimateDeterministicCost({
+      tasks: [task],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
+    const second = estimateDeterministicCost({
+      tasks: [task],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
 
     expect(second).toEqual(first);
     expect(first.tasks[0]).toMatchObject({
@@ -85,12 +99,23 @@ describe('estimateDeterministicCost', () => {
       },
     );
 
-    const estimate = estimateDeterministicCost({ tasks: [makeTask()], context, config, pricingCache: nullCache });
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
     const task = estimate.tasks[0];
 
     expect(task?.priceConfidence).toBe('price-known');
-    expect(task?.estimatedImplementerCost).toBeCloseTo((task?.estimatedPromptTokens ?? 0) * 0.28 / 1_000_000, 12);
-    expect(task?.hypotheticalPlannerCost).toBeCloseTo((task?.estimatedPromptTokens ?? 0) * 5 / 1_000_000, 12);
+    expect(task?.estimatedImplementerCost).toBeCloseTo(
+      ((task?.estimatedPromptTokens ?? 0) * 0.28) / 1_000_000,
+      12,
+    );
+    expect(task?.hypotheticalPlannerCost).toBeCloseTo(
+      ((task?.estimatedPromptTokens ?? 0) * 5) / 1_000_000,
+      12,
+    );
     expect(estimate.totals.knownActualEstimate).toBe(task?.estimatedImplementerCost);
     expect(estimate.totals.hypotheticalAllPlanner).toBe(task?.hypotheticalPlannerCost);
     expect(estimate.totals.estimatedSavings).toBeGreaterThan(0);
@@ -123,7 +148,12 @@ describe('estimateDeterministicCost', () => {
       },
     );
 
-    const estimate = estimateDeterministicCost({ tasks: [makeTask()], context, config, pricingCache: nullCache });
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
 
     expect(estimate.tasks[0]).toMatchObject({
       selectedProfileId: 'unknown-worker',
@@ -137,9 +167,10 @@ describe('estimateDeterministicCost', () => {
   it('uses cached provider context length metadata when profile context length is omitted', () => {
     const pricingCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
-      getProviderModels: providerId => providerId === 'deepseek'
-        ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
-        : null,
+      getProviderModels: (providerId) =>
+        providerId === 'deepseek'
+          ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
+          : null,
     };
     const config = withProfiles(
       makeConfig({
@@ -165,7 +196,12 @@ describe('estimateDeterministicCost', () => {
       },
     );
 
-    const estimate = estimateDeterministicCost({ tasks: [makeTask()], context, config, pricingCache });
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache,
+    });
 
     expect(estimate.tasks[0]).toMatchObject({
       selectedProfileId: 'runtime-worker',
@@ -175,22 +211,19 @@ describe('estimateDeterministicCost', () => {
   });
 
   it('uses the conservative context fallback when no context length metadata is available', () => {
-    const config = withProfiles(
-      makeConfig(),
-      {
-        default: 'fallback-worker',
-        profiles: {
-          'fallback-worker': {
-            kind: 'api',
-            provider: 'custom-cloud',
-            apiBase: 'https://models.example/v1',
-            apiKey: 'test-key',
-            model: 'unknown-model',
-            costTier: 'unknown',
-          },
+    const config = withProfiles(makeConfig(), {
+      default: 'fallback-worker',
+      profiles: {
+        'fallback-worker': {
+          kind: 'api',
+          provider: 'custom-cloud',
+          apiBase: 'https://models.example/v1',
+          apiKey: 'test-key',
+          model: 'unknown-model',
+          costTier: 'unknown',
         },
       },
-    );
+    });
 
     const estimate = estimateDeterministicCost({
       tasks: [makeTask()],
@@ -208,24 +241,26 @@ describe('estimateDeterministicCost', () => {
   });
 
   it('classifies tasks that exceed all profile context windows as overflow', () => {
-    const config = withProfiles(
-      makeConfig(),
-      {
-        default: 'tiny-worker',
-        profiles: {
-          'tiny-worker': {
-            kind: 'api',
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            model: 'deepseek-chat',
-            contextLength: 10,
-            costTier: 'cheap',
-          },
+    const config = withProfiles(makeConfig(), {
+      default: 'tiny-worker',
+      profiles: {
+        'tiny-worker': {
+          kind: 'api',
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+          contextLength: 10,
+          costTier: 'cheap',
         },
       },
-    );
+    });
 
-    const estimate = estimateDeterministicCost({ tasks: [makeTask()], context, config, pricingCache: nullCache });
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
 
     expect(estimate.tasks[0]).toMatchObject({
       selectedProfileId: null,
@@ -237,23 +272,25 @@ describe('estimateDeterministicCost', () => {
   });
 
   it('does not crash when configured profiles cannot be resolved', () => {
-    const config = withProfiles(
-      makeConfig(),
-      {
-        default: 'missing-worker',
-        profiles: {
-          'other-worker': {
-            kind: 'api',
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            model: 'deepseek-chat',
-            contextLength: 20_000,
-          },
+    const config = withProfiles(makeConfig(), {
+      default: 'missing-worker',
+      profiles: {
+        'other-worker': {
+          kind: 'api',
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+          contextLength: 20_000,
         },
       },
-    ) as Config;
+    }) as Config;
 
-    const estimate = estimateDeterministicCost({ tasks: [makeTask()], context, config, pricingCache: nullCache });
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
 
     expect(estimate.tasks[0]).toMatchObject({
       selectedProfileId: null,

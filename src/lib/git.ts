@@ -13,9 +13,16 @@ export function createGitClient(dir: string): GitClient {
 
 export const gitError = {
   commandFailed: (intent: string, causeMessage: string, cause?: unknown) =>
-    error('git-command-failed', `git ${intent} failed: ${causeMessage}`, { intent, causeMessage }, cause),
+    error(
+      'git-command-failed',
+      `git ${intent} failed: ${causeMessage}`,
+      { intent, causeMessage },
+      cause,
+    ),
   branchNameCollision: (desiredName: string) =>
-    error('git-branch-name-collision', `too many branch name collisions on ${desiredName}`, { desiredName }),
+    error('git-branch-name-collision', `too many branch name collisions on ${desiredName}`, {
+      desiredName,
+    }),
   isCommandFailed: matches('git-command-failed'),
 } as const;
 
@@ -23,6 +30,14 @@ export type GitCommandError = ReturnType<typeof gitError.commandFailed>;
 
 function toGitCommandError(intent: string, err: unknown): GitCommandError {
   return gitError.commandFailed(intent, toErrorMessage(err), err);
+}
+
+async function runGit<T>(intent: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw toGitCommandError(intent, err);
+  }
 }
 
 function getStatusPaths(status: Awaited<ReturnType<SimpleGit['status']>>): string[] {
@@ -72,12 +87,11 @@ export async function commitChanges(dir: string, message: string): Promise<strin
 }
 
 export async function getCurrentDiff(dir: string): Promise<string> {
-  const git = getGit(dir);
-  const [staged, unstaged] = await Promise.all([
-    git.diff(['--cached']),
-    git.diff(),
-  ]);
-  return [staged, unstaged].filter(Boolean).join('\n');
+  return runGit('diff', async () => {
+    const git = getGit(dir);
+    const [staged, unstaged] = await Promise.all([git.diff(['--cached']), git.diff()]);
+    return [staged, unstaged].filter(Boolean).join('\n');
+  });
 }
 
 export async function getCurrentCommitSha(dir: string): Promise<string> {
@@ -87,6 +101,15 @@ export async function getCurrentCommitSha(dir: string): Promise<string> {
     return sha.length > 0 ? sha : 'HEAD';
   } catch (err) {
     throw toGitCommandError('rev-parse HEAD', err);
+  }
+}
+
+export async function getCurrentBranch(dir: string): Promise<string> {
+  try {
+    const out = await getGit(dir).raw(['rev-parse', '--abbrev-ref', 'HEAD']);
+    return out.trim();
+  } catch (err) {
+    throw toGitCommandError('rev-parse --abbrev-ref HEAD', err);
   }
 }
 
@@ -126,20 +149,27 @@ export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<s
   });
 }
 
-export async function createTaggedStash(dir: string, message: string, tagName: string): Promise<string> {
+export async function createTaggedStash(
+  dir: string,
+  message: string,
+  tagName: string,
+): Promise<string> {
   await stageAll(dir);
-  const git = getGit(dir);
-  const stashSha = (await git.raw(['stash', 'create', message])).trim();
-  if (!stashSha) return '';
-  await git.tag([tagName, stashSha]);
-  await git.reset();
-  return tagName;
+  return runGit('stash create', async () => {
+    const git = getGit(dir);
+    const stashSha = (await git.raw(['stash', 'create', message])).trim();
+    if (!stashSha) return '';
+    await git.tag([tagName, stashSha]);
+    await git.reset();
+    return tagName;
+  });
 }
 
 export async function branchExists(dir: string, name: string): Promise<boolean> {
-  const git = getGit(dir);
-  const result = await git.branch(['--list', name]);
-  return result.all.includes(name);
+  return runGit('branch --list', async () => {
+    const result = await getGit(dir).branch(['--list', name]);
+    return result.all.includes(name);
+  });
 }
 
 /**
@@ -148,7 +178,6 @@ export async function branchExists(dir: string, name: string): Promise<boolean> 
  * Returns the actual branch name created.
  */
 export async function createBranch(dir: string, desiredName: string): Promise<string> {
-  const git = getGit(dir);
   let name = desiredName;
   let suffix = 2;
   while (await branchExists(dir, name)) {
@@ -158,7 +187,7 @@ export async function createBranch(dir: string, desiredName: string): Promise<st
     name = `${desiredName}-${suffix}`;
     suffix++;
   }
-  await git.checkoutLocalBranch(name);
+  await runGit('checkout -b', () => getGit(dir).checkoutLocalBranch(name));
   return name;
 }
 
@@ -167,15 +196,19 @@ export async function discardFileChange(
   file: string,
   mode: 'tracked' | 'untracked',
 ): Promise<void> {
-  const git = getGit(dir);
-  if (mode === 'tracked') {
-    await git.checkout(['--', file]);
-  } else {
-    await git.clean('f', ['--', file]);
-  }
+  await runGit(`discard ${file}`, async () => {
+    const git = getGit(dir);
+    if (mode === 'tracked') {
+      await git.checkout(['--', file]);
+    } else {
+      await git.clean('f', ['--', file]);
+    }
+  });
 }
 
 async function isTracked(dir: string, file: string): Promise<boolean> {
+  // Intentional boolean detection: a non-zero exit from ls-files means the
+  // path is untracked, not an error to surface — so this catch is not swallowing.
   try {
     await getGit(dir).raw(['ls-files', '--error-unmatch', '--', file]);
     return true;
@@ -185,12 +218,7 @@ async function isTracked(dir: string, file: string): Promise<boolean> {
 }
 
 export async function discardChangedFiles(dir: string, files: string[]): Promise<void> {
-  const git = getGit(dir);
   for (const file of files) {
-    if (await isTracked(dir, file)) {
-      await git.checkout(['--', file]);
-    } else {
-      await git.clean('f', ['--', file]);
-    }
+    await discardFileChange(dir, file, (await isTracked(dir, file)) ? 'tracked' : 'untracked');
   }
 }

@@ -23,11 +23,12 @@ function isExcluded(filePath: string): boolean {
 
 function listViaGit(projectDir: string): string[] | null {
   try {
-    const output = execFileSync(
-      'git',
-      ['ls-files', '--cached', '--others', '--exclude-standard'],
-      { cwd: projectDir, encoding: 'utf-8', timeout: 5_000, stdio: ['pipe', 'pipe', 'pipe'] },
-    );
+    const output = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      timeout: 5_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     return output.trim().split('\n').filter(Boolean);
   } catch {
     return null;

@@ -5,17 +5,27 @@ import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escal
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  makeWorkflowMetadata,
+  TEST_WORKFLOW_SINKS,
+} from '#testing/helpers/orchestrator-context.js';
 
 const META = makeWorkflowMetadata('standard');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 describe('escalation cascade: local retries exhaust, then hint (tier 1), then full (tier 2)', () => {
   it('emits retry then tier-1 then tier-2 escalate events in order and falls into method=failed when full fails', async () => {
@@ -39,26 +49,47 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken', usage: { inputTokens: 5, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'still broken',
+        usage: { inputTokens: 5, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 30, outputTokens: 10 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 30, outputTokens: 10 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     const { result } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 2, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+        validator: createValidator(),
+        bus,
       },
-      task, initialError: 'type error', currentState: state,
+      task,
+      initialError: 'type error',
+      currentState: state,
     });
 
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     const escalateEvents = busEvents.filter((e) => e.type === 'escalate');
-    const tiers = escalateEvents.map((e) => e.type === 'escalate' ? e.tier : -1);
+    const tiers = escalateEvents.map((e) => (e.type === 'escalate' ? e.tier : -1));
 
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
     expect(tiers).toEqual([1, 2]);

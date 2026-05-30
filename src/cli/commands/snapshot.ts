@@ -1,10 +1,11 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
-import { createSnapshot, listSnapshots } from '../../engine/snapshots/store.js';
+import { createSnapshot } from '../../engine/snapshots/create.js';
+import { listSnapshots } from '../../engine/snapshots/manifest.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 
 export function registerSnapshotCommand(program: Command): void {
@@ -22,7 +23,7 @@ export function registerSnapshotCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-      try {
+      await withCliErrors(async () => {
         const result = await createSnapshot({
           projectDir,
           sessionId,
@@ -59,9 +60,7 @@ export function registerSnapshotCommand(program: Command): void {
         }
         console.log(`  Files: ${result.manifest.trackedFileCount}`);
         console.log(`  Location: ${result.snapshotDir}`);
-      } catch (err) {
-        rethrowAsCli(err);
-      }
+      });
     });
 
   snapshot
@@ -73,22 +72,18 @@ export function registerSnapshotCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-      try {
-        const { manifests } = await listSnapshots(projectDir, sessionId);
+      const { manifests } = await withCliErrors(() => listSnapshots(projectDir, sessionId));
 
-        if (manifests.length === 0) {
-          console.log(`No snapshots found for session ${sessionId}.`);
-          return;
-        }
+      if (manifests.length === 0) {
+        console.log(`No snapshots found for session ${sessionId}.`);
+        return;
+      }
 
-        for (const m of manifests) {
-          const namePart = m.name ? `  ${ansis.dim(m.name)}` : '';
-          console.log(
-            `${m.id}  ${m.createdAt}  files=${m.trackedFileCount}  phase=${m.phase}${namePart}`,
-          );
-        }
-      } catch (err) {
-        rethrowAsCli(err);
+      for (const m of manifests) {
+        const namePart = m.name ? `  ${ansis.dim(m.name)}` : '';
+        console.log(
+          `${m.id}  ${m.createdAt}  files=${m.trackedFileCount}  phase=${m.phase}${namePart}`,
+        );
       }
     });
 
@@ -98,49 +93,50 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--session <id>', 'Session ID (defaults to active session)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--force', 'Overwrite files even if modified after snapshot')
-    .action(async (idOrName: string, opts: { session?: string; project?: string; force?: boolean }) => {
-      const projectDir = resolveProjectDir(opts.project);
-      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+    .action(
+      async (idOrName: string, opts: { session?: string; project?: string; force?: boolean }) => {
+        const projectDir = resolveProjectDir(opts.project);
+        const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-      let result: Awaited<ReturnType<typeof restoreSnapshot>>;
-      try {
-        result = await restoreSnapshot({
-          projectDir,
-          sessionId,
-          idOrName,
-          force: opts.force ?? false,
-        });
-      } catch (err) {
-        rethrowAsCli(err);
-      }
-
-      console.log(`Restored ${result.restoredPaths.length} file(s) from snapshot ${result.snapshotId}.`);
-
-      if (result.conflictedPaths.length > 0) {
-        console.log('Conflicts (not restored — modified since snapshot):');
-        for (const p of result.conflictedPaths) {
-          console.log(`  ${p}`);
-        }
-        console.log('Run with --force to overwrite.');
-      }
-
-      if (result.forcedPaths.length > 0) {
-        console.log(`Forced (${result.forcedPaths.length} file(s) overwritten):`);
-        for (const p of result.forcedPaths) {
-          console.log(`  ${p}`);
-        }
-      }
-
-      if (result.missingSnapshotFiles.length > 0) {
-        console.log(
-          `Warning: ${result.missingSnapshotFiles.length} file(s) missing from snapshot storage (skipped).`,
+        const result = await withCliErrors(() =>
+          restoreSnapshot({
+            projectDir,
+            sessionId,
+            idOrName,
+            force: opts.force ?? false,
+          }),
         );
-      }
 
-      if (result.conflictedPaths.length > 0) {
-        throw cliError('Restore completed with conflicts.', 1);
-      }
-    });
+        console.log(
+          `Restored ${result.restoredPaths.length} file(s) from snapshot ${result.snapshotId}.`,
+        );
+
+        if (result.conflictedPaths.length > 0) {
+          console.log('Conflicts (not restored — modified since snapshot):');
+          for (const p of result.conflictedPaths) {
+            console.log(`  ${p}`);
+          }
+          console.log('Run with --force to overwrite.');
+        }
+
+        if (result.forcedPaths.length > 0) {
+          console.log(`Forced (${result.forcedPaths.length} file(s) overwritten):`);
+          for (const p of result.forcedPaths) {
+            console.log(`  ${p}`);
+          }
+        }
+
+        if (result.missingSnapshotFiles.length > 0) {
+          console.log(
+            `Warning: ${result.missingSnapshotFiles.length} file(s) missing from snapshot storage (skipped).`,
+          );
+        }
+
+        if (result.conflictedPaths.length > 0) {
+          throw cliError('Restore completed with conflicts.', 1);
+        }
+      },
+    );
 
   snapshot
     .command('diff <id-or-name>')
@@ -148,29 +144,25 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--session <id>', 'Session ID (defaults to active session)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-color', 'Disable color output')
-    .action(async (idOrName: string, opts: { session?: string; project?: string; color?: boolean }) => {
-      const projectDir = resolveProjectDir(opts.project);
-      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+    .action(
+      async (idOrName: string, opts: { session?: string; project?: string; color?: boolean }) => {
+        const projectDir = resolveProjectDir(opts.project);
+        const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-      let manifest: Awaited<ReturnType<typeof resolveSnapshot>>;
-      try {
-        manifest = await resolveSnapshot(projectDir, sessionId, idOrName);
-      } catch (err) {
-        rethrowAsCli(err);
-      }
+        const manifest = await withCliErrors(() =>
+          resolveSnapshot(projectDir, sessionId, idOrName),
+        );
 
-      let result: Awaited<ReturnType<typeof computeSnapshotDiff>>;
-      try {
-        result = await computeSnapshotDiff({ projectDir, sessionId, manifest });
-      } catch (err) {
-        rethrowAsCli(err);
-      }
+        const result = await withCliErrors(() =>
+          computeSnapshotDiff({ projectDir, sessionId, manifest }),
+        );
 
-      const formatted = formatSnapshotDiff(result, { color: opts.color !== false });
-      console.log(formatted);
+        const formatted = formatSnapshotDiff(result, { color: opts.color !== false });
+        console.log(formatted);
 
-      if (result.changedCount > 0) {
-        throw cliError('Snapshot differs from working tree.', 1);
-      }
-    });
+        if (result.changedCount > 0) {
+          throw cliError('Snapshot differs from working tree.', 1);
+        }
+      },
+    );
 }

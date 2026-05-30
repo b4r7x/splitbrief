@@ -14,10 +14,13 @@ function push(value: string): void {
   const trimmed = value.trim();
   if (!trimmed) return;
 
-  store.set(state => {
+  store.set((state) => {
     if (state.entries[0] === trimmed) return state;
     return {
-      entries: [trimmed, ...state.entries.filter(entry => entry !== trimmed)].slice(0, MAX_INPUT_HISTORY),
+      entries: [trimmed, ...state.entries.filter((entry) => entry !== trimmed)].slice(
+        0,
+        MAX_INPUT_HISTORY,
+      ),
     };
   });
 }

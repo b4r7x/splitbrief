@@ -5,7 +5,10 @@ import { buildRoutes } from './routing.js';
 import { buildActivity, buildCost, buildReview, buildWarnings, sessionStatus } from './sections.js';
 import type { RunExplain } from './types.js';
 
-export async function buildRunExplain(opts: { projectDir: string; sessionId: string }): Promise<RunExplain> {
+export async function buildRunExplain(opts: {
+  projectDir: string;
+  sessionId: string;
+}): Promise<RunExplain> {
   validateSessionId(opts.sessionId);
   await assertSessionDirectory(opts.projectDir, opts.sessionId);
 
@@ -21,8 +24,14 @@ export async function buildRunExplain(opts: { projectDir: string; sessionId: str
     status: sessionStatus(summary, state),
     cost: buildCost(summary, reviewPacket, routes),
     routing: routes,
-    activity: buildActivity(reviewPacket, state, events),
-    review: buildReview(opts.sessionId, reviewPacket, state, events, artifacts.artifacts),
+    activity: buildActivity({ packet: reviewPacket, state, events }),
+    review: buildReview({
+      sessionId: opts.sessionId,
+      packet: reviewPacket,
+      state,
+      events,
+      artifacts: artifacts.artifacts,
+    }),
     warnings: buildWarnings(readinessSummary, reviewPacket, events),
     artifacts: artifacts.artifacts,
   };
@@ -31,6 +40,10 @@ export async function buildRunExplain(opts: { projectDir: string; sessionId: str
 function validateSessionId(sessionId: string): void {
   const result = validateSafeIdentifier(sessionId);
   if (!result.ok) {
-    throw error('run-explain-invalid-session-id', `Invalid session id "${sessionId}": ${result.reason}`, { sessionId, reason: result.reason });
+    throw error(
+      'run-explain-invalid-session-id',
+      `Invalid session id "${sessionId}": ${result.reason}`,
+      { sessionId, reason: result.reason },
+    );
   }
 }

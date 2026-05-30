@@ -3,14 +3,18 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
-import { routeTaskToImplementerProfile } from '../../../../engine/orchestrator/context-routing/route.js';
-import type { RoutingDecision } from '../../../../engine/orchestrator/context-routing/types.js';
-import { buildProjectLanguageContext } from '../../../../engine/spec/prompts/language-context.js';
-import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
-import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../../worker-packet-preview.js';
+import type {
+  PlanReviewEstimateStatus,
+  PlanTaskReviewMetadata,
+} from '../../../../stores/workflow/plan-editor.js';
+import {
+  buildWorkerPacketPreview,
+  refreshTaskForRoutingPreview,
+  routeTaskForPreview,
+  type RoutingDecision,
+  type WorkerPacketPreview,
+} from '../../../../engine/facades/routing-preview.js';
 import { buildProjectContext } from '../../project-context.js';
-import { refreshTaskForRoutingPreview } from '../brief-review.js';
 import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-helpers.js';
 
 interface PacketPreviewRefresh {
@@ -32,16 +36,11 @@ interface UsePacketPreviewOptions {
 }
 
 export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPreview | null {
-  const {
-    isOpen,
-    selectedTask,
-    selectedTaskMetadata,
-    projectDir,
-    testCommand,
-    config,
-    width,
-  } = opts;
-  const [packetPreviewRefresh, setPacketPreviewRefresh] = useState<PacketPreviewRefresh | null>(null);
+  const { isOpen, selectedTask, selectedTaskMetadata, projectDir, testCommand, config, width } =
+    opts;
+  const [packetPreviewRefresh, setPacketPreviewRefresh] = useState<PacketPreviewRefresh | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!isOpen || !selectedTask) {
@@ -62,18 +61,15 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
     });
 
     async function refreshPacketPreviewTask() {
-      const { task, estimateStatus } = await refreshTaskForRoutingPreview(previewSourceTask, projectDir);
+      const { task, estimateStatus } = await refreshTaskForRoutingPreview(
+        previewSourceTask,
+        projectDir,
+      );
       if (controller.signal.aborted) return;
 
       let routingDecision: RoutingDecision | undefined;
       if (config) {
-        const profiles = resolveImplementerProfiles(config).profiles;
-        routingDecision = routeTaskToImplementerProfile({
-          task,
-          context: buildProjectContext(projectDir, testCommand),
-          profiles,
-          languageContext: buildProjectLanguageContext(projectDir, undefined),
-        });
+        routingDecision = routeTaskForPreview({ task, config, projectDir, testCommand });
       }
 
       if (controller.signal.aborted) return;
@@ -96,34 +92,47 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
       });
     });
 
-    return () => { controller.abort(); };
+    return () => {
+      controller.abort();
+    };
   }, [isOpen, selectedTask, projectDir, config, testCommand]);
 
-  const hasPreviewRefresh = packetPreviewRefresh !== null
-    && packetPreviewRefresh.sourceTask === selectedTask
-    && packetPreviewRefresh.projectDir === projectDir;
-  const previewTask = selectedTask?.action === 'modify'
-    ? hasPreviewRefresh
-      ? packetPreviewRefresh.task
-      : taskWithoutCurrentCode(selectedTask)
-    : selectedTask;
-  const previewMetadata = hasPreviewRefresh && packetPreviewRefresh.estimateStatus !== undefined
-    ? { ...selectedTaskMetadata, taskId: packetPreviewRefresh.task.id, estimateStatus: packetPreviewRefresh.estimateStatus }
-    : selectedTaskMetadata;
+  const hasPreviewRefresh =
+    packetPreviewRefresh !== null &&
+    packetPreviewRefresh.sourceTask === selectedTask &&
+    packetPreviewRefresh.projectDir === projectDir;
+  const previewTask =
+    selectedTask?.action === 'modify'
+      ? hasPreviewRefresh
+        ? packetPreviewRefresh.task
+        : taskWithoutCurrentCode(selectedTask)
+      : selectedTask;
+  const previewMetadata =
+    hasPreviewRefresh && packetPreviewRefresh.estimateStatus !== undefined
+      ? {
+          ...selectedTaskMetadata,
+          taskId: packetPreviewRefresh.task.id,
+          estimateStatus: packetPreviewRefresh.estimateStatus,
+        }
+      : selectedTaskMetadata;
 
   return isOpen
     ? buildWorkerPacketPreview({
-      task: previewTask,
-      context: buildProjectContext(projectDir, testCommand),
-      ...(previewMetadata !== undefined ? { metadata: previewMetadata } : {}),
-      ...(hasPreviewRefresh && packetPreviewRefresh.routingDecision !== undefined ? { routingDecision: packetPreviewRefresh.routingDecision } : {}),
-      ...(previewMetadata?.contextLength !== undefined ? { contextLength: previewMetadata.contextLength } : {}),
-      display: {
-        maxSystemChars: Math.max(80, (width ?? 80) * 2),
-        maxPromptChars: Math.max(120, (width ?? 80) * 3),
-        maxSystemLines: 2,
-      },
-    })
+        task: previewTask,
+        context: buildProjectContext(projectDir, testCommand),
+        ...(previewMetadata !== undefined ? { metadata: previewMetadata } : {}),
+        ...(hasPreviewRefresh && packetPreviewRefresh.routingDecision !== undefined
+          ? { routingDecision: packetPreviewRefresh.routingDecision }
+          : {}),
+        ...(previewMetadata?.contextLength !== undefined
+          ? { contextLength: previewMetadata.contextLength }
+          : {}),
+        display: {
+          maxSystemChars: Math.max(80, (width ?? 80) * 2),
+          maxPromptChars: Math.max(120, (width ?? 80) * 3),
+          maxSystemLines: 2,
+        },
+      })
     : null;
 }
 
@@ -160,21 +169,35 @@ export function WorkerPacketPreviewPanel({
 
   return (
     <Box flexDirection="column" height={rows} overflow="hidden">
-      <Text bold color={t.accent}>Packet Preview {preview.taskId}</Text>
-      <Text color={t.textDim} wrap="truncate">
-        worker {compactValue(preview.workerProfile)} · cost {compactValue(preview.costTier)} · write {compactValue(writeMode)}
+      <Text bold color={t.accent}>
+        Packet Preview {preview.taskId}
       </Text>
       <Text color={t.textDim} wrap="truncate">
-        fit {compactValue(preview.contextFit)} · tokens {compactValue(preview.estimatedTokens)} · context {compactValue(preview.contextLength)}
+        worker {compactValue(preview.workerProfile)} · cost {compactValue(preview.costTier)} · write{' '}
+        {compactValue(writeMode)}
+      </Text>
+      <Text color={t.textDim} wrap="truncate">
+        fit {compactValue(preview.contextFit)} · tokens {compactValue(preview.estimatedTokens)} ·
+        context {compactValue(preview.contextLength)}
       </Text>
       <Text color={preview.refreshRequired ? t.warning : t.textDim} wrap="truncate">
-        current-code {preview.currentCodeContextMode} · estimate {compactValue(preview.estimateStatus)}{preview.stale ? ' · stale' : ''}{preview.refreshRequired ? ' · refresh required' : ''}
+        current-code {preview.currentCodeContextMode} · estimate{' '}
+        {compactValue(preview.estimateStatus)}
+        {preview.stale ? ' · stale' : ''}
+        {preview.refreshRequired ? ' · refresh required' : ''}
       </Text>
-      <Text color={preview.routingPending || preview.refreshRequired ? t.warning : t.textDim} wrap="truncate">
+      <Text
+        color={preview.routingPending || preview.refreshRequired ? t.warning : t.textDim}
+        wrap="truncate"
+      >
         notice {buildPreviewNoticeLine(preview)}
       </Text>
-      <Text color={t.textDim} wrap="truncate">system {systemExcerpt}</Text>
-      <Text color={t.textDim} wrap="truncate">task {promptExcerpt}</Text>
+      <Text color={t.textDim} wrap="truncate">
+        system {systemExcerpt}
+      </Text>
+      <Text color={t.textDim} wrap="truncate">
+        task {promptExcerpt}
+      </Text>
     </Box>
   );
 }

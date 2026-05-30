@@ -58,12 +58,18 @@ export function getContextualBindings(state: ContextualBindingsInput): FooterBin
   return bindings;
 }
 
-export function PlanEditorFooter({ isPacketPreviewOpen, isNarrow }: { isPacketPreviewOpen: boolean; isNarrow: boolean }) {
+export function PlanEditorFooter({
+  isPacketPreviewOpen,
+  isNarrow,
+}: {
+  isPacketPreviewOpen: boolean;
+  isNarrow: boolean;
+}) {
   const t = useTheme();
-  const tasks = planEditorStore.use(s => s.tasks);
-  const cursor = planEditorStore.use(s => s.cursor);
-  const dirty = planEditorStore.use(s => s.dirty);
-  const flaggedIds = planEditorStore.use(s => s.flaggedIds);
+  const tasks = planEditorStore.use((s) => s.tasks);
+  const cursor = planEditorStore.use((s) => s.cursor);
+  const dirty = planEditorStore.use((s) => s.dirty);
+  const flaggedIds = planEditorStore.use((s) => s.flaggedIds);
 
   const bindings = getContextualBindings({
     tasks,

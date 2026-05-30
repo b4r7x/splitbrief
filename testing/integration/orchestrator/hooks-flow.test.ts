@@ -11,28 +11,37 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
 
 const DENY_PRE_TASK_HOOKS: HooksConfig = {
-  pre_task: [{
-    kind: 'command',
-    command: 'node',
-    args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",message:"blocked by test"}))'],
-    timeout_ms: 5000,
-    on_failure: 'block',
-  }],
+  pre_task: [
+    {
+      kind: 'command',
+      command: 'node',
+      args: [
+        '-e',
+        'process.stdout.write(JSON.stringify({decision:"deny",message:"blocked by test"}))',
+      ],
+      timeout_ms: 5000,
+      on_failure: 'block',
+    },
+  ],
 };
 const ALLOW_POST_TASK_HOOKS: HooksConfig = {
-  post_task: [{
-    kind: 'command',
-    command: 'echo',
-    args: ['hook-fired'],
-    timeout_ms: 5000,
-    on_failure: 'warn',
-  }],
+  post_task: [
+    {
+      kind: 'command',
+      command: 'echo',
+      args: ['hook-fired'],
+      timeout_ms: 5000,
+      on_failure: 'warn',
+    },
+  ],
 };
 
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 describe('hooks integration flow', () => {
   it('pre_task hook deny causes task_skipped and no task_completed', async () => {

@@ -6,7 +6,10 @@ import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js'
 
 export type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
 export type ExplainCostConfidence = 'known' | 'partial' | 'unavailable';
-export type ExplainFinalReviewStatus = ReviewPacket['finalReview']['status'] | 'not-reached' | 'unavailable';
+export type ExplainFinalReviewStatus =
+  | ReviewPacket['finalReview']['status']
+  | 'not-reached'
+  | 'unavailable';
 
 export interface RunExplainArtifact {
   key: string;

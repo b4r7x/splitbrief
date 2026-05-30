@@ -42,27 +42,50 @@ const HOOK_RE = /\bhook(s)?\b/;
 const WEBHOOK_RE = /\bwebhook(s)?\b/;
 
 const TRIVIAL_PATTERNS: readonly string[] = [
-  'typo', 'spelling mistake', 'fix typo',
-  'rename', 'dead code', 'unused import', 'remove unused',
-  'formatting', 'fix indent', 'reformat', 'whitespace',
-  'comment only', 'update comment', 'fix comment', 'add comment',
+  'typo',
+  'spelling mistake',
+  'fix typo',
+  'rename',
+  'dead code',
+  'unused import',
+  'remove unused',
+  'formatting',
+  'fix indent',
+  'reformat',
+  'whitespace',
+  'comment only',
+  'update comment',
+  'fix comment',
+  'add comment',
 ];
 
 const SMALL_PATTERNS: readonly string[] = [
-  'helper', 'single bug', 'null check', 'optional chain',
-  'add log', 'console.log', 'logger',
-  'bump version', 'import order', 'add missing export',
+  'helper',
+  'single bug',
+  'null check',
+  'optional chain',
+  'add log',
+  'console.log',
+  'logger',
+  'bump version',
+  'import order',
+  'add missing export',
 ];
 
 const FILE_PATH_RE = /(?:src\/|lib\/|\.ts|\.tsx|\.js|\.jsx|\.py|\.go|\.rs)\b/i;
-const AREA_OR_MODULE_RE = /\b(area|module|component|page|screen|route|endpoint|api|service|store|hook|cli|config|docs?|tests?|auth|login|database|schema|ui|workflow|orchestrator|planner|implementer)\b/i;
-const VALIDATION_HINT_RE = /\b(test(s|ed|ing)?|verify|validate|validation|typecheck|lint|passing|assert|expect|acceptance|criteria|done when|done if|should)\b/i;
-const VAGUE_RE = /^(improve|fix|make better|make it better|make it work|update|enhance)\s*(it|this|that)?\s*$/i;
+const AREA_OR_MODULE_RE =
+  /\b(area|module|component|page|screen|route|endpoint|api|service|store|hook|cli|config|docs?|tests?|auth|login|database|schema|ui|workflow|orchestrator|planner|implementer)\b/i;
+const VALIDATION_HINT_RE =
+  /\b(test(s|ed|ing)?|verify|validate|validation|typecheck|lint|passing|assert|expect|acceptance|criteria|done when|done if|should)\b/i;
+const VAGUE_RE =
+  /^(improve|fix|make better|make it better|make it work|update|enhance)\s*(it|this|that)?\s*$/i;
 
 const MODE_ORDER: readonly WorkflowMode[] = ['instant', 'quick', 'standard', 'speckit'];
 
 function riskToMode(risk: WorkRisk): WorkflowMode {
-  return ({ trivial: 'instant', small: 'quick', normal: 'standard', high: 'speckit' } as const)[risk];
+  return ({ trivial: 'instant', small: 'quick', normal: 'standard', high: 'speckit' } as const)[
+    risk
+  ];
 }
 
 function modeIndex(mode: WorkflowMode): number {
@@ -79,7 +102,10 @@ export type AdvisorResult = {
   missing: string[];
 };
 
-function classifyRisk(lower: string, wordCount: number): { risk: WorkRisk; confidence: number; factors: string[] } {
+function classifyRisk(
+  lower: string,
+  wordCount: number,
+): { risk: WorkRisk; confidence: number; factors: string[] } {
   const factors: string[] = [];
 
   for (const re of HIGH_REGEXPS) {
@@ -102,7 +128,7 @@ function classifyRisk(lower: string, wordCount: number): { risk: WorkRisk; confi
     }
   }
   if (factors.length > 0 && wordCount <= 14) {
-    return { risk: 'trivial', confidence: 0.80 + Math.min(factors.length - 1, 2) * 0.05, factors };
+    return { risk: 'trivial', confidence: 0.8 + Math.min(factors.length - 1, 2) * 0.05, factors };
   }
   // Trivial keyword present but long prompt → normal risk
   if (factors.length > 0) {
@@ -115,15 +141,15 @@ function classifyRisk(lower: string, wordCount: number): { risk: WorkRisk; confi
     }
   }
   if (factors.length > 0) {
-    return { risk: 'small', confidence: 0.70, factors };
+    return { risk: 'small', confidence: 0.7, factors };
   }
 
   if (FILE_PATH_RE.test(lower) && wordCount <= 20) {
     factors.push('explicit file path');
-    return { risk: 'small', confidence: 0.70, factors };
+    return { risk: 'small', confidence: 0.7, factors };
   }
 
-  return { risk: 'normal', confidence: 0.60, factors };
+  return { risk: 'normal', confidence: 0.6, factors };
 }
 
 function detectMissing(prompt: string, lower: string, wordCount: number): string[] {
@@ -179,12 +205,11 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
   // Missing-context takes priority over mode matching — emit even when modes match
   if (
     missing.length > 0 &&
-    (
-      wordCount <= 5 ||
+    (wordCount <= 5 ||
       missing.includes('vague target') ||
       missing.includes('no area/file/module') ||
-      (risk === 'normal' && (missing.includes('no validation hint') || missing.includes('no done criteria')))
-    )
+      (risk === 'normal' &&
+        (missing.includes('no validation hint') || missing.includes('no done criteria'))))
   ) {
     return {
       kind: 'missing-context',
@@ -238,37 +263,12 @@ export function formatAdvisoryText(result: AdvisorResult): string {
 }
 
 function riskLabel(risk: WorkRisk): string {
-  return ({ trivial: 'trivial edit', small: 'small/localized', normal: 'standard scope', high: 'security/config risk' } as const)[risk];
+  return (
+    {
+      trivial: 'trivial edit',
+      small: 'small/localized',
+      normal: 'standard scope',
+      high: 'security/config risk',
+    } as const
+  )[risk];
 }
-
-interface AdvisoryStore {
-  get: () => AdvisorResult | null;
-  set: (next: AdvisorResult | null) => void;
-  subscribe: (listener: () => void) => () => void;
-}
-
-function createAdvisoryStore(): AdvisoryStore {
-  let current: AdvisorResult | null = null;
-  const listeners = new Set<() => void>();
-
-  return {
-    get: () => current,
-    set: (next) => {
-      if (current === next) return;
-      current = next;
-      for (const listener of listeners) listener();
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
-
-const defaultAdvisoryStore = createAdvisoryStore();
-
-export const setAdvisory = defaultAdvisoryStore.set;
-export const getAdvisory = defaultAdvisoryStore.get;
-export const subscribeAdvisory = defaultAdvisoryStore.subscribe;

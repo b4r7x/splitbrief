@@ -53,12 +53,12 @@ export async function readCompactedMessages(dir: string): Promise<SessionLogMess
   for await (const entry of readSessionLogFromDir(dir)) entries.push(entry);
 
   const latestSummary = findLatestSummary(entries);
-  const messages = entries.filter(entry => entry.kind === 'message');
+  const messages = entries.filter((entry) => entry.kind === 'message');
   if (!latestSummary) return messages;
 
   return [
     summaryAsMessage(latestSummary),
-    ...messages.filter(message => isAfterTimestamp(message.ts, latestSummary.summarizedUpTo)),
+    ...messages.filter((message) => isAfterTimestamp(message.ts, latestSummary.summarizedUpTo)),
   ];
 }
 

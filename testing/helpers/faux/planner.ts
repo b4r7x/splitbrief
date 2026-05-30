@@ -1,8 +1,6 @@
 import type { Task } from '../../../src/core/schemas/task.js';
 import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
-import type {
-  Planner,
-} from '../../../src/engine/planners/types.js';
+import type { Planner } from '../../../src/engine/planners/types.js';
 import { ONE_SHOT_API_CAPS } from '../../../src/engine/planners/types.js';
 
 export type FauxPlanScript = {
@@ -49,7 +47,7 @@ export function fauxPlanner(opts?: {
   };
 
   const planner: Planner = {
-    async plan(feature, _projectDir, _callbacks, _skillsContext, _codebaseContext) {
+    async plan({ feature }) {
       state.planCallCount++;
       state.receivedFeatures.push(feature);
       const script = plans[(state.planCallCount - 1) % plans.length];
@@ -62,11 +60,11 @@ export function fauxPlanner(opts?: {
       };
     },
 
-    async regenerate(_prompt, _artifactType, _projectDir, _callbacks) {
+    async regenerate() {
       return { text: '', usage: null };
     },
 
-    async escalateHint(_task, error, _projectDir, _callbacks) {
+    async escalateHint({ error }) {
       state.escalateHintCallCount++;
       state.receivedErrors.push(error);
       const script = escalations[(state.escalateHintCallCount - 1) % escalations.length];
@@ -79,7 +77,7 @@ export function fauxPlanner(opts?: {
       };
     },
 
-    async escalateFull(_task, error, _projectDir, _callbacks) {
+    async escalateFull({ error }) {
       state.escalateFullCallCount++;
       state.receivedErrors.push(error);
       const script = escalations[(state.escalateFullCallCount - 1) % escalations.length];
@@ -92,7 +90,7 @@ export function fauxPlanner(opts?: {
       };
     },
 
-    async quickPlan(feature, _projectDir, _callbacks, _codebaseContext) {
+    async quickPlan({ feature }) {
       state.quickPlanCallCount++;
       state.receivedFeatures.push(feature);
       const script = quickPlans[(state.quickPlanCallCount - 1) % quickPlans.length];

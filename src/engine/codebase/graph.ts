@@ -44,7 +44,11 @@ function buildResolvedPathMap(pathSet: Set<string>): Map<string, string> {
   return resolvedPathMap;
 }
 
-function resolveImport(spec: string, importerPath: string, resolvedPathMap: Map<string, string>): string | null {
+function resolveImport(
+  spec: string,
+  importerPath: string,
+  resolvedPathMap: Map<string, string>,
+): string | null {
   if (!spec.startsWith('.')) return null;
 
   const lang = getLanguageForExtension(extname(importerPath));

@@ -25,7 +25,10 @@ function executeHealthRequest(dir: string): QualityCheckResult {
     : {
         passed: false,
         detail: `Health request failed: ${
-          result.stderr.trim() || result.stdout.trim() || result.error?.message || `exit ${result.status ?? 'unknown'}`
+          result.stderr.trim() ||
+          result.stdout.trim() ||
+          result.error?.message ||
+          `exit ${result.status ?? 'unknown'}`
         }`,
       };
 }

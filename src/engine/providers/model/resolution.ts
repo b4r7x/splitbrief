@@ -22,7 +22,8 @@ interface ModelsDevCatalogSource {
 }
 
 const OPENAI_TOOL_MODEL_RE = /^(gpt-|o\d|codex)/i;
-const OPENAI_NON_TOOL_MODEL_RE = /^(text-embedding|gpt-image|whisper|tts-|omni-moderation|text-moderation|dall-e)/i;
+const OPENAI_NON_TOOL_MODEL_RE =
+  /^(text-embedding|gpt-image|whisper|tts-|omni-moderation|text-moderation|dall-e)/i;
 const CLAUDE_CODE_MODEL_RE = /^claude-(sonnet|opus)-/i;
 const ANTHROPIC_MODEL_RE = /^claude-/i;
 
@@ -33,14 +34,16 @@ const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, ModelsDevCatalogSource
   codex: [
     {
       provider: 'openai',
-      include: (modelId) => OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
+      include: (modelId) =>
+        OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
     },
   ],
   aider: [
     { provider: 'anthropic', include: (modelId) => ANTHROPIC_MODEL_RE.test(modelId) },
     {
       provider: 'openai',
-      include: (modelId) => OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
+      include: (modelId) =>
+        OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
     },
   ],
   copilot: [{ provider: 'copilot' }],
@@ -61,7 +64,10 @@ export function getRuntimeLookupProvider(providerId: ProviderId): ProviderId {
   return providerId === 'agent-sdk' ? 'anthropic' : providerId;
 }
 
-export function getModelsDevEntries(providerId: ProviderId, cache: ModelCacheAccessor): DetectedModel[] {
+export function getModelsDevEntries(
+  providerId: ProviderId,
+  cache: ModelCacheAccessor,
+): DetectedModel[] {
   const catalog = cache.getModelsDevCatalog();
   if (!catalog) return [];
 
@@ -89,7 +95,9 @@ export function lookupModelsDevModel(
   modelId: string,
   cache: ModelCacheAccessor,
 ): DetectedModel | null {
-  return getModelsDevEntries(providerId, cache).find((entry) => idsMatch(entry.id, modelId)) ?? null;
+  return (
+    getModelsDevEntries(providerId, cache).find((entry) => idsMatch(entry.id, modelId)) ?? null
+  );
 }
 
 export function lookupRuntimeModel(
@@ -106,20 +114,25 @@ export function findModelMetadata(
   modelId: string,
   cache: ModelCacheAccessor,
 ): DetectedModel | null {
-  return lookupModelsDevModel(providerId, modelId, cache)
-    ?? lookupRuntimeModel(providerId, modelId, cache);
+  return (
+    lookupModelsDevModel(providerId, modelId, cache) ??
+    lookupRuntimeModel(providerId, modelId, cache)
+  );
 }
 
 export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {
   const bundled = getBundledModels(providerId);
-  const direct = bundled.find((entry) =>
-    idsMatch(entry.name, modelId)
-    || entry.aliases?.some((alias) => idsMatch(alias, modelId)));
+  const direct = bundled.find(
+    (entry) =>
+      idsMatch(entry.name, modelId) || entry.aliases?.some((alias) => idsMatch(alias, modelId)),
+  );
   if (direct) return direct;
-  return bundled.find((entry) => entry.catalogModelId ? idsMatch(entry.catalogModelId, modelId) : false);
+  return bundled.find((entry) =>
+    entry.catalogModelId ? idsMatch(entry.catalogModelId, modelId) : false,
+  );
 }
 
-export function getDefaultKnownModel(providerId: ProviderId): KnownModel | undefined {
+function getDefaultKnownModel(providerId: ProviderId): KnownModel | undefined {
   return getBundledModels(providerId).find((entry) => entry.isDefault);
 }
 

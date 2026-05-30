@@ -16,17 +16,22 @@ export type RejectRunSnapshotResult =
   | { status: 'empty' }
   | { status: 'accepted'; snapshotId: string }
   | {
-    status: 'rejected';
-    snapshotId: string;
-    restoredPaths: string[];
-    deletedPaths: string[];
-    conflictedPaths: string[];
-    missingSnapshotFiles: string[];
-  };
+      status: 'rejected';
+      snapshotId: string;
+      restoredPaths: string[];
+      deletedPaths: string[];
+      conflictedPaths: string[];
+      missingSnapshotFiles: string[];
+    };
 
 export type CompactTranscriptResult =
   | { status: 'unsupported'; plannerName: string }
-  | { status: 'compacted'; summary: string; entriesRemoved: number; structured?: StructuredSummary | null };
+  | {
+      status: 'compacted';
+      summary: string;
+      entriesRemoved: number;
+      structured?: StructuredSummary | null;
+    };
 
 export type ExportSessionResult =
   | { status: 'ok'; path: string }
@@ -44,7 +49,10 @@ interface RuntimeCommandBase {
 
 export type RuntimeCommandDef =
   | (RuntimeCommandBase & { kind: 'noarg'; handler: () => CommandHandlerResult })
-  | (RuntimeCommandBase & { kind: 'arg'; handler: (args: string | undefined) => CommandHandlerResult });
+  | (RuntimeCommandBase & {
+      kind: 'arg';
+      handler: (args: string | undefined) => CommandHandlerResult;
+    });
 
 export interface RuntimeCommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;

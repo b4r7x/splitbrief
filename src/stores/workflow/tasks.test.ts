@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tasksStore } from './tasks.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
-import {
-  makeTaskStart,
-  makeTaskComplete,
-  makeTaskSkipped,
-} from '#testing/helpers/events.js';
+import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events.js';
 
 describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());
@@ -61,11 +57,21 @@ describe('tasksStore — via addEvent', () => {
 
   it('updates task state from escalation lifecycle events', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Escalating task' }));
-    addEvent({ type: 'task_escalating', ts: Date.now(), phase: 'escalating', taskId: taskId('T001') });
+    addEvent({
+      type: 'task_escalating',
+      ts: Date.now(),
+      phase: 'escalating',
+      taskId: taskId('T001'),
+    });
     expect(tasksStore.get().taskMap.get('T001')!.status).toBe('escalated');
 
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Full fail task' }));
-    addEvent({ type: 'task_full_fail', ts: Date.now(), phase: 'escalating', taskId: taskId('T003') });
+    addEvent({
+      type: 'task_full_fail',
+      ts: Date.now(),
+      phase: 'escalating',
+      taskId: taskId('T003'),
+    });
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('failed');
   });
 });

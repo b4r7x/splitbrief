@@ -37,7 +37,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
     return (
       <Box flexDirection="column">
         <Text color={t.textDim}>No models pulled.</Text>
-        <Text color={t.textDim} dimColor>Run: ollama pull qwen2.5-coder:7b</Text>
+        <Text color={t.textDim} dimColor>
+          Run: ollama pull qwen2.5-coder:7b
+        </Text>
       </Box>
     );
   }
@@ -46,7 +48,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
     return (
       <Box flexDirection="column">
         <Text color={t.textDim}>No models loaded.</Text>
-        <Text color={t.textDim} dimColor>Download a model in LM Studio.</Text>
+        <Text color={t.textDim} dimColor>
+          Download a model in LM Studio.
+        </Text>
       </Box>
     );
   }
@@ -58,7 +62,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
       return (
         <Box flexDirection="column">
           <Text color={t.textDim}>Provider not configured.</Text>
-          <Text color={t.textDim} dimColor>Set {envVar} to enable.</Text>
+          <Text color={t.textDim} dimColor>
+            Set {envVar} to enable.
+          </Text>
         </Box>
       );
     }
@@ -67,7 +73,8 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
 }
 
-const defaultRefresh = (projectDir: string | undefined) => refreshDetectionStores(getDefaultDetectionService(), detectionStore, projectDir);
+const defaultRefresh = (projectDir: string | undefined) =>
+  refreshDetectionStores(getDefaultDetectionService(), detectionStore, projectDir);
 
 export async function refreshPickerDetection(
   projectDir: string,
@@ -84,10 +91,10 @@ export async function refreshPickerDetection(
 
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
-  const projectDir = configStore.use(s => s.projectDir);
+  const projectDir = configStore.use((s) => s.projectDir);
 
   const currentModelIdx = catalog.focusModels
-    ? catalog.rightModels.findIndex(m => m.id === catalog.currentModel)
+    ? catalog.rightModels.findIndex((m) => m.id === catalog.currentModel)
     : -1;
   const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + CUSTOM_ROW_OFFSET : undefined;
 
@@ -106,9 +113,9 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       leftProps={{
         items: catalog.items,
         label: 'Tools',
-        getKey: item => item.id,
-        isSpecial: item => item.kind === 'shell' || item.kind === 'agent',
-        isDisabled: item => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
+        getKey: (item) => item.id,
+        isSpecial: (item) => item.kind === 'shell' || item.kind === 'agent',
+        isDisabled: (item) => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
         initialIndex: catalog.initialLeftIdx,
         specialHelp: (
           <Box flexDirection="column" marginTop={1} paddingX={1}>
@@ -118,7 +125,10 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         ),
         renderRow: (item, { isCursor, isSelected, maxWidth }) =>
           renderToolRow({
-            item, isCursor, isSelected, maxWidth,
+            item,
+            isCursor,
+            isSelected,
+            maxWidth,
             currentCommand: catalog.currentCommand,
             currentCommandKind: catalog.currentCommandKind,
             theme: t,
@@ -127,7 +137,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       rightProps={{
         items: catalog.rightModels,
         label: 'Models',
-        getKey: item => item.id,
+        getKey: (item) => item.id,
         initialIndex: initialRightIndex,
         onLeftChange: actions.leftChange,
         placeholder: <ProviderHint currentItem={catalog.currentItem} />,
@@ -138,7 +148,11 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         },
         renderRow: (item, { isCursor, maxWidth }) =>
           renderModelRow({
-            item, isCursor, maxWidth, currentModel: catalog.currentModel, theme: t,
+            item,
+            isCursor,
+            maxWidth,
+            currentModel: catalog.currentModel,
+            theme: t,
           }),
       }}
     />

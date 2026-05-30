@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
+import { pluralize } from '../../utils/format.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
@@ -20,7 +21,7 @@ import { HeroSavings } from './components/hero-savings.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { readEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
+import { readEvidenceLedger } from '../../core/evidence/ledger.js';
 import { uniqueSorted } from '../../utils/collections.js';
 
 interface SummaryScreenProps {
@@ -32,19 +33,24 @@ function formatImplementerSummary(summary: Summary): string | null {
   if (!summary.implementerTool) return null;
 
   const taskImplementers = summary.taskBreakdown
-    ?.filter(task => task.tool !== undefined || task.model !== undefined || task.implementerProfile !== undefined)
-    .map(task => `${task.implementerProfile ?? ''}\u0000${task.tool ?? ''}\u0000${task.model ?? ''}`);
+    ?.filter(
+      (task) =>
+        task.tool !== undefined ||
+        task.model !== undefined ||
+        task.implementerProfile !== undefined,
+    )
+    .map(
+      (task) => `${task.implementerProfile ?? ''}\u0000${task.tool ?? ''}\u0000${task.model ?? ''}`,
+    );
 
   const uniqueTaskImplementers = new Set(taskImplementers ?? []);
   if (uniqueTaskImplementers.size > 1) {
     const profiles = uniqueSorted(
       summary.taskBreakdown
-        ?.map(task => task.implementerProfile)
+        ?.map((task) => task.implementerProfile)
         .filter((profile): profile is string => profile !== undefined) ?? [],
     );
-    return profiles.length > 0
-      ? `mixed profiles (${profiles.join(', ')})`
-      : 'mixed implementers';
+    return profiles.length > 0 ? `mixed profiles (${profiles.join(', ')})` : 'mixed implementers';
   }
 
   return formatToolModel(summary.implementerTool, summary.implementerModel);
@@ -55,19 +61,25 @@ interface SummaryEvidenceLedgerState {
   ledger: EvidenceLedger | null;
 }
 
-function useSummaryEvidenceLedger(summary: Summary | null, sessionId: string | undefined): EvidenceLedger | null {
-  const projectDir = configStore.use(s => s.projectDir);
+function useSummaryEvidenceLedger(
+  summary: Summary | null,
+  sessionId: string | undefined,
+): EvidenceLedger | null {
+  const projectDir = configStore.use((s) => s.projectDir);
   const evidencePath = summary?.evidenceSummary?.path;
-  const ledgerKey = projectDir && sessionId && evidencePath
-    ? `${projectDir}\u0000${sessionId}\u0000${evidencePath}`
-    : '';
+  const ledgerKey =
+    projectDir && sessionId && evidencePath
+      ? `${projectDir}\u0000${sessionId}\u0000${evidencePath}`
+      : '';
   const [state, setState] = useState<SummaryEvidenceLedgerState>({ key: '', ledger: null });
 
   useEffect(() => {
     if (!projectDir || !sessionId || !evidencePath) {
-      setState(current => current.key === ledgerKey && current.ledger === null
-        ? current
-        : { key: ledgerKey, ledger: null });
+      setState((current) =>
+        current.key === ledgerKey && current.ledger === null
+          ? current
+          : { key: ledgerKey, ledger: null },
+      );
       return;
     }
 
@@ -80,10 +92,10 @@ function useSummaryEvidenceLedger(summary: Summary | null, sessionId: string | u
 
 export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps) {
   const theme = useTheme();
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const isSmall = terminalSizeStore.use((s) => s.isSmall);
 
-  const summary = routerStore.use(s => s.screen === 'summary' ? s.summary : null);
-  const sessionId = routerStore.use(s => s.screen === 'summary' ? s.sessionId : undefined);
+  const summary = routerStore.use((s) => (s.screen === 'summary' ? s.summary : null));
+  const sessionId = routerStore.use((s) => (s.screen === 'summary' ? s.sessionId : undefined));
   const evidenceLedger = useSummaryEvidenceLedger(summary, sessionId);
   if (!summary) return null;
 
@@ -101,34 +113,60 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const bq = summary.briefQuality;
   const drift = summary.driftSummary;
   const briefQualityText = bq
-    ? `quality ${bq.score.toFixed(2)}${bq.errorCount > 0 ? ` · ${bq.errorCount} error${bq.errorCount === 1 ? '' : 's'}` : ''}${bq.warningCount > 0 ? ` · ${bq.warningCount} warning${bq.warningCount === 1 ? '' : 's'}` : ''}`
+    ? `quality ${bq.score.toFixed(2)}${bq.errorCount > 0 ? ` · ${bq.errorCount} ${pluralize(bq.errorCount, 'error')}` : ''}${bq.warningCount > 0 ? ` · ${bq.warningCount} ${pluralize(bq.warningCount, 'warning')}` : ''}`
     : 'quality n/a';
   const driftText = drift
-    ? `score ${drift.score.toFixed(2)}${drift.warningCount > 0 ? ` · ${drift.warningCount} warning${drift.warningCount === 1 ? '' : 's'}` : ''}${drift.errorCount > 0 ? ` · ${drift.errorCount} error${drift.errorCount === 1 ? '' : 's'}` : ''}`
+    ? `score ${drift.score.toFixed(2)}${drift.warningCount > 0 ? ` · ${drift.warningCount} ${pluralize(drift.warningCount, 'warning')}` : ''}${drift.errorCount > 0 ? ` · ${drift.errorCount} ${pluralize(drift.errorCount, 'error')}` : ''}`
     : null;
   const implementerSummary = formatImplementerSummary(summary);
 
   return (
     <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
-        <Text bold color={theme.success}>diptych complete</Text>
+        <Text bold color={theme.success}>
+          diptych complete
+        </Text>
       </Box>
       <Box justifyContent="center" width="100%">
         <Text color={theme.textDim}>
-          Planner compiled {compiledByPlannerCount} Task {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'} · Implementer completed {localCount} locally{escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
+          Planner compiled {compiledByPlannerCount} Task{' '}
+          {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'} · Implementer completed {localCount}{' '}
+          locally{escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
         </Text>
       </Box>
 
       <HeroSavings costBreakdown={summary.costBreakdown} />
 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-        <LabeledRow label="Feature" labelWidth={labelWidth}><Text bold>{summary.feature}</Text></LabeledRow>
-        <LabeledRow label="Time" labelWidth={labelWidth}><Text>{formatTime(summary.totalTime)}</Text></LabeledRow>
-        {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text></LabeledRow>}
-        {implementerSummary && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{implementerSummary}</Text></LabeledRow>}
-        {mode && <LabeledRow label="Mode" labelWidth={labelWidth}><Text>{mode}</Text></LabeledRow>}
-        <LabeledRow label="Brief quality" labelWidth={labelWidth}><Text color={bq && !bq.passed ? theme.warning : theme.textDim}>{briefQualityText}</Text></LabeledRow>
-        {driftText && <LabeledRow label="Drift" labelWidth={labelWidth}><Text color={drift && !drift.passed ? theme.warning : theme.textDim}>{driftText}</Text></LabeledRow>}
+        <LabeledRow label="Feature" labelWidth={labelWidth}>
+          <Text bold>{summary.feature}</Text>
+        </LabeledRow>
+        <LabeledRow label="Time" labelWidth={labelWidth}>
+          <Text>{formatTime(summary.totalTime)}</Text>
+        </LabeledRow>
+        {summary.plannerTool && (
+          <LabeledRow label="Planner" labelWidth={labelWidth}>
+            <Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text>
+          </LabeledRow>
+        )}
+        {implementerSummary && (
+          <LabeledRow label="Implementer" labelWidth={labelWidth}>
+            <Text>{implementerSummary}</Text>
+          </LabeledRow>
+        )}
+        {mode && (
+          <LabeledRow label="Mode" labelWidth={labelWidth}>
+            <Text>{mode}</Text>
+          </LabeledRow>
+        )}
+        <LabeledRow label="Brief quality" labelWidth={labelWidth}>
+          <Text color={bq && !bq.passed ? theme.warning : theme.textDim}>{briefQualityText}</Text>
+        </LabeledRow>
+        {driftText && (
+          <LabeledRow label="Drift" labelWidth={labelWidth}>
+            <Text color={drift && !drift.passed ? theme.warning : theme.textDim}>{driftText}</Text>
+          </LabeledRow>
+        )}
         {summary.chainDriftSummary && (
           <Box marginTop={1}>
             <Text color={theme.textDim}>
@@ -142,7 +180,11 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           </Box>
         )}
         {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
-          <LabeledRow label="Saved" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
+          <LabeledRow label="Saved" labelWidth={labelWidth}>
+            <Text bold color={theme.success}>
+              {summary.estimatedCostSavings}
+            </Text>
+          </LabeledRow>
         )}
       </Box>
 
@@ -178,10 +220,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
       <SummaryReviewPacket summary={summary} sessionId={sessionId} />
 
       {summary.phaseTimings && (
-        <SummaryPhaseTiming
-          phaseTimings={summary.phaseTimings}
-          labelWidth={labelWidth}
-        />
+        <SummaryPhaseTiming phaseTimings={summary.phaseTimings} labelWidth={labelWidth} />
       )}
 
       <Box marginTop={1}>

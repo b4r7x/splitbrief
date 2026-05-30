@@ -53,7 +53,8 @@ describe('lastCommand', () => {
   afterEach(() => {
     while (tmpProjects.length > 0) {
       const projectDir = tmpProjects.pop();
-      if (projectDir && existsSync(projectDir)) rmSync(projectDir, { recursive: true, force: true });
+      if (projectDir && existsSync(projectDir))
+        rmSync(projectDir, { recursive: true, force: true });
     }
   });
 
@@ -79,9 +80,7 @@ describe('lastCommand', () => {
     arrange(projectDir);
     const { deps } = captureContinuation();
 
-    await expect(
-      lastCommand({ projectDir } as never, deps),
-    ).rejects.toThrow(/no sessions found/);
+    await expect(lastCommand({ projectDir } as never, deps)).rejects.toThrow(/no sessions found/);
   });
 
   it('selects the session with the highest startTimeMs', async () => {

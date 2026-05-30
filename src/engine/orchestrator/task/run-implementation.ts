@@ -38,10 +38,7 @@ export async function runImplementation(opts: {
   let state = opts.state;
 
   const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
-  const streamingFeed = createStreamingFeed(
-    task.id,
-    opts.streamingSink ?? noopStreamingSink,
-  );
+  const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
   const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
   const staged = usesStaging ? await createStagedProject(projectDir) : undefined;
@@ -51,18 +48,33 @@ export async function runImplementation(opts: {
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
     loop = await withContinuationLoop<ImplementerResult>({
-      ctx: { projectDir: staged?.projectDir ?? projectDir, sessionId, callbacks, signal: wctx.signal, sinks: wctx.sinks },
+      ctx: {
+        projectDir: staged?.projectDir ?? projectDir,
+        sessionId,
+        callbacks,
+        signal: wctx.signal,
+        sinks: wctx.sinks,
+      },
       state,
       onStateChange: setTrackedState,
       body: async ({ signal, continuationPrompt, recordOutput }) => {
         const result = await wctx.implementer.implement({
-          task, projectDir: staged?.projectDir ?? projectDir, config, context,
-          languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
-          onOutput: (text) => { recordOutput(text); textHandler(text); streamingFeed.onText(text); },
+          task,
+          projectDir: staged?.projectDir ?? projectDir,
+          config,
+          context,
+          languageContext: buildProjectLanguageContext(
+            projectDir,
+            state.discoveredValidation?.language,
+          ),
+          onOutput: (text) => {
+            recordOutput(text);
+            textHandler(text);
+            streamingFeed.onText(text);
+          },
           sessionId,
           signal,
           continuationPrompt,
-          bus: wctx.bus,
           phase: state.phase,
           approveWrite: async (file) => {
             if (staged) return { allow: true };
@@ -88,7 +100,7 @@ export async function runImplementation(opts: {
               return { allow: false, reason: decision.reason ?? 'write denied by approval gate' };
             }
             preApplyApprovedFiles = decision.changedFiles;
-            persistApprovalEvidence(wctx, state, decision, task.id);
+            persistApprovalEvidence({ wctx, state, decision, taskId: task.id });
             return { allow: true };
           },
         });

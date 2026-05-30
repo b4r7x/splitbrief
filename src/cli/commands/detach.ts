@@ -2,8 +2,9 @@ import { join } from 'node:path';
 import { createConnection } from 'node:net';
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { cliError, rethrowAsCli } from '../errors.js';
-import { assertNotWindows } from '../platform.js';
+import { cliError, withCliErrors } from '../errors.js';
+import { parseJsonLine } from '../json-line.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage } from '../../engine/ipc/protocol.js';
@@ -26,14 +27,8 @@ function sendDetach(sockPath: string): Promise<void> {
     let settled = false;
     const timer = setTimeout(() => finish(), 1000);
     const lineBuffer = createLineBuffer((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        return;
-      }
+      const parsed = parseJsonLine(line);
+      if (parsed === undefined) return;
       const msg = parseServerMessage(parsed);
       if (msg !== null && msg.kind === 'error') {
         finish(new Error(msg.message));
@@ -70,11 +65,12 @@ export async function detachCommand(
 ): Promise<void> {
   assertNotWindows();
 
-  const resolvedId = sessionId === undefined
-    ? await resolveRunningSession(opts.projectDir, deps)
-    : isNumericAlias(sessionId)
-      ? await resolveNumericAlias(sessionId, opts.projectDir)
-      : sessionId;
+  const resolvedId =
+    sessionId === undefined
+      ? await resolveRunningSession(opts.projectDir, deps)
+      : isNumericAlias(sessionId)
+        ? await resolveNumericAlias(sessionId, opts.projectDir)
+        : sessionId;
   const sessDir = sessionDir(opts.projectDir, resolvedId);
   const status = await deps.checkServerStatus(sessDir);
 
@@ -82,11 +78,7 @@ export async function detachCommand(
     throw cliError(`session ${resolvedId} is not running`, 1);
   }
 
-  try {
-    await sendDetach(join(sessDir, IPC_SOCK_FILE));
-  } catch (err) {
-    rethrowAsCli(err);
-  }
+  await withCliErrors(() => sendDetach(join(sessDir, IPC_SOCK_FILE)));
   console.log(`Session ${resolvedId} detached.`);
 }
 

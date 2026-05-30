@@ -4,11 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SnapshotManifest, SnapshotPhase } from '../../core/schemas/snapshot.js';
 import { acceptRunSnapshot, recordRunSnapshot } from './run.js';
-import { writeManifest } from './store.js';
-import {
-  CHECKPOINT_RESTORE_SAFETY,
-  listCheckpointSummaries,
-} from './checkpoint-summary.js';
+import { writeManifest } from './manifest.js';
+import { CHECKPOINT_RESTORE_SAFETY, listCheckpointSummaries } from './checkpoint-summary.js';
 
 let tmp: string;
 
@@ -171,12 +168,16 @@ describe('listCheckpointSummaries', () => {
       kind: 'post-task',
       isRunCheckpoint: true,
     });
-    expect(summaries.find((summary) => summary.id === 'snap-post-0')).not.toHaveProperty('inferredKind');
+    expect(summaries.find((summary) => summary.id === 'snap-post-0')).not.toHaveProperty(
+      'inferredKind',
+    );
     expect(summaries.find((summary) => summary.id === 'snap-pre-final')).toMatchObject({
       kind: 'pre-final-review',
       isRunCheckpoint: true,
     });
-    expect(summaries.find((summary) => summary.id === 'snap-pre-final')).not.toHaveProperty('inferredKind');
+    expect(summaries.find((summary) => summary.id === 'snap-pre-final')).not.toHaveProperty(
+      'inferredKind',
+    );
   });
 
   it('uses accepted run ledger state, not the accepted-run name, for accepted-run kind', async () => {
@@ -267,7 +268,9 @@ describe('listCheckpointSummaries', () => {
     expect(summaries[0]?.safety.text.conflictsSkippedByDefault).toContain('skipped by default');
     expect(summaries[0]?.safety.text.forceOverwritesConflicts).toContain('--force is destructive');
     expect(summaries[0]?.safety.text.forceOverwritesConflicts).toContain('overwrites conflicts');
-    expect(summaries[0]?.safety.text.partialRestoreExpected).toContain('Partial restore is expected');
+    expect(summaries[0]?.safety.text.partialRestoreExpected).toContain(
+      'Partial restore is expected',
+    );
     expect(summaries[0]?.safety.text.excludedPaths).toContain('.diptych/');
   });
 });

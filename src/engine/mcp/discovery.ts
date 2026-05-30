@@ -5,9 +5,11 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { error } from '../../utils/error.js';
 
 export const mcpDiscoveryError = {
-  sessionNotFound: (sessionId: string) => error('mcp-session-not-found', `Session not found: ${sessionId}`, { sessionId }),
+  sessionNotFound: (sessionId: string) =>
+    error('mcp-session-not-found', `Session not found: ${sessionId}`, { sessionId }),
   noSessions: () => error('mcp-no-sessions', 'No sessions found in this project.'),
-  noActiveSession: () => error('mcp-no-active-session', 'No active session. Use --session <id> or --all-sessions.'),
+  noActiveSession: () =>
+    error('mcp-no-active-session', 'No active session. Use --session <id> or --all-sessions.'),
 } as const;
 
 export type SessionDiscoveryOpts = {

@@ -15,21 +15,21 @@ const initial: ReviewState = {
 const store = createStore<ReviewState>(initial);
 
 function setReviewFile(path: string | null, lineCount?: number) {
-  store.set(s =>
+  store.set((s) =>
     s.filePath === path ? s : { ...s, filePath: path, scrollOffset: 0, lineCount: lineCount ?? 0 },
   );
 }
 
 function setScrollOffset(offset: number) {
-  store.set(s => (s.scrollOffset === offset ? s : { ...s, scrollOffset: offset }));
+  store.set((s) => (s.scrollOffset === offset ? s : { ...s, scrollOffset: offset }));
 }
 
 function setLineCount(count: number) {
-  store.set(s => (s.lineCount === count ? s : { ...s, lineCount: count }));
+  store.set((s) => (s.lineCount === count ? s : { ...s, lineCount: count }));
 }
 
 function clearReview() {
-  store.set(s => (s.filePath === null ? s : initial));
+  store.set((s) => (s.filePath === null ? s : initial));
 }
 
 export const reviewStore = {

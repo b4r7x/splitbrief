@@ -6,6 +6,7 @@ import {
   getCurrentDiff,
   getCurrentChangedFiles,
   discardFileChange,
+  discardChangedFiles,
   branchExists,
   createBranch,
   checkIgnoredPaths,
@@ -149,6 +150,26 @@ describe('git utils', () => {
       writeFileSync(join(dir, 'created.txt'), 'new file');
       await discardFileChange(dir, 'created.txt', 'untracked');
       expect(existsSync(join(dir, 'created.txt'))).toBe(false);
+    });
+  });
+
+  describe('discardChangedFiles', () => {
+    it('discards both tracked and untracked files', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'init.txt'), 'modified');
+      writeFileSync(join(dir, 'created.txt'), 'new file');
+
+      await discardChangedFiles(dir, ['init.txt', 'created.txt']);
+
+      expect(readFileSync(join(dir, 'init.txt'), 'utf-8')).toBe('init');
+      expect(existsSync(join(dir, 'created.txt'))).toBe(false);
+    });
+  });
+
+  describe('runGit error wrapping', () => {
+    it('wraps a failed simple-git call as a typed GitCommandError', async () => {
+      const dir = tracked(createTempDir('diptych-nogit-diff'));
+      await expect(getCurrentDiff(dir)).rejects.toSatisfy(gitError.isCommandFailed);
     });
   });
 

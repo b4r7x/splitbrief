@@ -28,11 +28,18 @@ async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
 
 /** Stream that writes a canned assistant message then a result. */
 function setQueryResponse(text: string): void {
-  queryMock.mockImplementation(() => asyncIter([
-    { type: 'system', subtype: 'init', session_id: 'sess-1' },
-    { type: 'assistant', message: { content: [{ type: 'text', text }] } },
-    { type: 'result', result: text, session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5 } },
-  ]));
+  queryMock.mockImplementation(() =>
+    asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-1' },
+      { type: 'assistant', message: { content: [{ type: 'text', text }] } },
+      {
+        type: 'result',
+        result: text,
+        session_id: 'sess-1',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+    ]),
+  );
 }
 
 function makeAgentSdkConfig(overrides?: Record<string, unknown>) {
@@ -68,10 +75,16 @@ describe('createAgentSdkImplementer', () => {
     const implementer = createAgentSdkImplementer(cfg);
 
     await implementer.implement({
-      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
-    expect(queryMock).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ model: 'claude-opus-4-6' }) }));
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ options: expect.objectContaining({ model: 'claude-opus-4-6' }) }),
+    );
   });
 
   it('resolves model "auto" to the agent-sdk default', async () => {
@@ -82,10 +95,18 @@ describe('createAgentSdkImplementer', () => {
     const implementer = createAgentSdkImplementer(cfg);
 
     await implementer.implement({
-      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
-    expect(queryMock).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ model: DEFAULT_AGENT_SDK_MODEL }) }));
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ model: DEFAULT_AGENT_SDK_MODEL }),
+      }),
+    );
   });
 
   it('isAvailable() is true when an API key is configured, false otherwise', async () => {
@@ -111,7 +132,11 @@ describe('createAgentSdkImplementer', () => {
     const implementer = createAgentSdkImplementer(cfg);
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     // The real createChangeDetector sees no new dirty files → reports false.
@@ -153,7 +178,11 @@ describe('createAgentSdkImplementer', () => {
     const implementer = createAgentSdkImplementer(cfg);
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -170,8 +199,10 @@ describe('createAgentSdkImplementer', () => {
       writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
       yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
       yield {
-        type: 'result', result: 'ok',
-        session_id: 'sess-1', usage: { input_tokens: 1, output_tokens: 1 },
+        type: 'result',
+        result: 'ok',
+        session_id: 'sess-1',
+        usage: { input_tokens: 1, output_tokens: 1 },
       };
     });
 
@@ -180,7 +211,11 @@ describe('createAgentSdkImplementer', () => {
       const implementer = createAgentSdkImplementer(cfg);
 
       await implementer.implement({
-        task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+        task: makeTask(),
+        projectDir,
+        config: cfg,
+        context: defaultContext,
+        onOutput: vi.fn(),
       });
 
       expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();

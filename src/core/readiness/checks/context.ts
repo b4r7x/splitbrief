@@ -2,7 +2,7 @@ import { resolveImplementerProfiles } from '../../config/accessors/implementer-p
 import { resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
-import { capitalize } from './format.js';
+import { capitalize } from '../../../utils/capitalize.js';
 
 const MODE_CONTEXT_FLOORS: Record<string, number> = {
   instant: 8_000,
@@ -20,7 +20,9 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
 
   try {
     const profiles = resolveImplementerProfiles(config);
-    checks.push(contextLengthCheck('implementer', profiles.defaultProfile.config.contextLength, floor));
+    checks.push(
+      contextLengthCheck('implementer', profiles.defaultProfile.config.contextLength, floor),
+    );
   } catch {
     return checks;
   }
@@ -28,7 +30,11 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
   return checks;
 }
 
-function contextLengthCheck(role: 'planner' | 'implementer', contextLength: number | undefined, floor: number): ReadinessCheck {
+function contextLengthCheck(
+  role: 'planner' | 'implementer',
+  contextLength: number | undefined,
+  floor: number,
+): ReadinessCheck {
   if (contextLength === undefined) {
     return {
       id: `context.${role}.missing`,

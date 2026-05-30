@@ -24,7 +24,10 @@ export const initialViewState: ViewState = {
 export function viewReducer(state: ViewState, action: ViewAction): ViewState {
   switch (action.type) {
     case 'open-custom-command':
-      return { view: { kind: 'custom-command', intendedKind: action.intendedKind }, preservedLeftIndex: action.preservedLeftIndex };
+      return {
+        view: { kind: 'custom-command', intendedKind: action.intendedKind },
+        preservedLeftIndex: action.preservedLeftIndex,
+      };
     case 'open-custom-model':
       return { ...state, view: { kind: 'custom-model', item: action.item } };
     case 'close':

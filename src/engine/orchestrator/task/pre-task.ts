@@ -30,35 +30,74 @@ export async function runPreTaskHooksAndPublish(opts: {
 
   if (wctx.config.hooks) {
     const preTaskPayload: EngineEvent = {
-      type: 'task_started', ts: Date.now(), phase: state.phase,
-      taskId: task.id, title: task.title, index, total: totalTasks,
-      file: task.file, action: task.action,
+      type: 'task_started',
+      ts: Date.now(),
+      phase: state.phase,
+      taskId: task.id,
+      title: task.title,
+      index,
+      total: totalTasks,
+      file: task.file,
+      action: task.action,
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
     };
-    const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
+    const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, {
+      projectDir,
+      sessionId,
+    });
     if (!pre.allow) {
-      publishWarning({ bus: wctx.bus, phase: state.phase }, `pre_task blocked: ${pre.reason ?? 'hook denied'}`);
-      publishTaskSkipped({ bus: wctx.bus, phase: state.phase }, { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' });
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'SKIP_TASK', taskId: task.id });
+      publishWarning(
+        { bus: wctx.bus, phase: state.phase },
+        `pre_task blocked: ${pre.reason ?? 'hook denied'}`,
+      );
+      publishTaskSkipped(
+        { bus: wctx.bus, phase: state.phase },
+        { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' },
+      );
+      state = transitionAndSave(projectDir, sessionId, state, {
+        type: 'SKIP_TASK',
+        taskId: task.id,
+      });
       setTrackedState(state);
-      persistTaskEvidence(wctx, state, task, 'skipped', { status: 'skipped', reason: pre.reason ?? 'pre_task hook denied' });
+      persistTaskEvidence({
+        wctx,
+        state,
+        task,
+        recordKind: 'skipped',
+        details: {
+          status: 'skipped',
+          reason: pre.reason ?? 'pre_task hook denied',
+        },
+      });
       return { proceed: false, state };
     }
   }
 
-  publishTaskStart({ bus: wctx.bus, phase: state.phase }, {
-    taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
-    tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
-    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-    ...buildRoutingEventFields(wctx.routingDecision),
-  });
+  publishTaskStart(
+    { bus: wctx.bus, phase: state.phase },
+    {
+      taskId: task.id,
+      title: task.title,
+      index,
+      total: totalTasks,
+      file: task.file,
+      action: task.action,
+      tool: getRunnerDisplayName(config.implementer),
+      model: config.implementer.model,
+      ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+      ...buildRoutingEventFields(wctx.routingDecision),
+    },
+  );
 
   let taskStartSnapshot: ChangedFilesSnapshot;
   try {
     taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
   } catch (err) {
-    publishError({ bus: wctx.bus, phase: state.phase }, `Task blocked by approval gate: ${toErrorMessage(err)}`);
+    publishError(
+      { bus: wctx.bus, phase: state.phase },
+      `Task blocked by approval gate: ${toErrorMessage(err)}`,
+    );
     return { proceed: false, state };
   }
 

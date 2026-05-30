@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
-import { rethrowAsCli } from '../errors.js';
+import { withCliErrors } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 
@@ -22,15 +22,13 @@ export function registerExplainCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-      try {
+      await withCliErrors(async () => {
         const explain = await buildRunExplain({ projectDir, sessionId });
         if (opts.json) {
           process.stdout.write(JSON.stringify({ type: 'run_explain', explain }, null, 2) + '\n');
           return;
         }
         console.log(formatRunExplain(explain));
-      } catch (err) {
-        rethrowAsCli(err);
-      }
+      });
     });
 }

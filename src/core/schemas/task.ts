@@ -24,6 +24,14 @@ export type TaskId = z.infer<typeof TaskIdSchema>;
 export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
 export const taskIdToString = (id: TaskId): string => id;
 
+export function isTaskCompleted(status: Task['status']): boolean {
+  return status === 'done' || status === 'escalated';
+}
+
+export function formatTaskId(n: number): TaskId {
+  return taskId(`T${String(n).padStart(3, '0')}`);
+}
+
 export const TaskSchema = z.object({
   /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
   id: TaskIdSchema,

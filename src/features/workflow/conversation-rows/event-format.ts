@@ -2,16 +2,21 @@ import { formatToolModel } from '../../../core/model-display.js';
 import type { TaskContextFit } from '../../../engine/events/workflow-events.js';
 import type { EngineEvent, ValidationStages } from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
+import { formatTruncatedList } from '../../../core/formatting.js';
 
 const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 
-export function formatTaskStartedValue(event: Extract<EngineEvent, { type: 'task_started' }>): string {
+export function formatTaskStartedValue(
+  event: Extract<EngineEvent, { type: 'task_started' }>,
+): string {
   const parts = [`${event.file} (${event.action})`];
   const toolLabel = formatToolModel(event.tool, event.model);
   if (toolLabel) parts.push(toolLabel);
   if (event.implementerProfile) parts.push(`profile ${event.implementerProfile}`);
   if (event.contextFit) {
-    parts.push(`fit ${formatContextFit(event.contextFit, event.estimatedTokens, event.contextLength)}`);
+    parts.push(
+      `fit ${formatContextFit(event.contextFit, event.estimatedTokens, event.contextLength)}`,
+    );
   }
   if (event.currentCodeContextMode && event.currentCodeContextMode !== 'none') {
     parts.push(`code ${event.currentCodeContextMode}`);
@@ -20,28 +25,29 @@ export function formatTaskStartedValue(event: Extract<EngineEvent, { type: 'task
   return parts.join(' · ');
 }
 
-export function formatExternalChangesValue(event: Extract<EngineEvent, { type: 'paused_external_changes' }>): string {
+export function formatExternalChangesValue(
+  event: Extract<EngineEvent, { type: 'paused_external_changes' }>,
+): string {
   if (!event.conflict) {
     return event.selectedAction
       ? `External changes detected · ${event.selectedAction}`
       : 'External changes detected';
   }
 
-  const files = event.conflict.files.slice(0, 3).join(', ');
-  const hiddenCount = event.conflict.files.length - 3;
-  const filesLabel = hiddenCount > 0
-    ? `${files}, +${hiddenCount} more`
-    : files || 'no files';
-  const tasksLabel = event.conflict.affectedTaskIds.length > 0
-    ? ` · tasks ${event.conflict.affectedTaskIds.join(', ')}`
-    : '';
+  const filesLabel = formatTruncatedList(event.conflict.files, 3) || 'no files';
+  const tasksLabel =
+    event.conflict.affectedTaskIds.length > 0
+      ? ` · tasks ${event.conflict.affectedTaskIds.join(', ')}`
+      : '';
   const actionLabel = event.selectedAction ? ` · ${event.selectedAction}` : '';
 
   return `${event.conflict.kind} · ${filesLabel}${tasksLabel}${actionLabel}`;
 }
 
 export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>): string {
-  const stageText = VALIDATION_STAGES.map(stage => `${stage} ${validationStageSymbol(event.stages, stage)}`).join(' ');
+  const stageText = VALIDATION_STAGES.map(
+    (stage) => `${stage} ${validationStageSymbol(event.stages, stage)}`,
+  ).join(' ');
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
   return `validate ${stageText}${dur}`;
 }
@@ -51,12 +57,16 @@ function formatContextFit(
   estimatedTokens: number | undefined,
   contextLength: number | undefined,
 ): string {
-  const tokenLabel = contextLength === undefined
-    ? `${estimatedTokens ?? '?'} tok`
-    : `${estimatedTokens ?? '?'}/${contextLength} tok`;
+  const tokenLabel =
+    contextLength === undefined
+      ? `${estimatedTokens ?? '?'} tok`
+      : `${estimatedTokens ?? '?'}/${contextLength} tok`;
   return `${contextFit} ${tokenLabel}`;
 }
 
-function validationStageSymbol(stages: ValidationStages, stage: typeof VALIDATION_STAGES[number]): string {
+function validationStageSymbol(
+  stages: ValidationStages,
+  stage: (typeof VALIDATION_STAGES)[number],
+): string {
   return stages[stage] ? '✓' : '○';
 }

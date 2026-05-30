@@ -1,4 +1,7 @@
-import type { ReviewPacket, ReviewPacketCheckpoint } from '../../../../core/schemas/review-packet.js';
+import type {
+  ReviewPacket,
+  ReviewPacketCheckpoint,
+} from '../../../../core/schemas/review-packet.js';
 import { CHECKPOINT_RESTORE_SAFETY } from '../../../snapshots/checkpoint-summary.js';
 import { narrowRecord } from '../../../../utils/type-guards.js';
 
@@ -39,7 +42,9 @@ function formatCheckpointKind(checkpoint: ReviewPacketCheckpoint): string {
     : checkpoint.kind;
 }
 
-function formatReviewPacketActualCost(costBreakdown: ReviewPacket['cost']['costBreakdown']): string {
+function formatReviewPacketActualCost(
+  costBreakdown: ReviewPacket['cost']['costBreakdown'],
+): string {
   if (!costBreakdown) return 'unavailable';
   if (costBreakdown.isTotalActualCostKnown === false) {
     return costBreakdown.totalActualCost > 0
@@ -51,21 +56,29 @@ function formatReviewPacketActualCost(costBreakdown: ReviewPacket['cost']['costB
 
 export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
   const restoreSafety = packet.checkpoints.items[0]?.safety ?? CHECKPOINT_RESTORE_SAFETY;
-  const checkpointLines = packet.checkpoints.items.length === 0
-    ? ['- No checkpoints available.']
-    : packet.checkpoints.items.map((checkpoint) =>
-      `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files, diff \`${checkpoint.diffCommand}\`, restore \`${checkpoint.restoreCommand}\``
-    );
-  const driftLines = packet.drift.findings.length === 0
-    ? ['- No drift findings recorded.']
-    : packet.drift.findings.map((finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`);
-  const recoveryLines = packet.recoveryDecisions.outcomes.length === 0
-    ? ['- No recovery decisions recorded.']
-    : packet.recoveryDecisions.outcomes.map((outcome) =>
-      `- ${outcome.status}${outcome.action ? ` via ${outcome.action}` : ''}${outcome.issueId ? ` (${outcome.issueId})` : ''}${outcome.message ? `: ${outcome.message}` : ''}`
-    );
-  const taskValidationLines = packet.validation.tasks.map((task) =>
-    `- ${task.taskId} ${task.status}: ${task.validation.filter((entry) => entry.passed).length}/${task.validation.length} validation stages passed`
+  const checkpointLines =
+    packet.checkpoints.items.length === 0
+      ? ['- No checkpoints available.']
+      : packet.checkpoints.items.map(
+          (checkpoint) =>
+            `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files, diff \`${checkpoint.diffCommand}\`, restore \`${checkpoint.restoreCommand}\``,
+        );
+  const driftLines =
+    packet.drift.findings.length === 0
+      ? ['- No drift findings recorded.']
+      : packet.drift.findings.map(
+          (finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`,
+        );
+  const recoveryLines =
+    packet.recoveryDecisions.outcomes.length === 0
+      ? ['- No recovery decisions recorded.']
+      : packet.recoveryDecisions.outcomes.map(
+          (outcome) =>
+            `- ${outcome.status}${outcome.action ? ` via ${outcome.action}` : ''}${outcome.issueId ? ` (${outcome.issueId})` : ''}${outcome.message ? `: ${outcome.message}` : ''}`,
+        );
+  const taskValidationLines = packet.validation.tasks.map(
+    (task) =>
+      `- ${task.taskId} ${task.status}: ${task.validation.filter((entry) => entry.passed).length}/${task.validation.length} validation stages passed`,
   );
 
   return [

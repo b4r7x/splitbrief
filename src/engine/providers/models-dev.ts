@@ -1,8 +1,12 @@
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
-import { ModelsDevCatalogSchema, type ModelsDevCatalog, type ModelsDevModel } from '../../core/schemas/models-dev.js';
+import {
+  ModelsDevCatalogSchema,
+  type ModelsDevCatalog,
+  type ModelsDevModel,
+} from '../../core/schemas/models-dev.js';
 import { fetchJsonWithTimeout } from './client.js';
-import { isModelFree } from './metadata.js';
+import { isModelFree, pricingFieldsFromResolved } from './metadata.js';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 
@@ -28,15 +32,11 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
   const inputRaw = model.cost?.input;
   const outputRaw = model.cost?.output;
   const hasPricingData = inputRaw !== undefined || outputRaw !== undefined;
-  const pricingInput = inputRaw;
-  const pricingOutput = outputRaw;
-  const isFree = hasPricingData ? isModelFree(pricingInput, pricingOutput) : undefined;
+  const isFree = hasPricingData ? isModelFree(inputRaw, outputRaw) : undefined;
 
   const result: DetectedModel = {
     id: model.id,
-    ...(pricingInput !== undefined && { pricingInput }),
-    ...(pricingOutput !== undefined && { pricingOutput }),
-    ...(isFree !== undefined && { isFree }),
+    ...pricingFieldsFromResolved(inputRaw, outputRaw, isFree),
   };
 
   if (model.limit?.context !== undefined) {
@@ -64,9 +64,7 @@ function mergeDetectedModel(
     ...current,
     ...incoming,
     ...(contextLength !== undefined ? { contextLength } : {}),
-    ...(pricingInput !== undefined ? { pricingInput } : {}),
-    ...(pricingOutput !== undefined ? { pricingOutput } : {}),
-    ...(isFree !== undefined ? { isFree } : {}),
+    ...pricingFieldsFromResolved(pricingInput, pricingOutput, isFree),
     ...(releaseDate !== undefined ? { releaseDate } : {}),
     ...(capabilities !== undefined ? { capabilities } : {}),
   };
@@ -79,7 +77,10 @@ export async function fetchModelsDevCatalog(): Promise<ModelsDevCatalog> {
   return parsed.data;
 }
 
-export function getModelsForProvider(catalog: ModelsDevCatalog, providerId: ProviderId): DetectedModel[] {
+export function getModelsForProvider(
+  catalog: ModelsDevCatalog,
+  providerId: ProviderId,
+): DetectedModel[] {
   const merged = new Map<string, DetectedModel>();
 
   for (const modelsDevId of toModelsDevProviderIds(providerId)) {

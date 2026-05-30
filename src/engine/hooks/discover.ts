@@ -1,6 +1,12 @@
 import { readdir } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { HookModuleEntrySchema, type HookEvent, type HookModuleEntry, type HooksConfig } from '../../core/schemas/hooks.js';
+import {
+  HookModuleEntrySchema,
+  type HookEvent,
+  type HookModuleEntry,
+  type HooksConfig,
+} from '../../core/schemas/hooks.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 
 const HOOK_EVENT_BY_FILE_NAME: Record<string, HookEvent> = {
   'pre-planning': 'pre_planning',
@@ -22,7 +28,7 @@ export interface DiscoveredHook {
 }
 
 export async function discoverHookModules(projectDir: string): Promise<DiscoveredHook[]> {
-  const hooksDir = join(projectDir, '.diptych', 'hooks');
+  const hooksDir = join(projectDir, DIPTYCH_DIR, 'hooks');
   let entries: string[];
   try {
     entries = await readdir(hooksDir);
@@ -38,12 +44,15 @@ export async function discoverHookModules(projectDir: string): Promise<Discovere
     const event = HOOK_EVENT_BY_FILE_NAME[basename(entry, ext)];
     if (!event) continue;
 
-    hooks.push({ event, path: join('.diptych', 'hooks', entry) });
+    hooks.push({ event, path: join(DIPTYCH_DIR, 'hooks', entry) });
   }
   return hooks;
 }
 
-export async function resolveHooksConfig(projectDir: string, hooks: HooksConfig | undefined): Promise<HooksConfig | undefined> {
+export async function resolveHooksConfig(
+  projectDir: string,
+  hooks: HooksConfig | undefined,
+): Promise<HooksConfig | undefined> {
   return mergeDiscoveredHooks(hooks, await discoverHookModules(projectDir));
 }
 
@@ -55,10 +64,7 @@ export function mergeDiscoveredHooks(
 
   const merged: HooksConfig = hooks ? { ...hooks } : {};
   for (const hook of discovered) {
-    merged[hook.event] = [
-      ...(merged[hook.event] ?? []),
-      discoveredModuleEntry(hook.path),
-    ];
+    merged[hook.event] = [...(merged[hook.event] ?? []), discoveredModuleEntry(hook.path)];
   }
   return merged;
 }

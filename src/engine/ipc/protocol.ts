@@ -1,13 +1,30 @@
 import { z } from 'zod';
 import type { EngineEvent } from '../events/types.js';
-import { EngineEventSchema } from '../events/schema.js';
-import { WorkflowModeSchema, type WorkflowMode, ActionClassSchema, PhaseSchema } from '../../core/schemas/enums.js';
-import { ClarificationQuestionSchema, type ClarificationQuestion } from '../../core/schemas/question.js';
+import {
+  EngineEventSchema,
+  taskReviewRequestFields,
+  userEditConflictSchema,
+} from '../events/schema.js';
+import {
+  WorkflowModeSchema,
+  type WorkflowMode,
+  ActionClassSchema,
+  PhaseSchema,
+} from '../../core/schemas/enums.js';
+import {
+  ClarificationQuestionSchema,
+  type ClarificationQuestion,
+} from '../../core/schemas/question.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { CostPredictionSchema, type CostPrediction } from '../../core/schemas/summary.js';
-import type { UserEditConflict, UserEditConflictAction, TaskReviewRequest, TaskReviewResponse } from '../events/workflow-events.js';
+import type {
+  UserEditConflict,
+  UserEditConflictAction,
+  TaskReviewRequest,
+  TaskReviewResponse,
+} from '../events/workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isUserEditConflictAction } from '../events/workflow-events.js';
 import { isOptionalString } from './guards.js';
@@ -22,11 +39,9 @@ const TieredApprovalRequestShape = z.object({
   phase: PhaseSchema,
 });
 
-const TieredApprovalRequestSchema = z.custom<TieredApprovalRequest>((value) =>
-  TieredApprovalRequestShape.safeParse(value).success
-);
+const TieredApprovalRequestSchema = TieredApprovalRequestShape;
 
-const TaskReviewRequestSchema = z.custom<TaskReviewRequest>(isRecord);
+const TaskReviewRequestSchema = z.object(taskReviewRequestFields).passthrough();
 
 const IpcPromptRequestSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -39,7 +54,7 @@ const IpcPromptRequestSchema = z.discriminatedUnion('kind', [
   z.object({
     requestId: z.string(),
     kind: z.literal('user_edit_conflict'),
-    conflict: z.custom<UserEditConflict>(isRecord),
+    conflict: userEditConflictSchema,
   }),
   z.object({
     requestId: z.string(),
@@ -107,10 +122,21 @@ const ServerMessageSchema = z.discriminatedUnion('kind', [
 ]);
 
 export type IpcPromptRequest =
-  | { requestId: string; kind: 'approval_needed'; approvalType: 'spec' | 'plan' | 'briefs'; filePath: string }
+  | {
+      requestId: string;
+      kind: 'approval_needed';
+      approvalType: 'spec' | 'plan' | 'briefs';
+      filePath: string;
+    }
   | { requestId: string; kind: 'external_changes' }
   | { requestId: string; kind: 'user_edit_conflict'; conflict: UserEditConflict }
-  | { requestId: string; kind: 'question_asked'; question: ClarificationQuestion; num: number; total: number }
+  | {
+      requestId: string;
+      kind: 'question_asked';
+      question: ClarificationQuestion;
+      num: number;
+      total: number;
+    }
   | { requestId: string; kind: 'budget_exceeded'; currentCost: number; maxBudget: number }
   | { requestId: string; kind: 'budget_paused'; currentCost: number; maxBudget: number }
   | { requestId: string; kind: 'continuation_needed'; partialResponse: string }
@@ -131,7 +157,12 @@ export type IpcPromptRequestInput =
   | Omit<Extract<IpcPromptRequest, { kind: 'task_review' }>, 'requestId'>;
 
 export type IpcPromptResponse =
-  | { kind: 'approval_needed'; approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }
+  | {
+      kind: 'approval_needed';
+      approved: boolean;
+      comment?: string | undefined;
+      action?: 'edit' | undefined;
+    }
   | { kind: 'external_changes'; proceed: boolean }
   | { kind: 'user_edit_conflict'; selectedAction: UserEditConflictAction }
   | { kind: 'question_asked'; answer: string }
@@ -143,7 +174,14 @@ export type IpcPromptResponse =
   | { kind: 'task_review'; response: TaskReviewResponse };
 
 export type ServerMessage =
-  | { kind: 'session_meta'; sessionId: string; startedAt: number; mode: WorkflowMode; feature: string; readonly: boolean }
+  | {
+      kind: 'session_meta';
+      sessionId: string;
+      startedAt: number;
+      mode: WorkflowMode;
+      feature: string;
+      readonly: boolean;
+    }
   | { kind: 'event'; payload: EngineEvent }
   | { kind: 'prompt_request'; request: IpcPromptRequest }
   | { kind: 'replay_meta'; totalEvents: number; firstTs: number | null; lastTs: number | null }
@@ -187,25 +225,24 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
         ? { kind: value.kind, proceed: value.proceed }
         : null;
     case 'user_edit_conflict':
-      return typeof value.selectedAction === 'string' && isUserEditConflictAction(value.selectedAction)
+      return typeof value.selectedAction === 'string' &&
+        isUserEditConflictAction(value.selectedAction)
         ? { kind: value.kind, selectedAction: value.selectedAction }
         : null;
     case 'question_asked':
-      return typeof value.answer === 'string'
-        ? { kind: value.kind, answer: value.answer }
-        : null;
+      return typeof value.answer === 'string' ? { kind: value.kind, answer: value.answer } : null;
     case 'budget_exceeded':
       return typeof value.proceed === 'boolean'
         ? { kind: value.kind, proceed: value.proceed }
         : null;
     case 'budget_paused':
-      return value.decision === 'continue' || value.decision === 'abort' || value.decision === 'raise'
+      return value.decision === 'continue' ||
+        value.decision === 'abort' ||
+        value.decision === 'raise'
         ? { kind: value.kind, decision: value.decision }
         : null;
     case 'continuation_needed':
-      return typeof value.text === 'string'
-        ? { kind: value.kind, text: value.text }
-        : null;
+      return typeof value.text === 'string' ? { kind: value.kind, text: value.text } : null;
     case 'tiered_approval':
       return isTieredApprovalResponse(value.response)
         ? { kind: value.kind, response: value.response }

@@ -17,8 +17,8 @@ const scenario = {
 function hasSessionArtifact(projectDir: string, fileName: string): boolean {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) return false;
-  return readdirSync(root, { withFileTypes: true }).some((entry) =>
-    entry.isDirectory() && existsSync(join(root, entry.name, fileName))
+  return readdirSync(root, { withFileTypes: true }).some(
+    (entry) => entry.isDirectory() && existsSync(join(root, entry.name, fileName)),
   );
 }
 

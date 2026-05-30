@@ -1,4 +1,7 @@
-import type { ImplementerCostTier, ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type {
+  ImplementerCostTier,
+  ImplementerWriteMode,
+} from '../../../core/schemas/implementer-config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { looksLikeFilePath } from '../../../utils/path-patterns.js';
@@ -18,11 +21,13 @@ export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
     ...(task.scope?.approvedOutOfBounds ?? []),
   ];
 
-  const hasAdditionalPathScope = scopedWritePatterns.some(pattern => {
+  const hasAdditionalPathScope = scopedWritePatterns.some((pattern) => {
     const normalized = normalizeScopePattern(pattern);
-    return normalized.length > 0
-      && looksLikeFilePath(normalized)
-      && !matchesTaskFilePattern(normalized, task.file);
+    return (
+      normalized.length > 0 &&
+      looksLikeFilePath(normalized) &&
+      !matchesTaskFilePattern(normalized, task.file)
+    );
   });
 
   return hasAdditionalPathScope ? 'direct' : 'extracted-code';
@@ -92,7 +97,8 @@ function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): strin
 
 export function costPosture(selected: ProfileFit | undefined, rejected: ProfileFit[]): string {
   if (!selected) return 'No capable implementer profile; no cost tier selected';
-  const rejectedTiers = uniqueSorted(rejected.map(profileFit => profileFit.profile.costTier));
-  const rejectedNote = rejectedTiers.length > 0 ? `; rejected tiers: ${rejectedTiers.join(', ')}` : '';
+  const rejectedTiers = uniqueSorted(rejected.map((profileFit) => profileFit.profile.costTier));
+  const rejectedNote =
+    rejectedTiers.length > 0 ? `; rejected tiers: ${rejectedTiers.join(', ')}` : '';
   return `Selected ${selected.profile.costTier} cost tier via cheapest-capable routing${rejectedNote}`;
 }

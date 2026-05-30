@@ -10,7 +10,9 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { WorkflowHeader } from './workflow-chrome.js';
 
-type WorkflowConfigOverrides = Partial<Omit<EngineEventOf<'workflow_config'>, 'type' | 'ts' | 'phase'>>;
+type WorkflowConfigOverrides = Partial<
+  Omit<EngineEventOf<'workflow_config'>, 'type' | 'ts' | 'phase'>
+>;
 
 function workflowConfig(overrides: WorkflowConfigOverrides = {}): EngineEventOf<'workflow_config'> {
   return {
@@ -39,22 +41,27 @@ describe('WorkflowHeader', () => {
   it('inlines full config with models when the allocated config column is wide enough', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     eventsStore.__testReset({
-      events: [workflowConfig({
-        plannerModel: 'p',
-        implementerModel: 'i',
-      })],
+      events: [
+        workflowConfig({
+          plannerModel: 'p',
+          implementerModel: 'i',
+        }),
+      ],
     });
 
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
     await tick();
     const lines = (ui.lastFrame() ?? '').split('\n');
 
-    expect(lines.some((line) =>
-      line.includes('instant')
-      && line.includes('(p)')
-      && line.includes('(i)')
-      && line.includes('spent n/a'),
-    )).toBe(true);
+    expect(
+      lines.some(
+        (line) =>
+          line.includes('instant') &&
+          line.includes('(p)') &&
+          line.includes('(i)') &&
+          line.includes('spent n/a'),
+      ),
+    ).toBe(true);
 
     ui.unmount();
   });
@@ -62,10 +69,12 @@ describe('WorkflowHeader', () => {
   it('keeps labels but omits models when the inline config column cannot fit full text', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     eventsStore.__testReset({
-      events: [workflowConfig({
-        plannerModel: 'planner-model',
-        implementerModel: 'implementer-model',
-      })],
+      events: [
+        workflowConfig({
+          plannerModel: 'planner-model',
+          implementerModel: 'implementer-model',
+        }),
+      ],
     });
 
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
@@ -144,7 +153,10 @@ describe('WorkflowHeader', () => {
     const frame = ui.lastFrame() ?? '';
     const statusLines = frame
       .split('\n')
-      .filter((line) => line.includes('planner researching') || line.includes('collecting enough context'));
+      .filter(
+        (line) =>
+          line.includes('planner researching') || line.includes('collecting enough context'),
+      );
 
     expect(statusLines).toHaveLength(1);
 

@@ -3,12 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachmentShortName } from '../../core/attachments/resolve.js';
-import {
-  attachImage,
-  attachmentsStore,
-  detachImage,
-  listAttachments,
-} from './attachments.js';
+import { attachImage, attachmentsStore, detachImage, listAttachments } from './attachments.js';
 
 let projectDir: string;
 
@@ -64,14 +59,14 @@ describe('attachment actions', () => {
     if (!first) throw new Error('expected first attachment');
 
     expect(detachImage('2')).toBe(true);
-    expect(listAttachments().map(a => a.path)).toEqual([real(firstPath), real(thirdPath)]);
+    expect(listAttachments().map((a) => a.path)).toEqual([real(firstPath), real(thirdPath)]);
 
     expect(detachImage(first.id)).toBe(true);
-    expect(listAttachments().map(a => a.path)).toEqual([real(thirdPath)]);
+    expect(listAttachments().map((a) => a.path)).toEqual([real(thirdPath)]);
 
     attachImage(secondPath, projectDir);
     expect(detachImage('second.png')).toBe(true);
-    expect(listAttachments().map(a => a.path)).toEqual([real(thirdPath)]);
+    expect(listAttachments().map((a) => a.path)).toEqual([real(thirdPath)]);
 
     expect(detachImage()).toBe(true);
     expect(listAttachments()).toEqual([]);
@@ -85,10 +80,12 @@ describe('attachment actions', () => {
 
     expect(detachImage('1-first.png')).toBe(true);
 
-    expect(listAttachments().map(a => a.path)).toEqual([real(secondPath)]);
+    expect(listAttachments().map((a) => a.path)).toEqual([real(secondPath)]);
   });
 
   it('formats long attachment names without requiring workflow imports', () => {
-    expect(attachmentShortName('/tmp/averyveryveryverylongname.png')).toBe('averyveryveryverylong...');
+    expect(attachmentShortName('/tmp/averyveryveryverylongname.png')).toBe(
+      'averyveryveryverylong...',
+    );
   });
 });

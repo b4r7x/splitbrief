@@ -1,5 +1,10 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders, detectCapabilities } from './registry.js';
+import {
+  KNOWN_PROVIDERS,
+  getProvider,
+  detectAvailableProviders,
+  detectCapabilities,
+} from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import type { Config } from '../../core/schemas/config.js';
 
@@ -7,7 +12,10 @@ describe('getProvider', () => {
   setupFetchMock();
 
   it('returns generic provider for unknown name', () => {
-    const p = getProvider('custom-api', { apiBase: 'http://api.example.com/v1', apiKey: 'sk-test' });
+    const p = getProvider('custom-api', {
+      apiBase: 'http://api.example.com/v1',
+      apiKey: 'sk-test',
+    });
     expect(p.name).toBe('custom-api');
     expect(p.baseURL).toBe('http://api.example.com/v1');
     expect(p.apiKey()).toBe('sk-test');
@@ -56,7 +64,6 @@ describe('getProvider', () => {
   });
 });
 
-
 describe('apiBase exfiltration guard', () => {
   setupFetchMock();
   const ORIGINAL_ENV = { ...process.env };
@@ -66,19 +73,25 @@ describe('apiBase exfiltration guard', () => {
 
   it('rejects known provider with env-sourced key and custom apiBase', () => {
     process.env.OPENAI_API_KEY = 'sk-real-key';
-    expect(() =>
-      getProvider('openai', { apiBase: 'https://evil.example.com/v1' }),
-    ).toThrow(/exfiltrat/i);
+    expect(() => getProvider('openai', { apiBase: 'https://evil.example.com/v1' })).toThrow(
+      /exfiltrat/i,
+    );
   });
 
   it('allows known provider with inline apiKey and custom apiBase', () => {
     delete process.env.OPENAI_API_KEY;
-    const p = getProvider('openai', { apiBase: 'https://proxy.example.com/v1', apiKey: 'sk-inline' });
+    const p = getProvider('openai', {
+      apiBase: 'https://proxy.example.com/v1',
+      apiKey: 'sk-inline',
+    });
     expect(p.baseURL).toBe('https://proxy.example.com/v1');
   });
 
   it('allows unknown provider with custom apiBase', () => {
-    const p = getProvider('my-custom-provider', { apiBase: 'https://custom.example.com/v1', apiKey: 'sk-custom' });
+    const p = getProvider('my-custom-provider', {
+      apiBase: 'https://custom.example.com/v1',
+      apiKey: 'sk-custom',
+    });
     expect(p.name).toBe('my-custom-provider');
     expect(p.baseURL).toBe('https://custom.example.com/v1');
   });
@@ -103,9 +116,9 @@ describe('apiBase exfiltration guard', () => {
 
   it('rejects local providers with env-sourced key and custom apiBase', () => {
     process.env.OLLAMA_API_KEY = 'ollama-real-key';
-    expect(() =>
-      getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' }),
-    ).toThrow(/exfiltrat/i);
+    expect(() => getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' })).toThrow(
+      /exfiltrat/i,
+    );
   });
 
   it('allows known provider without apiBase override', () => {
@@ -118,7 +131,12 @@ describe('apiBase exfiltration guard', () => {
 describe('detectCapabilities', () => {
   it('returns config contextLength for non-api implementer without throwing', async () => {
     const config = {
-      implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini', contextLength: 32768 },
+      implementer: {
+        kind: 'cli' as const,
+        tool: 'codex' as const,
+        model: 'gpt-5.4-mini',
+        contextLength: 32768,
+      },
       planner: { kind: 'cli' as const, tool: 'claude-code' as const },
     } as Config;
 

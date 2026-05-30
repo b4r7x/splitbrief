@@ -2,7 +2,7 @@ import { resolveImplementerProfiles } from '../../config/accessors/implementer-p
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
-import { capitalize } from './format.js';
+import { capitalize } from '../../../utils/capitalize.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
 function formatRunner(runner: Config['planner'] | Config['implementer']): string {
@@ -22,7 +22,7 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
       severity: 'info',
       summary: `Default implementer ${formatRunner(defaultProfile.config)} via profile ${defaultProfile.name}.`,
       details: [
-        `Profiles: ${resolved.profiles.map(profile => profile.name).join(', ')}`,
+        `Profiles: ${resolved.profiles.map((profile) => profile.name).join(', ')}`,
         `Cost tier: ${defaultProfile.costTier}`,
         `Write mode: ${defaultProfile.capabilities.writesFiles}`,
       ],
@@ -64,7 +64,7 @@ function buildImplementerProfileMetadataChecks(
   const configuredProfiles = config.implementerProfiles?.profiles;
   if (!configuredProfiles) return [];
 
-  return profiles.flatMap(profile => {
+  return profiles.flatMap((profile) => {
     const configured = configuredProfiles[profile.name];
     if (!configured) return [];
 
@@ -92,7 +92,10 @@ function buildImplementerProfileMetadataChecks(
   });
 }
 
-function runnerCheck(role: 'planner' | 'implementer', runner: Config['planner'] | Config['implementer']): ReadinessCheck {
+function runnerCheck(
+  role: 'planner' | 'implementer',
+  runner: Config['planner'] | Config['implementer'],
+): ReadinessCheck {
   return {
     id: `runners.${role}.configured`,
     severity: 'ok',

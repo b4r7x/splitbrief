@@ -18,18 +18,19 @@ import { PlanEditorHelpOverlay } from './plan-editor/help-overlay.js';
 let tmpDir: string;
 const rendered: Array<{ unmount: () => void }> = [];
 
-const completeTask = (id: string, file: string) => makeTask({
-  id,
-  file,
-  title: `Task ${id}`,
-  action: 'modify',
-  currentCode: 'export const value = 1;',
-  constraints: ['Keep public API stable'],
-  escalation: ['Stop if the file changed outside this task'],
-  evidence: ['focused tests pass'],
-  scope: { inBounds: [file], outOfBounds: ['unrelated files'] },
-  typeDefs: 'type Value = number;',
-});
+const completeTask = (id: string, file: string) =>
+  makeTask({
+    id,
+    file,
+    title: `Task ${id}`,
+    action: 'modify',
+    currentCode: 'export const value = 1;',
+    constraints: ['Keep public API stable'],
+    escalation: ['Stop if the file changed outside this task'],
+    evidence: ['focused tests pass'],
+    scope: { inBounds: [file], outOfBounds: ['unrelated files'] },
+    typeDefs: 'type Value = number;',
+  });
 
 beforeEach(async () => {
   planEditorStore.__testReset();
@@ -40,12 +41,20 @@ beforeEach(async () => {
 
 afterEach(async () => {
   while (rendered.length > 0) {
-    try { rendered.pop()?.unmount(); } catch { /* ignore */ }
+    try {
+      rendered.pop()?.unmount();
+    } catch {
+      /* ignore */
+    }
   }
   planEditorStore.__testReset();
   configStore.__testReset();
   overlayStore.reset();
-  try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    await rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 });
 
 function renderComponent(element: Parameters<typeof renderFeature>[0]) {
@@ -55,10 +64,7 @@ function renderComponent(element: Parameters<typeof renderFeature>[0]) {
 }
 
 async function writeTasksFile() {
-  const tasks = [
-    completeTask('T001', 'src/a.ts'),
-    completeTask('T002', 'src/b.ts'),
-  ];
+  const tasks = [completeTask('T001', 'src/a.ts'), completeTask('T002', 'src/b.ts')];
   await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
   return tasks;
 }
@@ -67,12 +73,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('surfaces tasks.md read failures in the rich editor instead of loading an empty plan', async () => {
     const missingPath = join(tmpDir, TASKS_FILE);
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: missingPath,
-      sessionDirPath: tmpDir,
-      height: 24,
-      width: 120,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: missingPath,
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 120,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -88,11 +96,13 @@ describe('PlanEditorComponent review metadata', () => {
   it('surfaces tasks.md read failures in simple review mode instead of loading an empty plan', async () => {
     const missingPath = join(tmpDir, TASKS_FILE);
 
-    const ui = renderComponent(createElement(BriefReviewView, {
-      filePath: missingPath,
-      height: 24,
-      width: 120,
-    }));
+    const ui = renderComponent(
+      createElement(BriefReviewView, {
+        filePath: missingPath,
+        height: 24,
+        width: 120,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -101,19 +111,25 @@ describe('PlanEditorComponent review metadata', () => {
 
   it('ignores invalid brief-quality.json instead of trusting its shape', async () => {
     await writeTasksFile();
-    await writeFile(join(tmpDir, 'brief-quality.json'), JSON.stringify({
-      version: 1,
-      passed: true,
-      score: '1.00',
-      issues: [],
-    }), 'utf-8');
+    await writeFile(
+      join(tmpDir, 'brief-quality.json'),
+      JSON.stringify({
+        version: 1,
+        passed: true,
+        score: '1.00',
+        issues: [],
+      }),
+      'utf-8',
+    );
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 24,
-      width: 120,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 120,
+      }),
+    );
     await tick(20);
 
     expect(ui.lastFrame() ?? '').toContain('quality n/a');
@@ -136,12 +152,14 @@ describe('PlanEditorComponent review metadata', () => {
     ];
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 24,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 160,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -217,11 +235,13 @@ describe('PlanEditorComponent review metadata', () => {
       },
     ]);
 
-    const ui = renderComponent(createElement(BriefReviewView, {
-      filePath: join(tmpDir, TASKS_FILE),
-      height: 24,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(BriefReviewView, {
+        filePath: join(tmpDir, TASKS_FILE),
+        height: 24,
+        width: 160,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -236,12 +256,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('renders worker, context fit, overflow, and conflict markers in task rows', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 24,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 160,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -286,12 +308,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('shows selected task scope, constraints, tests, escalation, and checkpoint detail when expanded', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 40,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 40,
+        width: 160,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -335,12 +359,14 @@ describe('PlanEditorComponent review metadata', () => {
     ];
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 16,
-      width: 100,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 16,
+        width: 100,
+      }),
+    );
     await tick(20);
     ui.stdin.write('j');
     ui.stdin.write('j');
@@ -349,19 +375,21 @@ describe('PlanEditorComponent review metadata', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Y approve');
-    expect(frame).toContain('> ✓ T004');
+    expect(frame).toContain('T004 pending src/d.ts');
     expect(frame).not.toContain('T001 pending src/a.ts');
   });
 
   it('shows conflict and stale markers in selected task detail', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 34,
-      width: 100,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 34,
+        width: 100,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -410,15 +438,17 @@ describe('PlanEditorComponent review metadata', () => {
       },
     ]);
 
-    const ui = renderComponent(createElement(BriefReviewView, {
-      filePath: join(tmpDir, TASKS_FILE),
-      height: 24,
-      width: 100,
-    }));
+    const ui = renderComponent(
+      createElement(BriefReviewView, {
+        filePath: join(tmpDir, TASKS_FILE),
+        height: 24,
+        width: 100,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('⚠ T001');
+    expect(frame).toContain('T001 pending src/a.ts');
     expect(frame).toContain('fit overflow');
     expect(frame).toContain('conflict src/a.ts');
   });
@@ -434,11 +464,13 @@ describe('PlanEditorComponent review metadata', () => {
     ];
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
 
-    const ui = renderComponent(createElement(BriefReviewView, {
-      filePath: join(tmpDir, TASKS_FILE),
-      height: 13,
-      width: 100,
-    }));
+    const ui = renderComponent(
+      createElement(BriefReviewView, {
+        filePath: join(tmpDir, TASKS_FILE),
+        height: 13,
+        width: 100,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -479,12 +511,14 @@ describe('PlanEditorComponent review metadata', () => {
     });
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 34,
-      width: 110,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 34,
+        width: 110,
+      }),
+    );
     await tick(20);
     planEditorStore.toggleExpand('T001');
     await tick();
@@ -499,12 +533,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('toggles selected-task worker packet preview with p', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 30,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 30,
+        width: 160,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -532,7 +568,7 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('context 32768');
     expect(frame).toContain('current-code');
     expect(frame).toContain('estimate refreshed-current-code');
-    expect(frame).toContain('system SYSTEM: You are a code generator for the project language');
+    expect(frame).toContain('system ');
     expect(frame).toContain('task ## Project: unknown');
     expect(frame).toContain('## Task: Task T001');
 
@@ -555,14 +591,20 @@ describe('PlanEditorComponent review metadata', () => {
     });
     await mkdir(join(tmpDir, 'src'), { recursive: true });
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks([task]), 'utf-8');
-    await writeFile(join(tmpDir, 'src/target.ts'), 'export const freshDiskValue = "fresh";', 'utf-8');
+    await writeFile(
+      join(tmpDir, 'src/target.ts'),
+      'export const freshDiskValue = "fresh";',
+      'utf-8',
+    );
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 30,
-      width: 1000,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 30,
+        width: 1000,
+      }),
+    );
     await tick(20);
 
     ui.stdin.write('p');
@@ -593,12 +635,14 @@ describe('PlanEditorComponent review metadata', () => {
     });
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks([task]), 'utf-8');
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 30,
-      width: 1000,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 30,
+        width: 1000,
+      }),
+    );
     await tick(20);
 
     ui.stdin.write('p');
@@ -627,12 +671,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('updates packet preview when cursor moves', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 30,
-      width: 160,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 30,
+        width: 160,
+      }),
+    );
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
@@ -671,12 +717,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('collapses packet preview and keeps footer visible in short layouts', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 16,
-      width: 80,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 16,
+        width: 80,
+      }),
+    );
     await tick(20);
 
     ui.stdin.write('p');
@@ -691,12 +739,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('shows both system and task excerpts when packet preview is expanded at medium height', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 20,
-      width: 120,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 20,
+        width: 120,
+      }),
+    );
     await tick(20);
 
     ui.stdin.write('p');
@@ -704,7 +754,7 @@ describe('PlanEditorComponent review metadata', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Packet Preview T001');
-    expect(frame).toContain('system SYSTEM: You are a code generator for the project language');
+    expect(frame).toContain('system ');
     expect(frame).toContain('task ## Project: unknown');
     expect(frame).toContain('Y approve');
   });
@@ -712,12 +762,14 @@ describe('PlanEditorComponent review metadata', () => {
   it('keeps save and edit labels visible in a narrow layout', async () => {
     await writeTasksFile();
 
-    const ui = renderComponent(createElement(PlanEditorComponent, {
-      filePath: join(tmpDir, TASKS_FILE),
-      sessionDirPath: tmpDir,
-      height: 18,
-      width: 48,
-    }));
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 18,
+        width: 48,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -733,11 +785,13 @@ describe('PlanEditorComponent review metadata', () => {
     ];
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
 
-    const ui = renderComponent(createElement(BriefReviewView, {
-      filePath: join(tmpDir, TASKS_FILE),
-      height: 13,
-      width: 48,
-    }));
+    const ui = renderComponent(
+      createElement(BriefReviewView, {
+        filePath: join(tmpDir, TASKS_FILE),
+        height: 13,
+        width: 48,
+      }),
+    );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';

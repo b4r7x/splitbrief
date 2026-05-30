@@ -7,8 +7,9 @@ import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
-import { STREAM_IDLE_TIMEOUT_MS } from '../../constants.js';
+import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
+import { parsePartialUsage } from '../metadata.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 
 type AnthropicEventType =
@@ -23,7 +24,10 @@ type AnthropicEventType =
 
 const DEFAULT_MAX_TOKENS = 4096;
 
-interface AnthropicTextBlock { type: 'text'; text: string }
+interface AnthropicTextBlock {
+  type: 'text';
+  text: string;
+}
 interface AnthropicImageBlock {
   type: 'image';
   source: { type: 'base64'; media_type: string; data: string };
@@ -58,7 +62,7 @@ interface SseEvent {
   data: string;
 }
 
-export function splitSystemMessages(
+function splitSystemMessages(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
 ): { system: AnthropicSystemBlock[] | undefined; conversation: AnthropicMessage[] } {
   const systemBlocks: AnthropicSystemBlock[] = [];
@@ -76,27 +80,6 @@ export function splitSystemMessages(
   const last = systemBlocks[systemBlocks.length - 1];
   if (last) last.cache_control = { type: 'ephemeral' };
   return { system: systemBlocks, conversation };
-}
-
-function parseUsage(value: unknown): Partial<TokenDelta> {
-  const usage = narrowRecord(value);
-  if (usage === null) return {};
-
-  const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : undefined;
-  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined;
-  const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number'
-    ? usage.cache_read_input_tokens
-    : undefined;
-  const cacheCreateTokens = typeof usage.cache_creation_input_tokens === 'number'
-    ? usage.cache_creation_input_tokens
-    : undefined;
-
-  return {
-    ...(inputTokens !== undefined && { inputTokens }),
-    ...(outputTokens !== undefined && { outputTokens }),
-    ...(cacheReadTokens !== undefined && { cacheReadTokens }),
-    ...(cacheCreateTokens !== undefined && { cacheCreateTokens }),
-  };
 }
 
 function mergeUsage(current: TokenDelta | null, next: Partial<TokenDelta>): TokenDelta | null {
@@ -135,7 +118,10 @@ function parseSseEvent(rawEvent: string): SseEvent | null {
   return { data: dataLines.join('\n') };
 }
 
-async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<SseEvent> {
+async function* readSseEvents(
+  stream: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): AsyncGenerator<SseEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -168,8 +154,14 @@ async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: Abort
 }
 
 const ANTHROPIC_EVENT_TYPES = [
-  'message_start', 'content_block_start', 'content_block_delta',
-  'content_block_stop', 'message_delta', 'message_stop', 'ping', 'error',
+  'message_start',
+  'content_block_start',
+  'content_block_delta',
+  'content_block_stop',
+  'message_delta',
+  'message_stop',
+  'ping',
+  'error',
 ] as const satisfies readonly AnthropicEventType[];
 
 const ANTHROPIC_EVENT_TYPE_SET: ReadonlySet<string> = new Set(ANTHROPIC_EVENT_TYPES);
@@ -186,7 +178,7 @@ function getEventType(payload: Record<string, unknown>): AnthropicEventType | nu
 
 function getMessageUsage(payload: Record<string, unknown>): Partial<TokenDelta> {
   const message = narrowRecord(payload.message);
-  return message ? parseUsage(message.usage) : {};
+  return message ? parsePartialUsage(message.usage) : {};
 }
 
 function getDeltaText(payload: Record<string, unknown>): string | null {
@@ -206,18 +198,23 @@ export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<InvokeResult> {
   const { system, conversation } = splitSystemMessages(opts.messages);
-  const finalConversation = opts.images && opts.images.length > 0
-    ? await attachImagesToLastUserMessage<AnthropicMessage, AnthropicContentBlock, AnthropicImageBlock>(conversation, {
-        images: opts.images,
-        imagePlacement: 'before-existing',
-        mapText: text => ({ type: 'text', text }),
-        mapImage: ({ mime, data }) => ({
-          type: 'image',
-          source: { type: 'base64', media_type: mime, data },
-        }),
-        createUserMessage: content => ({ role: 'user', content }),
-      })
-    : conversation;
+  const finalConversation =
+    opts.images && opts.images.length > 0
+      ? await attachImagesToLastUserMessage<
+          AnthropicMessage,
+          AnthropicContentBlock,
+          AnthropicImageBlock
+        >(conversation, {
+          images: opts.images,
+          imagePlacement: 'before-existing',
+          mapText: (text) => ({ type: 'text', text }),
+          mapImage: ({ mime, data }) => ({
+            type: 'image',
+            source: { type: 'base64', media_type: mime, data },
+          }),
+          createUserMessage: (content) => ({ role: 'user', content }),
+        })
+      : conversation;
   const url = `${stripV1Suffix(opts.apiBase)}/v1/messages`;
   const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };
 
@@ -263,7 +260,7 @@ export async function streamAnthropicCompletion(
     for await (const event of withIdleTimeout(
       readSseEvents(response.body, opts.signal),
       STREAM_IDLE_TIMEOUT_MS,
-      'Model response timed out',
+      STREAM_IDLE_TIMEOUT_MESSAGE,
     )) {
       if (event.data === '[DONE]') continue;
 
@@ -285,7 +282,7 @@ export async function streamAnthropicCompletion(
           break;
         }
         case 'message_delta':
-          usage = mergeUsage(usage, parseUsage(payload.usage));
+          usage = mergeUsage(usage, parsePartialUsage(payload.usage));
           break;
         case 'error':
           throw streamError.apiError('anthropic', getApiErrorMessage(payload));

@@ -71,11 +71,10 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
   return {
     version: 3,
     planner: migrated['planner'] ?? defaults.planner,
-    implementer: mergeRunner(
-      narrowRecord(migrated['implementer']),
-      implementerDefaults,
-    ),
-    ...(migrated['implementerProfiles'] !== undefined && { implementerProfiles: migrated['implementerProfiles'] }),
+    implementer: mergeRunner(narrowRecord(migrated['implementer']), implementerDefaults),
+    ...(migrated['implementerProfiles'] !== undefined && {
+      implementerProfiles: migrated['implementerProfiles'],
+    }),
     validation: narrowRecord(migrated['validation'])
       ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }
       : defaults.validation,
@@ -113,7 +112,9 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 
   const warnings: string[] = [];
   if (process.platform !== 'win32' && !checkConfigPermissions(filePath)) {
-    warnings.push(`Config file ${filePath} has overly permissive permissions. Consider running: chmod 600 ${filePath}`);
+    warnings.push(
+      `Config file ${filePath} has overly permissive permissions. Consider running: chmod 600 ${filePath}`,
+    );
   }
 
   let parsed: unknown;

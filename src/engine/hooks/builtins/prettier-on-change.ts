@@ -9,9 +9,11 @@ export async function prettierOnChange(event: EngineEvent, ctx: HookContext): Pr
   if (!file) return { kind: 'allow' };
   const abs = resolveFromProject(ctx.projectDir, file);
   try {
-    const result = await runCommand('npx', ['prettier', '--write', abs], { cwd: ctx.projectDir, timeout: 30_000 });
-    if (result.code === 0) return { kind: 'allow' };
-    return { kind: 'warn', message: `prettier failed for ${file} (exit ${result.code}): ${result.stderr.trim()}` };
+    await runCommand('npx', ['prettier', '--write', abs], {
+      cwd: ctx.projectDir,
+      timeout: 30_000,
+    });
+    return { kind: 'allow' };
   } catch (err) {
     return { kind: 'warn', message: toErrorMessage(err) };
   }

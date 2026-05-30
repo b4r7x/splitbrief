@@ -8,7 +8,9 @@ import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 let tmp: string;
 const SESSION_ID = '2024-01-01-test';
 
-afterEach(() => { if (tmp) cleanupTempDir(tmp); });
+afterEach(() => {
+  if (tmp) cleanupTempDir(tmp);
+});
 
 function makeTmp(): string {
   tmp = createTempDir('log-reader');
@@ -28,10 +30,33 @@ async function collect<T>(iter: AsyncIterable<T>): Promise<T[]> {
 }
 
 const FIXTURE_LINES = [
-  JSON.stringify({ ts: '2024-01-01T00:00:00.000Z', kind: 'event', type: 'workflow_started', phase: 'idle', data: {} }),
-  JSON.stringify({ ts: '2024-01-01T00:00:01.000Z', kind: 'message', role: 'user', text: 'add auth' }),
-  JSON.stringify({ ts: '2024-01-01T00:00:02.000Z', kind: 'event', type: 'task_started', phase: 'implementing', data: {} }),
-  JSON.stringify({ ts: '2024-01-01T00:00:03.000Z', kind: 'message', role: 'assistant', phase: 'researching', text: 'planner output' }),
+  JSON.stringify({
+    ts: '2024-01-01T00:00:00.000Z',
+    kind: 'event',
+    type: 'workflow_started',
+    phase: 'idle',
+    data: {},
+  }),
+  JSON.stringify({
+    ts: '2024-01-01T00:00:01.000Z',
+    kind: 'message',
+    role: 'user',
+    text: 'add auth',
+  }),
+  JSON.stringify({
+    ts: '2024-01-01T00:00:02.000Z',
+    kind: 'event',
+    type: 'task_started',
+    phase: 'implementing',
+    data: {},
+  }),
+  JSON.stringify({
+    ts: '2024-01-01T00:00:03.000Z',
+    kind: 'message',
+    role: 'assistant',
+    phase: 'researching',
+    text: 'planner output',
+  }),
 ];
 
 describe('readSessionLog', () => {
@@ -66,7 +91,9 @@ describe('readSessionLog', () => {
 
   it('rejects invalid session ids', async () => {
     const dir = makeTmp();
-    await expect(collect(readSessionLog({ projectDir: dir, sessionId: '../outside' }))).rejects.toThrow('Invalid session id');
+    await expect(
+      collect(readSessionLog({ projectDir: dir, sessionId: '../outside' })),
+    ).rejects.toThrow('Invalid session id');
   });
 });
 
@@ -76,7 +103,7 @@ describe('readMessages', () => {
     writeFixture(dir, FIXTURE_LINES);
     const messages = await collect(readMessages({ projectDir: dir, sessionId: SESSION_ID }));
     expect(messages).toHaveLength(2);
-    expect(messages.every(m => m.kind === 'message')).toBe(true);
+    expect(messages.every((m) => m.kind === 'message')).toBe(true);
     expect(messages[0]?.role).toBe('user');
     expect(messages[1]?.role).toBe('assistant');
   });
@@ -88,6 +115,6 @@ describe('readEvents', () => {
     writeFixture(dir, FIXTURE_LINES);
     const events = await collect(readEvents({ projectDir: dir, sessionId: SESSION_ID }));
     expect(events).toHaveLength(2);
-    expect(events.every(e => e.kind === 'event')).toBe(true);
+    expect(events.every((e) => e.kind === 'event')).toBe(true);
   });
 });

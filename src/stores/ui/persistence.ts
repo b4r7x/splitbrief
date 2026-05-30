@@ -17,8 +17,8 @@ export function loadHistoryFromDisk(): string[] {
     const content = readFileSync(HISTORY_FILE, 'utf-8');
     return content
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
       .slice(0, MAX_INPUT_HISTORY);
   } catch (err) {
     if (isENOENT(err)) return [];
@@ -39,7 +39,7 @@ export function installHistoryPersistence(): () => void {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       try {
-        writeSecureFile(HISTORY_FILE, entries.map(e => redactSecrets(e)).join('\n'));
+        writeSecureFile(HISTORY_FILE, entries.map((e) => redactSecrets(e)).join('\n'));
       } catch (err) {
         warnError('input-history: failed to save', err);
       }

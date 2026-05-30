@@ -2,11 +2,7 @@ import { error, matches } from '../../utils/error.js';
 
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>
-    error(
-      'session-invalid-data',
-      `Invalid session data: ${reason}`,
-      { sessionId, reason },
-    ),
+    error('session-invalid-data', `Invalid session data: ${reason}`, { sessionId, reason }),
   idCollision: (base: string, attempts: number) =>
     error(
       'session-id-collision',

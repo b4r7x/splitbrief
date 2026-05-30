@@ -22,7 +22,11 @@ beforeEach(() => {
   createTestGitRepo(tmp);
   const diptychDir = join(tmp, DIPTYCH_DIR);
   mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(join(diptychDir, CONFIG_FILE), YAML.stringify(toYaml(createDefaultConfig())), 'utf-8');
+  writeFileSync(
+    join(diptychDir, CONFIG_FILE),
+    YAML.stringify(toYaml(createDefaultConfig())),
+    'utf-8',
+  );
 });
 
 afterEach(() => {

@@ -6,18 +6,44 @@ import { createImplementer } from '../runners/factory.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
-    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, kind: 'shell', command: 'my-ai-tool', outputFormat: 'text', ...extra },
+    implementer: {
+      model: 'test',
+      contextLength: 8192,
+      temperature: 0.3,
+      kind: 'shell',
+      command: 'my-ai-tool',
+      outputFormat: 'text',
+      ...extra,
+    },
   });
 }
 
-const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
+const context = { ...defaultContext, dir: '/tmp' };
 
-async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onOutput: (text: string) => void }) {
+async function implementTask(
+  task: ReturnType<typeof makeTask>,
+  opts: {
+    projectDir: string;
+    config: Config;
+    context: typeof defaultContext;
+    onOutput: (text: string) => void;
+  },
+) {
   const implementer = await createImplementer(opts.config);
   return implementer.implement({ ...opts, task });
 }
 
-async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onOutput: (text: string) => void }) {
+async function retryTask(
+  task: ReturnType<typeof makeTask>,
+  opts: {
+    projectDir: string;
+    config: Config;
+    context: typeof defaultContext;
+    error: string;
+    attempt: number;
+    onOutput: (text: string) => void;
+  },
+) {
   const implementer = await createImplementer(opts.config);
   return implementer.retry({ ...opts, task, kind: 'local' });
 }
@@ -27,7 +53,12 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onOutput: () => {} });
+    const result = await implementTask(task, {
+      projectDir: '/tmp',
+      config,
+      context,
+      onOutput: () => {},
+    });
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -39,7 +70,14 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
-    const result = await retryTask(task, { projectDir: '/tmp', config, context, error: 'previous error', attempt: 1, onOutput: () => {} });
+    const result = await retryTask(task, {
+      projectDir: '/tmp',
+      config,
+      context,
+      error: 'previous error',
+      attempt: 1,
+      onOutput: () => {},
+    });
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -51,7 +89,12 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/false' });
     const task = makeTask();
 
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onOutput: () => {} });
+    const result = await implementTask(task, {
+      projectDir: '/tmp',
+      config,
+      context,
+      onOutput: () => {},
+    });
 
     expect(result.success).toBe(false);
     expect(result.error).toBeTruthy();
@@ -71,7 +114,12 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', codeOutput] });
     const task = makeTask();
 
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onOutput: () => {} });
+    const result = await implementTask(task, {
+      projectDir: '/tmp',
+      config,
+      context,
+      onOutput: () => {},
+    });
 
     expect(result.success).toBe(true);
     expect(result.output).toContain('hello');
@@ -84,8 +132,12 @@ describe('shell implementer', () => {
     const progressCalls: string[] = [];
 
     await implementTask(task, {
-      projectDir: '/tmp', config, context,
-      onOutput: (text) => { progressCalls.push(text); },
+      projectDir: '/tmp',
+      config,
+      context,
+      onOutput: (text) => {
+        progressCalls.push(text);
+      },
     });
 
     expect(progressCalls.length).toBeGreaterThan(0);
@@ -97,13 +149,17 @@ describe('shell implementer', () => {
     const progressCalls: string[] = [];
 
     await retryTask(task, {
-      projectDir: '/tmp', config, context,
-      error: 'TypeError: x is not a function', attempt: 1,
-      onOutput: (text) => { progressCalls.push(text); },
+      projectDir: '/tmp',
+      config,
+      context,
+      error: 'TypeError: x is not a function',
+      attempt: 1,
+      onOutput: (text) => {
+        progressCalls.push(text);
+      },
     });
 
     const fullOutput = progressCalls.join('');
     expect(fullOutput).toContain('TypeError: x is not a function');
   });
-
 });

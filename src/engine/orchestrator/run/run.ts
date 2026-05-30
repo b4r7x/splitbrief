@@ -4,11 +4,10 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { generateSessionId } from '../../../core/sessions/lifecycle.js';
-import { resolveAutoModel } from '../../../core/providers/model-selection.js';
+import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
@@ -16,29 +15,36 @@ import { error } from '../../../utils/error.js';
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishError, publishWarningFromError } from '../events.js';
-import { saveFinalSession, withShutdownHandlers, installQueueHandler } from '../session-lifecycle.js';
+import {
+  saveFinalSession,
+  withShutdownHandlers,
+  installQueueHandler,
+} from '../session-lifecycle.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { runPlanningPhases, runTasksAndReview, applyPostPlanDrain } from './phases.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
 
-function shouldPreserveActiveSession(state: WorkflowState | undefined, signal: AbortSignal | undefined): boolean {
+function shouldPreserveActiveSession(
+  state: WorkflowState | undefined,
+  signal: AbortSignal | undefined,
+): boolean {
   return state?.pendingRecovery !== undefined || signal?.reason === WORKFLOW_REWIND_ABORT_REASON;
 }
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, savedState, selectedSkills } = opts;
   const startTime = Date.now();
-  const plannerModel = getRunnerModelName(config.planner);
-  const implementerModel = resolveAutoModel(config.implementer.model, getRunnerDisplayName(config.implementer));
+  const ident = runPricingIdentity(config);
   const sessionId = opts.sessionId ?? generateSessionId(projectDir, feature);
   const summaryBase: SummaryBase = {
-    feature, startTime,
-    plannerTool: getRunnerDisplayName(config.planner),
-    ...(plannerModel !== undefined && { plannerModel }),
-    implementerTool: getRunnerDisplayName(config.implementer),
-    ...(implementerModel !== undefined && { implementerModel }),
+    feature,
+    startTime,
+    plannerTool: ident.plannerTool,
+    ...(ident.plannerModel !== undefined && { plannerModel: ident.plannerModel }),
+    implementerTool: ident.implementerTool,
+    ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir,
     sessionId,
@@ -60,64 +66,120 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
   const { cancelled } = await withShutdownHandlers(
     {
-      projectDir, sessionId,
+      projectDir,
+      sessionId,
       getTrackedState: () => trackedState,
       getCurrentTask: () => currentTask,
     },
     async () => {
       try {
         const resumeHolder: ResumeContextHolder = { messages: [] };
-        const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; }, resumeHolder);
-        if (!init.ok) { result = init.summary; return; }
+        const init = await initializeWorkflow({
+          opts,
+          sessionId,
+          summaryBase,
+          metadata,
+          setTrackedState: (s) => {
+            trackedState = s;
+          },
+          resumeHolder,
+        });
+        if (!init.ok) {
+          result = init.summary;
+          return;
+        }
 
         wctx = init.wctx;
         trackedState = init.state;
         const phaseTimings: Record<string, number> = {};
 
         installQueueHandler({
-          projectDir, sessionId,
+          projectDir,
+          sessionId,
           sinks: wctx.sinks,
           getTrackedState: () => trackedState,
-          setTrackedState: (s) => { trackedState = s; },
+          setTrackedState: (s) => {
+            trackedState = s;
+          },
           bus: wctx.bus,
           config,
           planner: wctx.planner,
         });
 
         const planning = await runPlanningPhases({
-          wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
-          setTrackedState: (s) => { trackedState = s; },
+          wctx,
+          state: init.state,
+          savedState,
+          selectedSkills,
+          phaseTimings,
+          startTime,
+          setTrackedState: (s) => {
+            trackedState = s;
+          },
         });
-        if (planning.cancelled) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
+        if (planning.cancelled) {
+          result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+          return;
+        }
 
-        if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
+        if (opts.signal?.aborted) {
+          result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+          return;
+        }
 
-        const postPlanState = applyPostPlanDrain(projectDir, sessionId, planning.state, wctx.bus, (s) => { trackedState = s; });
+        const postPlanState = applyPostPlanDrain({
+          ctx: wctx,
+          state: planning.state,
+          setTrackedState: (s) => {
+            trackedState = s;
+          },
+        });
 
         const taskRun = await runTasksAndReview({
-          wctx, state: postPlanState, summaryBase, phaseTimings,
-          setTrackedState: (s) => { trackedState = s; },
-          setCurrentTask: (t) => { currentTask = t; },
+          wctx,
+          state: postPlanState,
+          summaryBase,
+          phaseTimings,
+          setTrackedState: (s) => {
+            trackedState = s;
+          },
+          setCurrentTask: (t) => {
+            currentTask = t;
+          },
         });
         result = taskRun.summary;
         sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
       } catch (err) {
         if (trackedState) {
-          try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
-            if (wctx) publishWarningFromError({ bus: wctx.bus, phase: trackedState.phase }, 'Failed to save state', saveErr);
+          try {
+            saveState(projectDir, sessionId, trackedState);
+          } catch (saveErr) {
+            if (wctx)
+              publishWarningFromError(
+                { bus: wctx.bus, phase: trackedState.phase },
+                'Failed to save state',
+                saveErr,
+              );
           }
         }
         killAllProcesses();
-        if (wctx && trackedState) publishError({ bus: wctx.bus, phase: trackedState.phase }, toErrorMessage(err));
+        if (wctx && trackedState)
+          publishError({ bus: wctx.bus, phase: trackedState.phase }, toErrorMessage(err));
         sessionStatus = 'failed';
-        result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
+        result = buildSummary({
+          ...summaryBase,
+          state: trackedState ?? createInitialState(feature),
+        });
       }
     },
   );
 
   if (!result) {
     if (cancelled) {
-      const summary = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
+      const summary = buildSummary({
+        ...summaryBase,
+        state: trackedState ?? createInitialState(feature),
+      });
       saveFinalSession({
         projectDir,
         sessionId,

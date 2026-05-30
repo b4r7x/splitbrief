@@ -5,7 +5,13 @@ import { saveState } from '../../core/state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { createClearQueueHandler, createQueueHandler, drainQueue, formatDrainedMessages, formatMessage } from './queue.js';
+import {
+  createClearQueueHandler,
+  createQueueHandler,
+  drainQueue,
+  formatDrainedMessages,
+  formatMessage,
+} from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
 import { createStateSerializer } from './state-serializer.js';
@@ -63,16 +69,18 @@ describe('enqueue', () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (s) => { state = s; },
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
       bus,
-      false,
+      persistTranscript: false,
       planner,
-      createStateSerializer(),
-    );
+      serialize: createStateSerializer(),
+    });
 
     handler('hello world', 'researching');
     await new Promise((r) => setTimeout(r, 0));
@@ -103,16 +111,18 @@ describe('enqueue', () => {
       },
     });
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (s) => { state = s; },
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
       bus,
-      false,
+      persistTranscript: false,
       planner,
-      createStateSerializer(),
-    );
+      serialize: createStateSerializer(),
+    });
 
     handler('inject me', 'researching');
 
@@ -138,18 +148,20 @@ describe('enqueue', () => {
       injectUserTurn: async () => {},
     });
     let writtenState: WorkflowState | undefined;
-    const setState = (s: WorkflowState) => { writtenState = s; };
+    const setState = (s: WorkflowState) => {
+      writtenState = s;
+    };
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => undefined,
+      getState: () => undefined,
       setState,
       bus,
-      false,
+      persistTranscript: false,
       planner,
-      createStateSerializer(),
-    );
+      serialize: createStateSerializer(),
+    });
 
     handler('no state', 'researching');
     await new Promise((r) => setTimeout(r, 0));
@@ -173,16 +185,18 @@ describe('enqueue', () => {
     }));
     state = { ...state!, messageQueue: fakeMessages };
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (s) => { state = s; },
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
       bus,
-      false,
+      persistTranscript: false,
       planner,
-      createStateSerializer(),
-    );
+      serialize: createStateSerializer(),
+    });
 
     handler('overflow', 'researching');
     await new Promise((r) => setTimeout(r, 0));
@@ -199,16 +213,18 @@ describe('enqueue', () => {
     const planner = makePlanner();
     const serialize = createStateSerializer();
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (s) => { state = s; },
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
       bus,
-      false,
+      persistTranscript: false,
       planner,
       serialize,
-    );
+    });
 
     handler('first', 'researching');
     handler('second', 'researching');
@@ -232,16 +248,18 @@ describe('enqueue', () => {
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
 
-    const handler = createQueueHandler(
+    const handler = createQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (s) => { state = s; },
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
       bus,
-      false,
+      persistTranscript: false,
       planner,
-      createStateSerializer(),
-    );
+      serialize: createStateSerializer(),
+    });
 
     handler('do not drop me', 'researching');
     await new Promise((r) => setTimeout(r, 0));
@@ -262,13 +280,15 @@ describe('clear', () => {
     ]);
     const { bus, events } = makeBusRecorder();
 
-    const clear = createClearQueueHandler(
+    const clear = createClearQueueHandler({
       projectDir,
       sessionId,
-      () => state,
-      (next) => { state = next; },
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
       bus,
-    );
+    });
 
     const count = clear();
 
@@ -276,29 +296,41 @@ describe('clear', () => {
     expect(state?.messageQueue).toEqual([
       expect.objectContaining({ id: 'msg-drained', text: 'drained' }),
     ]);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'queue_cleared',
-      count: 1,
-      phase: state?.phase,
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'queue_cleared',
+        count: 1,
+        phase: state?.phase,
+      }),
+    );
   });
 
   it('clears pending messages from persisted state when caller state is stale', () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
-    saveState(projectDir, sessionId, makeStateWithQueue([
-      makeMessage('persisted pending'),
-      { ...makeMessage('persisted drained'), id: 'msg-drained', drainedAt: new Date().toISOString() },
-    ]));
-    const { bus } = makeBusRecorder();
-
-    const clear = createClearQueueHandler(
+    saveState(
       projectDir,
       sessionId,
-      () => state,
-      (next) => { state = next; },
-      bus,
+      makeStateWithQueue([
+        makeMessage('persisted pending'),
+        {
+          ...makeMessage('persisted drained'),
+          id: 'msg-drained',
+          drainedAt: new Date().toISOString(),
+        },
+      ]),
     );
+    const { bus } = makeBusRecorder();
+
+    const clear = createClearQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+    });
 
     const count = clear();
 
@@ -325,8 +357,18 @@ describe('drain', () => {
   it('returns pending messages and marks them drained + emits queue-drained event', () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeStateWithQueue([
-      { id: 'msg-1', text: 'first message', queuedAt: new Date().toISOString(), phase: 'researching' },
-      { id: 'msg-2', text: 'second message', queuedAt: new Date().toISOString(), phase: 'researching' },
+      {
+        id: 'msg-1',
+        text: 'first message',
+        queuedAt: new Date().toISOString(),
+        phase: 'researching',
+      },
+      {
+        id: 'msg-2',
+        text: 'second message',
+        queuedAt: new Date().toISOString(),
+        phase: 'researching',
+      },
     ]);
     const { bus, events } = makeBusRecorder();
 
@@ -362,9 +404,7 @@ describe('drain', () => {
   it('drains pending messages from persisted state when caller state is stale', () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = makeResearchingState();
-    saveState(projectDir, sessionId, makeStateWithQueue([
-      makeMessage('persisted pending'),
-    ]));
+    saveState(projectDir, sessionId, makeStateWithQueue([makeMessage('persisted pending')]));
     const { bus } = makeBusRecorder();
 
     const result = drainQueue(projectDir, sessionId, staleState, bus);
@@ -377,8 +417,11 @@ describe('drain', () => {
 describe('formatMessage', () => {
   it('formats user-input message with [user also says] wrapper', () => {
     const msg: QueuedMessage = {
-      id: 'msg-1', text: 'add logging', queuedAt: new Date().toISOString(),
-      phase: 'researching', deliveredViaNative: false,
+      id: 'msg-1',
+      text: 'add logging',
+      queuedAt: new Date().toISOString(),
+      phase: 'researching',
+      deliveredViaNative: false,
     };
     const result = formatMessage(msg);
     expect(result).toContain('[user also says during researching]');
@@ -388,9 +431,13 @@ describe('formatMessage', () => {
 
   it('formats clarification message with [clarification answer] wrapper', () => {
     const msg: QueuedMessage = {
-      id: 'msg-2', text: 'Yes, JWT', queuedAt: new Date().toISOString(),
-      phase: 'specifying', deliveredViaNative: false,
-      origin: 'clarification', question: 'Use JWT?',
+      id: 'msg-2',
+      text: 'Yes, JWT',
+      queuedAt: new Date().toISOString(),
+      phase: 'specifying',
+      deliveredViaNative: false,
+      origin: 'clarification',
+      question: 'Use JWT?',
     };
     const result = formatMessage(msg);
     expect(result).toContain('[clarification answer during specifying]');
@@ -406,13 +453,15 @@ describe('formatDrainedMessages', () => {
   });
 
   it('formats single message', () => {
-    const messages: QueuedMessage[] = [{
-      id: 'msg-1',
-      text: 'add logging',
-      queuedAt: new Date().toISOString(),
-      phase: 'researching',
-      deliveredViaNative: false,
-    }];
+    const messages: QueuedMessage[] = [
+      {
+        id: 'msg-1',
+        text: 'add logging',
+        queuedAt: new Date().toISOString(),
+        phase: 'researching',
+        deliveredViaNative: false,
+      },
+    ];
 
     const result = formatDrainedMessages(messages);
 
@@ -422,8 +471,20 @@ describe('formatDrainedMessages', () => {
 
   it('formats multiple messages with numbered list', () => {
     const messages: QueuedMessage[] = [
-      { id: 'msg-1', text: 'first', queuedAt: new Date().toISOString(), phase: 'researching', deliveredViaNative: false },
-      { id: 'msg-2', text: 'second', queuedAt: new Date().toISOString(), phase: 'specifying', deliveredViaNative: false },
+      {
+        id: 'msg-1',
+        text: 'first',
+        queuedAt: new Date().toISOString(),
+        phase: 'researching',
+        deliveredViaNative: false,
+      },
+      {
+        id: 'msg-2',
+        text: 'second',
+        queuedAt: new Date().toISOString(),
+        phase: 'specifying',
+        deliveredViaNative: false,
+      },
     ];
 
     const result = formatDrainedMessages(messages);
@@ -439,11 +500,21 @@ describe('native injection', () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
     let writtenState: WorkflowState | undefined;
-    const setState = (s: WorkflowState) => { writtenState = s; };
+    const setState = (s: WorkflowState) => {
+      writtenState = s;
+    };
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
 
-    await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, () => state, setState, bus);
+    await dispatchNativeInjection({
+      message: makeMessage(),
+      planner,
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState,
+      bus,
+    });
 
     expect(writtenState).toBeUndefined();
   });
@@ -452,7 +523,9 @@ describe('native injection', () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
     let capturedState: WorkflowState | undefined;
-    const setState = (s: WorkflowState) => { capturedState = s; };
+    const setState = (s: WorkflowState) => {
+      capturedState = s;
+    };
     const { bus, events } = makeBusRecorder();
     const injectedTurns: Array<{ text: string; dir: string }> = [];
     const planner = makePlanner({
@@ -470,7 +543,15 @@ describe('native injection', () => {
     });
     const message = makeMessage('inject this');
 
-    await dispatchNativeInjection(message, planner, projectDir, sessionId, () => state, setState, bus);
+    await dispatchNativeInjection({
+      message,
+      planner,
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState,
+      bus,
+    });
 
     expect(injectedTurns).toEqual([{ text: 'inject this', dir: projectDir }]);
     expect(capturedState).toBeDefined();
@@ -481,7 +562,9 @@ describe('native injection', () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
     let writtenState: WorkflowState | undefined;
-    const setState = (s: WorkflowState) => { writtenState = s; };
+    const setState = (s: WorkflowState) => {
+      writtenState = s;
+    };
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
       capabilities: {
@@ -498,7 +581,15 @@ describe('native injection', () => {
     });
 
     await expect(
-      dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, () => state, setState, bus),
+      dispatchNativeInjection({
+        message: makeMessage(),
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState,
+        bus,
+      }),
     ).resolves.toBeUndefined();
 
     expect(writtenState).toBeUndefined();
@@ -524,10 +615,17 @@ describe('native injection', () => {
     });
 
     let capturedState: WorkflowState | undefined;
-    await dispatchNativeInjection(
-      makeMessage('original'), planner, projectDir, sessionId,
-      () => state, (s) => { capturedState = s; }, bus,
-    );
+    await dispatchNativeInjection({
+      message: makeMessage('original'),
+      planner,
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (s) => {
+        capturedState = s;
+      },
+      bus,
+    });
 
     expect(capturedState).toBeDefined();
     expect(capturedState!.messageQueue.some((m) => m.text === 'concurrent')).toBe(true);
@@ -556,10 +654,17 @@ describe('clarifications', () => {
     const questions = [{ id: 'q1', type: 'input' as const, text: 'Use JWT?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('Yes, use JWT');
 
-    const resultState = await collectAndPersistClarifications(
-      questions, projectDir, sessionId, state,
-      onQuestionAsked, false, bus, null, planner,
-    );
+    const resultState = await collectAndPersistClarifications({
+      questions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked,
+      persistTranscript: false,
+      bus,
+      metadata: null,
+      planner,
+    });
 
     expect(resultState.messageQueue).toHaveLength(1);
     const msg = resultState.messageQueue[0];
@@ -589,10 +694,17 @@ describe('clarifications', () => {
     const questions = [{ id: 'q2', type: 'input' as const, text: 'Use sessions?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('No sessions');
 
-    const resultState = await collectAndPersistClarifications(
-      questions, projectDir, sessionId, state,
-      onQuestionAsked, false, bus, null, planner,
-    );
+    const resultState = await collectAndPersistClarifications({
+      questions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked,
+      persistTranscript: false,
+      bus,
+      metadata: null,
+      planner,
+    });
 
     expect(resultState.messageQueue).toHaveLength(1);
     const queued = resultState.messageQueue[0];
@@ -611,7 +723,10 @@ describe('clarifications', () => {
     const planner = makePlanner();
     const questions = [{ id: 'q3', type: 'input' as const, text: 'Should I use Redis?' }];
     let asked = 0;
-    const onQuestionAsked = async () => { asked++; return 'Yes'; };
+    const onQuestionAsked = async () => {
+      asked++;
+      return 'Yes';
+    };
 
     const stderrWrites: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
@@ -621,10 +736,17 @@ describe('clarifications', () => {
     }) as typeof process.stderr.write;
 
     try {
-      const resultState = await collectAndPersistClarifications(
-        questions, projectDir, sessionId, state,
-        onQuestionAsked, false, bus, null, planner,
-      );
+      const resultState = await collectAndPersistClarifications({
+        questions,
+        projectDir,
+        sessionId,
+        state,
+        onQuestionAsked,
+        persistTranscript: false,
+        bus,
+        metadata: null,
+        planner,
+      });
 
       expect(resultState.messageQueue).toHaveLength(0);
       expect(asked).toBe(0);
@@ -653,22 +775,31 @@ describe('clarifications', () => {
     const questions = [{ id: 'cq1', type: 'input' as const, text: 'Should we use GraphQL?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('Yes, use GraphQL');
 
-    await collectAndPersistClarifications(
-      questions, projectDir, sessionId, state,
-      onQuestionAsked, false, bus, null, planner,
-    );
+    await collectAndPersistClarifications({
+      questions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked,
+      persistTranscript: false,
+      bus,
+      metadata: null,
+      planner,
+    });
 
     expect(events.some((e) => e.type === 'clarification_answered')).toBe(true);
     expect(events.some((e) => e.type === 'message_queued')).toBe(true);
     expect(events.some((e) => e.type === 'clarifications_collected')).toBe(true);
 
     const answeredEvent = events.find((e) => e.type === 'clarification_answered');
-    if (!answeredEvent || answeredEvent.type !== 'clarification_answered') throw new Error('clarification_answered event missing');
+    if (!answeredEvent || answeredEvent.type !== 'clarification_answered')
+      throw new Error('clarification_answered event missing');
     expect(answeredEvent.questionId).toBe('cq1');
     expect(answeredEvent.answer).toBe('Yes, use GraphQL');
 
     const collectedEvent = events.find((e) => e.type === 'clarifications_collected');
-    if (!collectedEvent || collectedEvent.type !== 'clarifications_collected') throw new Error('clarifications_collected event missing');
+    if (!collectedEvent || collectedEvent.type !== 'clarifications_collected')
+      throw new Error('clarifications_collected event missing');
     expect(collectedEvent.count).toBe(1);
   });
 });

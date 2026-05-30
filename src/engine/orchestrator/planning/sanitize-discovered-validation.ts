@@ -3,11 +3,24 @@ import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { warnStderr } from '../../../lib/warn.js';
 
 const ALLOWED_COMMANDS = new Set([
-  'npm', 'npx', 'node', 'tsc',
-  'vitest', 'jest', 'eslint', 'prettier', 'biome',
-  'cargo', 'go', 'golangci-lint',
-  'pytest', 'mypy', 'ruff',
-  'pnpm', 'yarn', 'bun',
+  'npm',
+  'npx',
+  'node',
+  'tsc',
+  'vitest',
+  'jest',
+  'eslint',
+  'prettier',
+  'biome',
+  'cargo',
+  'go',
+  'golangci-lint',
+  'pytest',
+  'mypy',
+  'ruff',
+  'pnpm',
+  'yarn',
+  'bun',
 ]);
 
 const SHELL_OPERATORS = /[|&;`$(){}]/;
@@ -43,7 +56,9 @@ export function sanitizeDiscoveredValidation(
     if (isCommandSafe(value)) {
       sanitized[field] = value;
     } else {
-      warnStderr(`sanitize-discovered: planner-suggested ${field} '${value}' was ignored (not in allowlist)`);
+      warnStderr(
+        `sanitize-discovered: planner-suggested ${field} '${value}' was ignored (not in allowlist)`,
+      );
     }
   }
 

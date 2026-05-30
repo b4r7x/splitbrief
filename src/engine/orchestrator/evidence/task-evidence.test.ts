@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEvidenceLedger } from './ledger.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
 import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
@@ -20,7 +20,10 @@ describe('recordLocalTaskEvidence', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({
-      ledger, task, status: 'done', validation: [passing('typecheck'), passing('lint')],
+      ledger,
+      task,
+      status: 'done',
+      validation: [passing('typecheck'), passing('lint')],
     });
     expect(updated.tasks[0]?.status).toBe('done');
     expect(updated.tasks[0]?.observedEvidence).toContain('typecheck passed');
@@ -34,7 +37,11 @@ describe('recordRetryOrEscalationEvidence', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordRetryOrEscalationEvidence({
-      ledger, task, status: 'escalated', escalated: true, validation: [failing('typecheck', 'error')],
+      ledger,
+      task,
+      status: 'escalated',
+      escalated: true,
+      validation: [failing('typecheck', 'error')],
     });
     expect(updated.tasks[0]?.escalated).toBe(true);
     expect(updated.tasks[0]?.observedEvidence).toContain('task reached escalated');

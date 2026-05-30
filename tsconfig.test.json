@@ -9,11 +9,6 @@
       "#testing/*": ["./testing/*"]
     }
   },
-  "include": [
-    "src/**/*",
-    "testing/**/*",
-    "evals/*.ts",
-    "evals/scenarios/**/*.ts"
-  ],
+  "include": ["src/**/*", "testing/**/*", "evals/*.ts", "evals/scenarios/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -129,9 +129,9 @@ describe('continueCommand', () => {
   it('throws when no session exists and no active pointer', async () => {
     const projectDir = makeTmpProject();
 
-    await expect(
-      continueCommand(undefined, { projectDir }, deps),
-    ).rejects.toThrow(/no session to continue/);
+    await expect(continueCommand(undefined, { projectDir }, deps)).rejects.toThrow(
+      /no session to continue/,
+    );
   });
 
   it('throws when explicit session ID has no state and is not running', async () => {
@@ -139,9 +139,9 @@ describe('continueCommand', () => {
     const sessDir = makeSessionDir(projectDir, '2025-04-01-my-feature');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-my-feature' });
 
-    await expect(
-      continueCommand('2025-04-01-my-feature', { projectDir }, deps),
-    ).rejects.toThrow(/no saved state and is not running/);
+    await expect(continueCommand('2025-04-01-my-feature', { projectDir }, deps)).rejects.toThrow(
+      /no saved state and is not running/,
+    );
   });
 
   it('throws for a completed session that is not resumable', async () => {
@@ -150,9 +150,9 @@ describe('continueCommand', () => {
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-done' });
     writeState(sessDir, 'complete');
 
-    await expect(
-      continueCommand('2025-04-01-done', { projectDir }, deps),
-    ).rejects.toThrow(/cannot be resumed/);
+    await expect(continueCommand('2025-04-01-done', { projectDir }, deps)).rejects.toThrow(
+      /cannot be resumed/,
+    );
   });
 
   it('routes interrupted sessions to RPC mode when --rpc is passed', async () => {
@@ -222,9 +222,9 @@ describe('continueCommand', () => {
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-old' });
     writeState(sessDir, 'implementing', { stateVersion: 1 });
 
-    await expect(
-      continueCommand('2025-04-01-old', { projectDir }, deps),
-    ).rejects.toThrow(/no saved state/);
+    await expect(continueCommand('2025-04-01-old', { projectDir }, deps)).rejects.toThrow(
+      /no saved state/,
+    );
   });
 
   it('accepts a session with the current stateVersion', async () => {

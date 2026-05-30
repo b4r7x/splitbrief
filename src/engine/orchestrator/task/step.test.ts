@@ -20,7 +20,7 @@ import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/base.js';
 import { createValidator } from '../validation.js';
 import { runSingleTask } from './step.js';
-import { readEvidenceLedger } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -194,13 +194,18 @@ describe('runSingleTask — happy path', () => {
             tiers: { write_in_scope: 'sticky' },
           },
           hooks: {
-            pre_task: [{
-              kind: 'command',
-              command: 'node',
-              args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'ran')`],
-              timeout_ms: 5000,
-              on_failure: 'block',
-            }],
+            pre_task: [
+              {
+                kind: 'command',
+                command: 'node',
+                args: [
+                  '-e',
+                  `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'ran')`,
+                ],
+                timeout_ms: 5000,
+                on_failure: 'block',
+              },
+            ],
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { commitStrategy: 'none', maxRetries: 2 },
@@ -278,7 +283,9 @@ describe('runSingleTask — happy path', () => {
     });
 
     const ledger = readEvidenceLedger(projectDir, sessionId);
-    expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.changedFiles).toContain('src/hello.ts');
+    expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.changedFiles).toContain(
+      'src/hello.ts',
+    );
   });
 
   it('blocks out-of-scope changes to an already-dirty file (dirty-at-start detection)', async () => {
@@ -657,7 +664,13 @@ describe('runSingleTask — happy path', () => {
     expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe(concurrentUserEdit);
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
-    expect(events.find((event) => event.type === 'paused_external_changes' && event.conflict?.kind === 'changed-during-approval-promotion')).toMatchObject({
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'paused_external_changes' &&
+          event.conflict?.kind === 'changed-during-approval-promotion',
+      ),
+    ).toMatchObject({
       type: 'paused_external_changes',
       selectedAction: 'pause',
       conflict: {
@@ -719,7 +732,11 @@ describe('runSingleTask — happy path', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false, tiers: { write_in_scope: 'sticky' } },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_in_scope: 'sticky' },
+          },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { commitStrategy: 'none', maxRetries: 2 },
         }),
@@ -742,7 +759,12 @@ describe('runSingleTask — happy path', () => {
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
       files: ['src/race.ts'],
-      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: [
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ],
     });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',
@@ -791,7 +813,11 @@ describe('runSingleTask — happy path', () => {
         callbacks,
         implementer,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false, tiers: { write_in_scope: 'confirm' } },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_in_scope: 'confirm' },
+          },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { commitStrategy: 'none', maxRetries: 2 },
         }),
@@ -806,12 +832,14 @@ describe('runSingleTask — happy path', () => {
     });
 
     const ledger = readEvidenceLedger(projectDir, sessionId);
-    expect(ledger?.approvals).toContainEqual(expect.objectContaining({
-      taskId: 'T001',
-      tier: 'confirm',
-      actionClass: 'write_in_scope',
-      actionDescription: 'create src/hello.ts',
-      reason: 'approved scoped source write',
-    }));
+    expect(ledger?.approvals).toContainEqual(
+      expect.objectContaining({
+        taskId: 'T001',
+        tier: 'confirm',
+        actionClass: 'write_in_scope',
+        actionDescription: 'create src/hello.ts',
+        reason: 'approved scoped source write',
+      }),
+    );
   });
 });

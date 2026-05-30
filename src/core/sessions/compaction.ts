@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { SESSION_LOG_FILE } from '../paths.js';
 import type { ResolvedCompactionFormat, StructuredSummary } from '../schemas/compaction.js';
-import type { SessionLogEntry, SessionLogMessageEntry, SessionLogSummaryEntry } from '../schemas/session-log.js';
+import type {
+  SessionLogEntry,
+  SessionLogMessageEntry,
+  SessionLogSummaryEntry,
+} from '../schemas/session-log.js';
 import { findLatestSummary, isAfterTimestamp, readSessionLogFromDir } from './log-reader.js';
 
 export const DEFAULT_KEEP_RECENT_COUNT = 10;
@@ -36,7 +40,8 @@ export async function compactTranscript(
   const log = await readLogCompactionState(opts.sessionDir);
   const previousStructured = log.latestSummary?.structured;
   const messages = messagesToSummarize(log, opts.format, previousStructured);
-  const summarizeCount = messages.length - normalizedKeepCount(opts.keepRecentCount ?? DEFAULT_KEEP_RECENT_COUNT);
+  const summarizeCount =
+    messages.length - normalizedKeepCount(opts.keepRecentCount ?? DEFAULT_KEEP_RECENT_COUNT);
   if (summarizeCount <= 0) return { summary: '', entriesRemoved: 0 };
 
   const summarizedMessages = messages.slice(0, summarizeCount);
@@ -70,7 +75,7 @@ async function readLogCompactionState(sessionDir: string): Promise<LogCompaction
     entries.push(entry);
   }
   return {
-    messages: entries.filter(entry => entry.kind === 'message'),
+    messages: entries.filter((entry) => entry.kind === 'message'),
     latestSummary: findLatestSummary(entries),
   };
 }
@@ -81,7 +86,9 @@ function messagesToSummarize(
   previousStructured: StructuredSummary | undefined,
 ): SessionLogMessageEntry[] {
   if (format !== 'structured' || !previousStructured || !log.latestSummary) return log.messages;
-  return log.messages.filter(message => isAfterTimestamp(message.ts, log.latestSummary?.summarizedUpTo ?? ''));
+  return log.messages.filter((message) =>
+    isAfterTimestamp(message.ts, log.latestSummary?.summarizedUpTo ?? ''),
+  );
 }
 
 function normalizedKeepCount(keepRecentCount: number): number {
@@ -110,5 +117,7 @@ async function summarizeMessages(
 }
 
 async function appendSummary(sessionDir: string, entry: SessionLogSummaryEntry): Promise<void> {
-  await appendFile(join(sessionDir, SESSION_LOG_FILE), `${JSON.stringify(entry)}\n`, { mode: SECURE_FILE_MODE });
+  await appendFile(join(sessionDir, SESSION_LOG_FILE), `${JSON.stringify(entry)}\n`, {
+    mode: SECURE_FILE_MODE,
+  });
 }

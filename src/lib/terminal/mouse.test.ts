@@ -77,7 +77,11 @@ function makeFakeStdin(): NodeJS.ReadStream {
   return pt as unknown as NodeJS.ReadStream;
 }
 
-async function readFiltered(stream: NodeJS.ReadStream, bytes: number, timeoutMs = 200): Promise<string> {
+async function readFiltered(
+  stream: NodeJS.ReadStream,
+  bytes: number,
+  timeoutMs = 200,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let buf = '';
     const onData = (chunk: Buffer) => {
@@ -112,7 +116,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     fakeStdin.emit('data', Buffer.from('hello\u001b[<64;10'));
     fakeStdin.emit('data', Buffer.from(';20Mworld'));
@@ -131,7 +135,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     fakeStdin.emit('data', Buffer.from('a\u001b[<65;1;1Mb'));
 
@@ -149,7 +153,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     fakeStdin.emit('data', Buffer.from('hello world'));
 
@@ -165,7 +169,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     fakeStdin.emit('data', Buffer.from('a\u001b[<0;3;4Mb\u001b[<2;5;6Mc'));
 
@@ -181,14 +185,14 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M\u001b[<65;2;2Mtail'));
 
     const clean = await readFiltered(filtered.stdin, 'tail'.length);
 
     expect(clean).toBe('tail');
-    expect(events.map(e => e.type)).toEqual(['wheel-up', 'wheel-down']);
+    expect(events.map((e) => e.type)).toEqual(['wheel-up', 'wheel-down']);
     expect(events[0]).toMatchObject({ x: 1, y: 1 });
     expect(events[1]).toMatchObject({ x: 2, y: 2 });
 
@@ -200,17 +204,17 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('prefix\u001b[<64;'));
     // After the first chunk: 'prefix' is visible, escape tail held back — no event yet.
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
     expect(collected.join('')).toBe('prefix');
     expect(events).toEqual([]);
 
     fakeStdin.emit('data', Buffer.from('5;6Mdone'));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('prefixdone');
     expect(events).toEqual([
@@ -224,7 +228,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     const cleanPromise = readFiltered(filtered.stdin, 'leftright'.length);
     fakeStdin.emit('data', Buffer.from('left\u001b[<0;5'));
@@ -241,16 +245,16 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('left\u001b'));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('left');
 
     fakeStdin.emit('data', Buffer.from('[<64;1;2Mright'));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('leftright');
     expect(events).toEqual([
@@ -265,16 +269,16 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('left\u001b['));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('left');
 
     fakeStdin.emit('data', Buffer.from('<65;3;4Mright'));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('leftright');
     expect(events).toEqual([
@@ -290,7 +294,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
 
     const cleanPromise = readFiltered(filtered.stdin, 'ab\u001bx'.length);
     fakeStdin.emit('data', Buffer.from('ab\u001b'));
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
     fakeStdin.emit('data', Buffer.from('x'));
 
     await expect(cleanPromise).resolves.toBe('ab\u001bx');
@@ -303,8 +307,8 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const a: MouseEvent[] = [];
     const b: MouseEvent[] = [];
-    const unsubA = filtered.onMouse(e => a.push(e));
-    filtered.onMouse(e => b.push(e));
+    const unsubA = filtered.onMouse((e) => a.push(e));
+    filtered.onMouse((e) => b.push(e));
 
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M'));
     unsubA();
@@ -320,7 +324,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse(e => events.push(e));
+    filtered.onMouse((e) => events.push(e));
 
     filtered.disable();
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M'));

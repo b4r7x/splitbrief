@@ -3,7 +3,12 @@ import type { OrchestratorCallbacks, ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import { publishWarning, publishWarningFromError } from './events.js';
-import { buildResumeContext, compactResumeTranscript, keepRecentCountForThreshold } from './transcript-rebuild.js';
+import {
+  bindPlannerToProjectDir,
+  buildResumeContext,
+  compactResumeTranscript,
+  keepRecentCountForThreshold,
+} from './transcript-rebuild.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 
 export type ApplyRebuiltContextOpts = {
@@ -34,31 +39,43 @@ export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Pro
   if (rebuilt.messages.length <= threshold) return;
 
   try {
-    const format = resolveCompactionFormat(opts.config.workflow.compactionFormat, opts.config.planner.kind);
-    const summarizeStructured = opts.planner.summarizeStructured;
-    await compactResumeTranscript(
-      opts.projectDir,
-      opts.sessionId,
-      {
-        summarize: messages => summarize(messages, opts.projectDir),
-        ...(summarizeStructured
-          ? { summarizeStructured: (messages, previous) => summarizeStructured(messages, previous, opts.projectDir) }
-          : {}),
-      },
-      keepRecentCountForThreshold(threshold),
-      format,
-      () => publishWarning({ bus: opts.bus, phase: 'researching' }, 'Structured compaction returned invalid JSON; saved freeform summary instead.'),
+    const format = resolveCompactionFormat(
+      opts.config.workflow.compactionFormat,
+      opts.config.planner.kind,
     );
+    await compactResumeTranscript({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      planner: bindPlannerToProjectDir(opts.planner, opts.projectDir),
+      keepRecentCount: keepRecentCountForThreshold(threshold),
+      format,
+      onFallback: () =>
+        publishWarning(
+          { bus: opts.bus, phase: 'researching' },
+          'Structured compaction returned invalid JSON; saved freeform summary instead.',
+        ),
+    });
   } catch (err) {
-    publishWarningFromError({ bus: opts.bus, phase: 'researching' }, 'Transcript auto-compaction failed', err);
+    publishWarningFromError(
+      { bus: opts.bus, phase: 'researching' },
+      'Transcript auto-compaction failed',
+      err,
+    );
   }
 }
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
   const { projectDir, sessionId, bus, config, resumeHolder, requireNonEmpty } = opts;
-  const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+  const rebuilt = await buildResumeContext(
+    projectDir,
+    sessionId,
+    config.workflow.persistTranscript !== false,
+  );
   if (rebuilt.warning === 'transcript-unavailable') {
-    publishWarning({ bus: bus, phase: 'researching' }, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+    publishWarning(
+      { bus: bus, phase: 'researching' },
+      'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.',
+    );
     return;
   }
   if (!resumeHolder) return;
@@ -77,7 +94,10 @@ export type SessionExpiredHandlerOpts = {
 
 export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {
   return async () => {
-    publishWarning({ bus: opts.bus, phase: 'researching' }, 'Previous planner conversation expired — rebuilding context from transcript.');
+    publishWarning(
+      { bus: opts.bus, phase: 'researching' },
+      'Previous planner conversation expired — rebuilding context from transcript.',
+    );
     await applyRebuiltContext(opts);
   };
 }

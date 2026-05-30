@@ -43,15 +43,21 @@ export const WorkflowStateSchema = z.object({
   implementerModel: z.string().optional(),
   awaitingContinue: z.boolean().default(false),
   messageQueue: z.array(QueuedMessageSchema).default([]),
-  rewindPending: z.object({
-    target: z.enum(['spec', 'plan']),
-    comment: z.string().optional(),
-  }).optional(),
-  clarifications: z.array(z.object({
-    id: z.string(),
-    question: z.string(),
-    answer: z.string(),
-  })).optional(),
+  rewindPending: z
+    .object({
+      target: z.enum(['spec', 'plan']),
+      comment: z.string().optional(),
+    })
+    .optional(),
+  clarifications: z
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        answer: z.string(),
+      }),
+    )
+    .optional(),
   constitutionFailureReason: z.string().optional(),
   analysisResult: AnalyzeResultSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),

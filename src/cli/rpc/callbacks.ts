@@ -8,11 +8,13 @@ import type { ApprovalGateResult } from './gates.js';
 export function parseTaskReviewResponse(text: string): TaskReviewResponse | null {
   const [rawAction, ...rest] = text.trim().split(/\s+/);
   const notes = rest.join(' ').trim() || undefined;
-  if (rawAction === 'continue') return notes ? { action: 'continue', notes } : { action: 'continue' };
+  if (rawAction === 'continue')
+    return notes ? { action: 'continue', notes } : { action: 'continue' };
   if (rawAction === 'redo' || rawAction === 'redo-task') {
     return notes ? { action: 'redo-task', notes } : { action: 'redo-task' };
   }
-  if (rawAction === 'revise-plan') return notes ? { action: 'revise-plan', notes } : { action: 'revise-plan' };
+  if (rawAction === 'revise-plan')
+    return notes ? { action: 'revise-plan', notes } : { action: 'revise-plan' };
   if (rawAction === 'abort') return notes ? { action: 'abort', notes } : { action: 'abort' };
   return null;
 }
@@ -38,11 +40,19 @@ export function createWorkflowCallbacks(deps: {
     onQuestionAsked: async (question, num, total) =>
       deps.waitForMessage({ pending: 'question', question, num, total }),
     onBudgetExceeded: async (currentCost, maxBudget) => {
-      const result = await deps.waitForApproval({ pending: 'budget_exceeded', currentCost, maxBudget });
+      const result = await deps.waitForApproval({
+        pending: 'budget_exceeded',
+        currentCost,
+        maxBudget,
+      });
       return result.approved;
     },
     onBudgetPaused: async (currentCost, maxBudget) => {
-      const result = await deps.waitForApproval({ pending: 'budget_paused', currentCost, maxBudget });
+      const result = await deps.waitForApproval({
+        pending: 'budget_paused',
+        currentCost,
+        maxBudget,
+      });
       return result.approved ? 'continue' : 'abort';
     },
     onCostApprovalNeeded: async (prediction) => {
@@ -57,7 +67,11 @@ export function createWorkflowCallbacks(deps: {
         return { decision: 'deny', reason: result.comment ?? 'Rejected via RPC' };
       }
       if (request.tier === 'confirm') {
-        return { decision: 'confirm', phrase: 'I confirm', reason: result.comment ?? 'Approved via RPC' };
+        return {
+          decision: 'confirm',
+          phrase: 'I confirm',
+          reason: result.comment ?? 'Approved via RPC',
+        };
       }
       return { decision: 'allow', scope: 'once' };
     },
@@ -66,7 +80,9 @@ export function createWorkflowCallbacks(deps: {
         const answer = await deps.waitForMessage({ pending: 'task_review', request });
         const response = parseTaskReviewResponse(answer);
         if (response) return response;
-        deps.reportError('Invalid task review response. Use: continue, redo, revise-plan, or abort.');
+        deps.reportError(
+          'Invalid task review response. Use: continue, redo, revise-plan, or abort.',
+        );
       }
     },
     onComplete: () => undefined,

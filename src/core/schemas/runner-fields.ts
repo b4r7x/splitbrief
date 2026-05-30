@@ -2,14 +2,16 @@ import { z } from 'zod';
 import { CliToolIdSchema, EffortLevelSchema, OutputFormatSchema } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
-const PlannerCapabilitiesSchema = z.object({
-  supportsConversationalPlanning: z.boolean(),
-  supportsHintEscalation: z.boolean(),
-  supportsSessionResume: z.boolean(),
-  supportsEffort: z.boolean(),
-  supportsImages: z.boolean(),
-  supportsSelfSummarisation: z.boolean(),
-}).strict();
+const PlannerCapabilitiesSchema = z
+  .object({
+    supportsConversationalPlanning: z.boolean(),
+    supportsHintEscalation: z.boolean(),
+    supportsSessionResume: z.boolean(),
+    supportsEffort: z.boolean(),
+    supportsImages: z.boolean(),
+    supportsSelfSummarisation: z.boolean(),
+  })
+  .strict();
 
 const CliRunnerFields = {
   kind: z.literal('cli'),
@@ -62,12 +64,40 @@ type RunnerKindCapabilities = {
 };
 
 export const RUNNER_DESCRIPTORS = {
-  cli: { fields: CliRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: false },
-  api: { fields: ApiRunnerFields, usesArgsOutputFormat: false, usesApiKey: true, requiresCommand: false },
-  shell: { fields: ShellRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
-  agent: { fields: AgentRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
-  'agent-sdk': { fields: AgentSdkRunnerFields, usesArgsOutputFormat: false, usesApiKey: true, requiresCommand: false },
-} as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> } & RunnerKindCapabilities>;
+  cli: {
+    fields: CliRunnerFields,
+    usesArgsOutputFormat: true,
+    usesApiKey: false,
+    requiresCommand: false,
+  },
+  api: {
+    fields: ApiRunnerFields,
+    usesArgsOutputFormat: false,
+    usesApiKey: true,
+    requiresCommand: false,
+  },
+  shell: {
+    fields: ShellRunnerFields,
+    usesArgsOutputFormat: true,
+    usesApiKey: false,
+    requiresCommand: true,
+  },
+  agent: {
+    fields: AgentRunnerFields,
+    usesArgsOutputFormat: true,
+    usesApiKey: false,
+    requiresCommand: true,
+  },
+  'agent-sdk': {
+    fields: AgentSdkRunnerFields,
+    usesArgsOutputFormat: false,
+    usesApiKey: true,
+    requiresCommand: false,
+  },
+} as const satisfies Record<
+  RunnerKind,
+  { fields: Record<string, z.ZodTypeAny> } & RunnerKindCapabilities
+>;
 
 export function getRunnerKindMeta(kind: RunnerKind): RunnerKindCapabilities {
   return RUNNER_DESCRIPTORS[kind];

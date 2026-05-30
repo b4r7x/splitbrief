@@ -12,9 +12,13 @@ describe('check-invariants', () => {
     };
     const log = vi.fn();
 
-    const failed = runInvariantGates([gate], () => {
-      throw new Error('missing-tool');
-    }, log);
+    const failed = runInvariantGates(
+      [gate],
+      () => {
+        throw new Error('missing-tool');
+      },
+      log,
+    );
 
     expect(failed).toBe(1);
     expect(log).toHaveBeenCalledWith('  ✗ [broken] Broken gate: command failed (expected 0) FAIL');
@@ -36,7 +40,9 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith('  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL');
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL',
+    );
   });
 
   it('fails closed when a silent pipeline stage exits nonzero before wc', () => {
@@ -55,7 +61,9 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith('  ✗ [silent-pipeline] Silent broken pipeline: command failed (expected 0) FAIL');
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [silent-pipeline] Silent broken pipeline: command failed (expected 0) FAIL',
+    );
   });
 
   it('fails closed when gate output is not numeric', () => {
@@ -68,6 +76,8 @@ describe('check-invariants', () => {
     const log = vi.fn();
 
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith('  ✗ [nonnumeric] Nonnumeric gate: invalid output "not-a-number" (expected 0) FAIL');
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [nonnumeric] Nonnumeric gate: invalid output "not-a-number" (expected 0) FAIL',
+    );
   });
 });

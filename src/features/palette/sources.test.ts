@@ -5,7 +5,10 @@ import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
 
-function buildCommandSources(commands: RuntimeCommandDef[], onRuntimeCommand: (raw: string) => void = noop) {
+function buildCommandSources(
+  commands: RuntimeCommandDef[],
+  onRuntimeCommand: (raw: string) => void = noop,
+) {
   return buildPaletteSources({
     commands,
     screen: 'home',
@@ -43,7 +46,13 @@ describe('buildPaletteSources command items', () => {
 
   it('excludes unlabeled commands and commands unavailable on the current screen', () => {
     const items = buildCommandSources([
-      { kind: 'noarg', name: '/no-label', description: 'Hidden', validScreens: ['home'], handler: noop },
+      {
+        kind: 'noarg',
+        name: '/no-label',
+        description: 'Hidden',
+        validScreens: ['home'],
+        handler: noop,
+      },
       {
         kind: 'noarg',
         name: '/workflow-only',
@@ -62,21 +71,24 @@ describe('buildPaletteSources command items', () => {
       },
     ]);
 
-    expect(items.map(item => item.label)).toEqual(['Visible']);
+    expect(items.map((item) => item.label)).toEqual(['Visible']);
   });
 
   it('runs command item actions through the runtime command callback', () => {
     const calls: string[] = [];
-    const items = buildCommandSources([
-      {
-        kind: 'noarg',
-        name: '/settings',
-        label: 'Settings',
-        description: 'Open settings',
-        validScreens: ['home'],
-        handler: noop,
-      },
-    ], raw => calls.push(raw));
+    const items = buildCommandSources(
+      [
+        {
+          kind: 'noarg',
+          name: '/settings',
+          label: 'Settings',
+          description: 'Open settings',
+          validScreens: ['home'],
+          handler: noop,
+        },
+      ],
+      (raw) => calls.push(raw),
+    );
 
     items[0]?.action();
 

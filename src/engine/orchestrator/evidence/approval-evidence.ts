@@ -4,7 +4,7 @@ import type {
   EvidenceApproval,
   EvidenceRejection,
 } from '../../../core/schemas/evidence.js';
-import { withAppendedApproval, withAppendedRejection } from './ledger.js';
+import { withAppendedApproval, withAppendedRejection } from '../../../core/evidence/ledger.js';
 import { nowIso } from '../../../utils/format-time.js';
 
 export type RecordRejectionEvidenceInput = {

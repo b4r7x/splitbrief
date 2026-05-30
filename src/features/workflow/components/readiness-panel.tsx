@@ -2,6 +2,7 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
+import { pluralize } from '../../../utils/format.js';
 
 interface ReadinessPanelProps {
   report: ReadinessReport;
@@ -13,8 +14,8 @@ export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
   const { exit } = useApp();
   const canContinue = report.status !== 'blocked' && onContinue !== undefined;
   const notableChecks = report.sections
-    .flatMap(section => section.checks)
-    .filter(check => check.severity === 'blocker' || check.severity === 'warning')
+    .flatMap((section) => section.checks)
+    .filter((check) => check.severity === 'blocker' || check.severity === 'warning')
     .slice(0, 6);
 
   useInput((input, key) => {
@@ -41,12 +42,12 @@ export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
           <Text color={t.textDim}>
             {report.status === 'blocked'
               ? `Required: ${report.nextAction.label} — ${report.nextAction.reason}`
-              : `${report.counts.warning} advisory note${report.counts.warning === 1 ? '' : 's'}; start can continue.`}
+              : `${report.counts.warning} ${pluralize(report.counts.warning, 'advisory note')}; start can continue.`}
           </Text>
         </Box>
         {notableChecks.length > 0 ? (
           <Box flexDirection="column">
-            {notableChecks.map(check => (
+            {notableChecks.map((check) => (
               <ReadinessCheckLine key={check.id} check={check} />
             ))}
           </Box>
@@ -63,11 +64,16 @@ function ReadinessCheckLine({ check }: { check: ReadinessCheck }) {
   const color = check.severity === 'blocker' ? t.error : t.warning;
   return (
     <Box flexDirection="column">
-      <Text color={color}>{check.severity} {check.id}: {check.summary}</Text>
-      {check.details?.slice(0, 2).map(detail => (
-        <Text key={detail} color={t.textDim}>  {detail}</Text>
+      <Text color={color}>
+        {check.severity} {check.id}: {check.summary}
+      </Text>
+      {check.details?.slice(0, 2).map((detail) => (
+        <Text key={detail} color={t.textDim}>
+          {' '}
+          {detail}
+        </Text>
       ))}
-      {check.fix && <Text color={t.textDim}>  Fix: {check.fix}</Text>}
+      {check.fix && <Text color={t.textDim}> Fix: {check.fix}</Text>}
     </Box>
   );
 }

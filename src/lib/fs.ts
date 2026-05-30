@@ -1,9 +1,20 @@
-import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFileSync, chmodSync, lstatSync, renameSync } from 'node:fs';
+import {
+  writeFileSync,
+  mkdirSync,
+  statSync,
+  existsSync,
+  readFileSync,
+  appendFileSync,
+  chmodSync,
+  lstatSync,
+  renameSync,
+} from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat, writeFile, rename, chmod } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { isENOENT } from './process/errors.js';
+import { warnError } from './warn.js';
 
 export function readJsonSafe(path: string): unknown | null {
   if (!existsSync(path)) return null;
@@ -64,6 +75,71 @@ export function writeSecureFile(filePath: string, content: string): void {
   chmodSync(filePath, SECURE_FILE_MODE);
 }
 
+export async function writeSecureFileAsync(filePath: string, content: string): Promise<void> {
+  ensureSecureDir(dirname(filePath));
+
+  try {
+    const st = await lstat(filePath);
+    if (st.isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err: unknown) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+
+  const dir = dirname(filePath);
+  const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
+  const tmpPath = join(dir, tmpName);
+
+  await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
+  await rename(tmpPath, filePath);
+  await chmod(filePath, SECURE_FILE_MODE);
+}
+
+export function readValidatedJson<T>(
+  filePath: string,
+  parse: (value: unknown) => T | null,
+  fallback: T,
+  label: string,
+): T {
+  if (!existsSync(filePath)) return fallback;
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (err) {
+    warnError(label, err);
+    return fallback;
+  }
+  const parsed = parse(value);
+  if (parsed === null) {
+    warnError(label, undefined);
+    return fallback;
+  }
+  return parsed;
+}
+
+export function readJsonl<T>(
+  filePath: string,
+  parseLine: (value: unknown) => T | null,
+  label: string,
+): T[] {
+  if (!existsSync(filePath)) return [];
+  const results: T[] = [];
+  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
+    if (line.trim().length === 0) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (err) {
+      warnError(label, err);
+      continue;
+    }
+    const parsed = parseLine(value);
+    if (parsed !== null) results.push(parsed);
+  }
+  return results;
+}
+
 export function checkConfigPermissions(filePath: string): boolean {
   try {
     const stats = statSync(filePath);
@@ -103,7 +179,7 @@ export function ensureGitignore(projectDir: string, entry: string): void {
   const gitignorePath = join(projectDir, '.gitignore');
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, 'utf-8');
-    if (content.split('\n').some(line => line.trim() === entry)) return;
+    if (content.split('\n').some((line) => line.trim() === entry)) return;
     const prefix = content.endsWith('\n') ? '' : '\n';
     appendFileSync(gitignorePath, `${prefix}${entry}\n`);
   } else {

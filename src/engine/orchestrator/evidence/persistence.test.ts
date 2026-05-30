@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createEvidenceLedger } from './ledger.js';
-import { writeEvidenceLedger, readEvidenceLedger } from './persistence.js';
+import {
+  createEvidenceLedger,
+  writeEvidenceLedger,
+  readEvidenceLedger,
+} from '../../../core/evidence/ledger.js';
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
 import { setupEvidenceTmpDir } from '../../../../testing/helpers/fixtures/evidence-test-setup.js';
 

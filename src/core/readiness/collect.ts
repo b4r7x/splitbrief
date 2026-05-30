@@ -31,7 +31,9 @@ export interface CollectReadinessOptions {
   requiresCleanWorktree?: boolean | undefined;
 }
 
-export async function collectReadiness(options: CollectReadinessOptions): Promise<CollectedReadiness> {
+export async function collectReadiness(
+  options: CollectReadinessOptions,
+): Promise<CollectedReadiness> {
   const configFile = configPath(options.projectDir);
   const configExists = existsSync(configFile);
   const loaded = loadReadinessConfig(options, configFile, configExists);
@@ -94,7 +96,8 @@ function loadReadinessConfig(
         model: options.opts?.implementerModel ?? options.opts?.model,
         command: options.opts?.implementerCommand,
       },
-      autoApprove: options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
+      autoApprove:
+        options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
       approve: options.opts?.approve,
       mode: options.opts?.mode,
       budget: options.opts?.budget,
@@ -107,7 +110,7 @@ function loadReadinessConfig(
         state: 'loaded',
         path: filePath,
         warnings: loaded.warnings,
-        migratedInMemory: loaded.warnings.some(warning => warning.includes('config.version 2')),
+        migratedInMemory: loaded.warnings.some((warning) => warning.includes('config.version 2')),
       },
     };
   } catch (err) {
@@ -132,14 +135,19 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
   try {
     const parsed: unknown = readPackageJson(projectDir, { throwOnInvalid: true });
     if (!isRecord(parsed)) {
-      return { packageJsonExists: true, scripts: {}, parseError: 'package.json root is not an object.' };
+      return {
+        packageJsonExists: true,
+        scripts: {},
+        parseError: 'package.json root is not an object.',
+      };
     }
     const scripts: unknown = parsed['scripts'];
     if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) {
       return { packageJsonExists: true, scripts: {} };
     }
-    const entries = Object.entries(scripts)
-      .filter((entry): entry is [string, string] => typeof entry[1] === 'string');
+    const entries = Object.entries(scripts).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    );
     return { packageJsonExists: true, scripts: Object.fromEntries(entries) };
   } catch (err) {
     return {
@@ -150,7 +158,10 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
   }
 }
 
-async function readRepoPosture(projectDir: string, requiresCleanWorktree: boolean): Promise<RepoReadinessInput> {
+async function readRepoPosture(
+  projectDir: string,
+  requiresCleanWorktree: boolean,
+): Promise<RepoReadinessInput> {
   const repoExists = await isGitRepo(projectDir).catch(() => false);
   if (!repoExists) {
     return {
@@ -163,9 +174,7 @@ async function readRepoPosture(projectDir: string, requiresCleanWorktree: boolea
 
   const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
-  const dirtyFiles = status.files
-    .map(file => file.path)
-    .filter(path => !untracked.has(path));
+  const dirtyFiles = status.files.map((file) => file.path).filter((path) => !untracked.has(path));
   const activeSession = readActive(projectDir);
 
   return {

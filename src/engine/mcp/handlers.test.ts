@@ -48,7 +48,12 @@ function msg(payload: Record<string, unknown>): string {
 describe('handleMessage', () => {
   it('initialize → correct capabilities, protocolVersion, serverInfo', async () => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSION } }),
+      msg({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: MCP_PROTOCOL_VERSION },
+      }),
       makeResolver(),
       SERVER_VERSION,
     );
@@ -91,12 +96,21 @@ describe('handleMessage', () => {
     if (result.kind !== 'response') return;
     const r = result.body.result as { contents: unknown[] };
     expect(r.contents).toHaveLength(1);
-    expect(r.contents[0]).toMatchObject({ uri: stubContent.uri, mimeType: stubContent.mimeType, text: stubContent.text });
+    expect(r.contents[0]).toMatchObject({
+      uri: stubContent.uri,
+      mimeType: stubContent.mimeType,
+      text: stubContent.text,
+    });
   });
 
   it('resources/read with unknown URI → resource-not-found error code -32002', async () => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'mcp://diptych/unknown' } }),
+      msg({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'resources/read',
+        params: { uri: 'mcp://diptych/unknown' },
+      }),
       makeResolver(),
       SERVER_VERSION,
     );
@@ -156,21 +170,34 @@ describe('handleMessage', () => {
 
   it('tools/call with valid tool → success response', async () => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 22, method: 'tools/call', params: { name: 'report_evidence', arguments: {} } }),
+      msg({
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'tools/call',
+        params: { name: 'report_evidence', arguments: {} },
+      }),
       makeResolver(),
       SERVER_VERSION,
       stubToolHandler,
     );
     expect(result.kind).toBe('response');
     if (result.kind !== 'response') return;
-    const r = result.body.result as { content: Array<{ type: string; text: string }>; isError: boolean };
+    const r = result.body.result as {
+      content: Array<{ type: string; text: string }>;
+      isError: boolean;
+    };
     expect(r.isError).toBe(false);
     expect(r.content).toEqual([{ type: 'text', text: 'Evidence recorded' }]);
   });
 
   it('tools/call with unknown tool → isError response', async () => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: 'unknown', arguments: {} } }),
+      msg({
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'tools/call',
+        params: { name: 'unknown', arguments: {} },
+      }),
       makeResolver(),
       SERVER_VERSION,
       stubToolHandler,
@@ -231,7 +258,12 @@ describe('handleMessage', () => {
 
   it('resources/subscribe → METHOD_NOT_FOUND', async () => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 9, method: 'resources/subscribe', params: { uri: 'mcp://diptych/sessions' } }),
+      msg({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'resources/subscribe',
+        params: { uri: 'mcp://diptych/sessions' },
+      }),
       makeResolver(),
       SERVER_VERSION,
     );
@@ -271,11 +303,7 @@ describe('handleMessage', () => {
   });
 
   it('Missing method field without id → INVALID_REQUEST -32600', async () => {
-    const result = await handleMessage(
-      msg({ jsonrpc: '2.0' }),
-      makeResolver(),
-      SERVER_VERSION,
-    );
+    const result = await handleMessage(msg({ jsonrpc: '2.0' }), makeResolver(), SERVER_VERSION);
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
     expect(result.body.error.code).toBe(INVALID_REQUEST);
@@ -323,5 +351,4 @@ describe('handleMessage', () => {
     if (result.kind !== 'error') return;
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
-
 });

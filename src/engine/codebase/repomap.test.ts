@@ -68,7 +68,10 @@ describe('buildRepoMap', () => {
       mkdirSync(join(dir, 'src', 'nested'), { recursive: true });
       writeFileSync(join(dir, 'root.ts'), 'export function rootOnly() { return "root"; }');
       writeFileSync(join(dir, 'src', 'main.ts'), 'export function srcMain() { return "src"; }');
-      writeFileSync(join(dir, 'src', 'nested', 'feature.ts'), 'export function nestedFeature() { return "nested"; }');
+      writeFileSync(
+        join(dir, 'src', 'nested', 'feature.ts'),
+        'export function nestedFeature() { return "nested"; }',
+      );
 
       const out = await buildRepoMap(dir, { tokenBudget: 5000, include: ['src/**/*.ts'] });
 
@@ -86,8 +89,14 @@ describe('buildRepoMap', () => {
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
       mkdirSync(join(dir, '.git', 'objects'), { recursive: true });
       mkdirSync(join(dir, 'src'), { recursive: true });
-      writeFileSync(join(dir, 'node_modules', 'pkg', 'index.ts'), 'export function dep() { return "dep"; }');
-      writeFileSync(join(dir, '.git', 'objects', 'hook.ts'), 'export function hook() { return "hook"; }');
+      writeFileSync(
+        join(dir, 'node_modules', 'pkg', 'index.ts'),
+        'export function dep() { return "dep"; }',
+      );
+      writeFileSync(
+        join(dir, '.git', 'objects', 'hook.ts'),
+        'export function hook() { return "hook"; }',
+      );
       writeFileSync(join(dir, 'src', 'app.ts'), 'export function app() { return "app"; }');
 
       const out = await buildRepoMap(dir, { tokenBudget: 5000 });
@@ -104,7 +113,10 @@ describe('buildRepoMap', () => {
     const dir = createTempDir('repomap-large-file');
     try {
       writeFileSync(join(dir, 'small.ts'), 'export function small() { return "ok"; }');
-      writeFileSync(join(dir, 'huge.ts'), 'export function huge() { return "' + 'x'.repeat(MAX_FILE_SIZE_BYTES + 1) + '"; }');
+      writeFileSync(
+        join(dir, 'huge.ts'),
+        'export function huge() { return "' + 'x'.repeat(MAX_FILE_SIZE_BYTES + 1) + '"; }',
+      );
 
       const out = await buildRepoMap(dir, { tokenBudget: 5000 });
 
@@ -120,7 +132,10 @@ describe('buildRepoMap', () => {
     try {
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
       mkdirSync(join(dir, 'src'), { recursive: true });
-      writeFileSync(join(dir, 'node_modules', 'pkg', 'lib.ts'), 'export function lib() { return "lib"; }');
+      writeFileSync(
+        join(dir, 'node_modules', 'pkg', 'lib.ts'),
+        'export function lib() { return "lib"; }',
+      );
       writeFileSync(join(dir, 'src', 'app.ts'), 'export function app() { return "app"; }');
       writeFileSync(join(dir, 'src', 'app.test.ts'), 'import { app } from "./app.js";');
       writeFileSync(join(dir, 'src', 'gen.ts'), 'export function gen() { return "gen"; }');
@@ -140,10 +155,19 @@ describe('buildRepoMap', () => {
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'root.ts'), 'export function rootOnly() { return "root"; }');
-      writeFileSync(join(dir, 'src', 'service1.ts'), 'export function serviceOne() { return "one"; }');
-      writeFileSync(join(dir, 'src', 'service10.ts'), 'export function serviceTen() { return "ten"; }');
+      writeFileSync(
+        join(dir, 'src', 'service1.ts'),
+        'export function serviceOne() { return "one"; }',
+      );
+      writeFileSync(
+        join(dir, 'src', 'service10.ts'),
+        'export function serviceTen() { return "ten"; }',
+      );
 
-      const questionMark = await buildRepoMap(dir, { tokenBudget: 5000, include: ['src/service?.ts'] });
+      const questionMark = await buildRepoMap(dir, {
+        tokenBudget: 5000,
+        include: ['src/service?.ts'],
+      });
       const extensionOnly = await buildRepoMap(dir, { tokenBudget: 5000, include: ['*.ts'] });
 
       expect(questionMark).toContain('src/service1.ts:');

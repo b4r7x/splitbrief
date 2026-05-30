@@ -13,16 +13,19 @@ let closeCount: number;
 function createSessionFixture(projectDir: string, sessionId: string): void {
   const dir = join(projectDir, '.diptych', 'sessions', sessionId);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'summary.json'), JSON.stringify({
-    id: sessionId,
-    feature: 'test',
-    startedAt: 1,
-    completedAt: null,
-    stateVersion: 1,
-    stateFile: null,
-    status: 'interrupted',
-    summary: null,
-  }));
+  writeFileSync(
+    join(dir, 'summary.json'),
+    JSON.stringify({
+      id: sessionId,
+      feature: 'test',
+      startedAt: 1,
+      completedAt: null,
+      stateVersion: 1,
+      stateFile: null,
+      status: 'interrupted',
+      summary: null,
+    }),
+  );
 }
 
 function createDeps(port = 4321): McpDeps {

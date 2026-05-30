@@ -24,10 +24,10 @@ const MODES: readonly ModeDef[] = [
 
 export function ModeSelector() {
   const t = useTheme();
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const isSmall = terminalSizeStore.use((s) => s.isSmall);
   const config = configStore.useConfig();
   const currentMode = config.workflow.mode ?? 'standard';
-  const currentIdx = MODES.findIndex(m => m.mode === currentMode);
+  const currentIdx = MODES.findIndex((m) => m.mode === currentMode);
 
   const { selectedIndex } = useStaticSelector<ModeDef>({
     items: MODES,
@@ -55,7 +55,11 @@ export function ModeSelector() {
         const isSelected = i === selectedIndex;
         const isCurrent = m.mode === currentMode;
         return (
-          <Box key={m.mode} flexDirection="column" marginBottom={i < MODES.length - 1 && !isSmall ? 1 : 0}>
+          <Box
+            key={m.mode}
+            flexDirection="column"
+            marginBottom={i < MODES.length - 1 && !isSmall ? 1 : 0}
+          >
             <Box>
               <CursorCell isCursor={isSelected} dimWhenInactive />
               <Box width={12}>
@@ -67,9 +71,7 @@ export function ModeSelector() {
               <Box flexGrow={1}>
                 <Text color={t.textDim}>{m.cost}</Text>
               </Box>
-              {isSmall && (
-                <Text color={isSelected ? t.text : t.textDim}> {m.size}</Text>
-              )}
+              {isSmall && <Text color={isSelected ? t.text : t.textDim}> {m.size}</Text>}
             </Box>
             {!isSmall && (
               <Box marginLeft={4}>

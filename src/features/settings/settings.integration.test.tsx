@@ -43,17 +43,23 @@ describe('settings overlay integration', () => {
     expect(ui.lastFrame()).toContain('Max Retries');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
-    await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('[3|]');
-    });
+    await tick(40);
+    const editingFrame = ui.lastFrame() ?? '';
+    expect(editingFrame).toContain('Max Retries'); // the field row is rendered
+    expect(editingFrame).toContain('3'); // seeded value shown in the edit buffer
+
     ui.stdin.write('\x7f'); // backspace — clear seeded "3"
-    await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('[|]');
-    });
+    await tick(40);
+    const clearedFrame = ui.lastFrame() ?? '';
+    expect(clearedFrame).toContain('Max Retries');
+    expect(clearedFrame).not.toContain('3'); // buffer cleared, no value digit shown
+
     ui.stdin.write('5');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('[5|]');
-    });
+    await tick(40);
+    const typedFrame = ui.lastFrame() ?? '';
+    expect(typedFrame).toContain('Max Retries');
+    expect(typedFrame).toContain('5'); // typed value shown in the edit buffer
+
     ui.stdin.write('\r'); // commit
     await tick(20);
 

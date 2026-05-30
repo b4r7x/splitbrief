@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../testing/helpers/ink.js';
 import { SummaryEvidence } from './evidence.js';
-import { createEvidenceLedger } from '../../../engine/orchestrator/evidence/ledger.js';
-import {
-  recordFinalReviewEvidence,
-} from '../../../engine/orchestrator/evidence/reporting.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { recordFinalReviewEvidence } from '../../../engine/orchestrator/evidence/reporting.js';
 import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
@@ -21,18 +19,27 @@ const baseSummary: Summary = {
   failed: 0,
   totalTime: 0,
   tokenUsage: {
-    plannerInput: 0, plannerOutput: 0,
-    implementerInput: 0, implementerOutput: 0,
-    escalationInput: 0, escalationOutput: 0,
+    plannerInput: 0,
+    plannerOutput: 0,
+    implementerInput: 0,
+    implementerOutput: 0,
+    escalationInput: 0,
+    escalationOutput: 0,
   },
   estimatedCostSavings: '$0',
   escalationRate: 0,
   costBreakdown: {
-    hypotheticalCost: 0, actualPlannerCost: 0, actualImplementerCost: 0,
-    totalActualCost: 0, savingsAmount: 0, savingsPercentage: 0,
-    localCompletionRate: 0, hasSavingsEstimate: false,
+    hypotheticalCost: 0,
+    actualPlannerCost: 0,
+    actualImplementerCost: 0,
+    totalActualCost: 0,
+    savingsAmount: 0,
+    savingsPercentage: 0,
+    localCompletionRate: 0,
+    hasSavingsEstimate: false,
   },
-  plannerTool: 'p', implementerTool: 'i',
+  plannerTool: 'p',
+  implementerTool: 'i',
 };
 
 describe('SummaryEvidence', () => {
@@ -68,13 +75,28 @@ describe('SummaryEvidence', () => {
   it('renders per-task evidence from the loaded ledger prop', () => {
     const a = makeTask({ id: 'T001', title: 'Add hello module', file: 'src/hello.ts' });
     const b = makeTask({ id: 'T002', title: 'Escalated thing', file: 'src/world.ts' });
-    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'demo', mode: 'standard', tasks: [a, b] });
+    let ledger = createEvidenceLedger({
+      sessionId: 's1',
+      feature: 'demo',
+      mode: 'standard',
+      tasks: [a, b],
+    });
     ledger = recordLocalTaskEvidence({
-      ledger, task: a, status: 'done', method: 'local',
-      validation: [{ passed: true, stage: 'typecheck' }, { passed: true, stage: 'lint' }, { passed: true, stage: 'test' }],
+      ledger,
+      task: a,
+      status: 'done',
+      method: 'local',
+      validation: [
+        { passed: true, stage: 'typecheck' },
+        { passed: true, stage: 'lint' },
+        { passed: true, stage: 'test' },
+      ],
     });
     ledger = recordRetryOrEscalationEvidence({
-      ledger, task: b, status: 'escalated', escalated: true,
+      ledger,
+      task: b,
+      status: 'escalated',
+      escalated: true,
       validation: [{ passed: true, stage: 'typecheck' }],
     });
     ledger = recordFinalReviewEvidence({ ledger, status: 'written' });

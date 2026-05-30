@@ -197,7 +197,14 @@ describe('readLockfile', () => {
   it('returns null when required fields are missing (pid missing)', async () => {
     const { writeFileSync } = await import('node:fs');
     const { join: pathJoin } = await import('node:path');
-    const bad = { version: 1, startTimeMs: 1000, lastAliveMs: 1000, sessionId: 'x', mode: 'standard', feature: 'f' };
+    const bad = {
+      version: 1,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'x',
+      mode: 'standard',
+      feature: 'f',
+    };
     writeFileSync(pathJoin(testDir, 'lockfile.json'), JSON.stringify(bad));
     const result = await readLockfile(testDir);
     expect(result).toBeNull();
@@ -206,7 +213,15 @@ describe('readLockfile', () => {
   it('returns null when pid is not a positive integer', async () => {
     const { writeFileSync } = await import('node:fs');
     const { join: pathJoin } = await import('node:path');
-    const bad = { version: 1, pid: -1, startTimeMs: 1000, lastAliveMs: 1000, sessionId: 'x', mode: 'standard', feature: 'f' };
+    const bad = {
+      version: 1,
+      pid: -1,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'x',
+      mode: 'standard',
+      feature: 'f',
+    };
     writeFileSync(pathJoin(testDir, 'lockfile.json'), JSON.stringify(bad));
     const result = await readLockfile(testDir);
     expect(result).toBeNull();

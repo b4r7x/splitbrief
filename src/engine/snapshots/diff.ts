@@ -6,11 +6,9 @@ import { readFileSafeAsync } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
-import {
-  collectTrackedFiles,
-  hashFile,
-  readManifest,
-} from './store.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
+import { collectTrackedFiles, hashFile } from './files.js';
+import { readManifest } from './manifest.js';
 
 export type FileDiff = {
   path: string;
@@ -47,12 +45,15 @@ function manualTwoPassDiff(snapshotContent: string, currentContent: string, path
   const snapshotLines = snapshotContent.split('\n');
   const currentLines = currentContent.split('\n');
   const header = `--- snapshot/${path}\n+++ current/${path}\n@@ -1,${snapshotLines.length} +1,${currentLines.length} @@\n`;
-  const removed = snapshotLines.map(l => `-${l}`).join('\n');
-  const added = currentLines.map(l => `+${l}`).join('\n');
+  const removed = snapshotLines.map((l) => `-${l}`).join('\n');
+  const added = currentLines.map((l) => `+${l}`).join('\n');
   return `${header}${removed}\n${added}\n`;
 }
 
-async function readBothFiles(snapshotFile: string, currentFile: string): Promise<[string, string] | null> {
+async function readBothFiles(
+  snapshotFile: string,
+  currentFile: string,
+): Promise<[string, string] | null> {
   const [snapshotContent, currentContent] = await Promise.all([
     readFileSafeAsync(snapshotFile),
     readFileSafeAsync(currentFile),
@@ -61,13 +62,21 @@ async function readBothFiles(snapshotFile: string, currentFile: string): Promise
   return [snapshotContent, currentContent];
 }
 
-async function fallbackDiff(snapshotFile: string, currentFile: string, path: string): Promise<string> {
+async function fallbackDiff(
+  snapshotFile: string,
+  currentFile: string,
+  path: string,
+): Promise<string> {
   const pair = await readBothFiles(snapshotFile, currentFile);
   if (pair === null) return '';
   return manualTwoPassDiff(pair[0], pair[1], path);
 }
 
-async function unifiedDiff(snapshotFile: string, currentFile: string, path: string): Promise<string> {
+async function unifiedDiff(
+  snapshotFile: string,
+  currentFile: string,
+  path: string,
+): Promise<string> {
   if (process.platform === 'win32') {
     return fallbackDiff(snapshotFile, currentFile, path);
   }
@@ -75,8 +84,10 @@ async function unifiedDiff(snapshotFile: string, currentFile: string, path: stri
   try {
     const result = await execFileAsync('diff', [
       '-u',
-      '--label', `snapshot/${path}`,
-      '--label', `current/${path}`,
+      '--label',
+      `snapshot/${path}`,
+      '--label',
+      `current/${path}`,
       snapshotFile,
       currentFile,
     ]);
@@ -104,16 +115,18 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
   const union = new Set([...allSnapshotPaths, ...currentPaths]);
 
   const requestedPaths = opts.paths;
-  const filteredPaths = requestedPaths !== undefined
-    ? [...union].filter(p => requestedPaths.includes(p))
-    : [...union];
+  const filteredPaths =
+    requestedPaths !== undefined
+      ? [...union].filter((p) => requestedPaths.includes(p))
+      : [...union];
 
-  const deltaEntryMap = new Map(manifest.fileEntries.map(e => [e.path, e]));
-  const baselineEntryMap = new Map(baselineManifest.fileEntries.map(e => [e.path, e]));
+  const deltaEntryMap = new Map(manifest.fileEntries.map((e) => [e.path, e]));
+  const baselineEntryMap = new Map(baselineManifest.fileEntries.map((e) => [e.path, e]));
 
   const files: FileDiff[] = [];
 
   for (const path of filteredPaths) {
+    assertPathConfined(path, projectDir);
     const inSnapshot = manifest.fileHashes[path] !== undefined;
     const currentHash = await hashFile(join(projectDir, path));
     const snapshotHash = manifest.fileHashes[path] ?? null;
@@ -136,14 +149,20 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
     let snapshotFilePath: string;
     const deltaEntry = deltaEntryMap.get(path);
     if (deltaEntry !== undefined) {
-      snapshotFilePath = join(snapshotFilesDir(projectDir, sessionId, manifest.id), deltaEntry.encodedName);
+      snapshotFilePath = join(
+        snapshotFilesDir(projectDir, sessionId, manifest.id),
+        deltaEntry.encodedName,
+      );
     } else {
       const baselineEntry = baselineEntryMap.get(path);
       if (baselineEntry === undefined) {
         files.push({ path, status: 'modified' });
         continue;
       }
-      snapshotFilePath = join(snapshotFilesDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID), baselineEntry.encodedName);
+      snapshotFilePath = join(
+        snapshotFilesDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID),
+        baselineEntry.encodedName,
+      );
     }
 
     const currentFilePath = join(projectDir, path);
@@ -151,7 +170,7 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
     files.push({ path, status: 'modified', diff });
   }
 
-  const changedCount = files.filter(f => f.status !== 'unchanged').length;
+  const changedCount = files.filter((f) => f.status !== 'unchanged').length;
 
   return { snapshotId: manifest.id, createdAt: manifest.createdAt, files, changedCount };
 }
@@ -186,9 +205,9 @@ export function formatSnapshotDiff(result: SnapshotDiffResult, opts?: { color?: 
     }
   }
 
-  const modified = result.files.filter(f => f.status === 'modified').length;
-  const added = result.files.filter(f => f.status === 'added').length;
-  const removed = result.files.filter(f => f.status === 'removed').length;
+  const modified = result.files.filter((f) => f.status === 'modified').length;
+  const added = result.files.filter((f) => f.status === 'added').length;
+  const removed = result.files.filter((f) => f.status === 'removed').length;
   const summary = `${result.changedCount} file(s) changed (modified: ${modified}, added: ${added}, removed: ${removed})`;
   lines.push(useColor ? ansis.dim(summary) : summary);
 

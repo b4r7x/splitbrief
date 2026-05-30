@@ -10,7 +10,8 @@ import {
 const TOOL_DEFINITIONS: McpToolDefinition[] = [
   {
     name: 'report_evidence',
-    description: 'Report observed evidence for a task. Call after completing a verification step (e.g. manual check, code review, or any non-automated validation).',
+    description:
+      'Report observed evidence for a task. Call after completing a verification step (e.g. manual check, code review, or any non-automated validation).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -33,21 +34,28 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_progress',
-    description: 'Report progress on a task. Call periodically during long-running implementations to update diptych on status.',
+    description:
+      'Report progress on a task. Call periodically during long-running implementations to update diptych on status.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: 'Active diptych session ID' },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         message: { type: 'string', description: 'Progress message' },
-        percentComplete: { type: 'number', minimum: 0, maximum: 100, description: 'Optional completion percentage' },
+        percentComplete: {
+          type: 'number',
+          minimum: 0,
+          maximum: 100,
+          description: 'Optional completion percentage',
+        },
       },
       required: ['sessionId', 'taskId', 'message'],
     },
   },
   {
     name: 'mark_task_done',
-    description: 'Mark a task as completed. Call when all implementation and validation for a task are finished. Requires at least one changed file.',
+    description:
+      'Mark a task as completed. Call when all implementation and validation for a task are finished. Requires at least one changed file.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -71,13 +79,18 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_validation_result',
-    description: 'Report a validation result (typecheck, lint, or test) for a task. Call after running each validation stage.',
+    description:
+      'Report a validation result (typecheck, lint, or test) for a task. Call after running each validation stage.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: 'Active diptych session ID' },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
-        stage: { type: 'string', enum: ['typecheck', 'lint', 'test'], description: 'Validation stage' },
+        stage: {
+          type: 'string',
+          enum: ['typecheck', 'lint', 'test'],
+          description: 'Validation stage',
+        },
         passed: { type: 'boolean', description: 'Whether validation passed' },
         errorSummary: { type: 'string', description: 'Error summary if validation failed' },
         changedFiles: {
@@ -91,7 +104,8 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_error',
-    description: 'Report an error during task implementation. Call when the agent encounters an unrecoverable error or needs diptych to make a recovery decision.',
+    description:
+      'Report an error during task implementation. Call when the agent encounters an unrecoverable error or needs diptych to make a recovery decision.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -103,14 +117,20 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
           items: { type: 'string' },
           description: 'Files modified before the error occurred',
         },
-        recoverable: { type: 'boolean', description: 'Whether the agent believes a retry might succeed' },
+        recoverable: {
+          type: 'boolean',
+          description: 'Whether the agent believes a retry might succeed',
+        },
       },
       required: ['sessionId', 'taskId', 'error'],
     },
   },
 ];
 
-export function createToolHandler(projectDir: string, allowedSessionIds?: readonly string[]): McpToolHandler {
+export function createToolHandler(
+  projectDir: string,
+  allowedSessionIds?: readonly string[],
+): McpToolHandler {
   return {
     listTools: () => TOOL_DEFINITIONS,
     callTool(name: string, args: Record<string, unknown>): ToolCallResult {

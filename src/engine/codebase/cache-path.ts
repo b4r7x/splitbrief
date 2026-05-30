@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { resolveFromProject } from '../../utils/path-patterns.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 
-const DEFAULT_CACHE_DIR = '.diptych';
+const DEFAULT_CACHE_DIR = DIPTYCH_DIR;
 const REPOMAP_DB_FILE = 'repomap.sqlite';
 
 export function resolveCodebaseCacheDir(projectDir: string, cacheDir?: string): string {

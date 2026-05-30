@@ -14,8 +14,6 @@ export const TokenUsageLikeSchema = z.looseObject({
   cacheCreateTokens: z.number().optional(),
 });
 
-export type TokenUsageLike = z.infer<typeof TokenUsageLikeSchema>;
-
 export function toTokenDelta(raw: unknown): TokenDelta | null {
   if (!raw) return null;
 
@@ -39,10 +37,7 @@ export function toTokenDelta(raw: unknown): TokenDelta | null {
   };
 }
 
-export function accumulateUsage(
-  current: TokenDelta | null,
-  delta: TokenDelta,
-): TokenDelta {
+export function accumulateUsage(current: TokenDelta | null, delta: TokenDelta): TokenDelta {
   if (current) {
     return {
       inputTokens: current.inputTokens + delta.inputTokens,

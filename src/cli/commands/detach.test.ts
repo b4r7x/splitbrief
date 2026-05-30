@@ -29,15 +29,18 @@ function runningStatus(sessionId: string): ServerStatus {
 function writeLockfile(sessionId: string, startTimeMs: number): void {
   const sessDir = join(testDir, '.diptych', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
-  writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify({
-    version: 1,
-    pid: 99,
-    startTimeMs,
-    lastAliveMs: startTimeMs + 1000,
-    sessionId,
-    mode: 'quick',
-    feature: 'do a thing',
-  }));
+  writeFileSync(
+    join(sessDir, 'lockfile.json'),
+    JSON.stringify({
+      version: 1,
+      pid: 99,
+      startTimeMs,
+      lastAliveMs: startTimeMs + 1000,
+      sessionId,
+      mode: 'quick',
+      feature: 'do a thing',
+    }),
+  );
 }
 
 function createDeps(status: ServerStatus): DetachDeps {
@@ -95,7 +98,11 @@ describe('detachCommand', () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 
     await expect(
-      detachCommand('some-session', { projectDir: testDir }, createDeps(runningStatus('some-session'))),
+      detachCommand(
+        'some-session',
+        { projectDir: testDir },
+        createDeps(runningStatus('some-session')),
+      ),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('not supported on Windows'),
@@ -115,7 +122,11 @@ describe('detachCommand', () => {
     });
 
     await expect(
-      detachCommand('alive-session', { projectDir: testDir }, createDeps(runningStatus('alive-session'))),
+      detachCommand(
+        'alive-session',
+        { projectDir: testDir },
+        createDeps(runningStatus('alive-session')),
+      ),
     ).resolves.toBeUndefined();
 
     expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
@@ -147,9 +158,13 @@ describe('detachCommand', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
     await expect(
-      detachCommand('dead-session', {
-        projectDir: testDir,
-      }, createDeps({ alive: false, crashed: false, data: null })),
+      detachCommand(
+        'dead-session',
+        {
+          projectDir: testDir,
+        },
+        createDeps({ alive: false, crashed: false, data: null }),
+      ),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: 'session dead-session is not running',

@@ -128,58 +128,48 @@ export interface RegenerateResult {
   usage: TokenDelta | null;
 }
 
+export interface PlanOptions {
+  feature: string;
+  projectDir: string;
+  callbacks: PlannerCallbacks;
+  skillsContext?: string | undefined;
+  codebaseContext?: string | undefined;
+}
+
+export interface EscalateOptions {
+  task: Task;
+  error: string;
+  projectDir: string;
+  callbacks: PlannerOutputCallbacks;
+  languageContext?: LanguageContext | undefined;
+}
+
+export interface RegenerateOptions {
+  prompt: string;
+  artifactType: 'spec' | 'plan';
+  projectDir: string;
+  callbacks: PlannerOutputCallbacks;
+}
+
 export interface Planner extends RunnerRuntime {
-  plan(
-    feature: string,
-    projectDir: string,
-    callbacks: PlannerCallbacks,
-    skillsContext?: string,
-    codebaseContext?: string,
-  ): Promise<PlanResult>;
+  plan(opts: PlanOptions): Promise<PlanResult>;
 
-  regenerate(
-    prompt: string,
-    artifactType: 'spec' | 'plan',
-    projectDir: string,
-    callbacks: PlannerOutputCallbacks,
-  ): Promise<RegenerateResult>;
+  regenerate(opts: RegenerateOptions): Promise<RegenerateResult>;
 
-  escalateHint(
-    task: Task,
-    error: string,
-    projectDir: string,
-    callbacks: PlannerOutputCallbacks,
-    languageContext?: LanguageContext,
-  ): Promise<EscalationResult>;
+  escalateHint(opts: EscalateOptions): Promise<EscalationResult>;
 
-  escalateFull(
-    task: Task,
-    error: string,
-    projectDir: string,
-    callbacks: PlannerOutputCallbacks,
-    languageContext?: LanguageContext,
-  ): Promise<EscalationResult>;
+  escalateFull(opts: EscalateOptions): Promise<EscalationResult>;
 
-  quickPlan(
-    feature: string,
-    projectDir: string,
-    callbacks: PlannerCallbacks,
-    codebaseContext?: string,
-  ): Promise<PlanResult>;
+  quickPlan(opts: PlanOptions): Promise<PlanResult>;
 
   /**
    * One-shot planner call for `instant` mode. Mirrors {@link Planner.quickPlan}
    * but uses the instant prompt: emits the narrowest useful Task Brief set with
    * no spec/plan support documents (a single brief is acceptable). Optional:
    * backends that don't implement it fall back to `quickPlan ?? plan` via the
-   * dispatcher in `runInstantPlanning`.
+   * dispatcher in `runInstantPlanning`. Ignores `skillsContext`.
    */
-  instantPlan?: (
-    feature: string,
-    projectDir: string,
-    callbacks: PlannerCallbacks,
-    codebaseContext?: string,
-  ) => Promise<PlanResult>;
+  instantPlan?: (opts: PlanOptions) => Promise<PlanResult>;
 
   review(
     prompt: string,

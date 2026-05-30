@@ -11,9 +11,30 @@ import { configStore } from '../../stores/project/config.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
-  { kind: 'noarg', name: '/help', label: 'Help', description: 'Show help', validScreens: ['home'], handler: () => {} },
-  { kind: 'arg', name: '/mode', label: 'Mode', description: 'Workflow mode', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/settings', label: 'Settings', description: 'Open settings', validScreens: ['home'], handler: () => {} },
+  {
+    kind: 'noarg',
+    name: '/help',
+    label: 'Help',
+    description: 'Show help',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: 'Workflow mode',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/settings',
+    label: 'Settings',
+    description: 'Open settings',
+    validScreens: ['home'],
+    handler: () => {},
+  },
 ];
 
 const DOWN = '\u001b[B';
@@ -91,14 +112,16 @@ describe('composer integration: completions', () => {
 
     ui.stdin.write('/');
     await tick(20);
-    ui.stdin.write(DOWN);
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('▸ /mode');
+      expect(ui.lastFrame()).toContain('/mode');
     });
+    ui.stdin.write(DOWN);
+    await tick(20);
     ui.stdin.write(TAB);
     await tick(20);
 
     expect(ui.lastFrame()).toContain('/mode');
+    expect(ui.lastFrame()).not.toContain('/help');
     expect(commandCalls).toEqual([]);
 
     ui.stdin.write(ENTER);

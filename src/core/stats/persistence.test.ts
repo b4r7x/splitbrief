@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readStats, updateStats, rebuildStats } from './persistence.js';
@@ -40,11 +40,41 @@ describe('stats persistence', () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  it('readStats returns empty stats when file does not exist', () => {
+  it('readStats returns empty stats when file does not exist (no warn)', () => {
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const stats = readStats(testDir);
     expect(stats.totalSessions).toBe(0);
     expect(stats.totalCost).toBe(0);
     expect(stats.version).toBe(1);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('readStats warns once and returns empty stats when the file is corrupt', () => {
+    mkdirSync(join(testDir, '.diptych'), { recursive: true });
+    writeFileSync(join(testDir, '.diptych', 'stats.json'), '{ this is not json');
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const stats = readStats(testDir);
+
+    expect(stats.totalSessions).toBe(0);
+    expect(stats.version).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0] ?? '')).toContain('stats: unreadable file');
+    warn.mockRestore();
+  });
+
+  it('readStats warns and returns empty stats when the file fails schema validation', () => {
+    mkdirSync(join(testDir, '.diptych'), { recursive: true });
+    writeFileSync(join(testDir, '.diptych', 'stats.json'), JSON.stringify({ version: 999 }));
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const stats = readStats(testDir);
+
+    expect(stats.totalSessions).toBe(0);
+    expect(stats.version).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 
   it('updateStats creates file and accumulates', () => {
@@ -131,6 +161,6 @@ describe('stats persistence', () => {
 
     const files = readdirSync(join(testDir, '.diptych'));
     expect(files).toContain('stats.json');
-    expect(files.some(file => file.endsWith('.tmp'))).toBe(false);
+    expect(files.some((file) => file.endsWith('.tmp'))).toBe(false);
   });
 });

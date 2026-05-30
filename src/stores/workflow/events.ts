@@ -38,7 +38,12 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     next[next.length - 1] = merged;
     return next;
   }
-  if (event.type === 'validate' && event.status === 'running' && last?.type === 'validate' && last.status === 'running') {
+  if (
+    event.type === 'validate' &&
+    event.status === 'running' &&
+    last?.type === 'validate' &&
+    last.status === 'running'
+  ) {
     const next = events.slice();
     next[next.length - 1] = event;
     return next;

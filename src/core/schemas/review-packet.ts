@@ -8,6 +8,7 @@ import {
   TaskStatusSchema,
   WorkflowModeSchema,
 } from './enums.js';
+import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
 import { CostBreakdownSchema } from './summary.js';
 import { TaskIdSchema } from './task.js';
@@ -47,22 +48,26 @@ const ReviewPacketReadinessSchema = z.object({
   path: z.string(),
   present: z.boolean(),
   status: z.enum(['ready', 'ready-with-warnings', 'blocked']).nullable(),
-  nextAction: z.enum([
-    'continue',
-    'run-init',
-    'fix-config',
-    'clean-or-isolate-repo',
-    'raise-context',
-    'set-budget',
-    'exit',
-  ]).nullable(),
+  nextAction: z
+    .enum([
+      'continue',
+      'run-init',
+      'fix-config',
+      'clean-or-isolate-repo',
+      'raise-context',
+      'set-budget',
+      'exit',
+    ])
+    .nullable(),
   blockerCount: z.number().int().nonnegative().nullable(),
   warningCount: z.number().int().nonnegative().nullable(),
-  checks: z.array(z.object({
-    id: z.string(),
-    severity: z.enum(['ok', 'info', 'warning', 'blocker']),
-    summary: z.string(),
-  })),
+  checks: z.array(
+    z.object({
+      id: z.string(),
+      severity: z.enum(['ok', 'info', 'warning', 'blocker']),
+      summary: z.string(),
+    }),
+  ),
 });
 
 const ReviewPacketTaskFileSchema = z.object({
@@ -134,11 +139,13 @@ const ReviewPacketValidationTaskSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   status: TaskStatusSchema,
-  validation: z.array(z.object({
-    stage: EvidenceValidationStageSchema,
-    passed: z.boolean(),
-    errorSummary: z.string().optional(),
-  })),
+  validation: z.array(
+    z.object({
+      stage: EvidenceValidationStageSchema,
+      passed: z.boolean(),
+      errorSummary: z.string().optional(),
+    }),
+  ),
   expectedEvidence: z.array(z.string()),
   observedEvidence: z.array(z.string()),
   missingExpectedEvidence: z.array(z.string()),
@@ -160,32 +167,38 @@ const ReviewPacketEvidenceSchema = z.object({
   path: z.string().nullable(),
   present: z.boolean(),
   briefHash: z.string().nullable(),
-  finalReview: z.object({
-    path: z.string(),
-    status: EvidenceFinalReviewStatusSchema,
-  }).nullable(),
-  approvals: z.array(z.object({
-    ts: z.string(),
-    tier: z.string(),
-    actionClass: z.string(),
-    actionDescription: z.string(),
-    taskId: TaskIdSchema.optional(),
-    reason: z.string(),
-  })),
-  rejections: z.array(z.object({
-    ts: z.string(),
-    tier: z.string(),
-    actionClass: z.string(),
-    actionDescription: z.string(),
-    taskId: TaskIdSchema.optional(),
-    reason: z.string(),
-  })),
+  finalReview: z
+    .object({
+      path: z.string(),
+      status: EvidenceFinalReviewStatusSchema,
+    })
+    .nullable(),
+  approvals: z.array(
+    z.object({
+      ts: z.string(),
+      tier: z.string(),
+      actionClass: z.string(),
+      actionDescription: z.string(),
+      taskId: TaskIdSchema.optional(),
+      reason: z.string(),
+    }),
+  ),
+  rejections: z.array(
+    z.object({
+      ts: z.string(),
+      tier: z.string(),
+      actionClass: z.string(),
+      actionDescription: z.string(),
+      taskId: TaskIdSchema.optional(),
+      reason: z.string(),
+    }),
+  ),
 });
 
 const ReviewPacketDriftFindingSchema = z.object({
-  severity: z.enum(['info', 'warning', 'error']),
-  code: z.string(),
-  taskId: z.string().optional(),
+  severity: DriftSeveritySchema,
+  code: DriftCodeSchema,
+  taskId: TaskIdSchema.optional(),
   file: z.string().optional(),
   message: z.string(),
 });
@@ -210,13 +223,15 @@ const ReviewPacketDriftSchema = z.object({
     path: z.string(),
     present: z.boolean(),
     emittedChainCount: z.number().int().nonnegative(),
-    topChain: z.object({
-      chainLength: z.number().int().positive(),
-      score: z.number().min(0).max(1),
-      uniqueOutOfBoundsFiles: z.array(z.string()),
-      representativePath: z.string(),
-      detectedAtTaskId: z.string(),
-    }).nullable(),
+    topChain: z
+      .object({
+        chainLength: z.number().int().positive(),
+        score: z.number().min(0).max(1),
+        uniqueOutOfBoundsFiles: z.array(z.string()),
+        representativePath: z.string(),
+        detectedAtTaskId: TaskIdSchema,
+      })
+      .nullable(),
   }),
   briefQuality: z.object({
     path: z.string(),
@@ -260,7 +275,16 @@ const ReviewPacketRecoveryIssueSchema = z.object({
 const ReviewPacketRecoveryOutcomeSchema = z.object({
   issueId: z.string().nullable(),
   action: RecoveryActionSchema.optional(),
-  status: z.enum(['continued', 'retry-current-task', 'skipped', 'paused', 'resumed', 'aborted', 'failed', 'unresolved']),
+  status: z.enum([
+    'continued',
+    'retry-current-task',
+    'skipped',
+    'paused',
+    'resumed',
+    'aborted',
+    'failed',
+    'unresolved',
+  ]),
   message: z.string().optional(),
 });
 
@@ -268,36 +292,46 @@ const ReviewPacketRecoverySchema = z.object({
   sourceArtifacts: z.array(ReviewPacketArtifactSourceSchema),
   events: z.array(ReviewPacketEventSchema),
   currentIssue: ReviewPacketRecoveryIssueSchema.nullable(),
-  selectedActions: z.array(z.object({
-    issueId: z.string(),
-    reason: RecoveryReasonSchema,
-    action: RecoveryActionSchema,
-    selectedAt: z.string(),
-  })),
+  selectedActions: z.array(
+    z.object({
+      issueId: z.string(),
+      reason: RecoveryReasonSchema,
+      action: RecoveryActionSchema,
+      selectedAt: z.string(),
+    }),
+  ),
   outcomes: z.array(ReviewPacketRecoveryOutcomeSchema),
   unresolvedRisks: z.array(z.string()),
 });
 
 const ReviewPacketEscalationsSchema = z.object({
-  retries: z.array(z.object({
-    taskId: TaskIdSchema,
-    retryCount: z.number().int().nonnegative(),
-    lastError: z.string().nullable(),
-  })),
-  escalatedTasks: z.array(z.object({
-    taskId: TaskIdSchema,
-    title: z.string(),
-    method: TaskCompletionMethodSchema.optional(),
-  })),
-  skippedTasks: z.array(z.object({
-    taskId: TaskIdSchema,
-    title: z.string(),
-    reason: z.string().nullable(),
-  })),
-  failedTasks: z.array(z.object({
-    taskId: TaskIdSchema,
-    title: z.string(),
-  })),
+  retries: z.array(
+    z.object({
+      taskId: TaskIdSchema,
+      retryCount: z.number().int().nonnegative(),
+      lastError: z.string().nullable(),
+    }),
+  ),
+  escalatedTasks: z.array(
+    z.object({
+      taskId: TaskIdSchema,
+      title: z.string(),
+      method: TaskCompletionMethodSchema.optional(),
+    }),
+  ),
+  skippedTasks: z.array(
+    z.object({
+      taskId: TaskIdSchema,
+      title: z.string(),
+      reason: z.string().nullable(),
+    }),
+  ),
+  failedTasks: z.array(
+    z.object({
+      taskId: TaskIdSchema,
+      title: z.string(),
+    }),
+  ),
   warnings: z.array(ReviewPacketEventSchema),
 });
 

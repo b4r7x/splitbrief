@@ -16,18 +16,38 @@ export function createTranscriptBuffer(
       if (!shouldPersist) return;
       buffer += text;
       if (buffer.length > MAX_BUFFER_BYTES) {
-        appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, shouldPersist);
+        appendMessage(
+          projectDir,
+          sessionId,
+          { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
+          shouldPersist,
+        );
         buffer = '';
       }
     },
     flush(): void {
       if (!shouldPersist || buffer.length === 0) return;
-      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, shouldPersist);
+      appendMessage(
+        projectDir,
+        sessionId,
+        { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
+        shouldPersist,
+      );
       buffer = '';
     },
     flushInterrupted(): void {
       if (!shouldPersist || buffer.length === 0) return;
-      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer, interrupted: true }, shouldPersist);
+      appendMessage(
+        projectDir,
+        sessionId,
+        {
+          role: 'assistant',
+          ...(phase !== undefined && { phase }),
+          text: buffer,
+          interrupted: true,
+        },
+        shouldPersist,
+      );
       buffer = '';
     },
   };

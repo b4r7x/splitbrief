@@ -29,4 +29,3 @@ describe('runnerConfigError factories', () => {
     expect(implementer.data).toEqual({ toolName: 'aider', role: 'implementer' });
   });
 });
-

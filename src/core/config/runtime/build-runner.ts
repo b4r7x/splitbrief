@@ -31,16 +31,22 @@ export function buildRunnerConfig(role: 'planner', opts: BuildRunnerOpts): Plann
 export function buildRunnerConfig(role: 'implementer', opts: BuildRunnerOpts): ImplementerConfig;
 export function buildRunnerConfig(
   role: Role,
-  opts: BuildRunnerOpts
+  opts: BuildRunnerOpts,
 ): PlannerConfig | ImplementerConfig {
   const kind = inferKind(role, opts);
   switch (kind) {
-    case 'cli': return buildCliConfig(role, opts);
-    case 'api': return buildApiConfig(role, opts);
-    case 'shell': return buildCommandConfig(role, opts, 'shell');
-    case 'agent': return buildCommandConfig(role, opts, 'agent');
-    case 'agent-sdk': return buildAgentSdkConfig(role, opts);
-    default: return assertNever(kind);
+    case 'cli':
+      return buildCliConfig(role, opts);
+    case 'api':
+      return buildApiConfig(role, opts);
+    case 'shell':
+      return buildCommandConfig(role, opts, 'shell');
+    case 'agent':
+      return buildCommandConfig(role, opts, 'agent');
+    case 'agent-sdk':
+      return buildAgentSdkConfig(role, opts);
+    default:
+      return assertNever(kind);
   }
 }
 
@@ -109,9 +115,7 @@ function getExistingApiBase(
   existing: PlannerConfig | ImplementerConfig | undefined,
   provider: string,
 ): string | undefined {
-  return existing?.kind === 'api' && existing.provider === provider
-    ? existing.apiBase
-    : undefined;
+  return existing?.kind === 'api' && existing.provider === provider ? existing.apiBase : undefined;
 }
 
 function getExistingApiKey(
@@ -121,9 +125,7 @@ function getExistingApiKey(
 ): string | undefined {
   if (!existing) return undefined;
   if (existing.kind === 'agent-sdk') {
-    return nextKind === 'agent-sdk' || provider === 'anthropic'
-      ? existing.apiKey
-      : undefined;
+    return nextKind === 'agent-sdk' || provider === 'anthropic' ? existing.apiKey : undefined;
   }
   if (existing.kind !== 'api') return undefined;
   if (nextKind === 'agent-sdk') {
@@ -132,10 +134,7 @@ function getExistingApiKey(
   return existing.provider === provider ? existing.apiKey : undefined;
 }
 
-function buildCliConfig(
-  role: Role,
-  opts: BuildRunnerOpts
-): PlannerConfig | ImplementerConfig {
+function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
   if (!opts.tool) throw configError.runnerMissingField(role, 'cli', 'tool');
   if (!includes(CLI_TOOL_IDS, opts.tool)) {
     throw configError.unknownCliTool(opts.tool, CLI_TOOL_IDS);
@@ -155,10 +154,7 @@ function buildCliConfig(
   return parseRunnerConfig(role, config);
 }
 
-function buildApiConfig(
-  role: Role,
-  opts: BuildRunnerOpts
-): PlannerConfig | ImplementerConfig {
+function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
   const provider = opts.tool || (role === 'implementer' ? 'ollama' : 'anthropic');
   const existingApiBase = getExistingApiBase(opts.existing, provider);
   const apiBase = opts.apiBase || existingApiBase || resolveDefaultApiBase(provider);
@@ -185,7 +181,7 @@ function buildApiConfig(
 function buildCommandConfig(
   role: Role,
   opts: BuildRunnerOpts,
-  kind: 'shell' | 'agent'
+  kind: 'shell' | 'agent',
 ): PlannerConfig | ImplementerConfig {
   if (!opts.command) throw configError.runnerMissingField(role, kind, 'command');
 
@@ -203,10 +199,7 @@ function buildCommandConfig(
   return parseRunnerConfig(role, config);
 }
 
-function buildAgentSdkConfig(
-  role: Role,
-  opts: BuildRunnerOpts
-): PlannerConfig | ImplementerConfig {
+function buildAgentSdkConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
   const existingApiKey = getExistingApiKey(opts.existing, 'agent-sdk');
   const gen = resolveGenerationParams(opts);
   assertModelPresent(role, gen.model);

@@ -7,7 +7,11 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let server: http.Server;
 let port: number;
-type RequestBody = { model: string; stream: boolean; messages: { role: string; content: string }[] };
+type RequestBody = {
+  model: string;
+  stream: boolean;
+  messages: { role: string; content: string }[];
+};
 let receivedBodies: RequestBody[];
 let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
@@ -31,11 +35,22 @@ function makeApiPlannerConfig(provider: string): Config {
       temperature: 0.3,
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, compactionFormat: 'auto' },
+    workflow: {
+      autoApproveSpec: false,
+      autoApprovePlan: false,
+      maxRetries: 3,
+      commitStrategy: 'none',
+      persistTranscript: true,
+      compactionFormat: 'auto',
+    },
   };
 }
 
-function streamSseChunks(res: http.ServerResponse, chunks: string[], finalUsage?: { prompt_tokens: number; completion_tokens: number }) {
+function streamSseChunks(
+  res: http.ServerResponse,
+  chunks: string[],
+  finalUsage?: { prompt_tokens: number; completion_tokens: number },
+) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -68,11 +83,17 @@ function streamAnthropicChunks(
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
   });
-  res.write(`event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: usage.input_tokens, output_tokens: 0 } } })}\n\n`);
+  res.write(
+    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: usage.input_tokens, output_tokens: 0 } } })}\n\n`,
+  );
   for (const text of chunks) {
-    res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } })}\n\n`);
+    res.write(
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } })}\n\n`,
+    );
   }
-  res.write(`event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: usage.output_tokens } })}\n\n`);
+  res.write(
+    `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: usage.output_tokens } })}\n\n`,
+  );
   res.write('event: message_stop\ndata: {"type":"message_stop"}\n\n');
   res.end();
 }
@@ -137,8 +158,11 @@ describe('createApiPlanner', () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     const collected: string[] = [];
 
-    const result = await planner.regenerate('the prompt', 'spec', projectDir, {
-      onOutput: (text) => collected.push(text),
+    const result = await planner.regenerate({
+      prompt: 'the prompt',
+      artifactType: 'spec',
+      projectDir,
+      callbacks: { onOutput: (text) => collected.push(text) },
     });
 
     expect(result.text).toBe('Hello world');
@@ -155,8 +179,11 @@ describe('createApiPlanner', () => {
     const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
     const collected: string[] = [];
 
-    const result = await planner.regenerate('the prompt', 'spec', projectDir, {
-      onOutput: (text) => collected.push(text),
+    const result = await planner.regenerate({
+      prompt: 'the prompt',
+      artifactType: 'spec',
+      projectDir,
+      callbacks: { onOutput: (text) => collected.push(text) },
     });
 
     expect(result.text).toBe('Hello Claude');
@@ -178,9 +205,13 @@ describe('createApiPlanner', () => {
   it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
 
-    const result = await planner.plan('test feature', projectDir, {
-      onOutput: vi.fn(),
-      onPhase: vi.fn(),
+    const result = await planner.plan({
+      feature: 'test feature',
+      projectDir,
+      callbacks: {
+        onOutput: vi.fn(),
+        onPhase: vi.fn(),
+      },
     });
 
     expect(receivedBodies).toHaveLength(4);
@@ -190,13 +221,17 @@ describe('createApiPlanner', () => {
   it('plan() injects priorMessages into the first phase chat history (FR-007 api-kind)', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
 
-    await planner.plan('add auth', projectDir, {
-      onOutput: vi.fn(),
-      onPhase: vi.fn(),
-      priorMessages: [
-        { role: 'user', content: 'start: add auth' },
-        { role: 'assistant', content: 'we should use JWT' },
-      ],
+    await planner.plan({
+      feature: 'add auth',
+      projectDir,
+      callbacks: {
+        onOutput: vi.fn(),
+        onPhase: vi.fn(),
+        priorMessages: [
+          { role: 'user', content: 'start: add auth' },
+          { role: 'assistant', content: 'we should use JWT' },
+        ],
+      },
     });
 
     expect(receivedBodies.length).toBeGreaterThan(0);
@@ -210,11 +245,17 @@ describe('createApiPlanner', () => {
     const secondCall = receivedBodies[1]!;
     expect(secondCall.messages[0]!.role).toBe('user');
     // Prior assistant turn should not be present in phase 2+
-    const hasAssistantPrior = secondCall.messages.some((m: { role: string; content: string }) => m.role === 'assistant' && m.content === 'we should use JWT');
+    const hasAssistantPrior = secondCall.messages.some(
+      (m: { role: string; content: string }) =>
+        m.role === 'assistant' && m.content === 'we should use JWT',
+    );
     expect(hasAssistantPrior).toBe(false);
   });
 
-  it.each([['ollama'], ['anthropic']] as const)('isAvailable returns true for %s when endpoint responds', async (provider) => {
+  it.each([
+    ['ollama'],
+    ['anthropic'],
+  ] as const)('isAvailable returns true for %s when endpoint responds', async (provider) => {
     const planner = createApiPlanner(makeApiPlannerConfig(provider));
     expect(await planner.isAvailable()).toBe(true);
   });
@@ -230,5 +271,4 @@ describe('createApiPlanner', () => {
     cfg.planner.model = 'auto';
     expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
   });
-
 });

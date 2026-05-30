@@ -1,8 +1,16 @@
-import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS, type ApproveLevel, type RunnerKind } from '../../schemas/enums.js';
+import {
+  CLI_TOOL_IDS,
+  RUNNER_KINDS,
+  KNOWN_API_PROVIDERS,
+  type ApproveLevel,
+  type RunnerKind,
+} from '../../schemas/enums.js';
 import { getRunnerKindMeta } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
 import { narrowRecord, includes } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
+import { ConfigSchema } from '../../schemas/config.js';
+import { inferKindFromTool } from '../runtime/build-runner.js';
 
 export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   if (!raw || typeof raw !== 'object') {
@@ -22,7 +30,9 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
     return raw;
   } else if (version === 2) {
     v2 = obj;
-    warnings?.push('config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.');
+    warnings?.push(
+      'config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.',
+    );
   } else {
     v2 = narrowRecord(migrateV1ToV2(obj)) ?? {};
   }
@@ -40,7 +50,10 @@ export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unkno
     const autoSpec = workflow.autoApproveSpec === true;
     const autoPlan = workflow.autoApprovePlan === true;
     if (newWorkflow.approve === undefined) {
-      newWorkflow.approve = deriveApproveLevel({ autoApproveSpec: autoSpec, autoApprovePlan: autoPlan });
+      newWorkflow.approve = deriveApproveLevel({
+        autoApproveSpec: autoSpec,
+        autoApprovePlan: autoPlan,
+      });
     }
 
     const topCommit = workflow.commitStrategy;
@@ -77,27 +90,20 @@ export function deriveApproveLevel(flags: DeriveApproveLevelInput): ApproveLevel
   return 'default';
 }
 
+const V1_SPECIAL_KEYS = new Set(['version', 'planner', 'implementer', 'workflow']);
+
 function migrateV1ToV2(obj: Record<string, unknown>): unknown {
-  return {
+  const result: Record<string, unknown> = {
     version: 2,
     planner: obj.planner ? migrateRunnerV1ToV2('planner', obj.planner) : undefined,
     implementer: obj.implementer ? migrateRunnerV1ToV2('implementer', obj.implementer) : undefined,
-    validation: obj.validation,
     workflow: migrateWorkflowV1ToV2(obj.workflow),
-    theme: obj.theme,
-    shikiTheme: obj.shikiTheme,
-    sessions: obj.sessions,
-    escalation: obj.escalation,
-    codebase: obj.codebase,
-    hooks: obj.hooks,
-    otel: obj.otel,
-    snapshots: obj.snapshots,
-    palette: obj.palette,
-    approval: obj.approval,
-    implementerProfiles: obj.implementerProfiles,
-    plannerEstimateReview: obj.plannerEstimateReview,
-    autoSplitOverflow: obj.autoSplitOverflow,
   };
+  for (const key of Object.keys(ConfigSchema.shape)) {
+    if (V1_SPECIAL_KEYS.has(key)) continue;
+    if (key in obj) result[key] = obj[key];
+  }
+  return result;
 }
 
 function migrateWorkflowV1ToV2(raw: unknown): unknown {
@@ -128,7 +134,7 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
   const command = typeof runner.command === 'string' ? runner.command : undefined;
   const apiBase = typeof runner.apiBase === 'string' ? runner.apiBase : undefined;
 
-  const kind = inferLegacyKind(legacyKind, tool, command, apiBase, role);
+  const kind = inferLegacyKind({ legacyKind, tool, command, apiBase, role });
 
   if (kind === 'cli') {
     const resolvedTool = tool || legacyKind || (role === 'planner' ? 'claude-code' : undefined);
@@ -176,13 +182,16 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
   return result;
 }
 
-function inferLegacyKind(
-  legacyKind: string | undefined,
-  tool: string | undefined,
-  command: string | undefined,
-  apiBase: string | undefined,
-  role: 'planner' | 'implementer',
-): RunnerKind {
+interface LegacyKindInput {
+  legacyKind?: string | undefined;
+  tool?: string | undefined;
+  command?: string | undefined;
+  apiBase?: string | undefined;
+  role: 'planner' | 'implementer';
+}
+
+function inferLegacyKind(input: LegacyKindInput): RunnerKind {
+  const { legacyKind, tool, command, apiBase, role } = input;
   if (legacyKind && includes(RUNNER_KINDS, legacyKind)) {
     return legacyKind;
   }
@@ -191,7 +200,7 @@ function inferLegacyKind(
     return 'cli';
   }
 
-  if (tool && includes(CLI_TOOL_IDS, tool)) return 'cli';
+  if (tool && inferKindFromTool(tool) === 'cli') return 'cli';
   if (apiBase) return 'api';
   if (command) return 'shell';
 

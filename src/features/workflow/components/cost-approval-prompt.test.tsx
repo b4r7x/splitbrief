@@ -5,15 +5,30 @@ import type { CostPrediction } from '../../../core/schemas/summary.js';
 
 function makePrediction(): CostPrediction {
   return {
-    estimatedTasks: 12, lowCost: 0.08, expectedCost: 0.14, highCost: 0.35,
-    plannerTool: 'anthropic', implementerTool: 'anthropic',
+    estimatedTasks: 12,
+    lowCost: 0.08,
+    expectedCost: 0.14,
+    highCost: 0.35,
+    plannerTool: 'anthropic',
+    implementerTool: 'anthropic',
     deterministic: {
       taskCount: 12,
       taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
-      contextConfidenceCounts: { contextExplicit: 5, contextKnownCatalog: 4, contextCachedProvider: 2, contextConservativeFallback: 1, profileUnavailable: 0 },
+      contextConfidenceCounts: {
+        contextExplicit: 5,
+        contextKnownCatalog: 4,
+        contextCachedProvider: 2,
+        contextConservativeFallback: 1,
+        profileUnavailable: 0,
+      },
       priceConfidenceCounts: { priceKnown: 12, priceUnknown: 0, profileUnavailable: 0 },
       tasks: [],
-      totals: { knownActualEstimate: 0.14, hypotheticalAllPlanner: 1.20, estimatedSavings: 1.06, unknownCostReason: [] },
+      totals: {
+        knownActualEstimate: 0.14,
+        hypotheticalAllPlanner: 1.2,
+        estimatedSavings: 1.06,
+        unknownCostReason: [],
+      },
     },
   };
 }
@@ -35,7 +50,11 @@ describe('CostApprovalPrompt', () => {
     const onApprove = vi.fn();
     const onReject = vi.fn();
     const ui = renderFeature(
-      <CostApprovalPrompt prediction={makePrediction()} onApprove={onApprove} onReject={onReject} />,
+      <CostApprovalPrompt
+        prediction={makePrediction()}
+        onApprove={onApprove}
+        onReject={onReject}
+      />,
     );
     ui.stdin.write('y');
     expect(onApprove).toHaveBeenCalledOnce();
@@ -47,12 +66,15 @@ describe('CostApprovalPrompt', () => {
     const onApprove = vi.fn();
     const onReject = vi.fn();
     const ui = renderFeature(
-      <CostApprovalPrompt prediction={makePrediction()} onApprove={onApprove} onReject={onReject} />,
+      <CostApprovalPrompt
+        prediction={makePrediction()}
+        onApprove={onApprove}
+        onReject={onReject}
+      />,
     );
     ui.stdin.write('n');
     expect(onReject).toHaveBeenCalledOnce();
     expect(onApprove).not.toHaveBeenCalled();
     ui.unmount();
   });
-
 });

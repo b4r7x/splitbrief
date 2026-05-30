@@ -10,8 +10,19 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 
 type PublisherEvent =
-  | { type: 'implementer_generate_running'; phase: string; taskId: string; file?: string | undefined }
-  | { type: 'implementer_generate_done'; phase: string; taskId: string; file: string; duration: number }
+  | {
+      type: 'implementer_generate_running';
+      phase: string;
+      taskId: string;
+      file?: string | undefined;
+    }
+  | {
+      type: 'implementer_generate_done';
+      phase: string;
+      taskId: string;
+      file: string;
+      duration: number;
+    }
   | { type: 'implementer_generate_failed'; phase: string; taskId: string; model: string };
 
 let projectDir: string;
@@ -44,11 +55,17 @@ describe('createImplementerBase — bus events', () => {
     });
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
     const events: PublisherEvent[] = [];
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, publisher: makePublisher(events) }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ invoke, publisher: makePublisher(events) }),
+    );
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), phase: 'implementing',
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
     });
 
     expect(result.success).toBe(true);
@@ -76,18 +93,25 @@ describe('createImplementerBase — bus events', () => {
     const invoke = vi.fn().mockRejectedValue(new Error('connection refused'));
     const task = makeTask({ id: 'T002', file: 'src/fail.ts', action: 'create' });
     const events: PublisherEvent[] = [];
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, publisher: makePublisher(events) }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ invoke, publisher: makePublisher(events) }),
+    );
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), phase: 'implementing',
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
     });
 
     expect(result.success).toBe(false);
     const types = events.map((e) => e.type);
     expect(types).toContain('implementer_generate_running');
     expect(types).toContain('implementer_generate_failed');
-    expect(types.indexOf('implementer_generate_running')).toBeLessThan(types.indexOf('implementer_generate_failed'));
+    expect(types.indexOf('implementer_generate_running')).toBeLessThan(
+      types.indexOf('implementer_generate_failed'),
+    );
   });
-
 });

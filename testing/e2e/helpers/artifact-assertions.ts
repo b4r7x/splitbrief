@@ -10,7 +10,9 @@ export function evaluateTsArtifact(filePath: string, expression: string): unknow
     'process.stdout.write(JSON.stringify(result));',
   ].join('\n');
 
-  return JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', '--eval', script], {
-    encoding: 'utf-8',
-  }));
+  return JSON.parse(
+    execFileSync(process.execPath, ['--import', 'tsx', '--eval', script], {
+      encoding: 'utf-8',
+    }),
+  );
 }

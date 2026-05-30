@@ -7,4 +7,5 @@ export type HookOutcome =
 export interface HookContext {
   projectDir: string;
   sessionId: string;
+  files?: string[];
 }

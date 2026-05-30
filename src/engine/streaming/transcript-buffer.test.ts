@@ -18,8 +18,8 @@ function readEntries(projectDir: string, sessionId: string): unknown[] {
   if (!existsSync(logPath)) return [];
   return readFileSync(logPath, 'utf-8')
     .split('\n')
-    .filter(line => line.length > 0)
-    .map(line => JSON.parse(line));
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 describe('createTranscriptBuffer', () => {

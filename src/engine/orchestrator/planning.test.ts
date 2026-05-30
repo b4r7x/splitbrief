@@ -5,20 +5,27 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { BRIEF_QUALITY_FILE, sessionDir, TASKS_FILE } from '../../core/paths.js';
 import { runPlanningPhase } from './planning/run.js';
-import { createEvidenceLedger } from './evidence/ledger.js';
-import { writeEvidenceLedger } from './evidence/persistence.js';
+import { createEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger.js';
 import { recordRejectionEvidence } from './evidence/approval-evidence.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import type { Config } from '../../core/schemas/config.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'standard',
+} as const;
 
 const REAL_TASKS_MD = `---
 id: T001
@@ -72,7 +79,9 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function createTestSinks(): WorkflowSinks & { abortTurn: () => boolean } {
   let abortHandler: (() => void) | null = null;
   return {
-    setAbortHandler: (h) => { abortHandler = h; },
+    setAbortHandler: (h) => {
+      abortHandler = h;
+    },
     setQueueHandler: () => {},
     abortTurn: () => {
       if (!abortHandler) return false;
@@ -82,7 +91,10 @@ function createTestSinks(): WorkflowSinks & { abortTurn: () => boolean } {
   };
 }
 
-function prepareState(phase?: 'specifying' | 'planning', rewindPending?: WorkflowState['rewindPending']): WorkflowState {
+function prepareState(
+  phase?: 'specifying' | 'planning',
+  rewindPending?: WorkflowState['rewindPending'],
+): WorkflowState {
   const initial = createInitialState('test-feature');
   if (phase) return { ...initial, phase, rewindPending };
   return transition(initial, { type: 'START', feature: 'test-feature' });
@@ -139,16 +151,24 @@ function seedRejectionEvidence(projectDir: string, sessionId: string): void {
   writeEvidenceLedger(projectDir, sessionId, ledger);
 }
 
-function sequencedApproval(responses: Array<{ approved: boolean; comment?: string; action?: 'edit' }>): OrchestratorCallbacks['onApprovalNeeded'] {
+function sequencedApproval(
+  responses: Array<{ approved: boolean; comment?: string; action?: 'edit' }>,
+): OrchestratorCallbacks['onApprovalNeeded'] {
   const fn = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
   for (const r of responses) fn.mockResolvedValueOnce(r);
   return fn;
 }
 
-const auto = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> =>
-  ({ autoApproveSpec: true, autoApprovePlan: true, ...(mode ? { mode } : {}) });
-const manual = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> =>
-  ({ autoApproveSpec: false, autoApprovePlan: false, ...(mode ? { mode } : {}) });
+const auto = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
+  autoApproveSpec: true,
+  autoApprovePlan: true,
+  ...(mode ? { mode } : {}),
+});
+const manual = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
+  autoApproveSpec: false,
+  autoApprovePlan: false,
+  ...(mode ? { mode } : {}),
+});
 
 type RunOpts = {
   planner?: Planner;
@@ -168,7 +188,15 @@ async function runPhase(opts: RunOpts = {}) {
   const sinks = opts.sinks ?? createTestSinks();
   const recorder = makeBusRecorder();
   const result = await runPlanningPhase({
-    wctx: { projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, sinks, bus: recorder.bus },
+    wctx: {
+      projectDir,
+      config,
+      callbacks,
+      metadata: TEST_METADATA,
+      sessionId,
+      sinks,
+      bus: recorder.bus,
+    },
     planner,
     state,
     feature: 'test-feature',
@@ -186,9 +214,21 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
   }> = [
     { name: 'manual approval (default mode)', workflow: manual() },
     { name: 'auto-approve both completes without user interaction', workflow: auto() },
-    { name: 'quick mode skips approval and uses quickPlan', workflow: manual('quick'), useQuickPlan: true },
-    { name: 'standard mode uses spec + briefs approval gates', workflow: manual('standard'), approvals: [{ approved: true }, { approved: true }] },
-    { name: 'speckit mode requires spec + plan + briefs approvals', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: true }, { approved: true }] },
+    {
+      name: 'quick mode skips approval and uses quickPlan',
+      workflow: manual('quick'),
+      useQuickPlan: true,
+    },
+    {
+      name: 'standard mode uses spec + briefs approval gates',
+      workflow: manual('standard'),
+      approvals: [{ approved: true }, { approved: true }],
+    },
+    {
+      name: 'speckit mode requires spec + plan + briefs approvals',
+      workflow: manual('speckit'),
+      approvals: [{ approved: true }, { approved: true }, { approved: true }],
+    },
   ];
 
   it.each(happyCases)('$name', async ({ workflow, approvals, useQuickPlan }) => {
@@ -199,7 +239,12 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const quickPlan = useQuickPlan
       ? async () => {
           quickPlanCalls++;
-          return { spec: '', plan: '', tasks: [makePassingTask('T-QUICK')], usage: { inputTokens: 50, outputTokens: 25 } };
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makePassingTask('T-QUICK')],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          };
         }
       : undefined;
     const planner = makePassingPlanner(quickPlan ? { quickPlan } : undefined);
@@ -229,13 +274,17 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const regenArgs: Array<{ prompt: string; target: string }> = [];
     const planner = makePassingPlanner({
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      regenerate: async (prompt: string, target: 'spec' | 'plan') => {
-        regenArgs.push({ prompt, target });
+      regenerate: async (opts) => {
+        regenArgs.push({ prompt: opts.prompt, target: opts.artifactType });
         return { text: '# Regenerated Spec\n\nauth section added.\n', usage: null };
       },
     });
 
-    const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow: manual() }) });
+    const { result } = await runPhase({
+      planner,
+      callbacks,
+      config: makeConfig({ workflow: manual() }),
+    });
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
@@ -255,18 +304,22 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
         usage: { inputTokens: 100, outputTokens: 50 },
       }),
     });
-    const onApprovalNeeded = sequencedApproval([
-      { approved: true },
-      { approved: false },
-    ]);
+    const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: false }]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
     const initial = createInitialState('feature');
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -280,7 +333,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(existsSync(reportPath)).toBe(true);
     const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
     expect(persisted.passed).toBe(false);
-    const failed = events.find(e => e.type === 'brief_quality_failed');
+    const failed = events.find((e) => e.type === 'brief_quality_failed');
     expect(failed).toBeDefined();
   });
 
@@ -301,11 +354,18 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -315,14 +375,17 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
     expect(result.cancelled).toBe(true);
     expect(result.state.phase).toBe('idle');
-    expect(events.filter(e => e.type === 'brief_quality_failed').length).toBeGreaterThanOrEqual(2);
+    expect(events.filter((e) => e.type === 'brief_quality_failed').length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   it('brief edit reloads persisted tasks.md and quality-gates it before approval', async () => {
     const { projectDir, sessionId } = setupProject();
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
         writeFileSync(tasksPath, REAL_TASKS_MD, 'utf8');
@@ -330,11 +393,18 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
       })
       .mockResolvedValueOnce({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -351,18 +421,26 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const { projectDir, sessionId } = setupProject();
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
         rmSync(tasksPath, { force: true });
         return { approved: true };
       });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -379,7 +457,8 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const { projectDir, sessionId } = setupProject();
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
         writeFileSync(tasksPath, '', 'utf8');
@@ -387,11 +466,18 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
       })
       .mockResolvedValueOnce({ approved: false });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -415,12 +501,19 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true },
+    });
     const initial = createInitialState('feature');
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -447,12 +540,19 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
     const initial = createInitialState('feature');
 
     const result = await runPlanningPhase({
       wctx: {
-        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
@@ -469,7 +569,8 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
 describe('runPlanningPhase — planner rejection context', () => {
   const feature = 'implement audited API sync';
-  const rejectionSummary = '[sticky] network: fetch https://api.example.com/audit (reason: user denied network access)';
+  const rejectionSummary =
+    '[sticky] network: fetch https://api.example.com/audit (reason: user denied network access)';
 
   async function runSeededPlanning(opts: {
     workflow: Partial<Config['workflow']>;
@@ -501,9 +602,9 @@ describe('runPlanningPhase — planner rejection context', () => {
 
   it('prepends prior rejection context to standard planner input by default', async () => {
     const prompts: string[] = [];
-    const plan: Planner['plan'] = async (prompt, projectDir, callbacks) => {
-      prompts.push(prompt);
-      return makePassingPlanner().plan(prompt, projectDir, callbacks);
+    const plan: Planner['plan'] = async (opts) => {
+      prompts.push(opts.feature);
+      return makePassingPlanner().plan(opts);
     };
     const planner = makePassingPlanner({ plan });
 
@@ -520,8 +621,8 @@ describe('runPlanningPhase — planner rejection context', () => {
 
   it('prepends prior rejection context to quick planner input when enabled', async () => {
     const prompts: string[] = [];
-    const quickPlan: Planner['quickPlan'] = async (prompt) => {
-      prompts.push(prompt);
+    const quickPlan: Planner['quickPlan'] = async (opts) => {
+      prompts.push(opts.feature);
       return {
         spec: '',
         plan: '',
@@ -545,9 +646,9 @@ describe('runPlanningPhase — planner rejection context', () => {
 
   it('does not include prior rejection context when feedRejectionsToPlanner is false', async () => {
     const prompts: string[] = [];
-    const plan: Planner['plan'] = async (prompt, projectDir, callbacks) => {
-      prompts.push(prompt);
-      return makePassingPlanner().plan(prompt, projectDir, callbacks);
+    const plan: Planner['plan'] = async (opts) => {
+      prompts.push(opts.feature);
+      return makePassingPlanner().plan(opts);
     };
     const planner = makePassingPlanner({ plan });
 
@@ -572,8 +673,17 @@ describe('runPlanningPhase — rejection paths', () => {
     approvals: Array<{ approved: boolean }>;
     expectPhase?: WorkflowState['phase'];
   }> = [
-    { name: 'user rejects spec → cancelled, zero tasks, phase idle', workflow: manual(), approvals: [{ approved: false }], expectPhase: 'idle' },
-    { name: 'user rejects plan (speckit mode) → cancelled', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: false }] },
+    {
+      name: 'user rejects spec → cancelled, zero tasks, phase idle',
+      workflow: manual(),
+      approvals: [{ approved: false }],
+      expectPhase: 'idle',
+    },
+    {
+      name: 'user rejects plan (speckit mode) → cancelled',
+      workflow: manual('speckit'),
+      approvals: [{ approved: true }, { approved: false }],
+    },
   ];
 
   it.each(rejectCases)('$name', async ({ workflow, approvals, expectPhase }) => {
@@ -624,21 +734,38 @@ describe('runPlanningPhase — persistence', () => {
 });
 
 describe('runPlanningPhase — onQuestion wiring', () => {
-  const onQuestionCases: Array<{ name: string; supports: boolean; expectedType: 'undefined' | 'function' }> = [
-    { name: 'no onQuestion passed when capability is false', supports: false, expectedType: 'undefined' },
+  const onQuestionCases: Array<{
+    name: string;
+    supports: boolean;
+    expectedType: 'undefined' | 'function';
+  }> = [
+    {
+      name: 'no onQuestion passed when capability is false',
+      supports: false,
+      expectedType: 'undefined',
+    },
     { name: 'onQuestion wired when capability is true', supports: true, expectedType: 'function' },
   ];
 
   it.each(onQuestionCases)('$name', async ({ supports, expectedType }) => {
     let captured: unknown;
-    const plan = vi.fn().mockImplementation(async (_feature, _dir, cbs) => {
-      captured = cbs.onQuestion;
+    const plan = vi.fn().mockImplementation(async (opts) => {
+      captured = opts.callbacks.onQuestion;
       return { spec: '', plan: '', tasks: [makePassingTask()], usage: null };
     });
     const planner = makePassingPlanner({
       plan,
       ...(supports
-        ? { capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsEffort: false, supportsImages: false, supportsSelfSummarisation: false } }
+        ? {
+            capabilities: {
+              supportsConversationalPlanning: true,
+              supportsHintEscalation: true,
+              supportsSessionResume: false,
+              supportsEffort: false,
+              supportsImages: false,
+              supportsSelfSummarisation: false,
+            },
+          }
         : {}),
     });
 
@@ -658,14 +785,26 @@ describe('runPlanningPhase — abort + continuation', () => {
     partialText: string;
     continuationText: string;
   }> = [
-    { name: 'standard mode: plan() aborts → continuation carries partial + user text', fnKey: 'plan', workflow: auto(), partialText: 'partially generated spec...', continuationText: 'also use PostgreSQL 15' },
-    { name: 'quick mode: quickPlan() aborts → continuation carries partial + user text', fnKey: 'quickPlan', workflow: manual('quick'), partialText: 'quick plan partial output', continuationText: 'add more detail' },
+    {
+      name: 'standard mode: plan() aborts → continuation carries partial + user text',
+      fnKey: 'plan',
+      workflow: auto(),
+      partialText: 'partially generated spec...',
+      continuationText: 'also use PostgreSQL 15',
+    },
+    {
+      name: 'quick mode: quickPlan() aborts → continuation carries partial + user text',
+      fnKey: 'quickPlan',
+      workflow: manual('quick'),
+      partialText: 'quick plan partial output',
+      continuationText: 'add more detail',
+    },
   ];
 
   it.each(abortCases)('$name', async ({ fnKey, workflow, partialText, continuationText }) => {
     const sinks = createTestSinks();
     let callCount = 0;
-    const fn = async (feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
+    const fn: Planner['plan'] = async ({ feature, callbacks: plannerCbs }) => {
       callCount++;
       if (callCount === 1) {
         plannerCbs.onOutput(partialText);
@@ -675,8 +814,18 @@ describe('runPlanningPhase — abort + continuation', () => {
       expect(feature).toContain(partialText);
       expect(feature).toContain(continuationText);
       return fnKey === 'quickPlan'
-        ? { spec: '', plan: '', tasks: [makePassingTask()], usage: { inputTokens: 50, outputTokens: 25 } }
-        : { spec: '# Full Spec', plan: '# Full Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        ? {
+            spec: '',
+            plan: '',
+            tasks: [makePassingTask()],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }
+        : {
+            spec: '# Full Spec',
+            plan: '# Full Plan',
+            tasks: [makePassingTask()],
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
     };
 
     const continuationPrompts: string[] = [];
@@ -687,7 +836,12 @@ describe('runPlanningPhase — abort + continuation', () => {
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
     const planner = makePassingPlanner({ [fnKey]: fn });
 
-    const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow }), sinks });
+    const { result } = await runPhase({
+      planner,
+      callbacks,
+      config: makeConfig({ workflow }),
+      sinks,
+    });
 
     expect(result.cancelled).toBe(false);
     expect(continuationPrompts).toEqual([partialText]);
@@ -717,23 +871,38 @@ describe('runPlanningPhase — abort + continuation', () => {
 });
 
 describe('runPlanningPhase — rewindPending', () => {
-  const rewindRegenCases: Array<{ target: 'spec' | 'plan'; phase: 'specifying' | 'planning'; comment: string }> = [
+  const rewindRegenCases: Array<{
+    target: 'spec' | 'plan';
+    phase: 'specifying' | 'planning';
+    comment: string;
+  }> = [
     { target: 'spec', phase: 'specifying', comment: 'add httpOnly cookie flag' },
     { target: 'plan', phase: 'planning', comment: 'add caching layer' },
   ];
 
-  it.each(rewindRegenCases)('rewindPending target=$target with comment triggers regenerate', async ({ target, phase, comment }) => {
+  it.each(
+    rewindRegenCases,
+  )('rewindPending target=$target with comment triggers regenerate', async ({
+    target,
+    phase,
+    comment,
+  }) => {
     const regenCalls: Array<{ prompt: string; target: string }> = [];
     let planCalls = 0;
     const planner = makePassingPlanner({
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      regenerate: async (prompt: string, t: 'spec' | 'plan') => {
-        regenCalls.push({ prompt, target: t });
+      regenerate: async (opts) => {
+        regenCalls.push({ prompt: opts.prompt, target: opts.artifactType });
         return { text: 'regenerated', usage: null };
       },
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [makePassingTask()],
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
       },
     });
     const { result } = await runPhase({
@@ -750,18 +919,35 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(planCalls).toBe(0);
   });
 
-  const rewindRejectCases: Array<{ target: 'spec' | 'plan'; phase: 'specifying' | 'planning'; mode?: 'speckit' }> = [
+  const rewindRejectCases: Array<{
+    target: 'spec' | 'plan';
+    phase: 'specifying' | 'planning';
+    mode?: 'speckit';
+  }> = [
     { target: 'spec', phase: 'specifying' },
     { target: 'plan', phase: 'planning', mode: 'speckit' },
   ];
 
-  it.each(rewindRejectCases)('rewindPending target=$target — rejected during approval → cancelled', async ({ target, phase, mode }) => {
-    const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
+  it.each(
+    rewindRejectCases,
+  )('rewindPending target=$target — rejected during approval → cancelled', async ({
+    target,
+    phase,
+    mode,
+  }) => {
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+    });
     let planCalls = 0;
     const planner = makePassingPlanner({
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [makePassingTask()],
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
       },
     });
 
@@ -790,7 +976,12 @@ describe('runPlanningPhase — rewindPending', () => {
       },
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [makePassingTask()],
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
       },
     });
 
@@ -846,7 +1037,7 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
-    expect(events.some(e => e.type === 'plan_approved' && e.phase === 'implementing')).toBe(true);
+    expect(events.some((e) => e.type === 'plan_approved' && e.phase === 'implementing')).toBe(true);
   });
 
   it('rewindPending cleared on resulting state after regeneration', async () => {
@@ -855,7 +1046,10 @@ describe('runPlanningPhase — rewindPending', () => {
         review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
       }),
       config: makeConfig({ workflow: auto() }),
-      state: { ...prepareState('specifying'), rewindPending: { target: 'spec', comment: 'use JWT' } },
+      state: {
+        ...prepareState('specifying'),
+        rewindPending: { target: 'spec', comment: 'use JWT' },
+      },
       rewindPending: { target: 'spec', comment: 'use JWT' },
     });
 
@@ -872,14 +1066,22 @@ describe('runPlanningPhase — rewindPending', () => {
         // Distinctive task id proves these tasks came from plan(), not a stale
         // path. If plan() were called more than once, the result would come
         // from the last call but we assert the counter directly.
-        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask('T-FROMPLAN')], usage: { inputTokens: 100, outputTokens: 50 } };
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [makePassingTask('T-FROMPLAN')],
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
       },
       regenerate: async () => {
         regenCalls++;
         return { text: 'regenerated', usage: null };
       },
     });
-    const { result } = await runPhase({ planner, config: makeConfig({ workflow: auto('speckit') }) });
+    const { result } = await runPhase({
+      planner,
+      config: makeConfig({ workflow: auto('speckit') }),
+    });
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);

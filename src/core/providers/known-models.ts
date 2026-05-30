@@ -17,6 +17,23 @@ export interface KnownModel {
 
 export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-4-6';
 
+// Cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26.
+// Sonnet 4.6: cache read = $0.30/MTok (0.1x base input), cache write = $3.75/MTok (1.25x, 5-minute TTL).
+const CLAUDE_SONNET_46_PRICING = {
+  pricingInput: 3,
+  pricingOutput: 15,
+  pricingCacheRead: 0.3,
+  pricingCacheWrite: 3.75,
+} as const;
+
+// Opus 4.6: cache read = $0.50/MTok (0.1x base input), cache write = $6.25/MTok (1.25x, 5-minute TTL).
+const CLAUDE_OPUS_46_PRICING = {
+  pricingInput: 5,
+  pricingOutput: 25,
+  pricingCacheRead: 0.5,
+  pricingCacheWrite: 6.25,
+} as const;
+
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   'claude-code': [
     { name: 'auto', isDefault: true, provenance: 'Claude Code model aliases (2026-04)' },
@@ -103,30 +120,24 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       provenance: 'Minimal bundled fallback (2026-04)',
     },
   ],
-  'kilo-code': [
-    { name: 'auto', isDefault: true },
-  ],
+  'kilo-code': [{ name: 'auto', isDefault: true }],
   'agent-sdk': [
     {
       name: DEFAULT_AGENT_SDK_MODEL,
       isDefault: true,
       contextLength: 1_000_000,
-      pricingInput: 3,
-      pricingOutput: 15,
-      pricingCacheRead: 0.30,
-      pricingCacheWrite: 3.75,
+      ...CLAUDE_SONNET_46_PRICING,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      provenance:
+        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
     {
       name: 'claude-opus-4-6',
       contextLength: 1_000_000,
-      pricingInput: 5,
-      pricingOutput: 25,
-      pricingCacheRead: 0.50,
-      pricingCacheWrite: 6.25,
+      ...CLAUDE_OPUS_46_PRICING,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      provenance:
+        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
   ],
   anthropic: [
@@ -134,24 +145,16 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       name: 'claude-sonnet-4-6',
       isDefault: true,
       contextLength: 1_000_000,
-      pricingInput: 3,
-      pricingOutput: 15,
-      // Cache prices: verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26
-      // Cache read = $0.30/MTok (0.1x base input). Cache write = $3.75/MTok (1.25x, 5-minute TTL).
-      pricingCacheRead: 0.30,
-      pricingCacheWrite: 3.75,
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      ...CLAUDE_SONNET_46_PRICING,
+      provenance:
+        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
     {
       name: 'claude-opus-4-6',
       contextLength: 1_000_000,
-      pricingInput: 5,
-      pricingOutput: 25,
-      // Cache prices: verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26
-      // Cache read = $0.50/MTok (0.1x base input). Cache write = $6.25/MTok (1.25x, 5-minute TTL).
-      pricingCacheRead: 0.50,
-      pricingCacheWrite: 6.25,
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      ...CLAUDE_OPUS_46_PRICING,
+      provenance:
+        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
   ],
   openrouter: [
@@ -162,7 +165,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       provenance: 'Minimal bundled fallback (2026-04)',
     },
   ],
-  ollama:     [{ name: 'qwen2.5-coder:7b', isDefault: true }],
+  ollama: [{ name: 'qwen2.5-coder:7b', isDefault: true }],
   'lm-studio': [{ name: 'qwen2.5-coder-7b', isDefault: true }],
   deepseek: [
     {
@@ -200,7 +203,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       provenance: 'OpenAI coding-specialized fallback (2026-04)',
     },
   ],
-  groq:     [],
+  groq: [],
   together: [
     {
       name: 'zai-org/GLM-5.1',

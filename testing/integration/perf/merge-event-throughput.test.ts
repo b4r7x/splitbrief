@@ -1,8 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mergeEvent, eventsStore, MAX_EVENTS, MAX_MERGED_TEXT_LENGTH } from '../../../src/stores/workflow/events.js';
+import {
+  mergeEvent,
+  eventsStore,
+  MAX_EVENTS,
+  MAX_MERGED_TEXT_LENGTH,
+} from '../../../src/stores/workflow/events.js';
 import { addEvent, getSections, resetWorkflow } from '../../../src/stores/workflow/actions.js';
-import { groupEventsIntoSections } from '../../../src/core/layout/event-sections.js';
-import { makePlannerText, makeTaskStart, makeTaskComplete, makeImplementerGenerate } from '../../helpers/events.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import {
+  makePlannerText,
+  makeTaskStart,
+  makeTaskComplete,
+  makeImplementerGenerate,
+} from '../../helpers/events.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 
 beforeEach(() => {
@@ -40,12 +50,15 @@ describe('mergeEvent throughput', () => {
     let events: ReturnType<typeof mergeEvent> = [];
     const count = MAX_EVENTS + 50;
     for (let i = 0; i < count; i++) {
-      events = mergeEvent(events, makeTaskStart({
-        taskId: taskId(`T${String(i).padStart(5, '0')}`),
-        title: `task-${i}`,
-        index: i,
-        total: count,
-      }));
+      events = mergeEvent(
+        events,
+        makeTaskStart({
+          taskId: taskId(`T${String(i).padStart(5, '0')}`),
+          title: `task-${i}`,
+          index: i,
+          total: count,
+        }),
+      );
     }
 
     expect(events.length).toBe(MAX_EVENTS);
@@ -76,7 +89,7 @@ describe('mergeEvent throughput', () => {
     const sections = groupEventsIntoSections(events);
     expect(sections.length).toBeGreaterThan(0);
 
-    const completedSections = sections.filter(s => s.type === 'completed-task');
+    const completedSections = sections.filter((s) => s.type === 'completed-task');
     expect(completedSections).toHaveLength(10);
   });
 });

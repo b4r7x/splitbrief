@@ -29,10 +29,7 @@ export function writeDriftChainState(
   sessionId: string,
   state: DriftChainState,
 ): void {
-  writeSecureFile(
-    driftChainsPath(projectDir, sessionId),
-    `${JSON.stringify(state, null, 2)}\n`,
-  );
+  writeSecureFile(driftChainsPath(projectDir, sessionId), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 export function emptyActiveChain(): ActiveDriftChain {

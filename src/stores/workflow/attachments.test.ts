@@ -25,7 +25,7 @@ describe('attachmentsStore', () => {
   it('adds and lists attachments', () => {
     attachmentsStore.add(makeAttachment('a'));
     attachmentsStore.add(makeAttachment('b'));
-    expect(attachmentsStore.peek().map(a => a.id)).toEqual(['a', 'b']);
+    expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['a', 'b']);
   });
 
   it('does not retain caller-owned attachments', () => {
@@ -41,14 +41,14 @@ describe('attachmentsStore', () => {
     attachmentsStore.add(makeAttachment('a'));
     attachmentsStore.add(makeAttachment('b'));
     attachmentsStore.remove('a');
-    expect(attachmentsStore.peek().map(a => a.id)).toEqual(['b']);
+    expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['b']);
   });
 
   it('drain returns and clears pending', () => {
     attachmentsStore.add(makeAttachment('a'));
     attachmentsStore.add(makeAttachment('b'));
     const drained = attachmentsStore.drain();
-    expect(drained.map(a => a.id)).toEqual(['a', 'b']);
+    expect(drained.map((a) => a.id)).toEqual(['a', 'b']);
     expect(attachmentsStore.peek()).toEqual([]);
   });
 
@@ -57,7 +57,7 @@ describe('attachmentsStore', () => {
 
     const peeked = attachmentsStore.peek();
     peeked[0] = makeAttachment('mutated');
-    expect(attachmentsStore.peek().map(a => a.id)).toEqual(['a']);
+    expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['a']);
 
     const drained = attachmentsStore.drain();
     drained[0] = makeAttachment('mutated-again');

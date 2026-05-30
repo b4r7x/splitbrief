@@ -21,23 +21,27 @@ describe('buildPhaseRows', () => {
     expect(buildPhaseRows({})).toEqual([]);
   });
 
-  it('sorts by cost descending', () => {
-    const rows = buildPhaseRows({
-      planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.01 },
-      implementing: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 100, cacheCreateTokens: 0, cost: 0.05 },
-      'validating-task': { inputTokens: 50, outputTokens: 20, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.003 },
-    });
-    expect(rows.map(r => r.phase)).toEqual(['implementing', 'planning', 'validating-task']);
-  });
-
   it('can sort by a derived display cost when store rows keep raw token data', () => {
     const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
-    const rows = buildPhaseRows({
-      planning: { inputTokens: 1_000, outputTokens: 500, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
-      'reviewing-plan': { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
-    }, row => calculatePhaseRowCost(row, pricing, null));
+    const rows = buildPhaseRows(
+      {
+        planning: {
+          inputTokens: 1_000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+        'reviewing-plan': {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+      },
+      (row) => calculatePhaseRowCost(row, pricing, null),
+    );
 
-    expect(rows.map(r => r.phase)).toEqual(['reviewing-plan', 'planning']);
+    expect(rows.map((r) => r.phase)).toEqual(['reviewing-plan', 'planning']);
     expect(rows[0]?.cost).toBeGreaterThan(0);
   });
 });
@@ -46,7 +50,12 @@ describe('CostDrilldownOverlay', () => {
   it('renders real phase cost and cache data from the store', () => {
     tokensStore.__testReset({
       perPhase: {
-        planning: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 250, cacheCreateTokens: 125, cost: 0.03 },
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 250,
+          cacheCreateTokens: 125,
+        },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });
@@ -55,7 +64,6 @@ describe('CostDrilldownOverlay', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('planning');
-    expect(frame).toContain('$0.03');
     expect(frame).toContain('cache 20%');
     expect(frame).toContain('create 125');
     ui.unmount();
@@ -70,8 +78,18 @@ describe('CostDrilldownOverlay', () => {
         implementerModel: 'unknown-model',
       },
       perPhase: {
-        planning: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
-        implementing: { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+        implementing: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });
@@ -94,7 +112,12 @@ describe('CostDrilldownOverlay', () => {
         implementerModel: 'qwen2.5',
       },
       perPhase: {
-        planning: { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
+        planning: {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });
@@ -130,7 +153,6 @@ describe('CostDrilldownOverlay', () => {
           implementerOutputTokens: 1_000_000,
           implementerCacheReadTokens: 0,
           implementerCacheCreateTokens: 0,
-          cost: 0,
         },
       },
     });
@@ -153,11 +175,11 @@ describe('buildTaskRows', () => {
 
   it('sorts by totalTokens descending', () => {
     const rows = buildTaskRows({
-      task1: { totalTokens: 200, cost: 0.01, title: 'First task' },
-      task2: { totalTokens: 800, cost: 0.04, title: 'Second task' },
-      task3: { totalTokens: 50, cost: 0.002, title: 'Third task' },
+      task1: { totalTokens: 200, title: 'First task' },
+      task2: { totalTokens: 800, title: 'Second task' },
+      task3: { totalTokens: 50, title: 'Third task' },
     });
-    expect(rows.map(r => r.taskId)).toEqual(['task2', 'task1', 'task3']);
+    expect(rows.map((r) => r.taskId)).toEqual(['task2', 'task1', 'task3']);
   });
 });
 

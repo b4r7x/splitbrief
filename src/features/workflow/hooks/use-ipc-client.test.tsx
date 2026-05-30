@@ -9,7 +9,11 @@ import { Text } from 'ink';
 import { tick } from '#testing/helpers/ink.js';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
+import type {
+  IpcPromptRequest,
+  IpcPromptResponse,
+  ServerMessage,
+} from '../../../engine/ipc/protocol.js';
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'ipc-client-test-'));
@@ -104,7 +108,11 @@ afterEach(async () => {
     await closeServer(srv).catch(() => undefined);
   }
   for (const dir of tmpDirs.splice(0)) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 });
 
@@ -182,12 +190,16 @@ describe('useIpcClient', () => {
     await tick(100);
 
     if (connectedSocket) {
-      const msg: ServerMessage = { kind: 'event', payload: { type: 'workflow_started', ts: 42, phase: 'idle', feature: 'test' } };
+      const msg: ServerMessage = {
+        kind: 'event',
+        payload: { type: 'workflow_started', ts: 42, phase: 'idle', feature: 'test' },
+      };
       send(connectedSocket, msg);
     }
     await tick(50);
 
-    const payloadEvents = capture.current?.events.filter(e => e.type === 'workflow_started') ?? [];
+    const payloadEvents =
+      capture.current?.events.filter((e) => e.type === 'workflow_started') ?? [];
     expect(payloadEvents.length).toBeGreaterThan(0);
     expect(payloadEvents[0]?.type).toBe('workflow_started');
     ui.unmount();
@@ -244,8 +256,9 @@ describe('useIpcClient', () => {
     }
     await tick(50);
 
-    const response = received.map(line => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
-      .find(msg => msg.kind === 'prompt_response');
+    const response = received
+      .map((line) => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
+      .find((msg) => msg.kind === 'prompt_response');
     expect(response).toMatchObject({
       kind: 'prompt_response',
       requestId: 'prompt-1',
@@ -311,8 +324,9 @@ describe('useIpcClient', () => {
     }
     await tick(50);
 
-    const response = received.map(line => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
-      .find(msg => msg.kind === 'prompt_response');
+    const response = received
+      .map((line) => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
+      .find((msg) => msg.kind === 'prompt_response');
     expect(response).toMatchObject({
       kind: 'prompt_response',
       requestId: 'prompt-1',
@@ -362,9 +376,15 @@ describe('useIpcClient', () => {
     await tick(50);
 
     expect(capture.current?.status).toBe('detached');
-    expect(received.some(line => {
-      try { return (JSON.parse(line) as { kind: string }).kind === 'detach'; } catch { return false; }
-    })).toBe(true);
+    expect(
+      received.some((line) => {
+        try {
+          return (JSON.parse(line) as { kind: string }).kind === 'detach';
+        } catch {
+          return false;
+        }
+      }),
+    ).toBe(true);
     ui.unmount();
     await tick(20);
   });
@@ -406,8 +426,12 @@ describe('useIpcClient', () => {
     capture.current?.sendUserInput('hello world');
     await tick(50);
 
-    const userInputMsg = received.find(line => {
-      try { return (JSON.parse(line) as { kind: string }).kind === 'user_input'; } catch { return false; }
+    const userInputMsg = received.find((line) => {
+      try {
+        return (JSON.parse(line) as { kind: string }).kind === 'user_input';
+      } catch {
+        return false;
+      }
     });
     expect(userInputMsg).toBeDefined();
     if (userInputMsg) {
@@ -456,8 +480,12 @@ describe('useIpcClient', () => {
     capture.current?.sendUserInput('should be dropped');
     await tick(50);
 
-    const userInputMsg = received.find(line => {
-      try { return (JSON.parse(line) as { kind: string }).kind === 'user_input'; } catch { return false; }
+    const userInputMsg = received.find((line) => {
+      try {
+        return (JSON.parse(line) as { kind: string }).kind === 'user_input';
+      } catch {
+        return false;
+      }
     });
     expect(userInputMsg).toBeUndefined();
     ui.unmount();
@@ -496,7 +524,8 @@ describe('useIpcClient', () => {
     await tick(50);
 
     expect(capture.current?.status).toBe('reconnecting');
-    const attemptEvents = capture.current?.events.filter(e => e.type === 'ipc_reconnect_attempt') ?? [];
+    const attemptEvents =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
     expect(attemptEvents.length).toBeGreaterThan(0);
     ui.unmount();
     await tick(20);
@@ -561,7 +590,8 @@ describe('useIpcClient', () => {
     await waitMs(100);
 
     expect(capture.current?.status).toBe('failed');
-    const failedEvents = capture.current?.events.filter(e => e.type === 'ipc_reconnect_failed') ?? [];
+    const failedEvents =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
     expect(failedEvents.length).toBeGreaterThan(0);
     ui.unmount();
     await tick(20);
@@ -594,7 +624,7 @@ describe('useIpcClient', () => {
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
     await tick(150);
 
-    const warnings = capture.current?.events.filter(e => e.type === 'warning') ?? [];
+    const warnings = capture.current?.events.filter((e) => e.type === 'warning') ?? [];
     expect(warnings.length).toBeGreaterThan(0);
     // Status should remain connected (not crashed)
     expect(capture.current?.status).toBe('connected');
@@ -624,7 +654,7 @@ describe('useIpcClient', () => {
     await tick(100);
 
     expect(capture.current?.status).toBe('failed');
-    expect(capture.current?.events.some(e => e.type === 'warning')).toBe(true);
+    expect(capture.current?.events.some((e) => e.type === 'warning')).toBe(true);
     ui.unmount();
     await tick(20);
   });
@@ -647,7 +677,8 @@ describe('useIpcClient', () => {
     // Status stays at what it was at unmount time (connected), NOT reconnecting/failed
     // (The unmount cleanup fires before any reconnect can be scheduled)
     expect(capture.current?.status).toBe('connected');
-    const reconnectAttempts = capture.current?.events.filter(e => e.type === 'ipc_reconnect_attempt') ?? [];
+    const reconnectAttempts =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
     expect(reconnectAttempts.length).toBe(0);
   });
 
@@ -667,7 +698,8 @@ describe('useIpcClient', () => {
     await tick(200);
 
     expect(capture.current?.status).toBe('detached');
-    const reconnectAttempts = capture.current?.events.filter(e => e.type === 'ipc_reconnect_attempt') ?? [];
+    const reconnectAttempts =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
     expect(reconnectAttempts.length).toBe(0);
     ui.unmount();
     await tick(20);

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import {
-  INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
-  stepInputHistory,
-} from './history.js';
+import { INITIAL_INPUT_HISTORY_NAVIGATION_STATE, stepInputHistory } from './history.js';
 
 describe('stepInputHistory', () => {
   it('does nothing when there is no history', () => {
-    const result = stepInputHistory([], INITIAL_INPUT_HISTORY_NAVIGATION_STATE, 'up', 'draft');
+    const result = stepInputHistory({
+      entries: [],
+      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+      direction: 'up',
+      currentValue: 'draft',
+    });
 
     expect(result.changed).toBe(false);
     expect(result.nextValue).toBe('draft');
@@ -14,7 +16,12 @@ describe('stepInputHistory', () => {
   });
 
   it('recalls the most recent entry and stores the draft on first ArrowUp', () => {
-    const result = stepInputHistory(['third', 'second'], INITIAL_INPUT_HISTORY_NAVIGATION_STATE, 'up', 'draft');
+    const result = stepInputHistory({
+      entries: ['third', 'second'],
+      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+      direction: 'up',
+      currentValue: 'draft',
+    });
 
     expect(result.changed).toBe(true);
     expect(result.nextValue).toBe('third');
@@ -22,12 +29,12 @@ describe('stepInputHistory', () => {
   });
 
   it('walks toward older entries with repeated ArrowUp', () => {
-    const result = stepInputHistory(
-      ['third', 'second', 'first'],
-      { historyIndex: 0, draftValue: 'draft' },
-      'up',
-      'third',
-    );
+    const result = stepInputHistory({
+      entries: ['third', 'second', 'first'],
+      state: { historyIndex: 0, draftValue: 'draft' },
+      direction: 'up',
+      currentValue: 'third',
+    });
 
     expect(result.changed).toBe(true);
     expect(result.nextValue).toBe('second');
@@ -35,12 +42,12 @@ describe('stepInputHistory', () => {
   });
 
   it('restores the draft when ArrowDown leaves history mode', () => {
-    const result = stepInputHistory(
-      ['third', 'second'],
-      { historyIndex: 0, draftValue: 'draft' },
-      'down',
-      'third',
-    );
+    const result = stepInputHistory({
+      entries: ['third', 'second'],
+      state: { historyIndex: 0, draftValue: 'draft' },
+      direction: 'down',
+      currentValue: 'third',
+    });
 
     expect(result.changed).toBe(true);
     expect(result.nextValue).toBe('draft');
@@ -48,12 +55,12 @@ describe('stepInputHistory', () => {
   });
 
   it('walks toward newer entries with ArrowDown before restoring the draft', () => {
-    const result = stepInputHistory(
-      ['third', 'second', 'first'],
-      { historyIndex: 2, draftValue: 'draft' },
-      'down',
-      'first',
-    );
+    const result = stepInputHistory({
+      entries: ['third', 'second', 'first'],
+      state: { historyIndex: 2, draftValue: 'draft' },
+      direction: 'down',
+      currentValue: 'first',
+    });
 
     expect(result.changed).toBe(true);
     expect(result.nextValue).toBe('second');

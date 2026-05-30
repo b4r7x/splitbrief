@@ -43,9 +43,8 @@ export function createAnthropicProvider(overrides?: ProviderOverrides): Provider
       toDetected,
       modelsUrl: v1ModelsUrl,
       extractModels,
-      headers: (apiKey) => apiKey
-        ? { 'anthropic-version': ANTHROPIC_API_VERSION, 'x-api-key': apiKey }
-        : {},
+      headers: (apiKey) =>
+        apiKey ? { 'anthropic-version': ANTHROPIC_API_VERSION, 'x-api-key': apiKey } : {},
     },
     overrides,
   );

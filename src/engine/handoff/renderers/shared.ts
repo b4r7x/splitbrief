@@ -3,32 +3,24 @@ import type { HandoffFile, HandoffInput } from '../types.js';
 
 function listOrNone(items: string[] | undefined): string {
   if (!items || items.length === 0) return 'none declared';
-  return items.map(s => `- ${s}`).join('\n');
+  return items.map((s) => `- ${s}`).join('\n');
 }
 
 export function formatTaskBrief(task: Task): string {
   const dependsOn = task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'none';
 
-  const scopeInBounds = task.scope?.inBounds?.length
-    ? task.scope.inBounds.map(s => `- ${s}`).join('\n')
-    : 'none declared';
-  const scopeOutOfBounds = task.scope?.outOfBounds?.length
-    ? task.scope.outOfBounds.map(s => `- ${s}`).join('\n')
-    : 'none declared';
+  const scopeInBounds = listOrNone(task.scope?.inBounds);
+  const scopeOutOfBounds = listOrNone(task.scope?.outOfBounds);
 
   const currentCodeSection =
     task.action === 'modify' && task.currentCode
       ? `\n**Current Code:**\n\`\`\`\n${task.currentCode}\n\`\`\``
       : '';
 
-  const steps = task.implementationSteps
-    .map((step, i) => `${i + 1}. ${step}`)
-    .join('\n');
+  const steps = task.implementationSteps.map((step, i) => `${i + 1}. ${step}`).join('\n');
 
-  const tests = task.tests.map(t => `- ${t}`).join('\n');
-  const constraints = task.constraints.length > 0
-    ? task.constraints.map(c => `- ${c}`).join('\n')
-    : 'none declared';
+  const tests = task.tests.map((t) => `- ${t}`).join('\n');
+  const constraints = listOrNone(task.constraints);
 
   return `---
 briefHash: <placeholder>
@@ -81,6 +73,10 @@ ${listOrNone(task.evidence)}
 
 export function taskLink(task: Task): string {
   return `- [${task.id}](tasks/${task.id}.md) — ${task.title}`;
+}
+
+export function buildTaskListSection(tasks: Task[]): string {
+  return `## Tasks\n\n${tasks.map(taskLink).join('\n')}\n`;
 }
 
 export function buildBaseFiles(input: HandoffInput & { tasks: Task[] }): HandoffFile[] {

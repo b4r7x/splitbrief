@@ -6,17 +6,27 @@ import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escal
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  makeWorkflowMetadata,
+  TEST_WORKFLOW_SINKS,
+} from '#testing/helpers/orchestrator-context.js';
 
 const META = makeWorkflowMetadata('standard');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
@@ -45,16 +55,38 @@ describe('retry-then-escalate bridge', () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
-    const retry = vi.fn()
-      .mockResolvedValueOnce({ success: false, output: '', error: 'fail-1', usage: { inputTokens: 5, outputTokens: 5 } })
-      .mockResolvedValueOnce({ success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } });
+    const retry = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: 'fail-1',
+        usage: { inputTokens: 5, outputTokens: 5 },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        output: 'fixed',
+        usage: { inputTokens: 20, outputTokens: 10 },
+      });
     const implementer = makeImplementer({ retry });
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
-        context: defaultContext, planner: makePlanner(), callbacks, implementer,
-        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus },
-      task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
+        context: defaultContext,
+        planner: makePlanner(),
+        callbacks,
+        implementer,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+        validator: createValidator(),
+        bus,
+      },
+      task: makeTask(),
+      initialError: 'type err',
+      currentState: makeValidatingState(),
     });
 
     expect(result.completed).toBe(true);
@@ -67,18 +99,42 @@ describe('retry-then-escalate bridge', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'persistent', usage: { inputTokens: 5, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'persistent',
+        usage: { inputTokens: 5, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'try X', code: null, usage: { inputTokens: 40, outputTokens: 20 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'try X',
+        code: null,
+        usage: { inputTokens: 40, outputTokens: 20 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
-      wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus },
-      task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+        validator: createValidator(),
+        bus,
+      },
+      task: makeTask(),
+      initialError: 'type err',
+      currentState: makeValidatingState(),
     });
 
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();

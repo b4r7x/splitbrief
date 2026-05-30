@@ -1,15 +1,9 @@
-import { buildLanguageContext, codeFenceLanguage, type LanguageContext } from './language-context.js';
+import {
+  buildLanguageContext,
+  codeFenceLanguage,
+  type LanguageContext,
+} from './language-context.js';
 
-// Markdown rendering of one Product Task Brief v1. Section -> brief mapping:
-//   frontmatter             = Identity
-//   ### Description         = Intent
-//   ### Signature / Current Code / Types / Pattern = Code Context
-//   ### Implementation Steps= Implementation Plan
-//   ### Tests               = Validation
-//   ### Constraints         = Constraints
-//   ### Scope               = Scope (in/out of bounds)
-//   ### Escalation          = Escalation (when to stop and ask)
-//   ### Evidence            = Evidence (proof to leave behind)
 export function buildTaskFormatExample(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const fenceLanguage = codeFenceLanguage(ctx);
@@ -138,6 +132,10 @@ export function buildPrompt(spec: PromptSpec): string {
   }
 
   return parts.join('\n');
+}
+
+export function fenced(body: string, lang = ''): string {
+  return '```' + lang + '\n' + body + '\n```';
 }
 
 export function instructionsSection(body: string): PromptSection {

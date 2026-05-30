@@ -12,7 +12,9 @@ export function AttachmentChips() {
     <Box flexDirection="row" flexWrap="wrap" paddingX={1}>
       {pending.map((a, i) => (
         <Box key={a.id} marginRight={1}>
-          <Text color={theme.info}>📎 {i + 1}: {attachmentShortName(a.path)}</Text>
+          <Text color={theme.info}>
+            📎 {i + 1}: {attachmentShortName(a.path)}
+          </Text>
         </Box>
       ))}
     </Box>

@@ -28,7 +28,11 @@ describe('createImplementerBase — error paths', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config, context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config,
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -37,14 +41,20 @@ describe('createImplementerBase — error paths', () => {
 
   it('re-throws when shouldThrow returns true', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('command not found'));
-    const implementer = createImplementerBase(makeBaseConfig({
-      invoke,
-      shouldThrow: (err) => err instanceof Error && err.message.includes('command not found'),
-    }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        invoke,
+        shouldThrow: (err) => err instanceof Error && err.message.includes('command not found'),
+      }),
+    );
 
     await expect(
       implementer.implement({
-        task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+        task: makeTask(),
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
       }),
     ).rejects.toThrow('command not found');
   });
@@ -58,7 +68,11 @@ describe('createImplementerBase — error paths', () => {
     const task = makeTask({ id: 'T001', file: 'src/nope.ts', action: 'create' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -76,7 +90,11 @@ describe('createImplementerBase — error paths', () => {
 
     await expect(
       implementer.implement({
-        task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+        task,
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
       }),
     ).rejects.toThrow(/unsafe path/);
   });
@@ -121,7 +139,10 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
 
     const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext,
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
       onOutput: vi.fn(),
     });
 
@@ -181,20 +202,28 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toContain('changed during approval');
-    expect(readFileSync(join(projectDir, 'src/race.ts'), 'utf-8')).toBe('export const value = "user";\n');
+    expect(readFileSync(join(projectDir, 'src/race.ts'), 'utf-8')).toBe(
+      'export const value = "user";\n',
+    );
   });
 });
 
 describe('createImplementerBase — non-extracting backends (detectChanges)', () => {
   it('uses detectChanges when extractsCode is false', async () => {
     const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
-    const implementer = createImplementerBase(makeBaseConfig({
-      extractsCode: false,
-      detectChanges,
-    }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges,
+      }),
+    );
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -206,31 +235,43 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
     writeFileSync(prePath, 'pre-existing content\n');
 
     const detectChanges = createChangeDetector('Direct implementer');
-    const noChangeImplementer = createImplementerBase(makeBaseConfig({
-      extractsCode: false,
-      detectChanges,
-      invoke: vi.fn().mockResolvedValue({ text: 'done', usage: null }),
-    }));
+    const noChangeImplementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges,
+        invoke: vi.fn().mockResolvedValue({ text: 'done', usage: null }),
+      }),
+    );
 
     const noChange = await noChangeImplementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(noChange.success).toBe(false);
     if (!noChange.success) expect(noChange.error).toContain('without changing any files');
 
     const newPath = join(projectDir, 'src/new-file.ts');
-    const writingImplementer = createImplementerBase(makeBaseConfig({
-      extractsCode: false,
-      detectChanges,
-      invoke: vi.fn().mockImplementation(async () => {
-        writeFileSync(newPath, 'export const created = true;\n');
-        return { text: 'done', usage: null };
+    const writingImplementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges,
+        invoke: vi.fn().mockImplementation(async () => {
+          writeFileSync(newPath, 'export const created = true;\n');
+          return { text: 'done', usage: null };
+        }),
       }),
-    }));
+    );
 
     const changed = await writingImplementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(changed.success).toBe(true);
@@ -242,7 +283,11 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
     const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false }));
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -250,14 +295,22 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
 
   it('returns failure when detectChanges reports no changes', async () => {
     const detectChanges = vi.fn().mockResolvedValue({ changed: false, output: 'No files changed' });
-    const implementer = createImplementerBase(makeBaseConfig({
-      extractsCode: false,
-      detectChanges,
-      invoke: vi.fn().mockResolvedValue({ text: 'done', usage: { inputTokens: 10, outputTokens: 20 } }),
-    }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges,
+        invoke: vi
+          .fn()
+          .mockResolvedValue({ text: 'done', usage: { inputTokens: 10, outputTokens: 20 } }),
+      }),
+    );
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -277,12 +330,20 @@ describe('createImplementerBase — retry', () => {
       text: '```ts\nconst x = 1;\n```',
       usage: null,
     });
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }),
+    );
     const task = makeTask({ id: 'T001', file: 'src/retry.ts', action: 'create' });
 
     const result = await implementer.retry({
-      task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), error, attempt, kind,
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error,
+      attempt,
+      kind,
     });
 
     expect(result.success).toBe(true);

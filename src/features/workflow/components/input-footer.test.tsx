@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../testing/helpers/ink.js';
 import { makeConfig } from '../../../../testing/helpers/factories/config.js';
-import {
-  adviseMode,
-  setAdvisory,
-} from '../../../engine/orchestrator/planning/mode-advisor.js';
+import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
+import { setAdvisory } from '../../../engine/orchestrator/planning/mode-advisor-store.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';

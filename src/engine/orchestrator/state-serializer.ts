@@ -11,7 +11,10 @@ export function createStateSerializer(): StateSerializer {
       }
     };
     const result = chain ? chain.then(run) : run();
-    const settled = result.then(() => {}, () => {});
+    const settled = result.then(
+      () => {},
+      () => {},
+    );
     const next = settled.then(() => {
       if (chain === next) chain = undefined;
     });

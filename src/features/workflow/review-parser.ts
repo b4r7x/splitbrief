@@ -3,6 +3,7 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
+import { resolveEditorCommand } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
@@ -32,7 +33,7 @@ export function parseReviewCommand(text: string): ReviewAction {
 }
 
 function openInEditor(filePath: string): Promise<void> {
-  const editor = process.env.EDITOR || 'vi';
+  const editor = resolveEditorCommand();
   return (async () => {
     process.stdin.pause();
     try {
@@ -63,7 +64,9 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
     if (inputMode.mode === 'normal') {
       const phase = lifecycleStore.get().phase;
       if (isImplementerPhase(phase)) {
-        feedbackStore.setError('Input disabled during task implementation. Press Ctrl-C to abort, or /redo-task <id> after the task finishes.');
+        feedbackStore.setError(
+          'Input disabled during task implementation. Press Ctrl-C to abort, or /redo-task <id> after the task finishes.',
+        );
         return;
       }
       if (isLivePhase(phase)) {

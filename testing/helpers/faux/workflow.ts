@@ -13,9 +13,20 @@ export function createFauxWorkflow(opts?: {
   const { bus, events } = makeBusRecorder();
   const config = makeConfig();
 
-  function eventsOfType<T extends EngineEvent['type']>(type: T): Extract<EngineEvent, { type: T }>[] {
+  function eventsOfType<T extends EngineEvent['type']>(
+    type: T,
+  ): Extract<EngineEvent, { type: T }>[] {
     return events.filter((e): e is Extract<EngineEvent, { type: T }> => e.type === type);
   }
 
-  return { planner, implementer, plannerState, implementerState, events, eventsOfType, bus, config };
+  return {
+    planner,
+    implementer,
+    plannerState,
+    implementerState,
+    events,
+    eventsOfType,
+    bus,
+    config,
+  };
 }

@@ -2,6 +2,7 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { clamp01 } from '../../utils/math.js';
 
 export type BriefQualitySeverity = 'error' | 'warning';
 
@@ -44,23 +45,35 @@ const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
 
 function isBriefQualityIssue(value: unknown): value is BriefQualityIssue {
   if (!isRecord(value)) return false;
-  return typeof value.taskId === 'string'
-    && (value.severity === 'error' || value.severity === 'warning')
-    && typeof value.code === 'string'
-    && BRIEF_QUALITY_ISSUE_CODES.has(value.code)
-    && typeof value.message === 'string';
+  return (
+    typeof value.taskId === 'string' &&
+    (value.severity === 'error' || value.severity === 'warning') &&
+    typeof value.code === 'string' &&
+    BRIEF_QUALITY_ISSUE_CODES.has(value.code) &&
+    typeof value.message === 'string'
+  );
+}
+
+export function firstBriefError(report: BriefQualityReport): BriefQualityIssue | undefined {
+  return report.issues.find((issue) => issue.severity === 'error');
+}
+
+export function firstBriefErrorMessage(report: BriefQualityReport): string {
+  return firstBriefError(report)?.message ?? 'unknown error';
 }
 
 export function isBriefQualityReport(value: unknown): value is BriefQualityReport {
   if (!isRecord(value)) return false;
-  return value.version === 1
-    && typeof value.passed === 'boolean'
-    && typeof value.score === 'number'
-    && Number.isFinite(value.score)
-    && value.score >= 0
-    && value.score <= 1
-    && Array.isArray(value.issues)
-    && value.issues.every(isBriefQualityIssue);
+  return (
+    value.version === 1 &&
+    typeof value.passed === 'boolean' &&
+    typeof value.score === 'number' &&
+    Number.isFinite(value.score) &&
+    value.score >= 0 &&
+    value.score <= 1 &&
+    Array.isArray(value.issues) &&
+    value.issues.every(isBriefQualityIssue)
+  );
 }
 
 const VAGUE_PATTERNS = [
@@ -92,19 +105,19 @@ const RISK_PATTERNS = [
 ];
 
 function isVague(test: string): boolean {
-  return VAGUE_PATTERNS.some(p => p.test(test.trim()));
+  return VAGUE_PATTERNS.some((p) => p.test(test.trim()));
 }
 
 function isRisky(task: Task): boolean {
   const text = [task.description, ...task.implementationSteps].join(' ');
-  return RISK_PATTERNS.some(r => r.test(text));
+  return RISK_PATTERNS.some((r) => r.test(text));
 }
 
 function mentionsMultipleFiles(task: Task): boolean {
   const text = [task.description, ...task.implementationSteps].join(' ');
   const matches = text.match(CONCRETE_FILE_PATH_PATTERN);
   if (!matches) return false;
-  const unique = new Set(matches.map(m => m.toLowerCase()));
+  const unique = new Set(matches.map((m) => m.toLowerCase()));
   return unique.size >= 2;
 }
 
@@ -201,9 +214,9 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
     }
   }
 
-  const errorCount = issues.filter(i => i.severity === 'error').length;
-  const warningCount = issues.filter(i => i.severity === 'warning').length;
-  const score = Math.max(0, Math.min(1, 1 - errorCount * 0.2 - warningCount * 0.05));
+  const errorCount = issues.filter((i) => i.severity === 'error').length;
+  const warningCount = issues.filter((i) => i.severity === 'warning').length;
+  const score = clamp01(1 - errorCount * 0.2 - warningCount * 0.05);
   const passed = errorCount === 0;
 
   return { version: 1, passed, score, issues };

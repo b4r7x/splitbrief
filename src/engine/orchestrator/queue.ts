@@ -23,9 +23,12 @@ export function enqueueUserMessage(
   persistTranscript: boolean,
 ): { state: WorkflowState; queued: boolean; message?: QueuedMessage | undefined } {
   const base = mergePersistedMessageQueue(projectDir, sessionId, state);
-  const pending = base.messageQueue.filter(m => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length >= MAX_QUEUE_SIZE) {
-    publishWarning({ bus: bus, phase: phase }, `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`);
+    publishWarning(
+      { bus: bus, phase: phase },
+      `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`,
+    );
     return { state: base, queued: false };
   }
 
@@ -37,22 +40,37 @@ export function enqueueUserMessage(
     deliveredViaNative: false,
   };
 
-  const next = transitionAndSave(projectDir, sessionId, base, { type: 'ENQUEUE_USER_MSG', message });
-  appendMessage(projectDir, sessionId, { role: 'user', phase, text, queuedAt: message.queuedAt }, persistTranscript);
+  const next = transitionAndSave(projectDir, sessionId, base, {
+    type: 'ENQUEUE_USER_MSG',
+    message,
+  });
+  appendMessage(
+    projectDir,
+    sessionId,
+    { role: 'user', phase, text, queuedAt: message.queuedAt },
+    persistTranscript,
+  );
   bus.publish({ type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
   return { state: next, queued: true, message };
 }
 
+export type QueueHandlerContext = {
+  projectDir: string;
+  sessionId: string;
+  getState: () => WorkflowState | undefined;
+  setState: (s: WorkflowState) => void;
+  bus: EventBus;
+};
+
 export function createQueueHandler(
-  projectDir: string,
-  sessionId: string,
-  getState: () => WorkflowState | undefined,
-  setState: (s: WorkflowState) => void,
-  bus: EventBus,
-  persistTranscript: boolean,
-  planner: Planner,
-  serialize: StateSerializer,
+  opts: QueueHandlerContext & {
+    persistTranscript: boolean;
+    planner: Planner;
+    serialize: StateSerializer;
+  },
 ): (text: string, phase: Phase) => void {
+  const { projectDir, sessionId, getState, setState, bus, persistTranscript, planner, serialize } =
+    opts;
   return (text: string, phase: Phase) => {
     serialize(async () => {
       const state = getState();
@@ -69,11 +87,16 @@ export function createQueueHandler(
       );
       setState(result.state);
       if (!result.message) return;
-      await dispatchNativeInjection(
-        result.message, planner, projectDir, sessionId,
-        () => getState() ?? result.state, setState, bus,
-      );
-    }).catch(err => warnError('queue-handler failed', err));
+      await dispatchNativeInjection({
+        message: result.message,
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => getState() ?? result.state,
+        setState,
+        bus,
+      });
+    }).catch((err) => warnError('queue-handler failed', err));
   };
 }
 
@@ -84,7 +107,7 @@ export function clearPendingQueue(
   bus: EventBus,
 ): { state: WorkflowState; count: number } {
   const base = mergePersistedMessageQueue(projectDir, sessionId, state);
-  const pending = base.messageQueue.filter(m => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length === 0) return { state: base, count: 0 };
 
   const next = transitionAndSave(projectDir, sessionId, base, { type: 'CLEAR_QUEUE' });
@@ -92,13 +115,8 @@ export function clearPendingQueue(
   return { state: next, count: pending.length };
 }
 
-export function createClearQueueHandler(
-  projectDir: string,
-  sessionId: string,
-  getState: () => WorkflowState | undefined,
-  setState: (s: WorkflowState) => void,
-  bus: EventBus,
-): () => number {
+export function createClearQueueHandler(ctx: QueueHandlerContext): () => number {
+  const { projectDir, sessionId, getState, setState, bus } = ctx;
   return () => {
     const state = getState();
     if (!state) return 0;
@@ -116,7 +134,7 @@ export function drainQueue(
   bus: EventBus,
 ): { state: WorkflowState; messages: QueuedMessage[] } {
   const base = mergePersistedMessageQueue(projectDir, sessionId, state);
-  const pending = base.messageQueue.filter(m => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length === 0) return { state: base, messages: [] };
 
   const next = transitionAndSave(projectDir, sessionId, base, { type: 'DRAIN_QUEUE' });

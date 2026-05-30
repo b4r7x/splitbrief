@@ -32,5 +32,4 @@ describe('sessionError predicates', () => {
     expect(sessionError.isIdCollision(sessionError.invalidData('id', 'r'))).toBe(false);
     expect(sessionError.isIdCollision(undefined)).toBe(false);
   });
-
 });

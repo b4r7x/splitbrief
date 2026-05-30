@@ -139,7 +139,16 @@ describe('readTreeMeta', () => {
     await withTempDir('tree-io-test', async (dir) => {
       const path = treeMetaPath(dir);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(path, JSON.stringify({ leafId: 'E0001', entryCount: -1, branchCount: 0, createdAt: 1, updatedAt: 1 }));
+      writeFileSync(
+        path,
+        JSON.stringify({
+          leafId: 'E0001',
+          entryCount: -1,
+          branchCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        }),
+      );
       expect(readTreeMeta(dir)).toBeNull();
     });
   });
@@ -241,8 +250,18 @@ describe('reconstructTree', () => {
   it('counts branches correctly', async () => {
     await withTempDir('tree-io-test', async (dir) => {
       const tree = createEmptyTree(1000);
-      const r1 = branchFrom(tree, { fromId: entryId('E0001'), type: 'fork1', payload: {}, timestamp: 2000 });
-      const r2 = branchFrom(r1.tree, { fromId: entryId('E0001'), type: 'fork2', payload: {}, timestamp: 3000 });
+      const r1 = branchFrom(tree, {
+        fromId: entryId('E0001'),
+        type: 'fork1',
+        payload: {},
+        timestamp: 2000,
+      });
+      const r2 = branchFrom(r1.tree, {
+        fromId: entryId('E0001'),
+        type: 'fork2',
+        payload: {},
+        timestamp: 3000,
+      });
 
       for (const [, entry] of r2.tree.entries) {
         appendTreeEntry(dir, entry);
@@ -312,7 +331,12 @@ describe('persistAppend (branch)', () => {
   it('writes entry and meta atomically for branches', async () => {
     await withTempDir('tree-io-test', async (dir) => {
       const tree = createEmptyTree(1000);
-      const r1 = branchFrom(tree, { fromId: entryId('E0001'), type: 'fork', payload: {}, timestamp: 2000 });
+      const r1 = branchFrom(tree, {
+        fromId: entryId('E0001'),
+        type: 'fork',
+        payload: {},
+        timestamp: 2000,
+      });
 
       persistAppend(dir, r1.entry, r1.tree.meta);
 

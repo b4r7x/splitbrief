@@ -29,7 +29,9 @@ function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedF
 
 describe('gateChangedFiles', () => {
   it('returns allow=true when approval is disabled', async () => {
-    const input = makeInput({ config: makeConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }) });
+    const input = makeInput({
+      config: makeConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
+    });
     const result = await gateChangedFiles(input);
     expect(result.allow).toBe(true);
     expect(result.changedFiles).toEqual(['src/foo.ts']);

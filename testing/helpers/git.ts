@@ -47,21 +47,31 @@ function addTreeFile(root: TreeNode, file: string, blobSha: string): void {
 function writeTree(dir: string, node: TreeNode): string {
   const entries = [
     ...Array.from(node.files, ([name, sha]) => ({ mode: '100644', name, sha })),
-    ...Array.from(node.dirs, ([name, child]) => ({ mode: '40000', name, sha: writeTree(dir, child) })),
+    ...Array.from(node.dirs, ([name, child]) => ({
+      mode: '40000',
+      name,
+      sha: writeTree(dir, child),
+    })),
   ].sort((a, b) => Buffer.compare(Buffer.from(a.name), Buffer.from(b.name)));
 
-  const body = Buffer.concat(entries.map((entry) => Buffer.concat([
-    Buffer.from(`${entry.mode} ${entry.name}\0`),
-    Buffer.from(entry.sha, 'hex'),
-  ])));
+  const body = Buffer.concat(
+    entries.map((entry) =>
+      Buffer.concat([Buffer.from(`${entry.mode} ${entry.name}\0`), Buffer.from(entry.sha, 'hex')]),
+    ),
+  );
 
   return writeObject(dir, 'tree', body);
 }
 
-function writeIndex(dir: string, files: Array<{ path: string; blobSha: string; size: number }>): void {
+function writeIndex(
+  dir: string,
+  files: Array<{ path: string; blobSha: string; size: number }>,
+): void {
   const entries: Buffer[] = [];
 
-  for (const file of files.sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))) {
+  for (const file of files.sort((a, b) =>
+    Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)),
+  )) {
     const path = Buffer.from(file.path);
     if (path.length > 0xfff) throw new Error(`git fixture path is too long: ${file.path}`);
 

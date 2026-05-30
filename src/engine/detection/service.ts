@@ -11,7 +11,10 @@ export interface DetectionDeps {
 }
 
 export interface DetectionServiceResult {
-  detection: { planners: DetectAllResult['planners']; implementers: DetectAllResult['implementers'] };
+  detection: {
+    planners: DetectAllResult['planners'];
+    implementers: DetectAllResult['implementers'];
+  };
   catalog: ModelsDevCatalog | null;
   cliModels: Partial<Record<CliToolId, DetectedModel[]>>;
 }
@@ -21,18 +24,16 @@ export interface DetectionService {
   refreshDetection(projectDir: string | undefined): Promise<DetectionServiceResult | null>;
 }
 
-export interface DetectionServiceForTests extends DetectionService {
-  invalidateDetection(projectDir: string): Promise<void>;
-  getPendingSave(): Promise<void>;
-}
-
 const EMPTY_CLI_MODELS: Partial<Record<CliToolId, DetectedModel[]>> = {};
 
-export function createDetectionService(): DetectionServiceForTests {
+export function createDetectionService() {
   let pendingSave: Promise<void> = Promise.resolve();
   let lastDeps: DetectionDeps | undefined;
 
-  async function loadDetection(deps: DetectionDeps, projectDir?: string): Promise<DetectionServiceResult> {
+  async function loadDetection(
+    deps: DetectionDeps,
+    projectDir?: string,
+  ): Promise<DetectionServiceResult> {
     lastDeps = deps;
     let detection: DetectionServiceResult['detection'];
     let shouldPersist = false;
@@ -55,7 +56,9 @@ export function createDetectionService(): DetectionServiceForTests {
     ]);
 
     if (projectDir && shouldPersist) {
-      pendingSave = pendingSave.then(() => saveDetectionCache(projectDir, detection.planners, detection.implementers).catch(() => {}));
+      pendingSave = pendingSave.then(() =>
+        saveDetectionCache(projectDir, detection.planners, detection.implementers).catch(() => {}),
+      );
     }
 
     return { detection, catalog, cliModels };
@@ -65,7 +68,9 @@ export function createDetectionService(): DetectionServiceForTests {
     await invalidateCache(projectDir);
   }
 
-  async function refreshDetection(projectDir: string | undefined): Promise<DetectionServiceResult | null> {
+  async function refreshDetection(
+    projectDir: string | undefined,
+  ): Promise<DetectionServiceResult | null> {
     if (!lastDeps) return null;
     if (projectDir) await invalidateCache(projectDir).catch(() => {});
     return loadDetection(lastDeps, projectDir);
@@ -80,7 +85,6 @@ export function createDetectionService(): DetectionServiceForTests {
 
 const defaultService = createDetectionService();
 
-export const loadDetection = defaultService.loadDetection.bind(defaultService);
 export const refreshDetection = defaultService.refreshDetection.bind(defaultService);
 
 export function getDefaultDetectionService(): DetectionService {

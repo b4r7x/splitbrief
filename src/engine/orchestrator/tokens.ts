@@ -21,10 +21,33 @@ type CacheTokenKey =
 
 // escalation cache tokens are routed into the planner cache buckets because the escalator
 // always uses the planner runner; this preserves cache savings without adding new schema fields.
-const categoryFields: Record<UsageCategory, { input: CoreTokenKey; output: CoreTokenKey; cacheRead?: CacheTokenKey; cacheCreate?: CacheTokenKey }> = {
-  planner: { input: 'plannerInput', output: 'plannerOutput', cacheRead: 'plannerCacheRead', cacheCreate: 'plannerCacheCreate' },
-  implementer: { input: 'implementerInput', output: 'implementerOutput', cacheRead: 'implementerCacheRead', cacheCreate: 'implementerCacheCreate' },
-  escalation: { input: 'escalationInput', output: 'escalationOutput', cacheRead: 'plannerCacheRead', cacheCreate: 'plannerCacheCreate' },
+const categoryFields: Record<
+  UsageCategory,
+  {
+    input: CoreTokenKey;
+    output: CoreTokenKey;
+    cacheRead?: CacheTokenKey;
+    cacheCreate?: CacheTokenKey;
+  }
+> = {
+  planner: {
+    input: 'plannerInput',
+    output: 'plannerOutput',
+    cacheRead: 'plannerCacheRead',
+    cacheCreate: 'plannerCacheCreate',
+  },
+  implementer: {
+    input: 'implementerInput',
+    output: 'implementerOutput',
+    cacheRead: 'implementerCacheRead',
+    cacheCreate: 'implementerCacheCreate',
+  },
+  escalation: {
+    input: 'escalationInput',
+    output: 'escalationOutput',
+    cacheRead: 'plannerCacheRead',
+    cacheCreate: 'plannerCacheCreate',
+  },
 };
 
 export function addUsage(
@@ -45,7 +68,8 @@ export function addUsage(
     nextUsage[fields.cacheRead] = (state.tokenUsage[fields.cacheRead] ?? 0) + usage.cacheReadTokens;
   }
   if (fields.cacheCreate !== undefined && usage.cacheCreateTokens !== undefined) {
-    nextUsage[fields.cacheCreate] = (state.tokenUsage[fields.cacheCreate] ?? 0) + usage.cacheCreateTokens;
+    nextUsage[fields.cacheCreate] =
+      (state.tokenUsage[fields.cacheCreate] ?? 0) + usage.cacheCreateTokens;
   }
   return {
     ...state,
@@ -53,7 +77,10 @@ export function addUsage(
   };
 }
 
-function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens: number; escalationTokens: number } {
+function tokenDelta(
+  before: TokenUsage,
+  after: TokenUsage,
+): { implementerTokens: number; escalationTokens: number } {
   const implementerBefore = before.implementerInput + before.implementerOutput;
   const implementerAfter = after.implementerInput + after.implementerOutput;
   const escalationBefore = before.escalationInput + before.escalationOutput;
@@ -64,7 +91,12 @@ function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens:
   };
 }
 
-function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
+function emitTaskTokens(
+  bus: EventBus,
+  state: WorkflowState,
+  id: TaskId,
+  usage: TaskTokenUsage,
+): void {
   bus.publish({
     type: 'task_tokens',
     ts: Date.now(),
@@ -79,10 +111,16 @@ function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: 
     ...(usage.implementerProfile !== undefined && { implementerProfile: usage.implementerProfile }),
     ...(usage.contextFit !== undefined && { contextFit: usage.contextFit }),
     ...(usage.estimatedTokens !== undefined && { estimatedTokens: usage.estimatedTokens }),
-    ...(usage.untruncatedEstimatedTokens !== undefined && { untruncatedEstimatedTokens: usage.untruncatedEstimatedTokens }),
+    ...(usage.untruncatedEstimatedTokens !== undefined && {
+      untruncatedEstimatedTokens: usage.untruncatedEstimatedTokens,
+    }),
     ...(usage.contextLength !== undefined && { contextLength: usage.contextLength }),
-    ...(usage.currentCodeTruncated !== undefined && { currentCodeTruncated: usage.currentCodeTruncated }),
-    ...(usage.currentCodeContextMode !== undefined && { currentCodeContextMode: usage.currentCodeContextMode }),
+    ...(usage.currentCodeTruncated !== undefined && {
+      currentCodeTruncated: usage.currentCodeTruncated,
+    }),
+    ...(usage.currentCodeContextMode !== undefined && {
+      currentCodeContextMode: usage.currentCodeContextMode,
+    }),
     ...(usage.costPosture !== undefined && { costPosture: usage.costPosture }),
     ...(usage.routingReason !== undefined && { routingReason: usage.routingReason }),
   });
@@ -104,11 +142,27 @@ type RecordTaskUsageOptions = {
 };
 
 export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
-  const { task, method, tokensBefore, currentUsage, bus, state, taskBreakdowns, retryCount, tool, model, implementerProfile, routingDecision } = opts;
+  const {
+    task,
+    method,
+    tokensBefore,
+    currentUsage,
+    bus,
+    state,
+    taskBreakdowns,
+    retryCount,
+    tool,
+    model,
+    implementerProfile,
+    routingDecision,
+  } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
   const usage: TaskTokenUsage = {
-    taskId: task.id, taskTitle: task.title, method,
-    implementerTokens: delta.implementerTokens, escalationTokens: delta.escalationTokens,
+    taskId: task.id,
+    taskTitle: task.title,
+    method,
+    implementerTokens: delta.implementerTokens,
+    escalationTokens: delta.escalationTokens,
     retryCount: retryCount ?? 0,
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),
@@ -117,7 +171,9 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
       contextFit: routingDecision.fit,
       estimatedTokens: routingDecision.estimatedTokens,
       untruncatedEstimatedTokens: routingDecision.untruncatedEstimatedTokens,
-      ...(routingDecision.contextLength !== undefined && { contextLength: routingDecision.contextLength }),
+      ...(routingDecision.contextLength !== undefined && {
+        contextLength: routingDecision.contextLength,
+      }),
       currentCodeTruncated: routingDecision.currentCodeTruncated,
       currentCodeContextMode: routingDecision.currentCodeContextMode,
       costPosture: routingDecision.costPosture,

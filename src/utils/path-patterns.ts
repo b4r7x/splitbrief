@@ -19,7 +19,8 @@ export function looksLikeFilePath(value: string): boolean {
   return ROOT_FILE_NAMES.has(trimmed);
 }
 
-export const CONCRETE_FILE_PATH_PATTERN = /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
+export const CONCRETE_FILE_PATH_PATTERN =
+  /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
 
 export function resolveFromProject(projectDir: string, p: string): string {
   return isAbsolute(p) ? p : resolve(projectDir, p);

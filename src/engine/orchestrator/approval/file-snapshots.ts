@@ -31,13 +31,15 @@ export function uniqueProjectFiles(files: string[]): string[] {
 
 export async function getChangedFilesSnapshot(projectDir: string): Promise<ChangedFilesSnapshot> {
   const files = uniqueProjectFiles(await getCurrentChangedFiles(projectDir));
-  const entries = await Promise.all(files.map(async (file): Promise<[string, string | null]> => {
-    try {
-      return [file, await readFile(join(projectDir, file), 'utf-8')];
-    } catch {
-      return [file, null];
-    }
-  }));
+  const entries = await Promise.all(
+    files.map(async (file): Promise<[string, string | null]> => {
+      try {
+        return [file, await readFile(join(projectDir, file), 'utf-8')];
+      } catch {
+        return [file, null];
+      }
+    }),
+  );
   const dirtyFileContents: Record<string, string | null> = Object.fromEntries(entries);
   return {
     head: await getCurrentCommitSha(projectDir),
@@ -69,13 +71,18 @@ export async function getChangedFilesSinceSnapshot(
   );
   const modifiedDirtyFiles = modifiedDirtyResults.filter((f): f is string => f !== null);
 
-  const committedFiles = uniqueProjectFiles(await getCommittedFilesSince(projectDir, snapshot.head));
+  const committedFiles = uniqueProjectFiles(
+    await getCommittedFilesSince(projectDir, snapshot.head),
+  );
   return Array.from(new Set([...newChanges, ...modifiedDirtyFiles, ...committedFiles]))
     .filter((file) => !file.startsWith(`${DIPTYCH_DIR}/`))
     .sort();
 }
 
-export async function readCurrentFileContent(projectDir: string, file: string): Promise<string | null> {
+export async function readCurrentFileContent(
+  projectDir: string,
+  file: string,
+): Promise<string | null> {
   try {
     return await readFile(join(projectDir, file), 'utf-8');
   } catch {
@@ -83,7 +90,11 @@ export async function readCurrentFileContent(projectDir: string, file: string): 
   }
 }
 
-export async function writeCurrentFileContent(projectDir: string, file: string, content: string | null): Promise<void> {
+export async function writeCurrentFileContent(
+  projectDir: string,
+  file: string,
+  content: string | null,
+): Promise<void> {
   const path = join(projectDir, file);
   if (content === null) {
     await rm(path, { force: true });
@@ -93,10 +104,18 @@ export async function writeCurrentFileContent(projectDir: string, file: string, 
   await writeFile(path, content, 'utf-8');
 }
 
-export async function captureCurrentFileContents(projectDir: string, files: string[]): Promise<FileContentSnapshot> {
-  const entries = await Promise.all(files.map(async (file): Promise<[string, string | null]> =>
-    [file, await readCurrentFileContent(projectDir, file)],
-  ));
+export async function captureCurrentFileContents(
+  projectDir: string,
+  files: string[],
+): Promise<FileContentSnapshot> {
+  const entries = await Promise.all(
+    files.map(
+      async (file): Promise<[string, string | null]> => [
+        file,
+        await readCurrentFileContent(projectDir, file),
+      ],
+    ),
+  );
   return Object.fromEntries(entries);
 }
 

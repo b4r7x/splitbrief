@@ -12,7 +12,11 @@ function setImplementer(config: Config, implementer: ImplementerConfig): Config 
   return { ...config, implementer };
 }
 
-export function commitPlannerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
+export function commitPlannerSelection(
+  config: Config,
+  selection: PickerOption,
+  model: { id: string } | null,
+): Config {
   const opts = {
     kind: selection.kind,
     tool: selection.id,
@@ -22,7 +26,11 @@ export function commitPlannerSelection(config: Config, selection: PickerOption, 
   return setPlanner(config, buildRunnerConfig('planner', opts));
 }
 
-export function commitImplementerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
+export function commitImplementerSelection(
+  config: Config,
+  selection: PickerOption,
+  model: { id: string } | null,
+): Config {
   const opts = {
     kind: selection.kind,
     tool: selection.id,
@@ -32,7 +40,15 @@ export function commitImplementerSelection(config: Config, selection: PickerOpti
   return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
-export function commitCustomCommand(config: Config, role: 'planner' | 'implementer', command: string, kind: 'shell' | 'agent'): Config {
+export interface CommitCustomCommandInput {
+  config: Config;
+  role: 'planner' | 'implementer';
+  command: string;
+  kind: 'shell' | 'agent';
+}
+
+export function commitCustomCommand(input: CommitCustomCommandInput): Config {
+  const { config, role, command, kind } = input;
   const opts = {
     kind,
     command,
@@ -44,13 +60,16 @@ export function commitCustomCommand(config: Config, role: 'planner' | 'implement
   return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
-export function commitCustomModel(
-  config: Config,
-  role: 'planner' | 'implementer',
-  selection: PickerOption,
-  modelName: string,
-  customModels: string[],
-): Config {
+export interface CommitCustomModelInput {
+  config: Config;
+  role: 'planner' | 'implementer';
+  selection: PickerOption;
+  modelName: string;
+  customModels: string[];
+}
+
+export function commitCustomModel(input: CommitCustomModelInput): Config {
+  const { config, role, selection, modelName, customModels } = input;
   const newCustomModels = customModels.includes(modelName)
     ? customModels
     : [...customModels, modelName];
@@ -67,10 +86,14 @@ export function commitCustomModel(
   return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
-export function removeCustomModel(config: Config, role: 'planner' | 'implementer', modelId: string): Config {
+export function removeCustomModel(
+  config: Config,
+  role: 'planner' | 'implementer',
+  modelId: string,
+): Config {
   if (role === 'planner') {
     const current = config.planner.customModels ?? [];
-    const filtered = current.filter(m => m !== modelId);
+    const filtered = current.filter((m) => m !== modelId);
     if (config.planner.model !== modelId) {
       return setPlanner(config, { ...config.planner, customModels: filtered });
     }
@@ -78,12 +101,16 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
     return setPlanner(config, omitModel(config.planner, filtered));
   }
   const current = config.implementer.customModels ?? [];
-  const filtered = current.filter(m => m !== modelId);
+  const filtered = current.filter((m) => m !== modelId);
   if (config.implementer.model !== modelId) {
     return setImplementer(config, { ...config.implementer, customModels: filtered });
   }
   const fallbackModel = filtered[0] ?? 'auto';
-  return setImplementer(config, { ...config.implementer, model: fallbackModel, customModels: filtered });
+  return setImplementer(config, {
+    ...config.implementer,
+    model: fallbackModel,
+    customModels: filtered,
+  });
 }
 
 function omitModel(planner: PlannerConfig, customModels: string[]): PlannerConfig {

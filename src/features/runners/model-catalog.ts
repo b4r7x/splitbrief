@@ -1,10 +1,14 @@
 import type { Config } from '../../core/schemas/config.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
-import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS, LOCAL_PROVIDER_IDS, type ProviderId } from '../../core/schemas/enums.js';
+import {
+  CLI_TOOL_IDS,
+  KNOWN_API_PROVIDERS,
+  LOCAL_PROVIDER_IDS,
+  type ProviderId,
+} from '../../core/schemas/enums.js';
 import { getProviderDisplayName, hasApiKey } from '../../core/providers/catalog.js';
 import { includes } from '../../utils/type-guards.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { resolveModelCatalog } from '../../engine/providers/model/catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
 
@@ -42,7 +46,10 @@ function extractRecencyKey(id: string): { date: number; version: number[]; name:
   return { date, version, name: base };
 }
 
-function compareRecency(a: ReturnType<typeof extractRecencyKey>, b: ReturnType<typeof extractRecencyKey>): number {
+function compareRecency(
+  a: ReturnType<typeof extractRecencyKey>,
+  b: ReturnType<typeof extractRecencyKey>,
+): number {
   if (a.date !== b.date) return b.date - a.date;
   const maxLen = Math.max(a.version.length, b.version.length);
   for (let i = 0; i < maxLen; i++) {
@@ -121,11 +128,8 @@ interface SharedPickerOpts {
   hasApiKeyOverride?: (provider: string) => boolean;
 }
 
-function buildCliOption(
-  id: (typeof CLI_TOOL_IDS)[number],
-  opts: SharedPickerOpts,
-): PickerOption {
-  const detection = opts.plannerDetections?.find(item => item.tool === id);
+function buildCliOption(id: (typeof CLI_TOOL_IDS)[number], opts: SharedPickerOpts): PickerOption {
+  const detection = opts.plannerDetections?.find((item) => item.tool === id);
   return {
     id,
     displayName: getProviderDisplayName(id),
@@ -140,7 +144,7 @@ function buildApiOption(
   id: (typeof KNOWN_API_PROVIDERS)[number],
   opts: SharedPickerOpts,
 ): PickerOption {
-  const detection = opts.implementerDetections?.find(item => item.provider === id);
+  const detection = opts.implementerDetections?.find((item) => item.provider === id);
   const isLocal = detection?.isLocal ?? includes(LOCAL_PROVIDER_IDS, id);
   return {
     id,
@@ -155,7 +159,12 @@ function buildSharedPickerOption(id: SharedPickerId, opts: SharedPickerOpts): Pi
   if (id === 'shell') return makeSpecialOption('shell', 'shell', 'Custom');
   if (id === 'agent') return makeSpecialOption('agent', 'agent', 'Custom');
   if (id === 'agent-sdk') {
-    return makeSpecialOption('agent-sdk', 'agent-sdk', 'SDK', (opts.hasApiKeyOverride ?? hasApiKey)('agent-sdk'));
+    return makeSpecialOption(
+      'agent-sdk',
+      'agent-sdk',
+      'SDK',
+      (opts.hasApiKeyOverride ?? hasApiKey)('agent-sdk'),
+    );
   }
   if (includes(CLI_TOOL_IDS, id)) return buildCliOption(id, opts);
   if (includes(KNOWN_API_PROVIDERS, id)) return buildApiOption(id, opts);
@@ -169,9 +178,7 @@ function buildSharedPickerOption(id: SharedPickerId, opts: SharedPickerOpts): Pi
 }
 
 function buildSharedPickerOptions(opts: SharedPickerOpts): PickerOption[] {
-  return SHARED_PICKER_IDS
-    .map(id => buildSharedPickerOption(id, opts))
-    .sort(sortByAvailability);
+  return SHARED_PICKER_IDS.map((id) => buildSharedPickerOption(id, opts)).sort(sortByAvailability);
 }
 
 export function buildPlannerPickerOptions(opts: PlannerPickerOpts): PickerOption[] {
@@ -198,7 +205,7 @@ export function buildImplementerPickerOptions(opts: ImplementerPickerOpts): Pick
 
 function resolveAndSort(providerId: string, cache: ModelCacheAccessor = NULL_CACHE): ModelOption[] {
   return sortModelsByRecency(
-    resolveModelCatalog(providerId, cache).map(m => ({
+    resolveModelCatalog(providerId, cache).map((m) => ({
       id: m.id,
       isDefault: m.isDefault,
       isDetected: m.isDetected,
@@ -208,7 +215,10 @@ function resolveAndSort(providerId: string, cache: ModelCacheAccessor = NULL_CAC
   );
 }
 
-export function modelsForPlannerTool(toolId: string, cache: ModelCacheAccessor = NULL_CACHE): ModelOption[] {
+export function modelsForPlannerTool(
+  toolId: string,
+  cache: ModelCacheAccessor = NULL_CACHE,
+): ModelOption[] {
   return resolveAndSort(toolId, cache);
 }
 
@@ -227,21 +237,13 @@ export function buildRightModels(params: {
   currentItem: PickerOption | undefined;
   cache?: ModelCacheAccessor;
 }): ModelOption[] {
-  const customOptions: ModelOption[] = params.customModels.map(id => ({ id, isCustom: true }));
+  const customOptions: ModelOption[] = params.customModels.map((id) => ({ id, isCustom: true }));
   if (!params.currentItem) return customOptions;
   const cache = params.cache ?? NULL_CACHE;
   const knownModels = params.isPlanner
     ? modelsForPlannerTool(params.currentItem.id, cache)
     : modelsForImplementerProvider(params.currentItem.id, params.currentItem.kind, cache);
   return [...customOptions, ...knownModels];
-}
-
-export function buildRightModelsForPicker(params: {
-  isPlanner: boolean;
-  customModels: string[];
-  currentItem: PickerOption | undefined;
-}): ModelOption[] {
-  return buildRightModels({ ...params, cache: modelCacheStore });
 }
 
 export function isCurrentConfig(

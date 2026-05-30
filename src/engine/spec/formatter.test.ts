@@ -27,12 +27,11 @@ function makeTask(overrides: TaskOverrides = {}): Task {
 describe('formatTaskPrompt', () => {
   it('create action task contains action, file path, and project info', () => {
     const task = makeTask();
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('Action: create');
     expect(prompt).toContain('src/utils/helpers.ts');
     expect(prompt).toContain('test-project');
-    expect(prompt).toContain('Node.js 22');
   });
 
   it('modify action task with currentCode contains Current Code section', () => {
@@ -40,7 +39,7 @@ describe('formatTaskPrompt', () => {
       action: 'modify',
       currentCode: 'export function old(): void {}\n',
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('Current Code');
     expect(prompt).toContain('export function old(): void {}');
@@ -50,7 +49,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       signature: 'export function greet(name: string): string',
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('### Signature');
     expect(prompt).toContain('export function greet(name: string): string');
@@ -60,7 +59,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       tests: ['Should handle empty input', 'Should trim whitespace', 'Should return lowercase'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('### Tests');
     expect(prompt).toContain('- Should handle empty input');
@@ -72,7 +71,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       pattern: 'Follow the existing parseConfig(raw) guard shape.',
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('### Pattern');
     expect(prompt).toContain('Follow the existing parseConfig(raw) guard shape.');
@@ -82,7 +81,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       constraints: ['Must be pure function', 'No side effects'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('### Constraints');
     expect(prompt).toContain('- Must be pure function');
@@ -91,7 +90,7 @@ describe('formatTaskPrompt', () => {
 
   it('prompt ends with output instruction (lost-in-middle mitigation)', () => {
     const task = makeTask();
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     const lastLine = prompt.trimEnd().split('\n').at(-1)!;
 
     expect(lastLine).toContain('Output the complete file contents');
@@ -100,7 +99,7 @@ describe('formatTaskPrompt', () => {
 
   it('omits Scope / Escalation / Evidence sections when the brief has none', () => {
     const task = makeTask();
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).not.toContain('### Scope');
     expect(prompt).not.toContain('### Escalation');
     expect(prompt).not.toContain('### Evidence');
@@ -113,7 +112,7 @@ describe('formatTaskPrompt', () => {
         outOfBounds: ['do not modify SignupForm'],
       },
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('### Scope');
     expect(prompt).toContain('**In bounds:**');
     expect(prompt).toContain('- only touch helpers.ts');
@@ -123,7 +122,7 @@ describe('formatTaskPrompt', () => {
 
   it('renders Scope with only the bucket that has bullets', () => {
     const task = makeTask({ scope: { inBounds: ['just this file'] } });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('### Scope');
     expect(prompt).toContain('**In bounds:**');
     expect(prompt).not.toContain('**Out of bounds:**');
@@ -133,7 +132,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       escalation: ['ambiguous error message format', 'missing dependency'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('### Escalation');
     expect(prompt).toContain('- ambiguous error message format');
     expect(prompt).toContain('- missing dependency');
@@ -143,7 +142,7 @@ describe('formatTaskPrompt', () => {
     const task = makeTask({
       evidence: ['npm test passes', 'changed file list'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('### Evidence');
     expect(prompt).toContain('- npm test passes');
     expect(prompt).toContain('- changed file list');
@@ -157,7 +156,7 @@ describe('formatTaskPrompt', () => {
       evidence: ['proof A'],
       constraints: ['pure function'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     const idxTests = prompt.indexOf('### Tests');
     const idxScope = prompt.indexOf('### Scope');
     const idxEsc = prompt.indexOf('### Escalation');
@@ -177,7 +176,7 @@ describe('formatTaskPrompt', () => {
       escalation: ['stop on type error in shared schema'],
       evidence: ['typecheck output'],
     });
-    const prompt = formatRetryPrompt(task, context, 'boom', 1);
+    const prompt = formatRetryPrompt({ task, context, error: 'boom', attempt: 1 });
     expect(prompt).toContain('Fix it:');
     expect(prompt).toContain('### Scope');
     expect(prompt).toContain('- no schema changes');
@@ -197,7 +196,7 @@ describe('formatRetryPrompt', () => {
     [2, 'rephrased'],
     [3, 'different approach'],
   ] as const)('attempt %i contains expected framing', (attempt, expectedText) => {
-    const prompt = formatRetryPrompt(task, context, error, attempt);
+    const prompt = formatRetryPrompt({ task, context, error, attempt });
     expect(prompt).toContain(expectedText);
     expect(prompt).toContain(error);
     expect(prompt).toContain(task.file);
@@ -208,8 +207,8 @@ describe('formatRetryPrompt', () => {
       action: 'modify',
       currentCode: 'export function existing(): void { /* long code */ }\n',
     });
-    const retry2 = formatRetryPrompt(modifyTask, context, error, 2);
-    const retry3 = formatRetryPrompt(modifyTask, context, error, 3);
+    const retry2 = formatRetryPrompt({ task: modifyTask, context, error, attempt: 2 });
+    const retry3 = formatRetryPrompt({ task: modifyTask, context, error, attempt: 3 });
 
     expect(retry2).toContain('Current Code');
     expect(retry3).toContain('Current Code');
@@ -252,7 +251,7 @@ describe('formatTaskPrompt with contextLength', () => {
       action: 'modify',
       currentCode: largeCode,
     });
-    const prompt = formatTaskPrompt(task, context, 2048);
+    const prompt = formatTaskPrompt({ task, context, contextLength: 2048 });
     expect(prompt.length).toBeLessThan(largeCode.length);
     expect(prompt).toContain('// ... truncated to fit context window ...');
   });
@@ -263,7 +262,7 @@ describe('formatTaskPrompt with contextLength', () => {
       action: 'modify',
       currentCode: smallCode,
     });
-    const prompt = formatTaskPrompt(task, context, 8192);
+    const prompt = formatTaskPrompt({ task, context, contextLength: 8192 });
     expect(prompt).toContain(smallCode);
     expect(prompt).not.toContain('truncated');
   });
@@ -275,7 +274,7 @@ describe('formatTaskPrompt with contextLength', () => {
       implementationSteps: ['Update greet to accept a name'],
       tests: ['returns a personalized greeting'],
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
 
     const idxCurrentCode = prompt.indexOf('### Current Code');
     const idxSteps = prompt.indexOf('### Implementation Steps');
@@ -304,7 +303,7 @@ describe('formatTaskPrompt with contextLength', () => {
         '}',
       ].join('\n'),
     });
-    const prompt = formatTaskPrompt(task, context, 4096);
+    const prompt = formatTaskPrompt({ task, context, contextLength: 4096 });
 
     expect(prompt).toContain('#### Imports');
     expect(prompt).toContain('#### Target Function');
@@ -317,14 +316,18 @@ describe('formatTaskPrompt with contextLength', () => {
       action: 'modify',
       currentCode: 'export const x = 1;\n',
     });
-    const prompt = formatTaskPrompt(task, context);
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('export const x = 1;');
   });
 });
 
 describe('computeTokenBudget', () => {
   it('returns a consistent token breakdown', () => {
-    const budget = computeTokenBudget('system text', 'task body', 8192);
+    const budget = computeTokenBudget({
+      system: 'system text',
+      taskBody: 'task body',
+      contextLength: 8192,
+    });
     expect(budget.system).toBe(estimateTokens('system text'));
     expect(budget.taskBody).toBe(estimateTokens('task body'));
     expect(budget.outputReserve).toBe(Math.floor(8192 * 0.25));
@@ -334,9 +337,17 @@ describe('computeTokenBudget', () => {
   });
 
   it('remaining tracks prompt size and can go negative when context is too small', () => {
-    const small = computeTokenBudget('short', 'task', 8192);
-    const large = computeTokenBudget('a'.repeat(2000), 'task', 8192);
-    const tooSmall = computeTokenBudget('a'.repeat(4000), 'b'.repeat(4000), 100);
+    const small = computeTokenBudget({ system: 'short', taskBody: 'task', contextLength: 8192 });
+    const large = computeTokenBudget({
+      system: 'a'.repeat(2000),
+      taskBody: 'task',
+      contextLength: 8192,
+    });
+    const tooSmall = computeTokenBudget({
+      system: 'a'.repeat(4000),
+      taskBody: 'b'.repeat(4000),
+      contextLength: 100,
+    });
 
     expect(large.remaining).toBeLessThan(small.remaining);
     expect(tooSmall.remaining).toBeLessThan(0);

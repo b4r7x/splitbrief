@@ -26,7 +26,11 @@ afterEach(() => {
 function writeValidConfig(projectDir: string): void {
   const diptychDir = join(projectDir, DIPTYCH_DIR);
   mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(join(diptychDir, CONFIG_FILE), YAML.stringify(toYaml(createDefaultConfig())), 'utf-8');
+  writeFileSync(
+    join(diptychDir, CONFIG_FILE),
+    YAML.stringify(toYaml(createDefaultConfig())),
+    'utf-8',
+  );
 }
 
 function writeInvalidConfig(projectDir: string): void {

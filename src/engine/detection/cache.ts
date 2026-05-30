@@ -1,7 +1,11 @@
-import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, unlink } from 'node:fs/promises';
 import { z } from 'zod';
-import type { DetectedModel, PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import { writeSecureFileAsync } from '../../lib/fs.js';
+import type {
+  DetectedModel,
+  PlannerDetection,
+  ProviderDetection,
+} from '../../core/types/config-options.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { getDiptychPath } from '../../core/paths.js';
 
@@ -19,15 +23,17 @@ const DetectedModelRawSchema = z.object({
   releaseDate: z.string().optional(),
 });
 
-const DetectedModelSchema = DetectedModelRawSchema.transform((m): DetectedModel => ({
-  id: m.id,
-  ...(m.contextLength !== undefined && { contextLength: m.contextLength }),
-  ...(m.pricingInput !== undefined && { pricingInput: m.pricingInput }),
-  ...(m.pricingOutput !== undefined && { pricingOutput: m.pricingOutput }),
-  ...(m.isFree !== undefined && { isFree: m.isFree }),
-  ...(m.capabilities !== undefined && { capabilities: m.capabilities }),
-  ...(m.releaseDate !== undefined && { releaseDate: m.releaseDate }),
-}));
+const DetectedModelSchema = DetectedModelRawSchema.transform(
+  (m): DetectedModel => ({
+    id: m.id,
+    ...(m.contextLength !== undefined && { contextLength: m.contextLength }),
+    ...(m.pricingInput !== undefined && { pricingInput: m.pricingInput }),
+    ...(m.pricingOutput !== undefined && { pricingOutput: m.pricingOutput }),
+    ...(m.isFree !== undefined && { isFree: m.isFree }),
+    ...(m.capabilities !== undefined && { capabilities: m.capabilities }),
+    ...(m.releaseDate !== undefined && { releaseDate: m.releaseDate }),
+  }),
+);
 
 const PlannerDetectionRawSchema = z.object({
   tool: z.enum(PLANNER_TOOL_IDS),
@@ -38,14 +44,16 @@ const PlannerDetectionRawSchema = z.object({
   error: z.string().optional(),
 });
 
-const PlannerDetectionSchema = PlannerDetectionRawSchema.transform((p): PlannerDetection => ({
-  tool: p.tool,
-  type: p.type,
-  available: p.available,
-  ...(p.version !== undefined && { version: p.version }),
-  ...(p.description !== undefined && { description: p.description }),
-  ...(p.error !== undefined && { error: p.error }),
-}));
+const PlannerDetectionSchema = PlannerDetectionRawSchema.transform(
+  (p): PlannerDetection => ({
+    tool: p.tool,
+    type: p.type,
+    available: p.available,
+    ...(p.version !== undefined && { version: p.version }),
+    ...(p.description !== undefined && { description: p.description }),
+    ...(p.error !== undefined && { error: p.error }),
+  }),
+);
 
 const ProviderDetectionRawSchema = z.object({
   provider: z.enum(PROVIDER_IDS),
@@ -56,14 +64,16 @@ const ProviderDetectionRawSchema = z.object({
   error: z.string().optional(),
 });
 
-const ProviderDetectionSchema = ProviderDetectionRawSchema.transform((p): ProviderDetection => ({
-  provider: p.provider,
-  available: p.available,
-  isLocal: p.isLocal,
-  ...(p.models !== undefined && { models: p.models }),
-  ...(p.hasKey !== undefined && { hasKey: p.hasKey }),
-  ...(p.error !== undefined && { error: p.error }),
-}));
+const ProviderDetectionSchema = ProviderDetectionRawSchema.transform(
+  (p): ProviderDetection => ({
+    provider: p.provider,
+    available: p.available,
+    isLocal: p.isLocal,
+    ...(p.models !== undefined && { models: p.models }),
+    ...(p.hasKey !== undefined && { hasKey: p.hasKey }),
+    ...(p.error !== undefined && { error: p.error }),
+  }),
+);
 
 const DetectionCacheSchema = z.object({
   version: z.literal(CACHE_VERSION),
@@ -105,12 +115,14 @@ export async function saveDetectionCache(
   implementers: ProviderDetection[],
 ): Promise<void> {
   const path = cachePath(projectDir);
-  const cache: DetectionCache = { version: CACHE_VERSION, timestamp: Date.now(), planners, implementers };
+  const cache: DetectionCache = {
+    version: CACHE_VERSION,
+    timestamp: Date.now(),
+    planners,
+    implementers,
+  };
   try {
-    const tmpPath = path + '.tmp';
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(tmpPath, JSON.stringify(cache), 'utf-8');
-    await rename(tmpPath, path);
+    await writeSecureFileAsync(path, JSON.stringify(cache));
   } catch {
     // Cache write failure is non-critical
   }

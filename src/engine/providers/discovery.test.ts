@@ -88,7 +88,12 @@ describe('discoverAllCliTools', () => {
   });
 
   it('filters aider header and error lines', async () => {
-    installShim('aider', ['=== Available Models ===', '- some-header', 'openai/gpt-4o', 'Error: something']);
+    installShim('aider', [
+      '=== Available Models ===',
+      '- some-header',
+      'openai/gpt-4o',
+      'Error: something',
+    ]);
     installFailingShim('opencode', 0);
     fetchMock.mockResolvedValue(new Response('error', { status: 500 }));
 
@@ -137,8 +142,20 @@ describe('discoverAllCliTools', () => {
     const result = await discoverAllCliTools();
 
     expect(result['kilo-code']).toEqual([
-      { id: 'anthropic/claude-3-5-sonnet', contextLength: 200000, pricingInput: 3, pricingOutput: 15, isFree: false },
-      { id: 'openai/gpt-4o', contextLength: 128000, pricingInput: 5, pricingOutput: 15, isFree: false },
+      {
+        id: 'anthropic/claude-3-5-sonnet',
+        contextLength: 200000,
+        pricingInput: 3,
+        pricingOutput: 15,
+        isFree: false,
+      },
+      {
+        id: 'openai/gpt-4o',
+        contextLength: 128000,
+        pricingInput: 5,
+        pricingOutput: 15,
+        isFree: false,
+      },
     ]);
   });
 

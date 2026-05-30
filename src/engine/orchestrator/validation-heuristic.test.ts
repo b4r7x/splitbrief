@@ -6,8 +6,12 @@ import { detectValidationHeuristic } from './validation-heuristic.js';
 
 describe('detectValidationHeuristic', () => {
   let tmpDir: string;
-  beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), 'val-')); });
-  afterEach(() => { rmSync(tmpDir, { recursive: true }); });
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'val-'));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true });
+  });
 
   it('detects Rust project from Cargo.toml', () => {
     writeFileSync(join(tmpDir, 'Cargo.toml'), '[package]\nname = "test"');

@@ -31,8 +31,12 @@ describe('driftChainsPath', () => {
 
 describe('readDriftChainState', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'drift-chain-test-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'drift-chain-test-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('returns null when file is absent', () => {
     expect(readDriftChainState(dir, 'missing')).toBeNull();
@@ -55,8 +59,12 @@ describe('readDriftChainState', () => {
 
 describe('writeDriftChainState', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'drift-chain-write-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'drift-chain-write-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('creates file with trailing newline and parseable JSON', () => {
     const state = initialDriftChainState('s1');

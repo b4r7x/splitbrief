@@ -22,15 +22,16 @@ function createMockFilteredStdin() {
       },
       disable: () => {},
     } satisfies FilteredStdin,
-    emit: (type: 'wheel-up' | 'wheel-down', x = 1, y = 1) => listener?.({
-      type,
-      x,
-      y,
-      button: type === 'wheel-up' ? 64 : 65,
-      shift: false,
-      meta: false,
-      ctrl: false,
-    }),
+    emit: (type: 'wheel-up' | 'wheel-down', x = 1, y = 1) =>
+      listener?.({
+        type,
+        x,
+        y,
+        button: type === 'wheel-up' ? 64 : 65,
+        shift: false,
+        meta: false,
+        ctrl: false,
+      }),
   };
 }
 

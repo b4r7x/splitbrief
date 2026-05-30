@@ -6,7 +6,7 @@ import { setupWorkflow, resolveProjectDir } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
-import { assertNotWindows } from '../platform.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
@@ -14,14 +14,67 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { addWorkflowOptions } from '../options.js';
-import { maybeMigrate } from '../../core/migration/executor.js';
-import { printMigrationResult } from './migrate.js';
+import { maybeMigrateAndReport } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 import { findSingleRunningSession } from '../sessions/single-running-session.js';
 import { assertResumableState } from '../session-resolve.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+
+type ResumeTailDeps = Pick<
+  ContinueDeps,
+  'initStores' | 'renderApp' | 'runHeadless' | 'runRpc' | 'setupWorkflow'
+>;
+
+const defaultResumeTailDeps: ResumeTailDeps = {
+  initStores,
+  renderApp,
+  runHeadless,
+  runRpc,
+  setupWorkflow,
+};
+
+export async function resumeSavedSession(args: {
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState;
+  opts: WorkflowOpts;
+  deps?: ResumeTailDeps | undefined;
+}): Promise<void> {
+  const { projectDir, sessionId, state, opts } = args;
+  const deps = args.deps ?? defaultResumeTailDeps;
+
+  assertResumableState(state, sessionId);
+
+  if (opts.json) {
+    await deps.runHeadless({
+      feature: state.feature,
+      projectDir,
+      opts,
+      savedState: state,
+      sessionId,
+    });
+    return;
+  }
+
+  if (opts.rpc) {
+    await deps.runRpc({ feature: state.feature, projectDir, opts, savedState: state, sessionId });
+    return;
+  }
+
+  console.log(
+    `Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
+  );
+
+  const { useFullscreen, useMouse } = await deps.setupWorkflow(opts);
+
+  await deps.initStores(projectDir, opts);
+  routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
+
+  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+}
 
 export interface ContinueDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -112,38 +165,24 @@ export async function continueCommand(
     await deps.showCrashDiagnostic(sessDir, status);
   }
 
-  const migration = await maybeMigrate(opts.projectDir);
-  if (!opts.json && !opts.rpc) printMigrationResult(migration);
+  await maybeMigrateAndReport(opts.projectDir, opts);
 
   const state = loadState(opts.projectDir, sessionId);
 
   if (!state) {
-    throw cliError(`session '${sessionId}' has no saved state and is not running — cannot continue.`, 1);
+    throw cliError(
+      `session '${sessionId}' has no saved state and is not running — cannot continue.`,
+      1,
+    );
   }
 
-  assertResumableState(state, sessionId);
-
-  if (opts.json) {
-    await deps.runHeadless({ feature: state.feature, projectDir: opts.projectDir, opts, savedState: state, sessionId });
-    return;
-  }
-
-  if (opts.rpc) {
-    await deps.runRpc({ feature: state.feature, projectDir: opts.projectDir, opts, savedState: state, sessionId });
-    return;
-  }
-
-  console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
-
-  const { useFullscreen, useMouse } = await deps.setupWorkflow(opts);
-
-  await deps.initStores(opts.projectDir, opts);
-  routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
-
-  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+  await resumeSavedSession({ projectDir: opts.projectDir, sessionId, state, opts, deps });
 }
 
-export function registerContinueCommand(program: Command, deps: ContinueDeps = defaultContinueDeps): void {
+export function registerContinueCommand(
+  program: Command,
+  deps: ContinueDeps = defaultContinueDeps,
+): void {
   addWorkflowOptions(
     program
       .command('continue [session-id]')

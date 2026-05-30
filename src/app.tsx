@@ -19,7 +19,10 @@ import { WorkflowScreen } from './features/workflow/screen.js';
 import { SummaryScreen } from './features/summary/screen.js';
 import { SetupScreen } from './features/setup/screen.js';
 import { HelpOverlay } from './features/help/overlay.js';
-import { CommandPaletteOverlay, type CommandPaletteOverlayProps } from './features/palette/overlay.js';
+import {
+  CommandPaletteOverlay,
+  type CommandPaletteOverlayProps,
+} from './features/palette/overlay.js';
 import { SkillsPicker } from './features/skills/picker.js';
 import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
@@ -32,7 +35,11 @@ import type { OverlayType, Screen } from './core/navigation/types.js';
 import { assertNever } from './utils/type-guards.js';
 
 export function App() {
-  const [{ screen }, { active: overlayActive }, { phase }] = useStores(routerStore, overlayStore, lifecycleStore);
+  const [{ screen }, { active: overlayActive }, { phase }] = useStores(
+    routerStore,
+    overlayStore,
+    lifecycleStore,
+  );
   const { exit } = useApp();
   const config = configStore.useConfig();
   const theme = getTheme(config.theme);
@@ -40,7 +47,11 @@ export function App() {
   const ctx = buildCommandContext({ exit });
   const commands = createRuntimeCommands(ctx);
   const handleRuntimeCommand = (raw: string, from: Screen) => {
-    void executeRuntimeCommand(commands, raw, { screen: from, phase, onError: feedbackStore.setError });
+    void executeRuntimeCommand(commands, raw, {
+      screen: from,
+      phase,
+      onError: feedbackStore.setError,
+    });
   };
 
   useAppKeys({ exit, abortWorkflow: abortTurn });
@@ -62,19 +73,18 @@ export function App() {
   );
 }
 
-function renderScreen({ screen, commands, onRuntime }: {
+function renderScreen({
+  screen,
+  commands,
+  onRuntime,
+}: {
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
 }): ReactNode {
   switch (screen) {
     case 'home':
-      return (
-        <HomeScreen
-          commands={commands}
-          onRuntimeCommand={(raw) => onRuntime(raw, 'home')}
-        />
-      );
+      return <HomeScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'home')} />;
     case 'workflow':
       return (
         <WorkflowScreen
@@ -84,10 +94,7 @@ function renderScreen({ screen, commands, onRuntime }: {
       );
     case 'summary':
       return (
-        <SummaryScreen
-          commands={commands}
-          onRuntimeCommand={(raw) => onRuntime(raw, 'summary')}
-        />
+        <SummaryScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'summary')} />
       );
     case 'setup':
       return (
@@ -107,7 +114,13 @@ function renderScreen({ screen, commands, onRuntime }: {
   }
 }
 
-function renderOverlay({ active, screen, commands, onRuntime, onWorkflowMode }: {
+function renderOverlay({
+  active,
+  screen,
+  commands,
+  onRuntime,
+  onWorkflowMode,
+}: {
   active: OverlayType;
   screen: Screen;
   commands: RuntimeCommandDef[];

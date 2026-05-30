@@ -13,21 +13,33 @@ interface CostDisplayProps {
   useRateColor?: boolean;
 }
 
-export function CostDisplay({ spentHiddenWhenSavings = false, useRateColor: colorByRate = false }: CostDisplayProps) {
+export function CostDisplay({
+  spentHiddenWhenSavings = false,
+  useRateColor: colorByRate = false,
+}: CostDisplayProps) {
   const t = useTheme();
   const { localRate, costBreakdown } = useCostStats();
-  const { localRatePct, showSavings, savingsText, hasPricedUsage, spentText } = formatCostDisplay(localRate, costBreakdown);
+  const { localRatePct, showSavings, savingsText, hasPricedUsage, spentText } = formatCostDisplay(
+    localRate,
+    costBreakdown,
+  );
   const showSpent = hasPricedUsage && (!spentHiddenWhenSavings || !showSavings);
   const localColor = colorByRate ? rateColor(localRate, t) : t.accent;
 
   return (
     <>
-      <Text color={t.textDim}>Local rate: <Text color={localColor}>{localRatePct}</Text></Text>
+      <Text color={t.textDim}>
+        Local rate: <Text color={localColor}>{localRatePct}</Text>
+      </Text>
       {showSpent && (
-        <Text color={t.textDim}>Spent: <Text color={t.text}>{spentText}</Text></Text>
+        <Text color={t.textDim}>
+          Spent: <Text color={t.text}>{spentText}</Text>
+        </Text>
       )}
       {showSavings && (
-        <Text color={t.textDim}>Saved: <Text color={t.success}>{savingsText}</Text></Text>
+        <Text color={t.textDim}>
+          Saved: <Text color={t.success}>{savingsText}</Text>
+        </Text>
       )}
     </>
   );

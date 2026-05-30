@@ -3,20 +3,17 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation-types.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
-import { uniqueIds, uniqueSorted } from '../../../../utils/collections.js';
-import type { RecoveryBuilderBase, TaskRecoveryContext } from './shared.js';
+import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
+import type { RecoveryBuilderBase, TaskRecoveryContext } from './recovery-issue.js';
+import { compactFacts, createRecoveryIssue } from './recovery-issue.js';
+import { chooseRecommended, hasRouteBigger, orderedActions } from './recovery-actions.js';
 import {
   attemptDetails,
-  chooseRecommended,
-  compactFacts,
-  createRecoveryIssue,
-  hasRouteBigger,
   implementerDetails,
-  orderedActions,
   routeBiggerDetails,
   summarizeValidation,
   taskFiles,
-} from './shared.js';
+} from './recovery-details.js';
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   validationResults?: ValidationResult[] | undefined;
@@ -47,7 +44,9 @@ export interface DependencyBlockedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
 }
 
-export function buildRetryExhaustedRecoveryIssue(opts: RetryExhaustedRecoveryOptions): RecoveryIssue {
+export function buildRetryExhaustedRecoveryIssue(
+  opts: RetryExhaustedRecoveryOptions,
+): RecoveryIssue {
   const phase = opts.phase ?? 'escalating';
   const validation = summarizeValidation(opts);
   const actions = orderedActions([
@@ -101,31 +100,41 @@ function contextDetails(opts: {
   routingReason?: string | undefined;
 }): string[] {
   return [
-    opts.estimatedTokens !== undefined ? `Estimated prompt: ${opts.estimatedTokens} tokens` : undefined,
+    opts.estimatedTokens !== undefined
+      ? `Estimated prompt: ${opts.estimatedTokens} tokens`
+      : undefined,
     opts.untruncatedEstimatedTokens !== undefined
       ? `Untruncated estimate: ${opts.untruncatedEstimatedTokens} tokens`
       : undefined,
     opts.contextLength !== undefined ? `Context limit: ${opts.contextLength} tokens` : undefined,
     opts.routingReason !== undefined ? `Routing: ${opts.routingReason}` : undefined,
-  ].filter(detail => detail !== undefined);
+  ].filter((detail) => detail !== undefined);
 }
 
 function rejectedProfileDetails(routing: RoutingDecision | undefined): string[] {
   if (!routing || routing.rejected.length === 0) return [];
-  const rejected = routing.rejected.map(profile => `${profile.profile}: ${profile.reason}`).join('; ');
+  const rejected = routing.rejected
+    .map((profile) => `${profile.profile}: ${profile.reason}`)
+    .join('; ');
   return [`Rejected profiles: ${rejected}`];
 }
 
-export function buildContextOverflowRecoveryIssue(opts: ContextOverflowRecoveryOptions): RecoveryIssue {
+export function buildContextOverflowRecoveryIssue(
+  opts: ContextOverflowRecoveryOptions,
+): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
   const routing = opts.routingDecision;
   const estimatedTokens = opts.estimatedTokens ?? routing?.estimatedTokens;
-  const untruncatedEstimatedTokens = opts.untruncatedEstimatedTokens ?? routing?.untruncatedEstimatedTokens;
+  const untruncatedEstimatedTokens =
+    opts.untruncatedEstimatedTokens ?? routing?.untruncatedEstimatedTokens;
   const contextLength = opts.contextLength ?? routing?.contextLength;
   const routingReason = opts.routingReason ?? routing?.reason;
   const selectedImplementerProfile = opts.selectedImplementerProfile ?? routing?.selectedProfile;
   const routeBiggerProfile = opts.routeBiggerProfile;
-  const canRouteBigger = hasRouteBigger({ routeBiggerProfile, canRouteBigger: opts.canRouteBigger });
+  const canRouteBigger = hasRouteBigger({
+    routeBiggerProfile,
+    canRouteBigger: opts.canRouteBigger,
+  });
   const actions = orderedActions([
     canRouteBigger ? 'route-bigger-worker' : undefined,
     'planner-split-rebase',
@@ -146,7 +155,12 @@ export function buildContextOverflowRecoveryIssue(opts: ContextOverflowRecoveryO
     affectedTaskIds: [opts.task.id],
     message: `${opts.task.id} does not fit a capable implementer context`,
     details: [
-      ...contextDetails({ estimatedTokens, untruncatedEstimatedTokens, contextLength, routingReason }),
+      ...contextDetails({
+        estimatedTokens,
+        untruncatedEstimatedTokens,
+        contextLength,
+        routingReason,
+      }),
       ...rejectedProfileDetails(routing),
       ...routeBiggerDetails({ routeBiggerProfile, canRouteBigger }),
     ],
@@ -170,9 +184,7 @@ export function buildContextOverflowRecoveryIssue(opts: ContextOverflowRecoveryO
 
 function dependencyDetail(blockedByTaskIds: TaskId[], blockedByTasks: Task[]): string {
   if (blockedByTasks.length > 0) {
-    const formatted = blockedByTasks
-      .map(task => `${task.id} (${task.status})`)
-      .join(', ');
+    const formatted = blockedByTasks.map((task) => `${task.id} (${task.status})`).join(', ');
     return `Blocked dependencies: ${formatted}`;
   }
   if (blockedByTaskIds.length > 0) {
@@ -181,14 +193,16 @@ function dependencyDetail(blockedByTaskIds: TaskId[], blockedByTasks: Task[]): s
   return 'Blocked dependency was not identified.';
 }
 
-export function buildDependencyBlockedRecoveryIssue(opts: DependencyBlockedRecoveryOptions): RecoveryIssue {
+export function buildDependencyBlockedRecoveryIssue(
+  opts: DependencyBlockedRecoveryOptions,
+): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
-  const blockedByTaskIds = uniqueIds([
+  const blockedByTaskIds = uniqueSortedIds([
     ...(opts.blockedByTaskIds ?? []),
-    ...(opts.blockedByTasks ?? []).map(task => task.id),
+    ...(opts.blockedByTasks ?? []).map((task) => task.id),
   ]);
-  const affectedTaskIds = uniqueIds([opts.task.id, ...blockedByTaskIds]);
-  const blockedFiles = (opts.blockedByTasks ?? []).map(task => task.file);
+  const affectedTaskIds = uniqueSortedIds([opts.task.id, ...blockedByTaskIds]);
+  const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.file);
   const actions = orderedActions([
     'planner-split-rebase',
     'skip-current-task',
@@ -204,9 +218,7 @@ export function buildDependencyBlockedRecoveryIssue(opts: DependencyBlockedRecov
     files: uniqueSorted([opts.task.file, ...blockedFiles], { trim: true, nonEmpty: true }),
     affectedTaskIds,
     message: `${opts.task.id} is blocked by dependency status`,
-    details: [
-      dependencyDetail(blockedByTaskIds, opts.blockedByTasks ?? []),
-    ],
+    details: [dependencyDetail(blockedByTaskIds, opts.blockedByTasks ?? [])],
     facts: compactFacts({
       blockedByTaskIds: blockedByTaskIds.join(', '),
     }),

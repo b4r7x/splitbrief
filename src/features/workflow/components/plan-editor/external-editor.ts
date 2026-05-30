@@ -6,6 +6,7 @@ import { formatTasks } from '../../../../engine/spec/formatter.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import type { Task } from '../../../../core/schemas/task.js';
+import { resolveEditorCommand } from '../../editor-command.js';
 import { renumberTasks, parseSplitResult } from './actions.js';
 
 const SPLIT_INSTRUCTION = '# Edit the task below. Use --- to split into multiple tasks.';
@@ -13,17 +14,20 @@ const SPLIT_INSTRUCTION = '# Edit the task below. Use --- to split into multiple
 function removeTempFile(tmpPath: string): void {
   try {
     rmSync(tmpPath, { force: true });
-  } catch {
-  }
+  } catch {}
 }
 
-export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDirPath: string): void {
-  const editor = process.env.EDITOR ?? 'vi';
+export function openExternalEditor(
+  task: Task,
+  mode: 'edit' | 'split',
+  sessionDirPath: string,
+): void {
+  const editor = resolveEditorCommand();
   const prefix = mode === 'split' ? 'split' : 'edit';
   const tmpPath = join(sessionDirPath, `${prefix}-${task.id}.md`);
 
   const { tasks } = planEditorStore.get();
-  const cursor = tasks.findIndex(t => t.id === task.id);
+  const cursor = tasks.findIndex((t) => t.id === task.id);
 
   let content: string;
   if (mode === 'split') {
@@ -53,7 +57,9 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
   }
 
   if (result.error) {
-    planEditorStore.setSaveError(`Failed to open editor: ${result.error.message || 'Set $EDITOR.'}`);
+    planEditorStore.setSaveError(
+      `Failed to open editor: ${result.error.message || 'Set $EDITOR.'}`,
+    );
     removeTempFile(tmpPath);
     return;
   }
@@ -84,12 +90,16 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
       return;
     }
     if (parsed.length !== 1) {
-      planEditorStore.setSaveError('Edit mode expects exactly 1 task. Use split mode (s) for multiple tasks.');
+      planEditorStore.setSaveError(
+        'Edit mode expects exactly 1 task. Use split mode (s) for multiple tasks.',
+      );
       return;
     }
     if (cursor < 0) return;
+    const first = parsed[0];
+    if (!first) return;
     const updated = [...tasks];
-    updated[cursor] = { ...parsed[0]!, status: 'pending' as const };
+    updated[cursor] = { ...first, status: 'pending' as const };
     const renumbered = renumberTasks(updated);
     planEditorStore.setTasks(renumbered);
   } else {

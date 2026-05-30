@@ -6,7 +6,9 @@ import { extractQuestionsFromStream } from '../parsers/question-parser.js';
 import { createCommandAvailability } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 
-export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined): PlannerCapabilities {
+export function resolveCapabilities(
+  override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined,
+): PlannerCapabilities {
   return {
     supportsConversationalPlanning: override?.supportsConversationalPlanning ?? false,
     supportsHintEscalation: override?.supportsHintEscalation ?? false,
@@ -37,18 +39,16 @@ export function createCommandBasedPlanner(
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
     signal?: AbortSignal | undefined;
   }): Promise<InvokeResult> => {
-    const result = await invokeCommandBasedRunner(
-      {
-        command: config.command,
-        args: config.args ?? [],
-        outputFormat: config.outputFormat ?? 'text',
-        notFoundMessage,
-      },
+    const result = await invokeCommandBasedRunner({
+      command: config.command,
+      args: config.args ?? [],
+      outputFormat: config.outputFormat ?? 'text',
+      notFoundMessage,
       prompt,
       projectDir,
-      callbacks.onOutput,
+      onOutput: callbacks.onOutput,
       signal,
-    );
+    });
 
     if (callbacks.onQuestion) {
       const questions = extractQuestionsFromStream(result.stdout);

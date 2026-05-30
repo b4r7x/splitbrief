@@ -18,8 +18,10 @@ describe('addUsage — escalation cache token routing', () => {
   it('routes escalation cache tokens into plannerCacheRead / plannerCacheCreate (escalator runs on planner)', () => {
     const state = baseState();
     const next = addUsage(state, 'escalation', {
-      inputTokens: 10, outputTokens: 5,
-      cacheReadTokens: 200, cacheCreateTokens: 50,
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 200,
+      cacheCreateTokens: 50,
     });
     expect(next.tokenUsage.plannerCacheRead).toBe(200);
     expect(next.tokenUsage.plannerCacheCreate).toBe(50);
@@ -30,12 +32,16 @@ describe('addUsage — escalation cache token routing', () => {
   it('accumulates escalation cache tokens on top of existing planner cache totals', () => {
     let state = baseState();
     state = addUsage(state, 'planner', {
-      inputTokens: 0, outputTokens: 0,
-      cacheReadTokens: 1000, cacheCreateTokens: 200,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 1000,
+      cacheCreateTokens: 200,
     });
     state = addUsage(state, 'escalation', {
-      inputTokens: 0, outputTokens: 0,
-      cacheReadTokens: 500, cacheCreateTokens: 100,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 500,
+      cacheCreateTokens: 100,
     });
     expect(state.tokenUsage.plannerCacheRead).toBe(1500);
     expect(state.tokenUsage.plannerCacheCreate).toBe(300);
@@ -43,8 +49,18 @@ describe('addUsage — escalation cache token routing', () => {
 
   it('planner and implementer cache routing is unchanged', () => {
     let state = baseState();
-    state = addUsage(state, 'planner', { inputTokens: 0, outputTokens: 0, cacheReadTokens: 10, cacheCreateTokens: 5 });
-    state = addUsage(state, 'implementer', { inputTokens: 0, outputTokens: 0, cacheReadTokens: 20, cacheCreateTokens: 7 });
+    state = addUsage(state, 'planner', {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 10,
+      cacheCreateTokens: 5,
+    });
+    state = addUsage(state, 'implementer', {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 20,
+      cacheCreateTokens: 7,
+    });
     expect(state.tokenUsage.plannerCacheRead).toBe(10);
     expect(state.tokenUsage.plannerCacheCreate).toBe(5);
     expect(state.tokenUsage.implementerCacheRead).toBe(20);

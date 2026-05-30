@@ -8,7 +8,7 @@ describe('streamingOutputStore', () => {
   it('streams output for the active task until the stream is stopped', () => {
     const id = taskId('T001');
     streamingOutputStore.startStreaming(id);
-    streamingOutputStore.pushLines(['hello', 'world']);
+    streamingOutputStore.replaceLines(['hello', 'world']);
 
     expect(streamingOutputStore.get()).toEqual({
       active: true,
@@ -17,7 +17,7 @@ describe('streamingOutputStore', () => {
     });
 
     streamingOutputStore.stopStreaming();
-    streamingOutputStore.pushLines(['ignored after stop']);
+    streamingOutputStore.replaceLines(['ignored after stop']);
 
     expect(streamingOutputStore.get()).toEqual({
       active: false,
@@ -27,7 +27,7 @@ describe('streamingOutputStore', () => {
   });
 
   it('ignores output outside an active stream and can return to an idle state', () => {
-    streamingOutputStore.pushLines(['ignored before start']);
+    streamingOutputStore.replaceLines(['ignored before start']);
     streamingOutputStore.stopStreaming();
 
     expect(streamingOutputStore.get()).toEqual({
@@ -37,7 +37,7 @@ describe('streamingOutputStore', () => {
     });
 
     streamingOutputStore.startStreaming(taskId('T001'));
-    streamingOutputStore.pushLines(['visible']);
+    streamingOutputStore.replaceLines(['visible']);
     streamingOutputStore.reset();
 
     expect(streamingOutputStore.get()).toEqual({

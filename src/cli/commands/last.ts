@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { assertNotWindows } from '../platform.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { buildAliasedSessions } from '../session-aliases.js';
 import { continueCommand } from './continue.js';
 import { addWorkflowOptions } from '../options.js';
@@ -38,7 +38,9 @@ export function registerLastCommand(program: Command): void {
   addWorkflowOptions(
     program
       .command('last')
-      .description('Continue the most recent session (attaches if running, resumes if interrupted)'),
+      .description(
+        'Continue the most recent session (attaches if running, resumes if interrupted)',
+      ),
   ).action(async (opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
     await lastCommand({ ...opts, projectDir });

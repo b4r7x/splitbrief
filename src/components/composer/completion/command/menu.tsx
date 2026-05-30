@@ -10,7 +10,12 @@ interface CommandCompletionMenuProps {
   maxVisible: number;
 }
 
-export function CommandCompletionMenu({ filtered, selectedIndex, fuzzyMatch, maxVisible }: CommandCompletionMenuProps) {
+export function CommandCompletionMenu({
+  filtered,
+  selectedIndex,
+  fuzzyMatch,
+  maxVisible,
+}: CommandCompletionMenuProps) {
   const t = useTheme();
   return (
     <CompletionPanel
@@ -19,12 +24,10 @@ export function CommandCompletionMenu({ filtered, selectedIndex, fuzzyMatch, max
       maxVisible={maxVisible}
       footer="↑↓ select  Tab fill  Enter run  Esc close"
       isOpen={filtered.length > 0 || fuzzyMatch !== null}
-      itemKey={cmd => cmd.name}
+      itemKey={(cmd) => cmd.name}
       renderRow={({ item: cmd, isSelected, rowBg }) => (
         <>
-          <Text color={isSelected ? t.accent : t.textDim}>
-            {isSelected ? '▸' : ' '}
-          </Text>
+          <Text color={isSelected ? t.accent : t.textDim}>{isSelected ? '▸' : ' '}</Text>
           <Text> </Text>
           <Box width={14} backgroundColor={rowBg}>
             <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
@@ -33,7 +36,8 @@ export function CommandCompletionMenu({ filtered, selectedIndex, fuzzyMatch, max
           </Box>
           <Box flexGrow={1} flexShrink={1} backgroundColor={rowBg}>
             <Text color={isSelected ? t.text : t.textDim} wrap="truncate-end">
-              {cmd.description}{cmd.shortcut ? ` [${cmd.shortcut}]` : ''}
+              {cmd.description}
+              {cmd.shortcut ? ` [${cmd.shortcut}]` : ''}
             </Text>
           </Box>
         </>
@@ -45,10 +49,14 @@ export function CommandCompletionMenu({ filtered, selectedIndex, fuzzyMatch, max
             <Text color={t.textDim}>{'▸'}</Text>
             <Text> </Text>
             <Box width={14} backgroundColor={panelBg}>
-              <Text color={t.textDim} wrap="truncate-end">{fuzzyMatch.name}</Text>
+              <Text color={t.textDim} wrap="truncate-end">
+                {fuzzyMatch.name}
+              </Text>
             </Box>
             <Box flexGrow={1} flexShrink={1} backgroundColor={panelBg}>
-              <Text color={t.textDim} wrap="truncate-end">{fuzzyMatch.description} (fuzzy)</Text>
+              <Text color={t.textDim} wrap="truncate-end">
+                {fuzzyMatch.description} (fuzzy)
+              </Text>
             </Box>
           </Box>
         );

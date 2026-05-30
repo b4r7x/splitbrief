@@ -17,7 +17,11 @@ import { readIpcServerArgsFile, SERVER_ARGS_FILE, type IpcServerArgs } from './s
 
 const ipcServerEntryError = {
   promptResponseKindMismatch: (expected: string, actual: string) =>
-    error('ipc-prompt-response-kind-mismatch', `IPC prompt response kind mismatch: expected ${expected}, got ${actual}`, { expected, actual }),
+    error(
+      'ipc-prompt-response-kind-mismatch',
+      `IPC prompt response kind mismatch: expected ${expected}, got ${actual}`,
+      { expected, actual },
+    ),
 } as const;
 
 function assertPromptResponse<T extends IpcPromptResponse['kind']>(

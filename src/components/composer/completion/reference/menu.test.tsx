@@ -18,8 +18,8 @@ const LONG_FILES = [
 function panelInteriorRows(frame: string): string[] {
   return frame
     .split('\n')
-    .filter(line => line.includes('│'))
-    .map(line => line.slice(line.indexOf('│') + 1, line.lastIndexOf('│')));
+    .filter((line) => line.includes('│'))
+    .map((line) => line.slice(line.indexOf('│') + 1, line.lastIndexOf('│')));
 }
 
 describe('ReferenceCompletionMenu', () => {
@@ -34,8 +34,9 @@ describe('ReferenceCompletionMenu', () => {
 
     expect(frame).toContain('Tab/Enter fill');
     expect(frame).toContain('↓ more');
-    const visiblePathRows = panelInteriorRows(frame)
-      .filter(line => line.includes('docs/') || line.includes('src/'));
+    const visiblePathRows = panelInteriorRows(frame).filter(
+      (line) => line.includes('docs/') || line.includes('src/'),
+    );
     expect(visiblePathRows).toHaveLength(8);
     expect(visiblePathRows[0]).toContain('docs/superpowers');
     ui.unmount();
@@ -50,12 +51,18 @@ describe('ReferenceCompletionMenu', () => {
           ))}
         </Box>
         <Box position="absolute" marginTop={1} width={80}>
-          <ReferenceCompletionMenu filtered={LONG_FILES.slice(0, 3)} selectedIndex={0} maxVisible={3} />
+          <ReferenceCompletionMenu
+            filtered={LONG_FILES.slice(0, 3)}
+            selectedIndex={0}
+            maxVisible={3}
+          />
         </Box>
       </Box>,
     );
 
-    for (const row of panelInteriorRows(ui.lastFrame() ?? '')) {
+    const rows = panelInteriorRows(ui.lastFrame() ?? '');
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    for (const row of rows) {
       expect(row).not.toContain('UNDERLYING');
     }
     ui.unmount();

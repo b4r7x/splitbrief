@@ -14,14 +14,26 @@ export interface AtFileResult {
 
 export interface AtFileError {
   path: string;
-  reason: 'not-found' | 'not-a-file' | 'too-large' | 'unreadable' | 'outside-safe-roots' | 'outside-project';
+  reason:
+    | 'not-found'
+    | 'not-a-file'
+    | 'too-large'
+    | 'unreadable'
+    | 'outside-safe-roots'
+    | 'outside-project';
 }
 
-export function parseAtFiles(
-  feature: string,
-  args: string[],
-  projectDir: string,
-): AtFileResult {
+function confineOrPushError(check: () => void, raw: string, errors: AtFileError[]): boolean {
+  try {
+    check();
+    return true;
+  } catch {
+    errors.push({ path: raw, reason: 'outside-project' });
+    return false;
+  }
+}
+
+export function parseAtFiles(feature: string, args: string[], projectDir: string): AtFileResult {
   const atPaths: string[] = [];
   const extraWords: string[] = [];
 
@@ -33,44 +45,35 @@ export function parseAtFiles(
     }
   }
 
-  const finalFeature = extraWords.length > 0
-    ? `${feature} ${extraWords.join(' ')}`
-    : feature;
+  const finalFeature = extraWords.length > 0 ? `${feature} ${extraWords.join(' ')}` : feature;
 
   const textSegments: string[] = [];
   const attachments: Attachment[] = [];
   const errors: AtFileError[] = [];
 
   for (const raw of atPaths) {
+    const isRel = !isAbsolute(raw);
     const absPath = resolve(projectDir, raw);
-    const relForCheck = isAbsolute(raw) ? relative(resolve(projectDir), absPath) : raw;
+    const relForCheck = isRel ? raw : relative(resolve(projectDir), absPath);
 
-    if (!isAbsolute(raw)) {
-      try {
-        assertPathConfined(raw, projectDir);
-      } catch {
-        errors.push({ path: raw, reason: 'outside-project' });
-        continue;
-      }
-    }
+    if (isRel && !confineOrPushError(() => assertPathConfined(raw, projectDir), raw, errors))
+      continue;
 
     const imageResult = resolveAttachment({ input: absPath, projectDir });
     if (imageResult.ok) {
-      if (!isAbsolute(raw)) {
-        try {
-          assertExistingPathConfined(raw, projectDir);
-        } catch {
-          errors.push({ path: raw, reason: 'outside-project' });
-          continue;
-        }
-      }
+      if (
+        isRel &&
+        !confineOrPushError(() => assertExistingPathConfined(raw, projectDir), raw, errors)
+      )
+        continue;
       attachments.push(imageResult.attachment);
       continue;
     }
     if (imageResult.reason !== 'not-image') {
-      const reason = imageResult.reason === 'outside-safe-roots' && !isAbsolute(raw)
-        ? 'outside-project'
-        : imageResult.reason;
+      const reason =
+        imageResult.reason === 'outside-safe-roots' && isRel
+          ? 'outside-project'
+          : imageResult.reason;
       errors.push({ path: raw, reason });
       continue;
     }
@@ -88,12 +91,8 @@ export function parseAtFiles(
       continue;
     }
 
-    try {
-      assertExistingPathConfined(relForCheck, projectDir);
-    } catch {
-      errors.push({ path: raw, reason: 'outside-project' });
+    if (!confineOrPushError(() => assertExistingPathConfined(relForCheck, projectDir), raw, errors))
       continue;
-    }
 
     if (stat.size > MAX_ATTACHMENT_BYTES) {
       errors.push({ path: raw, reason: 'too-large' });

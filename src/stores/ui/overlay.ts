@@ -14,24 +14,23 @@ const store = createStore<OverlayState>(initial);
 
 export const overlayStore = {
   ...storeBase(store),
-  open: (type: OverlayType, focus?: string) => store.set(s => {
-    if (s.active === type && s.focus === focus && !s.exclusive) return s;
-    const stack = s.active !== 'none'
-      ? [...s.stack, { type: s.active, focus: s.focus }]
-      : s.stack;
-    return { active: type, focus, exclusive: false, stack };
-  }),
-  close: () => store.set(s => {
-    const prev = s.stack[s.stack.length - 1];
-    if (!prev) return initial;
-    return {
-      active: prev.type,
-      focus: prev.focus,
-      exclusive: false,
-      stack: s.stack.slice(0, -1),
-    };
-  }),
-  setExclusive: (v: boolean) => store.set(s =>
-    s.exclusive === v ? s : { ...s, exclusive: v }
-  ),
+  open: (type: OverlayType, focus?: string) =>
+    store.set((s) => {
+      if (s.active === type && s.focus === focus && !s.exclusive) return s;
+      const stack =
+        s.active !== 'none' ? [...s.stack, { type: s.active, focus: s.focus }] : s.stack;
+      return { active: type, focus, exclusive: false, stack };
+    }),
+  close: () =>
+    store.set((s) => {
+      const prev = s.stack[s.stack.length - 1];
+      if (!prev) return initial;
+      return {
+        active: prev.type,
+        focus: prev.focus,
+        exclusive: false,
+        stack: s.stack.slice(0, -1),
+      };
+    }),
+  setExclusive: (v: boolean) => store.set((s) => (s.exclusive === v ? s : { ...s, exclusive: v })),
 };

@@ -50,9 +50,7 @@ export function RecentSessions({ limit, featureColWidth }: RecentSessionsProps) 
           {...(featureColWidth !== undefined ? { featureColWidth } : {})}
         />
       ))}
-      {hiddenCount > 0 && (
-        <Text color={theme.textDim}>  +{hiddenCount} more</Text>
-      )}
+      {hiddenCount > 0 && <Text color={theme.textDim}> +{hiddenCount} more</Text>}
     </Box>
   );
 }

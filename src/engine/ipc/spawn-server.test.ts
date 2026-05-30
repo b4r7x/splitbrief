@@ -8,7 +8,11 @@ import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 import { writeLockfile } from './lockfile.js';
 import { waitForServerReady } from './spawn-server.js';
-import { parseIpcServerArgs, readIpcServerArgsFile, writeIpcServerArgsFile } from './server-args.js';
+import {
+  parseIpcServerArgs,
+  readIpcServerArgsFile,
+  writeIpcServerArgsFile,
+} from './server-args.js';
 
 let testDir: string;
 let socketServer: Server | null = null;
@@ -23,19 +27,27 @@ async function listenOnSocket(sockPath: string): Promise<void> {
 
 function closeSocketServer(): Promise<void> {
   return new Promise((resolve) => {
-    if (!socketServer) { resolve(); return; }
+    if (!socketServer) {
+      resolve();
+      return;
+    }
     socketServer.close(() => resolve());
     socketServer = null;
   });
 }
 
 function currentProcessStartTimeMs(): number {
-  const raw = execSync(`ps -o lstart= -p ${process.pid}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const raw = execSync(`ps -o lstart= -p ${process.pid}`, {
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
   const parsed = Date.parse(raw);
   return Number.isNaN(parsed) ? Date.now() : parsed;
 }
 
-async function writeServerLockfile(overrides?: Partial<Parameters<typeof writeLockfile>[1]>): Promise<void> {
+async function writeServerLockfile(
+  overrides?: Partial<Parameters<typeof writeLockfile>[1]>,
+): Promise<void> {
   const now = Date.now();
   await writeLockfile(testDir, {
     pid: process.pid,
@@ -132,7 +144,7 @@ describe('server args launch contract', () => {
     expect(parsed).toBeNull();
   });
 
-  it('rejects server args with unknown nested override keys', () => {
+  it('strips unknown nested override keys and keeps known fields', () => {
     const parsed = parseIpcServerArgs({
       sessionId: 'test-session',
       projectDir: '/repo',
@@ -142,6 +154,20 @@ describe('server args launch contract', () => {
       overrides: { planner: { tool: 'codex', extra: true } },
     });
 
-    expect(parsed).toBeNull();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.overrides).toEqual({ planner: { tool: 'codex' } });
+  });
+
+  it('normalizes the legacy full mode to speckit', () => {
+    const parsed = parseIpcServerArgs({
+      sessionId: 'test-session',
+      projectDir: '/repo',
+      feature: 'feature',
+      mode: 'full',
+      configPath: '/repo/.diptych/config.yaml',
+      overrides: {},
+    });
+
+    expect(parsed?.mode).toBe('speckit');
   });
 });

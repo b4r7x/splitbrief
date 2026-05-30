@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isRecord } from '../utils/type-guards.js';
 
 export function readPackageJson(
   projectDir: string,
@@ -9,9 +10,7 @@ export function readPackageJson(
   if (!existsSync(pkgPath)) return null;
   try {
     const parsed: unknown = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
+    return isRecord(parsed) ? parsed : null;
   } catch (err) {
     if (opts.throwOnInvalid) throw err;
     return null;
@@ -26,8 +25,8 @@ export function detectProjectLanguage(projectDir: string): string | undefined {
   const pkg = readPackageJson(projectDir);
   if (!pkg) return undefined;
   const deps = {
-    ...(pkg['dependencies'] && typeof pkg['dependencies'] === 'object' && !Array.isArray(pkg['dependencies']) ? pkg['dependencies'] : {}),
-    ...(pkg['devDependencies'] && typeof pkg['devDependencies'] === 'object' && !Array.isArray(pkg['devDependencies']) ? pkg['devDependencies'] : {}),
+    ...(isRecord(pkg['dependencies']) ? pkg['dependencies'] : {}),
+    ...(isRecord(pkg['devDependencies']) ? pkg['devDependencies'] : {}),
   };
   return 'typescript' in deps ? 'typescript' : 'javascript';
 }

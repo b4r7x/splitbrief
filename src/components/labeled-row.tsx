@@ -8,11 +8,7 @@ export interface LabeledRowProps {
   children: ReactNode;
 }
 
-export function LabeledRow({
-  label,
-  labelWidth = 14,
-  children,
-}: LabeledRowProps) {
+export function LabeledRow({ label, labelWidth = 14, children }: LabeledRowProps) {
   const t = useTheme();
   return (
     <Box>

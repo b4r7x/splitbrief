@@ -26,45 +26,47 @@ export interface ExitCodeErrorOptions {
 
 export const processError = {
   notFound: (command: string, message?: string) =>
-    error(
-      'command-not-found',
-      message ?? `Command not found: ${command}`,
-      { command, message },
-    ),
+    error('command-not-found', message ?? `Command not found: ${command}`, { command, message }),
 
   timeout: (opts: TimeoutErrorOptions) => {
     const subject = opts.label ?? opts.command;
     const seconds = Math.round(opts.timeoutMs / 1000);
-    return error(
-      'command-timeout',
-      `${subject} timed out after ${seconds}s`,
-      {
-        command: opts.command,
-        label: opts.label,
-        timeoutMs: opts.timeoutMs,
-        output: opts.output,
-      },
-    );
+    return error('command-timeout', `${subject} timed out after ${seconds}s`, {
+      command: opts.command,
+      label: opts.label,
+      timeoutMs: opts.timeoutMs,
+      output: opts.output,
+    });
   },
 
   exitCode: (opts: ExitCodeErrorOptions) => {
     const subject = opts.label ?? opts.command;
     const detail = opts.stderr?.trim();
     const message = `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`;
-    return error(
-      'process-output',
-      redactSecrets(message),
-      {
-        command: opts.command,
-        label: opts.label,
-        code: opts.code,
-        stderr: redactSecrets(opts.stderr ?? ''),
-        output: redactSecrets(opts.output ?? opts.stderr ?? ''),
-      },
-    );
+    return error('process-output', redactSecrets(message), {
+      command: opts.command,
+      label: opts.label,
+      code: opts.code,
+      stderr: redactSecrets(opts.stderr ?? ''),
+      output: redactSecrets(opts.output ?? opts.stderr ?? ''),
+    });
   },
 
   isNotFound: matches('command-not-found'),
   isTimeout: matches('command-timeout'),
-  isExitCode: matches('process-output'),
+  isExitCode: (err: unknown): err is ProcessOutputError =>
+    err instanceof Error && (err as { kind?: unknown }).kind === 'process-output',
 } as const;
+
+export interface ProcessOutputErrorData {
+  command: string;
+  label?: string | undefined;
+  code: number | null;
+  stderr: string;
+  output: string;
+}
+
+export type ProcessOutputError = Error & {
+  readonly kind: 'process-output';
+  readonly data: ProcessOutputErrorData;
+};

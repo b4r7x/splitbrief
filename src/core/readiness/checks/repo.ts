@@ -11,20 +11,24 @@ export interface RepoReadinessInput {
 
 export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   if (!repo.isGitRepo) {
-    return [{
-      id: 'repo.not-git',
-      severity: 'blocker',
-      summary: 'Project is not a git repository.',
-      fix: 'Run `git init` first or choose a project directory inside a git repository.',
-      nextAction: 'clean-or-isolate-repo',
-    }];
+    return [
+      {
+        id: 'repo.not-git',
+        severity: 'blocker',
+        summary: 'Project is not a git repository.',
+        fix: 'Run `git init` first or choose a project directory inside a git repository.',
+        nextAction: 'clean-or-isolate-repo',
+      },
+    ];
   }
 
-  const checks: ReadinessCheck[] = [{
-    id: 'repo.git',
-    severity: 'ok',
-    summary: 'Git repository detected.',
-  }];
+  const checks: ReadinessCheck[] = [
+    {
+      id: 'repo.git',
+      severity: 'ok',
+      summary: 'Git repository detected.',
+    },
+  ];
 
   if (repo.activeSession) {
     checks.push({

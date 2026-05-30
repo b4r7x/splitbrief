@@ -1,16 +1,17 @@
-import type { TaskContextFit, CurrentCodeContextMode } from '../../events/workflow-events.js';
 import type { EngineEvent } from '../../events/types.js';
+import type { RoutingDecision } from '../context-routing/types.js';
 
-export interface RoutingEventFields {
-  fit: TaskContextFit;
-  estimatedTokens: number;
-  untruncatedEstimatedTokens: number;
-  contextLength?: number | undefined;
-  currentCodeTruncated: boolean;
-  currentCodeContextMode: CurrentCodeContextMode;
-  costPosture: string;
-  reason: string;
-}
+export type RoutingEventFields = Pick<
+  RoutingDecision,
+  | 'fit'
+  | 'estimatedTokens'
+  | 'untruncatedEstimatedTokens'
+  | 'contextLength'
+  | 'currentCodeTruncated'
+  | 'currentCodeContextMode'
+  | 'costPosture'
+  | 'reason'
+>;
 
 type RoutingPayloadFields = Pick<
   Extract<EngineEvent, { type: 'task_started' | 'task_tokens' }>,
@@ -24,7 +25,9 @@ type RoutingPayloadFields = Pick<
   | 'routingReason'
 >;
 
-export function buildRoutingEventFields(decision: RoutingEventFields | undefined): Partial<RoutingPayloadFields> {
+export function buildRoutingEventFields(decision: RoutingEventFields | undefined): {
+  [K in keyof RoutingPayloadFields]?: Exclude<RoutingPayloadFields[K], undefined>;
+} {
   if (decision === undefined) return {};
   return {
     contextFit: decision.fit,

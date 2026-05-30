@@ -96,7 +96,16 @@ describe('readConversationScrollSnapshot', () => {
     const snapWithout = readConversationScrollSnapshot();
 
     eventsStore.__testReset({
-      events: [{ type: 'workflow_config', ts: 0, phase: 'idle' as const, mode: 'standard', plannerTool: 'claude-code', implementerTool: 'ollama' }],
+      events: [
+        {
+          type: 'workflow_config',
+          ts: 0,
+          phase: 'idle' as const,
+          mode: 'standard',
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+      ],
     });
 
     const snapWith = readConversationScrollSnapshot();
@@ -124,7 +133,9 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('recomputes prompt row budget when terminal width changes', () => {
-    const request = makeConfirmRequest('delete a generated artifact outside the active task scope after reviewing all safeguards');
+    const request = makeConfirmRequest(
+      'delete a generated artifact outside the active task scope after reviewing all safeguards',
+    );
     approvalPromptStore.__testReset({
       status: 'pending',
       request,

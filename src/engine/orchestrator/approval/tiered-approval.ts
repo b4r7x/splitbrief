@@ -35,7 +35,12 @@ export type GateDecision = {
   actionClass?: ActionClass;
   actionDescription?: string;
   confirmReason?: string;
-  confirmApprovals?: Array<{ tier: 'confirm'; actionClass: ActionClass; actionDescription: string; reason: string }>;
+  confirmApprovals?: Array<{
+    tier: 'confirm';
+    actionClass: ActionClass;
+    actionDescription: string;
+    reason: string;
+  }>;
 };
 
 export function isConfiguredHeadless(config: Config): boolean {
@@ -48,9 +53,13 @@ export function taskScopePatterns(task: Task): string[] {
 
 export function upsertApprovalGrant(projectDir: string, grant: ApprovalGrant): void {
   const store = readApprovalsStore(projectDir);
-  const alwaysExists = store.grants.some((g) => g.pattern === grant.pattern && g.class === grant.class && g.scope === 'always');
+  const alwaysExists = store.grants.some(
+    (g) => g.pattern === grant.pattern && g.class === grant.class && g.scope === 'always',
+  );
   if (alwaysExists && grant.scope === 'session') return;
-  const filtered = store.grants.filter((g) => !(g.pattern === grant.pattern && g.class === grant.class && g.scope === grant.scope));
+  const filtered = store.grants.filter(
+    (g) => !(g.pattern === grant.pattern && g.class === grant.class && g.scope === grant.scope),
+  );
   filtered.push(grant);
   writeApprovalsStore(projectDir, { version: 1, grants: filtered });
 }
@@ -68,7 +77,18 @@ function compactTierOverrides(rawTiers: ApprovalTierOverrides | undefined): Tier
 }
 
 export async function gateAction(input: GateActionInput): Promise<GateDecision> {
-  const { actionDescription, task, dependsOnFiles, projectDir, sessionId, phase, taskId, bus, callbacks, config } = input;
+  const {
+    actionDescription,
+    task,
+    dependsOnFiles,
+    projectDir,
+    sessionId,
+    phase,
+    taskId,
+    bus,
+    callbacks,
+    config,
+  } = input;
 
   if (config.approval?.enabled === false) {
     return { allow: true };
@@ -76,7 +96,14 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
 
   const tierOverrides = compactTierOverrides(config.approval?.tiers);
   const { actionClass, tier } = classifyAction(
-    { actionDescription, taskFile: task.file, taskInBounds: taskScopePatterns(task), dependsOnFiles, projectDir, allowedPaths: config.approval?.allowedPaths },
+    {
+      actionDescription,
+      taskFile: task.file,
+      taskInBounds: taskScopePatterns(task),
+      dependsOnFiles,
+      projectDir,
+      allowedPaths: config.approval?.allowedPaths,
+    },
     tierOverrides,
   );
 
@@ -84,60 +111,180 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     return { allow: true };
   }
 
-  const request: TieredApprovalRequest = { tier, actionClass, actionDescription, phase, ...(taskId !== undefined && { taskId }) };
+  const request: TieredApprovalRequest = {
+    tier,
+    actionClass,
+    actionDescription,
+    phase,
+    ...(taskId !== undefined && { taskId }),
+  };
 
   if (tier === 'sticky') {
     const grants = readApprovalsStore(projectDir).grants;
-    const classifyContext = { actionDescription, taskFile: task.file, taskInBounds: taskScopePatterns(task), dependsOnFiles, projectDir };
+    const classifyContext = {
+      actionDescription,
+      taskFile: task.file,
+      taskInBounds: taskScopePatterns(task),
+      dependsOnFiles,
+      projectDir,
+    };
     const grantPattern = extractActionPattern(classifyContext);
 
-    const alwaysGrant = grants.find((g) => g.class === actionClass && g.scope === 'always' && (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)));
+    const alwaysGrant = grants.find(
+      (g) =>
+        g.class === actionClass &&
+        g.scope === 'always' &&
+        (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
+    );
     if (alwaysGrant) {
-      bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: 'always' });
+      bus.publish({
+        type: 'approval_granted',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        scope: 'always',
+      });
       return { allow: true };
     }
 
-    const sessionGrant = grants.find((g) => g.class === actionClass && g.scope === 'session' && g.sessionId === sessionId && (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)));
+    const sessionGrant = grants.find(
+      (g) =>
+        g.class === actionClass &&
+        g.scope === 'session' &&
+        g.sessionId === sessionId &&
+        (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
+    );
     if (sessionGrant) {
-      bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: 'session' });
+      bus.publish({
+        type: 'approval_granted',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        scope: 'session',
+      });
       return { allow: true };
     }
 
-    bus.publish({ type: 'approval_prompted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }) });
+    bus.publish({
+      type: 'approval_prompted',
+      ts: Date.now(),
+      phase,
+      tier,
+      actionClass,
+      ...(taskId !== undefined && { taskId }),
+    });
 
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
-      bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'APPROVAL_REQUIRED' });
+      bus.publish({
+        type: 'approval_rejected',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        reason: 'APPROVAL_REQUIRED',
+      });
       return { allow: false, reason: 'APPROVAL_REQUIRED', tier, actionClass, actionDescription };
     }
 
     const response = await callbacks.onTieredApproval(request);
 
     if (response.decision === 'deny') {
-      bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: response.reason });
+      bus.publish({
+        type: 'approval_rejected',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        reason: response.reason,
+      });
       return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
     }
 
     if (response.decision === 'allow') {
       if (response.scope === 'session' || response.scope === 'always') {
-        const grant: ApprovalGrant = { pattern: grantPattern, class: actionClass, scope: response.scope, sessionId: response.scope === 'session' ? sessionId : undefined, grantedAt: new Date().toISOString() };
+        const grant: ApprovalGrant = {
+          pattern: grantPattern,
+          class: actionClass,
+          scope: response.scope,
+          sessionId: response.scope === 'session' ? sessionId : undefined,
+          grantedAt: new Date().toISOString(),
+        };
         upsertApprovalGrant(projectDir, grant);
-        bus.publish({ type: 'approval_sticky_recorded', ts: Date.now(), phase, pattern: grantPattern, scope: response.scope, actionClass });
-        bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: response.scope });
+        bus.publish({
+          type: 'approval_sticky_recorded',
+          ts: Date.now(),
+          phase,
+          pattern: grantPattern,
+          scope: response.scope,
+          actionClass,
+        });
+        bus.publish({
+          type: 'approval_granted',
+          ts: Date.now(),
+          phase,
+          tier,
+          actionClass,
+          ...(taskId !== undefined && { taskId }),
+          scope: response.scope,
+        });
         return { allow: true };
       }
-      bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: 'once' });
+      bus.publish({
+        type: 'approval_granted',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        scope: 'once',
+      });
       return { allow: true };
     }
 
-    bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'unexpected_confirm_on_sticky' });
-    return { allow: false, reason: 'unexpected_confirm_on_sticky', tier, actionClass, actionDescription };
+    bus.publish({
+      type: 'approval_rejected',
+      ts: Date.now(),
+      phase,
+      tier,
+      actionClass,
+      ...(taskId !== undefined && { taskId }),
+      reason: 'unexpected_confirm_on_sticky',
+    });
+    return {
+      allow: false,
+      reason: 'unexpected_confirm_on_sticky',
+      tier,
+      actionClass,
+      actionDescription,
+    };
   }
 
   if (tier === 'confirm') {
-    bus.publish({ type: 'approval_prompted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }) });
+    bus.publish({
+      type: 'approval_prompted',
+      ts: Date.now(),
+      phase,
+      tier,
+      actionClass,
+      ...(taskId !== undefined && { taskId }),
+    });
 
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
-      bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'APPROVAL_REQUIRED' });
+      bus.publish({
+        type: 'approval_rejected',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        reason: 'APPROVAL_REQUIRED',
+      });
       return { allow: false, reason: 'APPROVAL_REQUIRED', tier, actionClass, actionDescription };
     }
 
@@ -145,20 +292,72 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
 
     if (response.decision === 'confirm') {
       if (response.phrase !== 'I confirm' || !response.reason) {
-        bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'invalid_confirm_phrase' });
-        return { allow: false, reason: 'invalid_confirm_phrase', tier, actionClass, actionDescription };
+        bus.publish({
+          type: 'approval_rejected',
+          ts: Date.now(),
+          phase,
+          tier,
+          actionClass,
+          ...(taskId !== undefined && { taskId }),
+          reason: 'invalid_confirm_phrase',
+        });
+        return {
+          allow: false,
+          reason: 'invalid_confirm_phrase',
+          tier,
+          actionClass,
+          actionDescription,
+        };
       }
-      bus.publish({ type: 'approval_granted', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), scope: 'once', confirmReason: response.reason });
-      return { allow: true, tier, actionClass, actionDescription, confirmReason: response.reason, confirmApprovals: [{ tier, actionClass, actionDescription, reason: response.reason }] };
+      bus.publish({
+        type: 'approval_granted',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        scope: 'once',
+        confirmReason: response.reason,
+      });
+      return {
+        allow: true,
+        tier,
+        actionClass,
+        actionDescription,
+        confirmReason: response.reason,
+        confirmApprovals: [{ tier, actionClass, actionDescription, reason: response.reason }],
+      };
     }
 
     if (response.decision === 'deny') {
-      bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: response.reason });
+      bus.publish({
+        type: 'approval_rejected',
+        ts: Date.now(),
+        phase,
+        tier,
+        actionClass,
+        ...(taskId !== undefined && { taskId }),
+        reason: response.reason,
+      });
       return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
     }
 
-    bus.publish({ type: 'approval_rejected', ts: Date.now(), phase, tier, actionClass, ...(taskId !== undefined && { taskId }), reason: 'invalid_confirm_response' });
-    return { allow: false, reason: 'invalid_confirm_response', tier, actionClass, actionDescription };
+    bus.publish({
+      type: 'approval_rejected',
+      ts: Date.now(),
+      phase,
+      tier,
+      actionClass,
+      ...(taskId !== undefined && { taskId }),
+      reason: 'invalid_confirm_response',
+    });
+    return {
+      allow: false,
+      reason: 'invalid_confirm_response',
+      tier,
+      actionClass,
+      actionDescription,
+    };
   }
 
   tier satisfies never;

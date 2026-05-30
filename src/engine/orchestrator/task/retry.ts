@@ -23,9 +23,10 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 
 function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): string | undefined {
   if (!decision?.selectedProfile) return undefined;
-  const candidate = decision.rejected.find(profile =>
-    profile.fit !== 'overflow'
-    && (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct')
+  const candidate = decision.rejected.find(
+    (profile) =>
+      profile.fit !== 'overflow' &&
+      (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct'),
   );
   return candidate?.profile;
 }
@@ -44,14 +45,20 @@ export type RetryAndRecordOptions = {
   setTrackedState: (s: WorkflowState) => void;
 };
 
-export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+export async function retryAndRecord(
+  opts: RetryAndRecordOptions,
+): Promise<{ state: WorkflowState; completed: boolean }> {
+  const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } =
+    opts;
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
       taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
     } catch (err) {
-      publishError({ bus: wctx.bus, phase: opts.state.phase }, `Retry blocked by approval gate: ${toErrorMessage(err)}`);
+      publishError(
+        { bus: wctx.bus, phase: opts.state.phase },
+        `Retry blocked by approval gate: ${toErrorMessage(err)}`,
+      );
       return { state: opts.state, completed: false };
     }
   }
@@ -60,7 +67,11 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
   const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
   try {
     ({ state, result } = await handleRetryAndEscalation({
-      wctx, task, initialError, currentState: opts.state, taskStartTime,
+      wctx,
+      task,
+      initialError,
+      currentState: opts.state,
+      taskStartTime,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       profileOverride: retryProfileOverride,
@@ -86,7 +97,10 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
       routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
       createdAt: nowIso(),
     });
-    const nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, recoveryBaseState, { type: 'SET_PENDING_RECOVERY', issue });
+    const nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, recoveryBaseState, {
+      type: 'SET_PENDING_RECOVERY',
+      issue,
+    });
     publishRecoveryPrompted(wctx.bus, issue);
     setTrackedState(nextState);
     return { state: nextState, completed: false };
@@ -111,7 +125,10 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         createdAt: nowIso(),
       });
-      nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, nextState, { type: 'SET_PENDING_RECOVERY', issue });
+      nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, nextState, {
+        type: 'SET_PENDING_RECOVERY',
+        issue,
+      });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(nextState);
     }
@@ -133,16 +150,22 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
   });
   const escalated = result.method !== 'local';
   const status: TaskStatus = escalated ? 'escalated' : 'done';
-  persistTaskEvidence(wctx, nextState, task, 'retry', {
-    status,
-    method: result.method,
-    retries: result.attempts,
-    durationMs: Date.now() - taskStartTime,
-    escalated,
-    initialValidation: opts.initialValidation,
-    initialChangedFiles: opts.initialChangedFiles,
-    validation: result.validationResults,
-    changedFiles: result.changedFiles,
+  persistTaskEvidence({
+    wctx,
+    state: nextState,
+    task,
+    recordKind: 'retry',
+    details: {
+      status,
+      method: result.method,
+      retries: result.attempts,
+      durationMs: Date.now() - taskStartTime,
+      escalated,
+      initialValidation: opts.initialValidation,
+      initialChangedFiles: opts.initialChangedFiles,
+      validation: result.validationResults,
+      changedFiles: result.changedFiles,
+    },
   });
   return { state: nextState, completed: true };
 }

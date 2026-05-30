@@ -2,10 +2,15 @@ import type { LanguageContext } from './language-context.js';
 import { buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
 
-export function buildSpecPrompt(feature: string, researchOutput: string, languageContext?: LanguageContext): string {
+export function buildSpecPrompt(
+  feature: string,
+  researchOutput: string,
+  languageContext?: LanguageContext,
+): string {
   return buildPrompt({
     title: 'Write Feature Specification',
-    intro: 'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
+    intro:
+      'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
     sections: [
       { heading: 'Specification', body: feature },
       { heading: 'Research Findings', body: researchOutput },
@@ -40,6 +45,7 @@ Performance, security, compatibility, and other quality constraints relevant to 
 ### Out of Scope
 Explicitly list what this feature does NOT include to prevent scope creep.`),
     ],
-    output: 'Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.',
+    output:
+      'Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.',
   });
 }

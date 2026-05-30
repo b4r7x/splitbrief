@@ -15,24 +15,33 @@ import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
-import {
-  readEvidenceLedger,
-  writeEvidenceLedger,
-} from './evidence/persistence.js';
-import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writeDriftReport } from './drift/drift.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger.js';
+import { analyzeBriefDrift } from './drift/drift.js';
+import { writeDriftReport } from './drift/io.js';
+import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
 
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
 import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
-import { createSnapshot } from '../snapshots/store.js';
+import { createSnapshot } from '../snapshots/create.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
 
 export async function runFinalReviewPhase(
-  opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null; signal?: AbortSignal | undefined },
+  opts: {
+    projectDir: string;
+    sessionId: string;
+    config: Config;
+    callbacks: OrchestratorCallbacks;
+    bus: EventBus;
+    state: WorkflowState;
+    planner: Planner;
+    metadata?: SpecMetadata | null;
+    signal?: AbortSignal | undefined;
+  },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
@@ -54,15 +63,29 @@ export async function runFinalReviewPhase(
       });
       await recordRunSnapshot(projectDir, sessionId, result.manifest, 'pre-final-review');
     } catch (err) {
-      publishWarningFromError({ bus: bus, phase: state.phase }, 'auto-snapshot (pre-final-review) failed', err);
+      publishWarningFromError(
+        { bus: bus, phase: state.phase },
+        'auto-snapshot (pre-final-review) failed',
+        err,
+      );
     }
   }
 
   const finalReviewStart = Date.now();
   const interruptedSummary = (): Summary => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
-    publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart, summary: 'Final review aborted' });
-    return buildSummary({ ...summaryBase, projectDir, sessionId, state, taskBreakdowns, ...(phaseTimings && { phaseTimings }) });
+    publishPlannerStatus(bus, state, 'done', {
+      duration: Date.now() - finalReviewStart,
+      summary: 'Final review aborted',
+    });
+    return buildSummary({
+      ...summaryBase,
+      projectDir,
+      sessionId,
+      state,
+      taskBreakdowns,
+      ...(phaseTimings && { phaseTimings }),
+    });
   };
   if (opts.signal?.aborted) return interruptedSummary();
   publishPlannerStatus(bus, state, 'running');
@@ -75,7 +98,9 @@ export async function runFinalReviewPhase(
     let diff = await getCurrentDiff(projectDir);
     if (diff.length > MAX_DIFF_CHARS) {
       const omitted = diff.length - MAX_DIFF_CHARS;
-      diff = diff.slice(0, MAX_DIFF_CHARS) + `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
+      diff =
+        diff.slice(0, MAX_DIFF_CHARS) +
+        `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
     }
     const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
 
@@ -83,7 +108,13 @@ export async function runFinalReviewPhase(
     try {
       const changedFiles = await getCurrentChangedFiles(projectDir);
       const ledger = readEvidenceLedger(projectDir, sessionId);
-      const driftReport = analyzeBriefDrift({ tasks: state.tasks, changedFiles, diff, ledger, briefHash: hashTaskBrief(state.tasks) });
+      const driftReport = analyzeBriefDrift({
+        tasks: state.tasks,
+        changedFiles,
+        diff,
+        ledger,
+        briefHash: hashTaskBrief(state.tasks),
+      });
       writeDriftReport(projectDir, sessionId, driftReport);
       publishDriftReport(bus, state.phase, driftReport);
       driftPromptSection = formatDriftReportForPrompt(driftReport);
@@ -113,7 +144,11 @@ export async function runFinalReviewPhase(
   try {
     const ledger = readEvidenceLedger(projectDir, sessionId);
     if (ledger) {
-      writeEvidenceLedger(projectDir, sessionId, recordFinalReviewEvidence({ ledger, status: reviewStatus }));
+      writeEvidenceLedger(
+        projectDir,
+        sessionId,
+        recordFinalReviewEvidence({ ledger, status: reviewStatus }),
+      );
     }
   } catch (err) {
     warnError('Failed to record final review evidence', err);
@@ -142,7 +177,11 @@ export async function runFinalReviewPhase(
       finalReviewStatus: reviewStatus,
     });
   } catch (err) {
-    publishWarningFromError({ bus: bus, phase: state.phase }, 'Review packet generation failed', err);
+    publishWarningFromError(
+      { bus: bus, phase: state.phase },
+      'Review packet generation failed',
+      err,
+    );
   }
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
@@ -160,14 +199,20 @@ export async function shutdownWorkflow(
   killAllProcesses();
   const trackedState = getTrackedState();
   if (trackedState) {
-    try { saveState(projectDir, sessionId, trackedState); } catch (err) {
+    try {
+      saveState(projectDir, sessionId, trackedState);
+    } catch (err) {
       warnError('Failed to save state during shutdown', err);
     }
   }
   const currentTask = getCurrentTask();
   if (currentTask) {
     try {
-      await discardFileChange(projectDir, currentTask.file, currentTask.action === 'modify' ? 'tracked' : 'untracked');
+      await discardFileChange(
+        projectDir,
+        currentTask.file,
+        currentTask.action === 'modify' ? 'tracked' : 'untracked',
+      );
     } catch (err) {
       warnError('Failed to discard changes during shutdown', err);
     }

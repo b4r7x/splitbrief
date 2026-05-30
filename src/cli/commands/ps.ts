@@ -1,11 +1,11 @@
-import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { assertNotWindows } from '../platform.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
-import { assignSessionAliases } from '../session-aliases.js';
+import { assignSessionAliases, listSessionDirs } from '../session-aliases.js';
+import { renderTable } from '../render-table.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type PsDeps = {
@@ -88,10 +88,10 @@ function assignDisplayedAliases(rows: SessionRow[]): SessionRow[] {
   const aliases = assignSessionAliases(
     rows
       .filter((row): row is SessionRow & { lockfile: LockfileData } => row.lockfile !== null)
-      .map(row => ({ sessionId: row.sessionId, lockfile: row.lockfile })),
+      .map((row) => ({ sessionId: row.sessionId, lockfile: row.lockfile })),
   );
-  const aliasBySession = new Map(aliases.map(row => [row.sessionId, row.alias]));
-  return rows.map(row => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
+  const aliasBySession = new Map(aliases.map((row) => [row.sessionId, row.alias]));
+  return rows.map((row) => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
 }
 
 export async function psCommand(
@@ -101,61 +101,41 @@ export async function psCommand(
   assertNotWindows();
 
   const root = sessionsRoot(opts.projectDir);
+  const names = listSessionDirs(opts.projectDir);
 
-  if (!existsSync(root)) {
+  if (names.length === 0) {
     console.log('No sessions found in this project.');
     return;
   }
 
-  const entries = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory());
-
-  if (entries.length === 0) {
-    console.log('No sessions found in this project.');
-    return;
-  }
-
-  const rows = assignDisplayedAliases(await Promise.all(
-    entries.map((e) => buildRow(join(root, e.name), e.name, deps)),
-  ));
+  const rows = assignDisplayedAliases(
+    await Promise.all(names.map((name) => buildRow(join(root, name), name, deps))),
+  );
 
   rows.sort((a, b) => b.startTimeMs - a.startTimeMs);
 
   const now = Date.now();
 
-  const ALIAS_W = Math.max(2, '#'.length, String(rows.length).length);
-  const SID_W = Math.max(10, 'SESSION ID'.length, ...rows.map((r) => r.sessionId.length));
-  const STATUS_W = Math.max(7, 'STATUS'.length);
-  const PID_W = Math.max(5, 'PID'.length, ...rows.map((r) => String(r.pid ?? '-').length));
-  const MODE_W = Math.max(8, 'MODE'.length, ...rows.map((r) => r.mode.length));
-  const ELAPSED_W = Math.max(9, 'ELAPSED'.length);
-
-  const header = [
-    '#'.padEnd(ALIAS_W),
-    'SESSION ID'.padEnd(SID_W),
-    'STATUS'.padEnd(STATUS_W),
-    'PID'.padEnd(PID_W),
-    'MODE'.padEnd(MODE_W),
-    'ELAPSED'.padEnd(ELAPSED_W),
-    'FEATURE',
-  ].join('  ');
-
-  console.log(header);
-
-  for (const row of rows) {
-    const alias = row.alias === null ? '-' : String(row.alias);
-    const endMs = row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
-    const elapsed = row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
-    const line = [
-      alias.padEnd(ALIAS_W),
-      row.sessionId.padEnd(SID_W),
-      row.status.padEnd(STATUS_W),
-      String(row.pid ?? '-').padEnd(PID_W),
-      row.mode.padEnd(MODE_W),
-      elapsed.padEnd(ELAPSED_W),
-      row.feature,
-    ].join('  ');
-    console.log(line);
+  function elapsedOf(row: SessionRow): string {
+    const endMs =
+      row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
+    return row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
   }
+
+  const lines = renderTable<SessionRow>({
+    columns: [
+      { header: '#', min: 2, value: (r) => (r.alias === null ? '-' : String(r.alias)) },
+      { header: 'SESSION ID', min: 10, value: (r) => r.sessionId },
+      { header: 'STATUS', min: 7, value: (r) => r.status },
+      { header: 'PID', min: 5, value: (r) => String(r.pid ?? '-') },
+      { header: 'MODE', min: 8, value: (r) => r.mode },
+      { header: 'ELAPSED', min: 9, value: elapsedOf },
+      { header: 'FEATURE', min: 0, value: (r) => r.feature },
+    ],
+    rows,
+  });
+
+  for (const line of lines) console.log(line);
 }
 
 export function registerPsCommand(program: Command): void {

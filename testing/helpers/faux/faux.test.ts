@@ -9,7 +9,11 @@ describe('fauxPlanner', () => {
   it('returns scripted tasks and tracks calls', async () => {
     const task = makeTask({ title: 'test task' });
     const { planner, state } = fauxPlanner({ plans: [{ tasks: [task] }] });
-    const result = await planner.plan('add feature', '/tmp', { onOutput: () => {} });
+    const result = await planner.plan({
+      feature: 'add feature',
+      projectDir: '/tmp',
+      callbacks: { onOutput: () => {} },
+    });
     expect(result.tasks).toHaveLength(1);
     expect(state.planCallCount).toBe(1);
     expect(state.receivedFeatures).toEqual(['add feature']);
@@ -17,7 +21,9 @@ describe('fauxPlanner', () => {
 
   it('throws when script says so', async () => {
     const { planner } = fauxPlanner({ plans: [{ tasks: [], throws: new Error('boom') }] });
-    await expect(planner.plan('x', '/tmp', { onOutput: () => {} })).rejects.toThrow('boom');
+    await expect(
+      planner.plan({ feature: 'x', projectDir: '/tmp', callbacks: { onOutput: () => {} } }),
+    ).rejects.toThrow('boom');
   });
 });
 

@@ -9,12 +9,22 @@ describe('getPlannerToolId', () => {
   });
 
   it('returns the provider for api kind when it is a valid PlannerToolId', () => {
-    const config: PlannerConfig = { kind: 'api', provider: 'anthropic', apiBase: 'https://api.anthropic.com/v1', model: 'claude-opus-4-5' };
+    const config: PlannerConfig = {
+      kind: 'api',
+      provider: 'anthropic',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-opus-4-5',
+    };
     expect(getPlannerToolId(config)).toBe('anthropic');
   });
 
   it('falls back to anthropic for api kind with unknown provider', () => {
-    const config: PlannerConfig = { kind: 'api', provider: 'my-custom', apiBase: 'http://localhost:9999/v1', model: 'my-model' };
+    const config: PlannerConfig = {
+      kind: 'api',
+      provider: 'my-custom',
+      apiBase: 'http://localhost:9999/v1',
+      model: 'my-model',
+    };
     expect(getPlannerToolId(config)).toBe('anthropic');
   });
 

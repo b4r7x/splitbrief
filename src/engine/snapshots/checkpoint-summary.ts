@@ -1,7 +1,12 @@
-import type { RunSnapshotKind, SnapshotManifest, SnapshotPhase } from '../../core/schemas/snapshot.js';
+import type {
+  RunSnapshotKind,
+  SnapshotManifest,
+  SnapshotPhase,
+} from '../../core/schemas/snapshot.js';
 import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import { readRunSnapshotLedger } from './run.js';
-import { listSnapshots } from './store.js';
+import { listSnapshots } from './manifest.js';
+import { ALWAYS_EXCLUDED } from './files.js';
 
 export type CheckpointDisplayKind =
   | 'manual'
@@ -43,18 +48,21 @@ export type CheckpointSummary = {
   safety: CheckpointRestoreSafety;
 };
 
+const EXCLUDED_DISPLAY_PATHS = ALWAYS_EXCLUDED.map((p) => `${p}/`);
+
 export const CHECKPOINT_RESTORE_SAFETY = {
   hashGuarded: true,
   conflictsSkippedByDefault: true,
   forceOverwritesConflicts: true,
   partialRestoreExpected: true,
-  excludedPaths: ['.git/', '.diptych/', 'node_modules/', '.trees/'],
+  excludedPaths: EXCLUDED_DISPLAY_PATHS,
   text: {
     hashGuarded: 'Restore is hash-guarded against files changed since the checkpoint.',
     conflictsSkippedByDefault: 'Conflicted files are skipped by default.',
     forceOverwritesConflicts: '--force is destructive and overwrites conflicts.',
-    partialRestoreExpected: 'Partial restore is expected: safe files restore while conflicts are listed.',
-    excludedPaths: 'Snapshots exclude .git/, .diptych/, node_modules/, and .trees/.',
+    partialRestoreExpected:
+      'Partial restore is expected: safe files restore while conflicts are listed.',
+    excludedPaths: `Snapshots exclude ${EXCLUDED_DISPLAY_PATHS.join(', ')}.`,
   },
 } as const satisfies CheckpointRestoreSafety;
 
@@ -87,7 +95,12 @@ function toCheckpointSummary(
 ): CheckpointSummary {
   const isRunCheckpoint = runSnapshotIds.has(manifest.id);
   const inferredKind = inferKindFromName(manifest.name);
-  const kind = displayKindForSnapshot(manifest, isRunCheckpoint, acceptedRunSnapshotId, runSnapshotKind);
+  const kind = displayKindForSnapshot(
+    manifest,
+    isRunCheckpoint,
+    acceptedRunSnapshotId,
+    runSnapshotKind,
+  );
   const summary: CheckpointSummary = {
     id: manifest.id,
     createdAt: manifest.createdAt,
@@ -112,16 +125,17 @@ export async function listCheckpointSummaries(
   const { manifests } = await listSnapshots(projectDir, sessionId);
   const ledger = await readRunSnapshotLedger(projectDir, sessionId);
   const runSnapshotIds = new Set(ledger?.runSnapshotIds ?? []);
-  const acceptedRunSnapshotId = ledger?.accepted === true
-    ? ledger.runSnapshotIds.at(-1)
-    : undefined;
+  const acceptedRunSnapshotId =
+    ledger?.accepted === true ? ledger.runSnapshotIds.at(-1) : undefined;
 
   return manifests
     .filter((manifest) => manifest.id !== SNAPSHOT_BASELINE_ID)
-    .map((manifest) => toCheckpointSummary(
-      manifest,
-      runSnapshotIds,
-      acceptedRunSnapshotId,
-      ledger?.runSnapshotKinds?.[manifest.id],
-    ));
+    .map((manifest) =>
+      toCheckpointSummary(
+        manifest,
+        runSnapshotIds,
+        acceptedRunSnapshotId,
+        ledger?.runSnapshotKinds?.[manifest.id],
+      ),
+    );
 }

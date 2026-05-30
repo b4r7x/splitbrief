@@ -12,7 +12,12 @@ function buildDefaultTsCandidates(name: string, dir: string, projectDir: string)
   ];
 }
 
-function buildCandidatesFromPattern(name: string, dir: string, projectDir: string, testPattern: string): string[] {
+function buildCandidatesFromPattern(
+  name: string,
+  dir: string,
+  projectDir: string,
+  testPattern: string,
+): string[] {
   const resolved = testPattern.replace('*', name);
   return [
     join(projectDir, dir, resolved),
@@ -21,7 +26,11 @@ function buildCandidatesFromPattern(name: string, dir: string, projectDir: strin
   ];
 }
 
-export function findAffectedTestFile(taskFile: string, projectDir: string, testPattern?: string): string | null {
+export function findAffectedTestFile(
+  taskFile: string,
+  projectDir: string,
+  testPattern?: string,
+): string | null {
   const dir = dirname(taskFile);
   const name = basename(taskFile).replace(/\.\w+$/, '');
 

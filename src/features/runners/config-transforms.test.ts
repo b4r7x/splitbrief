@@ -49,7 +49,12 @@ function makeConfigWithOptionalSections(): Config {
     },
     palette: {
       customActions: [
-        { id: 'refresh-docs', label: 'Refresh docs', description: 'Refresh documentation', command: '/refresh' },
+        {
+          id: 'refresh-docs',
+          label: 'Refresh docs',
+          description: 'Refresh documentation',
+          command: '/refresh',
+        },
       ],
     },
     approval: {
@@ -64,7 +69,12 @@ function makeConfigWithOptionalSections(): Config {
 describe('commitCustomCommand', () => {
   it('preserves kind: shell for shell selection', () => {
     const config = makeBaseConfig();
-    const updated = commitCustomCommand(config, 'planner', 'my-shell-tool --flag', 'shell');
+    const updated = commitCustomCommand({
+      config,
+      role: 'planner',
+      command: 'my-shell-tool --flag',
+      kind: 'shell',
+    });
     expect(updated.planner.kind).toBe('shell');
     if (updated.planner.kind === 'shell') {
       expect(updated.planner.command).toBe('my-shell-tool --flag');
@@ -73,7 +83,12 @@ describe('commitCustomCommand', () => {
 
   it('preserves kind: agent for agent selection', () => {
     const config = makeBaseConfig();
-    const updated = commitCustomCommand(config, 'planner', 'my-agent-tool --flag', 'agent');
+    const updated = commitCustomCommand({
+      config,
+      role: 'planner',
+      command: 'my-agent-tool --flag',
+      kind: 'agent',
+    });
     expect(updated.planner.kind).toBe('agent');
     if (updated.planner.kind === 'agent') {
       expect(updated.planner.command).toBe('my-agent-tool --flag');
@@ -89,7 +104,12 @@ describe('commitCustomCommand', () => {
         model: 'llama3',
       },
     };
-    const updated = commitCustomCommand(config, 'implementer', 'new-impl-cmd', 'shell');
+    const updated = commitCustomCommand({
+      config,
+      role: 'implementer',
+      command: 'new-impl-cmd',
+      kind: 'shell',
+    });
     expect(updated.implementer.kind).toBe('shell');
   });
 
@@ -102,7 +122,12 @@ describe('commitCustomCommand', () => {
         model: 'llama3',
       },
     };
-    const updated = commitCustomCommand(config, 'implementer', 'new-agent-impl', 'agent');
+    const updated = commitCustomCommand({
+      config,
+      role: 'implementer',
+      command: 'new-agent-impl',
+      kind: 'agent',
+    });
     expect(updated.implementer.kind).toBe('agent');
   });
 });
@@ -117,11 +142,9 @@ describe('runner selection commits', () => {
   };
 
   it('commits planner Agent SDK selections with the explicit kind', () => {
-    const updated = commitPlannerSelection(
-      makeBaseConfig(),
-      agentSdkSelection,
-      { id: 'claude-opus-4-6' },
-    );
+    const updated = commitPlannerSelection(makeBaseConfig(), agentSdkSelection, {
+      id: 'claude-opus-4-6',
+    });
 
     expect(updated.planner.kind).toBe('agent-sdk');
     if (updated.planner.kind === 'agent-sdk') {
@@ -130,11 +153,9 @@ describe('runner selection commits', () => {
   });
 
   it('commits implementer Agent SDK selections with the explicit kind', () => {
-    const updated = commitImplementerSelection(
-      makeBaseConfig(),
-      agentSdkSelection,
-      { id: 'claude-sonnet-4-6' },
-    );
+    const updated = commitImplementerSelection(makeBaseConfig(), agentSdkSelection, {
+      id: 'claude-sonnet-4-6',
+    });
 
     expect(updated.implementer.kind).toBe('agent-sdk');
     if (updated.implementer.kind === 'agent-sdk') {

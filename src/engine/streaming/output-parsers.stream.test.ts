@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getLineParser, parseStreamLine } from './output-parsers.js';
+import { getLineParser } from './output-parsers.js';
+import { parseStreamLine } from './parse-stream-json.js';
 
 function jsonLine(value: unknown): string {
   return JSON.stringify(value);
@@ -12,7 +13,12 @@ describe('parseStreamLine', () => {
       jsonLine({
         type: 'assistant',
         session_id: 'sess-1',
-        message: { content: [{ type: 'text', text: 'Hello world' }, { type: 'text', text: ' more text' }] },
+        message: {
+          content: [
+            { type: 'text', text: 'Hello world' },
+            { type: 'text', text: ' more text' },
+          ],
+        },
       }),
       { text: 'Hello world more text', sessionId: 'sess-1' },
     ],
@@ -24,7 +30,12 @@ describe('parseStreamLine', () => {
         result: 'Final answer here',
         usage: { input_tokens: 1000, output_tokens: 500 },
       }),
-      { text: 'Final answer here', sessionId: 'sess-2', isResult: true, usage: { inputTokens: 1000, outputTokens: 500 } },
+      {
+        text: 'Final answer here',
+        sessionId: 'sess-2',
+        isResult: true,
+        usage: { inputTokens: 1000, outputTokens: 500 },
+      },
     ],
     [
       'session-only event',
@@ -36,7 +47,9 @@ describe('parseStreamLine', () => {
       jsonLine({
         type: 'assistant',
         session_id: 'sess-tool',
-        message: { content: [{ type: 'tool_use', name: 'read_file', input: { path: '/tmp/test.ts' } }] },
+        message: {
+          content: [{ type: 'tool_use', name: 'read_file', input: { path: '/tmp/test.ts' } }],
+        },
       }),
       { sessionId: 'sess-tool', toolUse: [{ name: 'read_file', input: { path: '/tmp/test.ts' } }] },
     ],
@@ -48,7 +61,11 @@ describe('parseStreamLine', () => {
         message: {
           content: [
             { type: 'text', text: 'Let me read that file.' },
-            { type: 'tool_use', name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } },
+            {
+              type: 'tool_use',
+              name: 'write_file',
+              input: { path: '/tmp/out.ts', content: 'code' },
+            },
           ],
         },
       }),
@@ -60,7 +77,10 @@ describe('parseStreamLine', () => {
     ],
     [
       'tool_use without input',
-      jsonLine({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'list_files' }] } }),
+      jsonLine({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'list_files' }] },
+      }),
       { toolUse: [{ name: 'list_files', input: {} }] },
     ],
     [
@@ -94,7 +114,9 @@ describe('getLineParser("stream-json")', () => {
       jsonLine({
         type: 'assistant',
         session_id: 'sess-wrap',
-        message: { content: [{ type: 'tool_use', name: 'read_file', input: { path: 'src/foo.ts' } }] },
+        message: {
+          content: [{ type: 'tool_use', name: 'read_file', input: { path: 'src/foo.ts' } }],
+        },
       }),
       { sessionId: 'sess-wrap', toolUse: [{ name: 'read_file', input: { path: 'src/foo.ts' } }] },
     ],

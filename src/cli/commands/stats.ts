@@ -5,7 +5,9 @@ import { readStats, rebuildStats } from '../../core/stats/persistence.js';
 import { formatCost } from '../../core/formatting.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { listAllSessions } from '../../core/sessions/io.js';
-import { rethrowAsCli } from '../errors.js';
+import { withCliErrors } from '../errors.js';
+import { writeJsonLine } from '../json-line.js';
+import { pluralize } from '../../utils/format.js';
 import type { StatsUpdateInput } from '../../core/stats/persistence.js';
 
 export function registerStatsCommand(program: Command): void {
@@ -15,8 +17,8 @@ export function registerStatsCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--rebuild', 'Rebuild stats from session history')
     .option('--json', 'Emit machine-readable JSON output', false)
-    .action((opts: { project?: string; rebuild?: boolean; json?: boolean }) => {
-      try {
+    .action((opts: { project?: string; rebuild?: boolean; json?: boolean }) =>
+      withCliErrors(() => {
         const projectDir = resolveProjectDir(opts.project);
 
         if (opts.rebuild) {
@@ -40,7 +42,7 @@ export function registerStatsCommand(program: Command): void {
         const stats = readStats(projectDir);
 
         if (opts.json) {
-          process.stdout.write(JSON.stringify({ type: 'stats', stats }) + '\n');
+          writeJsonLine({ type: 'stats', stats });
           return;
         }
 
@@ -50,24 +52,34 @@ export function registerStatsCommand(program: Command): void {
           return;
         }
 
-        console.log(ansis.bold.green(`\n  diptych savings: ${formatCost(stats.totalSavings)} saved across ${stats.totalSessions} session${stats.totalSessions === 1 ? '' : 's'}\n`));
+        console.log(
+          ansis.bold.green(
+            `\n  diptych savings: ${formatCost(stats.totalSavings)} saved across ${stats.totalSessions} ${pluralize(stats.totalSessions, 'session')}\n`,
+          ),
+        );
         console.log(`  ${ansis.dim('Total spent:')}          ${formatCost(stats.totalCost)}`);
-        console.log(`  ${ansis.dim('All-planner would be:')} ${formatCost(stats.totalHypotheticalCost)}`);
-        console.log(`  ${ansis.dim('Savings rate:')}         ${Math.round(stats.averageSavingsPercentage)}%`);
-        console.log(`  ${ansis.dim('Tasks completed:')}      ${stats.totalTasks} (${stats.totalLocalTasks} local, ${stats.totalEscalatedTasks} escalated)`);
+        console.log(
+          `  ${ansis.dim('All-planner would be:')} ${formatCost(stats.totalHypotheticalCost)}`,
+        );
+        console.log(
+          `  ${ansis.dim('Savings rate:')}         ${Math.round(stats.averageSavingsPercentage)}%`,
+        );
+        console.log(
+          `  ${ansis.dim('Tasks completed:')}      ${stats.totalTasks} (${stats.totalLocalTasks} local, ${stats.totalEscalatedTasks} escalated)`,
+        );
 
         const providers = Object.entries(stats.providerTotals);
         if (providers.length > 0) {
           console.log(`\n  ${ansis.bold('By Provider:')}`);
           for (const [id, data] of providers) {
             const name = getProviderDisplayName(id);
-            console.log(`    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} session${data.sessions === 1 ? '' : 's'})`);
+            console.log(
+              `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} ${pluralize(data.sessions, 'session')})`,
+            );
           }
         }
 
         console.log(ansis.dim(`\n  Last updated: ${stats.updatedAt}`));
-      } catch (err) {
-        rethrowAsCli(err);
-      }
-    });
+      }),
+    );
 }

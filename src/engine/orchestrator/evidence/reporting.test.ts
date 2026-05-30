@@ -4,7 +4,7 @@ import {
   buildRejectionContext,
   recordFinalReviewEvidence,
 } from './reporting.js';
-import { createEvidenceLedger } from './ledger.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { recordLocalTaskEvidence } from './task-evidence.js';
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
 import type { ValidationResult } from '../validation-types.js';
@@ -17,7 +17,12 @@ describe('recordFinalReviewEvidence', () => {
   it('marks final review as written', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('typecheck')] });
+    const local = recordLocalTaskEvidence({
+      ledger,
+      task,
+      status: 'done',
+      validation: [passing('typecheck')],
+    });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'written' });
     expect(updated.finalReview?.status).toBe('written');
     expect(updated.tasks[0]?.observedEvidence).toContain('final review written');
@@ -36,7 +41,12 @@ describe('buildEvidenceSummary', () => {
   it('produces summary counts', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('typecheck')] });
+    const local = recordLocalTaskEvidence({
+      ledger,
+      task,
+      status: 'done',
+      validation: [passing('typecheck')],
+    });
     const summary = buildEvidenceSummary(local);
     expect(summary.totalTasks).toBe(1);
     expect(summary.tasksWithValidationEvidence).toBe(1);

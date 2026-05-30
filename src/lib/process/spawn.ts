@@ -106,7 +106,7 @@ export function runCommand(
   command: string,
   args: string[],
   options?: { cwd?: string | undefined; timeout?: number | undefined },
-): Promise<{ stdout: string; stderr: string; code: number }> {
+): Promise<{ stdout: string; stderr: string; code: 0 }> {
   const timeout = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
   let stdout = '';
   let stderr = '';
@@ -123,9 +123,21 @@ export function runCommand(
       }
       timeoutSignal.addEventListener('abort', () => killProcess(proc), { once: true });
     },
-    onStdout: (chunk) => { stdout += chunk; },
-    onStderr: (chunk) => { stderr += chunk; },
-    onClose: (code) => ({ stdout, stderr, code: code ?? 1 }),
+    onStdout: (chunk) => {
+      stdout += chunk;
+    },
+    onStderr: (chunk) => {
+      stderr += chunk;
+    },
+    onClose: (code) => {
+      if (code === 127) {
+        throw processError.notFound(command);
+      }
+      if (code !== 0) {
+        throw processError.exitCode({ command, code, stderr, output: stdout });
+      }
+      return { stdout, stderr, code: 0 };
+    },
     onError: () => null,
   });
 }
@@ -165,7 +177,9 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
         killProcess(proc, { group: true });
         return;
       }
-      timeoutSignal.addEventListener('abort', () => killProcess(proc, { group: true }), { once: true });
+      timeoutSignal.addEventListener('abort', () => killProcess(proc, { group: true }), {
+        once: true,
+      });
     },
     onStdout: (chunk) => {
       output += chunk;
@@ -175,10 +189,25 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
       stderrOutput += chunk;
     },
     onClose: (code) => {
-      return { output, code: code ?? 1, timedOut: timeoutSignal.aborted, stderr: stderrOutput };
+      if (timeoutSignal.aborted) {
+        return { output, code: code ?? 1, timedOut: true, stderr: stderrOutput };
+      }
+      if (code === 127) {
+        throw processError.notFound(opts.command, opts.notFoundMessage);
+      }
+      if (code !== 0) {
+        throw processError.exitCode({
+          command: opts.command,
+          code,
+          stderr: stderrOutput,
+          output,
+        });
+      }
+      return { output, code: 0, timedOut: false, stderr: stderrOutput };
     },
     onError: (err) => {
-      if (opts.notFoundMessage && isENOENT(err)) return processError.notFound(opts.command, opts.notFoundMessage);
+      if (opts.notFoundMessage && isENOENT(err))
+        return processError.notFound(opts.command, opts.notFoundMessage);
       return null;
     },
   });
@@ -193,7 +222,9 @@ export async function spawnWithShellFallback(opts: SpawnOptions): Promise<SpawnR
     if (!isENOENT(err)) throw err;
 
     const userShell = process.env['SHELL'] ?? '/bin/bash';
-    const fullCommand = [opts.command, ...opts.args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+    const fullCommand = [opts.command, ...opts.args]
+      .map((a) => `'${a.replace(/'/g, "'\\''")}'`)
+      .join(' ');
     return spawnWithTimeout({ ...opts, command: userShell, args: ['-lc', fullCommand] });
   }
 }
@@ -226,7 +257,8 @@ export async function spawnWithStdin(opts: {
       stderrOutput += chunk;
       opts.onStderr?.(chunk);
     },
-    onError: (err) => isENOENT(err) ? processError.notFound(opts.command, opts.notFoundMessage) : null,
+    onError: (err) =>
+      isENOENT(err) ? processError.notFound(opts.command, opts.notFoundMessage) : null,
     onClose: (code) => {
       stdoutBuf.flush();
 

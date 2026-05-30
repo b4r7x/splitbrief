@@ -1,7 +1,7 @@
 import { z } from 'zod';
+import { TaskIdSchema } from './task.js';
 
 export const DriftSeveritySchema = z.enum(['info', 'warning', 'error']);
-export type DriftSeverity = z.infer<typeof DriftSeveritySchema>;
 
 export const DriftCodeSchema = z.enum([
   'out_of_scope_file',
@@ -11,12 +11,11 @@ export const DriftCodeSchema = z.enum([
   'missing_evidence',
   'failed_task_with_diff',
 ]);
-export type DriftCode = z.infer<typeof DriftCodeSchema>;
 
 export const DriftFindingSchema = z.object({
   severity: DriftSeveritySchema,
   code: DriftCodeSchema,
-  taskId: z.string().optional(),
+  taskId: TaskIdSchema.optional(),
   file: z.string().optional(),
   message: z.string(),
 });
@@ -29,18 +28,10 @@ export const DriftReportSchema = z.object({
   changedFiles: z.array(z.string()),
   expectedFiles: z.array(z.string()),
   findings: z.array(DriftFindingSchema),
-  briefHash: z.string().nullable(),
+  briefHash: z.string().nullable().default(null),
 });
 export type DriftReport = z.infer<typeof DriftReportSchema>;
 
 export function isDriftReport(value: unknown): value is DriftReport {
-  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const v = value as Record<string, unknown>;
-  return v.version === 1
-    && typeof v.passed === 'boolean'
-    && typeof v.score === 'number'
-    && Number.isFinite(v.score)
-    && Array.isArray(v.changedFiles)
-    && Array.isArray(v.expectedFiles)
-    && Array.isArray(v.findings);
+  return DriftReportSchema.safeParse(value).success;
 }

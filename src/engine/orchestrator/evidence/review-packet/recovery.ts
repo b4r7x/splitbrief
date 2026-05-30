@@ -13,8 +13,8 @@ type RecoverySelectedAction = ReviewPacket['recoveryDecisions']['selectedActions
 
 const RECOVERY_RESOLVED_STATUS: Record<string, RecoveryOutcome['status']> = {
   'skipped-current-task': 'skipped',
-  'aborted': 'aborted',
-  'continued': 'continued',
+  aborted: 'aborted',
+  continued: 'continued',
   'retry-current-task': 'retry-current-task',
 };
 
@@ -27,7 +27,9 @@ export interface MakeRecoveryWithSourcesOptions {
   missing: string[];
 }
 
-function recoveryIssueSummary(state: WorkflowState): ReviewPacket['recoveryDecisions']['currentIssue'] {
+function recoveryIssueSummary(
+  state: WorkflowState,
+): ReviewPacket['recoveryDecisions']['currentIssue'] {
   const issue = state.pendingRecovery;
   if (!issue) return null;
   return {
@@ -44,10 +46,17 @@ function recoveryIssueSummary(state: WorkflowState): ReviewPacket['recoveryDecis
   };
 }
 
-function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: string[]): RecoveryWithoutSources {
+function buildRecovery(
+  state: WorkflowState,
+  events: PacketEvent[],
+  missing: string[],
+): RecoveryWithoutSources {
   const recoveryEvents = events.filter((event) => event.type.startsWith('recovery_'));
   const selectedActions: RecoverySelectedAction[] = recoveryEvents
-    .filter((event) => event.type === 'recovery_action_selected' && event.issueId && event.reason && event.action)
+    .filter(
+      (event) =>
+        event.type === 'recovery_action_selected' && event.issueId && event.reason && event.action,
+    )
     .map((event) => ({
       issueId: event.issueId ?? '',
       reason: event.reason ?? 'implementation-error',
@@ -75,9 +84,13 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: str
       ...(event.message !== undefined && { message: event.message }),
     }));
 
-  const resolvedIssueIds = new Set(resolvedOutcomes.flatMap((outcome) => outcome.issueId ? [outcome.issueId] : []));
+  const resolvedIssueIds = new Set(
+    resolvedOutcomes.flatMap((outcome) => (outcome.issueId ? [outcome.issueId] : [])),
+  );
   const pausedOutcomes: RecoveryOutcome[] = selectedActions
-    .filter((selected) => selected.action === 'pause-run' && !resolvedIssueIds.has(selected.issueId))
+    .filter(
+      (selected) => selected.action === 'pause-run' && !resolvedIssueIds.has(selected.issueId),
+    )
     .map((selected) => ({
       issueId: selected.issueId,
       action: selected.action,
@@ -93,17 +106,25 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: str
 
   const currentIssue = recoveryIssueSummary(state);
   const unresolvedOutcomes: RecoveryOutcome[] = currentIssue
-    ? [{
-      issueId: currentIssue.issueId,
-      ...(currentIssue.selectedAction !== undefined && { action: currentIssue.selectedAction }),
-      status: 'unresolved',
-      message: `${currentIssue.reason} recovery issue is still ${currentIssue.status}`,
-    }]
+    ? [
+        {
+          issueId: currentIssue.issueId,
+          ...(currentIssue.selectedAction !== undefined && { action: currentIssue.selectedAction }),
+          status: 'unresolved',
+          message: `${currentIssue.reason} recovery issue is still ${currentIssue.status}`,
+        },
+      ]
     : [];
 
   const unresolvedRisks = [
-    ...failedOutcomes.map((outcome) => `Recovery action failed${outcome.issueId ? ` for ${outcome.issueId}` : ''}${outcome.message ? `: ${outcome.message}` : ''}.`),
-    ...pausedOutcomes.map((outcome) => `Recovery issue ${outcome.issueId ?? 'unknown'} paused without a resolved event.`),
+    ...failedOutcomes.map(
+      (outcome) =>
+        `Recovery action failed${outcome.issueId ? ` for ${outcome.issueId}` : ''}${outcome.message ? `: ${outcome.message}` : ''}.`,
+    ),
+    ...pausedOutcomes.map(
+      (outcome) =>
+        `Recovery issue ${outcome.issueId ?? 'unknown'} paused without a resolved event.`,
+    ),
     ...unresolvedOutcomes.map((outcome) => outcome.message ?? 'Recovery issue remains unresolved.'),
   ];
 
@@ -115,18 +136,32 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: str
     events: recoveryEvents,
     currentIssue,
     selectedActions,
-    outcomes: [...resolvedOutcomes, ...failedOutcomes, ...pausedOutcomes, ...resumedOutcomes, ...unresolvedOutcomes],
+    outcomes: [
+      ...resolvedOutcomes,
+      ...failedOutcomes,
+      ...pausedOutcomes,
+      ...resumedOutcomes,
+      ...unresolvedOutcomes,
+    ],
     unresolvedRisks,
   };
 }
 
-export function makeRecoveryWithSources(opts: MakeRecoveryWithSourcesOptions): ReviewPacket['recoveryDecisions'] {
+export function makeRecoveryWithSources(
+  opts: MakeRecoveryWithSourcesOptions,
+): ReviewPacket['recoveryDecisions'] {
   const recovery = buildRecovery(opts.state, opts.events, opts.missing);
   return {
     ...recovery,
     sourceArtifacts: [
-      { path: STATE_FILE, present: existsSync(join(sessionDir(opts.projectDir, opts.sessionId), STATE_FILE)) },
-      { path: SESSION_LOG_FILE, present: existsSync(join(sessionDir(opts.projectDir, opts.sessionId), SESSION_LOG_FILE)) },
+      {
+        path: STATE_FILE,
+        present: existsSync(join(sessionDir(opts.projectDir, opts.sessionId), STATE_FILE)),
+      },
+      {
+        path: SESSION_LOG_FILE,
+        present: existsSync(join(sessionDir(opts.projectDir, opts.sessionId), SESSION_LOG_FILE)),
+      },
       { path: EVIDENCE_FILE, present: opts.ledger !== null },
     ],
   };

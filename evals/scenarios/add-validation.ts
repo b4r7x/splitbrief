@@ -4,7 +4,9 @@ import { readSourceFiles, runNpmTest } from './shared.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 function hasZodUsage(content: string): boolean {
-  return /from\s+['"]zod['"]/.test(content) || /\bz\.(object|string|email|optional)\b/.test(content);
+  return (
+    /from\s+['"]zod['"]/.test(content) || /\bz\.(object|string|email|optional)\b/.test(content)
+  );
 }
 
 function hasValidationSchema(content: string): boolean {
@@ -76,7 +78,8 @@ const qualityChecks: QualityCheck[] = [
 export const addValidationScenario: EvalScenario = {
   id: 'add-validation',
   name: 'Add input validation',
-  feature: 'Add Zod validation to the createUser handler - validate email, name (1-100 chars), and optional phone',
+  feature:
+    'Add Zod validation to the createUser handler - validate email, name (1-100 chars), and optional phone',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/add-validation'),
   qualityChecks,
 };

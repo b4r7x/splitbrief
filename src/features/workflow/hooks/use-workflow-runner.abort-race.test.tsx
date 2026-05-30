@@ -13,7 +13,15 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { clearAllHandlers } from '../handlers.js';
 import { ensureDiptychDir } from '../../../core/paths-io.js';
 
-function Harness({ feature, projectDir, plannerCommand }: { feature: string; projectDir: string; plannerCommand: string }) {
+function Harness({
+  feature,
+  projectDir,
+  plannerCommand,
+}: {
+  feature: string;
+  projectDir: string;
+  plannerCommand: string;
+}) {
   const inputMode = useInputMode();
   const config = makeConfig({
     planner: { kind: 'shell', command: plannerCommand },
@@ -60,12 +68,18 @@ describe('useWorkflowRunner abort race', () => {
     await flush();
 
     ui.rerender(
-      <Harness feature="second run" projectDir={projectDir} plannerCommand="diptych-non-existent-planner-x7q9" />,
+      <Harness
+        feature="second run"
+        projectDir={projectDir}
+        plannerCommand="diptych-non-existent-planner-x7q9"
+      />,
     );
     await flush();
 
-    const errors = eventsStore.get().events.filter(e => e.type === 'error');
-    const hasSleepKilledError = errors.some(e => e.message.includes('sleep') || e.message.includes('SIGTERM'));
+    const errors = eventsStore.get().events.filter((e) => e.type === 'error');
+    const hasSleepKilledError = errors.some(
+      (e) => e.message.includes('sleep') || e.message.includes('SIGTERM'),
+    );
     expect(hasSleepKilledError).toBe(false);
     ui.unmount();
   });

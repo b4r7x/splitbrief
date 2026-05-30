@@ -3,16 +3,21 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { requestClearQueue, requestRewind as requestWorkflowRewind } from '../features/workflow/handlers.js';
+import {
+  requestClearQueue,
+  requestRewind as requestWorkflowRewind,
+} from '../features/workflow/handlers.js';
 import { refreshDetection } from '../engine/detection/service.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
-import { createCommandContext } from '../cli/command-context-factory.js';
+import { createCommandContext } from './command-context-factory.js';
 import { error } from '../utils/error.js';
 
 const appCommandContextError = {
-  noActiveSession: (command: string) => error('app-command-no-active-session', `No active session for ${command}`, { command }),
-  noConfig: (command: string) => error('app-command-no-config', `No config loaded for ${command}`, { command }),
+  noActiveSession: (command: string) =>
+    error('app-command-no-active-session', `No active session for ${command}`, { command }),
+  noConfig: (command: string) =>
+    error('app-command-no-config', `No config loaded for ${command}`, { command }),
 } as const;
 
 function currentSessionId(projectDir: string): string | null {
@@ -53,7 +58,7 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     },
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: requestWorkflowRewind,
-    requestTaskRedo: taskId => requestWorkflowRewind({ target: 'task', taskId }),
+    requestTaskRedo: (taskId) => requestWorkflowRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: requestClearQueue,
   });

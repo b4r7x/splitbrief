@@ -23,11 +23,11 @@ function cloneAttachments(attachments: Attachment[]): Attachment[] {
 }
 
 function add(attachment: Attachment): void {
-  store.set(s => ({ pending: [...s.pending, cloneAttachment(attachment)] }));
+  store.set((s) => ({ pending: [...s.pending, cloneAttachment(attachment)] }));
 }
 
 function remove(id: string): void {
-  store.set(s => ({ pending: s.pending.filter(a => a.id !== id) }));
+  store.set((s) => ({ pending: s.pending.filter((a) => a.id !== id) }));
 }
 
 function drain(): Attachment[] {
@@ -70,7 +70,7 @@ export function detachImage(idOrIndex?: string): boolean {
       return true;
     }
 
-    const match = pending.find(a => a.id === idOrIndex || a.path.endsWith(idOrIndex));
+    const match = pending.find((a) => a.id === idOrIndex || a.path.endsWith(idOrIndex));
     if (!match) return false;
     attachmentsStore.remove(match.id);
     return true;
@@ -83,5 +83,5 @@ export function detachImage(idOrIndex?: string): boolean {
 }
 
 export function listAttachments(): Array<{ id: string; path: string }> {
-  return attachmentsStore.peek().map(a => ({ id: a.id, path: a.path }));
+  return attachmentsStore.peek().map((a) => ({ id: a.id, path: a.path }));
 }

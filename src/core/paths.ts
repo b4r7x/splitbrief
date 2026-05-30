@@ -22,7 +22,11 @@ export function validateSessionId(sessionId: string): void {
     throw fsError.invalidId('session id', sessionId, result.reason);
   }
   if (!SESSION_ID_PATTERN.test(sessionId)) {
-    throw fsError.invalidId('session id', sessionId, 'must contain only letters, numbers, dots, underscores or hyphens and start with a letter or number');
+    throw fsError.invalidId(
+      'session id',
+      sessionId,
+      'must contain only letters, numbers, dots, underscores or hyphens and start with a letter or number',
+    );
   }
 }
 

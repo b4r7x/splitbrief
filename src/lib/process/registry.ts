@@ -14,7 +14,10 @@ export function unregisterProcess(proc: ChildProcess): void {
   activeProcesses.delete(proc);
 }
 
-export function killProcess(proc: ChildProcess, options?: { group?: boolean; killDelay?: number }): void {
+export function killProcess(
+  proc: ChildProcess,
+  options?: { group?: boolean; killDelay?: number },
+): void {
   if (proc.exitCode !== null || proc.killed) return;
   const pid = proc.pid;
   const useGroup = options?.group && pid !== undefined;
@@ -50,10 +53,15 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean; kil
   proc.once('close', () => clearTimeout(escalationTimer));
 }
 
-export function abortProcess(proc: ChildProcess, signal: AbortSignal, options?: { group?: boolean }): void {
+export function abortProcess(
+  proc: ChildProcess,
+  signal: AbortSignal,
+  options?: { group?: boolean },
+): void {
   if (proc.exitCode !== null || proc.killed) return;
 
-  const onAbort = () => killProcess(proc, { group: options?.group ?? false, killDelay: ABORT_KILL_DELAY });
+  const onAbort = () =>
+    killProcess(proc, { group: options?.group ?? false, killDelay: ABORT_KILL_DELAY });
 
   if (signal.aborted) {
     onAbort();

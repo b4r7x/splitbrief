@@ -51,7 +51,7 @@ export type StateAction =
   | { type: 'PAUSE_PENDING_RECOVERY' }
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction; selectedAt?: string }
   | { type: 'CLEAR_PENDING_RECOVERY' }
-  | { type: 'RESOLVE_PENDING_RECOVERY'; action: RecoveryAction };
+  | { type: 'RESOLVE_PENDING_RECOVERY' };
 
 export interface TokenBudget {
   system: number;
@@ -68,6 +68,6 @@ export type CodeContext =
 export interface ProjectContext {
   name: string;
   dir: string;
-  runtime: string;
+  runtime: 'node';
   testCommand: string;
 }

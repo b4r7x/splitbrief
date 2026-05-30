@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { gateAction } from './tiered-approval.js';
@@ -49,6 +49,12 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
 }
 
 describe('gateAction', () => {
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  afterEach(() => {
+    if (originalIsTTY) Object.defineProperty(process.stdout, 'isTTY', originalIsTTY);
+    else delete (process.stdout as { isTTY?: boolean }).isTTY;
+  });
+
   it('approval.enabled=false → allow immediately without events', async () => {
     const { bus, events } = makeBusRecorder();
     const config = makeApprovalConfig({ enabled: false });
@@ -64,7 +70,7 @@ describe('gateAction', () => {
     const input = makeInput({ bus, config, actionDescription: 'read src/foo.ts' });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    expect(events.filter(e => e.type === 'approval_prompted')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'approval_prompted')).toHaveLength(0);
   });
 
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
@@ -76,14 +82,14 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
       },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('APPROVAL_REQUIRED');
-    expect(events.some(e => e.type === 'approval_prompted')).toBe(true);
+    expect(events.some((e) => e.type === 'approval_prompted')).toBe(true);
   });
 
   it('sticky tier, always grant exists → allow without callback', async () => {
@@ -92,12 +98,14 @@ describe('gateAction', () => {
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
-      grants: [{
-        pattern: 'write /tmp/outside-project/file.ts',
-        class: 'write_out_of_scope',
-        scope: 'always',
-        grantedAt: new Date().toISOString(),
-      }],
+      grants: [
+        {
+          pattern: 'write /tmp/outside-project/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'always',
+          grantedAt: new Date().toISOString(),
+        },
+      ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
     const config = makeApprovalConfig({ enabled: true, headless: true });
@@ -109,17 +117,22 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async () => { callbackCalled = true; return { decision: 'allow', scope: 'once' }; },
+        onTieredApproval: async () => {
+          callbackCalled = true;
+          return { decision: 'allow', scope: 'once' };
+        },
       },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(callbackCalled).toBe(false);
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted?.scope).toBe('always');
-    expect(events.some(e => e.type === 'approval_prompted')).toBe(false);
+    expect(events.some((e) => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant matching sessionId → allow without callback', async () => {
@@ -128,13 +141,15 @@ describe('gateAction', () => {
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
-      grants: [{
-        pattern: 'write /tmp/outside-project/file.ts',
-        class: 'write_out_of_scope',
-        scope: 'session',
-        sessionId: 'sess-001',
-        grantedAt: new Date().toISOString(),
-      }],
+      grants: [
+        {
+          pattern: 'write /tmp/outside-project/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'session',
+          sessionId: 'sess-001',
+          grantedAt: new Date().toISOString(),
+        },
+      ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
     const config = makeApprovalConfig({ enabled: true, headless: true });
@@ -147,17 +162,22 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async () => { callbackCalled = true; return { decision: 'allow', scope: 'once' }; },
+        onTieredApproval: async () => {
+          callbackCalled = true;
+          return { decision: 'allow', scope: 'once' };
+        },
       },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(callbackCalled).toBe(false);
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted?.scope).toBe('session');
-    expect(events.some(e => e.type === 'approval_prompted')).toBe(false);
+    expect(events.some((e) => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
@@ -166,13 +186,15 @@ describe('gateAction', () => {
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
-      grants: [{
-        pattern: 'write /tmp/outside-project/file.ts',
-        class: 'write_out_of_scope',
-        scope: 'session',
-        sessionId: 'sess-OTHER',
-        grantedAt: new Date().toISOString(),
-      }],
+      grants: [
+        {
+          pattern: 'write /tmp/outside-project/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'session',
+          sessionId: 'sess-OTHER',
+          grantedAt: new Date().toISOString(),
+        },
+      ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
     const config = makeApprovalConfig({ enabled: true });
@@ -185,12 +207,14 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async () => { callbackCalled = true; return { decision: 'allow', scope: 'once' }; },
+        onTieredApproval: async () => {
+          callbackCalled = true;
+          return { decision: 'allow', scope: 'once' };
+        },
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(callbackCalled).toBe(true);
     expect(result.allow).toBe(true);
@@ -208,16 +232,20 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'allow', scope: 'once' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'allow',
+          scope: 'once',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    expect(events.some(e => e.type === 'approval_sticky_recorded')).toBe(false);
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    expect(events.some((e) => e.type === 'approval_sticky_recorded')).toBe(false);
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted?.scope).toBe('once');
   });
 
@@ -234,15 +262,17 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'allow', scope: 'session' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'allow',
+          scope: 'session',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    expect(events.some(e => e.type === 'approval_sticky_recorded')).toBe(true);
+    expect(events.some((e) => e.type === 'approval_sticky_recorded')).toBe(true);
     const stored = JSON.parse(readFileSync(approvalsFile(projectDir), 'utf-8'));
     expect(stored.grants).toHaveLength(1);
     expect(stored.grants[0].scope).toBe('session');
@@ -261,22 +291,30 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'deny', reason: 'wrong dir' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'deny',
+          reason: 'wrong dir',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('wrong dir');
-    const rejected = events.find(e => e.type === 'approval_rejected') as Extract<EngineEvent, { type: 'approval_rejected' }> | undefined;
+    const rejected = events.find((e) => e.type === 'approval_rejected') as
+      | Extract<EngineEvent, { type: 'approval_rejected' }>
+      | undefined;
     expect(rejected?.reason).toBe('wrong dir');
   });
 
   it('confirm tier, headless → deny APPROVAL_REQUIRED', async () => {
     const { bus } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true, headless: true, tiers: { destructive: 'confirm' } });
+    const config = makeApprovalConfig({
+      enabled: true,
+      headless: true,
+      tiers: { destructive: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
@@ -296,15 +334,20 @@ describe('gateAction', () => {
       actionDescription: 'rm -rf /tmp/foo',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'confirm', phrase: 'I confirm', reason: 'I understand this is destructive' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'confirm',
+          phrase: 'I confirm',
+          reason: 'I understand this is destructive',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted).toBeDefined();
     expect(granted?.scope).toBe('once');
   });
@@ -318,16 +361,21 @@ describe('gateAction', () => {
       actionDescription: 'rm -rf /tmp/foo',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'confirm', phrase: 'yes please', reason: 'I understand' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'confirm',
+          phrase: 'yes please',
+          reason: 'I understand',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('invalid_confirm_phrase');
-    const rejected = events.find(e => e.type === 'approval_rejected') as Extract<EngineEvent, { type: 'approval_rejected' }> | undefined;
+    const rejected = events.find((e) => e.type === 'approval_rejected') as
+      | Extract<EngineEvent, { type: 'approval_rejected' }>
+      | undefined;
     expect(rejected?.reason).toBe('invalid_confirm_phrase');
   });
 
@@ -340,16 +388,20 @@ describe('gateAction', () => {
       actionDescription: 'rm -rf /tmp/foo',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'deny', reason: 'not allowed' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'deny',
+          reason: 'not allowed',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('not allowed');
-    const rejected = events.find(e => e.type === 'approval_rejected') as Extract<EngineEvent, { type: 'approval_rejected' }> | undefined;
+    const rejected = events.find((e) => e.type === 'approval_rejected') as
+      | Extract<EngineEvent, { type: 'approval_rejected' }>
+      | undefined;
     expect(rejected?.reason).toBe('not allowed');
   });
 
@@ -362,15 +414,20 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'confirm', phrase: 'I confirm', reason: 'I understand' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'confirm',
+          phrase: 'I confirm',
+          reason: 'I understand',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    const prompted = events.find(e => e.type === 'approval_prompted') as Extract<EngineEvent, { type: 'approval_prompted' }> | undefined;
+    const prompted = events.find((e) => e.type === 'approval_prompted') as
+      | Extract<EngineEvent, { type: 'approval_prompted' }>
+      | undefined;
     expect(prompted?.tier).toBe('confirm');
   });
 
@@ -383,18 +440,22 @@ describe('gateAction', () => {
       actionDescription: 'rm -rf /tmp/foo',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'allow', scope: 'once' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'allow',
+          scope: 'once',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('invalid_confirm_response');
-    const rejected = events.find(e => e.type === 'approval_rejected') as Extract<EngineEvent, { type: 'approval_rejected' }> | undefined;
+    const rejected = events.find((e) => e.type === 'approval_rejected') as
+      | Extract<EngineEvent, { type: 'approval_rejected' }>
+      | undefined;
     expect(rejected?.reason).toBe('invalid_confirm_response');
-    const granted = events.find(e => e.type === 'approval_granted');
+    const granted = events.find((e) => e.type === 'approval_granted');
     expect(granted).toBeUndefined();
   });
 
@@ -407,16 +468,21 @@ describe('gateAction', () => {
       actionDescription: 'rm -rf /tmp/foo',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'confirm', phrase: 'I confirm', reason: 'cleaning stale fixtures' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'confirm',
+          phrase: 'I confirm',
+          reason: 'cleaning stale fixtures',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(result.confirmReason).toBe('cleaning stale fixtures');
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted).toBeDefined();
     expect(granted?.confirmReason).toBe('cleaning stale fixtures');
   });
@@ -428,7 +494,13 @@ describe('gateAction', () => {
     const store = {
       version: 1,
       grants: [
-        { pattern: '/tmp/outside-project/file.ts', class: 'write_out_of_scope', scope: 'session', sessionId: 'sess-X', grantedAt: new Date().toISOString() },
+        {
+          pattern: '/tmp/outside-project/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'session',
+          sessionId: 'sess-X',
+          grantedAt: new Date().toISOString(),
+        },
       ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
@@ -444,7 +516,7 @@ describe('gateAction', () => {
       actionDescription: 'modify /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
         onTieredApproval: async (): Promise<TieredApprovalResponse> => {
           prompted = true;
@@ -452,11 +524,12 @@ describe('gateAction', () => {
         },
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(prompted).toBe(false);
-    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    const granted = events.find((e) => e.type === 'approval_granted') as
+      | Extract<EngineEvent, { type: 'approval_granted' }>
+      | undefined;
     expect(granted?.scope).toBe('session');
   });
 
@@ -467,8 +540,19 @@ describe('gateAction', () => {
     const store = {
       version: 1,
       grants: [
-        { pattern: '/tmp/outside-project/file.ts', class: 'write_out_of_scope', scope: 'session', sessionId: 'sess-OLD', grantedAt: new Date().toISOString() },
-        { pattern: '/tmp/other/file.ts', class: 'write_out_of_scope', scope: 'always', grantedAt: new Date().toISOString() },
+        {
+          pattern: '/tmp/outside-project/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'session',
+          sessionId: 'sess-OLD',
+          grantedAt: new Date().toISOString(),
+        },
+        {
+          pattern: '/tmp/other/file.ts',
+          class: 'write_out_of_scope',
+          scope: 'always',
+          grantedAt: new Date().toISOString(),
+        },
       ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
@@ -483,18 +567,26 @@ describe('gateAction', () => {
       actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-  
+
         onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'allow', scope: 'session' }),
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
+          decision: 'allow',
+          scope: 'session',
+        }),
       },
     });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     await gateAction(input);
 
     const updated = JSON.parse(readFileSync(approvalsFile(projectDir), 'utf-8'));
-    const alwaysGrant = updated.grants.find((g: { pattern: string; scope: string }) => g.pattern === '/tmp/other/file.ts' && g.scope === 'always');
+    const alwaysGrant = updated.grants.find(
+      (g: { pattern: string; scope: string }) =>
+        g.pattern === '/tmp/other/file.ts' && g.scope === 'always',
+    );
     expect(alwaysGrant).toBeDefined();
-    const sessionGrants = updated.grants.filter((g: { pattern: string; scope: string }) => g.pattern === '/tmp/outside-project/file.ts' && g.scope === 'session');
+    const sessionGrants = updated.grants.filter(
+      (g: { pattern: string; scope: string }) =>
+        g.pattern === '/tmp/outside-project/file.ts' && g.scope === 'session',
+    );
     expect(sessionGrants).toHaveLength(1);
     expect(sessionGrants[0].sessionId).toBe('sess-NEW');
   });

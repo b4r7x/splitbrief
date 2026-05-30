@@ -1,4 +1,4 @@
-import { getMaxVisibleDiffLines } from '../../../core/layout/diff-height.js';
+import { getMaxVisibleDiffLines } from '../layout/diff-height.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { formatDuration } from '../../../utils/format-time.js';
@@ -16,24 +16,49 @@ export function implementerDoneRows(
   ];
 
   if (!event.diff) {
-    rows.push(row(`${keyPrefix}-summary`, `  ${event.file} (+${event.linesAdded} -${event.linesRemoved})`, 'textDim'));
+    rows.push(
+      row(
+        `${keyPrefix}-summary`,
+        `  ${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
+        'textDim',
+      ),
+    );
     return rows;
   }
 
-  const diffLines = event.diff.split('\n').filter(line => line.length > 0);
+  const diffLines = event.diff.split('\n').filter((line) => line.length > 0);
   if (!expanded || diffLines.length === 0) {
-    rows.push(row(`${keyPrefix}-collapsed`, `  ▸ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`, 'textDim'));
+    rows.push(
+      row(
+        `${keyPrefix}-collapsed`,
+        `  ▸ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
+        'textDim',
+      ),
+    );
     return rows;
   }
 
-  rows.push(row(`${keyPrefix}-expanded`, `  ▾ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`, 'textDim'));
+  rows.push(
+    row(
+      `${keyPrefix}-expanded`,
+      `  ▾ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
+      'textDim',
+    ),
+  );
   const maxLines = getMaxVisibleDiffLines(ctx.viewportRows);
   const visibleLines = diffLines.slice(0, maxLines);
   for (const [index, line] of visibleLines.entries()) {
-    rows.push(row(`${keyPrefix}-diff-${index}`, `    ${String(index + 1).padStart(3, ' ')} ${line}`, diffLineTone(line)));
+    rows.push(
+      row(
+        `${keyPrefix}-diff-${index}`,
+        `    ${String(index + 1).padStart(3, ' ')} ${line}`,
+        diffLineTone(line),
+      ),
+    );
   }
   const remaining = diffLines.length - visibleLines.length;
-  if (remaining > 0) rows.push(row(`${keyPrefix}-remaining`, `    ...${remaining} more lines`, 'textDim'));
+  if (remaining > 0)
+    rows.push(row(`${keyPrefix}-remaining`, `    ...${remaining} more lines`, 'textDim'));
   return rows;
 }
 

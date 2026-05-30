@@ -6,7 +6,11 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 
 const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 
-export async function applyCode(code: string, task: Task, projectDir: string): Promise<{ success: boolean; error?: string }> {
+export async function applyCode(
+  code: string,
+  task: Task,
+  projectDir: string,
+): Promise<{ success: boolean; error?: string }> {
   let filePath: string;
   try {
     filePath = validateTaskPath(projectDir, task.file);
@@ -53,7 +57,10 @@ export async function applyCode(code: string, task: Task, projectDir: string): P
     const replace = (match[2] ?? '').trimEnd();
 
     if (!result.includes(search)) {
-      return { success: false, error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}` };
+      return {
+        success: false,
+        error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}`,
+      };
     }
 
     result = result.replaceAll(search, () => replace);

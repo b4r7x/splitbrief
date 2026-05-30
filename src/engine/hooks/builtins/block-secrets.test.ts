@@ -21,8 +21,12 @@ function makeEvent(file: string): EngineEvent {
 
 describe('blockSecrets', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'block-secrets-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'block-secrets-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('denies when AWS access key is present', async () => {
     const f = join(dir, 'a.ts');
@@ -39,7 +43,10 @@ describe('blockSecrets', () => {
   });
 
   it('allows when file does not exist', async () => {
-    const outcome = await blockSecrets(makeEvent('missing.ts'), { projectDir: dir, sessionId: 's' });
+    const outcome = await blockSecrets(makeEvent('missing.ts'), {
+      projectDir: dir,
+      sessionId: 's',
+    });
     expect(outcome.kind).toBe('allow');
   });
 
@@ -56,14 +63,42 @@ describe('blockSecrets', () => {
     expect(outcome.kind).toBe('deny');
   });
 
-  it('deny message includes pattern name and file path', async () => {
+  it('deny message names the offending file', async () => {
     const f = join(dir, 'c.ts');
     writeFileSync(f, '// AKIAIOSFODNN7EXAMPLE');
     const outcome = await blockSecrets(makeEvent('c.ts'), { projectDir: dir, sessionId: 's' });
     expect(outcome.kind).toBe('deny');
     if (outcome.kind === 'deny') {
-      expect(outcome.message).toContain('AWS access key');
+      expect(outcome.message).toContain('secret detected');
       expect(outcome.message).toContain('c.ts');
     }
+  });
+
+  it('denies OpenAI sk- key (covered by shared detector)', async () => {
+    const f = join(dir, 'd.ts');
+    writeFileSync(f, 'const key = "sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD";');
+    const outcome = await blockSecrets(makeEvent('d.ts'), { projectDir: dir, sessionId: 's' });
+    expect(outcome.kind).toBe('deny');
+  });
+
+  it('denies Anthropic sk-ant- key (covered by shared detector)', async () => {
+    const f = join(dir, 'e.ts');
+    writeFileSync(f, 'ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123');
+    const outcome = await blockSecrets(makeEvent('e.ts'), { projectDir: dir, sessionId: 's' });
+    expect(outcome.kind).toBe('deny');
+  });
+
+  it('denies a secret only the widened 17-rule set covers (xAI key)', async () => {
+    const f = join(dir, 'f.ts');
+    writeFileSync(f, 'const k = "xai-abcdefghijklmnopqrstuvwxyz0123456789";');
+    const outcome = await blockSecrets(makeEvent('f.ts'), { projectDir: dir, sessionId: 's' });
+    expect(outcome.kind).toBe('deny');
+  });
+
+  it('denies a Groq gsk_ key (widened coverage)', async () => {
+    const f = join(dir, 'g.ts');
+    writeFileSync(f, 'GROQ=gsk_abcdefghijklmnopqrstuvwxyz0123456789');
+    const outcome = await blockSecrets(makeEvent('g.ts'), { projectDir: dir, sessionId: 's' });
+    expect(outcome.kind).toBe('deny');
   });
 });

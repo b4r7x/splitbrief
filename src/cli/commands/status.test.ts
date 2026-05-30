@@ -41,24 +41,29 @@ function writeCompletedSession(projectDir: string, sessionId: string, startedAt:
   mkdirSync(sessionDir, { recursive: true });
   const base = makeSession({ status: 'complete' });
   if (!base.summary) throw new Error('expected complete session summary');
-  writeFileSync(join(sessionDir, 'summary.json'), JSON.stringify(makeSession({
-    id: sessionId,
-    status: 'complete',
-    startedAt,
-    completedAt: startedAt + 1,
-    summary: {
-      ...base.summary,
-      costBreakdown: {
-        hypotheticalCost: 2,
-        actualPlannerCost: 0.2,
-        actualImplementerCost: 0.3,
-        totalActualCost: 0.5,
-        savingsAmount: 1.5,
-        savingsPercentage: 75,
-        localCompletionRate: 1,
-      },
-    },
-  })));
+  writeFileSync(
+    join(sessionDir, 'summary.json'),
+    JSON.stringify(
+      makeSession({
+        id: sessionId,
+        status: 'complete',
+        startedAt,
+        completedAt: startedAt + 1,
+        summary: {
+          ...base.summary,
+          costBreakdown: {
+            hypotheticalCost: 2,
+            actualPlannerCost: 0.2,
+            actualImplementerCost: 0.3,
+            totalActualCost: 0.5,
+            savingsAmount: 1.5,
+            savingsPercentage: 75,
+            localCompletionRate: 1,
+          },
+        },
+      }),
+    ),
+  );
 }
 
 async function runStatus(args: string[]): Promise<void> {

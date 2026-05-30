@@ -1,11 +1,9 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { ValidationResult } from '../validation-types.js';
-import type {
-  EvidenceLedger,
-  EvidenceValidationEntry,
-} from '../../../core/schemas/evidence.js';
-import { findOrSeed, withUpdatedTask } from './ledger.js';
+import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
+import { findOrSeed, withUpdatedTask } from '../../../core/evidence/ledger.js';
+import { uniquePush } from '../../../utils/collections.js';
 
 const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
   typecheck: 'typecheck passed',
@@ -13,28 +11,32 @@ const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> 
   test: 'test passed',
 };
 
-export function uniquePush(arr: string[], value: string): void {
-  if (!arr.includes(value)) arr.push(value);
-}
-
 export function validationEntries(
   results: ValidationResult[],
-  metadata?: { retryState?: EvidenceValidationEntry['retryState']; changedFiles?: string[] | undefined } | undefined,
+  metadata?:
+    | { retryState?: EvidenceValidationEntry['retryState']; changedFiles?: string[] | undefined }
+    | undefined,
 ): EvidenceValidationEntry[] {
-	return results.map(r => {
-	  const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
-	  if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
-	  if (metadata?.retryState) entry.retryState = metadata.retryState;
-	  if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
-	    entry.changedFiles = [...metadata.changedFiles];
-	  }
+  return results.map((r) => {
+    const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
+    if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
+    if (metadata?.retryState) entry.retryState = metadata.retryState;
+    if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
+      entry.changedFiles = [...metadata.changedFiles];
+    }
     return entry;
   });
 }
 
-export function appendValidationEntries(target: EvidenceValidationEntry[], entries: EvidenceValidationEntry[]): void {
+export function appendValidationEntries(
+  target: EvidenceValidationEntry[],
+  entries: EvidenceValidationEntry[],
+): void {
   for (const entry of entries) {
-    target.push({ ...entry, ...(entry.changedFiles ? { changedFiles: [...entry.changedFiles] } : {}) });
+    target.push({
+      ...entry,
+      ...(entry.changedFiles ? { changedFiles: [...entry.changedFiles] } : {}),
+    });
   }
 }
 
@@ -103,10 +105,15 @@ export function recordRetryOrEscalationEvidence(
     if (file) uniquePush(next.changedFiles, file);
   }
   if (input.validation) {
-    appendValidationEntries(next.validation, validationEntries(input.validation, {
-      retryState: input.validationRetryState ?? (input.escalated ? 'escalated' : input.status === 'failed' ? 'failed' : 'retry'),
-      changedFiles: input.changedFiles,
-    }));
+    appendValidationEntries(
+      next.validation,
+      validationEntries(input.validation, {
+        retryState:
+          input.validationRetryState ??
+          (input.escalated ? 'escalated' : input.status === 'failed' ? 'failed' : 'retry'),
+        changedFiles: input.changedFiles,
+      }),
+    );
   }
   if (input.status === 'done') {
     uniquePush(next.observedEvidence, 'task reached done');

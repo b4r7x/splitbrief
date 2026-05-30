@@ -10,14 +10,13 @@ import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { beginSession, generateSessionId } from '../../core/sessions/lifecycle.js';
 import { sessionError } from '../../core/sessions/errors.js';
-import { maybeMigrate } from '../../core/migration/executor.js';
-import { printMigrationResult } from './migrate.js';
+import { maybeMigrateAndReport } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import { createResponseWriter } from '../rpc/writer.js';
 import { parseAtFiles } from '../parse-at-files.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
 import { slugify } from '../../utils/slugify.js';
@@ -25,9 +24,10 @@ import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { configPath } from '../../core/config/load/load.js';
 import { READINESS_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { assertNotWindows } from '../platform.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { collectReadiness } from '../../core/readiness/collect.js';
+import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import {
   createBlockerOnlyReadinessReport,
   createStartReadinessRecord,
@@ -65,13 +65,11 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
       : slugify(feature ?? 'session');
   const baseProjectDir = resolveProjectDir(opts.project);
   const git = createGitClient(baseProjectDir);
-  try {
-    const wtPath = await createWorktree({ projectDir: baseProjectDir, slug, git });
-    console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
-    opts.project = wtPath;
-  } catch (err) {
-    rethrowAsCli(err);
-  }
+  const wtPath = await withCliErrors(() =>
+    createWorktree({ projectDir: baseProjectDir, slug, git }),
+  );
+  console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
+  opts.project = wtPath;
 }
 
 function persistStartReadiness(ref: SessionRef, report: ReadinessReport): void {
@@ -103,6 +101,168 @@ function readinessForInteractiveStart(report: ReadinessReport): ReadinessReport 
   return report.status === 'blocked' ? createBlockerOnlyReadinessReport(report) : report;
 }
 
+interface BootstrapSessionArgs {
+  projectDir: string;
+  feature: string;
+  opts: WorkflowOpts;
+  assertJson: boolean;
+  emitReadiness: (report: ReadinessReport) => void;
+  defaultAutoApprove?: boolean | undefined;
+}
+
+async function bootstrapSession(
+  args: BootstrapSessionArgs,
+): Promise<{ sessionId: string; readiness: CollectedReadiness }> {
+  const readiness = await collectReadiness({
+    projectDir: args.projectDir,
+    opts: args.opts,
+    ...(args.defaultAutoApprove !== undefined && { defaultAutoApprove: args.defaultAutoApprove }),
+  });
+  args.emitReadiness(readiness.report);
+  assertReadinessCanStart(readiness.report, args.assertJson);
+  clearStaleSessionForCli(args.projectDir);
+  const sessionId = beginSession(args.projectDir, args.feature);
+  persistStartReadiness({ projectDir: args.projectDir, sessionId }, readiness.report);
+  return { sessionId, readiness };
+}
+
+interface DispatchArgs {
+  deps: StartDeps;
+  projectDir: string;
+  feature: string | undefined;
+  enrichedFeature: string | undefined;
+  plannerContext: string | undefined;
+  opts: WorkflowOpts;
+}
+
+async function runDetachedStart(args: DispatchArgs): Promise<void> {
+  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
+  const feature = args.feature as string;
+  await ensureGitAndConfig(projectDir);
+  const readiness = await collectReadiness({ projectDir, opts });
+  assertReadinessCanStart(readiness.report, opts.json);
+
+  const mode = opts.mode ?? 'standard';
+  const sessId = generateSessionId(projectDir, feature);
+  const sessDir = sessionDir(projectDir, sessId);
+  ensureSessionDir(projectDir, sessId);
+  persistStartReadiness({ projectDir, sessionId: sessId }, readiness.report);
+
+  const overrides = { ...buildCLIOverrides(opts), mode };
+
+  const result = await deps.spawnServer({
+    sessionDir: sessDir,
+    sessionId: sessId,
+    projectDir,
+    feature: enrichedFeature ?? feature,
+    mode,
+    configPath: configPath(projectDir),
+    overrides,
+    ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+    ...(plannerContext !== undefined && { plannerContext }),
+  });
+
+  if (!result.ok) {
+    throw cliError(`Failed to start server: ${result.reason}`, 1);
+  }
+
+  console.log(`Session ${result.sessionId} started (pid ${result.pid}).`);
+  console.log(`Run: cd ${projectDir} && diptych attach ${result.sessionId}`);
+}
+
+async function runJsonStart(args: DispatchArgs): Promise<void> {
+  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
+  const feature = args.feature as string;
+  await ensureGitAndConfig(projectDir);
+  const { sessionId, readiness } = await bootstrapSession({
+    projectDir,
+    feature,
+    opts,
+    assertJson: true,
+    defaultAutoApprove: true,
+    emitReadiness: (report) => {
+      process.stdout.write(JSON.stringify({ type: 'readiness_report', report }) + '\n');
+    },
+  });
+  await deps.runHeadless({
+    feature: enrichedFeature ?? feature,
+    projectDir,
+    opts,
+    sessionId,
+    readiness,
+    plannerContext,
+  });
+}
+
+async function runRpcStart(args: DispatchArgs): Promise<void> {
+  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
+  const feature = args.feature as string;
+  await ensureGitAndConfig(projectDir);
+  const { sessionId, readiness } = await bootstrapSession({
+    projectDir,
+    feature,
+    opts,
+    assertJson: true,
+    emitReadiness: (report) => {
+      createResponseWriter(process.stdout).status({ type: 'readiness_report', report });
+    },
+  });
+  await deps.runRpc({
+    feature: enrichedFeature ?? feature,
+    projectDir,
+    opts,
+    sessionId,
+    readiness,
+    plannerContext,
+  });
+}
+
+async function runInteractiveStart(args: DispatchArgs): Promise<void> {
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
+  const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
+
+  let sessionId: string | undefined;
+  let readiness: CollectedReadiness | undefined;
+  if (feature && !needsSetup) {
+    ({ sessionId, readiness } = await bootstrapSession({
+      projectDir,
+      feature,
+      opts,
+      assertJson: false,
+      emitReadiness: () => {},
+    }));
+  } else {
+    clearStaleSessionForCli(projectDir);
+  }
+
+  await deps.initStores(projectDir, opts);
+  let worktreeName: string | null = null;
+  try {
+    worktreeName = await detectWorktree(projectDir, createGitClient(projectDir));
+  } catch {
+    worktreeName = null;
+  }
+  if (needsSetup) {
+    routerStore.init({
+      screen: 'setup',
+      onComplete: feature ? 'workflow' : 'home',
+      feature: enrichedFeature ?? feature,
+      plannerContext,
+    });
+  } else if (feature) {
+    routerStore.init({
+      screen: 'workflow',
+      feature: enrichedFeature ?? feature,
+      plannerContext,
+      sessionId,
+      worktreeName: worktreeName ?? undefined,
+      readiness: readiness ? readinessForInteractiveStart(readiness.report) : undefined,
+    });
+  }
+
+  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+}
+
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void {
   addWorkflowOptions(
     program
@@ -121,14 +281,16 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     }
     if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
     if (opts.rpc && !feature) throw cliError('--rpc requires a feature argument');
+    if (opts.json && !feature) throw cliError('--json requires a feature argument');
 
     await applyWorktreeOption(feature, opts);
+
+    const projectDir = resolveProjectDir(opts.project);
 
     let enrichedFeature = feature;
     let plannerContext: string | undefined;
     if (feature && files.length > 0) {
-      const projectDirAt = resolveProjectDir(opts.project);
-      const parsed = parseAtFiles(feature, files, projectDirAt);
+      const parsed = parseAtFiles(feature, files, projectDir);
       enrichedFeature = parsed.feature;
       if (parsed.textContext) plannerContext = parsed.textContext;
       for (const att of parsed.attachments) attachmentsStore.add(att);
@@ -137,119 +299,23 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       }
     }
 
+    await maybeMigrateAndReport(projectDir, opts);
+
     if (opts.detach) {
-      const projectDir = resolveProjectDir(opts.project);
-      printMigrationResult(await maybeMigrate(projectDir));
-      await ensureGitAndConfig(projectDir);
-      const readiness = await collectReadiness({ projectDir, opts });
-      assertReadinessCanStart(readiness.report, opts.json);
-
-      const mode = opts.mode ?? 'standard';
-      const detachFeature = feature as string;
-      const sessId = generateSessionId(projectDir, detachFeature);
-      const sessDir = sessionDir(projectDir, sessId);
-      ensureSessionDir(projectDir, sessId);
-      persistStartReadiness({ projectDir, sessionId: sessId }, readiness.report);
-
-      const overrides = { ...buildCLIOverrides(opts), mode };
-
-      const result = await deps.spawnServer({
-        sessionDir: sessDir,
-        sessionId: sessId,
-        projectDir,
-        feature: enrichedFeature ?? detachFeature,
-        mode,
-        configPath: configPath(projectDir),
-        overrides,
-        ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
-        ...(plannerContext !== undefined && { plannerContext }),
-      });
-
-      if (!result.ok) {
-        throw cliError(`Failed to start server: ${result.reason}`, 1);
-      }
-
-      console.log(`Session ${result.sessionId} started (pid ${result.pid}).`);
-      console.log(`Run: cd ${projectDir} && diptych attach ${result.sessionId}`);
+      await runDetachedStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
       return;
     }
 
-    const projectDir = resolveProjectDir(opts.project);
-    const migration = await maybeMigrate(projectDir);
-    if (!opts.json && !opts.rpc) printMigrationResult(migration);
-
     if (opts.json) {
-      if (!feature) throw cliError('--json requires a feature argument');
-      await ensureGitAndConfig(projectDir);
-      const readiness = await collectReadiness({ projectDir, opts, defaultAutoApprove: true });
-      process.stdout.write(JSON.stringify({ type: 'readiness_report', report: readiness.report }) + '\n');
-      assertReadinessCanStart(readiness.report, true);
-      clearStaleSessionForCli(projectDir);
-      const sessionId = beginSession(projectDir, feature);
-      persistStartReadiness({ projectDir, sessionId }, readiness.report);
-      await deps.runHeadless({
-        feature: enrichedFeature ?? feature,
-        projectDir,
-        opts,
-        sessionId,
-        readiness,
-        plannerContext,
-      });
+      await runJsonStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
       return;
     }
 
     if (opts.rpc) {
-      if (!feature) throw cliError('--rpc requires a feature argument');
-      await ensureGitAndConfig(projectDir);
-      const readiness = await collectReadiness({ projectDir, opts });
-      createResponseWriter(process.stdout).status({ type: 'readiness_report', report: readiness.report });
-      assertReadinessCanStart(readiness.report, true);
-      clearStaleSessionForCli(projectDir);
-      const sessionId = beginSession(projectDir, feature);
-      persistStartReadiness({ projectDir, sessionId }, readiness.report);
-      await deps.runRpc({
-        feature: enrichedFeature ?? feature,
-        projectDir,
-        opts,
-        sessionId,
-        readiness,
-        plannerContext,
-      });
+      await runRpcStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
       return;
     }
 
-    const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
-
-    const readiness = feature && !needsSetup
-      ? await collectReadiness({ projectDir, opts })
-      : undefined;
-    if (readiness) assertReadinessCanStart(readiness.report, false);
-
-    clearStaleSessionForCli(projectDir);
-
-    const sessionId = feature && !needsSetup ? beginSession(projectDir, feature) : undefined;
-    if (sessionId && readiness) persistStartReadiness({ projectDir, sessionId }, readiness.report);
-
-    await deps.initStores(projectDir, opts);
-    let worktreeName: string | null = null;
-    try {
-      worktreeName = await detectWorktree(projectDir, createGitClient(projectDir));
-    } catch {
-      worktreeName = null;
-    }
-    if (needsSetup) {
-      routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature: enrichedFeature ?? feature, plannerContext });
-    } else if (feature) {
-      routerStore.init({
-        screen: 'workflow',
-        feature: enrichedFeature ?? feature,
-        plannerContext,
-        sessionId,
-        worktreeName: worktreeName ?? undefined,
-        readiness: readiness ? readinessForInteractiveStart(readiness.report) : undefined,
-      });
-    }
-
-    await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+    await runInteractiveStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
   });
 }

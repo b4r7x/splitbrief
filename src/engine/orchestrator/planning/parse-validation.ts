@@ -1,7 +1,9 @@
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
 export function parseDiscoveredValidation(researchMarkdown: string): DiscoveredValidation | null {
-  const sectionMatch = researchMarkdown.match(/#{2,3} Validation Tools\s*\n([\s\S]*?)(?=\n#{2,3} |\n---|$)/);
+  const sectionMatch = researchMarkdown.match(
+    /#{2,3} Validation Tools\s*\n([\s\S]*?)(?=\n#{2,3} |\n---|$)/,
+  );
   if (!sectionMatch?.[1]) return null;
 
   const section = sectionMatch[1];

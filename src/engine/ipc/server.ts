@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import { parseClientMessage, type IpcPromptRequestInput, type IpcPromptResponse } from './protocol.js';
+import {
+  parseClientMessage,
+  type IpcPromptRequestInput,
+  type IpcPromptResponse,
+} from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { rejectAsAlreadyAttached, tryControlDetach } from './control-detach.js';
@@ -46,7 +50,11 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
   const sockPath = join(sessionDir, IPC_SOCK_FILE);
 
   if (existsSync(sockPath)) {
-    try { unlinkSync(sockPath); } catch { /* ignore */ }
+    try {
+      unlinkSync(sockPath);
+    } catch {
+      /* ignore */
+    }
   }
 
   let currentClient: { socket: Socket; unsubscribe: () => void } | null = null;
@@ -67,7 +75,8 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       tryControlDetach({
         socket,
         currentSocket: () => currentClient?.socket ?? null,
-        rejectAsAlreadyAttached: rejectSocket => rejectAsAlreadyAttached(rejectSocket, writeServerMessage),
+        rejectAsAlreadyAttached: (rejectSocket) =>
+          rejectAsAlreadyAttached(rejectSocket, writeServerMessage),
       });
       return;
     }
@@ -75,7 +84,10 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     let detached = false;
     let replaying = true;
     const liveBacklog: EngineEvent[] = [];
-    const client: { socket: Socket; unsubscribe: () => void } = { socket, unsubscribe: () => undefined };
+    const client: { socket: Socket; unsubscribe: () => void } = {
+      socket,
+      unsubscribe: () => undefined,
+    };
     currentClient = client;
 
     function writeEvent(event: EngineEvent): void {
@@ -100,22 +112,42 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         const parsed: unknown = JSON.parse(trimmed);
         msg = parseClientMessage(parsed);
         if (!msg) {
-          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: invalid message structure from client: ${trimmed}` });
+          bus.publish({
+            type: 'warning',
+            ts: Date.now(),
+            phase: 'idle',
+            message: `IPC: invalid message structure from client: ${trimmed}`,
+          });
           return;
         }
       } catch {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: malformed JSON from client: ${trimmed}` });
+        bus.publish({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: `IPC: malformed JSON from client: ${trimmed}`,
+        });
         return;
       }
       if (msg.kind === 'user_input') {
         try {
           onUserInput(msg.text);
         } catch (err) {
-          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: onUserInput threw: ${toErrorMessage(err)}` });
+          bus.publish({
+            type: 'warning',
+            ts: Date.now(),
+            phase: 'idle',
+            message: `IPC: onUserInput threw: ${toErrorMessage(err)}`,
+          });
         }
       } else if (msg.kind === 'prompt_response') {
         if (!promptTracker.handleResponse(msg.requestId, msg.response)) {
-          bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: response for unknown prompt ${msg.requestId}` });
+          bus.publish({
+            type: 'warning',
+            ts: Date.now(),
+            phase: 'idle',
+            message: `IPC: response for unknown prompt ${msg.requestId}`,
+          });
         }
       } else if (msg.kind === 'detach') {
         detachClient();
@@ -132,11 +164,23 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     });
 
     socket.on('error', (err) => {
-      bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC client error: ${toErrorMessage(err)}` });
+      bus.publish({
+        type: 'warning',
+        ts: Date.now(),
+        phase: 'idle',
+        message: `IPC client error: ${toErrorMessage(err)}`,
+      });
       detachClient();
     });
 
-    writeServerMessage(socket, { kind: 'session_meta', sessionId, startedAt, mode, feature, readonly: false });
+    writeServerMessage(socket, {
+      kind: 'session_meta',
+      sessionId,
+      startedAt,
+      mode,
+      feature,
+      readonly: false,
+    });
 
     bus.publish({ type: 'ipc_client_attached', ts: Date.now(), phase: 'idle' });
     promptTracker.sendPendingPrompts(socket);
@@ -178,17 +222,31 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       return promptTracker.requestClientPrompt(requestWithoutId);
     },
     close(): Promise<void> {
-      promptTracker.rejectAll(request => new Error(`IPC prompt cancelled while closing server: ${request.kind}`));
+      promptTracker.rejectAll(
+        (request) => new Error(`IPC prompt cancelled while closing server: ${request.kind}`),
+      );
 
       if (currentClient) {
-        try { currentClient.unsubscribe(); } catch { /* ignore */ }
-        try { currentClient.socket.destroy(); } catch { /* ignore */ }
+        try {
+          currentClient.unsubscribe();
+        } catch {
+          /* ignore */
+        }
+        try {
+          currentClient.socket.destroy();
+        } catch {
+          /* ignore */
+        }
         currentClient = null;
       }
 
       return new Promise<void>((resolve) => {
         server.close(() => {
-          try { unlinkSync(sockPath); } catch { /* ignore ENOENT */ }
+          try {
+            unlinkSync(sockPath);
+          } catch {
+            /* ignore ENOENT */
+          }
           resolve();
         });
       });

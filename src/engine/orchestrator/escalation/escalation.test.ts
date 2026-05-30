@@ -5,7 +5,12 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeImplementer,
+  makeBusRecorder,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -14,7 +19,11 @@ import { handleRetryAndEscalation } from './escalation.js';
 import type { WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' } as const;
+const TEST_METADATA = {
+  plannerTool: 'claude-code',
+  implementerTool: 'ollama',
+  mode: 'standard',
+} as const;
 
 const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},
@@ -68,11 +77,21 @@ describe('handleRetryAndEscalation', () => {
 
     const { result } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId, config: makeNoValidationConfig({ workflow: defaultWorkflow }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus: makeBusRecorder().bus,
       },
-      task, initialError: 'type error', currentState: state,
+      task,
+      initialError: 'type error',
+      currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -88,22 +107,43 @@ describe('handleRetryAndEscalation', () => {
 
     // Both local retry attempts AND the hint-tier retry fail: no success anywhere.
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'still broken',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
 
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'use x', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'use x',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     const { result } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     // Local retries exhausted → hint tier → full tier → all failed.
@@ -122,25 +162,49 @@ describe('handleRetryAndEscalation', () => {
     const state = makeValidatingState();
 
     const implementer = makeImplementer({
-      retry: vi.fn()
+      retry: vi
+        .fn()
         // Local retry fails (attempt 1).
-        .mockResolvedValueOnce({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } })
+        .mockResolvedValueOnce({
+          success: false,
+          output: '',
+          error: 'fail',
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
         // Hint-assisted retry succeeds.
-        .mockResolvedValueOnce({ success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } }),
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'fixed',
+          usage: { inputTokens: 20, outputTokens: 10 },
+        }),
     });
 
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'try adding import', code: null, usage: { inputTokens: 100, outputTokens: 50 } }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'try adding import',
+        code: null,
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
     });
 
     const { result } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -176,7 +240,9 @@ describe('handleRetryAndEscalation', () => {
       }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
     });
 
     const { result, state: finalState } = await handleRetryAndEscalation({
@@ -226,22 +292,46 @@ describe('handleRetryAndEscalation', () => {
     const state = makeValidatingState();
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
 
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: true, output: 'full code', code: 'code', usage: { inputTokens: 200, outputTokens: 100 } }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'full code',
+        code: 'code',
+        usage: { inputTokens: 200, outputTokens: 100 },
+      }),
     });
 
     const { result } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -263,22 +353,40 @@ describe('handleRetryAndEscalation', () => {
 
     const { callbacks } = makeCallbacks();
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
 
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     const { result, state: finalState } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus: makeBusRecorder().bus,
       },
-      task, initialError: 'error', currentState: stateWithTask,
+      task,
+      initialError: 'error',
+      currentState: stateWithTask,
     });
 
     expect(result.completed).toBe(false);
@@ -308,21 +416,42 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     const state = makeValidatingState();
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
@@ -338,24 +467,49 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     const state = makeValidatingState();
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1, commitStrategy: 'none' },
-          escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4', enabled: false },
+          escalation: {
+            intermediateProvider: 'openrouter',
+            intermediateModel: 'x-ai/grok-4',
+            enabled: false,
+          },
         }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
@@ -372,11 +526,19 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       implementer: { kind: 'cli' as const, tool: 'aider' as const, model: 'gpt-4' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: false, autoApprovePlan: false,
-        maxRetries: 1, commitStrategy: 'none' as const,
-        persistTranscript: true, compactionFormat: 'auto' as const, mode: 'standard' as const,
+        autoApproveSpec: false,
+        autoApprovePlan: false,
+        maxRetries: 1,
+        commitStrategy: 'none' as const,
+        persistTranscript: true,
+        compactionFormat: 'auto' as const,
+        mode: 'standard' as const,
       },
-      escalation: { intermediateProvider: 'totally-bogus-provider', intermediateModel: 'whatever', enabled: true },
+      escalation: {
+        intermediateProvider: 'totally-bogus-provider',
+        intermediateModel: 'whatever',
+        enabled: true,
+      },
     };
 
     const { projectDir, sessionId } = setupProject();
@@ -386,26 +548,53 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     const state = makeValidatingState();
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: cliOnlyConfig,
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     const warnings = busEvents.filter((e) => e.type === 'warning');
-    expect(warnings.some((e) => e.type === 'warning' && e.message.includes('Unknown intermediate provider'))).toBe(true);
-    expect(warnings.some((e) => e.type === 'warning' && e.message.includes('no API base URL available'))).toBe(true);
+    expect(
+      warnings.some(
+        (e) => e.type === 'warning' && e.message.includes('Unknown intermediate provider'),
+      ),
+    ).toBe(true);
+    expect(
+      warnings.some((e) => e.type === 'warning' && e.message.includes('no API base URL available')),
+    ).toBe(true);
 
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -420,27 +609,47 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
 
     // Intermediate provider returns real OpenAI-compatible SSE with extractable code.
     const code = '```typescript\nexport const fixed = true;\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([
-      { content: code },
-      { usage: { prompt_tokens: 400, completion_tokens: 200 } },
-    ]));
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([
+        { content: code },
+        { usage: { prompt_tokens: 400, completion_tokens: 200 } },
+      ]),
+    );
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner();
 
     const { result, state: finalState } = await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1, commitStrategy: 'none' },
-          escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4-fast', enabled: true },
+          escalation: {
+            intermediateProvider: 'openrouter',
+            intermediateModel: 'x-ai/grok-4-fast',
+            enabled: true,
+          },
         }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'type error', currentState: state,
+      task,
+      initialError: 'type error',
+      currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -469,24 +678,49 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     fetchMock.mockRejectedValue(new Error('Connection timeout'));
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'fail',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 50, outputTokens: 25 } }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'hint',
+        code: null,
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
       wctx: {
-        projectDir, sessionId,
+        projectDir,
+        sessionId,
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1, commitStrategy: 'none' },
-          escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4-fast', enabled: true },
+          escalation: {
+            intermediateProvider: 'openrouter',
+            intermediateModel: 'x-ai/grok-4-fast',
+            enabled: true,
+          },
         }),
-        context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
       },
-      task, initialError: 'error', currentState: state,
+      task,
+      initialError: 'error',
+      currentState: state,
     });
 
     // Tier 0 fires, fails, Tier 1 runs.

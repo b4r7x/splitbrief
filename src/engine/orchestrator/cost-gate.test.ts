@@ -15,14 +15,17 @@ function makePrediction(overrides: Partial<CostPrediction> = {}): CostPrediction
       taskCount: 12,
       taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
       contextConfidenceCounts: {
-        contextExplicit: 5, contextKnownCatalog: 4, contextCachedProvider: 2,
-        contextConservativeFallback: 1, profileUnavailable: 0,
+        contextExplicit: 5,
+        contextKnownCatalog: 4,
+        contextCachedProvider: 2,
+        contextConservativeFallback: 1,
+        profileUnavailable: 0,
       },
       priceConfidenceCounts: { priceKnown: 12, priceUnknown: 0, profileUnavailable: 0 },
       tasks: [],
       totals: {
         knownActualEstimate: 0.14,
-        hypotheticalAllPlanner: 1.20,
+        hypotheticalAllPlanner: 1.2,
         estimatedSavings: 1.06,
         unknownCostReason: [],
       },
@@ -33,25 +36,43 @@ function makePrediction(overrides: Partial<CostPrediction> = {}): CostPrediction
 
 describe('decideCostGate', () => {
   it('returns gate for standard mode with valid prediction', () => {
-    expect(decideCostGate({ mode: 'standard', prediction: makePrediction(), costGateEnabled: true })).toBe('gate');
+    expect(
+      decideCostGate({ mode: 'standard', prediction: makePrediction(), costGateEnabled: true }),
+    ).toBe('gate');
   });
   it('returns gate for speckit mode', () => {
-    expect(decideCostGate({ mode: 'speckit', prediction: makePrediction(), costGateEnabled: true })).toBe('gate');
+    expect(
+      decideCostGate({ mode: 'speckit', prediction: makePrediction(), costGateEnabled: true }),
+    ).toBe('gate');
   });
   it('returns skip for instant mode', () => {
-    expect(decideCostGate({ mode: 'instant', prediction: makePrediction(), costGateEnabled: true })).toBe('skip');
+    expect(
+      decideCostGate({ mode: 'instant', prediction: makePrediction(), costGateEnabled: true }),
+    ).toBe('skip');
   });
   it('returns skip for quick mode', () => {
-    expect(decideCostGate({ mode: 'quick', prediction: makePrediction(), costGateEnabled: true })).toBe('skip');
+    expect(
+      decideCostGate({ mode: 'quick', prediction: makePrediction(), costGateEnabled: true }),
+    ).toBe('skip');
   });
   it('returns skip when costGateEnabled is false', () => {
-    expect(decideCostGate({ mode: 'standard', prediction: makePrediction(), costGateEnabled: false })).toBe('skip');
+    expect(
+      decideCostGate({ mode: 'standard', prediction: makePrediction(), costGateEnabled: false }),
+    ).toBe('skip');
   });
   it('returns skip when prediction is null', () => {
-    expect(decideCostGate({ mode: 'standard', prediction: null, costGateEnabled: true })).toBe('skip');
+    expect(decideCostGate({ mode: 'standard', prediction: null, costGateEnabled: true })).toBe(
+      'skip',
+    );
   });
   it('returns skip when deterministic is undefined', () => {
-    expect(decideCostGate({ mode: 'standard', prediction: makePrediction({ deterministic: undefined }), costGateEnabled: true })).toBe('skip');
+    expect(
+      decideCostGate({
+        mode: 'standard',
+        prediction: makePrediction({ deterministic: undefined }),
+        costGateEnabled: true,
+      }),
+    ).toBe('skip');
   });
   it('returns skip when knownActualEstimate is null', () => {
     const prediction = makePrediction();

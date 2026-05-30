@@ -62,7 +62,7 @@ describe('approval list', () => {
   it('prints "No sticky approvals" when store is empty', async () => {
     const logs = await runApproval(['list', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('No sticky approvals'))).toBe(true);
+    expect(logs.some((l) => l.includes('No sticky approvals'))).toBe(true);
   });
 
   it('prints grant rows when store has entries', async () => {
@@ -86,7 +86,7 @@ describe('approval clear', () => {
 
     const logs = await runApproval(['clear', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
+    expect(logs.some((l) => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
     const after = readApprovals(tmp);
     expect(after.grants).toHaveLength(0);
   });
@@ -96,7 +96,7 @@ describe('approval clear', () => {
 
     const logs = await runApproval(['clear', '--scope', 'session', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('Cleared 1 approval grant(s)'))).toBe(true);
+    expect(logs.some((l) => l.includes('Cleared 1 approval grant(s)'))).toBe(true);
     const after = readApprovals(tmp);
     expect(after.grants).toHaveLength(1);
     expect(after.grants[0]!.scope).toBe('always');
@@ -107,7 +107,7 @@ describe('approval clear', () => {
 
     const logs = await runApproval(['clear', '--scope', 'always', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('Cleared 1 approval grant(s)'))).toBe(true);
+    expect(logs.some((l) => l.includes('Cleared 1 approval grant(s)'))).toBe(true);
     const after = readApprovals(tmp);
     expect(after.grants).toHaveLength(1);
     expect(after.grants[0]!.scope).toBe('session');
@@ -118,7 +118,7 @@ describe('approval clear', () => {
 
     const logs = await runApproval(['clear', '--scope', 'all', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
+    expect(logs.some((l) => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
     const after = readApprovals(tmp);
     expect(after.grants).toHaveLength(0);
   });
@@ -140,6 +140,6 @@ describe('approval clear', () => {
   it('reports 0 cleared when store is already empty', async () => {
     const logs = await runApproval(['clear', '--project', tmp]);
 
-    expect(logs.some(l => l.includes('Cleared 0 approval grant(s)'))).toBe(true);
+    expect(logs.some((l) => l.includes('Cleared 0 approval grant(s)'))).toBe(true);
   });
 });

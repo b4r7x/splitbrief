@@ -3,7 +3,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -42,7 +46,13 @@ function unavailablePlannerConfig(): Config {
       command: '/definitely/does/not/exist/plannerbin',
     },
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-    workflow: { autoApproveSpec: true, autoApprovePlan: true, commitStrategy: 'none', mode: 'quick', persistTranscript: false },
+    workflow: {
+      autoApproveSpec: true,
+      autoApprovePlan: true,
+      commitStrategy: 'none',
+      mode: 'quick',
+      persistTranscript: false,
+    },
   });
 }
 
@@ -68,7 +78,9 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
 
     // An error event was emitted explaining the missing planner to the user.
-    const errorEvent = events.find((e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error');
+    const errorEvent = events.find(
+      (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
+    );
     expect(errorEvent).toBeDefined();
     expect(errorEvent?.message).toMatch(/not available/i);
 
@@ -274,21 +286,25 @@ describe('runWorkflow — smoke', () => {
         quickPlan: vi.fn().mockResolvedValue({
           spec: '',
           plan: '',
-          tasks: [makeTask({
-            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_skipped event shows the discovered hook blocked the task'],
-            typeDefs: 'type HelloTask = { file: string }',
-          })],
+          tasks: [
+            makeTask({
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_skipped event shows the discovered hook blocked the task'],
+              typeDefs: 'type HelloTask = { file: string }',
+            }),
+          ],
           usage: { inputTokens: 50, outputTokens: 25 },
         }),
       }),
       _implementer: makeImplementer(),
     });
 
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'task_skipped',
-      reason: 'auto blocked',
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'task_skipped',
+        reason: 'auto blocked',
+      }),
+    );
   });
 });
 
@@ -302,7 +318,11 @@ describe('runWorkflow — createBranch', () => {
 
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { git: { createBranch: true, commitStrategy: 'none' }, mode: 'quick', persistTranscript: false },
+      workflow: {
+        git: { createBranch: true, commitStrategy: 'none' },
+        mode: 'quick',
+        persistTranscript: false,
+      },
     });
 
     await runWorkflow({
@@ -316,7 +336,10 @@ describe('runWorkflow — createBranch', () => {
       signal: controller.signal,
     });
 
-    const branchEvent = events.find((e): e is Extract<EngineEvent, { type: 'git_branch_created' }> => e.type === 'git_branch_created');
+    const branchEvent = events.find(
+      (e): e is Extract<EngineEvent, { type: 'git_branch_created' }> =>
+        e.type === 'git_branch_created',
+    );
     expect(branchEvent).toBeDefined();
     expect(branchEvent?.name).toBe('diptych/add-auth');
 
@@ -334,7 +357,11 @@ describe('runWorkflow — createBranch', () => {
 
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { git: { createBranch: false, commitStrategy: 'none' }, mode: 'quick', persistTranscript: false },
+      workflow: {
+        git: { createBranch: false, commitStrategy: 'none' },
+        mode: 'quick',
+        persistTranscript: false,
+      },
     });
 
     const g = simpleGit(projectDir);
@@ -375,12 +402,17 @@ describe('runWorkflow — recovery resume', () => {
       maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
-    const savedState = transition(implementingState([task]), { type: 'SET_PENDING_RECOVERY', issue });
+    const savedState = transition(implementingState([task]), {
+      type: 'SET_PENDING_RECOVERY',
+      issue,
+    });
     saveState(projectDir, sessionId, savedState);
 
     const { callbacks } = makeCallbacks();
     const isAvailable = async () => {
-      throw new Error('planner availability should not be checked while pending recovery is unresolved');
+      throw new Error(
+        'planner availability should not be checked while pending recovery is unresolved',
+      );
     };
 
     await runWorkflow({
@@ -388,7 +420,13 @@ describe('runWorkflow — recovery resume', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { autoApproveSpec: true, autoApprovePlan: true, commitStrategy: 'none', mode: 'quick', persistTranscript: false },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },

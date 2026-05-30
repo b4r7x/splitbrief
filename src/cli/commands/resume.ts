@@ -1,31 +1,20 @@
 import type { Command } from 'commander';
-import { createElement } from 'react';
-import { App } from '../../app.js';
 import { loadState } from '../../core/state/persistence.js';
-import { renderApp } from '../render.js';
 import { addWorkflowOptions } from '../options.js';
-import { setupWorkflow, resolveProjectDir } from '../setup.js';
+import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { routerStore } from '../../stores/navigation/router.js';
-import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
-import { maybeMigrate } from '../../core/migration/executor.js';
-import { printMigrationResult } from './migrate.js';
-import { runHeadless } from '../headless.js';
-import { runRpc } from '../rpc/run.js';
+import { maybeMigrateAndReport } from './migrate.js';
+import { resumeSavedSession } from './continue.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
-import { assertResumableState } from '../session-resolve.js';
 
 export function registerResumeCommand(program: Command): void {
   addWorkflowOptions(
-    program
-      .command('resume')
-      .description('Resume an interrupted workflow'),
+    program.command('resume').description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
     if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
     const projectDir = resolveProjectDir(opts.project);
-    const migration = await maybeMigrate(projectDir);
-    if (!opts.json && !opts.rpc) printMigrationResult(migration);
+    await maybeMigrateAndReport(projectDir, opts);
 
     const sessionId = readActive(projectDir);
     if (!sessionId) {
@@ -38,25 +27,6 @@ export function registerResumeCommand(program: Command): void {
       throw cliError(`session '${sessionId}' has no state.json — cannot resume.`);
     }
 
-    assertResumableState(state, sessionId);
-
-    if (opts.json) {
-      await runHeadless({ feature: state.feature, projectDir, opts, savedState: state, sessionId });
-      return;
-    }
-
-    if (opts.rpc) {
-      await runRpc({ feature: state.feature, projectDir, opts, savedState: state, sessionId });
-      return;
-    }
-
-    console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
-
-    const { useFullscreen, useMouse } = await setupWorkflow(opts);
-
-    await initStores(projectDir, opts);
-    routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
-
-    await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+    await resumeSavedSession({ projectDir, sessionId, state, opts });
   });
 }

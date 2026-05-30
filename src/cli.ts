@@ -31,10 +31,7 @@ bootstrapOtel();
 
 const program = new Command();
 
-program
-  .name('diptych')
-  .version('0.1.0')
-  .description('Cost-optimized AI coding orchestrator');
+program.name('diptych').version('0.1.0').description('Cost-optimized AI coding orchestrator');
 
 program.addHelpText('after', HELP_EXAMPLES);
 

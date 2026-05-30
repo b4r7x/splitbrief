@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { formatCost } from '../../../core/formatting.js';
+import { formatCost, formatKnownCost } from '../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 import { costKnownFlags, type CostBreakdown } from '../../../core/schemas/summary.js';
@@ -11,11 +11,6 @@ interface SummaryCostBreakdownProps {
   isSmall: boolean;
 }
 
-function formatKnownCost(amount: number, isKnown: boolean): string {
-  if (isKnown) return formatCost(amount);
-  return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
-}
-
 export function SummaryCostBreakdown({
   costBreakdown,
   labelWidth,
@@ -23,7 +18,8 @@ export function SummaryCostBreakdown({
 }: SummaryCostBreakdownProps) {
   const t = useTheme();
 
-  const { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown } = costKnownFlags(costBreakdown);
+  const { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown } =
+    costKnownFlags(costBreakdown);
   const hasUnknownPrice =
     !plannerCostKnown ||
     !implementerCostKnown ||
@@ -38,13 +34,19 @@ export function SummaryCostBreakdown({
         <Text bold>{formatKnownCost(costBreakdown.totalActualCost, totalCostKnown)}</Text>
       </LabeledRow>
       <LabeledRow label="Planner cost" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualPlannerCost, plannerCostKnown)}</Text>
+        <Text color={t.textDim}>
+          {formatKnownCost(costBreakdown.actualPlannerCost, plannerCostKnown)}
+        </Text>
       </LabeledRow>
       <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualImplementerCost, implementerCostKnown)}</Text>
+        <Text color={t.textDim}>
+          {formatKnownCost(costBreakdown.actualImplementerCost, implementerCostKnown)}
+        </Text>
       </LabeledRow>
       <LabeledRow label="All-planner baseline" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.hypotheticalCost, allPlannerBaselineKnown)}</Text>
+        <Text color={t.textDim}>
+          {formatKnownCost(costBreakdown.hypotheticalCost, allPlannerBaselineKnown)}
+        </Text>
       </LabeledRow>
       <LabeledRow label="Saved" labelWidth={labelWidth}>
         <Text color={costBreakdown.hasSavingsEstimate === false ? t.textDim : t.success}>
@@ -63,7 +65,11 @@ export function SummaryCostBreakdown({
       )}
       {costBreakdown.providerCosts &&
         Object.entries(costBreakdown.providerCosts).map(([provider, pc]) => (
-          <LabeledRow key={provider} label={getProviderDisplayName(provider)} labelWidth={labelWidth}>
+          <LabeledRow
+            key={provider}
+            label={getProviderDisplayName(provider)}
+            labelWidth={labelWidth}
+          >
             <Text color={t.textDim}>{formatCost(pc.cost)}</Text>
           </LabeledRow>
         ))}

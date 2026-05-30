@@ -5,7 +5,7 @@ import { StructuredSummarySchema } from './compaction.js';
 
 const SessionLogTimestampSchema = z.union([
   z.string(),
-  z.number().transform(value => String(value)),
+  z.number().transform((value) => String(value)),
 ]);
 
 export const SessionLogMessageEntrySchema = z.object({

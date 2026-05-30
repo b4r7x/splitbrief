@@ -3,7 +3,7 @@ import { useTheme } from '../../../../components/theme.js';
 import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
-import { buildCostStatusLineLayout } from '../../../../core/layout/cost-chrome.js';
+import { buildCostStatusLineLayout } from '../../layout/cost-chrome.js';
 import { formatSpentText, useCostStats } from '../../hooks/use-cost-stats.js';
 
 const DEFAULT_PADDING_X = 1;
@@ -14,12 +14,16 @@ interface CostStatusLineProps {
   align?: 'left' | 'right' | undefined;
 }
 
-export function CostStatusLine({ maxWidth, paddingX = DEFAULT_PADDING_X, align = 'left' }: CostStatusLineProps = {}) {
+export function CostStatusLine({
+  maxWidth,
+  paddingX = DEFAULT_PADDING_X,
+  align = 'left',
+}: CostStatusLineProps = {}) {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
+  const cols = terminalSizeStore.use((s) => s.cols);
   const renderWidth = maxWidth ?? cols;
-  const tokens = tokensStore.use(s => s);
-  const maxBudget = configStore.use(s => s.config?.workflow?.maxBudget);
+  const tokens = tokensStore.use((s) => s);
+  const maxBudget = configStore.use((s) => s.config?.workflow?.maxBudget);
   const { localRate, routedTasks, costBreakdown, pricingState, totalTasks } = useCostStats();
 
   const totalCacheRead = Object.values(tokens.perPhase).reduce(
@@ -50,7 +54,13 @@ export function CostStatusLine({ maxWidth, paddingX = DEFAULT_PADDING_X, align =
 
   if (layout.kind === 'split') {
     return (
-      <Box width={maxWidth ?? '100%'} height={1} overflow="hidden" paddingX={paddingX} justifyContent="space-between">
+      <Box
+        width={maxWidth ?? '100%'}
+        height={1}
+        overflow="hidden"
+        paddingX={paddingX}
+        justifyContent="space-between"
+      >
         <Text color={t.textDim}>{layout.left}</Text>
         <Text color={t.textDim}>{layout.right}</Text>
       </Box>
@@ -58,7 +68,13 @@ export function CostStatusLine({ maxWidth, paddingX = DEFAULT_PADDING_X, align =
   }
 
   return (
-    <Box width={maxWidth ?? '100%'} height={1} overflow="hidden" paddingX={paddingX} justifyContent={align === 'right' ? 'flex-end' : 'flex-start'}>
+    <Box
+      width={maxWidth ?? '100%'}
+      height={1}
+      overflow="hidden"
+      paddingX={paddingX}
+      justifyContent={align === 'right' ? 'flex-end' : 'flex-start'}
+    >
       <Text color={t.textDim}>{layout.line}</Text>
     </Box>
   );

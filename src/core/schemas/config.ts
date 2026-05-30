@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { WorkflowModeSchema, CommitStrategySchema, ApproveLevelSchema, ThemeModeSchema, ShikiThemeSchema } from './enums.js';
+import {
+  WorkflowModeSchema,
+  CommitStrategySchema,
+  ApproveLevelSchema,
+  ThemeModeSchema,
+  ShikiThemeSchema,
+} from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
 import { CodebaseConfigSchema } from './codebase.js';
@@ -17,9 +23,6 @@ const PaletteCustomActionSchema = z.object({
 const PaletteConfigSchema = z.object({
   customActions: z.array(PaletteCustomActionSchema).optional(),
 });
-
-export type PaletteCustomAction = z.infer<typeof PaletteCustomActionSchema>;
-export type PaletteConfig = z.infer<typeof PaletteConfigSchema>;
 
 const SnapshotsAutoConfigSchema = z.object({
   preTask: z.boolean().optional(),
@@ -69,7 +72,6 @@ export const ApprovalConfigSchema = z.object({
   feedRejectionsToPlanner: z.boolean().default(true),
   allowedPaths: z.array(z.string().min(1)).optional(),
 });
-export type ApprovalConfig = z.infer<typeof ApprovalConfigSchema>;
 
 /**
  * v3 ConfigSchema. Accepts both `version: 2` and `version: 3` on input for
@@ -113,18 +115,22 @@ export const ConfigSchema = z.object({
   }),
   theme: ThemeModeSchema.optional(),
   shikiTheme: ShikiThemeSchema.optional(),
-  sessions: z.object({
-    scope: z.enum(['project', 'global']).optional(),
-  }).optional(),
+  sessions: z
+    .object({
+      scope: z.enum(['project', 'global']).optional(),
+    })
+    .optional(),
   escalation: EscalationConfigSchema.optional(),
   codebase: CodebaseConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
   otel: OtelConfigSchema.optional(),
   snapshots: SnapshotsConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),
-  trust: z.object({
-    customRenderers: z.boolean().default(false),
-  }).optional(),
+  trust: z
+    .object({
+      customRenderers: z.boolean().default(false),
+    })
+    .optional(),
   approval: ApprovalConfigSchema.optional(),
   plannerEstimateReview: z.boolean().optional(),
   autoSplitOverflow: z.boolean().optional(),

@@ -1,24 +1,44 @@
 import { saveState } from '../../../core/state/persistence.js';
 import { formatValidationError } from '../validation.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
-import { captureCurrentFileContents, getChangedFilesSinceSnapshot, restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots.js';
-import { createStagedProject, promoteStagedChanges } from '../approval/staged-project.js';
-import { gateChangedFiles } from '../approval/gate-files.js';
+import { createStagedProject } from '../approval/staged-project.js';
+import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { publishError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { validateAndCommit } from './validate-and-commit.js';
+import { failedRetry } from './types.js';
 import type { RetryStepOpts, RetryStepOutcome } from './types.js';
 
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcome> {
-  const { ctx, state: initialState, lastError, attempts, method, transitionType, commitSuffix, usageCategory, retryFailureFallback, profileOverride, invokeRetry, onValidationAfterRetryFail } = opts;
+  const {
+    ctx,
+    state: initialState,
+    lastError,
+    attempts,
+    method,
+    transitionType,
+    commitSuffix,
+    usageCategory,
+    retryFailureFallback,
+    profileOverride,
+    invokeRetry,
+    onValidationAfterRetryFail,
+  } = opts;
   let state = initialState;
   let task = opts.task;
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   const retryRuntime = await createRetryRuntime(ctx, profileOverride);
-  const retryCtx = { ...ctx, config: retryRuntime.config, implementer: retryRuntime.implementer, ...(retryRuntime.implementerProfile !== undefined && { implementerProfile: retryRuntime.implementerProfile }) };
+  const retryCtx = {
+    ...ctx,
+    config: retryRuntime.config,
+    implementer: retryRuntime.implementer,
+    ...(retryRuntime.implementerProfile !== undefined && {
+      implementerProfile: retryRuntime.implementerProfile,
+    }),
+  };
   if (retryRuntime.profile !== undefined) {
     state = stateForRetryProfile(state, retryRuntime.profile);
     saveState(ctx.projectDir, ctx.sessionId, state);
@@ -34,14 +54,16 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       projectDir: staged.projectDir,
       config: retryRuntime.config,
       implementer: retryRuntime.implementer,
-      ...(retryRuntime.implementerProfile !== undefined && { implementerProfile: retryRuntime.implementerProfile }),
+      ...(retryRuntime.implementerProfile !== undefined && {
+        implementerProfile: retryRuntime.implementerProfile,
+      }),
       signal: ctx.signal,
     });
   } catch (err) {
     staged.cleanup();
     throw err;
   }
-  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, usageCategory, retryResult.usage, ctx.bus);
+  state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   if (!retryResult.success) {
     staged.cleanup();
@@ -49,94 +71,92 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   }
   if (ctx.signal?.aborted) {
     staged.cleanup();
-    return { state, task, lastError, attempts, result: { completed: false, method: 'failed', attempts } };
+    return {
+      state,
+      task,
+      lastError,
+      attempts,
+      result: failedRetry(attempts),
+    };
   }
 
-  const stagedChangedFiles = await getChangedFilesSinceSnapshot(staged.projectDir, ctx.taskStartSnapshot);
-  const actualChangedFiles = stagedChangedFiles.length > 0
-    ? stagedChangedFiles
-    : await getChangedFilesSinceSnapshot(ctx.projectDir, ctx.taskStartSnapshot);
-  const preApprovalChangedFileContents = await captureCurrentFileContents(ctx.projectDir, actualChangedFiles);
-  const changedFilesGate = await gateChangedFiles({
-    changedFiles: actualChangedFiles,
+  const gateResult = await gateAndPromoteChangedFiles({
     task,
-    dependsOnFiles: ctx.dependsOnFiles,
+    state,
     projectDir: ctx.projectDir,
     sessionId: ctx.sessionId,
-    phase: state.phase,
-    taskId: task.id,
     bus: ctx.bus,
     callbacks: ctx.callbacks,
     config: ctx.config,
+    staged,
+    usesStaging: true,
+    taskStartSnapshot: ctx.taskStartSnapshot,
+    dependsOnFiles: ctx.dependsOnFiles,
+    promoteFromStagingOnly: true,
+    signal: ctx.signal,
+    cleanup: staged.cleanup,
+    handleConflict: (s, files) =>
+      handleApprovalTimeUserEditConflict({ ctx, state: s, task, files }),
+    onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, task, decision),
   });
-  if (ctx.signal?.aborted) {
-    staged.cleanup();
-    return { state, task, lastError, attempts, result: { completed: false, method: 'failed', attempts } };
-  }
-  if (!changedFilesGate.allow) {
-    const files = changedFilesGate.changedFiles.join(', ');
-    const reason = changedFilesGate.reason ?? 'denied';
-    let nextState = state;
-    if (stagedChangedFiles.length === 0 && actualChangedFiles.length > 0) {
-      const restoreResult = await restoreDirtyFilesFromSnapshot(
-        ctx.projectDir,
-        ctx.taskStartSnapshot,
-        actualChangedFiles,
-        preApprovalChangedFileContents,
-      );
-      if (restoreResult.conflictedFiles.length > 0) {
-        nextState = await handleApprovalTimeUserEditConflict({
-          ctx,
-          state,
-          task,
-          files: restoreResult.conflictedFiles,
-        });
-      }
-    }
-    publishError({ bus: ctx.bus, phase: nextState.phase }, `Retry changed files blocked by approval gate: ${reason} (${files})`);
-    persistRetryRejectionEvidence(ctx, nextState, task, changedFilesGate);
-    staged.cleanup();
+
+  if (gateResult.outcome === 'error') throw gateResult.error;
+  if (gateResult.outcome === 'aborted') {
     return {
-      state: nextState,
+      state,
+      task,
+      lastError,
+      attempts,
+      result: failedRetry(attempts),
+    };
+  }
+  if (gateResult.outcome === 'gate-denied') {
+    const files = gateResult.decision.changedFiles.join(', ');
+    const reason = gateResult.decision.reason ?? 'denied';
+    publishError(
+      { bus: ctx.bus, phase: gateResult.state.phase },
+      `Retry changed files blocked by approval gate: ${reason} (${files})`,
+    );
+    persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
+    return {
+      state: gateResult.state,
       task,
       lastError: reason,
       attempts,
-      result: { completed: false, method: 'failed', attempts },
+      result: failedRetry(attempts),
     };
   }
-  persistRetryApprovalEvidence(ctx, state, task, changedFilesGate);
-
-  if (stagedChangedFiles.length > 0) {
-    const promoted = await promoteStagedChanges(ctx.projectDir, staged.projectDir, stagedChangedFiles, preApprovalChangedFileContents);
-    if (promoted.conflictedFiles.length > 0) {
-      state = await handleApprovalTimeUserEditConflict({
-        ctx,
-        state,
-        task,
-        files: promoted.conflictedFiles,
-      });
-      const reason = `Approved retry promotion blocked because files changed during approval: ${promoted.conflictedFiles.join(', ')}`;
-      publishError({ bus: ctx.bus, phase: state.phase }, reason);
-      staged.cleanup();
-      return {
-        state,
-        task,
-        lastError: reason,
-        attempts,
-        result: { completed: false, method: 'failed', attempts },
-      };
-    }
+  if (gateResult.outcome === 'promote-conflict') {
+    const reason = `Approved retry promotion blocked because files changed during approval: ${gateResult.conflictedFiles.join(', ')}`;
+    publishError({ bus: ctx.bus, phase: gateResult.state.phase }, reason);
+    return {
+      state: gateResult.state,
+      task,
+      lastError: reason,
+      attempts,
+      result: failedRetry(attempts),
+    };
   }
-  staged.cleanup();
+  state = gateResult.state;
+  const actualChangedFiles = gateResult.changedFiles;
 
-  const commitResult = await validateAndCommit(retryCtx, task, state, method, transitionType, attempts, commitSuffix, actualChangedFiles);
+  const commitResult = await validateAndCommit({
+    ctx: retryCtx,
+    task,
+    state,
+    method,
+    transitionType,
+    retryCount: attempts,
+    commitSuffix,
+    preApprovedChangedFiles: actualChangedFiles,
+  });
   if ('blockedReason' in commitResult) {
     return {
       state: commitResult.state,
       task,
       lastError: commitResult.blockedReason,
       attempts,
-      result: { completed: false, method: 'failed', attempts },
+      result: failedRetry(attempts),
     };
   }
   if (commitResult.completed) {
@@ -149,7 +169,9 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
         completed: true,
         method,
         attempts,
-        ...(commitResult.validationResults.length > 0 && { validationResults: commitResult.validationResults }),
+        ...(commitResult.validationResults.length > 0 && {
+          validationResults: commitResult.validationResults,
+        }),
         ...(actualChangedFiles.length > 0 && { changedFiles: actualChangedFiles }),
       },
     };

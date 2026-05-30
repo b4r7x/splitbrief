@@ -34,14 +34,22 @@ export async function runCommand(args: string[]): Promise<RunCommandResult> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
   program.configureOutput({
-    writeOut: (str) => { stdoutChunks.push(str); },
-    writeErr: (str) => { stderrChunks.push(str); },
+    writeOut: (str) => {
+      stdoutChunks.push(str);
+    },
+    writeErr: (str) => {
+      stderrChunks.push(str);
+    },
   });
 
   const origLog = console.log;
   const origErr = console.error;
-  console.log = (...parts: unknown[]) => { stdoutChunks.push(parts.map(String).join(' ') + '\n'); };
-  console.error = (...parts: unknown[]) => { stderrChunks.push(parts.map(String).join(' ') + '\n'); };
+  console.log = (...parts: unknown[]) => {
+    stdoutChunks.push(parts.map(String).join(' ') + '\n');
+  };
+  console.error = (...parts: unknown[]) => {
+    stderrChunks.push(parts.map(String).join(' ') + '\n');
+  };
 
   let exitCode = 0;
   try {

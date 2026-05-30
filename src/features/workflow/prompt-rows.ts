@@ -1,4 +1,4 @@
-import wrapAnsi from 'wrap-ansi';
+import { wrapHard } from '../../utils/wrap.js';
 import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ApprovalPromptState } from '../../stores/approval-prompt/store.js';
@@ -11,10 +11,7 @@ const COST_HORIZONTAL_CHROME = 6;
 
 function wrappedRows(text: string, width: number): number {
   const textWidth = Math.max(MIN_TEXT_WIDTH, width);
-  return Math.max(
-    1,
-    wrapAnsi(text, textWidth, { trim: false, hard: true }).split('\n').length,
-  );
+  return Math.max(1, wrapHard(text, textWidth).split('\n').length);
 }
 
 function approvalTextWidth(cols: number): number {
@@ -27,21 +24,21 @@ function costTextWidth(cols: number): number {
 
 function getStickyRows(actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
-  return BORDER_ROWS +
+  return (
+    BORDER_ROWS +
     wrappedRows(`[?] Write outside task scope: ${actionDescription}`, width) +
     wrappedRows('  [A] Approve once', width) +
     wrappedRows('  [S] Approve for this session', width) +
     wrappedRows('  [W] Always approve (saved to .diptych/approvals.json)', width) +
-    wrappedRows('  [X] Deny', width);
+    wrappedRows('  [X] Deny', width)
+  );
 }
 
 function getConfirmRows(actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
   const actionRows = wrappedRows(`[!] Destructive action: ${actionDescription}`, width);
   const phraseStepRows =
-    wrappedRows('    Type "I confirm" to proceed, or press Escape to cancel.', width) +
-    1 +
-    1;
+    wrappedRows('    Type "I confirm" to proceed, or press Escape to cancel.', width) + 1 + 1;
   const reasonStepRows =
     wrappedRows('    Phrase accepted. Enter reason:', width) +
     1 +
@@ -62,10 +59,15 @@ export function getCostApprovalPromptRows(state: CostApprovalState, cols: number
   return getCostApprovalPromptRowsForPrediction(state.prediction, cols);
 }
 
-export function getCostApprovalPromptRowsForPrediction(prediction: CostPrediction, cols: number): number {
+export function getCostApprovalPromptRowsForPrediction(
+  prediction: CostPrediction,
+  cols: number,
+): number {
   const summary = formatCostGateSummary(prediction);
   if (!summary) {
-    return 2 + wrappedRows('Cost estimate unavailable. Proceeding automatically.', Math.max(1, cols - 4));
+    return (
+      2 + wrappedRows('Cost estimate unavailable. Proceeding automatically.', Math.max(1, cols - 4))
+    );
   }
 
   const summaryLine = `${summary.taskCount} tasks | Est. ${summary.estimatedCost} | All-planner: ${summary.allPlannerCost} | Saving: ${summary.estimatedSavings} (${summary.savingsPercentage}%)`;
@@ -77,5 +79,7 @@ export function getWorkflowPromptRows(
   costApprovalState: CostApprovalState,
   cols: number,
 ): number {
-  return getApprovalPromptRows(approvalState, cols) + getCostApprovalPromptRows(costApprovalState, cols);
+  return (
+    getApprovalPromptRows(approvalState, cols) + getCostApprovalPromptRows(costApprovalState, cols)
+  );
 }

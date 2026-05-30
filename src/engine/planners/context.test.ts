@@ -16,11 +16,14 @@ afterEach(() => {
 
 describe('buildProjectContextMarkdown', () => {
   it('includes package name and scripts when package.json exists', async () => {
-    writeFileSync(join(tempDir, 'package.json'), JSON.stringify({
-      name: 'my-app',
-      description: 'A test app',
-      scripts: { build: 'tsc', test: 'vitest' },
-    }));
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({
+        name: 'my-app',
+        description: 'A test app',
+        scripts: { build: 'tsc', test: 'vitest' },
+      }),
+    );
 
     const result = await buildProjectContextMarkdown(tempDir);
 

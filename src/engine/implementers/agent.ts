@@ -5,7 +5,10 @@ import { assertImplementerKind } from '../config-assertions.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
-export function createAgentImplementer(initialConfig: Config, options?: ImplementerFactoryOptions): Implementer {
+export function createAgentImplementer(
+  initialConfig: Config,
+  options?: ImplementerFactoryOptions,
+): Implementer {
   const agentConfig = assertImplementerKind(initialConfig, 'agent');
 
   return createCommandBasedImplementer(

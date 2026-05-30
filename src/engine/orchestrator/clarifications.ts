@@ -10,17 +10,36 @@ import { dispatchNativeInjection } from './native-injection.js';
 import type { Planner } from '../planners/types.js';
 import { warnError } from '../../lib/warn.js';
 
+export type CollectClarificationsOptions = {
+  questions: ClarificationQuestion[];
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState;
+  onQuestionAsked: (
+    question: ClarificationQuestion,
+    index: number,
+    total: number,
+  ) => Promise<string>;
+  persistTranscript: boolean;
+  bus: EventBus;
+  metadata?: SpecMetadata | null;
+  planner?: Planner;
+};
+
 export async function collectAndPersistClarifications(
-  questions: ClarificationQuestion[],
-  projectDir: string,
-  sessionId: string,
-  state: WorkflowState,
-  onQuestionAsked: (question: ClarificationQuestion, index: number, total: number) => Promise<string>,
-  persistTranscript: boolean,
-  bus: EventBus,
-  metadata?: SpecMetadata | null,
-  planner?: Planner,
+  opts: CollectClarificationsOptions,
 ): Promise<WorkflowState> {
+  const {
+    questions,
+    projectDir,
+    sessionId,
+    onQuestionAsked,
+    persistTranscript,
+    bus,
+    metadata,
+    planner,
+  } = opts;
+  let state = opts.state;
   if (state.phase !== 'researching' && state.phase !== 'specifying') {
     warnError('clarifications: unexpected phase', { phase: state.phase });
     return state;
@@ -35,7 +54,12 @@ export async function collectAndPersistClarifications(
     if (answer === 'done') break;
     if (answer === 'skip' || answer === '') continue;
 
-    appendMessage(projectDir, sessionId, { role: 'user', phase: state.phase, text: answer }, persistTranscript);
+    appendMessage(
+      projectDir,
+      sessionId,
+      { role: 'user', phase: state.phase, text: answer },
+      persistTranscript,
+    );
     clarifications.push({ question: question.text, answer });
 
     const message: QueuedMessage = {
@@ -51,10 +75,26 @@ export async function collectAndPersistClarifications(
 
     state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
 
-    bus.publish({ type: 'clarification_answered', ts: Date.now(), phase: state.phase, questionId: question.id, answer });
+    bus.publish({
+      type: 'clarification_answered',
+      ts: Date.now(),
+      phase: state.phase,
+      questionId: question.id,
+      answer,
+    });
     if (planner) {
       bus.publish({ type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
-      await dispatchNativeInjection(message, planner, projectDir, sessionId, () => state, (s) => { state = s; }, bus);
+      await dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (s) => {
+          state = s;
+        },
+        bus,
+      });
     }
   }
 
@@ -62,7 +102,7 @@ export async function collectAndPersistClarifications(
 
   let content = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
   const sessionHeader = `### Session ${new Date().toISOString().slice(0, 10)}`;
-  const entries = clarifications.map(c => `- Q: ${c.question} \u2192 A: ${c.answer}`).join('\n');
+  const entries = clarifications.map((c) => `- Q: ${c.question} \u2192 A: ${c.answer}`).join('\n');
 
   if (!content.includes('## Clarifications')) {
     content += `\n\n## Clarifications\n\n${sessionHeader}\n${entries}\n`;
@@ -72,11 +112,14 @@ export async function collectAndPersistClarifications(
     content += `\n${entries}\n`;
   }
 
-  writeSpecFile(projectDir, sessionId, SPEC_FILE, content, metadata);
+  writeSpecFile({ projectDir, sessionId }, SPEC_FILE, content, metadata);
 
   bus.publish({
-    type: 'clarifications_collected', ts: Date.now(), phase: state.phase,
-    count: clarifications.length, clarifications,
+    type: 'clarifications_collected',
+    ts: Date.now(),
+    phase: state.phase,
+    count: clarifications.length,
+    clarifications,
   });
 
   return state;

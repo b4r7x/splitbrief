@@ -15,24 +15,28 @@ function datePartFromStartedAt(startedAt: string, fallback: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function deriveSessionId(
-  feature: string,
-  startedAt: string,
-  projectDir: string,
-  now: Date = new Date(),
-): string {
+export interface DeriveSessionIdInput {
+  feature: string;
+  startedAt: string;
+  projectDir: string;
+  now?: Date;
+}
+
+export function deriveSessionId(input: DeriveSessionIdInput): string {
+  const { feature, startedAt, projectDir, now = new Date() } = input;
   const date = datePartFromStartedAt(startedAt, now);
   const slug = slugify(feature).slice(0, 50) || 'unknown';
   const base = `${date}-${slug}`;
   const root = sessionsRoot(projectDir);
-  const id = findUnusedId(
+  const id = findUnusedId({
     root,
     base,
-    (candidateBase, collisionIndex) => collisionIndex === 1
-      ? `${candidateBase}-migrated`
-      : `${candidateBase}-migrated-${collisionIndex}`,
-    MAX_MIGRATION_COLLISION_ATTEMPTS,
-  );
+    suffixer: (candidateBase, collisionIndex) =>
+      collisionIndex === 1
+        ? `${candidateBase}-migrated`
+        : `${candidateBase}-migrated-${collisionIndex}`,
+    maxCollisionAttempts: MAX_MIGRATION_COLLISION_ATTEMPTS,
+  });
   if (id !== null) return id;
   throw sessionError.idCollision(base, MAX_MIGRATION_COLLISION_ATTEMPTS);
 }

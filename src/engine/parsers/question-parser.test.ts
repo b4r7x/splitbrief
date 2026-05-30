@@ -22,7 +22,8 @@ describe('extractQuestionsFromStream', () => {
   });
 
   it('extracts only questions from mixed text', () => {
-    const text = 'Planning phase started.\nAnalyzing codebase...\n<!-- Q:{"id":"q1","type":"input","text":"Module name?"} -->\nContinuing analysis...';
+    const text =
+      'Planning phase started.\nAnalyzing codebase...\n<!-- Q:{"id":"q1","type":"input","text":"Module name?"} -->\nContinuing analysis...';
     const questions = extractQuestionsFromStream(text);
     expect(questions.length).toBe(1);
     expect(questions[0]?.id).toBe('q1');
@@ -40,8 +41,9 @@ describe('extractQuestionsFromStream', () => {
       const questions = extractQuestionsFromStream(text);
       expect(questions.length).toBe(1);
       expect(questions[0]?.id).toBe('q1');
-      const warned = writeSpy.mock.calls.some(([chunk]) =>
-        typeof chunk === 'string' && chunk.includes('question-parser: malformed marker'),
+      const warned = writeSpy.mock.calls.some(
+        ([chunk]) =>
+          typeof chunk === 'string' && chunk.includes('question-parser: malformed marker'),
       );
       expect(warned).toBe(true);
     } finally {
@@ -103,7 +105,9 @@ describe('createQuestionAccumulator', () => {
 
   it('getAll returns all questions found so far', () => {
     const acc = createQuestionAccumulator();
-    acc.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"A?"} --> <!-- Q:{"id":"q2","type":"input","text":"B?"} -->');
+    acc.addChunk(
+      '<!-- Q:{"id":"q1","type":"confirm","text":"A?"} --> <!-- Q:{"id":"q2","type":"input","text":"B?"} -->',
+    );
     const all = acc.getAll();
     expect(all.length).toBe(2);
     expect(all[0]?.id).toBe('q1');
@@ -145,7 +149,8 @@ describe('createQuestionAccumulator', () => {
 
 describe('extractQuestionsFromStream — edge cases', () => {
   it('handles nested braces in JSON string values', () => {
-    const text = '<!-- Q:{"id":"q1","type":"input","text":"Enter code like { x: 1 }","default":"{}"} -->';
+    const text =
+      '<!-- Q:{"id":"q1","type":"input","text":"Enter code like { x: 1 }","default":"{}"} -->';
     const questions = extractQuestionsFromStream(text);
     expect(questions.length).toBe(1);
     expect(questions[0]?.id).toBe('q1');
@@ -160,7 +165,8 @@ describe('extractQuestionsFromStream — edge cases', () => {
   });
 
   it('skips malformed marker with no closing suffix', () => {
-    const text = '<!-- Q:{"id":"q1","type":"confirm","text":"A?"} --\n<!-- Q:{"id":"q2","type":"confirm","text":"B?"} -->';
+    const text =
+      '<!-- Q:{"id":"q1","type":"confirm","text":"A?"} --\n<!-- Q:{"id":"q2","type":"confirm","text":"B?"} -->';
     const questions = extractQuestionsFromStream(text);
     expect(questions.length).toBe(1);
     expect(questions[0]?.id).toBe('q2');

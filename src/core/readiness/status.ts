@@ -14,7 +14,10 @@ const EMPTY_COUNTS: ReadinessCounts = {
   blocker: 0,
 };
 
-const NEXT_ACTION_LABELS: Record<ReadinessNextActionKind, { label: string; command?: string | undefined }> = {
+const NEXT_ACTION_LABELS: Record<
+  ReadinessNextActionKind,
+  { label: string; command?: string | undefined }
+> = {
   continue: { label: 'Continue' },
   'run-init': { label: 'Run init', command: 'diptych init' },
   'fix-config': { label: 'Fix config' },
@@ -35,7 +38,7 @@ const NEXT_ACTION_PRIORITY: ReadinessNextActionKind[] = [
 ];
 
 export function flattenReadinessChecks(sections: ReadinessSection[]): ReadinessCheck[] {
-  return sections.flatMap(section => section.checks);
+  return sections.flatMap((section) => section.checks);
 }
 
 export function countReadinessChecks(checks: ReadinessCheck[]): ReadinessCounts {
@@ -52,7 +55,10 @@ export function aggregateReadinessStatus(counts: ReadinessCounts): ReadinessStat
   return 'ready';
 }
 
-export function selectNextAction(checks: ReadinessCheck[], status: ReadinessStatus): ReadinessNextAction {
+export function selectNextAction(
+  checks: ReadinessCheck[],
+  status: ReadinessStatus,
+): ReadinessNextAction {
   if (status !== 'blocked') {
     return {
       kind: 'continue',
@@ -61,12 +67,15 @@ export function selectNextAction(checks: ReadinessCheck[], status: ReadinessStat
     };
   }
 
-  const actionableChecks = checks.filter(check => check.severity === 'blocker' && check.nextAction !== undefined);
-  const selectedKind = NEXT_ACTION_PRIORITY.find(kind =>
-    actionableChecks.some(check => check.nextAction === kind),
-  ) ?? 'exit';
+  const actionableChecks = checks.filter(
+    (check) => check.severity === 'blocker' && check.nextAction !== undefined,
+  );
+  const selectedKind =
+    NEXT_ACTION_PRIORITY.find((kind) =>
+      actionableChecks.some((check) => check.nextAction === kind),
+    ) ?? 'exit';
 
-  const selectedCheck = actionableChecks.find(check => check.nextAction === selectedKind);
+  const selectedCheck = actionableChecks.find((check) => check.nextAction === selectedKind);
   const label = NEXT_ACTION_LABELS[selectedKind];
   return {
     kind: selectedKind,

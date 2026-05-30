@@ -27,7 +27,10 @@ describe('terminalSizeStore', () => {
   });
 
   it('isSmall is true when cols < threshold', async () => {
-    Object.defineProperty(process.stdout, 'columns', { value: SMALL_SCREEN_THRESHOLD - 1, writable: true });
+    Object.defineProperty(process.stdout, 'columns', {
+      value: SMALL_SCREEN_THRESHOLD - 1,
+      writable: true,
+    });
     Object.defineProperty(process.stdout, 'rows', { value: 24, writable: true });
 
     const { terminalSizeStore } = await import('./terminal-size.js');
@@ -36,7 +39,10 @@ describe('terminalSizeStore', () => {
   });
 
   it('isSmall is false when cols >= threshold', async () => {
-    Object.defineProperty(process.stdout, 'columns', { value: SMALL_SCREEN_THRESHOLD, writable: true });
+    Object.defineProperty(process.stdout, 'columns', {
+      value: SMALL_SCREEN_THRESHOLD,
+      writable: true,
+    });
     Object.defineProperty(process.stdout, 'rows', { value: 24, writable: true });
 
     const { terminalSizeStore } = await import('./terminal-size.js');

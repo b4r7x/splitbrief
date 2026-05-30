@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
+import { STATUS_GLYPH } from '../status-glyph.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -13,14 +14,24 @@ interface TaskSummaryProps {
   reason?: string | undefined;
 }
 
-export function TaskSummary({ index, title, method, retries, duration, file, reason }: TaskSummaryProps) {
+export function TaskSummary({
+  index,
+  title,
+  method,
+  retries,
+  duration,
+  file,
+  reason,
+}: TaskSummaryProps) {
   const t = useTheme();
 
   if (method === 'failed') {
     return (
       <Box>
-        <Text color={t.error}>✗ </Text>
-        <Text color={t.error}>T{index} {title}</Text>
+        <Text color={t.error}>{STATUS_GLYPH.failed} </Text>
+        <Text color={t.error}>
+          T{index} {title}
+        </Text>
         <Text color={t.textDim}> — failed</Text>
       </Box>
     );
@@ -29,7 +40,9 @@ export function TaskSummary({ index, title, method, retries, duration, file, rea
   if (method === 'skipped') {
     return (
       <Box>
-        <Text color={t.textDim}>⊘ T{index} {title} — skipped{reason ? `: ${reason}` : ''}</Text>
+        <Text color={t.textDim}>
+          {STATUS_GLYPH.skipped} T{index} {title} — skipped{reason ? `: ${reason}` : ''}
+        </Text>
       </Box>
     );
   }
@@ -42,9 +55,11 @@ export function TaskSummary({ index, title, method, retries, duration, file, rea
   return (
     <Box>
       <Text color={t.success}>✓ </Text>
-      <Text color={t.text}>T{index} {title}</Text>
-      {file && <Text color={t.textDim}>  {file}</Text>}
-      <Text color={t.textDim}>  {meta.join(' ')}</Text>
+      <Text color={t.text}>
+        T{index} {title}
+      </Text>
+      {file && <Text color={t.textDim}> {file}</Text>}
+      <Text color={t.textDim}> {meta.join(' ')}</Text>
     </Box>
   );
 }

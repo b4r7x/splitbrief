@@ -67,5 +67,8 @@ export function stripNaturalLanguage(text: string): string {
   }
 
   if (start > end) return '';
-  return lines.slice(start, end + 1).join('\n').trim();
+  return lines
+    .slice(start, end + 1)
+    .join('\n')
+    .trim();
 }

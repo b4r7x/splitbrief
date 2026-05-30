@@ -36,11 +36,20 @@ function setupProject(): { projectDir: string; sessionId: string } {
 describe('publishPlannerStatus', () => {
   it('falls back to plannerTool / plannerModel from state when extra is not provided', () => {
     const { bus, events } = makeBusRecorder();
-    const state = { ...createInitialState('test'), plannerTool: 'claude-code', plannerModel: 'opus-4' };
+    const state = {
+      ...createInitialState('test'),
+      plannerTool: 'claude-code',
+      plannerModel: 'opus-4',
+    };
 
     publishPlannerStatus(bus, state, 'running');
 
-    expect(events[0]).toMatchObject({ type: 'planner_status', status: 'running', tool: 'claude-code', model: 'opus-4' });
+    expect(events[0]).toMatchObject({
+      type: 'planner_status',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'opus-4',
+    });
   });
 
   it('omits tool and model when neither state nor extra provides them', () => {
@@ -57,7 +66,11 @@ describe('publishPlannerStatus', () => {
 
   it('extra.tool / extra.model override state values', () => {
     const { bus, events } = makeBusRecorder();
-    const state = { ...createInitialState('test'), plannerTool: 'claude-code', plannerModel: 'opus-4' };
+    const state = {
+      ...createInitialState('test'),
+      plannerTool: 'claude-code',
+      plannerModel: 'opus-4',
+    };
 
     publishPlannerStatus(bus, state, 'done', { tool: 'agent-sdk', model: 'sonnet-4' });
 
@@ -68,18 +81,24 @@ describe('publishPlannerStatus', () => {
 describe('publishValidation — result phase aggregates stage outcomes', () => {
   it('passed=true only when every stage passed', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'lint', passed: true },
-        { stage: 'test', passed: true },
-      ],
-      startTime: Date.now() - 100,
-    });
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [
+          { stage: 'typecheck', passed: true },
+          { stage: 'lint', passed: true },
+          { stage: 'test', passed: true },
+        ],
+        startTime: Date.now() - 100,
+      },
+    );
 
     expect(events[0]).toMatchObject({
-      type: 'validate', status: 'done', passed: true,
+      type: 'validate',
+      status: 'done',
+      passed: true,
       stages: { typecheck: true, lint: true, test: true },
     });
     expect((events[0] as Record<string, unknown>)['error']).toBeUndefined();
@@ -87,17 +106,22 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('passed=false with first failing stage error on partial failure', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'lint', passed: false, error: 'lint error' },
-      ],
-      startTime: Date.now(),
-    });
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [
+          { stage: 'typecheck', passed: true },
+          { stage: 'lint', passed: false, error: 'lint error' },
+        ],
+        startTime: Date.now(),
+      },
+    );
 
     expect(events[0]).toMatchObject({
-      type: 'validate', passed: false,
+      type: 'validate',
+      passed: false,
       stages: { typecheck: true, lint: false, test: false },
       error: 'lint error',
     });
@@ -107,9 +131,15 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     const { bus, events } = makeBusRecorder();
     const startTime = Date.now() - 500;
 
-    publishValidation({ bus: bus, phase: 'implementing' }, 'T001' as import('../../core/schemas/task.js').TaskId, {
-      phase: 'result', results: [{ stage: 'typecheck', passed: true }], startTime,
-    });
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [{ stage: 'typecheck', passed: true }],
+        startTime,
+      },
+    );
 
     expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
   });
@@ -126,48 +156,68 @@ describe('publish* payload forwarding', () => {
 
   it('publishCostPrediction — forwards prediction payload', () => {
     const { bus, events } = makeBusRecorder();
-    publishCostPrediction({ bus: bus, phase: 'implementing' }, {
-      estimatedTasks: 5,
-      lowCost: 0.10,
-      expectedCost: 0.25,
-      highCost: 0.50,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    });
+    publishCostPrediction(
+      { bus: bus, phase: 'implementing' },
+      {
+        estimatedTasks: 5,
+        lowCost: 0.1,
+        expectedCost: 0.25,
+        highCost: 0.5,
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+    );
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: 'cost_prediction',
       prediction: {
-        estimatedTasks: 5, lowCost: 0.10, expectedCost: 0.25, highCost: 0.50,
-        plannerTool: 'claude-code', implementerTool: 'ollama',
+        estimatedTasks: 5,
+        lowCost: 0.1,
+        expectedCost: 0.25,
+        highCost: 0.5,
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
       },
     });
   });
 
   it('publishBudgetWarning — forwards cost and budget', () => {
     const { bus, events } = makeBusRecorder();
-    publishBudgetWarning({ bus: bus, phase: 'implementing' }, 0.80, 1.00);
+    publishBudgetWarning({ bus: bus, phase: 'implementing', currentCost: 0.8, maxBudget: 1.0 });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'budget_warning', currentCost: 0.80, maxBudget: 1.00 });
+    expect(events[0]).toMatchObject({ type: 'budget_warning', currentCost: 0.8, maxBudget: 1.0 });
   });
 
   it('publishBudgetExceeded — forwards cost and budget', () => {
     const { bus, events } = makeBusRecorder();
-    publishBudgetExceeded({ bus: bus, phase: 'implementing' }, 1.50, 1.00);
+    publishBudgetExceeded({ bus: bus, phase: 'implementing', currentCost: 1.5, maxBudget: 1.0 });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'budget_exceeded', currentCost: 1.50, maxBudget: 1.00 });
+    expect(events[0]).toMatchObject({ type: 'budget_exceeded', currentCost: 1.5, maxBudget: 1.0 });
   });
 
   it('publishGitCommit — includes file when provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit({ bus: bus, phase: 'implementing' }, 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit', 'src/a.ts');
+    publishGitCommit(
+      { bus: bus, phase: 'implementing' },
+      'T1' as import('../../core/schemas/task.js').TaskId,
+      'chore: commit',
+      'src/a.ts',
+    );
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit', file: 'src/a.ts' });
+    expect(events[0]).toMatchObject({
+      type: 'git_commit',
+      message: 'chore: commit',
+      file: 'src/a.ts',
+    });
   });
 
   it('publishGitCommit — omits file when not provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit({ bus: bus, phase: 'implementing' }, 'T1' as import('../../core/schemas/task.js').TaskId, 'chore: commit');
+    publishGitCommit(
+      { bus: bus, phase: 'implementing' },
+      'T1' as import('../../core/schemas/task.js').TaskId,
+      'chore: commit',
+    );
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit' });
     expect('file' in (events[0] as Record<string, unknown>)).toBe(false);
@@ -180,7 +230,7 @@ describe('publish* payload forwarding', () => {
       score: 0.75,
       uniqueOutOfBoundsFiles: ['src/a.ts', 'src/b.ts'],
       representativePath: 'src/a.ts',
-      detectedAtTaskId: 'T003',
+      detectedAtTaskId: 'T003' as import('../../core/schemas/task.js').TaskId,
       ts: Date.now(),
     };
     publishDriftChainDetected({ bus: bus, phase: 'implementing' }, chain, 0.6);
@@ -230,10 +280,10 @@ describe('addUsageAndSave', () => {
     const state = makeState({ tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }) });
     const { bus, events } = makeBusRecorder();
 
-    const result = addUsageAndSave(projectDir, sessionId, state, 'planner', {
+    const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', {
       inputTokens: 200,
       outputTokens: 100,
-    }, bus);
+    });
 
     expect(result.tokenUsage.plannerInput).toBe(300);
     expect(result.tokenUsage.plannerOutput).toBe(150);
@@ -246,7 +296,7 @@ describe('addUsageAndSave', () => {
     const state = makeState();
     const { bus, events } = makeBusRecorder();
 
-    const result = addUsageAndSave(projectDir, sessionId, state, 'implementer', null, bus);
+    const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'implementer', null);
 
     expect(result).toBe(state);
     expect(events).toHaveLength(0);

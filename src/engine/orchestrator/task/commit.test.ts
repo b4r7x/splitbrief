@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -7,7 +7,11 @@ import type { Task } from '../../../core/schemas/task.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, passingResults, failingResults } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  passingResults,
+  failingResults,
+} from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -33,11 +37,13 @@ function makeDirty(projectDir: string, relativePath = 'task-file.txt'): void {
   writeFileSync(join(projectDir, relativePath), 'content');
 }
 
-function makeGitOps(overrides: Partial<{
-  stageAll: (dir: string) => Promise<void>;
-  commitChanges: (dir: string, message: string) => Promise<string>;
-  createTaggedStash: (dir: string, message: string, tagName: string) => Promise<string>;
-}> = {}) {
+function makeGitOps(
+  overrides: Partial<{
+    stageAll: (dir: string) => Promise<void>;
+    commitChanges: (dir: string, message: string) => Promise<string>;
+    createTaggedStash: (dir: string, message: string, tagName: string) => Promise<string>;
+  }> = {},
+) {
   return {
     stageAll: async () => {},
     commitChanges: async () => 'commit-sha',
@@ -140,7 +146,9 @@ describe('validateCommitAndAdvance', () => {
 
     const gitEvent = events.find((e) => e.type === 'git_commit');
     expect(gitEvent).toBeDefined();
-    expect(gitEvent && 'message' in gitEvent ? gitEvent.message : '').toContain(firstTask(state).id);
+    expect(gitEvent && 'message' in gitEvent ? gitEvent.message : '').toContain(
+      firstTask(state).id,
+    );
     expect(gitOpsCalls).toEqual([
       `stage:${projectDir}`,
       expect.stringContaining(`commit:feat(diptych): ${firstTask(state).id}`),
@@ -152,7 +160,10 @@ describe('validateCommitAndAdvance', () => {
     const state = makeState();
     makeDirty(projectDir);
     const { bus, events } = makeBusRecorder();
-    const headBefore = execSync('git rev-parse HEAD', { cwd: projectDir, encoding: 'utf-8' }).trim();
+    const headBefore = execSync('git rev-parse HEAD', {
+      cwd: projectDir,
+      encoding: 'utf-8',
+    }).trim();
 
     await validateCommitAndAdvance({
       task: firstTask(state),
@@ -204,11 +215,13 @@ describe('validateCommitAndAdvance', () => {
       tag: 'diptych/T001',
       taskId: 'T001',
     });
-    expect(checkpointCalls).toEqual([{
-      dir: projectDir,
-      message: `diptych checkpoint: ${firstTask(state).id}`,
-      tagName: `diptych/${firstTask(state).id}`,
-    }]);
+    expect(checkpointCalls).toEqual([
+      {
+        dir: projectDir,
+        message: `diptych checkpoint: ${firstTask(state).id}`,
+        tagName: `diptych/${firstTask(state).id}`,
+      },
+    ]);
   });
 
   it('emits task_completed event with method and taskId', async () => {
@@ -294,7 +307,10 @@ describe('validateCommitAndAdvance', () => {
     mkdirSync(dirname(secretPath), { recursive: true });
     writeFileSync(secretPath, 'const k = "AKIAIOSFODNN7EXAMPLE";');
     const { bus, events } = makeBusRecorder();
-    const headBefore = execSync('git rev-parse HEAD', { cwd: projectDir, encoding: 'utf-8' }).trim();
+    const headBefore = execSync('git rev-parse HEAD', {
+      cwd: projectDir,
+      encoding: 'utf-8',
+    }).trim();
     const commitAttempts: string[] = [];
 
     const result = await validateCommitAndAdvance({
@@ -330,7 +346,8 @@ describe('validateCommitAndAdvance', () => {
     expect(warning).toBeDefined();
     if (warning && warning.type === 'warning') {
       expect(warning.message).toContain('pre_commit blocked');
-      expect(warning.message).toContain('AWS access key');
+      expect(warning.message).toContain('secret detected');
+      expect(warning.message).toContain(firstTask(state).file);
     }
     // Task still advances to completion (hook is non-fatal)
     expect(events.find((e) => e.type === 'task_completed')).toBeDefined();
@@ -369,5 +386,63 @@ describe('validateCommitAndAdvance', () => {
     expect(result.completed).toBe(true);
     expect(events.find((e) => e.type === 'git_commit')).toBeDefined();
     expect(commitAttempts).toEqual([expect.stringContaining(firstTask(state).id)]);
+  });
+
+  it('stages the full changed set before the pre_commit hook and passes it as ctx.files', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    // Two distinct dirty files, neither of which is task.file.
+    writeFileSync(join(projectDir, 'extra-a.txt'), 'a');
+    writeFileSync(join(projectDir, 'extra-b.txt'), 'b');
+    // A pre_commit module hook that records the ctx.files it received and the
+    // staged index it observed (proving staging ran before the hook).
+    const sentinel = join(projectDir, 'hook-seen.json');
+    writeFileSync(
+      join(projectDir, 'capture-hook.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "import { execSync } from 'node:child_process';",
+        'export default function (event, ctx) {',
+        "  const staged = execSync('git diff --cached --name-only', { cwd: ctx.projectDir, encoding: 'utf-8' })",
+        "    .split('\\n').filter(Boolean);",
+        `  writeFileSync(${JSON.stringify(sentinel)}, JSON.stringify({ files: ctx.files ?? [], staged }));`,
+        "  return { kind: 'allow' };",
+        '}',
+      ].join('\n'),
+    );
+    const { bus } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({
+        workflow: { git: { commitStrategy: 'per-task' } },
+        hooks: {
+          pre_commit: [
+            { kind: 'module', path: 'capture-hook.mjs', timeout_ms: 30_000, on_failure: 'warn' },
+          ],
+        },
+      }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+    });
+
+    expect(result.completed).toBe(true);
+    expect(existsSync(sentinel)).toBe(true);
+    const seen = JSON.parse(readFileSync(sentinel, 'utf-8')) as {
+      files: string[];
+      staged: string[];
+    };
+    // ctx.files carries the full changed set, not just task.file.
+    expect(seen.files).toContain('extra-a.txt');
+    expect(seen.files).toContain('extra-b.txt');
+    expect(seen.files.length).toBeGreaterThan(1);
+    // The index was staged before the hook ran.
+    expect(seen.staged).toContain('extra-a.txt');
+    expect(seen.staged).toContain('extra-b.txt');
   });
 });

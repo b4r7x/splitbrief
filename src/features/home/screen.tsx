@@ -19,7 +19,7 @@ interface HomeScreenProps {
 
 export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   const theme = useTheme();
-  const hasOverlay = overlayStore.use(s => s.active !== 'none');
+  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const layout = getHomeLayout({ cols, rows, isSmall });
@@ -28,20 +28,19 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   return (
     <ScreenShell justifyContent="flex-start" alignItems="center">
       <Box flexDirection="column" width={layout.inputWidth} height="100%">
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          overflowY="hidden"
-          alignItems="center"
-        >
+        <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
           <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
             <Box justifyContent="center" marginBottom={1}>
               {layout.logoTier === 'full' ? (
                 <Text color={theme.accent}>{FULL_LOGO}</Text>
               ) : layout.logoTier === 'small' ? (
-                <Text bold color={theme.accent}>{SMALL_LOGO}</Text>
+                <Text bold color={theme.accent}>
+                  {SMALL_LOGO}
+                </Text>
               ) : (
-                <Text bold color={theme.accent}>diptych</Text>
+                <Text bold color={theme.accent}>
+                  diptych
+                </Text>
               )}
             </Box>
 

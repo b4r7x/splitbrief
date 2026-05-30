@@ -8,7 +8,10 @@ import type { OrchestratorCallbacks } from '../../../engine/orchestrator/types.j
 import { formatCost } from '../../../core/formatting.js';
 import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
 import { REVIEW_HINT } from '../review-parser.js';
-import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
+import {
+  formatUserEditConflictPrompt,
+  parseUserEditConflictAnswer,
+} from '../user-edit-conflict-prompt.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from '../recovery-prompt.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from '../task-review-prompt.js';
 import { requestCancel, requestRewind } from '../handlers.js';
@@ -28,7 +31,9 @@ function buildBudgetPromptIssue(
     status: 'awaiting-user',
     files: [],
     affectedTaskIds: [],
-    message: exceeded ? `Budget exceeded at ${budgetPercent}%` : `Budget pause at ${budgetPercent}%`,
+    message: exceeded
+      ? `Budget exceeded at ${budgetPercent}%`
+      : `Budget pause at ${budgetPercent}%`,
     details: [
       `Spent ${formatCost(currentCost)} of ${formatCost(maxBudget)}`,
       ...(exceeded ? ['Continuing requires a separate raise-budget flow.'] : []),
@@ -39,7 +44,9 @@ function buildBudgetPromptIssue(
       budgetPercent,
       belowMaxBudget: currentCost < maxBudget,
     },
-    availableActions: exceeded ? ['pause-run', 'abort-workflow'] : ['continue', 'pause-run', 'abort-workflow'],
+    availableActions: exceeded
+      ? ['pause-run', 'abort-workflow']
+      : ['continue', 'pause-run', 'abort-workflow'],
     recommendedAction: 'pause-run',
     createdAt: new Date().toISOString(),
   };
@@ -82,7 +89,9 @@ export function usePromptCallbacks(): (opts: BuildCallbacksOptions) => Orchestra
         return openCostApprovalPrompt(prediction);
       },
       onContinuationNeeded: async (_partial) =>
-        inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):'),
+        inputMode.setQuestionMode(
+          'Task interrupted. Enter instructions to continue (or press Enter to retry):',
+        ),
       onTieredApproval: (request) => openApprovalPrompt(request),
       onTaskReviewNeeded: async (request) => {
         const answer = await inputMode.setQuestionMode(formatTaskReviewPrompt(request));
@@ -92,7 +101,12 @@ export function usePromptCallbacks(): (opts: BuildCallbacksOptions) => Orchestra
             feedbackStore.setError('Cannot redo task: no active workflow.');
           }
         } else if (decision.action === 'revise-plan') {
-          if (!requestRewind({ target: 'plan', ...(decision.notes ? { comment: decision.notes } : {}) })) {
+          if (
+            !requestRewind({
+              target: 'plan',
+              ...(decision.notes ? { comment: decision.notes } : {}),
+            })
+          ) {
             feedbackStore.setError('Cannot revise plan: no active workflow.');
           }
         } else if (decision.action === 'abort') {

@@ -23,7 +23,11 @@ interface FilterableListProps<T> {
   bordered?: boolean;
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
-  customKeys?: (input: string, key: Key, ctx: { filtered: T[]; selectedIndex: number }) => boolean | undefined;
+  customKeys?: (
+    input: string,
+    key: Key,
+    ctx: { filtered: T[]; selectedIndex: number },
+  ) => boolean | undefined;
   sectionBy?: (item: T) => string;
   renderSectionHeader?: (section: string, index: number) => ReactNode;
 }
@@ -46,7 +50,7 @@ export function FilterableList<T>({
   sectionBy,
   renderSectionHeader,
 }: FilterableListProps<T>) {
-  const rows = terminalSizeStore.use(s => s.rows);
+  const rows = terminalSizeStore.use((s) => s.rows);
 
   const list = useFilterableList<T>({
     items,
@@ -59,19 +63,19 @@ export function FilterableList<T>({
 
   const { filter, filtered, selectedIndex } = list;
 
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
-    computeScrollWindow(filtered, selectedIndex, rows, chromeRows, maxVisibleProp);
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow(
+    filtered,
+    selectedIndex,
+    rows,
+    chromeRows,
+    maxVisibleProp,
+  );
 
   const useSections = sectionBy && renderSectionHeader;
   const sectionedSlice = useSections ? toSectionedList(visibleSlice, sectionBy) : null;
 
   return (
-    <OverlayPanel
-      title={title}
-      hint={hint}
-      maxWidth={width}
-      bordered={bordered}
-    >
+    <OverlayPanel title={title} hint={hint} maxWidth={width} bordered={bordered}>
       <FilterInput filter={filter} />
       <ScrollIndicator show={showScrollUp} direction="up" />
       <Box flexDirection="column">

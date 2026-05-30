@@ -77,9 +77,7 @@ describe('formatModelName (heuristic)', () => {
     expect(formatModelName(input)).toBe(expected);
   });
 
-  it.each([
-    ['gpt-7-nano', 'GPT-7 Nano'],
-  ])('GPT hyphen format: %s → %s', (input, expected) => {
+  it.each([['gpt-7-nano', 'GPT-7 Nano']])('GPT hyphen format: %s → %s', (input, expected) => {
     expect(formatModelName(input)).toBe(expected);
   });
 });

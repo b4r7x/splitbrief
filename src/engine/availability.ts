@@ -15,13 +15,17 @@ async function probeCommand(
   opts?: { timeout?: number | undefined },
 ): Promise<{ available: boolean; version: string | null }> {
   try {
-    const { stdout, code } = await runCommand(command, ['--version'], opts);
-    if (code !== 0) return { available: false, version: null };
+    const { stdout } = await runCommand(command, ['--version'], opts);
     return { available: true, version: parseVersion(stdout) };
-  } catch { return { available: false, version: null }; }
+  } catch {
+    return { available: false, version: null };
+  }
 }
 
-export function createCommandAvailability(command: string | undefined, opts?: { timeout?: number | undefined }) {
+export function createCommandAvailability(
+  command: string | undefined,
+  opts?: { timeout?: number | undefined },
+) {
   if (!command) {
     return {
       isAvailable: async (): Promise<boolean> => false,

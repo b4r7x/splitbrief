@@ -13,24 +13,34 @@ interface ProviderShell {
   getLastError(): string | undefined;
 }
 
-export function createProviderShell(base: { name: string; baseURL: string; isLocal: boolean }): ProviderShell {
+export function createProviderShell(base: {
+  name: string;
+  baseURL: string;
+  isLocal: boolean;
+}): ProviderShell {
   let lastError: string | undefined;
   return {
     base,
-    trackError(message: string | undefined) { lastError = message; },
-    getLastError() { return lastError; },
+    trackError(message: string | undefined) {
+      lastError = message;
+    },
+    getLastError() {
+      return lastError;
+    },
   };
 }
 
-const OpenAIModelItemSchema = z.object({
-  id: z.string(),
-}).passthrough();
+const OpenAIModelItemSchema = z
+  .object({
+    id: z.string(),
+  })
+  .passthrough();
 
 const OpenAIModelListSchema = z.object({
   data: z.array(OpenAIModelItemSchema),
 });
 
-export function extractOpenAIModelList<T>(
+function extractOpenAIModelList<T>(
   data: unknown,
   mapper: (model: z.infer<typeof OpenAIModelListSchema>['data'][number]) => T,
 ): T[] {
@@ -39,14 +49,11 @@ export function extractOpenAIModelList<T>(
   return result.data.data.map(mapper);
 }
 
-export function isOpenAIModelList(data: unknown): boolean {
+function isOpenAIModelList(data: unknown): boolean {
   return OpenAIModelListSchema.safeParse(data).success;
 }
 
-export async function fetchJsonWithTimeout(
-  url: string,
-  timeoutMs: number,
-): Promise<unknown> {
+export async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unknown> {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw providerError.httpFailure(res.status, redactSecrets(url));
   return await res.json();

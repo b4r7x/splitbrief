@@ -9,13 +9,7 @@ const ENTER = '\r';
 const ESC = '\u001b';
 const BACKSPACE = '\x7f';
 
-function Harness({
-  items,
-  initialIndex,
-}: {
-  items: string[];
-  initialIndex?: number | undefined;
-}) {
+function Harness({ items, initialIndex }: { items: string[]; initialIndex?: number | undefined }) {
   const [chosen, setChosen] = useState('none');
   const [closed, setClosed] = useState(false);
   const list = useFilterableList({

@@ -16,9 +16,13 @@ let tmpDir: string;
 
 async function writeFakeEditor(exitCode: number): Promise<string> {
   const editorPath = join(tmpDir, `editor-${exitCode}.js`);
-  await writeFile(editorPath, `#!/usr/bin/env node
+  await writeFile(
+    editorPath,
+    `#!/usr/bin/env node
 process.exit(${exitCode});
-`, 'utf-8');
+`,
+    'utf-8',
+  );
   await chmod(editorPath, 0o700);
   return editorPath;
 }
@@ -161,7 +165,10 @@ describe('parseReviewCommand', () => {
   });
 
   it('parses comment with text', () => {
-    expect(parseReviewCommand('comment add more tests')).toEqual({ action: 'approve', comment: 'add more tests' });
+    expect(parseReviewCommand('comment add more tests')).toEqual({
+      action: 'approve',
+      comment: 'add more tests',
+    });
   });
 
   it('parses edit', () => {
@@ -175,7 +182,10 @@ describe('parseReviewCommand', () => {
 });
 
 describe('createReviewInputHandler – brief review edit mode', () => {
-  it.each(['e', 'edit'])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
+  it.each([
+    'e',
+    'edit',
+  ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
     vi.stubEnv('EDITOR', 'true');

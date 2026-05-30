@@ -13,6 +13,8 @@ export function parseHandoffTarget(value: string): HandoffTarget | null {
   return HANDOFF_TARGETS.find((target) => target === value) ?? null;
 }
 
-export function validateHandoffTargetName(target: string): { ok: true } | { ok: false; reason: string } {
+export function validateHandoffTargetName(
+  target: string,
+): { ok: true } | { ok: false; reason: string } {
   return validateSafeIdentifier(target);
 }

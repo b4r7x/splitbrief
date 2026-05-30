@@ -1,4 +1,5 @@
 import { stat, readFile } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { extname } from 'node:path';
 import { createRequire } from 'node:module';
 import { Parser, Language, type Node, type Tree } from 'web-tree-sitter';
@@ -48,21 +49,28 @@ export function kindForNodeType(type: string): SymbolKind {
     case 'function_declaration':
     case 'function_definition':
     case 'method_declaration':
-    case 'function_item': return 'function';
+    case 'function_item':
+      return 'function';
     case 'class_declaration':
     case 'abstract_class_declaration':
     case 'class_definition':
     case 'struct_item':
-    case 'impl_item': return 'class';
+    case 'impl_item':
+      return 'class';
     case 'interface_declaration':
-    case 'trait_item': return 'interface';
+    case 'trait_item':
+      return 'interface';
     case 'type_alias_declaration':
     case 'type_declaration':
-    case 'type_item': return 'type';
+    case 'type_item':
+      return 'type';
     case 'enum_declaration':
-    case 'enum_item': return 'enum';
-    case 'lexical_declaration': return 'const';
-    default: return 'const';
+    case 'enum_item':
+      return 'enum';
+    case 'lexical_declaration':
+      return 'const';
+    default:
+      return 'const';
   }
 }
 
@@ -95,12 +103,14 @@ function extractSignature(declNode: Node, exported: boolean): string {
 function extractImports(source: string, regex: RegExp | null): string[] {
   if (!regex) return [];
   const matches = [...source.matchAll(regex)];
-  return matches.map(m => {
-    for (let i = 1; i < m.length; i++) {
-      if (m[i] !== undefined) return m[i];
-    }
-    return undefined;
-  }).filter((s): s is string => s !== undefined);
+  return matches
+    .map((m) => {
+      for (let i = 1; i < m.length; i++) {
+        if (m[i] !== undefined) return m[i];
+      }
+      return undefined;
+    })
+    .filter((s): s is string => s !== undefined);
 }
 
 function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
@@ -136,17 +146,17 @@ function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
   return symbols;
 }
 
-export async function parseFile(absPath: string): Promise<FileNode | null> {
+export async function parseFile(absPath: string, fileStat?: Stats): Promise<FileNode | null> {
   await initParser();
 
   const ext = extname(absPath);
   const lang = getLanguageForExtension(ext);
   if (!lang) return null;
 
-  let fileStat: Awaited<ReturnType<typeof stat>>;
+  let resolvedStat = fileStat;
   let source: string;
   try {
-    fileStat = await stat(absPath);
+    if (resolvedStat === undefined) resolvedStat = await stat(absPath);
     source = await readFile(absPath, 'utf8');
   } catch {
     return null;
@@ -158,8 +168,8 @@ export async function parseFile(absPath: string): Promise<FileNode | null> {
       path: absPath,
       symbols: [],
       imports: [],
-      sizeBytes: fileStat.size,
-      mtimeMs: fileStat.mtimeMs,
+      sizeBytes: resolvedStat.size,
+      mtimeMs: resolvedStat.mtimeMs,
     };
   }
 
@@ -180,8 +190,8 @@ export async function parseFile(absPath: string): Promise<FileNode | null> {
       path: absPath,
       symbols,
       imports,
-      sizeBytes: fileStat.size,
-      mtimeMs: fileStat.mtimeMs,
+      sizeBytes: resolvedStat.size,
+      mtimeMs: resolvedStat.mtimeMs,
     };
   } finally {
     tree?.delete();

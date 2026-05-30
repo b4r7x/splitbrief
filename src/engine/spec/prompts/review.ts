@@ -1,4 +1,4 @@
-import { buildPrompt, instructionsSection } from './shared.js';
+import { buildPrompt, fenced, instructionsSection } from './shared.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.`;
 
@@ -30,7 +30,7 @@ One-paragraph overall assessment.`;
 export function buildFinalReviewPrompt(spec: string, diff: string, driftReport?: string): string {
   const sections = [
     { heading: 'Specification', body: spec },
-    { heading: 'Implementation Diff', body: '```diff\n' + diff + '\n```' },
+    { heading: 'Implementation Diff', body: fenced(diff, 'diff') },
   ];
   if (driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: driftReport });
@@ -42,7 +42,8 @@ export function buildFinalReviewPrompt(spec: string, diff: string, driftReport?:
   );
   return buildPrompt({
     title: 'Final Implementation Review',
-    intro: 'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
+    intro:
+      'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
     sections,
   });
 }

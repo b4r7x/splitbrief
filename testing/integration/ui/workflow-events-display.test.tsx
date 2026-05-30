@@ -102,5 +102,4 @@ describe('workflow events display', () => {
       ui.unmount();
     });
   });
-
 });

@@ -1,4 +1,4 @@
-import wrapAnsi from 'wrap-ansi';
+import { wrapHard } from '../../../utils/wrap.js';
 import type { GutterRole } from '../event-role.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
 
@@ -22,12 +22,11 @@ export function blankRow(key: string): ConversationRow {
 }
 
 export function rowText(rowValue: ConversationRow): string {
-  return rowValue.segments.map(segment => segment.text).join('');
+  return rowValue.segments.map((segment) => segment.text).join('');
 }
 
 export function wrapText(text: string, width: number): string[] {
-  const columns = Math.max(MIN_ROW_WIDTH, width);
-  return wrapAnsi(text, columns, { trim: false, hard: true }).split('\n');
+  return wrapHard(text, Math.max(MIN_ROW_WIDTH, width)).split('\n');
 }
 
 function segmentedRow(key: string, segments: ConversationRowSegment[]): ConversationRow {
@@ -35,19 +34,24 @@ function segmentedRow(key: string, segments: ConversationRowSegment[]): Conversa
 }
 
 function rolePrefixes(role: GutterRole): { first: string; continuation: string } {
-  if (role === 'planner') return { first: PLANNER_PREFIX, continuation: PLANNER_CONTINUATION_PREFIX };
-  if (role === 'implementer') return { first: IMPLEMENTER_PREFIX, continuation: IMPLEMENTER_CONTINUATION_PREFIX };
+  if (role === 'planner')
+    return { first: PLANNER_PREFIX, continuation: PLANNER_CONTINUATION_PREFIX };
+  if (role === 'implementer')
+    return { first: IMPLEMENTER_PREFIX, continuation: IMPLEMENTER_CONTINUATION_PREFIX };
   return { first: '', continuation: '' };
 }
 
-export function prefixedWrappedRows(
-  keyPrefix: string,
-  text: string,
-  width: number,
-  tone: ConversationRowTone,
-  role: GutterRole,
-  bold = false,
-): ConversationRow[] {
+export interface PrefixedRowsInput {
+  keyPrefix: string;
+  text: string;
+  width: number;
+  tone: ConversationRowTone;
+  role: GutterRole;
+  bold?: boolean;
+}
+
+export function prefixedWrappedRows(input: PrefixedRowsInput): ConversationRow[] {
+  const { keyPrefix, text, width, tone, role, bold = false } = input;
   const prefixes = rolePrefixes(role);
   const rows: ConversationRow[] = [];
   let isFirst = true;
@@ -56,12 +60,7 @@ export function prefixedWrappedRows(
     const prefix = isFirst ? prefixes.first : prefixes.continuation;
     const wrapped = wrapText(rawLine, width - prefix.length);
     for (const wrappedLine of wrapped) {
-      rows.push(row(
-        `${keyPrefix}-${rows.length}`,
-        `${prefix}${wrappedLine}`,
-        tone,
-        bold,
-      ));
+      rows.push(row(`${keyPrefix}-${rows.length}`, `${prefix}${wrappedLine}`, tone, bold));
       isFirst = false;
     }
   }
@@ -69,14 +68,17 @@ export function prefixedWrappedRows(
   return rows;
 }
 
-export function cardRows(
-  keyPrefix: string,
-  label: string,
-  value: string | undefined,
-  width: number,
-  labelTone: ConversationRowTone,
-  valueTone: ConversationRowTone = 'textDim',
-): ConversationRow[] {
+export interface CardRowsInput {
+  keyPrefix: string;
+  label: string;
+  value: string | undefined;
+  width: number;
+  labelTone: ConversationRowTone;
+  valueTone?: ConversationRowTone;
+}
+
+export function cardRows(input: CardRowsInput): ConversationRow[] {
+  const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim' } = input;
   const labelText = value ? `${label}  ` : label;
   const text = `${labelText}${value ?? ''}`;
   const wrapped = wrapText(text, width);
@@ -97,12 +99,14 @@ export function wrapRows(rows: ConversationRow[], width: number): ConversationRo
     const text = rowText(sourceRow);
     const wrapped = wrapText(text, width);
     for (const line of wrapped) {
-      next.push(row(
-        `${sourceRow.key}-${next.length}`,
-        line,
-        sourceRow.segments[0]?.tone ?? 'text',
-        sourceRow.segments[0]?.bold ?? false,
-      ));
+      next.push(
+        row(
+          `${sourceRow.key}-${next.length}`,
+          line,
+          sourceRow.segments[0]?.tone ?? 'text',
+          sourceRow.segments[0]?.bold ?? false,
+        ),
+      );
     }
   }
   return next;

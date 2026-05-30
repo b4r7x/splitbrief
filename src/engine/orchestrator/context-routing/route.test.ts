@@ -8,7 +8,7 @@ import { routeTaskToImplementerProfile } from './route.js';
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'Node.js 22',
+  runtime: 'node',
   testCommand: 'npm test',
 };
 
@@ -100,17 +100,14 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-large', 'local', 20_000),
-        profile('local-small', 'local', 10_000),
-      ],
+      profiles: [profile('local-large', 'local', 20_000), profile('local-small', 'local', 10_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-small');
     expect(decision.selectedCostTier).toBe('local');
     expect(decision.costPosture).toContain('Selected local cost tier');
     expect(decision.fit).toBe('fits');
-    expect(decision.rejected.map(rejected => rejected.profile)).toEqual(['local-large']);
+    expect(decision.rejected.map((rejected) => rejected.profile)).toEqual(['local-large']);
   });
 
   it('sorts local and cheap tiers before more expensive capable profiles', () => {
@@ -127,7 +124,10 @@ describe('routeTaskToImplementerProfile', () => {
     });
 
     expect(decision.selectedProfile).toBe('cheap-big');
-    expect(decision.rejected.map(rejected => rejected.profile)).toEqual(['standard-big', 'frontier-big']);
+    expect(decision.rejected.map((rejected) => rejected.profile)).toEqual([
+      'standard-big',
+      'frontier-big',
+    ]);
   });
 
   it('handles unknown cost tiers deterministically by profile name', () => {
@@ -344,7 +344,7 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.selectedProfile).toBeUndefined();
     expect(decision.fit).toBe('overflow');
     expect(decision.reason).toContain('No capable implementer profile');
-    expect(decision.rejected.map(rejected => rejected.fit)).toEqual(['overflow', 'overflow']);
+    expect(decision.rejected.map((rejected) => rejected.fit)).toEqual(['overflow', 'overflow']);
   });
 
   it('uses a conservative fallback when a profile has no declared context length', () => {
@@ -365,16 +365,15 @@ describe('routeTaskToImplementerProfile', () => {
   it('rejects profiles that only fit after unsafe currentCode truncation', () => {
     const task = makeTask({
       action: 'modify',
-      currentCode: Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join('\n'),
+      currentCode: Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join(
+        '\n',
+      ),
     });
 
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('small-local', 'local', 2000),
-        profile('larger-cheap', 'cheap', 40_000),
-      ],
+      profiles: [profile('small-local', 'local', 2000), profile('larger-cheap', 'cheap', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('larger-cheap');
@@ -387,7 +386,9 @@ describe('routeTaskToImplementerProfile', () => {
         currentCodeTruncated: true,
       },
     ]);
-    expect(decision.rejected[0]?.untruncatedEstimatedTokens).toBeGreaterThan(decision.rejected[0]?.estimatedTokens ?? 0);
+    expect(decision.rejected[0]?.untruncatedEstimatedTokens).toBeGreaterThan(
+      decision.rejected[0]?.estimatedTokens ?? 0,
+    );
     expect(decision.rejected[0]?.reason).toContain('current code truncated');
   });
 

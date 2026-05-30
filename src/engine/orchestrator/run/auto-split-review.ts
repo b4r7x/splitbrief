@@ -1,0 +1,108 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowContext } from '../types.js';
+import type { AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
+import { runBriefQualityGate } from '../planning/briefs-approval-loop.js';
+import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
+import { publishError, publishWarning } from '../events.js';
+import { transitionAndSave } from '../state-ops.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
+import { formatTasks } from '../../spec/formatter.js';
+import { parseTasks } from '../../spec/parser.js';
+import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
+
+async function readApprovedSplitTasks(tasksFilePath: string): Promise<Task[] | null> {
+  try {
+    const text = await readFile(tasksFilePath, 'utf8');
+    const tasks = parseTasks(text);
+    return tasks.length > 0 ? tasks : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function reviewAutoSplitOutput(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  tasks: Task[];
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; tasks: Task[]; approved: boolean }> {
+  const tasksFilePath = join(sessionDir(opts.wctx.projectDir, opts.wctx.sessionId), TASKS_FILE);
+  writeSpecFile(
+    { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
+    TASKS_FILE,
+    formatTasks(opts.tasks),
+    opts.wctx.metadata,
+  );
+  publishWarning(
+    { bus: opts.wctx.bus, phase: opts.state.phase },
+    `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`,
+  );
+
+  let state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, {
+    type: 'BRIEFS_READY',
+    tasks: opts.tasks,
+  });
+  opts.setTrackedState(state);
+
+  const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
+  if (!result.approved && result.action !== 'edit') {
+    publishError(
+      { bus: opts.wctx.bus, phase: state.phase },
+      result.comment
+        ? `Auto-split overflow rejected: ${result.comment}`
+        : 'Auto-split overflow rejected before implementation.',
+    );
+    state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+      type: 'REJECT_BRIEFS',
+    });
+    opts.setTrackedState(state);
+    return { state, tasks: opts.tasks, approved: false };
+  }
+
+  const approvedTasks = await readApprovedSplitTasks(tasksFilePath);
+  if (!approvedTasks) {
+    publishError(
+      { bus: opts.wctx.bus, phase: state.phase },
+      `Auto-split overflow review failed: ${tasksFilePath} has no parseable Task Briefs.`,
+    );
+    return { state, tasks: opts.tasks, approved: false };
+  }
+
+  const { ok, report } = runBriefQualityGate({
+    tasks: approvedTasks,
+    projectDir: opts.wctx.projectDir,
+    sessionId: opts.wctx.sessionId,
+    bus: opts.wctx.bus,
+    phase: state.phase,
+  });
+  if (!ok) {
+    publishError(
+      { bus: opts.wctx.bus, phase: state.phase },
+      `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
+    );
+    return { state, tasks: approvedTasks, approved: false };
+  }
+
+  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+    type: 'BRIEFS_READY',
+    tasks: approvedTasks,
+  });
+  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+    type: 'APPROVE_BRIEFS',
+  });
+  opts.setTrackedState(state);
+  return { state, tasks: approvedTasks, approved: true };
+}
+
+export function formatSkippedSplitNotice(skippedSplits: AutoSplitOverflowSkippedSplit[]): string {
+  return skippedSplits
+    .map((skipped) => {
+      const reason = skipped.reason.trim();
+      const punctuatedReason = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+      return `Auto-split overflow skipped ${skipped.taskId}: ${punctuatedReason} Original task will continue unless routing/recovery requires a different action.`;
+    })
+    .join('; ');
+}

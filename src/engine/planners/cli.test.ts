@@ -50,23 +50,17 @@ describe('createCliPlanner', () => {
   it('isAvailable returns true when the CLI responds to --version', async () => {
     installShim('codex', ['codex 1.0.0']);
 
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
     expect(await planner.isAvailable()).toBe(true);
   });
 
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
-    const withResume = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-    );
+    const withResume = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
     expect(withResume.capabilities.supportsHintEscalation).toBe(true);
     expect(withResume.capabilities.supportsSessionResume).toBe(true);
 
-    const noResume = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }),
-    );
+    const noResume = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
     expect(noResume.capabilities.supportsHintEscalation).toBe(true);
     expect(noResume.capabilities.supportsSessionResume).toBe(false);
   });
@@ -77,18 +71,23 @@ describe('createCliPlanner', () => {
     // that propagates onSessionId (review()'s callback type is narrower).
     installShim('codex', [
       JSON.stringify({ type: 'thread.started', thread_id: 'sess-abc' }),
-      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: '# spec\nbody' } }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: '# spec\nbody' },
+      }),
     ]);
 
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
     const onSessionId = vi.fn();
 
     // plan() runs multiple phases; we just need session capture on first phase.
     // Capture errors so the test does not depend on full plan success.
     try {
-      await planner.plan('add auth', projectDir, { onOutput: vi.fn(), onSessionId });
+      await planner.plan({
+        feature: 'add auth',
+        projectDir,
+        callbacks: { onOutput: vi.fn(), onSessionId },
+      });
     } catch {
       // Shim only emits one "phase" — later phase invocations may throw. The
       // session-id capture happens on the first run regardless.
@@ -113,9 +112,7 @@ describe('createCliPlanner', () => {
     );
     chmodSync(shimPath, 0o755);
 
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'aider' } }),
-    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'aider' } }));
 
     const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
 
@@ -157,11 +154,13 @@ Create the CLI-written file.
     );
     chmodSync(shimPath, 0o755);
 
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
-    const result = await planner.quickPlan('make it better', projectDir, { onOutput: vi.fn() });
+    const result = await planner.quickPlan({
+      feature: 'make it better',
+      projectDir,
+      callbacks: { onOutput: vi.fn() },
+    });
 
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks[0]?.id).toBe('T001');
@@ -173,14 +172,12 @@ Create the CLI-written file.
     // Point PATH at an empty dir — no `codex` shim → ENOENT.
     process.env['PATH'] = createTempDir('empty-path');
 
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
     try {
-      await expect(
-        planner.review('prompt', projectDir, { onOutput: vi.fn() }),
-      ).rejects.toSatisfy(processError.isNotFound);
+      await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toSatisfy(
+        processError.isNotFound,
+      );
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }

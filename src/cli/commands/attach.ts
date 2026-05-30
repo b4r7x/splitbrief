@@ -6,7 +6,7 @@ import { resolveProjectDir } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
-import { assertNotWindows } from '../platform.js';
+import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
@@ -66,9 +66,10 @@ export function registerAttachCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (sessionId: string | undefined, opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const resolvedId = sessionId !== undefined && isNumericAlias(sessionId)
-        ? await resolveNumericAlias(sessionId, projectDir)
-        : sessionId;
+      const resolvedId =
+        sessionId !== undefined && isNumericAlias(sessionId)
+          ? await resolveNumericAlias(sessionId, projectDir)
+          : sessionId;
       await attachCommand(resolvedId, { projectDir });
     });
 }

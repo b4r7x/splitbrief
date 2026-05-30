@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
 import { type FilterableItem, availableRows } from '../picker-utils.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../../core/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../../../features/workflow/layout/terminal-width.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
@@ -28,7 +28,10 @@ const INNER_PADDING = 4;
 const CURSOR_WIDTH = 2;
 const COLUMN_GAP = 3;
 
-function getHint(nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean }, hasRefresh: boolean): string {
+function getHint(
+  nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean },
+  hasRefresh: boolean,
+): string {
   const refreshHint = hasRefresh ? '  Ctrl+R refresh' : '';
   if (nav.isOnCustomItem) {
     return `\u2190 back  Enter add custom  Esc cancel${refreshHint}`;
@@ -57,7 +60,10 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const innerChrome = 6;
   const maxVisible = Math.min(availableRows(rows, outerChrome + innerChrome), 20);
   const columnHeight = maxVisible + innerChrome;
-  const totalBoxWidth = getResponsivePanelWidth(cols, isSmall, { small: contentMaxWidth, large: contentMaxWidth });
+  const totalBoxWidth = getResponsivePanelWidth(cols, isSmall, {
+    small: contentMaxWidth,
+    large: contentMaxWidth,
+  });
   const columnContentWidth = Math.max(
     1,
     Math.floor((totalBoxWidth - COLUMN_GAP) / 2) - BORDER_WIDTH - INNER_PADDING - CURSOR_WIDTH,
@@ -75,13 +81,24 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const displayTitle = stepLabel ? `${title} \u2014 ${stepLabel}` : title;
   const hideRightFilter = nav.isSpecial;
   const rightItems = nav.isOnLeftCustomItem ? [] : nav.right.items;
-  const placeholderNode = nav.isOnLeftCustomItem && leftProps.specialHelp ? leftProps.specialHelp : rightProps.placeholder;
+  const placeholderNode =
+    nav.isOnLeftCustomItem && leftProps.specialHelp
+      ? leftProps.specialHelp
+      : rightProps.placeholder;
   const hint = getHint(nav, !!onRefresh);
 
   return (
-    <Box width={cols} height={rows} flexDirection="column" alignItems="center" justifyContent="center">
+    <Box
+      width={cols}
+      height={rows}
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+    >
       <Box justifyContent="center" marginBottom={2}>
-        <Text bold color={t.accent}>{displayTitle}</Text>
+        <Text bold color={t.accent}>
+          {displayTitle}
+        </Text>
       </Box>
       <Box gap={COLUMN_GAP} width={totalBoxWidth} flexDirection="row">
         <SingleColumnPicker<L>
@@ -117,7 +134,11 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           placeholderWhenEmpty={placeholderNode}
           renderRow={(item, isCursor, maxWidth) => {
             if (isVirtualCustomItem(item)) {
-              return <Text color={isCursor ? t.accent : t.textDim} italic>+ Custom model...</Text>;
+              return (
+                <Text color={isCursor ? t.accent : t.textDim} italic>
+                  + Custom model...
+                </Text>
+              );
             }
             return rightProps.renderRow(item, { isCursor, maxWidth });
           }}

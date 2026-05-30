@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawnAndCollect } from '../../../src/engine/streaming/spawn-collect.js';
-import { parseJsonlLine } from '../../../src/engine/streaming/output-parsers.js';
+import { parseJsonlLine } from '../../../src/engine/streaming/parse-jsonl.js';
 
 describe('CLI implementer JSONL parsing', () => {
   it('parses codex-style JSONL into human-readable text', async () => {

@@ -6,7 +6,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
-import { readEvidenceLedger } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 
 import type { TaskReviewRequest, TaskReviewValidation } from '../../events/workflow-events.js';
 
@@ -32,22 +32,27 @@ export function shouldReviewTask(opts: {
   const hasAdvanced = opts.currentTaskIndex > opts.taskIndex;
   const recoveryRequired = opts.request.status === 'recovery-required';
   if (mode === 'every') return hasAdvanced || recoveryRequired;
-  return opts.request.status === 'failed' || recoveryRequired || opts.request.validation.passed === false;
+  return (
+    opts.request.status === 'failed' || recoveryRequired || opts.request.validation.passed === false
+  );
 }
 
 export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): TaskReviewRequest {
   const ledger = readEvidenceLedger(opts.projectDir, opts.sessionId);
-  const evidenceTask = ledger?.tasks.find(task => task.id === opts.task.id);
+  const evidenceTask = ledger?.tasks.find((task) => task.id === opts.task.id);
   const validation = buildValidation(evidenceTask, opts.state);
-  const evidencePath = ledger ? join(sessionDir(opts.projectDir, opts.sessionId), EVIDENCE_FILE) : undefined;
-  const recovery = opts.state.pendingRecovery?.taskId === opts.task.id ? opts.state.pendingRecovery : undefined;
+  const evidencePath = ledger
+    ? join(sessionDir(opts.projectDir, opts.sessionId), EVIDENCE_FILE)
+    : undefined;
+  const recovery =
+    opts.state.pendingRecovery?.taskId === opts.task.id ? opts.state.pendingRecovery : undefined;
   const filesTouched = uniqueNonEmpty([
     ...opts.filesTouched,
     ...(evidenceTask?.changedFiles ?? []),
     ...(recovery?.files ?? []),
     opts.task.file,
   ]);
-  const taskTokens = opts.taskBreakdowns.find(breakdown => breakdown.taskId === opts.task.id);
+  const taskTokens = opts.taskBreakdowns.find((breakdown) => breakdown.taskId === opts.task.id);
 
   return {
     taskId: opts.task.id,
@@ -70,11 +75,15 @@ export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): Tas
     },
     ...(opts.routingDecision !== undefined && {
       routing: {
-        ...(opts.routingDecision.selectedProfile !== undefined && { selectedProfile: opts.routingDecision.selectedProfile }),
+        ...(opts.routingDecision.selectedProfile !== undefined && {
+          selectedProfile: opts.routingDecision.selectedProfile,
+        }),
         fit: opts.routingDecision.fit,
         estimatedTokens: opts.routingDecision.estimatedTokens,
         untruncatedEstimatedTokens: opts.routingDecision.untruncatedEstimatedTokens,
-        ...(opts.routingDecision.contextLength !== undefined && { contextLength: opts.routingDecision.contextLength }),
+        ...(opts.routingDecision.contextLength !== undefined && {
+          contextLength: opts.routingDecision.contextLength,
+        }),
         currentCodeTruncated: opts.routingDecision.currentCodeTruncated,
         currentCodeContextMode: opts.routingDecision.currentCodeContextMode,
         costPosture: opts.routingDecision.costPosture,
@@ -93,14 +102,18 @@ export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): Tas
   };
 }
 
-function buildValidation(evidenceTask: EvidenceTask | undefined, state: WorkflowState): TaskReviewValidation {
-  const stages = evidenceTask?.validation.map(entry => ({
-    stage: entry.stage,
-    passed: entry.passed,
-    ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
-  })) ?? [];
+function buildValidation(
+  evidenceTask: EvidenceTask | undefined,
+  state: WorkflowState,
+): TaskReviewValidation {
+  const stages =
+    evidenceTask?.validation.map((entry) => ({
+      stage: entry.stage,
+      passed: entry.passed,
+      ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
+    })) ?? [];
   if (stages.length > 0) {
-    const passed = stages.every(stage => stage.passed);
+    const passed = stages.every((stage) => stage.passed);
     return {
       passed,
       summary: passed ? 'validation passed' : validationFailureSummary(stages),
@@ -108,9 +121,10 @@ function buildValidation(evidenceTask: EvidenceTask | undefined, state: Workflow
     };
   }
   const recovery = state.pendingRecovery;
-  const validationSummary = typeof recovery?.facts?.validationSummary === 'string'
-    ? recovery.facts.validationSummary
-    : undefined;
+  const validationSummary =
+    typeof recovery?.facts?.validationSummary === 'string'
+      ? recovery.facts.validationSummary
+      : undefined;
   return {
     passed: recovery ? false : null,
     summary: validationSummary ?? (recovery ? recovery.message : 'validation not recorded'),
@@ -119,7 +133,7 @@ function buildValidation(evidenceTask: EvidenceTask | undefined, state: Workflow
 }
 
 function validationFailureSummary(stages: TaskReviewValidation['stages']): string {
-  const failed = stages.find(stage => !stage.passed);
+  const failed = stages.find((stage) => !stage.passed);
   return failed?.errorSummary ?? (failed ? `${failed.stage} failed` : 'validation failed');
 }
 

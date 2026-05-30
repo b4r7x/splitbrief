@@ -2,11 +2,7 @@ import type { Stats } from 'node:fs';
 import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, normalize, resolve, sep } from 'node:path';
-import {
-  EXT_TO_MIME,
-  MAX_ATTACHMENT_BYTES,
-  SUPPORTED_IMAGE_EXTS,
-} from '../schemas/attachment.js';
+import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
 import { includes } from '../../utils/type-guards.js';
 import type { Attachment } from '../schemas/attachment.js';
 
@@ -84,8 +80,8 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
     return { ok: false, reason: 'not-found' };
   }
 
-  const safeRoots = [opts.projectDir, homedir()].map(r => normalize(r));
-  const inSafeRoot = safeRoots.some(root => isInsideSafeRoot(absPath, realPath, root));
+  const safeRoots = [opts.projectDir, homedir()].map((r) => normalize(r));
+  const inSafeRoot = safeRoots.some((root) => isInsideSafeRoot(absPath, realPath, root));
   if (!inSafeRoot) {
     return { ok: false, reason: 'outside-safe-roots' };
   }

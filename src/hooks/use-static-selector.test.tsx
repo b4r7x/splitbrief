@@ -9,13 +9,7 @@ const DOWN = '\u001b[B';
 const ENTER = '\r';
 const ESC = '\u001b';
 
-function Harness({
-  items,
-  initialIndex,
-}: {
-  items: string[];
-  initialIndex?: number | undefined;
-}) {
+function Harness({ items, initialIndex }: { items: string[]; initialIndex?: number | undefined }) {
   const [chosen, setChosen] = useState('none');
   const [cancelled, setCancelled] = useState(false);
   const selector = useStaticSelector({
@@ -25,11 +19,7 @@ function Harness({
     onCancel: () => setCancelled(true),
   });
   const current = items[selector.selectedIndex] ?? 'none';
-  return (
-    <Text>
-      {`current:${current}|chosen:${chosen}|cancelled:${cancelled ? 'yes' : 'no'}`}
-    </Text>
-  );
+  return <Text>{`current:${current}|chosen:${chosen}|cancelled:${cancelled ? 'yes' : 'no'}`}</Text>;
 }
 
 describe('useStaticSelector', () => {

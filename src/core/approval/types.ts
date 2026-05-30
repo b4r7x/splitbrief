@@ -7,7 +7,7 @@ export type TieredApprovalRequest = {
   tier: ApprovalTier;
   actionClass: ActionClass;
   actionDescription: string;
-  taskId?: TaskId;
+  taskId?: TaskId | undefined;
   phase: Phase;
 };
 

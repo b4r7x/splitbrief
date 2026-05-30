@@ -1,11 +1,19 @@
 import type { Socket } from 'node:net';
 import { error, type AppError } from '../../utils/error.js';
 import type { EventBus } from '../events/types.js';
-import type { IpcPromptRequest, IpcPromptRequestInput, IpcPromptResponse, ServerMessage } from './protocol.js';
+import type {
+  IpcPromptRequest,
+  IpcPromptRequestInput,
+  IpcPromptResponse,
+  ServerMessage,
+} from './protocol.js';
 
-export type IpcPromptUnavailableError = AppError<'ipc-prompt-no-client-headless', {
-  promptKind: IpcPromptRequest['kind'];
-}> & {
+export type IpcPromptUnavailableError = AppError<
+  'ipc-prompt-no-client-headless',
+  {
+    promptKind: IpcPromptRequest['kind'];
+  }
+> & {
   code: 'ipc_prompt_no_client_headless';
   promptKind: IpcPromptRequest['kind'];
 };
@@ -85,8 +93,14 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
 
         pendingPrompts.set(request.requestId, {
           request,
-          resolve: (response) => { clearTimeout(timer); resolve(response); },
-          reject: (err) => { clearTimeout(timer); reject(err); },
+          resolve: (response) => {
+            clearTimeout(timer);
+            resolve(response);
+          },
+          reject: (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
         });
         if (currentSocket) {
           sendPrompt(currentSocket, request);

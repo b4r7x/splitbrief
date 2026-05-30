@@ -26,7 +26,12 @@ export async function runPlannerReview(
     onOutput: createBusTextHandler({ bus: bus, phase: opts.state.phase }),
     signal: opts.signal,
   });
-  const state = addUsageAndSave(projectDir, sessionId, opts.state, 'planner', result.usage, bus);
-  if (writeTo) writeSpecFile(projectDir, sessionId, writeTo, result.text, metadata);
+  const state = addUsageAndSave(
+    { projectDir, sessionId, bus },
+    opts.state,
+    'planner',
+    result.usage,
+  );
+  if (writeTo) writeSpecFile({ projectDir, sessionId }, writeTo, result.text, metadata);
   return { state, text: result.text };
 }

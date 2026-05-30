@@ -9,13 +9,18 @@ import {
   publishPendingRecoveryPrompt,
   recoveryRetryTaskId,
   saveAbortedRecoverySession,
-} from '../../../engine/facades/recovery.js';
+} from '../../../engine/orchestrator/recovery/driver.js';
 import { createTuiSink } from '../tui-sink.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from '../recovery-prompt.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
 export type PendingRecoveryResult =
-  | { shouldRun: true; state: WorkflowState; retryProfileOverride?: string | undefined; retryProfileOverrideTaskId?: TaskId | undefined }
+  | {
+      shouldRun: true;
+      state: WorkflowState;
+      retryProfileOverride?: string | undefined;
+      retryProfileOverrideTaskId?: TaskId | undefined;
+    }
   | { shouldRun: false; state?: WorkflowState | undefined };
 
 interface PromptPendingRecoveryArgs {
@@ -88,15 +93,24 @@ export function useRecoveryDriver(): (
       }
 
       if (result.status === 'aborted') {
-        saveAbortedRecoverySession({ projectDir, sessionId: activeSessionId, state: result.state, config });
+        saveAbortedRecoverySession({
+          projectDir,
+          sessionId: activeSessionId,
+          state: result.state,
+          config,
+        });
         feedbackStore.setMessage('Workflow aborted.');
         return { shouldRun: false, state: result.state };
       }
 
       const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
-      const retryOverrides = retryProfileOverride !== undefined && result.status === 'retry-current-task'
-        ? { retryProfileOverride, ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}) }
-        : {};
+      const retryOverrides =
+        retryProfileOverride !== undefined && result.status === 'retry-current-task'
+          ? {
+              retryProfileOverride,
+              ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}),
+            }
+          : {};
       return {
         shouldRun: true,
         state: result.state,

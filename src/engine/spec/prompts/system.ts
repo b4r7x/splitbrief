@@ -3,9 +3,10 @@ import { buildLanguageContext, type LanguageContext } from './language-context.j
 export function buildSystemPreamble(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const example = exampleOutput(ctx);
-  const intro = ctx.language === 'the project language'
-    ? 'SYSTEM: You are a code generator for the project language. You write clean, working code that matches the target file.'
-    : `SYSTEM: You are a ${ctx.language} code generator. You write clean, working ${ctx.language} code.`;
+  const intro =
+    ctx.language === 'the project language'
+      ? 'SYSTEM: You are a code generator for the project language. You write clean, working code that matches the target file.'
+      : `SYSTEM: You are a ${ctx.language} code generator. You write clean, working ${ctx.language} code.`;
 
   return `${intro}
 Rules:

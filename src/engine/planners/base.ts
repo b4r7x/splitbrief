@@ -3,15 +3,31 @@ import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
-import type { Planner, PlannerCallbacks, PlannerOutputCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage, PlannerSummaryMessage } from './types.js';
+import type {
+  Planner,
+  PlannerCallbacks,
+  PlannerOutputCallbacks,
+  PlanOptions,
+  EscalateOptions,
+  RegenerateOptions,
+  PlanResult,
+  EscalationResult,
+  RegenerateResult,
+  PhaseResult,
+  PlannerCapabilities,
+  PriorMessage,
+  PlannerSummaryMessage,
+} from './types.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { buildInstantPrompt } from '../spec/prompts/instant.js';
-import type { LanguageContext } from '../spec/prompts/language-context.js';
-import { buildProjectLanguageContext, extractLanguageFromResearch } from '../spec/prompts/language-context.js';
+import {
+  buildProjectLanguageContext,
+  extractLanguageFromResearch,
+} from '../spec/prompts/language-context.js';
 import { parseTasks } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { buildProjectContextMarkdown } from './context.js';
@@ -20,7 +36,11 @@ import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './planning-helpers.js';
+import {
+  formatRepoMapBlock,
+  prepareInvokeArgs,
+  runSinglePhasePlanning,
+} from './planning-helpers.js';
 import { summarize, summarizeStructured } from './summary.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
@@ -64,8 +84,18 @@ export interface PlannerBaseConfig {
    */
   escalateFullMode?: 'text' | 'files';
   /** Override to read the artifact from disk when the backend writes files directly (e.g., agent planner). Falls back to stdout text when not provided. */
-  readPhaseOutput?: (filename: string, resultText: string, projectDir: string, sessionId?: string) => string;
-  escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
+  readPhaseOutput?: (
+    filename: string,
+    resultText: string,
+    projectDir: string,
+    sessionId?: string,
+  ) => string;
+  escalateFullPostProcess?: (
+    task: Task,
+    result: InvokeResult,
+    extracted: { code: string },
+    projectDir: string,
+  ) => EscalationResult;
   /**
    * When true, the backend handles `priorMessages` natively (e.g. API backends using an OpenAI
    * messages array). When false (default), the base layer prepends a CLI-format transcript
@@ -74,27 +104,12 @@ export interface PlannerBaseConfig {
   consumesPriorMessages?: boolean;
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 }
-function normalizeCapabilities(capabilities: PlannerCapabilities): PlannerCapabilities {
-  return {
-    supportsConversationalPlanning: capabilities.supportsConversationalPlanning,
-    supportsHintEscalation: capabilities.supportsHintEscalation,
-    supportsSessionResume: capabilities.supportsSessionResume,
-    supportsEffort: capabilities.supportsEffort,
-    supportsImages: capabilities.supportsImages,
-    supportsSelfSummarisation: capabilities.supportsSelfSummarisation ?? false,
-  };
-}
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
-  const capabilities = normalizeCapabilities(config.capabilities);
+  const capabilities = config.capabilities;
 
   return {
-    async plan(
-      feature: string,
-      projectDir: string,
-      callbacks: PlannerCallbacks,
-      skillsContext?: string,
-      codebaseContext?: string,
-    ): Promise<PlanResult> {
+    async plan(opts: PlanOptions): Promise<PlanResult> {
+      const { feature, projectDir, callbacks, skillsContext, codebaseContext } = opts;
       const projectContext = await buildProjectContextMarkdown(projectDir);
       const repoMapBlock = formatRepoMapBlock(codebaseContext);
       let usage: TokenDelta | null = null;
@@ -103,16 +118,24 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       let priorInjected = false;
       let imagesInjected = false;
       const pendingImages = callbacks.attachments;
-      async function runPhase(phase: PlannerArtifactPhase, prompt: string, filename: string): Promise<string> {
+      async function runPhase(
+        phase: PlannerArtifactPhase,
+        prompt: string,
+        filename: string,
+      ): Promise<string> {
         const plannerPhase = PHASE_MAP[phase];
         if (plannerPhase) callbacks.onPhase?.(plannerPhase);
         const buffer = createTranscriptBuffer(
-          projectDir, callbacks.sessionId ?? '', plannerPhase, callbacks.persistTranscript ?? true,
+          projectDir,
+          callbacks.sessionId ?? '',
+          plannerPhase,
+          callbacks.persistTranscript ?? true,
         );
 
         const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;
         priorInjected = true;
-        const images = !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
+        const images =
+          !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
         imagesInjected = true;
 
         const { effectivePrompt, extras } = prepareInvokeArgs({
@@ -126,7 +149,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           prompt: effectivePrompt,
           projectDir,
           callbacks: {
-            onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
+            onOutput: (text) => {
+              callbacks.onOutput(text);
+              buffer.append(text);
+            },
             onQuestion: callbacks.onQuestion,
             onSessionId: callbacks.onSessionId,
             onSessionExpired: callbacks.onSessionExpired,
@@ -144,80 +170,80 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         return artifactText;
       }
 
-      const research = await runPhase('researching', repoMapBlock + buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
+      const research = await runPhase(
+        'researching',
+        repoMapBlock + buildResearchPrompt(feature, projectContext, skillsContext),
+        RESEARCH_FILE,
+      );
       const languageContext = buildProjectLanguageContext(
         projectDir,
         extractLanguageFromResearch(research) ?? callbacks.discoveredValidation?.language,
       );
-      const spec = await runPhase('specifying', buildSpecPrompt(feature, research, languageContext), SPEC_FILE);
-      const plan = await runPhase('planning', buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext, languageContext), PLAN_FILE);
-      const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan, languageContext), TASKS_FILE);
+      const spec = await runPhase(
+        'specifying',
+        buildSpecPrompt(feature, research, languageContext),
+        SPEC_FILE,
+      );
+      const plan = await runPhase(
+        'planning',
+        buildPlanPrompt(
+          { content: spec, hasClarifications: spec.includes('## Clarifications') },
+          projectContext,
+          skillsContext,
+          languageContext,
+        ),
+        PLAN_FILE,
+      );
+      const tasksMarkdown = await runPhase(
+        'generating-tasks',
+        buildTasksPrompt(spec, plan, languageContext),
+        TASKS_FILE,
+      );
 
       const tasks = parseTasks(tasksMarkdown);
 
       return { spec, plan, tasks, usage, phases };
     },
-    async quickPlan(
-      feature: string,
-      projectDir: string,
-      callbacks: PlannerCallbacks,
-      codebaseContext?: string,
-    ): Promise<PlanResult> {
+    async quickPlan(opts: PlanOptions): Promise<PlanResult> {
       return runSinglePhasePlanning(
         config,
-        (promptFeature, projectContext, languageContext) => buildQuickPlanPrompt(promptFeature, projectContext, languageContext),
-        'quick-planning',
-        feature,
-        projectDir,
-        callbacks,
-        codebaseContext,
+        (promptFeature, projectContext, languageContext) =>
+          buildQuickPlanPrompt(promptFeature, projectContext, languageContext),
+        opts.feature,
+        opts.projectDir,
+        opts.callbacks,
+        opts.codebaseContext,
       );
     },
-    async instantPlan(
-      feature: string,
-      projectDir: string,
-      callbacks: PlannerCallbacks,
-      codebaseContext?: string,
-    ): Promise<PlanResult> {
+    async instantPlan(opts: PlanOptions): Promise<PlanResult> {
       return runSinglePhasePlanning(
         config,
-        (promptFeature, projectContext, languageContext) => buildInstantPrompt(promptFeature, projectContext, languageContext),
-        'instant-planning',
-        feature,
-        projectDir,
-        callbacks,
-        codebaseContext,
+        (promptFeature, projectContext, languageContext) =>
+          buildInstantPrompt(promptFeature, projectContext, languageContext),
+        opts.feature,
+        opts.projectDir,
+        opts.callbacks,
+        opts.codebaseContext,
       );
     },
 
-    async regenerate(
-      prompt: string,
-      _artifactType: 'spec' | 'plan',
-      projectDir: string,
-      callbacks: PlannerOutputCallbacks,
-    ): Promise<RegenerateResult> {
-      const result = await config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal });
+    async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
+      const { prompt, projectDir, callbacks } = opts;
+      const result = await config.invokeEscalate({
+        prompt,
+        projectDir,
+        callbacks,
+        signal: callbacks.signal,
+      });
       return { text: result.text, usage: result.usage };
     },
 
-    async escalateHint(
-      task: Task,
-      error: string,
-      projectDir: string,
-      callbacks: PlannerOutputCallbacks,
-      languageContext?: LanguageContext,
-    ): Promise<EscalationResult> {
-      return escalateHint(config, task, error, projectDir, callbacks, languageContext);
+    async escalateHint(opts: EscalateOptions): Promise<EscalationResult> {
+      return escalateHint(config, opts);
     },
 
-    async escalateFull(
-      task: Task,
-      error: string,
-      projectDir: string,
-      callbacks: PlannerOutputCallbacks,
-      languageContext?: LanguageContext,
-    ): Promise<EscalationResult> {
-      return escalateFull(config, task, error, projectDir, callbacks, languageContext);
+    async escalateFull(opts: EscalateOptions): Promise<EscalationResult> {
+      return escalateFull(config, opts);
     },
 
     async review(

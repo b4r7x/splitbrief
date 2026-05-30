@@ -11,11 +11,7 @@ interface SummaryTaskTableProps {
   truncateLength: number;
 }
 
-export function SummaryTaskTable({
-  tasks,
-  taskTitleWidth,
-  truncateLength,
-}: SummaryTaskTableProps) {
+export function SummaryTaskTable({ tasks, taskTitleWidth, truncateLength }: SummaryTaskTableProps) {
   const t = useTheme();
 
   if (tasks.length === 0) return null;

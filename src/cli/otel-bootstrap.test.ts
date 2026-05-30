@@ -49,9 +49,15 @@ describe('bootstrapOtel', () => {
   });
 
   it('exports spans when console exporter is requested', () => {
-    expect(runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'console' } })).toBe('exported:probe-span');
-    expect(runSpanExportProbe({ env: { DIPTYCH_OTEL_EXPORTER: 'console' } })).toBe('exported:probe-span');
+    expect(runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'console' } })).toBe(
+      'exported:probe-span',
+    );
+    expect(runSpanExportProbe({ env: { DIPTYCH_OTEL_EXPORTER: 'console' } })).toBe(
+      'exported:probe-span',
+    );
     expect(runSpanExportProbe({ argv: ['--otel-exporter=console'] })).toBe('exported:probe-span');
-    expect(runSpanExportProbe({ argv: ['--otel-exporter', 'console'] })).toBe('exported:probe-span');
+    expect(runSpanExportProbe({ argv: ['--otel-exporter', 'console'] })).toBe(
+      'exported:probe-span',
+    );
   });
 });

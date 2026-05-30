@@ -1,4 +1,5 @@
 import type { Phase } from './schemas/enums.js';
+import { PHASES } from './schemas/enums.js';
 import type { WorkflowState } from './schemas/workflow.js';
 
 type PhaseRole = 'planner' | 'implementer';
@@ -65,6 +66,26 @@ export function isLivePhase(phase: Phase): boolean {
 
 export function isImplementerPhase(phase: Phase): boolean {
   return IMPLEMENTER_PHASES.has(phase);
+}
+
+export function isTerminalPhase(phase: Phase): boolean {
+  return phase === 'idle' || phase === 'complete';
+}
+
+export function phaseOrder(phase: Phase): number {
+  return PHASES.indexOf(phase);
+}
+
+export function canReviseSpec(phase: Phase): boolean {
+  return !isTerminalPhase(phase) && phaseOrder(phase) >= phaseOrder('reviewing-spec');
+}
+
+export function canRevisePlan(phase: Phase): boolean {
+  return !isTerminalPhase(phase) && phaseOrder(phase) >= phaseOrder('reviewing-plan');
+}
+
+export function canRedoTask(phase: Phase): boolean {
+  return phase === 'implementing' || phase === 'validating-task' || phase === 'escalating';
 }
 
 // awaitingContinue overrides phase check: workflow paused mid-turn is always resumable.

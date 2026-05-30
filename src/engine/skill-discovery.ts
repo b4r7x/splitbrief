@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs';
 import { readFile, readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
-import type { PlannerTool } from '../core/types/config-options.js';
+import type { PlannerToolId } from '../core/schemas/enums.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../utils/frontmatter.js';
 
@@ -27,11 +27,19 @@ export function parseFrontmatter(raw: string): { name: string; description: stri
 }
 
 async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<SkillMeta[]> {
-  try { await access(dir); } catch { return []; }
+  try {
+    await access(dir);
+  } catch {
+    return [];
+  }
   const skills: SkillMeta[] = [];
 
   let entries: Dirent[];
-  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return []; }
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
 
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue;
@@ -45,12 +53,18 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
         const s = await stat(fullPath);
         isFile = s.isFile();
         isDir = s.isDirectory();
-      } catch { continue; }
+      } catch {
+        continue;
+      }
     }
 
     if (isFile && entry.name.endsWith('.md')) {
       let raw: string;
-      try { raw = await readFile(fullPath, 'utf-8'); } catch { continue; }
+      try {
+        raw = await readFile(fullPath, 'utf-8');
+      } catch {
+        continue;
+      }
       const fm = parseFrontmatter(raw);
       if (fm) {
         skills.push({ id: basename(entry.name, '.md'), path: fullPath, scope, ...fm });
@@ -60,12 +74,18 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
       try {
         await access(skillMd);
         let raw: string;
-        try { raw = await readFile(skillMd, 'utf-8'); } catch { continue; }
+        try {
+          raw = await readFile(skillMd, 'utf-8');
+        } catch {
+          continue;
+        }
         const fm = parseFrontmatter(raw);
         if (fm) {
           skills.push({ id: entry.name, path: skillMd, scope, ...fm });
         }
-      } catch { /* no SKILL.md */ }
+      } catch {
+        /* no SKILL.md */
+      }
     }
   }
 
@@ -76,7 +96,7 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
   const skills: SkillMeta[] = [];
 
   const globalSkillsDir = join(homedir(), CODEX_DIR, SKILLS_DIR);
-  skills.push(...await discoverFromDir(globalSkillsDir, 'global'));
+  skills.push(...(await discoverFromDir(globalSkillsDir, 'global')));
 
   const rootAgents = join(projectDir, 'AGENTS.md');
   try {
@@ -102,42 +122,45 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
 async function discoverConventions(projectDir: string): Promise<SkillMeta[]> {
   const convPath = join(projectDir, 'CONVENTIONS.md');
   let raw: string;
-  try { raw = await readFile(convPath, 'utf-8'); } catch { return []; }
+  try {
+    raw = await readFile(convPath, 'utf-8');
+  } catch {
+    return [];
+  }
   const fm = parseFrontmatter(raw);
-  return [{
-    id: 'conventions',
-    name: fm?.name ?? 'CONVENTIONS.md',
-    description: fm?.description ?? 'Project conventions',
-    path: convPath,
-    scope: 'project',
-  }];
+  return [
+    {
+      id: 'conventions',
+      name: fm?.name ?? 'CONVENTIONS.md',
+      description: fm?.description ?? 'Project conventions',
+      path: convPath,
+      scope: 'project',
+    },
+  ];
 }
 
 function mergeSkills(global: SkillMeta[], project: SkillMeta[]): SkillMeta[] {
-  const projectIds = new Set(project.map(s => s.id));
-  const uniqueGlobal = global.filter(s => !projectIds.has(s.id));
+  const projectIds = new Set(project.map((s) => s.id));
+  const uniqueGlobal = global.filter((s) => !projectIds.has(s.id));
   return [...project, ...uniqueGlobal];
 }
 
-function getGlobalDir(tool: PlannerTool): string | null {
-  switch (tool) {
-    case 'claude-code': return join(homedir(), '.claude', 'skills');
-    case 'codex': return null;
-    case 'aider': return null;
-    default: return join(homedir(), DIPTYCH_DIR, SKILLS_DIR);
-  }
+function getGlobalDir(tool: PlannerToolId): string {
+  return tool === 'claude-code'
+    ? join(homedir(), '.claude', 'skills')
+    : join(homedir(), DIPTYCH_DIR, SKILLS_DIR);
 }
 
-function getProjectDir(tool: PlannerTool, projectDir: string): string | null {
-  switch (tool) {
-    case 'claude-code': return join(projectDir, '.claude', 'skills');
-    case 'codex': return null;
-    case 'aider': return null;
-    default: return getDiptychPath(projectDir, SKILLS_DIR);
-  }
+function getProjectDir(tool: PlannerToolId, projectDir: string): string {
+  return tool === 'claude-code'
+    ? join(projectDir, '.claude', 'skills')
+    : getDiptychPath(projectDir, SKILLS_DIR);
 }
 
-export async function discoverSkills(tool: PlannerTool, projectDir: string): Promise<SkillMeta[]> {
+export async function discoverSkills(
+  tool: PlannerToolId,
+  projectDir: string,
+): Promise<SkillMeta[]> {
   if (tool === 'codex') return discoverAgentsMd(projectDir);
   if (tool === 'aider') return discoverConventions(projectDir);
 
@@ -145,8 +168,8 @@ export async function discoverSkills(tool: PlannerTool, projectDir: string): Pro
   const projDir = getProjectDir(tool, projectDir);
 
   const [global, project] = await Promise.all([
-    globalDir ? discoverFromDir(globalDir, 'global') : [],
-    projDir ? discoverFromDir(projDir, 'project') : [],
+    discoverFromDir(globalDir, 'global'),
+    discoverFromDir(projDir, 'project'),
   ]);
 
   return mergeSkills(global, project);
@@ -160,7 +183,11 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
 
   for (const skill of skills) {
     let raw: string;
-    try { raw = await readFile(skill.path, 'utf-8'); } catch { continue; }
+    try {
+      raw = await readFile(skill.path, 'utf-8');
+    } catch {
+      continue;
+    }
     const { body } = extractFrontmatter(raw);
 
     if (totalChars + body.length > MAX_SKILL_CHARS) {

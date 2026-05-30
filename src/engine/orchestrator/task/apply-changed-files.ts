@@ -3,15 +3,10 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
-import { gateChangedFiles, type GateChangedFilesDecision } from '../approval/gate-files.js';
-import {
-  captureCurrentFileContents,
-  getChangedFilesSinceSnapshot,
-  restoreDirtyFilesFromSnapshot,
-  type ChangedFilesSnapshot,
-} from '../approval/file-snapshots.js';
-import { promoteStagedChanges, type StagedProject } from '../approval/staged-project.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { StagedProject } from '../approval/staged-project.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
+import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 
@@ -32,85 +27,62 @@ export async function applyChangedFiles(opts: {
 }): Promise<ApplyChangedFilesResult> {
   const { wctx, task, staged, usesStaging, preApplyApprovedFiles, taskStartSnapshot } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
-  let state = opts.state;
+  const state = opts.state;
 
-  let taskChangedFiles: string[];
-  let taskChangedFilesFromStaging = Boolean(staged);
-  try {
-    taskChangedFiles = await getChangedFilesSinceSnapshot(staged?.projectDir ?? projectDir, taskStartSnapshot);
-    if (usesStaging && taskChangedFiles.length === 0) {
-      taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
-      taskChangedFilesFromStaging = false;
-    }
-  } catch (err) {
-    staged?.cleanup();
-    publishError({ bus: wctx.bus, phase: state.phase }, `Task changed files blocked by approval gate: ${toErrorMessage(err)}`);
-    return { proceed: false, state };
-  }
+  const result = await gateAndPromoteChangedFiles({
+    task,
+    state,
+    projectDir,
+    sessionId,
+    bus: wctx.bus,
+    callbacks,
+    config,
+    staged,
+    usesStaging,
+    taskStartSnapshot,
+    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
+    preApprovedFiles: preApplyApprovedFiles,
+    handleConflict: opts.handleConflict,
+    onRestoreConflict: (files) =>
+      publishWarning(
+        { bus: wctx.bus, phase: state.phase },
+        `denied task rollback skipped files changed during approval: ${files.join(', ')}`,
+      ),
+    onRestoreError: (err) =>
+      publishWarningFromError(
+        { bus: wctx.bus, phase: state.phase },
+        'failed to discard denied task changes',
+        err,
+      ),
+    onApproved: (decision) => persistApprovalEvidence({ wctx, state, decision, taskId: task.id }),
+  });
 
-  const preApprovalChangedFileContents = await captureCurrentFileContents(projectDir, taskChangedFiles);
-  const preApplyApprovedFileSet = new Set(preApplyApprovedFiles);
-  const filesNeedingApproval = taskChangedFiles.filter((file) => !preApplyApprovedFileSet.has(file));
-  let changedFilesGate: GateChangedFilesDecision = { allow: true, changedFiles: taskChangedFiles };
-  if (filesNeedingApproval.length > 0) {
-    changedFilesGate = await gateChangedFiles({
-      changedFiles: filesNeedingApproval,
-      task,
-      dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-      projectDir,
-      sessionId,
-      phase: state.phase,
-      taskId: task.id,
-      bus: wctx.bus,
-      callbacks,
-      config,
-    });
-  }
-
-  if (!changedFilesGate.allow) {
-    const files = changedFilesGate.changedFiles.join(', ');
-    try {
-      if (!taskChangedFilesFromStaging) {
-        const restoreResult = await restoreDirtyFilesFromSnapshot(
-          projectDir,
-          taskStartSnapshot,
-          changedFilesGate.changedFiles,
-          preApprovalChangedFileContents,
-        );
-        if (restoreResult.conflictedFiles.length > 0) {
-          state = await opts.handleConflict(state, restoreResult.conflictedFiles);
-          publishWarning({ bus: wctx.bus, phase: state.phase },
-            `denied task rollback skipped files changed during approval: ${restoreResult.conflictedFiles.join(', ')}`,
-          );
-        }
-      }
-    } catch (err) {
-      publishWarningFromError({ bus: wctx.bus, phase: state.phase }, 'failed to discard denied task changes', err);
-    }
-    staged?.cleanup();
-    opts.recordApprovalDenial(
-      state,
-      changedFilesGate,
-      `Task changed files blocked by approval gate: ${changedFilesGate.reason ?? 'denied'} (${files})`,
+  if (result.outcome === 'error') {
+    publishError(
+      { bus: wctx.bus, phase: state.phase },
+      `Task changed files blocked by approval gate: ${toErrorMessage(result.error)}`,
     );
-    return { proceed: false, state };
+    return { proceed: false, state: result.state };
+  }
+  if (result.outcome === 'gate-denied') {
+    const files = result.decision.changedFiles.join(', ');
+    opts.recordApprovalDenial(
+      result.state,
+      result.decision,
+      `Task changed files blocked by approval gate: ${result.decision.reason ?? 'denied'} (${files})`,
+    );
+    return { proceed: false, state: result.state };
+  }
+  if (result.outcome === 'promote-conflict') {
+    publishError(
+      { bus: wctx.bus, phase: result.state.phase },
+      `Approved task promotion blocked because files changed during approval: ${result.conflictedFiles.join(', ')}`,
+    );
+    return { proceed: false, state: result.state };
+  }
+  if (result.outcome === 'aborted') {
+    return { proceed: false, state: result.state };
   }
 
-  if (filesNeedingApproval.length > 0) {
-    persistApprovalEvidence(wctx, state, changedFilesGate, task.id);
-  }
-
-  if (staged) {
-    const promoteResult = await promoteStagedChanges(projectDir, staged.projectDir, taskChangedFiles, preApprovalChangedFileContents);
-    staged.cleanup();
-    if (promoteResult.conflictedFiles.length > 0) {
-      state = await opts.handleConflict(state, promoteResult.conflictedFiles);
-      publishError({ bus: wctx.bus, phase: state.phase },
-        `Approved task promotion blocked because files changed during approval: ${promoteResult.conflictedFiles.join(', ')}`,
-      );
-      return { proceed: false, state };
-    }
-  }
-
-  return { proceed: true, state, taskChangedFiles };
+  return { proceed: true, state: result.state, taskChangedFiles: result.changedFiles };
 }

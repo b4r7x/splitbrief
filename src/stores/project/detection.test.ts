@@ -8,18 +8,22 @@ describe('detectionStore', () => {
   });
 
   it('clones detection arrays and nested model data on ingress', () => {
-    const planners: PlannerDetection[] = [{
-      tool: 'claude-code',
-      type: 'cli',
-      available: true,
-      version: '1.0.0',
-    }];
-    const implementers: ProviderDetection[] = [{
-      provider: 'ollama',
-      available: true,
-      isLocal: true,
-      models: [{ id: 'qwen', capabilities: ['tools'] }],
-    }];
+    const planners: PlannerDetection[] = [
+      {
+        tool: 'claude-code',
+        type: 'cli',
+        available: true,
+        version: '1.0.0',
+      },
+    ];
+    const implementers: ProviderDetection[] = [
+      {
+        provider: 'ollama',
+        available: true,
+        isLocal: true,
+        models: [{ id: 'qwen', capabilities: ['tools'] }],
+      },
+    ];
 
     detectionStore.setDetection({ planners, implementers });
     planners[0]!.version = 'mutated';

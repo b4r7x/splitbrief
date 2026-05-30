@@ -1,4 +1,7 @@
-export function createLineBuffer(onLine: (line: string) => void): { push(chunk: string): void; flush(): void } {
+export function createLineBuffer(onLine: (line: string) => void): {
+  push(chunk: string): void;
+  flush(): void;
+} {
   let buffer = '';
   return {
     push(chunk: string) {
@@ -8,7 +11,10 @@ export function createLineBuffer(onLine: (line: string) => void): { push(chunk: 
       for (const line of lines) onLine(line);
     },
     flush() {
-      if (buffer) { onLine(buffer); buffer = ''; }
+      if (buffer) {
+        onLine(buffer);
+        buffer = '';
+      }
     },
   };
 }

@@ -55,6 +55,7 @@ For the per-layer reference (what each layer contains, acceptance criteria, proh
 | [ERRORS.md](./ERRORS.md) | Error factory pattern, domain predicate bags, zero-class rule for errors |
 | [TESTING.md](./TESTING.md) | Test placement, forbidden patterns, fakes vs mocks |
 | [INVARIANTS.md](./INVARIANTS.md) | Pre-merge grep gates — one-stop invariant checklist |
+| [CODE-STANDARD.md](./CODE-STANDARD.md) | Consolidated SOTA review bar + reviewer checklist; refines rule 21's parameter thresholds (≥4 any / ≥3 exported) |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | High-level data flow (CLI → stores → engine/UI) |
 | [CLAUDE.md](../CLAUDE.md) | Build/test commands, coding conventions, editorial rules |
 

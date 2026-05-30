@@ -1,11 +1,8 @@
 import { useInput } from 'ink';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import {
-  SETTINGS_DEFS,
-  type SettingDef,
-} from '../../../core/settings/catalog.js';
-import { matchesFilter } from '../../../core/settings/presentation.js';
+import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
+import { matchesFilter } from '../presentation.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/state.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
@@ -65,14 +62,20 @@ export function useSettingsEditor({
 
   const isListActive = !editor.isEditing;
   const initialIndex = focusSetting
-    ? Math.max(0, SETTINGS_DEFS.findIndex((d) => d.id === focusSetting))
+    ? Math.max(
+        0,
+        SETTINGS_DEFS.findIndex((d) => d.id === focusSetting),
+      )
     : 0;
 
   const list = useFilterableList<SettingDef>({
     items: SETTINGS_DEFS,
     filterFn: matchesFilter,
     onSelect: (def) => {
-      if (def.kind === 'picker') { onOpenSubPicker(def); return; }
+      if (def.kind === 'picker') {
+        onOpenSubPicker(def);
+        return;
+      }
       if (def.kind === 'string' || def.kind === 'number') {
         const current = getValue(def);
         editor.startEditing(def.id, current != null ? String(current) : '');

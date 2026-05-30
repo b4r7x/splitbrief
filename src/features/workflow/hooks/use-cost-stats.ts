@@ -3,10 +3,10 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
+import { calculateCostBreakdown } from '../../../engine/providers/cost.js';
 import { resolvePricing, type PricingMode } from '../../../engine/providers/pricing-resolver.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
-import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
+import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
 
@@ -30,7 +30,12 @@ interface CostDisplay {
   spentText: string;
 }
 
-function asReactiveModelCache(snapshot: Pick<ReturnType<typeof modelCacheStore.get>, 'modelsDevCatalog' | 'modelsDevFetchedAt' | 'providers'>): ModelCacheAccessor {
+function asReactiveModelCache(
+  snapshot: Pick<
+    ReturnType<typeof modelCacheStore.get>,
+    'modelsDevCatalog' | 'modelsDevFetchedAt' | 'providers'
+  >,
+): ModelCacheAccessor {
   return {
     getModelsDevCatalog: () => {
       if (snapshot.modelsDevCatalog === null || snapshot.modelsDevFetchedAt === null) return null;
@@ -56,14 +61,22 @@ export function resolvePricingState(
   return 'unpriced';
 }
 
-export function formatSpentText(costBreakdown: CostBreakdown | null, pricingState: CostPricingState): string {
+export function formatSpentText(
+  costBreakdown: CostBreakdown | null,
+  pricingState: CostPricingState,
+): string {
   if (pricingState === 'priced') return formatCost(costBreakdown?.totalActualCost ?? 0);
-  if (pricingState === 'mixed') return `${formatCost(costBreakdown?.totalActualCost ?? 0)} + unpriced`;
+  if (pricingState === 'mixed')
+    return `${formatCost(costBreakdown?.totalActualCost ?? 0)} + unpriced`;
   return pricingState;
 }
 
-export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdown | null): CostDisplay {
-  const showSavings = (costBreakdown?.hasSavingsEstimate ?? false) && (costBreakdown?.savingsAmount ?? 0) > 0;
+export function formatCostDisplay(
+  localRate: number,
+  costBreakdown: CostBreakdown | null,
+): CostDisplay {
+  const showSavings =
+    (costBreakdown?.hasSavingsEstimate ?? false) && (costBreakdown?.savingsAmount ?? 0) > 0;
   const hasPricedUsage = costBreakdown?.hasPricedUsage ?? false;
   const pricingState = resolvePricingState(costBreakdown);
   return {
@@ -77,32 +90,37 @@ export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdow
 
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
-  const modelCache = asReactiveModelCache(modelCacheStore.use(s => ({ modelsDevCatalog: s.modelsDevCatalog, modelsDevFetchedAt: s.modelsDevFetchedAt, providers: s.providers })));
+  const modelCache = asReactiveModelCache(
+    modelCacheStore.use((s) => ({
+      modelsDevCatalog: s.modelsDevCatalog,
+      modelsDevFetchedAt: s.modelsDevFetchedAt,
+      providers: s.providers,
+    })),
+  );
   const [
     { tokenUsage, localCount, escalatedCount },
     { currentTask, totalTasks, taskCompletionTimes },
   ] = useStores(tokensStore, tasksStore);
 
   const routedTasks = localCount + escalatedCount;
-  const localRate = routedTasks > 0
-    ? (localCount / routedTasks) * 100
-    : 0;
+  const localRate = routedTasks > 0 ? (localCount / routedTasks) * 100 : 0;
 
-  const plannerTool = getRunnerDisplayName(config.planner);
-  const implementerTool = getRunnerDisplayName(config.implementer);
-  const plannerModel = getRunnerModelName(config.planner);
-  const implementerModel = getRunnerModelName(config.implementer);
+  const { plannerTool, implementerTool, plannerModel, implementerModel } =
+    runPricingIdentity(config);
 
   const costBreakdown = tokenUsage
-    ? calculateCostBreakdown({
-        tokenUsage,
-        totalTasks,
-        escalatedCount,
-        plannerTool,
-        implementerTool,
-        plannerModel,
-        implementerModel,
-      }, modelCache)
+    ? calculateCostBreakdown(
+        {
+          tokenUsage,
+          totalTasks,
+          escalatedCount,
+          plannerTool,
+          implementerTool,
+          plannerModel,
+          implementerModel,
+        },
+        modelCache,
+      )
     : null;
   const plannerPricing = resolvePricing(plannerTool, modelCache, plannerModel);
   const implementerPricing = resolvePricing(implementerTool, modelCache, implementerModel);
@@ -112,5 +130,13 @@ export function useCostStats(): CostStats {
     implementerPricing.pricingMode,
   );
 
-  return { localRate, routedTasks, costBreakdown, pricingState, currentTask, totalTasks, taskCompletionTimes };
+  return {
+    localRate,
+    routedTasks,
+    costBreakdown,
+    pricingState,
+    currentTask,
+    totalTasks,
+    taskCompletionTimes,
+  };
 }

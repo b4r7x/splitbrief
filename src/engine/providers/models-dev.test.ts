@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  fetchModelsDevCatalog,
-  getModelsForProvider,
-} from './models-dev.js';
+import { fetchModelsDevCatalog, getModelsForProvider } from './models-dev.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
@@ -248,9 +245,7 @@ describe('fetchModelsDevCatalog', () => {
   });
 
   it('throws on non-ok response', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response('error', { status: 500 }),
-    );
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
 
     await expect(fetchModelsDevCatalog()).rejects.toThrow('500');
   });

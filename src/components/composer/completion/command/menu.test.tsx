@@ -5,16 +5,37 @@ import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.
 import { CommandCompletionMenu } from './menu.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
-  { kind: 'noarg', name: '/help', label: 'Help', description: 'Show help overlay [Ctrl+/]', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/palette', label: 'Palette', description: 'Open command palette', validScreens: ['home'], handler: () => {} },
-  { kind: 'noarg', name: '/skills', label: 'Skills', description: 'Select planner skills [Ctrl+S]', validScreens: ['home'], handler: () => {} },
+  {
+    kind: 'noarg',
+    name: '/help',
+    label: 'Help',
+    description: 'Show help overlay [Ctrl+/]',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/palette',
+    label: 'Palette',
+    description: 'Open command palette',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/skills',
+    label: 'Skills',
+    description: 'Select planner skills [Ctrl+S]',
+    validScreens: ['home'],
+    handler: () => {},
+  },
 ];
 
 function panelInteriorRows(frame: string): string[] {
   return frame
     .split('\n')
-    .filter(line => line.includes('│'))
-    .map(line => line.slice(line.indexOf('│') + 1, line.lastIndexOf('│')));
+    .filter((line) => line.includes('│'))
+    .map((line) => line.slice(line.indexOf('│') + 1, line.lastIndexOf('│')));
 }
 
 describe('CommandCompletionMenu', () => {
@@ -32,7 +53,9 @@ describe('CommandCompletionMenu', () => {
       </Box>,
     );
 
-    for (const row of panelInteriorRows(ui.lastFrame() ?? '')) {
+    const rows = panelInteriorRows(ui.lastFrame() ?? '');
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    for (const row of rows) {
       expect(row).not.toContain('UNDERLYING');
     }
     ui.unmount();

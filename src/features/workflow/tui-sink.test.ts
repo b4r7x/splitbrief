@@ -5,11 +5,7 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow, markCancelled } from '../../stores/workflow/actions.js';
-import {
-  makePlannerText,
-  makeTaskStart,
-  makeWorkflowCancelled,
-} from '#testing/helpers/events.js';
+import { makePlannerText, makeTaskStart, makeWorkflowCancelled } from '#testing/helpers/events.js';
 
 describe('tuiSink', () => {
   beforeEach(() => resetWorkflow());

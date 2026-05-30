@@ -1,9 +1,21 @@
 import { configError } from '../errors.js';
-import { ImplementerConfigSchema, defaultImplementerWriteMode } from '../../schemas/implementer-config.js';
+import {
+  ImplementerConfigSchema,
+  defaultImplementerWriteMode,
+} from '../../schemas/implementer-config.js';
 import type { Config } from '../../schemas/config.js';
-import type { ImplementerCapabilities, ImplementerConfig, ImplementerCostTier, ImplementerProfileConfig, ImplementerProfilesConfig, ImplementerWriteMode } from '../../schemas/implementer-config.js';
+import type {
+  ImplementerCapabilities,
+  ImplementerConfig,
+  ImplementerCostTier,
+  ImplementerProfileConfig,
+  ImplementerProfilesConfig,
+  ImplementerWriteMode,
+} from '../../schemas/implementer-config.js';
 
-export function pickDefaultProfileName(profileConfig: ImplementerProfilesConfig): string | undefined {
+export function pickDefaultProfileName(
+  profileConfig: ImplementerProfilesConfig,
+): string | undefined {
   return profileConfig.default ?? Object.keys(profileConfig.profiles).sort()[0];
 }
 
@@ -72,7 +84,7 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
       };
     });
 
-  const defaultProfile = profiles.find(profile => profile.isDefault);
+  const defaultProfile = profiles.find((profile) => profile.isDefault);
   if (!defaultProfile) {
     throw configError.profileNotFound(defaultName);
   }

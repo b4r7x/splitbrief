@@ -14,6 +14,14 @@ export type AliasableSession = {
   lockfile: LockfileData;
 };
 
+export function listSessionDirs(projectDir: string): string[] {
+  const root = sessionsRoot(projectDir);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+}
+
 export function assignSessionAliases(sessions: AliasableSession[]): AliasedSession[] {
   return [...sessions]
     .sort((a, b) => b.lockfile.startTimeMs - a.lockfile.startTimeMs)
@@ -25,19 +33,13 @@ export function assignSessionAliases(sessions: AliasableSession[]): AliasedSessi
 }
 
 export async function buildAliasedSessions(projectDir: string): Promise<AliasedSession[]> {
-  const root = sessionsRoot(projectDir);
-
-  if (!existsSync(root)) return [];
-
-  const entries = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory());
-
   const sessions: { sessionId: string; lockfile: LockfileData }[] = [];
 
-  for (const entry of entries) {
-    const sessDir = sessionDir(projectDir, entry.name);
+  for (const name of listSessionDirs(projectDir)) {
+    const sessDir = sessionDir(projectDir, name);
     const data = await readLockfile(sessDir);
     if (!data) continue;
-    sessions.push({ sessionId: entry.name, lockfile: data });
+    sessions.push({ sessionId: name, lockfile: data });
   }
 
   return assignSessionAliases(sessions);
@@ -49,10 +51,7 @@ export function isNumericAlias(input: string): boolean {
   return NUMERIC_PATTERN.test(input);
 }
 
-export async function resolveNumericAlias(
-  input: string,
-  projectDir: string,
-): Promise<string> {
+export async function resolveNumericAlias(input: string, projectDir: string): Promise<string> {
   const num = parseInt(input, 10);
 
   if (num < 1) {

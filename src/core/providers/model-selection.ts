@@ -9,7 +9,10 @@ function getDefaultResolvedModel(providerId: ProviderId): string | undefined {
   return defaultModel.name;
 }
 
-export function normalizeConfiguredModel(model: string | undefined, providerId?: string): string | undefined {
+export function normalizeConfiguredModel(
+  model: string | undefined,
+  providerId?: string,
+): string | undefined {
   if (!model) return undefined;
   const trimmed = model.trim();
   if (trimmed === '') return undefined;
@@ -19,12 +22,13 @@ export function normalizeConfiguredModel(model: string | undefined, providerId?:
   return trimmed;
 }
 
-export function resolveAutoModel(model: string | undefined, providerId?: string): string | undefined {
+export function resolveAutoModel(
+  model: string | undefined,
+  providerId?: string,
+): string | undefined {
   const normalized = normalizeConfiguredModel(model, providerId);
   if (!normalized) return undefined;
 
   if (normalized.toLowerCase() !== 'auto') return normalized;
-  return providerId && isProviderId(providerId)
-    ? getDefaultResolvedModel(providerId)
-    : undefined;
+  return providerId && isProviderId(providerId) ? getDefaultResolvedModel(providerId) : undefined;
 }

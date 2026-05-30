@@ -14,15 +14,17 @@ export const controlsStore = {
   ...storeBase(store),
   __testReset: () => store.set(initial),
   toggleSidebar: () => {
-    store.set(prev => ({ ...prev, sidebarVisible: !prev.sidebarVisible }));
+    store.set((prev) => ({ ...prev, sidebarVisible: !prev.sidebarVisible }));
   },
   setSidebar: (visible: boolean) => {
-    store.set(prev => prev.sidebarVisible === visible ? prev : { ...prev, sidebarVisible: visible });
+    store.set((prev) =>
+      prev.sidebarVisible === visible ? prev : { ...prev, sidebarVisible: visible },
+    );
   },
   setInputMode: (mode: InputMode) => {
-    store.set(prev => prev.inputMode === mode ? prev : { ...prev, inputMode: mode });
+    store.set((prev) => (prev.inputMode === mode ? prev : { ...prev, inputMode: mode }));
   },
   clearInputMode: () => {
-    store.set(prev => prev.inputMode === 'normal' ? prev : { ...prev, inputMode: 'normal' });
+    store.set((prev) => (prev.inputMode === 'normal' ? prev : { ...prev, inputMode: 'normal' }));
   },
 };

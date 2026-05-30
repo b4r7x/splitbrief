@@ -11,14 +11,16 @@ describe('buildTargetedRejectionComment', () => {
     const first = makeTask({ id: 'T001', title: 'Add auth', file: 'src/auth.ts' });
     const second = makeTask({ id: 'T002', title: 'Add logging', file: 'src/log.ts' });
 
-    expect(buildTargetedRejectionComment([first, second])).toBe([
-      'The user has flagged the following tasks for regeneration:',
-      '',
-      '- T001: "Add auth" (src/auth.ts)',
-      '- T002: "Add logging" (src/log.ts)',
-      '',
-      'Please regenerate ONLY these tasks. Keep all other tasks unchanged.',
-      'For each flagged task, keep the same goal and revise the description, scope, tests, and implementation steps to address the user feedback.',
-    ].join('\n'));
+    expect(buildTargetedRejectionComment([first, second])).toBe(
+      [
+        'The user has flagged the following tasks for regeneration:',
+        '',
+        '- T001: "Add auth" (src/auth.ts)',
+        '- T002: "Add logging" (src/log.ts)',
+        '',
+        'Please regenerate ONLY these tasks. Keep all other tasks unchanged.',
+        'For each flagged task, keep the same goal and revise the description, scope, tests, and implementation steps to address the user feedback.',
+      ].join('\n'),
+    );
   });
 });

@@ -1,8 +1,10 @@
 import { mkdtemp, rm, writeFile, unlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSnapshot } from './store.js';
+import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
+import { createSnapshot } from './create.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from './diff.js';
 
 let tmp: string;
@@ -21,7 +23,12 @@ describe('computeSnapshotDiff', () => {
     await writeFile(join(tmp, 'b.ts'), 'bbb');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     const result = await computeSnapshotDiff({
       projectDir: tmp,
@@ -30,14 +37,19 @@ describe('computeSnapshotDiff', () => {
     });
 
     expect(result.changedCount).toBe(0);
-    expect(result.files.every(f => f.status === 'unchanged')).toBe(true);
+    expect(result.files.every((f) => f.status === 'unchanged')).toBe(true);
   });
 
   it('returns modified for a file with changed content', async () => {
     await writeFile(join(tmp, 'foo.ts'), 'original content');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await writeFile(join(tmp, 'foo.ts'), 'modified content');
 
@@ -47,7 +59,7 @@ describe('computeSnapshotDiff', () => {
       manifest: snap.manifest,
     });
 
-    const fooDiff = result.files.find(f => f.path === 'foo.ts');
+    const fooDiff = result.files.find((f) => f.path === 'foo.ts');
     expect(fooDiff).toBeDefined();
     expect(fooDiff?.status).toBe('modified');
     expect(result.changedCount).toBe(1);
@@ -57,7 +69,12 @@ describe('computeSnapshotDiff', () => {
     await writeFile(join(tmp, 'existing.ts'), 'existing');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await writeFile(join(tmp, 'new-file.ts'), 'new content');
 
@@ -67,7 +84,7 @@ describe('computeSnapshotDiff', () => {
       manifest: snap.manifest,
     });
 
-    const newFileDiff = result.files.find(f => f.path === 'new-file.ts');
+    const newFileDiff = result.files.find((f) => f.path === 'new-file.ts');
     expect(newFileDiff).toBeDefined();
     expect(newFileDiff?.status).toBe('added');
     expect(result.changedCount).toBeGreaterThanOrEqual(1);
@@ -77,7 +94,12 @@ describe('computeSnapshotDiff', () => {
     await writeFile(join(tmp, 'to-delete.ts'), 'will be deleted');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await unlink(join(tmp, 'to-delete.ts'));
 
@@ -87,10 +109,31 @@ describe('computeSnapshotDiff', () => {
       manifest: snap.manifest,
     });
 
-    const deletedFileDiff = result.files.find(f => f.path === 'to-delete.ts');
+    const deletedFileDiff = result.files.find((f) => f.path === 'to-delete.ts');
     expect(deletedFileDiff).toBeDefined();
     expect(deletedFileDiff?.status).toBe('removed');
     expect(result.changedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('throws on a traversal path in the manifest instead of reading outside the root', async () => {
+    await writeFile(join(tmp, 'a.ts'), 'aaa');
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+
+    const tampered: SnapshotManifest = {
+      ...baseline.manifest,
+      id: 'tampered',
+      fileHashes: { ...baseline.manifest.fileHashes, '../escape.txt': 'deadbeef' },
+    };
+
+    const escapeTarget = resolve(tmp, '..', 'escape.txt');
+    await expect(
+      computeSnapshotDiff({ projectDir: tmp, sessionId: 'sess-01', manifest: tampered }),
+    ).rejects.toMatchObject({ kind: 'path-confined-escape' });
+    expect(existsSync(escapeTarget)).toBe(false);
   });
 });
 

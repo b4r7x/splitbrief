@@ -3,7 +3,11 @@ import { describe, it, expect } from 'vitest';
 import { runPreHooks } from './run-pre-hook.js';
 import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
-import { makeCommandHookEntry, makeAllowHook, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
+import {
+  makeCommandHookEntry,
+  makeAllowHook,
+  makeThrowingModuleHook,
+} from '#testing/helpers/factories/hook-entry.js';
 
 const projectDir = resolve('.');
 const ctx = { projectDir, sessionId: 'sess-1' };
@@ -21,9 +25,7 @@ const preTaskEvent: EngineEvent = {
 };
 
 function denyViaStdout(message?: string): HookCommandEntry {
-  const payload = message === undefined
-    ? { decision: 'deny' }
-    : { decision: 'deny', message };
+  const payload = message === undefined ? { decision: 'deny' } : { decision: 'deny', message };
   return makeCommandHookEntry({
     command: 'node',
     args: ['-e', `process.stdout.write(${JSON.stringify(JSON.stringify(payload))})`],
@@ -71,7 +73,12 @@ describe('runPreHooks', () => {
         },
       ],
     };
-    const result = await runPreHooks(hooks, 'pre_task', { ...preTaskEvent, title: 'forbidden task' }, ctx);
+    const result = await runPreHooks(
+      hooks,
+      'pre_task',
+      { ...preTaskEvent, title: 'forbidden task' },
+      ctx,
+    );
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('forbidden by sample-module');
   });

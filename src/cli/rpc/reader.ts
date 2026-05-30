@@ -1,22 +1,24 @@
 import { createInterface } from 'node:readline';
+import { parseJsonLine } from '../json-line.js';
 import { RpcCommandSchema, type RpcCommand } from './types.js';
 
-export function createCommandReader(
-  stream: NodeJS.ReadableStream,
-  onCommand: (cmd: RpcCommand) => void,
-  onError: (err: string) => void,
-  onClose?: () => void,
-): { close: () => void } {
+export interface CommandReaderOptions {
+  stream: NodeJS.ReadableStream;
+  onCommand: (cmd: RpcCommand) => void;
+  onError: (err: string) => void;
+  onClose?: (() => void) | undefined;
+}
+
+export function createCommandReader(options: CommandReaderOptions): { close: () => void } {
+  const { stream, onCommand, onError, onClose } = options;
   const rl = createInterface({ input: stream, terminal: false });
 
   rl.on('line', (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
+    const parsed = parseJsonLine(trimmed);
+    if (parsed === undefined) {
       onError(`Invalid JSON: ${trimmed}`);
       return;
     }

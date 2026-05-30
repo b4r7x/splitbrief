@@ -46,7 +46,9 @@ describe('recovery prompt', () => {
     expect(prompt).toContain('Recovery needed: T003 validation failed after 3 attempts');
     expect(prompt).toContain('Task: T003 - Patch auth validation');
     expect(prompt).toContain('Files: src/auth/session.ts, src/auth/session.test.ts');
-    expect(prompt).toContain('Last check: test failed: npm test -- auth failed in src/auth/session.test.ts');
+    expect(prompt).toContain(
+      'Last check: test failed: npm test -- auth failed in src/auth/session.test.ts',
+    );
     expect(prompt).toContain('Recommended: route to bigger worker: cheap-cloud');
     expect(prompt).toContain('[r] retry same worker');
     expect(prompt).toContain('[b] route to bigger worker: cheap-cloud');
@@ -128,12 +130,14 @@ describe('recovery prompt', () => {
       taskTitle: 'Update session store',
       files: ['src/auth/session.ts'],
       affectedTaskIds: [taskId('T004'), taskId('T006')],
-      details: [
-        'Conflict kind: current-task-conflict',
-        'Safe to continue: no',
-      ],
+      details: ['Conflict kind: current-task-conflict', 'Safe to continue: no'],
       facts: { conflictKind: 'current-task-conflict', safeToContinue: false },
-      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: [
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ],
       recommendedAction: 'planner-split-rebase',
       createdAt: '2026-04-29T12:00:00.000Z',
     };

@@ -5,5 +5,7 @@ import { assertPlannerKind } from '../config-assertions.js';
 
 export function createShellPlanner(config: Config): Planner {
   const plannerCfg = assertPlannerKind(config, 'shell');
-  return createCommandBasedPlanner(plannerCfg, 'Shell planner', { capabilities: resolveCapabilities(plannerCfg.capabilities) });
+  return createCommandBasedPlanner(plannerCfg, 'Shell planner', {
+    capabilities: resolveCapabilities(plannerCfg.capabilities),
+  });
 }

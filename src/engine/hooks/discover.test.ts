@@ -34,7 +34,10 @@ function hooksDir(): string {
   return join(projectDir, '.diptych', 'hooks');
 }
 
-async function writeHook(fileName: string, source = 'export default () => ({ kind: "allow" });'): Promise<void> {
+async function writeHook(
+  fileName: string,
+  source = 'export default () => ({ kind: "allow" });',
+): Promise<void> {
   await writeFile(join(hooksDir(), fileName), source);
 }
 
@@ -44,16 +47,14 @@ describe('discoverHookModules', () => {
 
     const hooks = await discoverHookModules(projectDir);
 
-    expect(hooks).toEqual([
-      { event: 'pre_task', path: join('.diptych', 'hooks', 'pre-task.ts') },
-    ]);
+    expect(hooks).toEqual([{ event: 'pre_task', path: join('.diptych', 'hooks', 'pre-task.ts') }]);
   });
 
   it('discovers multiple hook files', async () => {
     await writeHook('pre-task.ts');
     await writeHook('post-validation.js');
 
-    const events = (await discoverHookModules(projectDir)).map(hook => hook.event);
+    const events = (await discoverHookModules(projectDir)).map((hook) => hook.event);
 
     expect(events).toEqual(['post_validation', 'pre_task']);
   });
@@ -83,10 +84,9 @@ describe('mergeDiscoveredHooks', () => {
     const explicit = makeCommandHookEntry({ name: 'explicit', command: 'true' });
     const discoveredPath = join('.diptych', 'hooks', 'pre-task.ts');
 
-    const hooks = mergeDiscoveredHooks(
-      { pre_task: [explicit] },
-      [{ event: 'pre_task', path: discoveredPath }],
-    );
+    const hooks = mergeDiscoveredHooks({ pre_task: [explicit] }, [
+      { event: 'pre_task', path: discoveredPath },
+    ]);
 
     expect(hooks?.pre_task).toEqual([
       explicit,
@@ -103,10 +103,16 @@ describe('mergeDiscoveredHooks', () => {
 describe('resolveHooksConfig', () => {
   it('returns executable config for discovered module hooks', async () => {
     await writeFile(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }));
-    await writeHook('pre-task.js', 'export default () => ({ kind: "deny", message: "auto blocked" });');
+    await writeHook(
+      'pre-task.js',
+      'export default () => ({ kind: "deny", message: "auto blocked" });',
+    );
 
     const hooks = await resolveHooksConfig(projectDir, undefined);
-    const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, { projectDir, sessionId: 's' });
+    const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, {
+      projectDir,
+      sessionId: 's',
+    });
 
     expect(result).toEqual({ allow: false, reason: 'auto blocked' });
   });

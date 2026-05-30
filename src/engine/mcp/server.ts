@@ -25,8 +25,10 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 
 // Local origins allowed for browser-initiated requests; missing = non-browser CLI client.
 const LOCAL_ORIGIN_PREFIXES = [
-  'http://localhost', 'https://localhost',
-  'http://127.0.0.1', 'https://127.0.0.1',
+  'http://localhost',
+  'https://localhost',
+  'http://127.0.0.1',
+  'https://127.0.0.1',
 ];
 
 export function normalizeHeader(value: string | string[] | undefined): string | undefined {
@@ -38,7 +40,7 @@ export function normalizeHeader(value: string | string[] | undefined): string | 
 function isLocalOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true;
   if (origin === 'null') return false;
-  return LOCAL_ORIGIN_PREFIXES.some(p => origin === p || origin.startsWith(`${p}:`));
+  return LOCAL_ORIGIN_PREFIXES.some((p) => origin === p || origin.startsWith(`${p}:`));
 }
 
 function negotiateProtocolVersion(clientHeader: string | string[] | undefined): string | null {
@@ -116,14 +118,16 @@ function sendProtocolVersionError(res: ServerResponse): void {
     'Content-Type': 'application/json',
     'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
   });
-  res.end(JSON.stringify({
-    jsonrpc: '2.0',
-    id: null,
-    error: {
-      code: INVALID_REQUEST,
-      message: `Unsupported MCP-Protocol-Version. Supported versions: ${[...SUPPORTED_PROTOCOL_VERSIONS].join(', ')}`,
-    },
-  }));
+  res.end(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: INVALID_REQUEST,
+        message: `Unsupported MCP-Protocol-Version. Supported versions: ${[...SUPPORTED_PROTOCOL_VERSIONS].join(', ')}`,
+      },
+    }),
+  );
 }
 
 export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle> {

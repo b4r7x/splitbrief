@@ -8,6 +8,7 @@ import { abortStore } from '../stores/workflow/abort.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
+import { assertNever } from '../utils/type-guards.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
 
 const DOUBLE_PRESS_WINDOW_MS = 2000;
@@ -27,9 +28,16 @@ interface UseAppKeysOptions {
 
 function applyAction(action: AppKeyAction, exit: () => void) {
   switch (action.type) {
-    case 'none': return;
-    case 'exit': exit(); return;
-    case 'open-overlay': overlayStore.open(action.overlay); return;
+    case 'none':
+      return;
+    case 'exit':
+      exit();
+      return;
+    case 'open-overlay':
+      overlayStore.open(action.overlay);
+      return;
+    default:
+      return assertNever(action);
   }
 }
 
@@ -77,20 +85,21 @@ export function useAppKeys({ exit, abortWorkflow = noop }: UseAppKeysOptions) {
   useInput(
     (input, key) => {
       const shortcut = handleShortcutKeys(input, key, route.screen);
-      if (shortcut.type !== 'none') { applyAction(shortcut, exit); return; }
+      if (shortcut.type !== 'none') {
+        applyAction(shortcut, exit);
+        return;
+      }
     },
     { isActive: !isOpen },
   );
 }
 
-function handleShortcutKeys(
-  input: string,
-  key: Key,
-  screen: Screen,
-): AppKeyAction {
+function handleShortcutKeys(input: string, key: Key, screen: Screen): AppKeyAction {
   if (key.ctrl && input === 'k') return { type: 'open-overlay', overlay: 'command-palette' };
-  if (key.ctrl && input === 's' && screen === 'home') return { type: 'open-overlay', overlay: 'skills' };
-  if (key.ctrl && input === 'i' && screen === 'home') return { type: 'open-overlay', overlay: 'settings' };
+  if (key.ctrl && input === 's' && screen === 'home')
+    return { type: 'open-overlay', overlay: 'skills' };
+  if (key.ctrl && input === 'i' && screen === 'home')
+    return { type: 'open-overlay', overlay: 'settings' };
   if (input === '\x1f') return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
   if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
   if (key.ctrl && input === 'q') return { type: 'exit' };

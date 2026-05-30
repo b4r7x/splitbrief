@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { migrateConfig, migrateV2ToV3, deriveApproveLevel } from './migrate.js';
-import type { CliPlannerConfig, ApiPlannerConfig, AgentSdkPlannerConfig } from '../../schemas/planner-config.js';
-import type { ApiImplementerConfig, ShellImplementerConfig, AgentImplementerConfig } from '../../schemas/implementer-config.js';
+import type {
+  CliPlannerConfig,
+  ApiPlannerConfig,
+  AgentSdkPlannerConfig,
+} from '../../schemas/planner-config.js';
+import type {
+  ApiImplementerConfig,
+  ShellImplementerConfig,
+  AgentImplementerConfig,
+} from '../../schemas/implementer-config.js';
 
 describe('migrateConfig', () => {
   describe('version detection', () => {
@@ -29,7 +37,7 @@ describe('migrateConfig', () => {
       expect(workflow.commitStrategy).toBe('none');
       expect(workflow.git).toEqual({ commitStrategy: 'none' });
       expect(workflow.approve).toBe('default');
-      expect(warnings.some(w => /version 2 is deprecated/.test(w))).toBe(true);
+      expect(warnings.some((w) => /version 2 is deprecated/.test(w))).toBe(true);
     });
 
     it('passes through v3 configs unchanged', () => {
@@ -52,7 +60,7 @@ describe('migrateConfig', () => {
           version: 99,
           planner: { kind: 'cli', tool: 'claude-code' },
           implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1' },
-        })
+        }),
       ).toThrow(/Unsupported config version/);
     });
 
@@ -132,7 +140,10 @@ describe('migrateConfig', () => {
     });
 
     it('returns undefined for planner when null', () => {
-      const result = migrateConfig({ planner: null, implementer: { kind: 'api' } }) as Record<string, unknown>;
+      const result = migrateConfig({ planner: null, implementer: { kind: 'api' } }) as Record<
+        string,
+        unknown
+      >;
       expect(result.planner).toBeUndefined();
     });
   });
@@ -275,6 +286,18 @@ describe('migrateConfig', () => {
       expect(planner.kind).toBe('cli');
       expect(planner.tool).toBe('claude-code');
       expect(planner.model).toBe('claude-opus-4');
+    });
+  });
+
+  describe('top-level passthrough keys', () => {
+    it('retains the trust block when migrating a v1 config', () => {
+      const v1 = {
+        planner: { kind: 'claude-code' },
+        implementer: { kind: 'api', tool: 'ollama', apiBase: 'http://localhost:11434/v1' },
+        trust: { customRenderers: true },
+      };
+      const result = migrateConfig(v1) as Record<string, unknown>;
+      expect(result.trust).toEqual({ customRenderers: true });
     });
   });
 });

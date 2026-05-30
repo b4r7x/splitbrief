@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { windowSlice } from '../../components/pickers/picker-utils.js';
 import { buildPaletteResults } from './results.js';
 import type { PaletteResult } from './results.js';
 import { buildPaletteSources } from './sources.js';
@@ -33,13 +34,13 @@ export function CommandPaletteOverlay({
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
 
-  const screen = routerStore.use(s => s.screen);
+  const screen = routerStore.use((s) => s.screen);
   const config = configStore.useConfig();
-  const phase = lifecycleStore.use(s => s.phase);
-  const mruIds = commandPaletteMruStore.use(s => s.ids);
-  const tasks = tasksStore.use(s => s.tasks);
-  const sessions = sessionsStore.use(s => s.sessions);
-  const projectDir = configStore.use(s => s.projectDir);
+  const phase = lifecycleStore.use((s) => s.phase);
+  const mruIds = commandPaletteMruStore.use((s) => s.ids);
+  const tasks = tasksStore.use((s) => s.tasks);
+  const sessions = sessionsStore.use((s) => s.sessions);
+  const projectDir = configStore.use((s) => s.projectDir);
 
   useEffect(() => {
     sessionsStore.load(projectDir);
@@ -84,20 +85,20 @@ export function CommandPaletteOverlay({
         return;
       }
       if (key.upArrow) {
-        setCursor(c => Math.max(0, c - 1));
+        setCursor((c) => Math.max(0, c - 1));
         return;
       }
       if (key.downArrow) {
-        setCursor(c => Math.min(results.length - 1, c + 1));
+        setCursor((c) => Math.min(results.length - 1, c + 1));
         return;
       }
       if (key.backspace || key.delete) {
-        setQuery(q => q.slice(0, -1));
+        setQuery((q) => q.slice(0, -1));
         setCursor(0);
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        setQuery(q => q + input);
+        setQuery((q) => q + input);
         setCursor(0);
       }
     },
@@ -106,14 +107,10 @@ export function CommandPaletteOverlay({
 
   const t = useTheme();
 
-  const scrollOffset = Math.max(0, Math.min(cursor - Math.floor(MAX_VISIBLE / 2), results.length - MAX_VISIBLE));
-  const visible = results.slice(scrollOffset, scrollOffset + MAX_VISIBLE);
+  const { scrollOffset, visibleSlice: visible } = windowSlice(results, cursor, MAX_VISIBLE);
 
   return (
-    <OverlayPanel
-      title="Command Palette"
-      hint={'↑↓ navigate  Enter select  Esc close'}
-    >
+    <OverlayPanel title="Command Palette" hint={'↑↓ navigate  Enter select  Esc close'}>
       <Box marginBottom={1}>
         <Text color={t.textDim}>{'❯ '}</Text>
         <Text>{query}</Text>
@@ -122,14 +119,12 @@ export function CommandPaletteOverlay({
 
       <Box flexDirection="column">
         {visible.length === 0 && query.length > 0 && (
-          <Text color={t.textDim}>  No matching commands</Text>
+          <Text color={t.textDim}> No matching commands</Text>
         )}
         {visible.map((result, i) => {
           const globalIndex = scrollOffset + i;
           const isCursor = globalIndex === cursor;
-          return (
-            <ResultRow key={result.id} result={result} isCursor={isCursor} />
-          );
+          return <ResultRow key={result.id} result={result} isCursor={isCursor} />;
         })}
       </Box>
     </OverlayPanel>
@@ -142,17 +137,19 @@ function ResultRow({ result, isCursor }: { result: PaletteResult; isCursor: bool
     <Box>
       <Text color={isCursor ? t.accent : t.text}>{isCursor ? '▸ ' : '  '}</Text>
       <Text color={t.textDim}>{`[${result.source}]`}</Text>
-      <Text>{' '}</Text>
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{result.label}</Text>
+      <Text> </Text>
+      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
+        {result.label}
+      </Text>
       {result.description ? (
         <>
-          <Text>{' '}</Text>
+          <Text> </Text>
           <Text color={t.textDim}>{result.description}</Text>
         </>
       ) : null}
       {result.shortcut ? (
         <>
-          <Text>{' '}</Text>
+          <Text> </Text>
           <Text color={t.textDim}>{`[${result.shortcut}]`}</Text>
         </>
       ) : null}

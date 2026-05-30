@@ -3,7 +3,7 @@ import { renderFeature } from '../../../../../testing/helpers/ink.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../../core/schemas/task.js';
-import type { Section } from '../../../../core/layout/event-sections.js';
+import type { Section } from '../../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { ConversationFlow } from './flow.js';
 
@@ -62,26 +62,25 @@ function frameRowCount(frame: string): number {
 }
 
 function normalizedRows(frame: string): string[] {
-  return windowRows(frame)
-    .filter(line => line !== '');
+  return windowRows(frame).filter((line) => line !== '');
 }
 
 function windowRows(frame: string): string[] {
   return frame
     .split('\n')
-    .map(line => line.replace(/[│┆]/g, '').trim())
-    .filter(line =>
-      !line.includes('line above') &&
-      !line.includes('lines above') &&
-      !line.includes('line below') &&
-      !line.includes('lines below') &&
-      !line.includes('new event')
+    .map((line) => line.replace(/[│┆]/g, '').trim())
+    .filter(
+      (line) =>
+        !line.includes('line above') &&
+        !line.includes('lines above') &&
+        !line.includes('line below') &&
+        !line.includes('lines below') &&
+        !line.includes('new event'),
     );
 }
 
 function contentRows(frame: string): string[] {
-  return normalizedRows(frame)
-    .filter(line => /^line-\d+$/.test(line));
+  return normalizedRows(frame).filter((line) => /^line-\d+$/.test(line));
 }
 
 describe('ConversationFlow', () => {
@@ -130,13 +129,14 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
-
   it('moves a tall event by one rendered row between adjacent scroll offsets', () => {
-    const sections: Section<EngineEvent>[] = [{
-      type: 'events',
-      startIndex: 0,
-      items: [makePlannerTextBlock(12)],
-    }];
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [makePlannerTextBlock(12)],
+      },
+    ];
 
     conversationScrollStore.__testReset({
       scrollOffset: 0,
@@ -164,11 +164,13 @@ describe('ConversationFlow', () => {
   });
 
   it('scrolls a wrapped task_started card by rendered rows, not by the whole card', () => {
-    const sections: Section<EngineEvent>[] = [{
-      type: 'events',
-      startIndex: 0,
-      items: [makeLongTaskStarted(), makePlannerTextBlock(8)],
-    }];
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [makeLongTaskStarted(), makePlannerTextBlock(8)],
+      },
+    ];
 
     conversationScrollStore.__testReset({
       scrollOffset: 4,
@@ -196,11 +198,13 @@ describe('ConversationFlow', () => {
   });
 
   it('includes streaming output in row height and scrolls it one rendered row at a time', () => {
-    const sections: Section<EngineEvent>[] = [{
-      type: 'events',
-      startIndex: 0,
-      items: [makeRunningImplementer()],
-    }];
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [makeRunningImplementer()],
+      },
+    ];
     streamingOutputStore.__testReset({
       active: true,
       taskId: taskId('T001'),
@@ -255,7 +259,11 @@ describe('ConversationFlow', () => {
     expect(frame).toContain('Finished task');
     expect(frame).toContain('3 lines above');
     expect(frame).toContain('1 line below');
-    expect(normalizedRows(frame).filter(line => line.startsWith('event '))).toEqual(['event 2', 'event 3', 'event 4']);
+    expect(normalizedRows(frame).filter((line) => line.startsWith('event '))).toEqual([
+      'event 2',
+      'event 3',
+      'event 4',
+    ]);
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
 
     ui.unmount();

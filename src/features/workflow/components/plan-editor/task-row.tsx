@@ -9,7 +9,7 @@ import {
   formatTaskReviewLine,
   getTaskStatusSymbol,
   hasTaskReviewWarning,
-} from '../brief-review.js';
+} from '../brief-review-format.js';
 
 function DetailList({ label, items }: { label: string; items: string[] }) {
   const t = useTheme();
@@ -20,7 +20,9 @@ function DetailList({ label, items }: { label: string; items: string[] }) {
       {items.map((item, i) => (
         <Box key={`${label}-${i}`} flexDirection="row" paddingLeft={2}>
           <Text color={t.textDim}>- </Text>
-          <Text color={t.text} wrap="truncate">{item}</Text>
+          <Text color={t.text} wrap="truncate">
+            {item}
+          </Text>
         </Box>
       ))}
     </Box>
@@ -43,9 +45,9 @@ function TaskEditorDetail({
     `risk ${metadata?.risk ?? 'pending'}`,
   ];
   const scopeItems = [
-    ...(task.scope?.inBounds ?? []).map(item => `in ${item}`),
-    ...(task.scope?.outOfBounds ?? []).map(item => `out ${item}`),
-    ...(task.scope?.approvedOutOfBounds ?? []).map(item => `approved ${item}`),
+    ...(task.scope?.inBounds ?? []).map((item) => `in ${item}`),
+    ...(task.scope?.outOfBounds ?? []).map((item) => `out ${item}`),
+    ...(task.scope?.approvedOutOfBounds ?? []).map((item) => `approved ${item}`),
   ];
   const routingItems = [
     metadata?.checkpoint ? `checkpoint ${metadata.checkpoint}` : null,
@@ -60,7 +62,9 @@ function TaskEditorDetail({
     <Box flexDirection="column" paddingLeft={4}>
       <Box flexDirection="row">
         <Text color={t.textDim}>scope: </Text>
-        <Text color={t.text} wrap="truncate">{task.description}</Text>
+        <Text color={t.text} wrap="truncate">
+          {task.description}
+        </Text>
       </Box>
       <DetailList label="review" items={reviewItems} />
       <DetailList label="scope bounds" items={scopeItems} />
@@ -93,11 +97,12 @@ export function TaskEditorRow({
   const hasOverflow = metadata?.contextFit === 'overflow';
   const hasWarning = hasTaskReviewWarning(issues, metadata);
   const statusSymbol = getTaskStatusSymbol(issues, metadata);
-  const statusColor = hasConflict || hasOverflow || metadata?.validationStatus === 'fail'
-    ? t.error
-    : hasWarning
-      ? t.warning
-      : t.success;
+  const statusColor =
+    hasConflict || hasOverflow || metadata?.validationStatus === 'fail'
+      ? t.error
+      : hasWarning
+        ? t.warning
+        : t.success;
   const detailLine = buildTaskDetailParts(task);
   const reviewLine = formatTaskReviewLine(task, issues, metadata);
   const prefix = isCursor ? '> ' : '  ';
@@ -108,19 +113,27 @@ export function TaskEditorRow({
         <Text color={isCursor ? t.accent : t.text}>{prefix}</Text>
         {isFlagged && <Text color={t.error}>✗ </Text>}
         <Text color={statusColor}>{statusSymbol} </Text>
-        <Text bold color={t.accent}>{task.id}</Text>
+        <Text bold color={t.accent}>
+          {task.id}
+        </Text>
         <Text> </Text>
         <Text color={t.textDim}>{task.status}</Text>
         <Text> </Text>
         <Text color={t.textDim}>{task.file}</Text>
-        <Text>  </Text>
-        <Text bold={isCursor} color={t.text}>{task.title}</Text>
+        <Text> </Text>
+        <Text bold={isCursor} color={t.text}>
+          {task.title}
+        </Text>
       </Box>
       <Box paddingLeft={4}>
-        <Text color={t.textDim} wrap="truncate">{detailLine}</Text>
+        <Text color={t.textDim} wrap="truncate">
+          {detailLine}
+        </Text>
       </Box>
       <Box paddingLeft={4}>
-        <Text color={hasWarning ? t.warning : t.textDim} wrap="truncate">{reviewLine}</Text>
+        <Text color={hasWarning ? t.warning : t.textDim} wrap="truncate">
+          {reviewLine}
+        </Text>
       </Box>
       {isExpanded && <TaskEditorDetail task={task} metadata={metadata} />}
     </Box>

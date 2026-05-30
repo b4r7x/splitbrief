@@ -10,11 +10,7 @@ function makeTmpProject(): string {
   return dir;
 }
 
-function makeSessionWithLockfile(
-  projectDir: string,
-  sessionId: string,
-  startTimeMs: number,
-): void {
+function makeSessionWithLockfile(projectDir: string, sessionId: string, startTimeMs: number): void {
   const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   const data = {
@@ -118,26 +114,20 @@ describe('resolveNumericAlias', () => {
 
     makeSessionWithLockfile(projectDir, 'only-session', 1000);
 
-    await expect(
-      resolveNumericAlias('5', projectDir),
-    ).rejects.toThrow(/out of range/);
+    await expect(resolveNumericAlias('5', projectDir)).rejects.toThrow(/out of range/);
   });
 
   it('throws for alias 0', async () => {
     const { resolveNumericAlias } = await import('./session-aliases.js');
     const projectDir = makeTmpProject();
 
-    await expect(
-      resolveNumericAlias('0', projectDir),
-    ).rejects.toThrow(/aliases start at 1/);
+    await expect(resolveNumericAlias('0', projectDir)).rejects.toThrow(/aliases start at 1/);
   });
 
   it('throws when no sessions exist', async () => {
     const { resolveNumericAlias } = await import('./session-aliases.js');
     const projectDir = makeTmpProject();
 
-    await expect(
-      resolveNumericAlias('1', projectDir),
-    ).rejects.toThrow(/no sessions found/);
+    await expect(resolveNumericAlias('1', projectDir)).rejects.toThrow(/no sessions found/);
   });
 });

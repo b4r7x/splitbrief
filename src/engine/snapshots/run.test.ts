@@ -1,10 +1,17 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSnapshot } from './store.js';
-import { acceptRunSnapshot, readRunSnapshotLedger, recordRunSnapshot, rejectRunSnapshot } from './run.js';
+import { snapshotManifestPath } from '../../core/paths.js';
+import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
+import { createSnapshot } from './create.js';
+import {
+  acceptRunSnapshot,
+  readRunSnapshotLedger,
+  recordRunSnapshot,
+  rejectRunSnapshot,
+} from './run.js';
 
 let tmp: string;
 
@@ -35,7 +42,11 @@ describe('rejectRunSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await writeFile(join(tmp, 'feature.ts'), 'after diptych');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     const result = await rejectRunSnapshot(tmp, 'sess-01');
@@ -53,7 +64,11 @@ describe('rejectRunSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await writeFile(join(tmp, 'feature.ts'), 'after diptych');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     await writeFile(join(tmp, 'feature.ts'), 'user edit');
@@ -72,7 +87,11 @@ describe('rejectRunSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await writeFile(join(tmp, 'feature.ts'), 'after diptych');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     // Conflict on first attempt.
@@ -110,7 +129,11 @@ describe('rejectRunSnapshot', () => {
 
     await writeFile(join(tmp, 'restored.ts'), 'after restored');
     await writeFile(join(tmp, 'conflicted.ts'), 'after conflicted');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     await writeFile(join(tmp, 'conflicted.ts'), 'user edit');
@@ -140,7 +163,11 @@ describe('rejectRunSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await writeFile(join(tmp, 'created.ts'), 'created by diptych');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     const result = await rejectRunSnapshot(tmp, 'sess-01');
@@ -150,6 +177,34 @@ describe('rejectRunSnapshot', () => {
       expect(result.deletedPaths).toEqual(['created.ts']);
     }
     expect(existsSync(join(tmp, 'created.ts'))).toBe(false);
+  });
+
+  it('refuses to act on a traversal path in the manifest and writes/deletes nothing outside the root', async () => {
+    await writeFile(join(tmp, 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    // Tamper with the persisted run-snapshot manifest to smuggle in a path that
+    // escapes the project root. rejectRunSnapshot must fail closed.
+    const manifestFile = snapshotManifestPath(tmp, 'sess-01', runSnapshot.manifest.id);
+    const tampered: SnapshotManifest = {
+      ...runSnapshot.manifest,
+      fileHashes: { ...runSnapshot.manifest.fileHashes, '../escape.txt': 'deadbeef' },
+    };
+    await writeFile(manifestFile, JSON.stringify(tampered, null, 2));
+
+    const escapeTarget = resolve(tmp, '..', 'escape.txt');
+    await expect(rejectRunSnapshot(tmp, 'sess-01')).rejects.toMatchObject({
+      kind: 'path-confined-escape',
+    });
+    expect(existsSync(escapeTarget)).toBe(false);
   });
 
   it('refuses to reject after the run has been accepted', async () => {
@@ -188,7 +243,11 @@ describe('rejectRunSnapshot', () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
     await writeFile(join(tmp, 'feature.ts'), 'after diptych');
-    const runSnapshot = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     await rejectRunSnapshot(tmp, 'sess-01');

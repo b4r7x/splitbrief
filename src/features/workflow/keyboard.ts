@@ -1,5 +1,5 @@
 import type { Key } from 'ink';
-import type { Section } from '../../core/layout/event-sections.js';
+import type { Section } from '../../core/sections/event-sections.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
@@ -7,28 +7,34 @@ export type WorkflowKeyAction =
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; index: number }
   | { type: 'review-scroll'; offset: number }
-  | { type: 'conversation-scroll-up'; renderableCount: number; step: number; totalHeight: number; maxOffset: number }
+  | {
+      type: 'conversation-scroll-up';
+      renderableCount: number;
+      step: number;
+      totalHeight: number;
+      maxOffset: number;
+    }
   | { type: 'conversation-scroll-down'; step: number }
   | { type: 'conversation-scroll-bottom'; renderableCount: number };
 
 const NONE: WorkflowKeyAction = { type: 'none' };
 
-export function handleWorkflowEscape(
-  key: Key,
-  cancelled: boolean,
-): WorkflowKeyAction {
+export function handleWorkflowEscape(key: Key, cancelled: boolean): WorkflowKeyAction {
   if (!key.escape) return NONE;
   if (cancelled) return { type: 'navigate-home' };
   return NONE;
 }
 
-export function handleWorkflowCtrlChords(
-  input: string,
-  key: Key,
-  isSmall: boolean,
-  sections: Section[],
-  findLatestDiff: (sections: Section[]) => number | null,
-): WorkflowKeyAction {
+export interface WorkflowCtrlChordsInput {
+  input: string;
+  key: Key;
+  isSmall: boolean;
+  sections: Section[];
+  findLatestDiff: (sections: Section[]) => number | null;
+}
+
+export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
+  const { input, key, isSmall, sections, findLatestDiff } = options;
   if (!key.ctrl) return NONE;
   if (input === 'e') {
     if (!isSmall) return { type: 'toggle-sidebar' };
@@ -42,16 +48,20 @@ export function handleWorkflowCtrlChords(
   return NONE;
 }
 
-export function handleReviewScroll(
-  input: string,
-  key: Key,
-  reviewScrollOffset: number,
-  reviewLineCount: number,
-  visibleHeight: number,
-): WorkflowKeyAction {
+export interface ReviewScrollInput {
+  input: string;
+  key: Key;
+  reviewScrollOffset: number;
+  reviewLineCount: number;
+  visibleHeight: number;
+}
+
+export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyAction {
+  const { input, key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
   const maxOffset = Math.max(0, reviewLineCount - visibleHeight);
   if (key.upArrow) return { type: 'review-scroll', offset: Math.max(0, reviewScrollOffset - 1) };
-  if (key.downArrow) return { type: 'review-scroll', offset: Math.min(maxOffset, reviewScrollOffset + 1) };
+  if (key.downArrow)
+    return { type: 'review-scroll', offset: Math.min(maxOffset, reviewScrollOffset + 1) };
   if (input === 'G') return { type: 'review-scroll', offset: maxOffset };
   return NONE;
 }
@@ -77,14 +87,26 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
   }
 
   if (key.pageUp) {
-    return { type: 'conversation-scroll-up', renderableCount, step: pageStep, totalHeight, maxOffset };
+    return {
+      type: 'conversation-scroll-up',
+      renderableCount,
+      step: pageStep,
+      totalHeight,
+      maxOffset,
+    };
   }
   if (key.pageDown) {
     return { type: 'conversation-scroll-down', step: pageStep };
   }
 
   if (input === 'g') {
-    return { type: 'conversation-scroll-up', renderableCount, step: maxOffset, totalHeight, maxOffset };
+    return {
+      type: 'conversation-scroll-up',
+      renderableCount,
+      step: maxOffset,
+      totalHeight,
+      maxOffset,
+    };
   }
   if (input === 'G') {
     return { type: 'conversation-scroll-bottom', renderableCount };

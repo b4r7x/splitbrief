@@ -8,7 +8,11 @@ interface ReferenceCompletionMenuProps {
   maxVisible: number;
 }
 
-export function ReferenceCompletionMenu({ filtered, selectedIndex, maxVisible }: ReferenceCompletionMenuProps) {
+export function ReferenceCompletionMenu({
+  filtered,
+  selectedIndex,
+  maxVisible,
+}: ReferenceCompletionMenuProps) {
   const t = useTheme();
   return (
     <CompletionPanel
@@ -16,15 +20,17 @@ export function ReferenceCompletionMenu({ filtered, selectedIndex, maxVisible }:
       selectedIndex={selectedIndex}
       maxVisible={maxVisible}
       footer="↑↓ select  Tab/Enter fill  Esc close"
-      itemKey={file => file}
+      itemKey={(file) => file}
       renderRow={({ item: file, isSelected, rowBg }) => (
         <>
-          <Text color={isSelected ? t.accent : t.textDim}>
-            {isSelected ? '▸' : ' '}
-          </Text>
+          <Text color={isSelected ? t.accent : t.textDim}>{isSelected ? '▸' : ' '}</Text>
           <Text> </Text>
           <Box flexGrow={1} flexShrink={1} backgroundColor={rowBg}>
-            <Text color={isSelected ? t.accent : t.textDim} bold={isSelected} wrap="truncate-middle">
+            <Text
+              color={isSelected ? t.accent : t.textDim}
+              bold={isSelected}
+              wrap="truncate-middle"
+            >
               {file}
             </Text>
           </Box>

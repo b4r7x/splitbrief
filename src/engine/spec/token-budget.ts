@@ -13,12 +13,15 @@ export function truncateMiddle(text: string, maxTokens: number, modelId?: string
   return text.slice(0, half) + '\n// ... truncated to fit context window ...\n' + text.slice(-half);
 }
 
-export function computeTokenBudget(
-  system: string,
-  taskBody: string,
-  contextLength: number,
-  modelId?: string,
-): TokenBudget {
+export interface TokenBudgetInput {
+  system: string;
+  taskBody: string;
+  contextLength: number;
+  modelId?: string;
+}
+
+export function computeTokenBudget(input: TokenBudgetInput): TokenBudget {
+  const { system, taskBody, contextLength, modelId } = input;
   const systemTokens = estimateTokens(system, modelId);
   const taskBodyTokens = estimateTokens(taskBody, modelId);
   const outputReserve = Math.floor(contextLength * OUTPUT_RESERVE_RATIO);

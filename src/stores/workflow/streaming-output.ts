@@ -23,15 +23,15 @@ function startStreaming(taskId: TaskId): void {
   store.set({ taskId, lines: [], active: true });
 }
 
-function pushLines(lines: string[]): void {
-  store.set(s => {
+function replaceLines(lines: string[]): void {
+  store.set((s) => {
     if (!s.active) return s;
     return { ...s, lines };
   });
 }
 
 function stopStreaming(): void {
-  store.set(s => {
+  store.set((s) => {
     if (!s.active) return s;
     return { ...s, active: false };
   });
@@ -41,6 +41,6 @@ export const streamingOutputStore = {
   ...storeBase(store),
   __testReset,
   startStreaming,
-  pushLines,
+  replaceLines,
   stopStreaming,
 };

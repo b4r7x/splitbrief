@@ -8,11 +8,12 @@ import { normalizeConfiguredModel } from '../../core/providers/model-selection.j
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
-  buildRightModelsForPicker,
+  buildRightModels,
   isCurrentConfig,
   type PickerOption,
   type ModelOption,
 } from './model-catalog.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 
 export interface PickerCatalog {
   items: PickerOption[];
@@ -34,21 +35,25 @@ export function usePickerCatalog(
 ): PickerCatalog {
   const isPlanner = role === 'planner';
   const config = configStore.useConfig();
-  const focusModels = overlayStore.use(s => s.focus) === 'models';
+  const focusModels = overlayStore.use((s) => s.focus) === 'models';
 
-  const [{ planners: plannerDetections, implementers: implementerDetections }] = useStores(detectionStore);
+  const [{ planners: plannerDetections, implementers: implementerDetections }] =
+    useStores(detectionStore);
 
-  const [currentSelection, setCurrentSelection] = useState<{ role: 'planner' | 'implementer'; itemId: string } | null>(null);
+  const [currentSelection, setCurrentSelection] = useState<{
+    role: 'planner' | 'implementer';
+    itemId: string;
+  } | null>(null);
 
   const rawItems = isPlanner
     ? buildPlannerPickerOptions({ detections: plannerDetections, implementerDetections })
     : buildImplementerPickerOptions({ detections: implementerDetections, plannerDetections });
-  const items: PickerOption[] = rawItems.map(item => ({
+  const items: PickerOption[] = rawItems.map((item) => ({
     ...item,
     isCurrent: isCurrentConfig(item, config, role),
   }));
 
-  const configItemIndex = items.findIndex(item => item.isCurrent);
+  const configItemIndex = items.findIndex((item) => item.isCurrent);
   const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
   const initialLeftIdx = configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
@@ -59,26 +64,23 @@ export function usePickerCatalog(
 
   const initialItem = items[initialLeftIdx] ?? items[0];
   const currentItemId = currentSelection?.role === role ? currentSelection.itemId : null;
-  const currentItem = items.find(item => item.id === currentItemId) ?? initialItem;
+  const currentItem = items.find((item) => item.id === currentItemId) ?? initialItem;
 
-  const rightModels = buildRightModelsForPicker({
+  const rightModels = buildRightModels({
     isPlanner,
     customModels,
     currentItem,
+    cache: modelCacheStore,
   });
 
   const roleLabel = isPlanner ? 'Planner' : 'Implementer';
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool
-    ? normalizeConfiguredModel(
-        runnerConfig.model,
-        currentItem?.id,
-      )
+    ? normalizeConfiguredModel(runnerConfig.model, currentItem?.id)
     : undefined;
   const currentCommand = getRunnerCommand(runnerConfig);
-  const currentCommandKind = runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent'
-    ? runnerConfig.kind
-    : undefined;
+  const currentCommandKind =
+    runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent' ? runnerConfig.kind : undefined;
 
   return {
     items,

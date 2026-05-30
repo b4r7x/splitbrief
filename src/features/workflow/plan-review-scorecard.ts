@@ -1,6 +1,12 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../engine/spec/brief-quality.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
+import {
+  STALE_ESTIMATE_STATUSES,
+  hasNoCapableWorker,
+  hasStaleOrConflict,
+  hasTruncatedContextReason,
+} from '../../core/schemas/plan-review-predicates.js';
 
 export type PlanReviewScorecardBucket =
   | 'ready'
@@ -56,32 +62,20 @@ const MISSING_CHECK_ISSUES = new Set<BriefQualityIssue['code']>([
   'missing_evidence',
 ]);
 
-const STALE_ESTIMATE_STATUSES = new Set<PlanTaskReviewMetadata['estimateStatus']>([
-  'missing-current-code',
-  'current-code-unavailable',
-]);
-
-function issuesForTask(
-  quality: BriefQualityReport | null,
-  taskId: TaskId,
-): BriefQualityIssue[] {
-  return quality?.issues.filter(issue => issue.taskId === taskId) ?? [];
+function issuesForTask(quality: BriefQualityReport | null, taskId: TaskId): BriefQualityIssue[] {
+  return quality?.issues.filter((issue) => issue.taskId === taskId) ?? [];
 }
 
-function hasIssueCode(issues: BriefQualityIssue[], codes: ReadonlySet<BriefQualityIssue['code']>): boolean {
-  return issues.some(issue => codes.has(issue.code));
+function hasIssueCode(
+  issues: BriefQualityIssue[],
+  codes: ReadonlySet<BriefQualityIssue['code']>,
+): boolean {
+  return issues.some((issue) => codes.has(issue.code));
 }
 
 function hasCurrentTaskEstimate(task: Task, metadata: PlanTaskReviewMetadata): boolean {
   if (metadata.estimatedTokens === undefined) return false;
   return task.action !== 'modify' || metadata.estimateStatus !== undefined;
-}
-
-function hasNoCapableWorker(metadata: PlanTaskReviewMetadata): boolean {
-  if (metadata.workerProfile !== undefined) return false;
-  if (metadata.contextFit === 'overflow') return true;
-  const reason = metadata.routingReason?.toLowerCase() ?? '';
-  return reason.includes('no capable') || reason.includes('overflows');
 }
 
 function hasRoutingPendingCondition(
@@ -101,9 +95,11 @@ function hasSplitOverflowCondition(
   metadata: PlanTaskReviewMetadata | undefined,
   issues: BriefQualityIssue[],
 ): boolean {
-  return metadata?.contextFit === 'overflow'
-    || (metadata !== undefined && hasNoCapableWorker(metadata))
-    || hasIssueCode(issues, SPLIT_OVERFLOW_ISSUES);
+  return (
+    metadata?.contextFit === 'overflow' ||
+    (metadata !== undefined && hasNoCapableWorker(metadata)) ||
+    hasIssueCode(issues, SPLIT_OVERFLOW_ISSUES)
+  );
 }
 
 function hasRiskyTightCondition(metadata: PlanTaskReviewMetadata | undefined): boolean {
@@ -112,24 +108,19 @@ function hasRiskyTightCondition(metadata: PlanTaskReviewMetadata | undefined): b
   if (metadata.risk === 'high') return true;
   if (metadata.validationStatus === 'warn' || metadata.validationStatus === 'fail') return true;
   if (STALE_ESTIMATE_STATUSES.has(metadata.estimateStatus)) return true;
-  const reason = metadata.routingReason?.toLowerCase() ?? '';
-  return reason.includes('function-level context') || reason.includes('current code truncated');
-}
-
-function hasStaleConflictCondition(metadata: PlanTaskReviewMetadata | undefined): boolean {
-  return metadata?.stale === true
-    || metadata?.conflict !== undefined
-    || STALE_ESTIMATE_STATUSES.has(metadata?.estimateStatus);
+  return hasTruncatedContextReason(metadata);
 }
 
 function hasMissingChecksCondition(task: Task, issues: BriefQualityIssue[]): boolean {
-  return task.tests.length === 0
-    || (task.evidence?.length ?? 0) === 0
-    || hasIssueCode(issues, MISSING_CHECK_ISSUES);
+  return (
+    task.tests.length === 0 ||
+    (task.evidence?.length ?? 0) === 0 ||
+    hasIssueCode(issues, MISSING_CHECK_ISSUES)
+  );
 }
 
 function hasErrorIssue(issues: BriefQualityIssue[]): boolean {
-  return issues.some(issue => issue.severity === 'error');
+  return issues.some((issue) => issue.severity === 'error');
 }
 
 function hasReadyCondition(opts: {
@@ -142,23 +133,22 @@ function hasReadyCondition(opts: {
   missingChecks: boolean;
 }): boolean {
   const metadata = opts.metadata;
-  return metadata !== undefined
-    && !hasErrorIssue(opts.issues)
-    && !opts.routingPending
-    && !opts.splitOverflow
-    && !opts.riskyTight
-    && !opts.staleConflict
-    && !opts.missingChecks
-    && metadata.contextFit === 'fits'
-    && metadata.workerProfile !== undefined
-    && metadata.validationStatus !== 'pending'
-    && metadata.validationStatus !== 'fail';
+  return (
+    metadata !== undefined &&
+    !hasErrorIssue(opts.issues) &&
+    !opts.routingPending &&
+    !opts.splitOverflow &&
+    !opts.riskyTight &&
+    !opts.staleConflict &&
+    !opts.missingChecks &&
+    metadata.contextFit === 'fits' &&
+    metadata.workerProfile !== undefined &&
+    metadata.validationStatus !== 'pending' &&
+    metadata.validationStatus !== 'fail'
+  );
 }
 
-function entry(
-  bucket: PlanReviewScorecardBucket,
-  taskIds: TaskId[],
-): PlanReviewScorecardEntry {
+function entry(bucket: PlanReviewScorecardBucket, taskIds: TaskId[]): PlanReviewScorecardEntry {
   return {
     bucket,
     label: `${BUCKET_LABELS[bucket]} ${taskIds.length}`,
@@ -187,7 +177,7 @@ export function buildPlanReviewScorecard(
     const routingPending = hasRoutingPendingCondition(task, taskMetadata);
     const splitOverflow = hasSplitOverflowCondition(taskMetadata, issues);
     const riskyTight = hasRiskyTightCondition(taskMetadata);
-    const staleConflict = hasStaleConflictCondition(taskMetadata);
+    const staleConflict = hasStaleOrConflict(taskMetadata);
     const missingChecks = hasMissingChecksCondition(task, issues);
     const ready = hasReadyCondition({
       metadata: taskMetadata,
@@ -229,6 +219,6 @@ export function buildPlanReviewScorecard(
     riskyTight,
     staleConflict,
     missingChecks,
-    buckets: BUCKET_ORDER.map(bucket => entries[bucket]),
+    buckets: BUCKET_ORDER.map((bucket) => entries[bucket]),
   };
 }

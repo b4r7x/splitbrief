@@ -2,10 +2,7 @@ import { useState } from 'react';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Screen } from '../../core/navigation/types.js';
-import {
-  INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
-  stepInputHistory,
-} from './history.js';
+import { INITIAL_INPUT_HISTORY_NAVIGATION_STATE, stepInputHistory } from './history.js';
 
 interface UseHistoryParams {
   currentScreen: Screen;
@@ -44,7 +41,12 @@ export function useHistory({
       return false;
     }
 
-    const result = stepInputHistory(homeHistory, historyState, direction, value);
+    const result = stepInputHistory({
+      entries: homeHistory,
+      state: historyState,
+      direction,
+      currentValue: value,
+    });
     if (!result.changed) return false;
 
     setValue(result.nextValue);

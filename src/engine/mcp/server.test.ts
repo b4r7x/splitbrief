@@ -47,7 +47,7 @@ describe('POST /mcp — valid auth', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
-    const json = await res.json() as Record<string, unknown>;
+    const json = (await res.json()) as Record<string, unknown>;
     expect(json['jsonrpc']).toBe('2.0');
     expect(json['id']).toBe(1);
     const result = json['result'] as Record<string, unknown>;
@@ -76,7 +76,7 @@ describe('POST /mcp — valid auth', () => {
       body: JSON.stringify({ jsonrpc: '2.0' }),
     });
     expect(res.status).toBe(200);
-    const json = await res.json() as { id: unknown; error?: { code: number } };
+    const json = (await res.json()) as { id: unknown; error?: { code: number } };
     expect(json.id).toBeNull();
     expect(json.error?.code).toBe(-32600);
   });
@@ -277,7 +277,7 @@ describe('MCP-Protocol-Version header', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
-    const json = await res.json() as { result?: { protocolVersion?: string } };
+    const json = (await res.json()) as { result?: { protocolVersion?: string } };
     expect(json.result?.protocolVersion).toBe(MCP_PROTOCOL_VERSION);
   });
 
@@ -294,7 +294,7 @@ describe('MCP-Protocol-Version header', () => {
     });
     expect(res.status).toBe(400);
     expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
-    const json = await res.json() as { id: unknown; error?: { code: number; message: string } };
+    const json = (await res.json()) as { id: unknown; error?: { code: number; message: string } };
     expect(json.id).toBeNull();
     expect(json.error?.code).toBe(-32600);
     expect(json.error?.message).toContain('Unsupported MCP-Protocol-Version');
@@ -322,7 +322,9 @@ describe('normalizeHeader', () => {
   });
 
   it('returns the first element for an array value', () => {
-    expect(normalizeHeader(['http://localhost:3000', 'http://evil.com'])).toBe('http://localhost:3000');
+    expect(normalizeHeader(['http://localhost:3000', 'http://evil.com'])).toBe(
+      'http://localhost:3000',
+    );
   });
 
   it('returns undefined for an empty array', () => {

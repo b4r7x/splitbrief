@@ -6,7 +6,7 @@ import { createImplementer } from '../../runners/factory.js';
 import { createImplementerPublisher } from '../events.js';
 import type { Implementer } from '../../implementers/types.js';
 
-export function taskConfigForProfile(
+export function configForProfile(
   config: WorkflowContext['config'],
   profile: ResolvedImplementerProfile,
 ): WorkflowContext['config'] {
@@ -18,7 +18,7 @@ export function selectedProfileFromDecision(
   decision: RoutingDecision,
 ): ResolvedImplementerProfile | undefined {
   if (decision.selectedProfile === undefined) return undefined;
-  return profiles.find(profile => profile.name === decision.selectedProfile);
+  return profiles.find((profile) => profile.name === decision.selectedProfile);
 }
 
 export async function createTaskImplementer(opts: {
@@ -32,19 +32,18 @@ export async function createTaskImplementer(opts: {
   return factory(opts.taskConfig, { publisher: createImplementerPublisher(opts.wctx.bus) });
 }
 
-export function retryProfileOverrideForTask(
-  wctx: WorkflowContext,
-  task: Task,
-): string | undefined {
+export function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {
   if (!wctx.retryProfileOverride) return undefined;
-  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id) return undefined;
+  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id)
+    return undefined;
   return wctx.retryProfileOverride;
 }
 
 export function routingBlockMessage(decision: RoutingDecision): string {
-  const context = decision.contextLength === undefined
-    ? `${decision.estimatedTokens} estimated tokens`
-    : `${decision.estimatedTokens}/${decision.contextLength} estimated tokens`;
+  const context =
+    decision.contextLength === undefined
+      ? `${decision.estimatedTokens} estimated tokens`
+      : `${decision.estimatedTokens}/${decision.contextLength} estimated tokens`;
   return [
     `Task ${decision.taskId} cannot be routed to an implementer profile (${context}).`,
     'Ask the planner to split the task, reduce required context, or escalate to a larger implementer profile.',

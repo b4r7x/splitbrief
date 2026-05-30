@@ -42,19 +42,21 @@ function buildPlainSegments(
   };
 }
 
-function buildSegmentsWithHighlight(
-  highlight: { start: number; end: number },
-  textBefore: string,
-  textAfter: string,
-  cursorIndex: number,
-  showCursor: boolean,
-  valueLength: number,
-  formatText: FormatText,
-): SegmentResult {
+interface HighlightSegmentArgs {
+  highlight: { start: number; end: number };
+  textBefore: string;
+  textAfter: string;
+  cursorIndex: number;
+  showCursor: boolean;
+  valueLength: number;
+  formatText: FormatText;
+}
+
+function buildSegmentsWithHighlight(args: HighlightSegmentArgs): SegmentResult {
+  const { highlight, textBefore, textAfter, cursorIndex, showCursor, valueLength, formatText } =
+    args;
   const hasValidHighlight =
-    highlight.end > highlight.start &&
-    highlight.start >= 0 &&
-    highlight.end <= valueLength;
+    highlight.end > highlight.start && highlight.start >= 0 && highlight.end <= valueLength;
 
   if (!hasValidHighlight) {
     return buildPlainSegments(textBefore, textAfter, showCursor, formatText);
@@ -67,9 +69,7 @@ function buildSegmentsWithHighlight(
     preCursor: [
       { value: formatText(textBefore.slice(0, highlight.start)) },
       {
-        value: formatText(
-          textBefore.slice(highlight.start, Math.min(highlight.end, cursorIndex)),
-        ),
+        value: formatText(textBefore.slice(highlight.start, Math.min(highlight.end, cursorIndex))),
         type: 'highlight',
       },
       { value: formatText(textBefore.slice(highlight.end)) },
@@ -121,15 +121,15 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
   }
 
   if (highlight) {
-    return buildSegmentsWithHighlight(
+    return buildSegmentsWithHighlight({
       highlight,
       textBefore,
       textAfter,
       cursorIndex,
       showCursor,
-      value.length,
+      valueLength: value.length,
       formatText,
-    );
+    });
   }
 
   return buildPlainSegments(textBefore, textAfter, showCursor, formatText);

@@ -67,11 +67,7 @@ Second task description.
 
 describe('renumberTasks', () => {
   it('assigns T001, T002, T003 in array order', () => {
-    const tasks = [
-      makeTask({ id: 'A' }),
-      makeTask({ id: 'B' }),
-      makeTask({ id: 'C' }),
-    ];
+    const tasks = [makeTask({ id: 'A' }), makeTask({ id: 'B' }), makeTask({ id: 'C' })];
     const result = renumberTasks(tasks);
     expect(result[0]?.id).toBe('T001');
     expect(result[1]?.id).toBe('T002');
@@ -137,7 +133,7 @@ describe('relinkAfterDelete', () => {
     // T003 depends on T002, and T002 also depended on T001 → no dup T001
     const result = relinkAfterDelete([t1, t3], taskId('T002'), [taskId('T001')]);
     const dep = result[1]?.dependsOn ?? [];
-    expect(dep.filter(d => d === 'T001').length).toBe(1);
+    expect(dep.filter((d) => d === 'T001').length).toBe(1);
   });
 });
 
@@ -193,12 +189,14 @@ describe('mergeWithPrevious', () => {
   });
 
   it('concatenates tests, implementationSteps, constraints', () => {
-    const prev = makeTask({ id: 'T001',
+    const prev = makeTask({
+      id: 'T001',
       tests: ['test A'],
       implementationSteps: ['step A'],
       constraints: ['c A'],
     });
-    const curr = makeTask({ id: 'T002',
+    const curr = makeTask({
+      id: 'T002',
       tests: ['test B'],
       implementationSteps: ['step B'],
       constraints: ['c B'],
@@ -324,8 +322,8 @@ describe('moveTaskDown', () => {
       makeTask({ id: 'T003', title: 'Third' }),
     ];
     const { tasks: result, cursor } = moveTaskDown(tasks, 0);
-    expect(result.map(t => t.title)).toEqual(['Second', 'First', 'Third']);
-    expect(result.map(t => t.id)).toEqual(['T001', 'T002', 'T003']);
+    expect(result.map((t) => t.title)).toEqual(['Second', 'First', 'Third']);
+    expect(result.map((t) => t.id)).toEqual(['T001', 'T002', 'T003']);
     expect(cursor).toBe(1);
   });
 
@@ -343,7 +341,7 @@ describe('moveTaskDown', () => {
       makeTask({ id: 'T003', title: 'Third', dependsOn: ['T002'] }),
     ];
     const { tasks: result } = moveTaskDown(tasks, 0);
-    expect(result.map(t => t.title)).toEqual(['Second', 'First', 'Third']);
+    expect(result.map((t) => t.title)).toEqual(['Second', 'First', 'Third']);
     expect(result[2]?.dependsOn).toEqual(['T001']);
   });
 });
@@ -356,8 +354,8 @@ describe('moveTaskUp', () => {
       makeTask({ id: 'T003', title: 'Third' }),
     ];
     const { tasks: result, cursor } = moveTaskUp(tasks, 2);
-    expect(result.map(t => t.title)).toEqual(['First', 'Third', 'Second']);
-    expect(result.map(t => t.id)).toEqual(['T001', 'T002', 'T003']);
+    expect(result.map((t) => t.title)).toEqual(['First', 'Third', 'Second']);
+    expect(result.map((t) => t.id)).toEqual(['T001', 'T002', 'T003']);
     expect(cursor).toBe(1);
   });
 
@@ -375,7 +373,7 @@ describe('moveTaskUp', () => {
       makeTask({ id: 'T003', title: 'Third', dependsOn: ['T001'] }),
     ];
     const { tasks: result } = moveTaskUp(tasks, 2);
-    expect(result.map(t => t.title)).toEqual(['First', 'Third', 'Second']);
+    expect(result.map((t) => t.title)).toEqual(['First', 'Third', 'Second']);
     expect(result[1]?.dependsOn).toEqual(['T001']);
   });
 });

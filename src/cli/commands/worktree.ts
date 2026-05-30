@@ -1,8 +1,9 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { cliError, rethrowAsCli } from '../errors.js';
+import { cliError, withCliErrors } from '../errors.js';
 import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
+import { renderTable } from '../render-table.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
 
 export interface WorktreeDeps {
@@ -12,116 +13,45 @@ export interface WorktreeDeps {
 
 const defaultDeps: WorktreeDeps = { listWorktrees, removeWorktree };
 
-function statusCell(info: WorktreeInfo): string {
-  return info.status;
-}
-
-function valueOrUnknown(value: string | null): string {
-  return value ?? 'unknown';
-}
-
 function renderList(worktrees: WorktreeInfo[]): void {
-  const terminalWidth = process.stdout.columns ?? 80;
-
-  const NAME_MIN = 12;
-  const PATH_MIN = 18;
-  const BRANCH_MIN = 18;
-  const STATUS_MIN = 10;
-  const SESSION_MIN = 12;
-  const PHASE_MIN = 10;
-  const UPDATED_MIN = 12;
-
-  const nameNatural = Math.max(NAME_MIN, 'NAME'.length, ...worktrees.map((w) => w.name.length));
-  const pathNatural = Math.max(PATH_MIN, 'PATH'.length, ...worktrees.map((w) => w.path.length));
-  const branchNatural = Math.max(
-    BRANCH_MIN,
-    'BRANCH'.length,
-    ...worktrees.map((w) => w.branch.length),
-  );
-  const statusNatural = Math.max(
-    STATUS_MIN,
-    'STATUS'.length,
-    ...worktrees.map((w) => statusCell(w).length),
-  );
-  const sessionNatural = Math.max(
-    SESSION_MIN,
-    'SESSION'.length,
-    ...worktrees.map((w) => valueOrUnknown(w.sessionId).length),
-  );
-  const phaseNatural = Math.max(
-    PHASE_MIN,
-    'PHASE'.length,
-    ...worktrees.map((w) => valueOrUnknown(w.phase).length),
-  );
-  const updatedNatural = Math.max(
-    UPDATED_MIN,
-    'UPDATED'.length,
-    ...worktrees.map((w) => valueOrUnknown(w.lastUpdated).length),
-  );
-
-  const GAP = 2;
-  const totalNatural =
-    nameNatural +
-    GAP +
-    pathNatural +
-    GAP +
-    branchNatural +
-    GAP +
-    statusNatural +
-    GAP +
-    sessionNatural +
-    GAP +
-    phaseNatural +
-    GAP +
-    updatedNatural;
-
-  let nameW = nameNatural;
-  let pathW = pathNatural;
-  let branchW = branchNatural;
-  const statusW = statusNatural;
-  const sessionW = sessionNatural;
-  const phaseW = phaseNatural;
-  const updatedW = updatedNatural;
-
-  if (totalNatural > terminalWidth) {
-    const overflow = totalNatural - terminalWidth;
-    pathW = Math.max(PATH_MIN, pathNatural - overflow);
-    const afterPath = nameW + GAP + pathW + GAP + branchW + GAP + statusW + GAP + sessionW + GAP + phaseW + GAP + updatedW;
-    if (afterPath > terminalWidth) {
-      branchW = Math.max(BRANCH_MIN, branchNatural - (afterPath - terminalWidth));
-    }
-    if (nameW + GAP + pathW + GAP + branchW + GAP + statusW + GAP + sessionW + GAP + phaseW + GAP + updatedW > terminalWidth) {
-      nameW = Math.max(NAME_MIN, terminalWidth - GAP - pathW - GAP - branchW - GAP - statusW - GAP - sessionW - GAP - phaseW - GAP - updatedW);
-    }
-  }
-
-  const header = [
-    'NAME'.padEnd(nameW),
-    'PATH'.padEnd(pathW),
-    'BRANCH'.padEnd(branchW),
-    'STATUS'.padEnd(statusW),
-    'SESSION'.padEnd(sessionW),
-    'PHASE'.padEnd(phaseW),
-    'UPDATED'.padEnd(updatedW),
-  ].join('  ');
-  console.log(header);
-
-  for (const w of worktrees) {
-    const name = w.name.length > nameW ? w.name.slice(0, nameW) : w.name.padEnd(nameW);
-    const path = w.path.length > pathW ? w.path.slice(0, pathW) : w.path.padEnd(pathW);
-    const branch = w.branch.length > branchW ? w.branch.slice(0, branchW) : w.branch.padEnd(branchW);
-    const status = statusCell(w);
-    const session = valueOrUnknown(w.sessionId);
-    const phase = valueOrUnknown(w.phase);
-    const updated = valueOrUnknown(w.lastUpdated);
-    console.log([name, path, branch, status, session, phase, updated].join('  '));
-  }
+  const lines = renderTable<WorktreeInfo>({
+    columns: [
+      {
+        header: 'NAME',
+        min: 12,
+        value: (w) => w.name,
+        shrink: true,
+        shrinkPriority: 2,
+        truncate: true,
+      },
+      {
+        header: 'PATH',
+        min: 18,
+        value: (w) => w.path,
+        shrink: true,
+        shrinkPriority: 0,
+        truncate: true,
+      },
+      {
+        header: 'BRANCH',
+        min: 18,
+        value: (w) => w.branch,
+        shrink: true,
+        shrinkPriority: 1,
+        truncate: true,
+      },
+      { header: 'STATUS', min: 10, value: (w) => w.status },
+      { header: 'SESSION', min: 12, value: (w) => w.sessionId ?? 'unknown' },
+      { header: 'PHASE', min: 10, value: (w) => w.phase ?? 'unknown' },
+      { header: 'UPDATED', min: 12, value: (w) => w.lastUpdated ?? 'unknown' },
+    ],
+    rows: worktrees,
+  });
+  for (const line of lines) console.log(line);
 }
 
 export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = defaultDeps): void {
-  const worktree = program
-    .command('worktree')
-    .description('Manage diptych-managed git worktrees');
+  const worktree = program.command('worktree').description('Manage diptych-managed git worktrees');
 
   worktree
     .command('list')
@@ -166,10 +96,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--delete-branch', 'Also delete the diptych/<name> branch')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(
-      async (
-        name: string,
-        opts: { force?: boolean; deleteBranch?: boolean; project?: string },
-      ) => {
+      async (name: string, opts: { force?: boolean; deleteBranch?: boolean; project?: string }) => {
         const projectDir = resolveProjectDir(opts.project);
         const git = createGitClient(projectDir);
 
@@ -179,17 +106,15 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
           throw cliError(`Worktree "${name}" not found.`, 1);
         }
 
-        try {
-          await deps.removeWorktree({
+        await withCliErrors(() =>
+          deps.removeWorktree({
             projectDir,
             slug: name,
             git,
             force: opts.force ?? false,
             deleteBranch: opts.deleteBranch ?? false,
-          });
-        } catch (err) {
-          rethrowAsCli(err);
-        }
+          }),
+        );
 
         console.log(`Removed worktree ".trees/${name}".`);
         if (opts.deleteBranch) {

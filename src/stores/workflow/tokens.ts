@@ -3,10 +3,10 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import { phaseCostRole } from '../../core/phases.js';
+import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
-interface PhaseTokens {
+export interface PhaseTokens {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -19,12 +19,10 @@ interface PhaseTokens {
   implementerOutputTokens?: number | undefined;
   implementerCacheReadTokens?: number | undefined;
   implementerCacheCreateTokens?: number | undefined;
-  cost: number;
 }
 
-interface PerTaskTokens {
+export interface PerTaskTokens {
   totalTokens: number;
-  cost: number;
   title: string;
 }
 
@@ -95,12 +93,7 @@ function makeEmptyPhaseTokens(): PhaseTokens {
     implementerOutputTokens: 0,
     implementerCacheReadTokens: 0,
     implementerCacheCreateTokens: 0,
-    cost: 0,
   };
-}
-
-function clampDelta(value: number): number {
-  return Math.max(0, value);
 }
 
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
@@ -123,22 +116,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
 
       const existingPhase = state.perPhase[phase] ?? makeEmptyPhaseTokens();
 
-      const plannerDelta = {
-        input: clampDelta(curr.plannerInput - prev.plannerInput + curr.escalationInput - prev.escalationInput),
-        output: clampDelta(curr.plannerOutput - prev.plannerOutput + curr.escalationOutput - prev.escalationOutput),
-        cacheRead: clampDelta((curr.plannerCacheRead ?? 0) - (prev.plannerCacheRead ?? 0)),
-        cacheCreate: clampDelta((curr.plannerCacheCreate ?? 0) - (prev.plannerCacheCreate ?? 0)),
-      };
-      const implementerDelta = {
-        input: clampDelta(curr.implementerInput - prev.implementerInput),
-        output: clampDelta(curr.implementerOutput - prev.implementerOutput),
-        cacheRead: clampDelta((curr.implementerCacheRead ?? 0) - (prev.implementerCacheRead ?? 0)),
-        cacheCreate: clampDelta((curr.implementerCacheCreate ?? 0) - (prev.implementerCacheCreate ?? 0)),
-      };
-
-      const role = phaseCostRole(phase);
-      const pd = role === null ? { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 } : plannerDelta;
-      const id = role === 'implementer' ? implementerDelta : { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+      const { planner: pd, implementer: id } = attributePhaseTokenDelta(prev, curr, phase);
 
       const updatedPhase: PhaseTokens = {
         inputTokens: existingPhase.inputTokens + pd.input + id.input,
@@ -152,8 +130,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         implementerInputTokens: (existingPhase.implementerInputTokens ?? 0) + id.input,
         implementerOutputTokens: (existingPhase.implementerOutputTokens ?? 0) + id.output,
         implementerCacheReadTokens: (existingPhase.implementerCacheReadTokens ?? 0) + id.cacheRead,
-        implementerCacheCreateTokens: (existingPhase.implementerCacheCreateTokens ?? 0) + id.cacheCreate,
-        cost: existingPhase.cost,
+        implementerCacheCreateTokens:
+          (existingPhase.implementerCacheCreateTokens ?? 0) + id.cacheCreate,
       };
 
       return {
@@ -167,7 +145,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       return { ...state, prediction: event.prediction };
 
     case 'task_tokens': {
-      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, cost: 0, title: '' };
+      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '' };
       const totalTokens = event.implementerTokens + event.escalationTokens;
       return {
         ...state,
@@ -176,7 +154,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     }
 
     case 'task_started': {
-      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, cost: 0, title: '' };
+      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '' };
       return {
         ...state,
         perTask: { ...state.perTask, [event.taskId]: { ...existing, title: event.title } },

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/cli.ts",
+    "src/engine/ipc/server-entry.ts",
+    "scripts/check-invariants.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreExportsUsedInFile": true,
+  "includeEntryExports": true
+}

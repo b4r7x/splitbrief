@@ -2,7 +2,10 @@ import { readActive } from '../core/sessions/lifecycle.js';
 import { CURRENT_STATE_VERSION } from '../core/state/machine.js';
 import { isResumable } from '../core/phases.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
-import { findSingleRunningSession, type ScanRunningSessionsDeps } from './sessions/single-running-session.js';
+import {
+  findSingleRunningSession,
+  type ScanRunningSessionsDeps,
+} from './sessions/single-running-session.js';
 import { cliError } from './errors.js';
 
 export function resolveSessionOrThrow(projectDir: string, sessionOpt: string | undefined): string {

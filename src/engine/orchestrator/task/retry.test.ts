@@ -18,7 +18,7 @@ import {
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
-import { readEvidenceLedger } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { retryAndRecord } from './retry.js';
 
 afterEach(cleanupTaskProjects);
@@ -77,18 +77,19 @@ describe('retryAndRecord — retry budget', () => {
     state = transition(state, { type: 'TASK_SENT' });
 
     const implementer = makeImplementer({
-      retry: vi.fn().mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
-        mkdirSync(join(retryDir, 'src'), { recursive: true });
-        writeFileSync(join(retryDir, task.file), 'recovered implementation');
-        return {
-          success: true,
-          output: 'fixed',
-          usage: { inputTokens: 20, outputTokens: 10 },
-        };
-      }),
+      retry: vi
+        .fn()
+        .mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
+          mkdirSync(join(retryDir, 'src'), { recursive: true });
+          writeFileSync(join(retryDir, task.file), 'recovered implementation');
+          return {
+            success: true,
+            output: 'fixed',
+            usage: { inputTokens: 20, outputTokens: 10 },
+          };
+        }),
     });
     const validator = {
-      findAffectedTestFile: vi.fn().mockReturnValue(null),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
     };
 
@@ -114,14 +115,17 @@ describe('retryAndRecord — retry budget', () => {
         retryState: 'initial-failure',
         changedFiles: ['src/initial.ts'],
       },
-	      {
-	        stage: 'test',
-	        passed: true,
-	        retryState: 'retry',
-	        changedFiles: ['src/task.ts'],
-	      },
-	    ]);
-    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.changedFiles).toEqual(['src/initial.ts', 'src/task.ts']);
+      {
+        stage: 'test',
+        passed: true,
+        retryState: 'retry',
+        changedFiles: ['src/task.ts'],
+      },
+    ]);
+    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.changedFiles).toEqual([
+      'src/initial.ts',
+      'src/task.ts',
+    ]);
   });
 
   it('exhausts local retry budget and persists recovery when escalation also fails', async () => {
@@ -139,8 +143,12 @@ describe('retryAndRecord — retry budget', () => {
       usage: { inputTokens: 20, outputTokens: 10 },
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
     const implementer = makeImplementer({ retry });
 
@@ -172,7 +180,13 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: [
+        'retry-same-worker',
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ],
     });
     expect(loadState(wctx.projectDir, wctx.sessionId)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -228,18 +242,32 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: [
+        'retry-same-worker',
+        'planner-split-rebase',
+        'skip-current-task',
+        'pause-run',
+        'abort-workflow',
+      ],
     });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
     });
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'recovery_prompted',
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_prompted',
+        reason: 'retry-exhausted',
+        taskId: 'T001',
+        availableActions: [
+          'retry-same-worker',
+          'planner-split-rebase',
+          'skip-current-task',
+          'pause-run',
+          'abort-workflow',
+        ],
+      }),
+    );
   });
 
   it('adds recovery to the latest persisted retry state when a later retry step throws', async () => {
@@ -296,10 +324,12 @@ describe('retryAndRecord — recovery stop points', () => {
       attempt: 1,
       pendingRecovery: expect.objectContaining({ reason: 'retry-exhausted' }),
     });
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'recovery_prompted',
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_prompted',
+        reason: 'retry-exhausted',
+        taskId: 'T001',
+      }),
+    );
   });
 });

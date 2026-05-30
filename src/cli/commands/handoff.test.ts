@@ -44,7 +44,16 @@ async function runHandoff(args: string[], deps = createDeps()): Promise<string[]
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerHandoffCommand(program, deps);
-  await program.parseAsync(['node', 'diptych', 'handoff', '--project', tmp, '--session', 'test-session', ...args]);
+  await program.parseAsync([
+    'node',
+    'diptych',
+    'handoff',
+    '--project',
+    tmp,
+    '--session',
+    'test-session',
+    ...args,
+  ]);
   return logs;
 }
 

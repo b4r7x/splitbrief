@@ -11,13 +11,16 @@ export interface MissingRunnerCredential {
   envVar?: string | undefined;
 }
 
-export function missingRunnerCredential(runner: RunnerCredentialConfig): MissingRunnerCredential | undefined {
+export function missingRunnerCredential(
+  runner: RunnerCredentialConfig,
+): MissingRunnerCredential | undefined {
   if (runner.kind === 'agent-sdk') {
-    const envVar = PROVIDER_CATALOG['agent-sdk']?.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
+    const sdk = PROVIDER_CATALOG['agent-sdk'];
+    const envVar = sdk.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
     if (runner.apiKey || process.env[envVar]) return undefined;
     return {
       provider: 'agent-sdk',
-      providerDisplayName: PROVIDER_CATALOG['agent-sdk']?.displayName ?? 'Agent SDK',
+      providerDisplayName: sdk.displayName,
       envVar,
     };
   }
@@ -32,9 +35,9 @@ export function missingRunnerCredential(runner: RunnerCredentialConfig): Missing
     };
   }
 
-	const info = PROVIDER_CATALOG[runner.provider];
-	if (info.isLocal) return undefined;
-	if (!info.apiKeyEnv || runner.apiKey || process.env[info.apiKeyEnv]) return undefined;
+  const info = PROVIDER_CATALOG[runner.provider];
+  if (info.isLocal) return undefined;
+  if (!info.apiKeyEnv || runner.apiKey || process.env[info.apiKeyEnv]) return undefined;
   return {
     provider: runner.provider,
     providerDisplayName: info.displayName,

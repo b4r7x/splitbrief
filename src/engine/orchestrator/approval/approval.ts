@@ -23,14 +23,26 @@ type ApprovalLoopOptions = {
   persistTranscript: boolean;
 };
 
-export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
-  const { type, filePath, planner, projectDir, sessionId, callbacks, bus, signal, persistTranscript } = opts;
+export async function runApprovalLoop(
+  opts: ApprovalLoopOptions,
+): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
+  const {
+    type,
+    filePath,
+    planner,
+    projectDir,
+    sessionId,
+    callbacks,
+    bus,
+    signal,
+    persistTranscript,
+  } = opts;
   let { state } = opts;
   let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
   const isSpec = type === 'spec';
-  const rejectedEvent = isSpec ? 'spec_rejected' as const : 'plan_rejected' as const;
-  const regeneratedEvent = isSpec ? 'spec_regenerated' as const : 'plan_regenerated' as const;
+  const rejectedEvent = isSpec ? ('spec_rejected' as const) : ('plan_rejected' as const);
+  const regeneratedEvent = isSpec ? ('spec_regenerated' as const) : ('plan_regenerated' as const);
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
 
   while (true) {
@@ -45,28 +57,44 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
     }
     if (!result.comment) return { state, rejected: false, regenerated };
 
-    appendMessage(projectDir, sessionId, {
-      role: 'user',
-      phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
-      text: result.comment,
-    }, persistTranscript);
+    appendMessage(
+      projectDir,
+      sessionId,
+      {
+        role: 'user',
+        phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
+        text: result.comment,
+      },
+      persistTranscript,
+    );
 
     const current = readSpecFileOrEmpty(projectDir, sessionId, filename);
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
-    createBusTextHandler({ bus: bus, phase: state.phase })(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
+    createBusTextHandler({ bus: bus, phase: state.phase })(
+      `\n[Regenerating ${type} with feedback: ${result.comment}]\n`,
+    );
     let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
     try {
-      regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
-        onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
-        signal,
+      regenResult = await planner.regenerate({
+        prompt: regenPrompt,
+        artifactType: type,
+        projectDir,
+        callbacks: {
+          onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
+          signal,
+        },
       });
     } catch (err) {
       if (signal?.aborted || isAbortError(err)) return { state, rejected: false, regenerated };
       throw err;
     }
-    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, bus);
+    state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
     regenerated = true;
-    bus.publish({ type: regeneratedEvent, ts: Date.now(), phase: state.phase, comment: result.comment });
+    bus.publish({
+      type: regeneratedEvent,
+      ts: Date.now(),
+      phase: state.phase,
+      comment: result.comment,
+    });
   }
-
 }

@@ -30,7 +30,12 @@ describe('CostStatusLine', () => {
         plannerCacheRead: 25,
       },
       perPhase: {
-        planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 25, cacheCreateTokens: 0, cost: 0.01 },
+        planning: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 25,
+          cacheCreateTokens: 0,
+        },
       },
     });
 

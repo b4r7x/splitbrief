@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  makeImplementer,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { markHooksConfigTrusted, isHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -13,18 +17,22 @@ import type { SummaryBase } from '../summary.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 
 const HOOK: HooksConfig = {
-  post_task: [{
-    kind: 'command',
-    command: 'echo',
-    args: ['ok'],
-    timeout_ms: 5000,
-    on_failure: 'warn',
-  }],
+  post_task: [
+    {
+      kind: 'command',
+      command: 'echo',
+      args: ['ok'],
+      timeout_ms: 5000,
+      on_failure: 'warn',
+    },
+  ],
 };
 
 const dirs: string[] = [];
 
-afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+afterEach(() => {
+  while (dirs.length) cleanupTempDir(dirs.pop() as string);
+});
 
 function setupProjectDir(prefix: string) {
   const projectDir = createTempDir(prefix);
@@ -35,7 +43,11 @@ function setupProjectDir(prefix: string) {
   return projectDir;
 }
 
-function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra?: Partial<RunWorkflowOptions>) {
+function makeInitArgs(
+  projectDir: string,
+  hooks?: HooksConfig,
+  extra?: Partial<RunWorkflowOptions>,
+) {
   const feature = 'test-feature';
   const sessionId = 'test-session';
   const config = makeConfig({
@@ -45,14 +57,23 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra?: Partial<R
   });
   const { callbacks } = makeCallbacks();
   const summaryBase: SummaryBase = {
-    feature, startTime: Date.now(),
-    plannerTool: 'test', implementerTool: 'test', mode: 'quick', projectDir, sessionId,
+    feature,
+    startTime: Date.now(),
+    plannerTool: 'test',
+    implementerTool: 'test',
+    mode: 'quick',
+    projectDir,
+    sessionId,
   };
   const metadata: SpecMetadata = { plannerTool: 'test', implementerTool: 'test', mode: 'quick' };
   const opts: RunWorkflowOptions = {
-    feature, projectDir, config, callbacks,
+    feature,
+    projectDir,
+    config,
+    callbacks,
     sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-    _planner: makePlanner(), _implementer: makeImplementer(),
+    _planner: makePlanner(),
+    _implementer: makeImplementer(),
     ...extra,
   };
 
@@ -65,7 +86,14 @@ describe('engine-level hook trust gate', () => {
     const args = makeInitArgs(projectDir, HOOK);
 
     await expect(
-      initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] }),
+      initializeWorkflow({
+        opts: args.opts,
+        sessionId: args.sessionId,
+        summaryBase: args.summaryBase,
+        metadata: args.metadata,
+        setTrackedState: args.setTracked,
+        resumeHolder: { messages: [] },
+      }),
     ).rejects.toThrow(/not trusted/);
   });
 
@@ -73,7 +101,14 @@ describe('engine-level hook trust gate', () => {
     const projectDir = setupProjectDir('hook-trust-allow');
     const args = makeInitArgs(projectDir, HOOK, { allowHooks: true });
 
-    const init = await initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] });
+    const init = await initializeWorkflow({
+      opts: args.opts,
+      sessionId: args.sessionId,
+      summaryBase: args.summaryBase,
+      metadata: args.metadata,
+      setTrackedState: args.setTracked,
+      resumeHolder: { messages: [] },
+    });
     expect(init.ok).toBe(true);
   });
 
@@ -82,7 +117,14 @@ describe('engine-level hook trust gate', () => {
     markHooksConfigTrusted(projectDir, HOOK);
     const args = makeInitArgs(projectDir, HOOK);
 
-    const init = await initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] });
+    const init = await initializeWorkflow({
+      opts: args.opts,
+      sessionId: args.sessionId,
+      summaryBase: args.summaryBase,
+      metadata: args.metadata,
+      setTrackedState: args.setTracked,
+      resumeHolder: { messages: [] },
+    });
     expect(init.ok).toBe(true);
   });
 
@@ -95,7 +137,14 @@ describe('engine-level hook trust gate', () => {
     const args = makeInitArgs(projectDir);
 
     await expect(
-      initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] }),
+      initializeWorkflow({
+        opts: args.opts,
+        sessionId: args.sessionId,
+        summaryBase: args.summaryBase,
+        metadata: args.metadata,
+        setTrackedState: args.setTracked,
+        resumeHolder: { messages: [] },
+      }),
     ).rejects.toThrow(/not trusted/);
   });
 
@@ -116,7 +165,14 @@ describe('engine-level hook trust gate', () => {
 
     const args = makeInitArgs(projectDir);
     await expect(
-      initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] }),
+      initializeWorkflow({
+        opts: args.opts,
+        sessionId: args.sessionId,
+        summaryBase: args.summaryBase,
+        metadata: args.metadata,
+        setTrackedState: args.setTracked,
+        resumeHolder: { messages: [] },
+      }),
     ).rejects.toThrow(/not trusted/);
   });
 
@@ -124,7 +180,14 @@ describe('engine-level hook trust gate', () => {
     const projectDir = setupProjectDir('hook-trust-no-hooks');
     const args = makeInitArgs(projectDir);
 
-    const init = await initializeWorkflow(args.opts, args.sessionId, args.summaryBase, args.metadata, args.setTracked, { messages: [] });
+    const init = await initializeWorkflow({
+      opts: args.opts,
+      sessionId: args.sessionId,
+      summaryBase: args.summaryBase,
+      metadata: args.metadata,
+      setTrackedState: args.setTracked,
+      resumeHolder: { messages: [] },
+    });
     expect(init.ok).toBe(true);
   });
 });

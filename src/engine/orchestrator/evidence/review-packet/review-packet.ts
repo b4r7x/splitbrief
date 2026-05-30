@@ -7,7 +7,13 @@ import type { BuildReviewPacketOptions } from './types.js';
 
 export async function writeReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {
   const packet = await buildReviewPacket(opts);
-  writeSecureFile(reviewPacketJsonPath(opts.projectDir, opts.sessionId), stringifyReviewPacket(packet));
-  writeSecureFile(reviewPacketMarkdownPath(opts.projectDir, opts.sessionId), renderReviewPacketMarkdown(packet));
+  writeSecureFile(
+    reviewPacketJsonPath(opts.projectDir, opts.sessionId),
+    stringifyReviewPacket(packet),
+  );
+  writeSecureFile(
+    reviewPacketMarkdownPath(opts.projectDir, opts.sessionId),
+    renderReviewPacketMarkdown(packet),
+  );
   return packet;
 }

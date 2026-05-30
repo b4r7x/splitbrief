@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EngineEvent } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
 import { snapshotFilesDir } from '../../core/paths.js';
-import { createSnapshot } from './store.js';
+import { createSnapshot } from './create.js';
 import { resolveSnapshot, restoreSnapshot } from './restore.js';
 
 let tmp: string;
@@ -30,7 +30,11 @@ describe('restoreSnapshot — from baseline', () => {
     await writeFile(join(tmp, 'a.ts'), 'aaa');
     await writeFile(join(tmp, 'b.ts'), 'bbb');
 
-    const baseline = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
 
     const result = await restoreSnapshot({
       projectDir: tmp,
@@ -57,8 +61,8 @@ describe('restoreSnapshot — from delta snapshot', () => {
     const delta = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     // Confirm delta snapshot only has changed.ts in fileEntries
-    expect(delta.manifest.fileEntries.some(e => e.path === 'changed.ts')).toBe(true);
-    expect(delta.manifest.fileEntries.some(e => e.path === 'unchanged.ts')).toBe(false);
+    expect(delta.manifest.fileEntries.some((e) => e.path === 'changed.ts')).toBe(true);
+    expect(delta.manifest.fileEntries.some((e) => e.path === 'unchanged.ts')).toBe(false);
 
     // Now delete both files to force restore from storage (currentHash === null → always restored)
     await unlink(join(tmp, 'unchanged.ts'));
@@ -88,7 +92,12 @@ describe('restoreSnapshot — conflict detection', () => {
     await writeFile(join(tmp, 'foo.ts'), 'original');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     // Modify the file after snapshot
     await writeFile(join(tmp, 'foo.ts'), 'modified after snapshot');
@@ -108,7 +117,12 @@ describe('restoreSnapshot — conflict detection', () => {
     await writeFile(join(tmp, 'foo.ts'), 'original');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await writeFile(join(tmp, 'foo.ts'), 'modified after snapshot');
 
@@ -134,7 +148,12 @@ describe('restoreSnapshot — deleted file on disk', () => {
     await writeFile(join(tmp, 'gone.ts'), 'was here');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await unlink(join(tmp, 'gone.ts'));
 
@@ -158,10 +177,15 @@ describe('restoreSnapshot — missingSnapshotFiles', () => {
     await writeFile(join(tmp, 'foo.ts'), 'foo');
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     // Manually corrupt: add a path to fileHashes with no entry in fileEntries or baseline
-    const { writeManifest } = await import('./store.js');
+    const { writeManifest } = await import('./manifest.js');
     const corruptManifest = {
       ...snap.manifest,
       fileHashes: { ...snap.manifest.fileHashes, 'ghost.ts': 'deadbeef' },
@@ -181,7 +205,7 @@ describe('restoreSnapshot — missingSnapshotFiles', () => {
 describe('restoreSnapshot — missing baseline', () => {
   it('throws "Baseline snapshot missing" when no baseline exists', async () => {
     // Write a manifest directly without creating a baseline
-    const { writeManifest } = await import('./store.js');
+    const { writeManifest } = await import('./manifest.js');
     await writeManifest(tmp, 'sess-01', {
       version: 1,
       id: 'fake-snap',
@@ -202,7 +226,7 @@ describe('restoreSnapshot — missing baseline', () => {
 describe('restoreSnapshot — lock release on error', () => {
   it('releases lock even when error thrown mid-restore', async () => {
     // No baseline exists — will throw during restore
-    const { writeManifest } = await import('./store.js');
+    const { writeManifest } = await import('./manifest.js');
     await writeManifest(tmp, 'sess-01', {
       version: 1,
       id: 'snap-x',
@@ -219,7 +243,7 @@ describe('restoreSnapshot — lock release on error', () => {
     ).rejects.toThrow();
 
     // Lock should be released — can acquire again
-    const { acquireSnapshotLock } = await import('./store.js');
+    const { acquireSnapshotLock } = await import('./lock.js');
     const release = await acquireSnapshotLock(tmp, 'sess-01');
     await release();
   });
@@ -239,7 +263,12 @@ describe('resolveSnapshot', () => {
     await writeFile(join(tmp, 'x.ts'), 'x');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
     await writeFile(join(tmp, 'x.ts'), 'xx');
-    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'my-snap' });
+    await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'my-snap',
+    });
 
     const resolved = await resolveSnapshot(tmp, 'sess-01', 'my-snap');
     expect(resolved.name).toBe('my-snap');
@@ -272,7 +301,11 @@ describe('resolveSnapshot', () => {
 describe('restoreSnapshot — event emission', () => {
   it('emits snapshot_restored on successful completion', async () => {
     await writeFile(join(tmp, 'a.ts'), 'aaa');
-    const baseline = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
 
     const { bus, events } = makeMockBus();
     await restoreSnapshot({
@@ -282,7 +315,7 @@ describe('restoreSnapshot — event emission', () => {
       bus,
     });
 
-    const restoredEvt = events.find(e => e.type === 'snapshot_restored');
+    const restoredEvt = events.find((e) => e.type === 'snapshot_restored');
     expect(restoredEvt).toBeDefined();
     expect(restoredEvt?.type === 'snapshot_restored' && restoredEvt.snapshotId).toBe('baseline');
   });
@@ -290,7 +323,12 @@ describe('restoreSnapshot — event emission', () => {
   it('emits snapshot_restore_conflict when conflicts present and force is false', async () => {
     await writeFile(join(tmp, 'foo.ts'), 'original');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await writeFile(join(tmp, 'foo.ts'), 'changed after');
 
@@ -303,17 +341,22 @@ describe('restoreSnapshot — event emission', () => {
       bus,
     });
 
-    const conflictEvt = events.find(e => e.type === 'snapshot_restore_conflict');
+    const conflictEvt = events.find((e) => e.type === 'snapshot_restore_conflict');
     expect(conflictEvt).toBeDefined();
 
-    const restoredEvt = events.find(e => e.type === 'snapshot_restored');
+    const restoredEvt = events.find((e) => e.type === 'snapshot_restored');
     expect(restoredEvt).toBeDefined();
   });
 
   it('does NOT emit snapshot_restore_conflict when force is true', async () => {
     await writeFile(join(tmp, 'foo.ts'), 'original');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'snap1' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
 
     await writeFile(join(tmp, 'foo.ts'), 'changed after');
 
@@ -326,7 +369,7 @@ describe('restoreSnapshot — event emission', () => {
       bus,
     });
 
-    const conflictEvt = events.find(e => e.type === 'snapshot_restore_conflict');
+    const conflictEvt = events.find((e) => e.type === 'snapshot_restore_conflict');
     expect(conflictEvt).toBeUndefined();
   });
 
@@ -370,7 +413,7 @@ describe('restoreSnapshot — path confinement', () => {
     await writeFile(join(tmp, 'safe.ts'), 'safe');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    const { writeManifest } = await import('./store.js');
+    const { writeManifest } = await import('./manifest.js');
     const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     const corruptManifest = {
@@ -388,7 +431,7 @@ describe('restoreSnapshot — path confinement', () => {
     await writeFile(join(tmp, 'safe.ts'), 'safe');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    const { writeManifest } = await import('./store.js');
+    const { writeManifest } = await import('./manifest.js');
     const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     const corruptManifest = {

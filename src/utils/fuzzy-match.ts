@@ -12,7 +12,10 @@ export function fuzzyMatch(query: string, target: string): FuzzyMatchResult | nu
   const results = fzf.find(query.toLowerCase());
   const top = results[0];
   if (top === undefined || top.score <= 0) return null;
-  return { score: Math.min(1, top.score / 100), positions: Array.from(top.positions as Set<number>).sort((a, b) => a - b) };
+  return {
+    score: Math.min(1, top.score / 100),
+    positions: [...top.positions].sort((a, b) => a - b),
+  };
 }
 
 export function fuzzyMatchExtended(query: string, target: string): FuzzyMatchResult | null {

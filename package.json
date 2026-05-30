@@ -23,6 +23,8 @@
     "typecheck:src": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -32,7 +34,8 @@
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
-    "test-ci": "npm run typecheck && npm run lint && npm test && npm run check:invariants",
+    "knip": "knip",
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run check:invariants",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -88,6 +91,7 @@
     "@types/react": "^19.0.0",
     "@vitest/coverage-v8": "^4.1.2",
     "ink-testing-library": "^4.0.0",
+    "knip": "^5.88.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"

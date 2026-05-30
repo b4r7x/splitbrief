@@ -16,10 +16,7 @@ describe('createLatestEventByTypeSelector', () => {
     const first = selector({ events: firstEvents });
 
     const next = selector({
-      events: [
-        ...firstEvents,
-        { type: 'warning', ts: 2, phase: 'planning', message: 'noise' },
-      ],
+      events: [...firstEvents, { type: 'warning', ts: 2, phase: 'planning', message: 'noise' }],
     });
 
     expect(next).toBe(first);

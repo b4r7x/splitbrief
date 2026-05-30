@@ -4,11 +4,12 @@ import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
   drainAndFormat,
   handlePlanningFailure,
-  persistPhases,
   runBriefQualityGate,
-  runPlannerCallInContinuationLoop,
-} from './shared.js';
+} from './briefs-approval-loop.js';
+import { persistPhases } from './planning-io.js';
+import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
+import { firstBriefError } from '../../spec/brief-quality.js';
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -31,29 +32,45 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       feature,
       mode: 'quick',
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
-      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
+      ...(resumeHolder && resumeHolder.messages.length > 0
+        ? { priorMessages: resumeHolder.messages }
+        : {}),
       ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {}),
       phaseHint: 'generating plan',
     });
     state = run.state;
     planResult = run.result;
   } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, wctx);
+    return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
-  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
+  state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
-  const { report: qualityReport, ok: qualityOk } = runBriefQualityGate(planResult.tasks, projectDir, sessionId, wctx.bus, state.phase);
+  const { report: qualityReport, ok: qualityOk } = runBriefQualityGate({
+    tasks: planResult.tasks,
+    projectDir,
+    sessionId,
+    bus: wctx.bus,
+    phase: state.phase,
+  });
   if (!qualityOk) {
-    const firstError = qualityReport.issues.find(i => i.severity === 'error');
-    return handlePlanningFailure(
-      new Error(`brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`),
-      projectDir, sessionId, state, wctx,
-    );
+    const firstError = firstBriefError(qualityReport);
+    return handlePlanningFailure({
+      err: new Error(
+        `brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`,
+      ),
+      projectDir,
+      sessionId,
+      state,
+      wctx,
+    });
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'START_QUICK', tasks: planResult.tasks });
+  state = transitionAndSave(projectDir, sessionId, state, {
+    type: 'START_QUICK',
+    tasks: planResult.tasks,
+  });
   publishPlannerStatus(wctx.bus, state, 'running');
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 

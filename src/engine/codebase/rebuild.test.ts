@@ -6,8 +6,12 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('rebuildRepomap', () => {
   let projectDir: string;
-  beforeEach(() => { projectDir = createTempDir('repomap-rebuild'); });
-  afterEach(() => { cleanupTempDir(projectDir); });
+  beforeEach(() => {
+    projectDir = createTempDir('repomap-rebuild');
+  });
+  afterEach(() => {
+    cleanupTempDir(projectDir);
+  });
 
   it('returns deleted=false when no cache file exists', () => {
     const result = rebuildRepomap(projectDir);

@@ -17,8 +17,22 @@ function makeSummary(overrides: Partial<Summary> = {}): Summary {
   });
 }
 
-const completeDefaults = { id: 'sess-1', feature: 'test', startedAt: 1000, completedAt: 2000, stateFile: null, stateVersion: 1 };
-const interruptedDefaults = { id: 'sess-1', feature: 'test', startedAt: 1000, completedAt: null, stateFile: null, stateVersion: 1 };
+const completeDefaults = {
+  id: 'sess-1',
+  feature: 'test',
+  startedAt: 1000,
+  completedAt: 2000,
+  stateFile: null,
+  stateVersion: 1,
+};
+const interruptedDefaults = {
+  id: 'sess-1',
+  feature: 'test',
+  startedAt: 1000,
+  completedAt: null,
+  stateFile: null,
+  stateVersion: 1,
+};
 
 function makeCompleteSession(overrides: { id?: string; summary?: Summary } = {}) {
   return makeSession({

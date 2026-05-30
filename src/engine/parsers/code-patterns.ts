@@ -92,10 +92,7 @@ export function extractFencedBlocks(text: string): string[] {
 }
 
 export function stripMarkdownFences(text: string): string {
-  return text
-    .replace(FENCE_OPEN_LINE_RE, '')
-    .replace(FENCE_CLOSE_LINE_RE, '')
-    .trim();
+  return text.replace(FENCE_OPEN_LINE_RE, '').replace(FENCE_CLOSE_LINE_RE, '').trim();
 }
 
 export function hasCodePrefix(line: string): boolean {

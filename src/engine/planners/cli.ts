@@ -13,10 +13,7 @@ import { assertPlannerKind } from '../config-assertions.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { escapeRegExp } from '../../utils/regexp.js';
 
 function isInsideProject(projectDir: string, candidate: string): boolean {
   const root = resolve(projectDir);
@@ -32,16 +29,25 @@ function readArtifactPath(projectDir: string, filename: string, candidate: strin
 }
 
 function extractMarkdownLinkedArtifact(resultText: string, filename: string): string | null {
-  const linkedPath = resultText.match(new RegExp(`\\[${escapeRegExp(filename)}\\]\\(([^)]+)\\)`))?.[1];
+  const linkedPath = resultText.match(
+    new RegExp(`\\[${escapeRegExp(filename)}\\]\\(([^)]+)\\)`),
+  )?.[1];
   return linkedPath ?? null;
 }
 
 function mentionsWrittenArtifact(resultText: string, filename: string): boolean {
-  return new RegExp(`\\b(?:wrote|written|saved|created|updated)\\b[\\s\\S]{0,80}\\b${escapeRegExp(filename)}\\b`, 'i')
-    .test(resultText);
+  return new RegExp(
+    `\\b(?:wrote|written|saved|created|updated)\\b[\\s\\S]{0,80}\\b${escapeRegExp(filename)}\\b`,
+    'i',
+  ).test(resultText);
 }
 
-function readCliPhaseOutput(filename: string, resultText: string, projectDir: string, sessionId?: string): string {
+function readCliPhaseOutput(
+  filename: string,
+  resultText: string,
+  projectDir: string,
+  sessionId?: string,
+): string {
   const sessionArtifact = sessionId ? readSpecFile(projectDir, sessionId, filename) : null;
   if (sessionArtifact !== null) return sessionArtifact;
 
@@ -97,7 +103,11 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       notFoundMessage: tool.notFoundMessage,
       parseLine: planner.parseLine,
       onText: callbacks.onOutput,
-      onStderr: planner.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
+      onStderr: planner.postProcess
+        ? (chunk) => {
+            stderrOutput += chunk;
+          }
+        : undefined,
       signal,
       ...(supportsSessionResume && {
         onSessionId: (id: string) => {
@@ -126,13 +136,17 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     return runWithResumeFallback(
       session,
       (resumeId) => runOnce(prompt, projectDir, callbacks, mode, resumeId ?? null, signal),
-      () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
+      () => {
+        if (priorId) callbacks.onSessionExpired?.(priorId);
+      },
     );
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks, signal }) => invoke(prompt, projectDir, callbacks, 'plan', signal),
-    invokeEscalate: ({ prompt, projectDir, callbacks, signal }) => invoke(prompt, projectDir, callbacks, 'escalate', signal),
+    invokePlan: ({ prompt, projectDir, callbacks, signal }) =>
+      invoke(prompt, projectDir, callbacks, 'plan', signal),
+    invokeEscalate: ({ prompt, projectDir, callbacks, signal }) =>
+      invoke(prompt, projectDir, callbacks, 'escalate', signal),
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 

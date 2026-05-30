@@ -1,5 +1,10 @@
 import { createTestGitRepo } from './git.js';
-import { makeCallbacks, makeBusRecorder, makeImplementer, makePlanner } from './orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeBusRecorder,
+  makeImplementer,
+  makePlanner,
+} from './orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 import { defaultContext, makeConfig } from './factories/config.js';
 import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from './orchestrator-context.js';
@@ -14,7 +19,10 @@ export function cleanupTaskProjects(): void {
   taskProjectDirs.length = 0;
 }
 
-export function setupTaskProject(files: Record<string, string> = {}): { projectDir: string; sessionId: string } {
+export function setupTaskProject(files: Record<string, string> = {}): {
+  projectDir: string;
+  sessionId: string;
+} {
   const projectDir = createTempDir('task-step-test');
   taskProjectDirs.push(projectDir);
   createTestGitRepo(projectDir, files);
@@ -44,5 +52,11 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     sinks: TEST_WORKFLOW_SINKS,
     validator: createValidator(),
   };
-  return { ...base, ...overrides, projectDir: proj.projectDir, sessionId: proj.sessionId, callbacks };
+  return {
+    ...base,
+    ...overrides,
+    projectDir: proj.projectDir,
+    sessionId: proj.sessionId,
+    callbacks,
+  };
 }

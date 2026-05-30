@@ -5,12 +5,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import {
-  createWorktree,
-  listWorktrees,
-  removeWorktree,
-  detectWorktree,
-} from './worktree.js';
+import { createWorktree, listWorktrees, removeWorktree, detectWorktree } from './worktree.js';
 import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR } from '../core/paths.js';
 
 let repoDir: string;
@@ -48,17 +43,17 @@ describe('createWorktree', () => {
 
   it('throws when the branch diptych/<slug> already exists', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-c', git });
-    await expect(
-      createWorktree({ projectDir: repoDir, slug: 'feat-c', git }),
-    ).rejects.toThrow('Branch diptych/feat-c already exists');
+    await expect(createWorktree({ projectDir: repoDir, slug: 'feat-c', git })).rejects.toThrow(
+      'Branch diptych/feat-c already exists',
+    );
   });
 
   it('refuses to create a worktree when the source working tree is dirty', async () => {
     await writeFile(join(repoDir, 'dirty.txt'), 'uncommitted');
 
-    await expect(
-      createWorktree({ projectDir: repoDir, slug: 'feat-dirty', git }),
-    ).rejects.toThrow('Source working tree is dirty (1 uncommitted file(s))');
+    await expect(createWorktree({ projectDir: repoDir, slug: 'feat-dirty', git })).rejects.toThrow(
+      'Source working tree is dirty (1 uncommitted file(s))',
+    );
 
     expect(existsSync(join(repoDir, TREES_DIR, 'feat-dirty'))).toBe(false);
   });
@@ -95,9 +90,7 @@ describe('createWorktree', () => {
     ['containing parentheses', 'feat(x)'],
     ['exceeding length limit', 'a'.repeat(65)],
   ])('rejects an invalid worktree name (%s)', async (_label, slug) => {
-    await expect(
-      createWorktree({ projectDir: repoDir, slug, git }),
-    ).rejects.toThrow();
+    await expect(createWorktree({ projectDir: repoDir, slug, git })).rejects.toThrow();
     // No branch should ever be created for an invalid name. (We skip the
     // .trees/<slug> existence check for path-traversal slugs like "..",
     // which trivially resolve to existing directories.)
@@ -113,9 +106,7 @@ describe('createWorktree', () => {
     '_internal',
     'a',
   ])('accepts a valid worktree name "%s"', async (slug) => {
-    await expect(
-      createWorktree({ projectDir: repoDir, slug, git }),
-    ).resolves.toBeDefined();
+    await expect(createWorktree({ projectDir: repoDir, slug, git })).resolves.toBeDefined();
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(true);
   });
 });
@@ -194,9 +185,9 @@ describe('removeWorktree', () => {
   });
 
   it('throws for a non-existent worktree', async () => {
-    await expect(
-      removeWorktree({ projectDir: repoDir, slug: 'nonexistent', git }),
-    ).rejects.toThrow('Worktree ".trees/nonexistent" does not exist.');
+    await expect(removeWorktree({ projectDir: repoDir, slug: 'nonexistent', git })).rejects.toThrow(
+      'Worktree ".trees/nonexistent" does not exist.',
+    );
   });
 
   it('refuses when a live session exists (without force)', async () => {
@@ -209,9 +200,9 @@ describe('removeWorktree', () => {
     await writeFile(join(diptychDir, ACTIVE_FILE), sessionId + '\n');
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
 
-    await expect(
-      removeWorktree({ projectDir: repoDir, slug: 'feat-i', git }),
-    ).rejects.toThrow(`Worktree ".trees/feat-i" has a live session ${sessionId}`);
+    await expect(removeWorktree({ projectDir: repoDir, slug: 'feat-i', git })).rejects.toThrow(
+      `Worktree ".trees/feat-i" has a live session ${sessionId}`,
+    );
   });
 
   it('refuses when uncommitted changes exist (without force)', async () => {
@@ -219,9 +210,9 @@ describe('removeWorktree', () => {
     const wtPath = join(repoDir, TREES_DIR, 'feat-j');
     await writeFile(join(wtPath, 'dirty.txt'), 'uncommitted change');
 
-    await expect(
-      removeWorktree({ projectDir: repoDir, slug: 'feat-j', git }),
-    ).rejects.toThrow('Worktree ".trees/feat-j" has uncommitted changes');
+    await expect(removeWorktree({ projectDir: repoDir, slug: 'feat-j', git })).rejects.toThrow(
+      'Worktree ".trees/feat-j" has uncommitted changes',
+    );
   });
 
   it('proceeds with force=true and logs both bypassed guards to stderr', async () => {
