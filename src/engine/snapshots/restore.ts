@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
-import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
+import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
 import { error } from '../../utils/error.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../lib/path-confinement.js';
+import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { acquireSnapshotLock } from './lock.js';
-import { decodeSnapshotPath } from './path-codec.js';
 import { hashFile } from './files.js';
 import { listSnapshotIds, readManifest } from './manifest.js';
 
@@ -101,54 +101,31 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
     const snapshotEntryByPath = new Map(manifest.fileEntries.map((e) => [e.path, e]));
     const baselineEntryByPath = new Map(baselineManifest.fileEntries.map((e) => [e.path, e]));
 
-    const VALID_ENCODED_NAME = /^[0-9a-f]+$/;
-
     for (const path of Object.keys(manifest.fileHashes)) {
       assertPathConfined(path, projectDir);
 
       const absPath = join(projectDir, path);
 
-      let sourceFilePath: string;
-      let expectedBlobHash: string;
+      // Validate and resolve the backing blob (hex `encodedName`, decodes to
+      // `path`, hash matches the manifest) before any read. A delta entry takes
+      // precedence; otherwise fall back to the baseline blob for this path.
       const snapshotEntry = snapshotEntryByPath.get(path);
-      if (snapshotEntry) {
-        if (!VALID_ENCODED_NAME.test(snapshotEntry.encodedName)) {
-          missingSnapshotFiles.push(path);
-          continue;
-        }
-        if (decodeSnapshotPath(snapshotEntry.encodedName) !== path) {
-          missingSnapshotFiles.push(path);
-          continue;
-        }
-        sourceFilePath = join(
-          snapshotFilesDir(projectDir, sessionId, manifest.id),
-          snapshotEntry.encodedName,
-        );
-        expectedBlobHash = snapshotEntry.hash;
-      } else {
-        const baselineEntry = baselineEntryByPath.get(path);
-        if (!baselineEntry) {
-          missingSnapshotFiles.push(path);
-          continue;
-        }
-        sourceFilePath = join(
-          snapshotFilesDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID),
-          baselineEntry.encodedName,
-        );
-        expectedBlobHash = baselineEntry.hash;
-      }
-
-      const sourceHash = await hashFile(sourceFilePath);
-      if (sourceHash === null) {
-        missingSnapshotFiles.push(path);
-        continue;
-      }
-
-      // Refuse to write a blob whose stored bytes do not match the manifest
-      // hash recorded when the snapshot was captured. A mismatch means the
-      // backing blob was corrupted or replaced after capture, so writing it
-      // would silently install wrong content and call it a restore.
-      if (sourceHash !== expectedBlobHash) {
+      const sourceFilePath = snapshotEntry
+        ? await resolveValidatedBlobPath({
+            projectDir,
+            sessionId,
+            snapshotId: manifest.id,
+            path,
+            entry: snapshotEntry,
+          })
+        : await resolveValidatedBlobPath({
+            projectDir,
+            sessionId,
+            snapshotId: SNAPSHOT_BASELINE_ID,
+            path,
+            entry: baselineEntryByPath.get(path),
+          });
+      if (sourceFilePath === null) {
         missingSnapshotFiles.push(path);
         continue;
       }
@@ -159,11 +136,13 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
       if (currentHash === snapshotHash || currentHash === null) {
         const contents = await readFile(sourceFilePath);
         await mkdir(dirname(absPath), { recursive: true });
+        assertWritablePathConfined(path, projectDir);
         await writeFile(absPath, contents);
         restoredPaths.push(path);
       } else if (force) {
         const contents = await readFile(sourceFilePath);
         await mkdir(dirname(absPath), { recursive: true });
+        assertWritablePathConfined(path, projectDir);
         await writeFile(absPath, contents);
         forcedPaths.push(path);
       } else {

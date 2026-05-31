@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, rmdir, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { encodeSnapshotPath } from './path-codec.js';
 import { snapshotManifestPath } from '../../core/paths.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { createSnapshot } from './create.js';
@@ -205,6 +206,106 @@ describe('rejectRunSnapshot', () => {
       kind: 'path-confined-escape',
     });
     expect(existsSync(escapeTarget)).toBe(false);
+  });
+
+  it('does not delete an outside file when a recorded path parent is replaced by a symlink', async () => {
+    // Baseline has no file under sub/. The run creates sub/created.ts, so reject
+    // would normally delete it. Replacing sub/ with a symlink to an outside dir
+    // must make reject fail closed instead of unlinking the outside file.
+    await writeFile(join(tmp, 'anchor.ts'), 'anchor');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    await mkdir(join(tmp, 'sub'), { recursive: true });
+    await writeFile(join(tmp, 'sub', 'created.ts'), 'created by diptych');
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
+    await writeFile(join(outside, 'created.ts'), 'created by diptych');
+    try {
+      await rm(join(tmp, 'sub', 'created.ts'));
+      await rmdir(join(tmp, 'sub'));
+      await symlink(outside, join(tmp, 'sub'));
+
+      await expect(rejectRunSnapshot(tmp, 'sess-01')).rejects.toMatchObject({
+        kind: 'path-confined-escape',
+      });
+      await expect(readFile(join(outside, 'created.ts'), 'utf-8')).resolves.toBe(
+        'created by diptych',
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('does not restore through a symlinked parent that escapes the project root', async () => {
+    // Baseline records sub/feature.ts; the run deletes it. Reject would restore
+    // the baseline blob into <root>/sub/feature.ts. Replacing sub/ with a symlink
+    // to an outside dir must make the restore write fail closed.
+    await mkdir(join(tmp, 'sub'), { recursive: true });
+    await writeFile(join(tmp, 'sub', 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    await rm(join(tmp, 'sub', 'feature.ts'));
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    const outside = await mkdtemp(join(tmpdir(), 'diptych-restore-outside-'));
+    try {
+      await rmdir(join(tmp, 'sub'));
+      await symlink(outside, join(tmp, 'sub'));
+
+      await expect(rejectRunSnapshot(tmp, 'sess-01')).rejects.toMatchObject({
+        kind: 'path-confined-escape',
+      });
+      expect(existsSync(join(outside, 'feature.ts'))).toBe(false);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a tampered baseline manifest whose encodedName points outside snapshot storage', async () => {
+    // Baseline records feature.ts; the run deletes it, so reject restores it from
+    // the baseline blob. A tampered baseline entry whose encodedName decodes to an
+    // outside path must be rejected by the validated blob resolver: the live file
+    // is reported missing instead of being restored from arbitrary content.
+    await writeFile(join(tmp, 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    await rm(join(tmp, 'feature.ts'));
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    const outsideBlob = resolve(tmp, '..', 'evil-blob');
+    await writeFile(outsideBlob, 'evil');
+
+    const baselineManifestFile = snapshotManifestPath(tmp, 'sess-01', 'baseline');
+    const baselineRaw = JSON.parse(await readFile(baselineManifestFile, 'utf-8'));
+    const traversalEncoded = encodeSnapshotPath(`../../../../../../..${outsideBlob}`);
+    baselineRaw.fileEntries = baselineRaw.fileEntries.map(
+      (e: { path: string; encodedName: string; hash: string }) =>
+        e.path === 'feature.ts' ? { ...e, encodedName: traversalEncoded } : e,
+    );
+    await writeFile(baselineManifestFile, JSON.stringify(baselineRaw, null, 2));
+
+    const result = await rejectRunSnapshot(tmp, 'sess-01');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.restoredPaths).toEqual([]);
+      expect(result.missingSnapshotFiles).toContain('feature.ts');
+    }
   });
 
   it('refuses to reject after the run has been accepted', async () => {

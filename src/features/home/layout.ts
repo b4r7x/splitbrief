@@ -1,4 +1,4 @@
-import { getResponsivePanelWidth } from '../workflow/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { getLogoTier, getLogoHeight, type LogoTier } from './logo.js';
 
 interface HomeLayoutInput {

@@ -13,7 +13,7 @@ import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { getCurrentCommitSha } from '../../lib/git.js';
 import { error, matches } from '../../utils/error.js';
 
@@ -187,6 +187,9 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
       ? file.content.replace('<placeholder>', briefHash)
       : file.content;
 
+    // Realpath-aware confinement: a renderer-supplied path whose parent resolves
+    // through a symlink must not let the write escape the output directory.
+    assertWritablePathConfined(file.path, outDir);
     await writeFile(filePath, content, { mode: SECURE_FILE_MODE });
     writtenFiles.push(relative(outDir, filePath));
   }

@@ -70,8 +70,9 @@ const gates: Gate[] = [
   },
   {
     id: '9',
-    description: 'No cross-feature imports',
-    command: '{ rg "from \'\\.\\./(\\.\\./)features/" src/features/ || true; } | wc -l',
+    description:
+      'No cross-feature or component->feature imports (resolver-based: components->features, features/<a>-><b>)',
+    command: 'tsx scripts/import-boundaries.ts src',
     expected: 0,
   },
   {

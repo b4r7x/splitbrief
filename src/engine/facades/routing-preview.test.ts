@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { RoutingDecision } from '../orchestrator/context-routing/types.js';
-import type { PlanTaskReviewMetadata } from '../../core/schemas/plan-review.js';
+import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { buildWorkerPacketPreview } from './routing-preview.js';
+import { buildWorkerPacketPreview, refreshTaskForRoutingPreview } from './routing-preview.js';
 
 describe('buildWorkerPacketPreview', () => {
   it('returns null when no task is selected', () => {
@@ -270,5 +273,83 @@ describe('buildWorkerPacketPreview', () => {
     expect(preview?.estimatedTokens).toBeGreaterThan(0);
     expect(preview?.untruncatedEstimatedTokens).toBeGreaterThan(0);
     expect(preview?.notices.join(' ')).toContain('display-truncated');
+  });
+});
+
+describe('refreshTaskForRoutingPreview path confinement', () => {
+  let projectDir: string;
+  let outsideDir: string;
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'routing-preview-project-'));
+    outsideDir = mkdtempSync(join(tmpdir(), 'routing-preview-outside-'));
+  });
+
+  afterEach(() => {
+    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('reads current code for a confined modify target', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const ok = true;');
+    const task = makeTask({ action: 'modify', file: 'src/app.ts' });
+
+    const result = await refreshTaskForRoutingPreview(task, projectDir);
+
+    expect(result.estimateStatus).toBe('refreshed-current-code');
+    expect(result.task.currentCode).toBe('export const ok = true;');
+  });
+
+  it('rejects ../ traversal and drops stale current code', async () => {
+    writeFileSync(join(outsideDir, 'secret.txt'), 'SECRET OUTSIDE CONTENT');
+    const task = makeTask({
+      action: 'modify',
+      file: join('..', 'routing-preview-outside-escape', 'secret.txt'),
+      currentCode: 'stale',
+    });
+
+    const result = await refreshTaskForRoutingPreview(task, projectDir);
+
+    expect(result.estimateStatus).toBe('current-code-unavailable');
+    expect(result.task.currentCode).toBeUndefined();
+  });
+
+  it('rejects absolute paths and drops stale current code', async () => {
+    writeFileSync(join(outsideDir, 'secret.txt'), 'SECRET OUTSIDE CONTENT');
+    const task = makeTask({
+      action: 'modify',
+      file: join(outsideDir, 'secret.txt'),
+      currentCode: 'stale',
+    });
+
+    const result = await refreshTaskForRoutingPreview(task, projectDir);
+
+    expect(result.estimateStatus).toBe('current-code-unavailable');
+    expect(result.task.currentCode).toBeUndefined();
+  });
+
+  it('rejects a target whose parent directory is a symlink outside the project', async () => {
+    writeFileSync(join(outsideDir, 'secret.txt'), 'SECRET OUTSIDE CONTENT');
+    symlinkSync(outsideDir, join(projectDir, 'linked'));
+    const task = makeTask({
+      action: 'modify',
+      file: 'linked/secret.txt',
+      currentCode: 'stale',
+    });
+
+    const result = await refreshTaskForRoutingPreview(task, projectDir);
+
+    expect(result.estimateStatus).toBe('current-code-unavailable');
+    expect(result.task.currentCode).toBeUndefined();
+  });
+
+  it('reports missing-current-code for a confined but nonexistent file', async () => {
+    const task = makeTask({ action: 'modify', file: 'src/missing.ts', currentCode: 'stale' });
+
+    const result = await refreshTaskForRoutingPreview(task, projectDir);
+
+    expect(result.estimateStatus).toBe('missing-current-code');
+    expect(result.task.currentCode).toBeUndefined();
   });
 });

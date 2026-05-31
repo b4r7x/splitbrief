@@ -15,6 +15,7 @@ import {
   checkConfigPermissions,
   writeSecureFile,
   writeSecureFileAsync,
+  writeConfinedSecureFileAsync,
   readValidatedJson,
   readJsonl,
   ensureSecureDir,
@@ -246,6 +247,44 @@ describe('writeSecureFileAsync', () => {
       /refusing to write through symlink/,
     );
     expect(readFileSync(target, 'utf-8')).toBe('original');
+  });
+});
+
+describe('writeConfinedSecureFileAsync', () => {
+  it('writes content under the root with 0o600 permissions', async () => {
+    const dir = makeTmp();
+    await writeConfinedSecureFileAsync(dir, join('meta', 'cache.json'), '{"ok":true}');
+    expect(readFileSync(join(dir, 'meta', 'cache.json'), 'utf-8')).toBe('{"ok":true}');
+    expect(statSync(join(dir, 'meta', 'cache.json')).mode & 0o777).toBe(0o600);
+  });
+
+  it('rejects an absolute relative path', async () => {
+    const dir = makeTmp();
+    await expect(writeConfinedSecureFileAsync(dir, '/etc/passwd', 'x')).rejects.toMatchObject({
+      kind: 'path-confined-absolute',
+    });
+  });
+
+  it('rejects a traversal relative path', async () => {
+    const dir = makeTmp();
+    await expect(
+      writeConfinedSecureFileAsync(dir, join('..', 'escape.json'), 'x'),
+    ).rejects.toMatchObject({ kind: 'path-confined-escape' });
+  });
+
+  it('refuses to write when a parent directory is a symlink pointing outside the root', async () => {
+    const dir = makeTmp();
+    const outside = join(dir, 'outside');
+    mkdirSync(outside);
+    const root = join(dir, 'root');
+    mkdirSync(root);
+    // root/meta -> ../outside (parent of the target resolves outside the root)
+    symlinkSync(outside, join(root, 'meta'));
+
+    await expect(
+      writeConfinedSecureFileAsync(root, join('meta', 'cache.json'), 'SECRET'),
+    ).rejects.toMatchObject({ kind: 'path-confined-escape' });
+    expect(existsSync(join(outside, 'cache.json'))).toBe(false);
   });
 });
 

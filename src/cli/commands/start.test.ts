@@ -17,6 +17,7 @@ import type { StartDeps } from './start.js';
 import { CONFIG_FILE, DIPTYCH_DIR, STATE_FILE, worktreePath } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
+import { parseIpcServerArgs } from '../../engine/ipc/server-args.js';
 
 import { routerStore } from '../../stores/navigation/router.js';
 
@@ -326,6 +327,20 @@ describe('start command — --worktree flag', () => {
         plannerEffort: 'high',
       },
     });
+  });
+
+  it('normalizes the legacy --mode full alias through nested detached overrides', async () => {
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, '--detach', '--mode', 'full', 'implement X']);
+
+    const artifact = readOnlySessionArtifact(tmp, 'server-args.json');
+    const parsed = parseIpcServerArgs(artifact);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.mode).toBe('speckit');
+    expect(parsed?.overrides.mode).toBe('speckit');
   });
 
   it('rejects --detach without a feature argument before creating any worktree', async () => {

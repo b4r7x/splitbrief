@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -231,6 +233,35 @@ describe('writeHandoffPack — renderer path confinement', () => {
         allowCustomRenderer: true,
       }),
     ).rejects.toThrow(/unsafe path/);
+  });
+
+  it('rejects custom renderer output paths whose parent resolves through a symlink outside outDir', async () => {
+    const sessionId = 'symlink-parent-renderer-session';
+    writeSessionState(tmp, sessionId);
+    // The renderer emits evil/escape.md. We pre-seed outDir with evil -> outside,
+    // so writing the (lexically confined) path would escape via the symlink.
+    writeCustomRenderer(tmp, 'evil/escape.md');
+
+    const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'symlink-parent');
+    mkdirSync(outDir, { recursive: true });
+    const outside = mkdtempSync(join(tmpdir(), 'diptych-handoff-outside-'));
+    try {
+      symlinkSync(outside, join(outDir, 'evil'));
+
+      await expect(
+        writeHandoffPack({
+          projectDir: tmp,
+          sessionId,
+          target: 'malicious',
+          outDir,
+          mode: 'append',
+          allowCustomRenderer: true,
+        }),
+      ).rejects.toThrow(/unsafe path/);
+      expect(existsSync(join(outside, 'escape.md'))).toBe(false);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it('rejects path-like custom renderer targets before loading a renderer', async () => {

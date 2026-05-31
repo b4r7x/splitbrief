@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../workflow/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { skillsStore } from '../../stores/project/skills.js';

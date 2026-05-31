@@ -1,15 +1,20 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import type {
   RunSnapshotKind,
   RunSnapshotLedger,
   SnapshotManifest,
 } from '../../core/schemas/snapshot.js';
 import { RunSnapshotLedgerSchema } from '../../core/schemas/snapshot.js';
-import { SNAPSHOT_BASELINE_ID, snapshotFilesDir, snapshotsDir } from '../../core/paths.js';
-import { writeSecureFileAsync } from '../../lib/fs.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { SNAPSHOT_BASELINE_ID, snapshotsDir } from '../../core/paths.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import {
+  assertExistingPathConfined,
+  assertPathConfined,
+  assertWritablePathConfined,
+} from '../../lib/path-confinement.js';
+import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { createSnapshot } from './create.js';
 import { hashFile } from './files.js';
 import { readManifest } from './manifest.js';
@@ -56,7 +61,11 @@ async function writeRunLedger(
   ledger: RunSnapshotLedger,
 ): Promise<void> {
   const target = runLedgerPath(projectDir, sessionId);
-  await writeSecureFileAsync(target, `${JSON.stringify(ledger, null, 2)}\n`);
+  await writeConfinedSecureFileAsync(
+    projectDir,
+    relative(projectDir, target),
+    `${JSON.stringify(ledger, null, 2)}\n`,
+  );
 }
 
 async function createRunLedger(opts: {
@@ -155,18 +164,17 @@ async function restoreBaselineFile(opts: {
 }): Promise<boolean> {
   if (!opts.baselineEntry) return false;
 
-  assertPathConfined(opts.path, opts.projectDir);
-
-  const sourcePath = join(
-    snapshotFilesDir(opts.projectDir, opts.sessionId, SNAPSHOT_BASELINE_ID),
-    opts.baselineEntry.encodedName,
-  );
-
-  // Verify the stored baseline blob matches the manifest hash before
-  // overwriting the live file. A corrupted blob must surface as missing
-  // rather than silently corrupting the user's working tree.
-  const blobHash = await hashFile(sourcePath);
-  if (blobHash === null || blobHash !== opts.baselineEntry.hash) return false;
+  // Validate the baseline blob (hex `encodedName`, decodes back to `path`, hash
+  // matches the manifest) before reading it, so a tampered baseline manifest
+  // cannot restore arbitrary outside content into the working tree.
+  const sourcePath = await resolveValidatedBlobPath({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    snapshotId: SNAPSHOT_BASELINE_ID,
+    path: opts.path,
+    entry: opts.baselineEntry,
+  });
+  if (sourcePath === null) return false;
 
   let contents: Buffer;
   try {
@@ -177,8 +185,23 @@ async function restoreBaselineFile(opts: {
 
   const targetPath = join(opts.projectDir, opts.path);
   await mkdir(dirname(targetPath), { recursive: true });
+  // Realpath-aware write confinement: a parent directory replaced with a symlink
+  // after capture must not redirect the restore outside the project.
+  assertWritablePathConfined(opts.path, opts.projectDir);
   await writeFile(targetPath, contents);
   return true;
+}
+
+async function hashProjectFileIfConfined(projectDir: string, path: string): Promise<string | null> {
+  assertPathConfined(path, projectDir);
+  const filePath = join(projectDir, path);
+  try {
+    await stat(filePath);
+  } catch {
+    return null;
+  }
+  assertExistingPathConfined(path, projectDir);
+  return hashFile(filePath);
 }
 
 export async function acceptRunSnapshot(
@@ -252,7 +275,7 @@ export async function rejectRunSnapshot(
     const latestHash = latest.fileHashes[path];
     if (baselineHash === latestHash) continue;
 
-    const currentHash = await hashFile(join(projectDir, path));
+    const currentHash = await hashProjectFileIfConfined(projectDir, path);
 
     if (baselineHash === undefined) {
       if (currentHash === null) continue;
@@ -260,6 +283,10 @@ export async function rejectRunSnapshot(
         conflictedPaths.push(path);
         continue;
       }
+      // Realpath-aware confinement on the existing target: a parent directory
+      // swapped for a symlink after capture must not let reject delete an
+      // outside file that lexical confinement would have allowed.
+      assertExistingPathConfined(path, projectDir);
       await unlink(join(projectDir, path));
       deletedPaths.push(path);
       continue;

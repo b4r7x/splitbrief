@@ -2,10 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import {
-  getClampedTerminalWidth,
-  getResponsivePanelWidth,
-} from '../../features/workflow/layout/terminal-width.js';
+import { getClampedTerminalWidth, getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
 
 interface OverlayPanelProps {

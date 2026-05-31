@@ -1,4 +1,4 @@
-import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from './plan-review.js';
+import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from './types.js';
 
 export const STALE_ESTIMATE_STATUSES = new Set<PlanReviewEstimateStatus | undefined>([
   'missing-current-code',
@@ -8,8 +8,7 @@ export const STALE_ESTIMATE_STATUSES = new Set<PlanReviewEstimateStatus | undefi
 export function hasNoCapableWorker(metadata: PlanTaskReviewMetadata): boolean {
   if (metadata.workerProfile !== undefined) return false;
   if (metadata.contextFit === 'overflow') return true;
-  const reason = metadata.routingReason?.toLowerCase() ?? '';
-  return reason.includes('no capable') || reason.includes('overflows');
+  return metadata.routingBlockKind === 'no-capable-worker';
 }
 
 export function hasStaleOrConflict(metadata: PlanTaskReviewMetadata | undefined): boolean {
@@ -21,6 +20,9 @@ export function hasStaleOrConflict(metadata: PlanTaskReviewMetadata | undefined)
 }
 
 export function hasTruncatedContextReason(metadata: PlanTaskReviewMetadata | undefined): boolean {
-  const reason = metadata?.routingReason?.toLowerCase() ?? '';
-  return reason.includes('function-level context') || reason.includes('current code truncated');
+  return (
+    metadata?.currentCodeTruncated === true ||
+    metadata?.currentCodeContextMode === 'function-level' ||
+    metadata?.currentCodeContextMode === 'truncated'
+  );
 }

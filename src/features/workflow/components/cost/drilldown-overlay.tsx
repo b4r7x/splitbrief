@@ -15,7 +15,7 @@ import {
 } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
 import { PhaseSchema, type Phase } from '../../../../core/schemas/enums.js';
-import { renderMeterBar } from '../../../summary/components/meter-bar.js';
+import { renderMeterBar } from '../../../../utils/meter-bar.js';
 
 type PhaseRowData = PhaseTokens & { phase: Phase };
 

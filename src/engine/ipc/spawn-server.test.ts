@@ -170,4 +170,19 @@ describe('server args launch contract', () => {
 
     expect(parsed?.mode).toBe('speckit');
   });
+
+  it('normalizes the legacy full mode inside nested overrides to speckit', () => {
+    const parsed = parseIpcServerArgs({
+      sessionId: 'test-session',
+      projectDir: '/repo',
+      feature: 'feature',
+      mode: 'full',
+      configPath: '/repo/.diptych/config.yaml',
+      overrides: { mode: 'full' },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.mode).toBe('speckit');
+    expect(parsed?.overrides.mode).toBe('speckit');
+  });
 });

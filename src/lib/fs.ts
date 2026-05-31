@@ -11,8 +11,9 @@ import {
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { readFile, lstat, writeFile, rename, chmod } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { error, matches } from '../utils/error.js';
+import { assertWritablePathConfined } from './path-confinement.js';
 import { isENOENT } from './process/errors.js';
 import { warnError } from './warn.js';
 
@@ -77,6 +78,42 @@ export function writeSecureFile(filePath: string, content: string): void {
 
 export async function writeSecureFileAsync(filePath: string, content: string): Promise<void> {
   ensureSecureDir(dirname(filePath));
+
+  try {
+    const st = await lstat(filePath);
+    if (st.isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err: unknown) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+
+  const dir = dirname(filePath);
+  const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
+  const tmpPath = join(dir, tmpName);
+
+  await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
+  await rename(tmpPath, filePath);
+  await chmod(filePath, SECURE_FILE_MODE);
+}
+
+// Root-aware secure async write. Unlike `writeSecureFileAsync`, this resolves
+// the real path of the target's parent before the temp write AND the rename, so
+// a symlinked parent directory under `rootDir` cannot redirect the write outside
+// the project metadata tree. `relativePath` must stay confined inside `rootDir`.
+export async function writeConfinedSecureFileAsync(
+  rootDir: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  assertWritablePathConfined(relativePath, rootDir);
+
+  const filePath = resolve(rootDir, relativePath);
+  ensureSecureDir(dirname(filePath));
+
+  // Re-check after mkdir: creating the parent may have materialized a symlink
+  // target, and the existing target (if any) must not be a symlink we follow.
+  assertWritablePathConfined(relativePath, rootDir);
 
   try {
     const st = await lstat(filePath);

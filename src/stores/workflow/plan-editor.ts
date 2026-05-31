@@ -5,7 +5,7 @@ import type {
   PlanReviewContextFit,
   PlanReviewEstimateStatus,
   PlanTaskReviewMetadata,
-} from '../../core/schemas/plan-review.js';
+} from '../../core/plan-review/types.js';
 import { deepEqual } from '../../utils/deep-equal.js';
 
 export type {

@@ -10,7 +10,7 @@ import { displayValue, valueColor } from './presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth } from '../workflow/layout/terminal-width.js';
+import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
 import { ScrollIndicator } from '../../components/scroll-indicator.js';
 import { FilterInput } from '../../components/filter-input.js';

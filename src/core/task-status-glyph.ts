@@ -1,4 +1,4 @@
-import type { TaskStatus } from '../../core/schemas/enums.js';
+import type { TaskStatus } from './schemas/enums.js';
 
 export const STATUS_GLYPH: Record<TaskStatus, string> = {
   done: '✓',
