@@ -1,11 +1,13 @@
-import { mkdtemp, rm, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, rmdir, symlink, writeFile, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
+import { snapshotManifestPath } from '../../core/paths.js';
 import { createSnapshot } from './create.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from './diff.js';
+import { encodeSnapshotPath } from './path-codec.js';
 
 let tmp: string;
 
@@ -134,6 +136,68 @@ describe('computeSnapshotDiff', () => {
       computeSnapshotDiff({ projectDir: tmp, sessionId: 'sess-01', manifest: tampered }),
     ).rejects.toMatchObject({ kind: 'path-confined-escape' });
     expect(existsSync(escapeTarget)).toBe(false);
+  });
+
+  it('does not disclose an outside file when a recorded path parent is replaced by a symlink', async () => {
+    await mkdir(join(tmp, 'sub'), { recursive: true });
+    await writeFile(join(tmp, 'sub', 'file.ts'), 'in-repo');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
+
+    const outside = await mkdtemp(join(tmpdir(), 'diptych-diff-outside-'));
+    await writeFile(join(outside, 'file.ts'), 'SECRET OUTSIDE CONTENT');
+    try {
+      await rm(join(tmp, 'sub', 'file.ts'));
+      await rmdir(join(tmp, 'sub'));
+      await symlink(outside, join(tmp, 'sub'));
+
+      await expect(
+        computeSnapshotDiff({ projectDir: tmp, sessionId: 'sess-01', manifest: snap.manifest }),
+      ).rejects.toMatchObject({ kind: 'path-confined-escape' });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('does not read a tampered delta blob whose encodedName decodes outside snapshot storage', async () => {
+    await writeFile(join(tmp, 'foo.ts'), 'original');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    await writeFile(join(tmp, 'foo.ts'), 'changed by run');
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
+    // Live content now differs from the snapshot, so diff must read the snapshot
+    // blob — which the tampered encodedName points outside storage.
+    await writeFile(join(tmp, 'foo.ts'), 'live working tree edit');
+
+    const outsideBlob = resolve(tmp, '..', 'evil-diff-blob');
+    await writeFile(outsideBlob, 'EVIL SNAPSHOT CONTENT');
+
+    const manifestFile = snapshotManifestPath(tmp, 'sess-01', snap.manifest.id);
+    const raw = JSON.parse(await readFile(manifestFile, 'utf-8'));
+    const traversalEncoded = encodeSnapshotPath(`../../../../../../..${outsideBlob}`);
+    raw.fileEntries = raw.fileEntries.map((e: { path: string; encodedName: string }) =>
+      e.path === 'foo.ts' ? { ...e, encodedName: traversalEncoded } : e,
+    );
+    await writeFile(manifestFile, JSON.stringify(raw, null, 2));
+    const tampered = { ...snap.manifest, fileEntries: raw.fileEntries };
+
+    const result = await computeSnapshotDiff({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      manifest: tampered,
+    });
+    const fooDiff = result.files.find((f) => f.path === 'foo.ts');
+    expect(fooDiff?.status).toBe('modified');
+    expect(fooDiff?.diff ?? '').not.toContain('EVIL SNAPSHOT CONTENT');
   });
 });
 

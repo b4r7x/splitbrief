@@ -5,7 +5,7 @@ import { OverlayPanel } from './overlay-panel.js';
 import { MultilineInput } from '../input/multiline-input.js';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth } from '../../features/workflow/layout/terminal-width.js';
+import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 
 interface TextInputOverlayProps {

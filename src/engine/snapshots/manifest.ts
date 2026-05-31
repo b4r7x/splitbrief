@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { SnapshotManifestSchema } from '../../core/schemas/snapshot.js';
 import {
@@ -9,7 +9,7 @@ import {
   SNAPSHOT_BASELINE_ID,
   SNAPSHOT_MANIFEST_FILE,
 } from '../../core/paths.js';
-import { writeSecureFileAsync } from '../../lib/fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 
 export async function writeManifest(
@@ -18,7 +18,11 @@ export async function writeManifest(
   manifest: SnapshotManifest,
 ): Promise<void> {
   const target = snapshotManifestPath(projectDir, sessionId, manifest.id);
-  await writeSecureFileAsync(target, `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeConfinedSecureFileAsync(
+    projectDir,
+    relative(projectDir, target),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 export async function readManifest(

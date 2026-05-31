@@ -5,7 +5,7 @@ import { pluralize } from '../../../utils/format.js';
 import {
   STALE_ESTIMATE_STATUSES,
   hasStaleOrConflict,
-} from '../../../core/schemas/plan-review-predicates.js';
+} from '../../../core/plan-review/predicates.js';
 import type {
   PlanReviewRisk,
   PlanTaskReviewMetadata,

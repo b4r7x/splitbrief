@@ -42,6 +42,9 @@ export async function applyChangedFiles(opts: {
     taskStartSnapshot,
     dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
     preApprovedFiles: preApplyApprovedFiles,
+    signal: wctx.signal,
+    cleanup: staged ? () => staged.cleanup() : undefined,
+    catchChangedFilesError: true,
     handleConflict: opts.handleConflict,
     onRestoreConflict: (files) =>
       publishWarning(

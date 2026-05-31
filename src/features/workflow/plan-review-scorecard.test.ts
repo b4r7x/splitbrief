@@ -146,6 +146,7 @@ describe('buildPlanReviewScorecard', () => {
         readyMetadata(overflow.id, { contextFit: 'overflow', workerProfile: undefined }),
         readyMetadata(noCapable.id, {
           workerProfile: undefined,
+          routingBlockKind: 'no-capable-worker',
           routingReason: 'No capable implementer profile can fit this task prompt',
         }),
         readyMetadata(multiFile.id),
@@ -222,5 +223,70 @@ describe('buildPlanReviewScorecard', () => {
 
     expect(scorecard.splitOverflow.taskIds).toEqual([nonAtomic.id]);
     expect(scorecard.ready.count).toBe(0);
+  });
+
+  it('classifies a no-capable-worker block from typed fields regardless of routingReason wording', () => {
+    const task = makeTask({ id: 'T001', evidence: ['reviewed'] });
+
+    const withReason = buildPlanReviewScorecard(
+      [task],
+      quality(),
+      metadataMap([
+        readyMetadata(task.id, {
+          workerProfile: undefined,
+          routingBlockKind: 'no-capable-worker',
+          routingReason: 'No capable implementer profile can fit this task prompt',
+        }),
+      ]),
+    );
+
+    const withDifferentWording = buildPlanReviewScorecard(
+      [task],
+      quality(),
+      metadataMap([
+        readyMetadata(task.id, {
+          workerProfile: undefined,
+          routingBlockKind: 'no-capable-worker',
+          routingReason: 'Totally reworded human-facing explanation with no keywords',
+        }),
+      ]),
+    );
+
+    expect(withReason.splitOverflow.taskIds).toEqual([task.id]);
+    expect(withDifferentWording.splitOverflow.taskIds).toEqual([task.id]);
+    expect(withDifferentWording.routingPending.taskIds).toEqual(withReason.routingPending.taskIds);
+  });
+
+  it('classifies truncated current code from typed fields regardless of routingReason wording', () => {
+    const task = makeTask({ id: 'T001', action: 'modify', evidence: ['reviewed'] });
+
+    const withReason = buildPlanReviewScorecard(
+      [task],
+      quality(),
+      metadataMap([
+        readyMetadata(task.id, {
+          estimateStatus: 'refreshed-current-code',
+          currentCodeContextMode: 'function-level',
+          currentCodeTruncated: false,
+          routingReason: 'current code reduced to function-level context',
+        }),
+      ]),
+    );
+
+    const withDifferentWording = buildPlanReviewScorecard(
+      [task],
+      quality(),
+      metadataMap([
+        readyMetadata(task.id, {
+          estimateStatus: 'refreshed-current-code',
+          currentCodeContextMode: 'function-level',
+          currentCodeTruncated: false,
+          routingReason: 'Reworded explanation that mentions nothing recognizable',
+        }),
+      ]),
+    );
+
+    expect(withReason.riskyTight.taskIds).toEqual([task.id]);
+    expect(withDifferentWording.riskyTight.taskIds).toEqual([task.id]);
   });
 });

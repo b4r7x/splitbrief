@@ -1,5 +1,5 @@
-import type { ImplementerCostTier } from './implementer-config.js';
-import type { UserEditConflictKind } from './enums.js';
+import type { ImplementerCostTier } from '../schemas/implementer-config.js';
+import type { CurrentCodeContextMode, UserEditConflictKind } from '../schemas/enums.js';
 
 export type PlanReviewRisk = 'low' | 'medium' | 'high';
 export type PlanReviewContextFit = 'fits' | 'tight' | 'overflow';
@@ -8,6 +8,8 @@ export type PlanReviewEstimateStatus =
   | 'brief-current-code'
   | 'missing-current-code'
   | 'current-code-unavailable';
+
+export type PlanReviewRoutingBlockKind = 'no-capable-worker';
 
 export interface PlanReviewConflictMetadata {
   kind: UserEditConflictKind;
@@ -26,6 +28,9 @@ export interface PlanTaskReviewMetadata {
   contextLength?: number | undefined;
   estimateStatus?: PlanReviewEstimateStatus | undefined;
   routingReason?: string | undefined;
+  routingBlockKind?: PlanReviewRoutingBlockKind | undefined;
+  currentCodeContextMode?: CurrentCodeContextMode | undefined;
+  currentCodeTruncated?: boolean | undefined;
   validationStatus?: 'pending' | 'pass' | 'warn' | 'fail' | undefined;
   risk?: PlanReviewRisk | undefined;
   stale?: boolean | undefined;

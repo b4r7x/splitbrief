@@ -103,6 +103,21 @@ describe('parseStreamLine', () => {
   ] as const)('parses %s', (_name, line, expected) => {
     expect(parseStreamLine(line)).toEqual(expected);
   });
+
+  it('preserves result text and isResult when usage is malformed', () => {
+    const line = jsonLine({
+      type: 'result',
+      session_id: 'sess-bad-usage',
+      result: 'Final answer survives',
+      usage: { input_tokens: '10', output_tokens: 5 },
+    });
+
+    expect(parseStreamLine(line)).toEqual({
+      text: 'Final answer survives',
+      sessionId: 'sess-bad-usage',
+      isResult: true,
+    });
+  });
 });
 
 describe('getLineParser("stream-json")', () => {

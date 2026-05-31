@@ -31,7 +31,7 @@ export function makeWctx(
     config: makeNoValidationConfig(),
     callbacks: makeCallbacks().callbacks,
     bus: createEventBus(),
-    context: defaultContext,
+    context: { ...defaultContext, dir: overrides.projectDir },
     planner: makePlanner(),
     implementer: makeImplementer(),
     metadata: TEST_METADATA,

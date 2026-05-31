@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ToolUseInfo } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { TokenUsageLikeSchema, toTokenDelta } from './token-utils.js';
+import { toTokenDelta } from './token-utils.js';
 import { warnError } from '../../lib/warn.js';
 
 export interface StreamParseResult {
@@ -31,7 +31,7 @@ const ResultEvent = z.object({
   type: z.literal('result'),
   result: z.string().optional(),
   session_id: z.string().optional(),
-  usage: TokenUsageLikeSchema.optional(),
+  usage: z.unknown(),
 });
 
 const SessionEvent = z.object({

@@ -47,7 +47,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     bus: makeBusRecorder().bus,
     planner: makePlanner(),
     implementer: makeImplementer(),
-    context: defaultContext,
+    context: { ...defaultContext, dir: proj.projectDir },
     metadata: makeWorkflowMetadata('standard'),
     sinks: TEST_WORKFLOW_SINKS,
     validator: createValidator(),

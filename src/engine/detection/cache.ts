@@ -1,6 +1,7 @@
 import { readFile, unlink } from 'node:fs/promises';
+import { relative } from 'node:path';
 import { z } from 'zod';
-import { writeSecureFileAsync } from '../../lib/fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import type {
   DetectedModel,
   PlannerDetection,
@@ -122,7 +123,11 @@ export async function saveDetectionCache(
     implementers,
   };
   try {
-    await writeSecureFileAsync(path, JSON.stringify(cache));
+    await writeConfinedSecureFileAsync(
+      projectDir,
+      relative(projectDir, path),
+      JSON.stringify(cache),
+    );
   } catch {
     // Cache write failure is non-critical
   }

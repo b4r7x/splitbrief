@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: [
       'src/**/*.test.{ts,tsx}',
+      'scripts/**/*.test.{ts,tsx}',
       'testing/integration/**/*.test.{ts,tsx}',
       'testing/helpers/**/*.test.{ts,tsx}',
       'evals/eval.test.ts',

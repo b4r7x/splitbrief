@@ -29,7 +29,12 @@ export const CLIOverridesSchema = z.object({
   contextLength: z.number().optional(),
   autoApprove: z.boolean().optional(),
   approve: z.string().optional(),
-  mode: WorkflowModeSchema.optional(),
+  mode: z
+    .preprocess(
+      (m) => (typeof m === 'string' ? (normalizeLegacyMode(m) ?? m) : m),
+      WorkflowModeSchema,
+    )
+    .optional(),
   budget: z.number().optional(),
   plannerEffort: z.string().optional(),
   yolo: z.boolean().optional(),

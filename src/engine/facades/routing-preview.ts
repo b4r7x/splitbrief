@@ -13,11 +13,8 @@ import type {
   PlanReviewEstimateStatus,
   PlanReviewRisk,
   PlanTaskReviewMetadata,
-} from '../../core/schemas/plan-review.js';
-import {
-  hasNoCapableWorker,
-  hasStaleOrConflict,
-} from '../../core/schemas/plan-review-predicates.js';
+} from '../../core/plan-review/types.js';
+import { hasNoCapableWorker, hasStaleOrConflict } from '../../core/plan-review/predicates.js';
 import { routeTaskToImplementerProfile } from '../orchestrator/context-routing/route.js';
 import { currentCodeContextMode as inferCurrentCodeContextModeFromPrompt } from '../orchestrator/context-routing/headings.js';
 import type { RoutingDecision } from '../orchestrator/context-routing/types.js';
@@ -29,6 +26,7 @@ import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { pluralize } from '../../utils/format.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 
 export type { RoutingDecision };
@@ -383,6 +381,9 @@ export function buildRoutingPreviewMetadata(
         ...(decision.contextLength !== undefined && { contextLength: decision.contextLength }),
         ...(estimateStatus !== undefined && { estimateStatus }),
         routingReason,
+        ...(routeBlocked && { routingBlockKind: 'no-capable-worker' as const }),
+        currentCodeContextMode: decision.currentCodeContextMode,
+        currentCodeTruncated: decision.currentCodeTruncated,
         ...(routeBlocked ||
         estimateStatus === 'missing-current-code' ||
         estimateStatus === 'current-code-unavailable'
@@ -401,6 +402,7 @@ export async function refreshTaskForRoutingPreview(
   if (task.action !== 'modify') return { task };
 
   try {
+    assertWritablePathConfined(task.file, projectDir);
     const currentCode = await readFile(join(projectDir, task.file), 'utf-8');
     return { task: { ...task, currentCode }, estimateStatus: 'refreshed-current-code' };
   } catch (err) {

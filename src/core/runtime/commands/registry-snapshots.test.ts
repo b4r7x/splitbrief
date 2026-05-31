@@ -1,0 +1,230 @@
+import { describe, it, expect } from 'vitest';
+import { createRuntimeCommands } from './registry.js';
+import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+
+describe('/handoff command', () => {
+  it('appears in catalog with validScreens including workflow and summary', () => {
+    const commands = createRuntimeCommands(makeCtx());
+    const cmd = commands.find((c) => c.name === '/handoff');
+    expect(cmd).toBeDefined();
+    expect(cmd?.validScreens).toContain('workflow');
+    expect(cmd?.validScreens).toContain('summary');
+  });
+
+  it('calls setFeedbackError with usage hint when no args given', () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff', 'workflow', noop);
+    expect(error).toMatch(/usage/i);
+  });
+
+  it('calls setFeedbackError mentioning valid targets for unknown target', () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff unknown-target', 'workflow', noop);
+    expect(error).toMatch(/valid/i);
+    expect(error).toContain('spec-kit');
+  });
+
+  it('calls writeHandoff with spec-kit and no taskId', async () => {
+    const calls: Array<{ target: string; taskId: string | undefined }> = [];
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async (target, taskId) => {
+          calls.push({ target, taskId });
+          return { outputDir: '/fake' };
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
+  });
+
+  it('calls writeHandoff with claude-code and task id T003', async () => {
+    const calls: Array<{ target: string; taskId: string | undefined }> = [];
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async (target, taskId) => {
+          calls.push({ target, taskId });
+          return { outputDir: '/fake' };
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff claude-code T003', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
+  });
+
+  it('calls setFeedbackMessage containing output path on success', async () => {
+    let message: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async () => ({ outputDir: '/proj/.diptych/sessions/s1/handoffs/spec-kit' }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(message).toContain('/proj/.diptych/sessions/s1/handoffs/spec-kit');
+  });
+
+  it('calls setFeedbackError when writeHandoff rejects', async () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        writeHandoff: async () => {
+          throw new Error('No active session for handoff');
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(error).toContain('No active session for handoff');
+  });
+});
+
+describe('/export command', () => {
+  it('appears in catalog for workflow and summary screens', () => {
+    const commands = createRuntimeCommands(makeCtx());
+    const command = commands.find((c) => c.name === '/export');
+    expect(command).toBeDefined();
+    expect(command?.validScreens).toEqual(['workflow', 'summary']);
+  });
+
+  it('exports the session and reports the output path', async () => {
+    let message: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        exportSession: async () => ({
+          status: 'ok',
+          path: '/proj/.diptych/sessions/s1/report.html',
+        }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+
+    await executeRuntimeCommand(commands, '/export', 'workflow', noop);
+
+    expect(message).toContain('/proj/.diptych/sessions/s1/report.html');
+  });
+
+  it('surfaces export errors from the context', async () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        exportSession: async () => ({
+          status: 'error',
+          error: 'No summary.json found for session',
+        }),
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+
+    await executeRuntimeCommand(commands, '/export', 'summary', noop);
+
+    expect(error).toContain('No summary.json found for session');
+  });
+});
+
+describe('run snapshot runtime commands', () => {
+  it('accepts the current run and surfaces the snapshot id', async () => {
+    let message: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        acceptRunSnapshot: async () => ({ snapshotId: 'snap-1', isFirstSnapshot: false }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/accept-run', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(message).toContain('snap-1');
+  });
+
+  it('requires explicit confirmation before rejecting a run', () => {
+    let called = false;
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => {
+          called = true;
+          return { status: 'empty' };
+        },
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/reject-run', 'workflow', noop);
+    expect(called).toBe(false);
+    expect(error).toMatch(/confirm/i);
+  });
+
+  it('rejects the current run after confirmation and reports changed files', async () => {
+    let message: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => ({
+          status: 'rejected',
+          snapshotId: 'snap-2',
+          restoredPaths: ['src/a.ts'],
+          deletedPaths: ['src/b.ts'],
+          conflictedPaths: [],
+          missingSnapshotFiles: [],
+        }),
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(message).toContain('2 file(s)');
+    expect(message).toContain('snap-2');
+  });
+
+  it('surfaces conflicts as an error when rejecting a run', async () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRunSnapshot: async () => ({
+          status: 'rejected',
+          snapshotId: 'snap-3',
+          restoredPaths: [],
+          deletedPaths: [],
+          conflictedPaths: ['src/a.ts'],
+          missingSnapshotFiles: [],
+        }),
+        setFeedbackError: (m) => {
+          error = m;
+        },
+      }),
+    );
+    executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(error).toMatch(/conflict/i);
+  });
+});

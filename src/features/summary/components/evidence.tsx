@@ -4,7 +4,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { statusGlyph } from '../../workflow/status-glyph.js';
+import { statusGlyph } from '../../../core/task-status-glyph.js';
 
 interface SummaryEvidenceProps {
   summary: Summary;

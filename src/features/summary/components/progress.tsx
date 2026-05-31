@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { renderMeterBar } from './meter-bar.js';
+import { renderMeterBar } from '../../../utils/meter-bar.js';
 
 interface SummaryProgressProps {
   completed: number;

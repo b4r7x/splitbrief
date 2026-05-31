@@ -3,7 +3,7 @@ import { Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import type { Session } from '../../core/schemas/session.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../workflow/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';

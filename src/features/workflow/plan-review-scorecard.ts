@@ -6,7 +6,7 @@ import {
   hasNoCapableWorker,
   hasStaleOrConflict,
   hasTruncatedContextReason,
-} from '../../core/schemas/plan-review-predicates.js';
+} from '../../core/plan-review/predicates.js';
 
 export type PlanReviewScorecardBucket =
   | 'ready'

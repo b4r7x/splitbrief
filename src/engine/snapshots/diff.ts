@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -5,8 +6,9 @@ import ansis from 'ansis';
 import { readFileSafeAsync } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
-import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
+import { assertExistingPathConfined, assertPathConfined } from '../../lib/path-confinement.js';
+import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { collectTrackedFiles, hashFile } from './files.js';
 import { readManifest } from './manifest.js';
 
@@ -105,6 +107,23 @@ async function unifiedDiff(
   }
 }
 
+async function hashLiveConfined(
+  path: string,
+  projectDir: string,
+  currentFilePath: string,
+): Promise<string | null> {
+  let exists = false;
+  try {
+    await stat(currentFilePath);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  if (!exists) return null;
+  assertExistingPathConfined(path, projectDir);
+  return hashFile(currentFilePath);
+}
+
 export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDiffResult> {
   const { projectDir, sessionId, manifest } = opts;
 
@@ -128,7 +147,14 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
   for (const path of filteredPaths) {
     assertPathConfined(path, projectDir);
     const inSnapshot = manifest.fileHashes[path] !== undefined;
-    const currentHash = await hashFile(join(projectDir, path));
+    const currentFilePath = join(projectDir, path);
+
+    // The live current file may be absent (removed status). Only enforce
+    // realpath confinement when it exists, so a parent directory swapped for a
+    // symlink after capture cannot make the diff read or disclose an outside
+    // file. If it does not exist, report the missing status without reading.
+    const liveHash = await hashLiveConfined(path, projectDir, currentFilePath);
+    const currentHash = liveHash;
     const snapshotHash = manifest.fileHashes[path] ?? null;
 
     if (!inSnapshot && currentHash !== null) {
@@ -146,26 +172,30 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
       continue;
     }
 
-    let snapshotFilePath: string;
-    const deltaEntry = deltaEntryMap.get(path);
-    if (deltaEntry !== undefined) {
-      snapshotFilePath = join(
-        snapshotFilesDir(projectDir, sessionId, manifest.id),
-        deltaEntry.encodedName,
-      );
-    } else {
-      const baselineEntry = baselineEntryMap.get(path);
-      if (baselineEntry === undefined) {
+    // Validate the stored blob before reading it for the diff: a tampered
+    // manifest must not point `encodedName` outside snapshot storage.
+    let snapshotFilePath = await resolveValidatedBlobPath({
+      projectDir,
+      sessionId,
+      snapshotId: manifest.id,
+      path,
+      entry: deltaEntryMap.get(path),
+    });
+    if (snapshotFilePath === null) {
+      const baselineFilePath = await resolveValidatedBlobPath({
+        projectDir,
+        sessionId,
+        snapshotId: SNAPSHOT_BASELINE_ID,
+        path,
+        entry: baselineEntryMap.get(path),
+      });
+      if (baselineFilePath === null) {
         files.push({ path, status: 'modified' });
         continue;
       }
-      snapshotFilePath = join(
-        snapshotFilesDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID),
-        baselineEntry.encodedName,
-      );
+      snapshotFilePath = baselineFilePath;
     }
 
-    const currentFilePath = join(projectDir, path);
     const diff = await unifiedDiff(snapshotFilePath, currentFilePath, path);
     files.push({ path, status: 'modified', diff });
   }

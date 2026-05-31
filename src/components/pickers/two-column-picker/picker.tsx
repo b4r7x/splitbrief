@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
 import { type FilterableItem, availableRows } from '../picker-utils.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../../features/workflow/layout/terminal-width.js';
+import { getResponsivePanelWidth } from '../../../utils/terminal-width.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
