@@ -8,13 +8,7 @@ import { readRunSnapshotLedger } from './run.js';
 import { listSnapshots } from './manifest.js';
 import { ALWAYS_EXCLUDED } from './files.js';
 
-export type CheckpointDisplayKind =
-  | 'manual'
-  | 'pre-task'
-  | 'post-task'
-  | 'pre-final-review'
-  | 'accepted-run'
-  | 'other';
+export type CheckpointDisplayKind = RunSnapshotKind | 'manual' | 'other';
 
 export type InferredCheckpointKind = Exclude<CheckpointDisplayKind, 'manual' | 'other'>;
 
@@ -45,7 +39,6 @@ export type CheckpointSummary = {
   isRunCheckpoint: boolean;
   diffCommand: string;
   restoreCommand: string;
-  safety: CheckpointRestoreSafety;
 };
 
 const EXCLUDED_DISPLAY_PATHS = ALWAYS_EXCLUDED.map((p) => `${p}/`);
@@ -110,7 +103,6 @@ function toCheckpointSummary(
     isRunCheckpoint,
     diffCommand: `diptych snapshot diff ${manifest.id}`,
     restoreCommand: `diptych snapshot restore ${manifest.id}`,
-    safety: CHECKPOINT_RESTORE_SAFETY,
     ...(manifest.name !== undefined && { name: manifest.name }),
     ...(manifest.taskIndex !== undefined && { taskIndex: manifest.taskIndex }),
     ...(inferredKind !== undefined && inferredKind !== kind && { inferredKind }),

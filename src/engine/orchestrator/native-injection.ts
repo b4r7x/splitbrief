@@ -2,6 +2,7 @@ import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.j
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { transitionAndSave } from './state-ops.js';
+import { publishWarningFromError } from './events.js';
 
 export type DispatchNativeInjectionOptions = {
   message: QueuedMessage;
@@ -23,7 +24,7 @@ export async function dispatchNativeInjection(opts: DispatchNativeInjectionOptio
         ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
         : message.text;
     await planner.injectUserTurn(injectionText, projectDir);
-    const next = transitionAndSave(projectDir, sessionId, getState(), {
+    const next = transitionAndSave({ projectDir, sessionId }, getState(), {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,
     });
@@ -34,5 +35,7 @@ export async function dispatchNativeInjection(opts: DispatchNativeInjectionOptio
       phase: next.phase,
       id: message.id,
     });
-  } catch {}
+  } catch (err) {
+    publishWarningFromError({ bus, phase: getState().phase }, 'native injection failed', err);
+  }
 }

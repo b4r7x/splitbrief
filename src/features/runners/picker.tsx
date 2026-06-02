@@ -18,7 +18,7 @@ interface ToolModelPickerProps {
 export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolModelPickerProps) {
   const [viewState, dispatchView] = useReducer(viewReducer, initialViewState);
   const catalog = usePickerCatalog(role, viewState.preservedLeftIndex);
-  const actions = usePickerActions(role, onConfirm, catalog, viewState, dispatchView);
+  const actions = usePickerActions({ role, onConfirm, catalog, viewState, dispatchView });
   const t = useTheme();
   const isTextInput =
     viewState.view.kind === 'custom-command' || viewState.view.kind === 'custom-model';

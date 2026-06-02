@@ -6,6 +6,7 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
+import type { SpecMetadata } from '../../../core/paths-io.js';
 
 export type PlanningPhaseOptions = {
   wctx: PlannerCallbacksContext;
@@ -18,6 +19,13 @@ export type PlanningPhaseOptions = {
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
   deferBriefGate?: boolean | undefined;
+};
+
+export type PlanningRunContext = {
+  approveLevel: ApproveLevel;
+  metadata: SpecMetadata;
+  skillsContext: string | undefined;
+  state: WorkflowState;
 };
 
 export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };

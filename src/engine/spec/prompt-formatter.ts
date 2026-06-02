@@ -196,13 +196,12 @@ export function formatTaskPrompt(opts: {
     return sections.join('\n');
   }
 
-  const budget = computeTokenBudget({
-    system: buildSystemPreamble(ctx),
-    taskBody: sections.join('\n'),
-    contextLength,
-  });
-
   if (task.action === 'modify') {
+    const budget = computeTokenBudget({
+      system: buildSystemPreamble(ctx),
+      taskBody: sections.join('\n'),
+      contextLength,
+    });
     insertCodeContext(sections, task, budget);
   }
 

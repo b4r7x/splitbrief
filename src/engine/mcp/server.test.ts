@@ -112,6 +112,18 @@ describe('Auth rejection', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('returns 401 for an equal-length but different token', async () => {
+    const wrong = `X${TOKEN.slice(1)}`;
+    expect(wrong.length).toBe(TOKEN.length);
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${wrong}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(401);
+  });
 });
 
 describe('Routing — wrong method/path', () => {

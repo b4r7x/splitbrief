@@ -1,7 +1,10 @@
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
+import { buildGraph } from './graph.js';
+import { pagerank } from './pagerank.js';
+import type { FileNode } from './types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('extractMentionedFilenames', () => {
@@ -25,10 +28,11 @@ describe('extractMentionedFilenames', () => {
     ).toEqual([]);
   });
 
-  it('returns matching path when file exists', () => {
+  it('returns the absolute path when file exists', () => {
     writeFileSync(join(projectDir, 'foo.ts'), 'export {}');
     const result = extractMentionedFilenames('update foo.ts to add a bar function', projectDir, []);
-    expect(result).toContain('foo.ts');
+    expect(result).toContain(join(projectDir, 'foo.ts'));
+    expect(result.every((p) => isAbsolute(p))).toBe(true);
   });
 
   it('filters out non-existent paths', () => {
@@ -44,8 +48,8 @@ describe('extractMentionedFilenames', () => {
     writeFileSync(join(projectDir, 'alpha.ts'), 'export {}');
     writeFileSync(join(projectDir, 'beta.tsx'), 'export {}');
     const result = extractMentionedFilenames('change alpha.ts and beta.tsx', projectDir, []);
-    expect(result).toContain('alpha.ts');
-    expect(result).toContain('beta.tsx');
+    expect(result).toContain(join(projectDir, 'alpha.ts'));
+    expect(result).toContain(join(projectDir, 'beta.tsx'));
   });
 
   it('matches basename against discoveredFiles when literal path does not exist', () => {
@@ -61,5 +65,28 @@ describe('extractMentionedFilenames', () => {
       join(projectDir, 'src', 'foo.ts'),
     ]);
     expect(result).toEqual([]);
+  });
+
+  it('mentioned on-disk file survives pagerank focus filter and gets boosted', () => {
+    const focusPath = join(projectDir, 'target.ts');
+    const otherPath = join(projectDir, 'other.ts');
+    writeFileSync(focusPath, 'export {}');
+
+    const node = (path: string, imports: string[]): FileNode => ({
+      path,
+      symbols: [],
+      imports,
+      sizeBytes: 10,
+      mtimeMs: 0,
+    });
+    const graph = buildGraph([node(focusPath, []), node(otherPath, ['./target'])]);
+    const discovered = [focusPath, otherPath];
+
+    const mentioned = extractMentionedFilenames('please change target.ts', projectDir, discovered);
+    const ranks = pagerank(graph, mentioned);
+
+    // With a live focus file the mentioned node must outrank the unfocused one.
+    expect(mentioned).toContain(focusPath);
+    expect(ranks.get(focusPath) ?? 0).toBeGreaterThan(ranks.get(otherPath) ?? 0);
   });
 });

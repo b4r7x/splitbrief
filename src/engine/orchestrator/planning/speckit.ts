@@ -14,7 +14,8 @@ import {
 import { readFileOrEmpty, writeSecureFile } from '../../../lib/fs.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
-import { runBriefQualityGate, runBriefsApprovalLoop } from './briefs-approval-loop.js';
+import { runBriefQualityGate } from './planning-helpers.js';
+import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type {
   ConstitutionCheckResult,
@@ -25,8 +26,6 @@ import { narrowRecord } from '../../../utils/type-guards.js';
 import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
-
-export { extractJsonBlock };
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 
@@ -104,10 +103,10 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
 
   const constitutionContent = await readConstitution(projectDir);
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_CLARIFY_START' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_START' });
   publishPlannerStatus(bus, state, 'running');
   writeSecureFile(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder());
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_CLARIFY_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
   publishPlannerStatus(bus, state, 'running');
@@ -143,14 +142,13 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
       phase: state.phase,
       message: `constitution check failed: ${reason}`,
     });
-    state = transitionAndSave(projectDir, sessionId, state, {
+    state = transitionAndSave({ projectDir, sessionId }, state, {
       type: 'CONSTITUTION_CHECK_FAIL',
-      reason,
     });
     publishPlannerStatus(bus, state, 'done');
     return { state, tasks: [], cancelled: true };
   }
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'CONSTITUTION_CHECK_PASS' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CONSTITUTION_CHECK_PASS' });
   publishPlannerStatus(bus, state, 'done');
 
   const planResult = await runFullPlanning({ ...opts, state, deferBriefGate: true });
@@ -158,7 +156,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   if (planResult.cancelled) return planResult;
   let tasks = planResult.tasks;
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_START' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
 
   const [specText, planText, tasksText] = await Promise.all([
@@ -190,7 +188,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     });
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
   runBriefQualityGate({ tasks, projectDir, sessionId, bus, phase: state.phase });

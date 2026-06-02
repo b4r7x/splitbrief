@@ -48,13 +48,14 @@ function runnerChangedPaths(
   return Array.from(new Set([...changed, ...extra]));
 }
 
-export function usePickerActions(
-  role: 'planner' | 'implementer',
-  onConfirm: ((updated: Config) => void) | undefined,
-  catalog: PickerCatalog,
-  viewState: ViewState,
-  dispatchView: (action: ViewAction) => void,
-): PickerActions {
+export function usePickerActions(opts: {
+  role: 'planner' | 'implementer';
+  onConfirm: ((updated: Config) => void) | undefined;
+  catalog: PickerCatalog;
+  viewState: ViewState;
+  dispatchView: (action: ViewAction) => void;
+}): PickerActions {
+  const { role, onConfirm, catalog, viewState, dispatchView } = opts;
   const isPlanner = role === 'planner';
   const config = configStore.useConfig();
 

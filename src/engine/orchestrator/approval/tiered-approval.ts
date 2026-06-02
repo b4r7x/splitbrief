@@ -4,6 +4,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalGrant } from '../../../core/schemas/approval-store.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 import type { TierMap } from './action-classifier.js';
 import { classifyAction, extractActionPattern, matchesActionPattern } from './action-classifier.js';
@@ -12,6 +13,7 @@ import type { EventBus } from '../../events/types.js';
 import { readApprovalsStore, writeApprovalsStore } from '../../../core/approval/store.js';
 import { error } from '../../../utils/error.js';
 import { ActionClassSchema } from '../../../core/schemas/enums.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 type ApprovalTierOverrides = NonNullable<Config['approval']>['tiers'];
 
@@ -26,6 +28,7 @@ export type GateActionInput = {
   bus: EventBus;
   callbacks: OrchestratorCallbacks;
   config: Config;
+  grants?: ApprovalGrant[];
 };
 
 export type GateDecision = {
@@ -51,17 +54,23 @@ export function taskScopePatterns(task: Task): string[] {
   return [...(task.scope?.inBounds ?? []), ...(task.scope?.approvedOutOfBounds ?? [])];
 }
 
-export function upsertApprovalGrant(projectDir: string, grant: ApprovalGrant): void {
-  const store = readApprovalsStore(projectDir);
-  const alwaysExists = store.grants.some(
+function mergeGrant(grants: ApprovalGrant[], grant: ApprovalGrant): ApprovalGrant[] | null {
+  const alwaysExists = grants.some(
     (g) => g.pattern === grant.pattern && g.class === grant.class && g.scope === 'always',
   );
-  if (alwaysExists && grant.scope === 'session') return;
-  const filtered = store.grants.filter(
+  if (alwaysExists && grant.scope === 'session') return null;
+  const filtered = grants.filter(
     (g) => !(g.pattern === grant.pattern && g.class === grant.class && g.scope === grant.scope),
   );
   filtered.push(grant);
-  writeApprovalsStore(projectDir, { version: 1, grants: filtered });
+  return filtered;
+}
+
+export function upsertApprovalGrant(projectDir: string, grant: ApprovalGrant): void {
+  const store = readApprovalsStore(projectDir);
+  const merged = mergeGrant(store.grants, grant);
+  if (merged === null) return;
+  writeApprovalsStore(projectDir, { version: 1, grants: merged });
 }
 
 function compactTierOverrides(rawTiers: ApprovalTierOverrides | undefined): TierMap | undefined {
@@ -74,6 +83,46 @@ function compactTierOverrides(rawTiers: ApprovalTierOverrides | undefined): Tier
     }
   }
   return Object.keys(tierOverrides).length > 0 ? tierOverrides : undefined;
+}
+
+type ApprovalEventBase = {
+  bus: EventBus;
+  phase: Phase;
+  tier: ApprovalTier;
+  actionClass: ActionClass;
+  taskId?: TaskId | undefined;
+};
+
+function publishApprovalRejected(args: ApprovalEventBase & { reason: string }): void {
+  const { bus, phase, tier, actionClass, taskId, reason } = args;
+  bus.publish({
+    type: 'approval_rejected',
+    ts: Date.now(),
+    phase,
+    tier,
+    actionClass,
+    ...(taskId !== undefined && { taskId }),
+    reason,
+  });
+}
+
+function publishApprovalGranted(
+  args: ApprovalEventBase & {
+    scope: 'once' | 'session' | 'always';
+    confirmReason?: string | undefined;
+  },
+): void {
+  const { bus, phase, tier, actionClass, taskId, scope, confirmReason } = args;
+  bus.publish({
+    type: 'approval_granted',
+    ts: Date.now(),
+    phase,
+    tier,
+    actionClass,
+    ...(taskId !== undefined && { taskId }),
+    scope,
+    ...(confirmReason !== undefined && { confirmReason }),
+  });
 }
 
 export async function gateAction(input: GateActionInput): Promise<GateDecision> {
@@ -120,7 +169,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   };
 
   if (tier === 'sticky') {
-    const grants = readApprovalsStore(projectDir).grants;
+    const grants = input.grants ?? readApprovalsStore(projectDir).grants;
     const classifyContext = {
       actionDescription,
       taskFile: task.file,
@@ -137,15 +186,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
         (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
     );
     if (alwaysGrant) {
-      bus.publish({
-        type: 'approval_granted',
-        ts: Date.now(),
-        phase,
-        tier,
-        actionClass,
-        ...(taskId !== undefined && { taskId }),
-        scope: 'always',
-      });
+      publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'always' });
       return { allow: true };
     }
 
@@ -157,15 +198,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
         (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
     );
     if (sessionGrant) {
-      bus.publish({
-        type: 'approval_granted',
-        ts: Date.now(),
-        phase,
-        tier,
-        actionClass,
-        ...(taskId !== undefined && { taskId }),
-        scope: 'session',
-      });
+      publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'session' });
       return { allow: true };
     }
 
@@ -179,13 +212,12 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     });
 
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
-      bus.publish({
-        type: 'approval_rejected',
-        ts: Date.now(),
+      publishApprovalRejected({
+        bus,
         phase,
         tier,
         actionClass,
-        ...(taskId !== undefined && { taskId }),
+        taskId,
         reason: 'APPROVAL_REQUIRED',
       });
       return { allow: false, reason: 'APPROVAL_REQUIRED', tier, actionClass, actionDescription };
@@ -194,15 +226,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     const response = await callbacks.onTieredApproval(request);
 
     if (response.decision === 'deny') {
-      bus.publish({
-        type: 'approval_rejected',
-        ts: Date.now(),
-        phase,
-        tier,
-        actionClass,
-        ...(taskId !== undefined && { taskId }),
-        reason: response.reason,
-      });
+      publishApprovalRejected({ bus, phase, tier, actionClass, taskId, reason: response.reason });
       return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
     }
 
@@ -213,9 +237,16 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
           class: actionClass,
           scope: response.scope,
           sessionId: response.scope === 'session' ? sessionId : undefined,
-          grantedAt: new Date().toISOString(),
+          grantedAt: nowIso(),
         };
         upsertApprovalGrant(projectDir, grant);
+        if (input.grants) {
+          const merged = mergeGrant(input.grants, grant);
+          if (merged !== null) {
+            input.grants.length = 0;
+            input.grants.push(...merged);
+          }
+        }
         bus.publish({
           type: 'approval_sticky_recorded',
           ts: Date.now(),
@@ -224,36 +255,19 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
           scope: response.scope,
           actionClass,
         });
-        bus.publish({
-          type: 'approval_granted',
-          ts: Date.now(),
-          phase,
-          tier,
-          actionClass,
-          ...(taskId !== undefined && { taskId }),
-          scope: response.scope,
-        });
+        publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: response.scope });
         return { allow: true };
       }
-      bus.publish({
-        type: 'approval_granted',
-        ts: Date.now(),
-        phase,
-        tier,
-        actionClass,
-        ...(taskId !== undefined && { taskId }),
-        scope: 'once',
-      });
+      publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'once' });
       return { allow: true };
     }
 
-    bus.publish({
-      type: 'approval_rejected',
-      ts: Date.now(),
+    publishApprovalRejected({
+      bus,
       phase,
       tier,
       actionClass,
-      ...(taskId !== undefined && { taskId }),
+      taskId,
       reason: 'unexpected_confirm_on_sticky',
     });
     return {
@@ -276,13 +290,12 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     });
 
     if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
-      bus.publish({
-        type: 'approval_rejected',
-        ts: Date.now(),
+      publishApprovalRejected({
+        bus,
         phase,
         tier,
         actionClass,
-        ...(taskId !== undefined && { taskId }),
+        taskId,
         reason: 'APPROVAL_REQUIRED',
       });
       return { allow: false, reason: 'APPROVAL_REQUIRED', tier, actionClass, actionDescription };
@@ -291,14 +304,13 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     const response = await callbacks.onTieredApproval(request);
 
     if (response.decision === 'confirm') {
-      if (response.phrase !== 'I confirm' || !response.reason) {
-        bus.publish({
-          type: 'approval_rejected',
-          ts: Date.now(),
+      if (response.phrase !== CONFIRM_PHRASE || !response.reason) {
+        publishApprovalRejected({
+          bus,
           phase,
           tier,
           actionClass,
-          ...(taskId !== undefined && { taskId }),
+          taskId,
           reason: 'invalid_confirm_phrase',
         });
         return {
@@ -309,13 +321,12 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
           actionDescription,
         };
       }
-      bus.publish({
-        type: 'approval_granted',
-        ts: Date.now(),
+      publishApprovalGranted({
+        bus,
         phase,
         tier,
         actionClass,
-        ...(taskId !== undefined && { taskId }),
+        taskId,
         scope: 'once',
         confirmReason: response.reason,
       });
@@ -330,25 +341,16 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     }
 
     if (response.decision === 'deny') {
-      bus.publish({
-        type: 'approval_rejected',
-        ts: Date.now(),
-        phase,
-        tier,
-        actionClass,
-        ...(taskId !== undefined && { taskId }),
-        reason: response.reason,
-      });
+      publishApprovalRejected({ bus, phase, tier, actionClass, taskId, reason: response.reason });
       return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
     }
 
-    bus.publish({
-      type: 'approval_rejected',
-      ts: Date.now(),
+    publishApprovalRejected({
+      bus,
       phase,
       tier,
       actionClass,
-      ...(taskId !== undefined && { taskId }),
+      taskId,
       reason: 'invalid_confirm_response',
     });
     return {

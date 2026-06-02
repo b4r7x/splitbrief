@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
 import { runCommand } from '../../lib/process/spawn.js';
 import { isENOENT } from '../../lib/process/errors.js';

@@ -3,8 +3,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { continueCommand, resolveSessionInput } from './continue.js';
+import { continueCommand } from './continue.js';
 import type { ContinueDeps } from './continue.js';
+import { resolveSessionAlias } from '../session-aliases.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -212,8 +213,8 @@ describe('continueCommand', () => {
   });
 
   it('resolves explicit and missing session input', async () => {
-    await expect(resolveSessionInput(undefined, '/tmp')).resolves.toBeUndefined();
-    await expect(resolveSessionInput('2025-04-01-feat', '/tmp')).resolves.toBe('2025-04-01-feat');
+    await expect(resolveSessionAlias(undefined, '/tmp')).resolves.toBeUndefined();
+    await expect(resolveSessionAlias('2025-04-01-feat', '/tmp')).resolves.toBe('2025-04-01-feat');
   });
 
   it('rejects a session with an older stateVersion via loadState filtering', async () => {

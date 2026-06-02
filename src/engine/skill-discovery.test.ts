@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
@@ -172,6 +172,23 @@ describe('discoverSkills', () => {
     expect(skills[0]?.scope).toBe('project');
 
     rmSync(join(TMP, 'CONVENTIONS.md'), { force: true });
+  });
+
+  it('surfaces a non-ENOENT CONVENTIONS.md read error without crashing discovery', async () => {
+    // A directory at the expected file path makes readFile fail with EISDIR (non-ENOENT).
+    const convPath = join(TMP, 'CONVENTIONS.md');
+    mkdirSync(convPath, { recursive: true });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      const skills = await discoverSkills('aider', TMP);
+      expect(skills).toEqual([]);
+      const warned = stderrSpy.mock.calls.some((c) => String(c[0]).includes('CONVENTIONS.md'));
+      expect(warned).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+      rmSync(convPath, { recursive: true, force: true });
+    }
   });
 
   it('falls back to .diptych/skills for shell planner', async () => {

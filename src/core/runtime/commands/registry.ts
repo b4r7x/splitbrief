@@ -6,6 +6,7 @@ import { includes } from '../../../utils/type-guards.js';
 import { canRedoTask, canRevisePlan, canReviseSpec } from '../../phases.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { pluralize } from '../../../utils/format.js';
 import { formatRejectRunMessage } from './messages.js';
 
 export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
@@ -128,6 +129,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       validScreens: ALL_SCREENS,
       handler: async () => {
         ctx.setFeedbackMessage('Refreshing tool detection…');
+        ctx.refreshProjectFiles();
         try {
           await ctx.refreshDetection();
           ctx.setFeedbackMessage('Tool detection refreshed');
@@ -200,14 +202,14 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           if (depth === 0) {
             ctx.setFeedbackMessage('Queue is empty');
           } else {
-            ctx.setFeedbackMessage(`Queue: ${depth} message${depth === 1 ? '' : 's'} pending`);
+            ctx.setFeedbackMessage(`Queue: ${depth} ${pluralize(depth, 'message')} pending`);
           }
           return;
         }
         if (sub === 'clear') {
           const cleared = ctx.clearQueue();
           if (cleared > 0) {
-            ctx.setFeedbackMessage(`Cleared ${cleared} queued message${cleared === 1 ? '' : 's'}`);
+            ctx.setFeedbackMessage(`Cleared ${cleared} queued ${pluralize(cleared, 'message')}`);
           } else {
             ctx.setFeedbackMessage('Queue is already empty');
           }
@@ -272,9 +274,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
             return;
           }
           const count = result.entriesRemoved;
-          const plural = count === 1 ? '' : 's';
           ctx.setFeedbackMessage(
-            `Transcript compacted: ${count} older message${plural} summarized.`,
+            `Transcript compacted: ${count} older ${pluralize(count, 'message')} summarized.`,
           );
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));

@@ -3,6 +3,7 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,
@@ -29,7 +30,13 @@ export function createRecoveryBus(opts: {
 }): EventBus {
   const bus = createEventBus();
   for (const sink of opts.sinks) bus.subscribe(sink);
-  bus.subscribe(createJsonlSink(opts.projectDir, opts.sessionId, opts.persistTranscript));
+  bus.subscribe(
+    createJsonlSink({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      persistTranscript: opts.persistTranscript,
+    }),
+  );
   return bus;
 }
 
@@ -42,11 +49,10 @@ export function publishPendingRecoveryPrompt(
 }
 
 export function loadPendingRecoveryState(
-  projectDir: string,
-  sessionId: string,
+  ref: SessionRef,
   fallback: WorkflowState,
 ): PendingRecoveryState {
-  const state = loadState(projectDir, sessionId) ?? fallback;
+  const state = loadState(ref) ?? fallback;
   return state.pendingRecovery
     ? { pending: true, state, issue: state.pendingRecovery }
     : { pending: false, state };
@@ -59,7 +65,6 @@ export function applySelectedRecoveryAction(opts: {
   action: RecoveryAction;
   bus: EventBus;
   config: Config;
-  selectedAt: string;
 }): ApplyRecoveryActionResult {
   return applyRecoveryAction({
     projectDir: opts.projectDir,
@@ -68,7 +73,6 @@ export function applySelectedRecoveryAction(opts: {
     action: opts.action,
     bus: opts.bus,
     config: opts.config,
-    selectedAt: opts.selectedAt,
     mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   });
 }

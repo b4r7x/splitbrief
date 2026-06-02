@@ -2,7 +2,7 @@ import { loadDetectionCache, saveDetectionCache, invalidateCache } from './cache
 import type { DetectAllResult } from './detect.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 
 export interface DetectionDeps {
   detectAll(): Promise<DetectAllResult>;

@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { ScrollIndicator } from '../scroll-indicator.js';
-import { CURSOR, NO_CURSOR, windowSlice } from './picker-utils.js';
+import { windowSlice } from './picker-utils.js';
+import { CursorCell } from './cursor-cell.js';
 
 interface SingleColumnPickerProps<T> {
   label: string;
@@ -79,7 +80,7 @@ export function SingleColumnPicker<T>({
             const isCursor = isActive && idx === selectedIndex;
             return (
               <Box key={getKey(item)}>
-                <Text color={isCursor ? t.accent : t.textDim}>{isCursor ? CURSOR : NO_CURSOR}</Text>
+                <CursorCell isCursor={isCursor} dimWhenInactive />
                 {renderRow(item, isCursor, contentMaxWidth)}
               </Box>
             );

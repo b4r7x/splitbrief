@@ -90,7 +90,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(result.state.pendingRecovery?.affectedTaskIds).toEqual(
       expect.arrayContaining(['T001', 'T002']),
     );
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'dependency-blocked',
       taskId: 'T002',
     });
@@ -168,7 +168,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
       recommendedAction: 'planner-split-rebase',
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
       taskId: 'T001',
     });
@@ -255,7 +255,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       reason: 'budget-paused',
       availableActions: ['continue', 'pause-run', 'abort-workflow'],
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery?.reason).toBe('budget-paused');
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe('budget-paused');
   });
 
   it('persists budget exceeded recovery without ordinary continue', async () => {
@@ -296,6 +296,6 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       availableActions: ['pause-run', 'abort-workflow'],
     });
     expect(result.state.pendingRecovery?.availableActions).not.toContain('continue');
-    expect(loadState(projectDir, sessionId)?.pendingRecovery?.reason).toBe('budget-exceeded');
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe('budget-exceeded');
   });
 });

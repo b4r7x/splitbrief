@@ -64,7 +64,7 @@ export function registerStatusCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
 
       const sessionId = readActive(projectDir);
-      const state = sessionId ? loadState(projectDir, sessionId) : null;
+      const state = sessionId ? loadState({ projectDir, sessionId }) : null;
 
       if (!state) {
         console.log('No active workflow.');

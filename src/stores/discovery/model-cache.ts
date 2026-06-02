@@ -1,6 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
@@ -27,7 +27,7 @@ const initial: ModelCacheState = {
 
 const store = createStore<ModelCacheState>(initial);
 
-function isStale(fetchedAt: number): boolean {
+function isExpired(fetchedAt: number): boolean {
   return Date.now() - fetchedAt >= TTL_MS;
 }
 
@@ -56,7 +56,7 @@ export const modelCacheStore = {
   getProviderModels(provider: ProviderId): DetectedModel[] | null {
     const cache = store.get().providers[provider];
     if (!cache || cache.isStale) return null;
-    if (isStale(cache.fetchedAt)) return null;
+    if (isExpired(cache.fetchedAt)) return null;
     return cloneModels(cache.models);
   },
 

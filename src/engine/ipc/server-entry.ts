@@ -98,14 +98,13 @@ async function main() {
 
   const ipcBus = createEventBus();
   const ipcBridge = createIpcWorkflowBridge(ipcBus);
-  const mode = normalizeLegacyMode(argv.mode) ?? 'standard';
   const { config: rawConfig } = loadConfig(argv.projectDir);
   const config = applyCLIOverrides(rawConfig, argv.overrides);
   const ipcServer = await startIpcServer({
     sessionId: argv.sessionId,
     sessionDir: dir,
     startedAt: now,
-    mode,
+    mode: argv.mode,
     feature: argv.feature,
     bus: ipcBus,
     onUserInput: ipcBridge.onUserInput,

@@ -7,6 +7,7 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import { getProviderDisplayName, isProviderLocal } from '../../../core/providers/catalog.js';
 import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { getWorkflowMode } from '../../../core/config/accessors/state.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 
 const COMPACT_ROWS_THRESHOLD = 30;
@@ -20,7 +21,7 @@ export function HomeConfigSummary() {
   const plannerModel = config.planner.model;
   const implToolName = getRunnerDisplayName(config.implementer);
   const implModel = config.implementer.model;
-  const mode = config.workflow.mode ?? 'standard';
+  const mode = getWorkflowMode(config);
   const compact = isSmall || rows < COMPACT_ROWS_THRESHOLD;
 
   if (compact) {

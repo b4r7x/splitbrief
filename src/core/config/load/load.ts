@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import YAML from 'yaml';
-import type { Config } from '../../schemas/config.js';
+import { ConfigSchema, type Config } from '../../schemas/config.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
 import { validateConfig } from './validate.js';
 import { fromYaml, toYaml } from './transform.js';
@@ -64,9 +64,29 @@ function mergeRunner(
   return { ...defaults, ...migrated };
 }
 
+const MERGE_HANDLED_KEYS = new Set([
+  'version',
+  'planner',
+  'implementer',
+  'implementerProfiles',
+  'validation',
+  'workflow',
+  'theme',
+  'shikiTheme',
+  'sessions',
+  'plannerEstimateReview',
+  'autoSplitOverflow',
+]);
+
 function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
   const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
+
+  const passthrough: Record<string, unknown> = {};
+  for (const key of Object.keys(ConfigSchema.shape)) {
+    if (MERGE_HANDLED_KEYS.has(key)) continue;
+    if (migrated[key] !== undefined) passthrough[key] = migrated[key];
+  }
 
   return {
     version: 3,
@@ -86,13 +106,7 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
     sessions: narrowRecord(migrated['sessions'])
       ? { ...defaults.sessions, ...narrowRecord(migrated['sessions']) }
       : defaults.sessions,
-    ...(migrated['escalation'] !== undefined && { escalation: migrated['escalation'] }),
-    ...(migrated['codebase'] !== undefined && { codebase: migrated['codebase'] }),
-    ...(migrated['hooks'] !== undefined && { hooks: migrated['hooks'] }),
-    ...(migrated['otel'] !== undefined && { otel: migrated['otel'] }),
-    ...(migrated['snapshots'] !== undefined && { snapshots: migrated['snapshots'] }),
-    ...(migrated['palette'] !== undefined && { palette: migrated['palette'] }),
-    ...(migrated['approval'] !== undefined && { approval: migrated['approval'] }),
+    ...passthrough,
     plannerEstimateReview: migrated['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
     autoSplitOverflow: migrated['autoSplitOverflow'] ?? defaults.autoSplitOverflow,
   };

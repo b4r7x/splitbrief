@@ -75,8 +75,10 @@ export function usePromptCallbacks(): (opts: BuildCallbacksOptions) => Orchestra
       },
       onBudgetExceeded: async (currentCost, maxBudget) => {
         const issue = buildBudgetPromptIssue('budget-exceeded', currentCost, maxBudget);
-        const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
-        return parseRecoveryActionAnswer(answer, issue) === 'continue';
+        // Budget exceeded is a hard stop: the prompt only offers pause/abort, so there is
+        // no 'continue' to honor. Continuing requires a separate raise-budget flow.
+        await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
+        return false;
       },
       onBudgetPaused: async (currentCost, maxBudget) => {
         const issue = buildBudgetPromptIssue('budget-paused', currentCost, maxBudget);

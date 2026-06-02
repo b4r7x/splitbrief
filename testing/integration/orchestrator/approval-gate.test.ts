@@ -37,7 +37,7 @@ describe('spec approval gate suspends until externally resolved', () => {
     const { bus, events } = makeBusRecorder();
 
     let state = createInitialState('feat');
-    state = transition(state, { type: 'START', feature: 'feat' });
+    state = transition(state, { type: 'START' });
 
     const loopPromise = runApprovalLoop({
       type: 'spec',

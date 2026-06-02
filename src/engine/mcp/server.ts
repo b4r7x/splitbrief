@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleMessage } from './handlers.js';
 import { INVALID_REQUEST, SUPPORTED_PROTOCOL_VERSIONS, MCP_PROTOCOL_VERSION } from './handlers.js';
@@ -90,7 +91,10 @@ function isAuthorized(req: IncomingMessage, token: string): boolean {
   if (!header.startsWith('Bearer ')) return false;
   const provided = header.slice('Bearer '.length);
   if (provided.length === 0) return false;
-  return provided === token;
+  const providedBuf = Buffer.from(provided);
+  const tokenBuf = Buffer.from(token);
+  if (providedBuf.length !== tokenBuf.length) return false;
+  return timingSafeEqual(providedBuf, tokenBuf);
 }
 
 function send401(res: ServerResponse): void {

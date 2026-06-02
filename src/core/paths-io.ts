@@ -10,8 +10,13 @@ import { error, matches } from '../utils/error.js';
 import type { WorkflowMode } from './schemas/enums.js';
 
 export const pathError = {
-  escapesProject: (filePath: string) =>
-    error('path-escapes-project', `Path '${filePath}' escapes project directory`, { filePath }),
+  escapesProject: (filePath: string, cause?: unknown) =>
+    error(
+      'path-escapes-project',
+      `Path '${filePath}' escapes project directory`,
+      { filePath },
+      cause,
+    ),
   isEscapesProject: matches('path-escapes-project'),
 } as const;
 
@@ -98,30 +103,22 @@ export function writeSpecFile(
   writeSecureFile(join(sessionDir(ref.projectDir, ref.sessionId), filename), finalContent);
 }
 
-export function readSpecFile(
-  projectDir: string,
-  sessionId: string,
-  filename: string,
-): string | null {
+export function readSpecFile(ref: SpecFileRef, filename: string): string | null {
   validateFilename(filename);
-  const filePath = join(sessionDir(projectDir, sessionId), filename);
+  const filePath = join(sessionDir(ref.projectDir, ref.sessionId), filename);
   if (!existsSync(filePath)) return null;
   return readFileSync(filePath, 'utf-8');
 }
 
-export function readSpecFileOrEmpty(
-  projectDir: string,
-  sessionId: string,
-  filename: string,
-): string {
-  return readSpecFile(projectDir, sessionId, filename) ?? '';
+export function readSpecFileOrEmpty(ref: SpecFileRef, filename: string): string {
+  return readSpecFile(ref, filename) ?? '';
 }
 
 export function validateTaskPath(projectDir: string, filePath: string): string {
   try {
     assertWritablePathConfined(filePath, projectDir);
-  } catch {
-    throw pathError.escapesProject(filePath);
+  } catch (err) {
+    throw pathError.escapesProject(filePath, err);
   }
   return resolve(projectDir, filePath);
 }

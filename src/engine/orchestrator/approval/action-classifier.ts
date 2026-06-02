@@ -266,7 +266,7 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
   const lower = desc.toLowerCase();
 
   const startsWithRead =
-    PATH_PREFIXES.some((p) => lower.startsWith(p)) === false &&
+    !PATH_PREFIXES.some((p) => lower.startsWith(p)) &&
     ['read ', 'cat ', 'ls ', 'find ', 'grep '].some((p) => lower.startsWith(p));
   if (startsWithRead) {
     return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };

@@ -38,7 +38,7 @@ export type BudgetCheckOptions = {
 };
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
-const BUDGET_PAUSE_THRESHOLD = 0.85;
+export const BUDGET_PAUSE_THRESHOLD = 0.85;
 
 export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): number {
   const breakdown = calculateCostBreakdown(

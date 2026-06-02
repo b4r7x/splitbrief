@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import type { Config } from '../core/schemas/config.js';
+import { defaultApprovalConfig } from '../core/schemas/config.js';
 import type { Phase } from '../core/schemas/enums.js';
+import type { RewindTarget } from '../core/state/build-rewind-action.js';
 import { sessionDir } from '../core/paths.js';
 import type { RuntimeCommandContext, ExportSessionResult } from '../core/runtime/commands/types.js';
 import type { OverlayType } from '../core/navigation/types.js';
@@ -15,11 +17,10 @@ import {
   clearGrantsByScope,
 } from '../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
+import { projectFilesStore } from '../stores/ui/project-files.js';
 
 type ConfigSaveResult = { ok: true } | { ok: false; errorMessage?: string | undefined };
-type CommandRewindRequest =
-  | { target: 'spec'; comment?: string }
-  | { target: 'plan'; comment?: string };
+type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
 
 interface CommandContextFactoryOptions {
   projectDir: () => string;
@@ -73,6 +74,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
+    refreshProjectFiles: projectFilesStore.requestRefresh,
     getCurrentPhase: opts.getCurrentPhase,
     requestRewind: (target, comment) => {
       const request: CommandRewindRequest = { target, ...(comment ? { comment } : {}) };
@@ -116,7 +118,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
         return;
       }
       updateConfig((current) => {
-        const approval = current.approval ?? { enabled: true, feedRejectionsToPlanner: true };
+        const approval = current.approval ?? defaultApprovalConfig();
         return { ...current, approval: { ...approval, enabled } };
       });
     },

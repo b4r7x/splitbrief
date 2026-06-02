@@ -42,7 +42,7 @@ describe('quick-mode one-task workflow', () => {
 
     const task = makeTask({ id: 'T001' });
     let state = createInitialState('add hello');
-    state = transition(state, { type: 'START', feature: 'add hello' });
+    state = transition(state, { type: 'START' });
     state = transition(state, { type: 'START_QUICK', tasks: [task] });
 
     const { callbacks } = makeCallbacks();

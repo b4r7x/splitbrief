@@ -1,6 +1,11 @@
 import type { Config } from '../../schemas/config.js';
 import { ConfigSchema } from '../../schemas/config.js';
+import type { WorkflowMode } from '../../schemas/enums.js';
 import { isRecord, narrowRecord } from '../../../utils/type-guards.js';
+
+export function getWorkflowMode(config: Config): WorkflowMode {
+  return config.workflow.mode ?? 'standard';
+}
 
 export function getConfigValue(config: Config | Record<string, unknown>, dotPath: string): unknown {
   const parts = dotPath.split('.');

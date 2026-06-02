@@ -23,26 +23,9 @@ export async function runLocalRetries(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     attempts = attempt;
     if (state.phase === 'implementing') {
-      state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'TASK_SENT' });
+      state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
     }
-    state = transitionAndSave(
-      ctx.projectDir,
-      ctx.sessionId,
-      state,
-      { type: 'VALIDATION_FAIL' },
-      maxRetries,
-    );
-    if (state.phase === 'escalating') {
-      publishRetry({
-        bus: ctx.bus,
-        phase: state.phase,
-        taskId: task.id,
-        attempt,
-        maxRetries,
-        error: lastError,
-      });
-      break;
-    }
+    state = transitionAndSave(ctx, state, { type: 'VALIDATION_FAIL' }, maxRetries);
     publishRetry({
       bus: ctx.bus,
       phase: state.phase,
@@ -51,6 +34,9 @@ export async function runLocalRetries(
       maxRetries,
       error: lastError,
     });
+    if (state.phase === 'escalating') {
+      break;
+    }
 
     const outcome = await runRetryStep({
       ctx,

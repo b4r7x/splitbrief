@@ -7,10 +7,12 @@ import type { EventBus } from '../events/types.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { saveState } from '../../core/state/persistence.js';
 import { updateStats } from '../../core/stats/persistence.js';
 import { warnError } from '../../lib/warn.js';
+import { killAllProcesses } from '../../lib/process/registry.js';
+import { discardFileChange } from '../../lib/git.js';
 import { withSignalHandlers } from './signals.js';
-import { shutdownWorkflow } from './final-review.js';
 import { createClearQueueHandler, createQueueHandler } from './queue.js';
 import { createStateSerializer } from './state-serializer.js';
 import type { Planner } from '../planners/types.js';
@@ -55,6 +57,35 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
     if (!opts.preserveActive) clearActive(opts.projectDir);
   } catch (err) {
     warnError('Failed to save final session', err);
+  }
+}
+
+export async function shutdownWorkflow(
+  projectDir: string,
+  sessionId: string,
+  getTrackedState: () => WorkflowState | undefined,
+  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
+): Promise<void> {
+  killAllProcesses();
+  const trackedState = getTrackedState();
+  if (trackedState) {
+    try {
+      saveState({ projectDir, sessionId }, trackedState);
+    } catch (err) {
+      warnError('Failed to save state during shutdown', err);
+    }
+  }
+  const currentTask = getCurrentTask();
+  if (currentTask) {
+    try {
+      await discardFileChange(
+        projectDir,
+        currentTask.file,
+        currentTask.action === 'modify' ? 'tracked' : 'untracked',
+      );
+    } catch (err) {
+      warnError('Failed to discard changes during shutdown', err);
+    }
   }
 }
 

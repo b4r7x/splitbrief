@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
-import { computeEta } from './cost/footer.js';
+import { computeEta } from './cost/compute-eta.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { useAdvisory } from '../hooks/use-advisory.js';

@@ -13,9 +13,16 @@ import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
-import { assertPathConfined, assertWritablePathConfined } from '../../lib/path-confinement.js';
+import {
+  assertPathConfined,
+  assertWritablePathConfined,
+  isPathConfined,
+} from '../../lib/path-confinement.js';
 import { getCurrentCommitSha } from '../../lib/git.js';
 import { error, matches } from '../../utils/error.js';
+
+export const HANDOFF_WRITE_MODES = ['default', 'append', 'overwrite'] as const;
+export type HandoffWriteMode = (typeof HANDOFF_WRITE_MODES)[number];
 
 export type WriteHandoffOptions = {
   projectDir: string;
@@ -24,7 +31,7 @@ export type WriteHandoffOptions = {
   target: string;
   outDir: string;
   selectedTaskIds?: string[];
-  mode: 'default' | 'append' | 'overwrite';
+  mode: HandoffWriteMode;
   allowCustomRenderer?: boolean;
 };
 
@@ -54,9 +61,8 @@ export const handoffWriteError = {
 } as const;
 
 function isInsideDiptychDir(outDir: string, projectDir: string): boolean {
-  const absOut = resolve(outDir);
   const absDiptych = resolve(join(projectDir, DIPTYCH_DIR));
-  return absOut.startsWith(absDiptych + '/');
+  return isPathConfined(relative(absDiptych, resolve(outDir)), absDiptych);
 }
 
 function isPreviousHandoffOutput(outDir: string): boolean {
@@ -79,13 +85,13 @@ function assertSafeOverwriteTarget(outDir: string, projectDir: string): void {
 export async function writeHandoffPack(options: WriteHandoffOptions): Promise<WriteHandoffResult> {
   const { projectDir, sessionId, target, outDir, selectedTaskIds, mode } = options;
 
-  const state = loadState(projectDir, sessionId);
+  const state = loadState({ projectDir, sessionId });
   if (!state) {
     throw handoffWriteError.stateNotFound(sessionId);
   }
 
-  const specContent = readSpecFile(projectDir, sessionId, SPEC_FILE) ?? undefined;
-  const planContent = readSpecFile(projectDir, sessionId, PLAN_FILE) ?? undefined;
+  const specContent = readSpecFile({ projectDir, sessionId }, SPEC_FILE) ?? undefined;
+  const planContent = readSpecFile({ projectDir, sessionId }, PLAN_FILE) ?? undefined;
 
   let loadedConfig: Config | undefined;
   try {

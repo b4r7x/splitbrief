@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
 import {
   ModelsDevCatalogSchema,
@@ -9,6 +9,7 @@ import { fetchJsonWithTimeout } from './client.js';
 import { isModelFree, pricingFieldsFromResolved } from './metadata.js';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
+const MODELS_DEV_TIMEOUT_MS = 10_000;
 
 const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ProviderId, string[]>> = {
   together: ['togetherai'],
@@ -71,7 +72,7 @@ function mergeDetectedModel(
 }
 
 export async function fetchModelsDevCatalog(): Promise<ModelsDevCatalog> {
-  const json = await fetchJsonWithTimeout(MODELS_DEV_URL, 10_000);
+  const json = await fetchJsonWithTimeout(MODELS_DEV_URL, MODELS_DEV_TIMEOUT_MS);
   const parsed = ModelsDevCatalogSchema.safeParse(json);
   if (!parsed.success) return {};
   return parsed.data;

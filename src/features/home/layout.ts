@@ -35,7 +35,12 @@ function getContentAwareSessionLimit(input: SessionLimitInput): number {
 }
 
 export function getHomeLayout({ cols, rows, isSmall }: HomeLayoutInput): HomeLayout {
-  const inputWidth = getResponsivePanelWidth(cols, isSmall, { small: 70, large: 92 }, 8);
+  const inputWidth = getResponsivePanelWidth({
+    cols,
+    size: isSmall ? 'small' : 'large',
+    widths: { small: 70, large: 92 },
+    gutter: 8,
+  });
   const bodyWidth = isSmall ? inputWidth : Math.min(inputWidth, 72);
   const logoTier = getLogoTier(rows, cols);
   const inputBottomMargin = rows >= 38 ? 2 : rows >= 30 ? 1 : 0;

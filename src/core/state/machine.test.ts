@@ -31,7 +31,7 @@ describe('transition', () => {
 
   it('START -> researching', () => {
     const state = createInitialState('feat');
-    const next = transition(state, { type: 'START', feature: 'feat' });
+    const next = transition(state, { type: 'START' });
     expect(next.phase).toBe('researching');
   });
 
@@ -314,7 +314,7 @@ describe('transition', () => {
     let s = createInitialState('full-flow');
     expect(s.phase).toBe('idle');
 
-    s = transition(s, { type: 'START', feature: 'full-flow' });
+    s = transition(s, { type: 'START' });
     expect(s.phase).toBe('researching');
 
     s = transition(s, { type: 'RESEARCH_DONE' });
@@ -375,7 +375,6 @@ describe('transition', () => {
       awaitingContinue: true,
       plannerSessionId: 'old-session',
       clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
-      constitutionFailureReason: 'old reason',
       analysisResult: { decisions: [] } as any,
       discoveredValidation: { testCommand: 'npm test' },
     };
@@ -387,7 +386,6 @@ describe('transition', () => {
     expect(next.awaitingContinue).toBe(false);
     expect(next.plannerSessionId).toBeUndefined();
     expect(next.clarifications).toEqual([]);
-    expect(next.constitutionFailureReason).toBeUndefined();
     expect(next.analysisResult).toBeUndefined();
     expect(next.discoveredValidation).toBeUndefined();
   });
@@ -403,7 +401,6 @@ describe('transition', () => {
       awaitingContinue: true,
       plannerSessionId: 'old-session',
       clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
-      constitutionFailureReason: 'old reason',
       analysisResult: { decisions: [] } as any,
       discoveredValidation: { testCommand: 'npm test' },
     };
@@ -415,7 +412,6 @@ describe('transition', () => {
     expect(next.awaitingContinue).toBe(false);
     expect(next.plannerSessionId).toBeUndefined();
     expect(next.clarifications).toEqual([]);
-    expect(next.constitutionFailureReason).toBeUndefined();
     expect(next.analysisResult).toBeUndefined();
     expect(next.discoveredValidation).toBeUndefined();
   });
@@ -528,7 +524,6 @@ describe('transition', () => {
     };
     const next = transition(state, {
       type: 'CONSTITUTION_CHECK_FAIL',
-      reason: 'violates principle X',
     });
     expect(next.phase).toBe('idle');
     expect(next.awaitingContinue).toBe(false);
@@ -633,26 +628,11 @@ describe('transition', () => {
     const next = transition(state, {
       type: 'MARK_RECOVERY_APPLYING',
       action: 'route-bigger-worker',
-      selectedAt: '2026-04-28T12:05:00.000Z',
     });
 
     expect(next.phase).toBe('validating-task');
     expect(next.pendingRecovery?.status).toBe('applying');
     expect(next.pendingRecovery?.selectedAction).toBe('route-bigger-worker');
-    expect(next.pendingRecovery?.selectedAt).toBe('2026-04-28T12:05:00.000Z');
-  });
-
-  it('CLEAR_PENDING_RECOVERY removes pending recovery without changing phase', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      pendingRecovery: makeRecoveryIssue({ status: 'paused' }),
-    };
-
-    const next = transition(state, { type: 'CLEAR_PENDING_RECOVERY' });
-
-    expect(next.phase).toBe('validating-task');
-    expect(next.pendingRecovery).toBeUndefined();
   });
 
   it('RESOLVE_PENDING_RECOVERY clears pending recovery after a selected action succeeds', () => {

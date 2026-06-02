@@ -55,7 +55,7 @@ export async function runPreTaskHooksAndPublish(opts: {
         { bus: wctx.bus, phase: state.phase },
         { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' },
       );
-      state = transitionAndSave(projectDir, sessionId, state, {
+      state = transitionAndSave({ projectDir, sessionId }, state, {
         type: 'SKIP_TASK',
         taskId: task.id,
       });

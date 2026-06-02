@@ -4,13 +4,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { blockSecrets } from './block-secrets.js';
 import type { EngineEvent } from '../../events/types.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 function makeEvent(file: string): EngineEvent {
   return {
     type: 'task_started',
     ts: 1,
     phase: 'implementing',
-    taskId: 'T1' as never,
+    taskId: taskId('T1'),
     title: 't',
     index: 0,
     total: 1,

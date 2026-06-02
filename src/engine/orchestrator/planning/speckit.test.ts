@@ -15,7 +15,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
-import { extractJsonBlock } from './speckit.js';
+import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';

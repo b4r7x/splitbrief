@@ -84,7 +84,7 @@ export function prepareState(
 ): WorkflowState {
   const initial = createInitialState('test-feature');
   if (phase) return { ...initial, phase, rewindPending };
-  return transition(initial, { type: 'START', feature: 'test-feature' });
+  return transition(initial, { type: 'START' });
 }
 
 export function makePassingTask(id = 'T001') {

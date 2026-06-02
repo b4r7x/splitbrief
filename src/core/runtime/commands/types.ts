@@ -63,6 +63,7 @@ export interface RuntimeCommandContext {
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<void>;
+  refreshProjectFiles: () => void;
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;

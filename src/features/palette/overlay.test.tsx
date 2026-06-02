@@ -49,6 +49,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {},
+    refreshProjectFiles: () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
@@ -410,6 +411,33 @@ describe('CommandPaletteOverlay', () => {
 
     expect(overlayStore.get().active).toBe('settings');
 
+    instance.unmount();
+  });
+
+  it('reports a synchronously thrown action error via feedback without crashing', async () => {
+    const commands = createTestCommands();
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={commands}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={() => {
+          throw new Error('mode switch boom');
+        }}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    write(instance, 'instant');
+    await tick(1);
+    await tick(1);
+    write(instance, ENTER);
+    await tick(1);
+    await tick(1);
+
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('mode switch boom');
+    expect(overlayStore.get().active).toBe('none');
     instance.unmount();
   });
 });

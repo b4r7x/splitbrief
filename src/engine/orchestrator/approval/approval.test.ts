@@ -30,7 +30,7 @@ function setupProject(): { projectDir: string; sessionId: string; specPath: stri
 
 function prepareState(): WorkflowState {
   let state = createInitialState('test-feature');
-  state = transition(state, { type: 'START', feature: 'test-feature' });
+  state = transition(state, { type: 'START' });
   state = transition(state, { type: 'RESEARCH_DONE' });
   state = transition(state, { type: 'SPEC_DONE' });
   return state;
@@ -150,10 +150,10 @@ describe('runApprovalLoop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
 
-    const regenCalls: Array<[string, string]> = [];
+    const regenCalls: string[] = [];
     const planner = makePlanner({
       regenerate: async (opts) => {
-        regenCalls.push([opts.prompt, opts.artifactType]);
+        regenCalls.push(opts.prompt);
         return { text: 'regenerated', usage: null };
       },
     });
@@ -173,8 +173,8 @@ describe('runApprovalLoop', () => {
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(true);
     expect(regenCalls).toHaveLength(1);
-    expect(regenCalls[0]?.[0]).toContain('please add auth section');
-    expect(regenCalls[0]?.[1]).toBe('spec');
+    expect(regenCalls[0]).toContain('please add auth section');
+    expect(regenCalls[0]).toContain('spec');
     expect(approvalCalls).toBe(2);
   });
 

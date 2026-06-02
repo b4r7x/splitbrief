@@ -41,7 +41,7 @@ export interface WorkflowContentRectInput {
 const REVIEW_HEADER_ROWS = 2;
 const REVIEW_FOOTER_ROWS = 1;
 
-export function getWorkflowMiddleRows(
+function getWorkflowMiddleRows(
   rows: number,
   inputRows: number,
   hasConfig: boolean,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { entryId } from './schemas.js';
 import { parseEntryAs } from './parse-entry.js';
-import { PlanStepPayloadSchema, AgentInvocationPayloadSchema } from './entry-types.js';
+import { PlanStepPayloadSchema, AgentInvocationPayloadSchema } from './payloads.js';
 
 function makeEnvelope(type: string, payload: unknown) {
   return {

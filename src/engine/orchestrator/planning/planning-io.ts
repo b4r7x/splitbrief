@@ -66,13 +66,14 @@ export async function readPersistedTasks(tasksFilePath: string): Promise<Persist
   }
 }
 
-export async function readTasksForApproval(
-  tasksFilePath: string,
-  currentTasks: Task[],
-  projectDir: string,
-  sessionId: string,
-  metadata: SpecMetadata,
-): Promise<PersistedTasksResult> {
+export async function readTasksForApproval(opts: {
+  tasksFilePath: string;
+  currentTasks: Task[];
+  projectDir: string;
+  sessionId: string;
+  metadata: SpecMetadata;
+}): Promise<PersistedTasksResult> {
+  const { tasksFilePath, currentTasks, projectDir, sessionId, metadata } = opts;
   const first = await readPersistedTasks(tasksFilePath);
   if (first.ok || first.reason !== 'missing') return first;
   if (currentTasks.length === 0) return first;

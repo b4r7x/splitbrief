@@ -64,7 +64,7 @@ export function useRecoveryDriver(): (
       const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
       if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
 
-      const latest = loadPendingRecoveryState(projectDir, activeSessionId, state);
+      const latest = loadPendingRecoveryState({ projectDir, sessionId: activeSessionId }, state);
       if (!latest.pending) return { shouldRun: true, state: latest.state };
 
       const action = parseRecoveryActionAnswer(answer, latest.issue);
@@ -77,7 +77,6 @@ export function useRecoveryDriver(): (
         action,
         bus,
         config,
-        selectedAt: new Date().toISOString(),
       });
 
       setInlineResume(result.state);

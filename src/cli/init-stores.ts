@@ -18,7 +18,6 @@ import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
 import { resolveHooksConfig } from '../engine/hooks/discover.js';
-import { normalizeLegacyMode } from '../core/schemas/enums.js';
 import { buildCLIOverrides } from './build-overrides.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
@@ -43,9 +42,7 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   if (rawMode === 'full' && process.env.DIPTYCH_QUIET !== '1') {
     warnStderr('--mode full is deprecated; use --mode speckit');
   }
-  const normalizedMode = rawMode ? (normalizeLegacyMode(rawMode) ?? undefined) : undefined;
   const overrides = buildCLIOverrides(opts);
-  overrides.mode = normalizedMode;
   configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');

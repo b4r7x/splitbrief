@@ -79,6 +79,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => {},
+    refreshProjectFiles: noop,
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,

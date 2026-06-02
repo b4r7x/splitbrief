@@ -69,6 +69,6 @@ export function createAgentSdkPlanner(opts: {
       });
     },
 
-    capabilities: { ...CONVERSATIONAL_CAPS, supportsHintEscalation: false },
+    capabilities: CONVERSATIONAL_CAPS,
   });
 }

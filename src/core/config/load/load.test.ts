@@ -145,6 +145,17 @@ describe('config loading', () => {
       });
     });
 
+    it('preserves the trust block (trust.customRenderers) from YAML', () => {
+      const dir = join(TMP, 'trust-block');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        trust: { custom_renderers: true },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.trust?.customRenderers).toBe(true);
+    });
+
     it('preserves hook event and option keys from YAML', () => {
       const dir = join(TMP, 'hooks-snake-case');
       writeConfigYaml(dir, {

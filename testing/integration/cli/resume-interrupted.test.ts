@@ -46,7 +46,7 @@ describe('CLI integration: resume interrupted session', () => {
       ],
       currentTaskIndex: 1,
     };
-    saveState(tmp, sessionId, state);
+    saveState({ projectDir: tmp, sessionId }, state);
     writeFileSync(join(tmp, DIPTYCH_DIR, 'active'), sessionId + '\n');
 
     const { exitCode, stdout } = await runCommand(['resume', '--project', tmp]);

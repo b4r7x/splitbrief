@@ -6,31 +6,7 @@ import { clamp01 } from '../../utils/math.js';
 
 export type BriefQualitySeverity = 'error' | 'warning';
 
-export type BriefQualityIssue = {
-  taskId: TaskId;
-  severity: BriefQualitySeverity;
-  code:
-    | 'missing_scope'
-    | 'missing_validation'
-    | 'vague_validation'
-    | 'missing_evidence'
-    | 'missing_escalation'
-    | 'missing_code_context'
-    | 'empty_task_list'
-    | 'multi_file_task'
-    | 'missing_type_definitions'
-    | 'missing_implementation_steps';
-  message: string;
-};
-
-export type BriefQualityReport = {
-  version: 1;
-  passed: boolean;
-  score: number;
-  issues: BriefQualityIssue[];
-};
-
-const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
+const BRIEF_QUALITY_CODES = [
   'missing_scope',
   'missing_validation',
   'vague_validation',
@@ -41,7 +17,25 @@ const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
   'multi_file_task',
   'missing_type_definitions',
   'missing_implementation_steps',
-]);
+] as const;
+
+export type BriefQualityCode = (typeof BRIEF_QUALITY_CODES)[number];
+
+export type BriefQualityIssue = {
+  taskId: TaskId;
+  severity: BriefQualitySeverity;
+  code: BriefQualityCode;
+  message: string;
+};
+
+export type BriefQualityReport = {
+  version: 1;
+  passed: boolean;
+  score: number;
+  issues: BriefQualityIssue[];
+};
+
+const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set(BRIEF_QUALITY_CODES);
 
 function isBriefQualityIssue(value: unknown): value is BriefQualityIssue {
   if (!isRecord(value)) return false;

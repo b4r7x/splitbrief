@@ -1,5 +1,6 @@
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { readFileSafe } from '../../lib/fs.js';
+import { isPathConfined } from '../../lib/path-confinement.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
@@ -15,16 +16,9 @@ import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { escapeRegExp } from '../../utils/regexp.js';
 
-function isInsideProject(projectDir: string, candidate: string): boolean {
-  const root = resolve(projectDir);
-  const resolved = resolve(candidate);
-  const rel = relative(root, resolved);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
-  if (!isInsideProject(projectDir, candidate)) return null;
+  if (!isPathConfined(relative(resolve(projectDir), resolve(candidate)), projectDir)) return null;
   return readFileSafe(candidate);
 }
 
@@ -48,7 +42,7 @@ function readCliPhaseOutput(
   projectDir: string,
   sessionId?: string,
 ): string {
-  const sessionArtifact = sessionId ? readSpecFile(projectDir, sessionId, filename) : null;
+  const sessionArtifact = sessionId ? readSpecFile({ projectDir, sessionId }, filename) : null;
   if (sessionArtifact !== null) return sessionArtifact;
 
   const linkedPath = extractMarkdownLinkedArtifact(resultText, filename);
@@ -78,14 +72,15 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   const effort = plannerCfg.effort;
   const supportsEffort = planner.supportsEffort === true;
 
-  async function runOnce(
-    prompt: string,
-    projectDir: string,
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId'>,
-    mode: 'plan' | 'escalate',
-    resumeId: string | null,
-    signal?: AbortSignal | undefined,
-  ): Promise<InvokeResult> {
+  async function runOnce(opts: {
+    prompt: string;
+    projectDir: string;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId'>;
+    mode: 'plan' | 'escalate';
+    resumeId: string | null;
+    signal?: AbortSignal | undefined;
+  }): Promise<InvokeResult> {
+    const { prompt, projectDir, callbacks, mode, resumeId, signal } = opts;
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
       prompt,
@@ -121,21 +116,23 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     return { text: result.text, usage: result.usage };
   }
 
-  async function invoke(
-    prompt: string,
-    projectDir: string,
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>,
-    mode: 'plan' | 'escalate',
-    signal?: AbortSignal | undefined,
-  ): Promise<InvokeResult> {
+  async function invoke(opts: {
+    prompt: string;
+    projectDir: string;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>;
+    mode: 'plan' | 'escalate';
+    signal?: AbortSignal | undefined;
+  }): Promise<InvokeResult> {
+    const { prompt, projectDir, callbacks, mode, signal } = opts;
     if (!supportsSessionResume) {
-      return runOnce(prompt, projectDir, callbacks, mode, null, signal);
+      return runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal });
     }
 
     const priorId = session.getResumeId();
     return runWithResumeFallback(
       session,
-      (resumeId) => runOnce(prompt, projectDir, callbacks, mode, resumeId ?? null, signal),
+      (resumeId) =>
+        runOnce({ prompt, projectDir, callbacks, mode, resumeId: resumeId ?? null, signal }),
       () => {
         if (priorId) callbacks.onSessionExpired?.(priorId);
       },
@@ -144,9 +141,9 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
   return createPlannerBase({
     invokePlan: ({ prompt, projectDir, callbacks, signal }) =>
-      invoke(prompt, projectDir, callbacks, 'plan', signal),
+      invoke({ prompt, projectDir, callbacks, mode: 'plan', signal }),
     invokeEscalate: ({ prompt, projectDir, callbacks, signal }) =>
-      invoke(prompt, projectDir, callbacks, 'escalate', signal),
+      invoke({ prompt, projectDir, callbacks, mode: 'escalate', signal }),
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 

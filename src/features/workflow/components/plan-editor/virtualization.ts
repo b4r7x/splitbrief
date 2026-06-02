@@ -1,5 +1,6 @@
 import type { Task } from '../../../../core/schemas/task.js';
-import type { PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
+import { clampIndex } from '../../../../utils/indexing.js';
 
 export interface VisibleTaskWindow {
   scrollOffset: number;
@@ -50,7 +51,7 @@ export function getVisibleTaskWindow(input: VisibleTaskWindowInput): VisibleTask
 
   const heightFor = (task: Task) =>
     getTaskEditorRowHeight(task, expandedIds.has(task.id), metadata.get(task.id));
-  const clampedCursor = Math.max(0, Math.min(cursor, tasks.length - 1));
+  const clampedCursor = clampIndex(cursor, tasks.length);
   const cursorTask = tasks[clampedCursor];
   if (!cursorTask) return { scrollOffset: 0, visibleTasks: [] };
   let start = clampedCursor;

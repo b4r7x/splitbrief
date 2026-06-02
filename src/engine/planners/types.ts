@@ -26,7 +26,7 @@ export type PlannerCapabilities = {
 /** Preset for session-based conversational planners (Claude Code, Agent SDK, codex). */
 export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: true,
-  supportsHintEscalation: true,
+  supportsHintEscalation: false,
   supportsSessionResume: true,
   supportsEffort: true,
   supportsImages: true,
@@ -146,7 +146,6 @@ export interface EscalateOptions {
 
 export interface RegenerateOptions {
   prompt: string;
-  artifactType: 'spec' | 'plan';
   projectDir: string;
   callbacks: PlannerOutputCallbacks;
 }

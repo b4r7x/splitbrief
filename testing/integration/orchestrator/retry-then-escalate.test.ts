@@ -31,7 +31,7 @@ afterEach(() => {
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
   let s = createInitialState('feat');
-  s = transition(s, { type: 'START', feature: 'feat' });
+  s = transition(s, { type: 'START' });
   s = transition(s, { type: 'RESEARCH_DONE' });
   s = transition(s, { type: 'SPEC_DONE' });
   s = transition(s, { type: 'APPROVE_SPEC' });

@@ -1,10 +1,7 @@
 import { Fzf } from 'fzf';
 import type { RuntimeCommandDef } from './types.js';
 
-export function findRuntimeCommand(
-  commands: RuntimeCommandDef[],
-  name: string,
-): RuntimeCommandDef | null {
+function findRuntimeCommand(commands: RuntimeCommandDef[], name: string): RuntimeCommandDef | null {
   const lower = name.toLowerCase();
   return (
     commands.find(

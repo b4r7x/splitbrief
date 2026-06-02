@@ -1,15 +1,12 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
-import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
-import { killAllProcesses } from '../../lib/process/registry.js';
-import { getCurrentDiff, discardFileChange, getCurrentChangedFiles } from '../../lib/git.js';
+import { getCurrentDiff, getCurrentChangedFiles } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
@@ -49,7 +46,7 @@ export async function runFinalReviewPhase(
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, bus, planner, metadata } = opts;
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'ALL_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ALL_DONE' });
 
   if (config.snapshots?.auto?.preFinalReview === true) {
     try {
@@ -102,7 +99,7 @@ export async function runFinalReviewPhase(
         diff.slice(0, MAX_DIFF_CHARS) +
         `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
     }
-    const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
+    const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
 
     let driftPromptSection: string | undefined;
     try {
@@ -154,7 +151,7 @@ export async function runFinalReviewPhase(
     warnError('Failed to record final review evidence', err);
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'REVIEW_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'REVIEW_DONE' });
   publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
   bus.publish({ type: 'workflow_complete', ts: Date.now(), phase: state.phase });
 
@@ -188,33 +185,4 @@ export async function runFinalReviewPhase(
   const summary = buildSummary(summaryOpts);
   callbacks.onComplete(summary);
   return summary;
-}
-
-export async function shutdownWorkflow(
-  projectDir: string,
-  sessionId: string,
-  getTrackedState: () => WorkflowState | undefined,
-  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
-): Promise<void> {
-  killAllProcesses();
-  const trackedState = getTrackedState();
-  if (trackedState) {
-    try {
-      saveState(projectDir, sessionId, trackedState);
-    } catch (err) {
-      warnError('Failed to save state during shutdown', err);
-    }
-  }
-  const currentTask = getCurrentTask();
-  if (currentTask) {
-    try {
-      await discardFileChange(
-        projectDir,
-        currentTask.file,
-        currentTask.action === 'modify' ? 'tracked' : 'untracked',
-      );
-    } catch (err) {
-      warnError('Failed to discard changes during shutdown', err);
-    }
-  }
 }

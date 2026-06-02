@@ -12,6 +12,10 @@ import {
 } from '../../../../core/schemas/enums.js';
 import { TaskIdSchema, type TaskId } from '../../../../core/schemas/task.js';
 import {
+  READINESS_NEXT_ACTION_KINDS,
+  READINESS_STATUSES,
+} from '../../../../core/readiness/types.js';
+import {
   BRIEF_QUALITY_FILE,
   READINESS_FILE,
   SESSION_LOG_FILE,
@@ -22,6 +26,7 @@ import { readEvents } from '../../../../core/sessions/log-reader.js';
 import { readJsonSafe } from '../../../../lib/fs.js';
 import { includes, narrowRecord, optionalString } from '../../../../utils/type-guards.js';
 import {
+  CHECKPOINT_RESTORE_SAFETY,
   listCheckpointSummaries,
   type CheckpointSummary,
 } from '../../../snapshots/checkpoint-summary.js';
@@ -109,18 +114,8 @@ function nonnegativeIntegerOrNull(value: unknown): number | null {
   return Number.isInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
-const READINESS_NEXT_ACTIONS = [
-  'continue',
-  'run-init',
-  'fix-config',
-  'clean-or-isolate-repo',
-  'raise-context',
-  'set-budget',
-  'exit',
-] as const;
-
 function recoveryReadinessAction(value: unknown): ReviewPacket['readiness']['nextAction'] {
-  return includes(READINESS_NEXT_ACTIONS, value) ? value : null;
+  return includes(READINESS_NEXT_ACTION_KINDS, value) ? value : null;
 }
 
 function readinessChecks(value: unknown): ReviewPacket['readiness']['checks'] {
@@ -177,12 +172,7 @@ export function readReadiness(
   return {
     path: READINESS_FILE,
     present: true,
-    status:
-      record.status === 'ready' ||
-      record.status === 'ready-with-warnings' ||
-      record.status === 'blocked'
-        ? record.status
-        : null,
+    status: includes(READINESS_STATUSES, record.status) ? record.status : null,
     nextAction: recoveryReadinessAction(record.nextAction),
     blockerCount: nonnegativeIntegerOrNull(record.blockerCount),
     warningCount: nonnegativeIntegerOrNull(record.warningCount),
@@ -237,15 +227,14 @@ export async function readPacketEvents(
 }
 
 function toReviewPacketCheckpoint(checkpoint: CheckpointSummary): ReviewPacketCheckpoint {
-  return {
-    ...checkpoint,
-    safety: {
-      ...checkpoint.safety,
-      excludedPaths: [...checkpoint.safety.excludedPaths],
-      text: { ...checkpoint.safety.text },
-    },
-  };
+  return { ...checkpoint };
 }
+
+const reviewPacketSafety = (): ReviewPacket['checkpoints']['safety'] => ({
+  ...CHECKPOINT_RESTORE_SAFETY,
+  excludedPaths: [...CHECKPOINT_RESTORE_SAFETY.excludedPaths],
+  text: { ...CHECKPOINT_RESTORE_SAFETY.text },
+});
 
 export async function readCheckpoints(
   projectDir: string,
@@ -282,5 +271,6 @@ export async function readCheckpoints(
       runSnapshotKinds: ledger?.runSnapshotKinds ?? {},
       latestSnapshotId: latestRunCheckpointId,
     },
+    safety: reviewPacketSafety(),
   };
 }

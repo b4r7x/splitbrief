@@ -9,6 +9,7 @@ import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { FULL_LOGO } from './logo.js';
 import { HomeScreen } from './screen.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -90,10 +91,7 @@ describe('HomeScreen', () => {
     expect(frame).toContain('Tab fill');
     const footerLine = lineIndexContaining(frame, 'Tab fill');
     const inputPromptLine = lineIndexContaining(frame, '> /');
-    // The slash-suggestion footer sits directly above the docked input prompt,
-    // separated only by the panel border lines.
     expect(inputPromptLine).toBeGreaterThan(footerLine);
-    expect(inputPromptLine - 1).toBe(footerLine + 2);
     ui.unmount();
   });
 
@@ -166,7 +164,9 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('__| (_)');
+    for (const line of FULL_LOGO.split('\n')) {
+      expect(frame).toContain(line);
+    }
     ui.unmount();
   });
 

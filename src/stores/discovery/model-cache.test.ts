@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { modelCacheStore } from './model-cache.js';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
 const TTL_MS = 5 * 60 * 1000;

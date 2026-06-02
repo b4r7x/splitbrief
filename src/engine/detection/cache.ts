@@ -6,7 +6,7 @@ import type {
   DetectedModel,
   PlannerDetection,
   ProviderDetection,
-} from '../../core/types/config-options.js';
+} from '../../core/discovery/detection.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { getDiptychPath } from '../../core/paths.js';
 

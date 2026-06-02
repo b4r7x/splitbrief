@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { planEditorStore, type PlanTaskReviewMetadata } from './plan-editor.js';
+import { planEditorStore } from './plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
 
@@ -45,7 +46,7 @@ describe('planEditorStore', () => {
 
     planEditorStore.initEditor([task]);
     planEditorStore.setReviewMetadata([
-      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+      { taskId: taskId('T001'), workerProfile: 'cheap-cloud', contextFit: 'fits' },
     ]);
     planEditorStore.setSaveError('old parse error');
     planEditorStore.setTasks([edited]);
@@ -76,8 +77,8 @@ describe('planEditorStore', () => {
     const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
     planEditorStore.initEditor([first, second]);
     planEditorStore.setReviewMetadata([
-      { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
-      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      { taskId: taskId('T001'), workerProfile: 'local-qwen', contextFit: 'fits' },
+      { taskId: taskId('T002'), workerProfile: 'frontier', contextFit: 'tight' },
     ]);
 
     planEditorStore.setTasks([
@@ -129,7 +130,7 @@ describe('planEditorStore', () => {
       files: ['src/a.ts'],
     };
     const metadata: PlanTaskReviewMetadata = {
-      taskId: 'T001',
+      taskId: taskId('T001'),
       workerProfile: 'cheap-cloud',
       selectedCostTier: 'cheap',
       costPosture: 'Selected cheap cost tier via cheapest-capable routing',
@@ -142,11 +143,11 @@ describe('planEditorStore', () => {
 
     planEditorStore.setReviewMetadata([
       metadata,
-      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      { taskId: taskId('T002'), workerProfile: 'frontier', contextFit: 'tight' },
     ]);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         costPosture: 'Selected local cost tier via cheapest-capable routing',
@@ -184,7 +185,7 @@ describe('planEditorStore', () => {
 
     planEditorStore.initEditor([reviewed]);
     planEditorStore.setReviewMetadata([
-      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+      { taskId: taskId('T001'), workerProfile: 'cheap-cloud', contextFit: 'fits' },
     ]);
     planEditorStore.initEditor([reviewed]);
 
@@ -197,12 +198,12 @@ describe('planEditorStore', () => {
 
   it('upserts one task review without removing metadata for another task', () => {
     planEditorStore.setReviewMetadata([
-      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
-      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      { taskId: taskId('T001'), workerProfile: 'cheap-cloud', contextFit: 'fits' },
+      { taskId: taskId('T002'), workerProfile: 'frontier', contextFit: 'tight' },
     ]);
 
     planEditorStore.upsertTaskReviewMetadata({
-      taskId: 'T001',
+      taskId: taskId('T001'),
       contextFit: 'overflow',
       risk: 'high',
     });

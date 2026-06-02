@@ -1,7 +1,8 @@
 import type { z } from 'zod';
+import type { ValidationStageSchema } from '../../core/schemas/enums.js';
 import type { EngineEventSchema } from './schema.js';
 
-export type ValidationStages = { typecheck: boolean; lint: boolean; test: boolean };
+export type ValidationStages = Record<z.infer<typeof ValidationStageSchema>, boolean>;
 
 export type EngineEvent = z.infer<typeof EngineEventSchema>;
 

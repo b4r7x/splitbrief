@@ -62,7 +62,6 @@ export function createCliImplementer(
             output: '',
           });
         }
-        if (signal?.aborted) throw err;
         throw err;
       }
     },

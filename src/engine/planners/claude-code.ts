@@ -87,7 +87,7 @@ export function createClaudeCodePlanner(opts: {
       });
     },
 
-    capabilities: { ...CONVERSATIONAL_CAPS, supportsHintEscalation: false },
+    capabilities: CONVERSATIONAL_CAPS,
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
       writeProjectFile(projectDir, task.file, extracted.code);

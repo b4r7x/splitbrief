@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { BriefQualityIssue } from '../../../../engine/spec/brief-quality.js';
-import type { PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
 import {
   buildTaskDetailParts,
   formatContextFit,

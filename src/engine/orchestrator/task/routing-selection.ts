@@ -57,7 +57,7 @@ export async function selectRoutingProfile(opts: {
       routingReason: message,
       createdAt: nowIso(),
     });
-    state = transitionAndSave(projectDir, sessionId, state, {
+    state = transitionAndSave({ projectDir, sessionId }, state, {
       type: 'SET_PENDING_RECOVERY',
       issue,
     });
@@ -85,7 +85,7 @@ export async function selectRoutingProfile(opts: {
       routingDecision,
       createdAt: nowIso(),
     });
-    state = transitionAndSave(projectDir, sessionId, state, {
+    state = transitionAndSave({ projectDir, sessionId }, state, {
       type: 'SET_PENDING_RECOVERY',
       issue,
     });

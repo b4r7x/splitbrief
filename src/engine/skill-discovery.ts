@@ -62,7 +62,8 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
       let raw: string;
       try {
         raw = await readFile(fullPath, 'utf-8');
-      } catch {
+      } catch (err) {
+        if (!isENOENT(err)) warnError(`Failed to read skill ${fullPath}`, err);
         continue;
       }
       const fm = parseFrontmatter(raw);
@@ -76,7 +77,8 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
         let raw: string;
         try {
           raw = await readFile(skillMd, 'utf-8');
-        } catch {
+        } catch (err) {
+          if (!isENOENT(err)) warnError(`Failed to read skill ${skillMd}`, err);
           continue;
         }
         const fm = parseFrontmatter(raw);
@@ -124,7 +126,8 @@ async function discoverConventions(projectDir: string): Promise<SkillMeta[]> {
   let raw: string;
   try {
     raw = await readFile(convPath, 'utf-8');
-  } catch {
+  } catch (err) {
+    if (!isENOENT(err)) warnError('Failed to read CONVENTIONS.md', err);
     return [];
   }
   const fm = parseFrontmatter(raw);
@@ -185,7 +188,8 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
     let raw: string;
     try {
       raw = await readFile(skill.path, 'utf-8');
-    } catch {
+    } catch (err) {
+      if (!isENOENT(err)) warnError(`Failed to read skill ${skill.path}`, err);
       continue;
     }
     const { body } = extractFrontmatter(raw);

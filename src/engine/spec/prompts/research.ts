@@ -1,4 +1,4 @@
-import { buildPrompt, instructionsSection } from './shared.js';
+import { buildPrompt, instructionsSection } from './prompt-builder.js';
 
 export function buildResearchPrompt(
   feature: string,

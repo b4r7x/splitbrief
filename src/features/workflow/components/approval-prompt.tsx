@@ -5,6 +5,7 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/store.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getApprovalPromptRows } from '../prompt-rows.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 
 type ConfirmStep = 'phrase' | 'reason';
 
@@ -56,14 +57,10 @@ export function ApprovalPrompt() {
         if (confirmStep === 'phrase') {
           if (key.escape) {
             closeApprovalPrompt();
-            setPhraseInput('');
-            setReasonInput('');
-            setConfirmStep('phrase');
-            setPhraseError('');
             return;
           }
           if (key.return) {
-            if (phraseInput === 'I confirm') {
+            if (phraseInput === CONFIRM_PHRASE) {
               setPhraseError('');
               setConfirmStep('reason');
             } else {
@@ -86,20 +83,12 @@ export function ApprovalPrompt() {
         if (confirmStep === 'reason') {
           if (key.escape) {
             closeApprovalPrompt();
-            setPhraseInput('');
-            setReasonInput('');
-            setConfirmStep('phrase');
-            setPhraseError('');
             return;
           }
           if (key.return) {
             if (reasonInput.trim()) {
               const reason = reasonInput.trim();
-              closeApprovalPrompt({ decision: 'confirm', phrase: 'I confirm', reason });
-              setPhraseInput('');
-              setReasonInput('');
-              setConfirmStep('phrase');
-              setPhraseError('');
+              closeApprovalPrompt({ decision: 'confirm', phrase: CONFIRM_PHRASE, reason });
             }
             return;
           }
@@ -160,7 +149,7 @@ export function ApprovalPrompt() {
         {confirmStep === 'phrase' && (
           <>
             <Text color={t.textDim}>
-              {'    Type "I confirm" to proceed, or press Escape to cancel.'}
+              {`    Type "${CONFIRM_PHRASE}" to proceed, or press Escape to cancel.`}
             </Text>
             <Box>
               <Text color={t.textDim}>{'    Phrase: '}</Text>

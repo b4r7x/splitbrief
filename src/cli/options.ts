@@ -1,4 +1,9 @@
 import type { Command } from 'commander';
+import { cliError } from './errors.js';
+
+export function assertModeFlagsExclusive(opts: { json?: boolean; rpc?: boolean }): void {
+  if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
+}
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd

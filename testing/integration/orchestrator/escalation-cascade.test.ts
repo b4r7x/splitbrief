@@ -37,7 +37,7 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
 
     const task = makeTask({ id: 'T001' });
     let state = createInitialState('feat');
-    state = transition(state, { type: 'START', feature: 'feat' });
+    state = transition(state, { type: 'START' });
     state = transition(state, { type: 'RESEARCH_DONE' });
     state = transition(state, { type: 'SPEC_DONE' });
     state = transition(state, { type: 'APPROVE_SPEC' });

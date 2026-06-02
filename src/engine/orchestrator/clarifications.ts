@@ -9,6 +9,7 @@ import { transitionAndSave } from './state-ops.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import type { Planner } from '../planners/types.js';
 import { warnError } from '../../lib/warn.js';
+import { nowIso } from '../../utils/format-time.js';
 
 export type CollectClarificationsOptions = {
   questions: ClarificationQuestion[];
@@ -55,8 +56,7 @@ export async function collectAndPersistClarifications(
     if (answer === 'skip' || answer === '') continue;
 
     appendMessage(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       { role: 'user', phase: state.phase, text: answer },
       persistTranscript,
     );
@@ -65,7 +65,7 @@ export async function collectAndPersistClarifications(
     const message: QueuedMessage = {
       id: randomUUID(),
       text: answer,
-      queuedAt: new Date().toISOString(),
+      queuedAt: nowIso(),
       phase: state.phase,
       deliveredViaNative: false,
       origin: 'clarification',
@@ -73,7 +73,10 @@ export async function collectAndPersistClarifications(
       questionId: question.id ?? undefined,
     };
 
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'ENQUEUE_USER_MSG',
+      message,
+    });
 
     bus.publish({
       type: 'clarification_answered',
@@ -100,7 +103,7 @@ export async function collectAndPersistClarifications(
 
   if (clarifications.length === 0) return state;
 
-  let content = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
+  let content = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
   const sessionHeader = `### Session ${new Date().toISOString().slice(0, 10)}`;
   const entries = clarifications.map((c) => `- Q: ${c.question} \u2192 A: ${c.answer}`).join('\n');
 

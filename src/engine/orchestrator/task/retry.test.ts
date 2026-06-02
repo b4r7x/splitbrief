@@ -188,7 +188,7 @@ describe('retryAndRecord — retry budget', () => {
         'abort-workflow',
       ],
     });
-    expect(loadState(wctx.projectDir, wctx.sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState(wctx)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
     });
@@ -250,7 +250,7 @@ describe('retryAndRecord — recovery stop points', () => {
         'abort-workflow',
       ],
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
     });
@@ -320,7 +320,7 @@ describe('retryAndRecord — recovery stop points', () => {
       taskId: 'T001',
       attempts: 1,
     });
-    expect(loadState(projectDir, sessionId)).toMatchObject({
+    expect(loadState({ projectDir, sessionId })).toMatchObject({
       attempt: 1,
       pendingRecovery: expect.objectContaining({ reason: 'retry-exhausted' }),
     });

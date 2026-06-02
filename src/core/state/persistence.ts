@@ -6,19 +6,20 @@ import { PhaseSchema } from '../schemas/enums.js';
 import { TaskIdSchema } from '../schemas/task.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
+import type { SessionRef } from '../types/session-ref.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../lib/fs.js';
 import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
-export function saveState(projectDir: string, sessionId: string, state: WorkflowState): void {
-  const dir = sessionDir(projectDir, sessionId);
+export function saveState(ref: SessionRef, state: WorkflowState): void {
+  const dir = sessionDir(ref.projectDir, ref.sessionId);
   writeSecureFile(join(dir, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
 }
 
-export function loadState(projectDir: string, sessionId: string): WorkflowState | null {
-  const filePath = join(sessionDir(projectDir, sessionId), STATE_FILE);
+export function loadState(ref: SessionRef): WorkflowState | null {
+  const filePath = join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE);
   if (!existsSync(filePath)) return null;
   let raw: unknown;
   try {
@@ -37,12 +38,8 @@ export function loadState(projectDir: string, sessionId: string): WorkflowState 
 
 const ensuredDirs = new Set<string>();
 
-function appendLine(
-  projectDir: string,
-  sessionId: string,
-  entry: SessionLogMessageEntry | SessionLogEventEntry,
-): void {
-  const dir = sessionDir(projectDir, sessionId);
+function appendLine(ref: SessionRef, entry: SessionLogMessageEntry | SessionLogEventEntry): void {
+  const dir = sessionDir(ref.projectDir, ref.sessionId);
   try {
     if (!ensuredDirs.has(dir)) {
       ensureSecureDir(dir);
@@ -57,8 +54,7 @@ function appendLine(
 }
 
 export function appendMessage(
-  projectDir: string,
-  sessionId: string,
+  ref: SessionRef,
   message: Omit<SessionLogMessageEntry, 'ts' | 'kind'>,
   persistTranscript: boolean,
 ): void {
@@ -68,12 +64,11 @@ export function appendMessage(
     ts: new Date().toISOString(),
     ...message,
   };
-  appendLine(projectDir, sessionId, entry);
+  appendLine(ref, entry);
 }
 
 export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
-  projectDir: string,
-  sessionId: string,
+  ref: SessionRef,
   event: TEvent,
 ): void {
   const { type, ts, ...rest } = event;
@@ -90,5 +85,5 @@ export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
     ...(taskId.success && { taskId: taskId.data }),
     data,
   };
-  appendLine(projectDir, sessionId, entry);
+  appendLine(ref, entry);
 }

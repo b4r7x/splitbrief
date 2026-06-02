@@ -1,3 +1,4 @@
+import { pluralize } from '../../../utils/format.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {
@@ -52,7 +53,7 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
     checks.push({
       id: repo.requiresCleanWorktree ? 'repo.dirty-worktree-blocked' : 'repo.dirty-worktree',
       severity: repo.requiresCleanWorktree ? 'blocker' : 'warning',
-      summary: `Working tree has ${dirtyCount} changed and ${untrackedCount} untracked file${untrackedCount === 1 ? '' : 's'}.`,
+      summary: `Working tree has ${dirtyCount} changed and ${untrackedCount} untracked ${pluralize(untrackedCount, 'file')}.`,
       details: examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : undefined,
       fix: repo.requiresCleanWorktree
         ? 'Clean the source checkout before creating an isolated worktree.'

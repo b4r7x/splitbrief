@@ -60,8 +60,13 @@ function applyTaskResult(
   planEditorStore.setCursor(result.cursor);
 }
 
+type StoreEditorAction = Exclude<
+  PlanEditorAction,
+  { type: 'open-editor' } | { type: 'regenerate-flagged' }
+>;
+
 export function applyPlanEditorAction(
-  action: PlanEditorAction,
+  action: StoreEditorAction,
   onSave: () => Promise<void>,
   onTogglePacketPreview?: (() => void) | undefined,
 ): void {
@@ -106,16 +111,11 @@ export function applyPlanEditorAction(
       if (task) planEditorStore.toggleFlag(task.id);
       return;
     }
-    case 'regenerate-flagged': {
-      return;
-    }
     case 'toggle-packet-preview':
       onTogglePacketPreview?.();
       return;
     case 'open-help':
       overlayStore.open('plan-editor-help');
-      return;
-    case 'open-editor':
       return;
     case 'save':
       void onSave();
@@ -154,7 +154,7 @@ export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
         const { tasks, cursor } = planEditorStore.get();
         const task = tasks[cursor];
         if (!task) return;
-        openExternalEditor(task, action.mode, sessionDir);
+        openExternalEditor({ task, mode: action.mode, sessionDirPath: sessionDir });
         return;
       }
       if (action.type === 'regenerate-flagged') {

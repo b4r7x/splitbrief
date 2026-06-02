@@ -133,7 +133,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     });
     expect(result.state.messageQueue[0]?.text).toContain('tighten the follow-up assertions');
     expect(events.some((event) => event.type === 'message_queued')).toBe(true);
-    expect(loadState(projectDir, sessionId)?.messageQueue).toEqual(
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           text: expect.stringContaining('tighten the follow-up assertions'),

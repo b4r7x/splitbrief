@@ -7,7 +7,8 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
-import type { WorkflowMode } from '../../core/schemas/enums.js';
+import { WORKFLOW_MODES, type WorkflowMode } from '../../core/schemas/enums.js';
+import { getWorkflowMode } from '../../core/config/accessors/state.js';
 
 interface ModeDef {
   mode: WorkflowMode;
@@ -15,18 +16,23 @@ interface ModeDef {
   size: string;
 }
 
-const MODES: readonly ModeDef[] = [
-  { mode: 'instant', cost: '1 call · no approval', size: 'trivial edits' },
-  { mode: 'quick', cost: '1 call · no approval', size: 'small fixes' },
-  { mode: 'standard', cost: '4 calls · 1 approval', size: 'features' },
-  { mode: 'speckit', cost: '6-7 calls · 2 approvals', size: 'large scope' },
-];
+const MODE_METADATA: Record<WorkflowMode, { cost: string; size: string }> = {
+  instant: { cost: '1 call · no approval', size: 'trivial edits' },
+  quick: { cost: '1 call · no approval', size: 'small fixes' },
+  standard: { cost: '4 calls · 1 approval', size: 'features' },
+  speckit: { cost: '6-7 calls · 2 approvals', size: 'large scope' },
+};
+
+const MODES: readonly ModeDef[] = WORKFLOW_MODES.map((mode) => ({
+  mode,
+  ...MODE_METADATA[mode],
+}));
 
 export function ModeSelector() {
   const t = useTheme();
   const isSmall = terminalSizeStore.use((s) => s.isSmall);
   const config = configStore.useConfig();
-  const currentMode = config.workflow.mode ?? 'standard';
+  const currentMode = getWorkflowMode(config);
   const currentIdx = MODES.findIndex((m) => m.mode === currentMode);
 
   const { selectedIndex } = useStaticSelector<ModeDef>({

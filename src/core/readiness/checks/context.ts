@@ -1,10 +1,11 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
+import type { WorkflowMode } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 import { capitalize } from '../../../utils/capitalize.js';
 
-const MODE_CONTEXT_FLOORS: Record<string, number> = {
+const MODE_CONTEXT_FLOORS: Record<WorkflowMode, number> = {
   instant: 8_000,
   quick: 16_000,
   standard: 32_000,
@@ -13,7 +14,7 @@ const MODE_CONTEXT_FLOORS: Record<string, number> = {
 
 export function buildContextChecks(config: Config): ReadinessCheck[] {
   const mode = resolveMode({ config });
-  const floor = MODE_CONTEXT_FLOORS[mode] ?? 32_000;
+  const floor = MODE_CONTEXT_FLOORS[mode];
   const checks: ReadinessCheck[] = [
     contextLengthCheck('planner', config.planner.contextLength, floor),
   ];

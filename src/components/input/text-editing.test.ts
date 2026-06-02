@@ -5,6 +5,7 @@ import {
   moveToLineStart,
   moveToLineEnd,
   findVisualLineStart,
+  findVisualLineEnd,
   resolveEditAction,
   applyEditAction,
   navigateVertically,
@@ -91,6 +92,25 @@ describe('moveToLineEnd', () => {
 
   it('stays at end when already there', () => {
     expect(moveToLineEnd('hello', 5)).toEqual({ value: 'hello', cursor: 5 });
+  });
+
+  it('lands at the visual-row end (not logical end) on a wrapped line', () => {
+    // "abcdefghijklmno" at width 10 wraps as "abcdefghij" | "klmno".
+    // Cursor on the first visual row → Ctrl+E must stop within that row, not jump to 15.
+    const result = moveToLineEnd('abcdefghijklmno', 2, 10);
+    expect(result.cursor).toBeLessThan(15);
+    expect(result.cursor).toBe(findVisualLineEnd('abcdefghijklmno', 2, 10));
+  });
+
+  it('is symmetric with moveToLineStart on a wrapped line', () => {
+    // Ctrl+A and Ctrl+E agree on the bounds of the same visual row.
+    const value = 'abcdefghijklmno';
+    const cursor = 2;
+    const start = moveToLineStart(value, cursor, 10).cursor;
+    const end = moveToLineEnd(value, cursor, 10).cursor;
+    expect(start).toBeLessThanOrEqual(cursor);
+    expect(end).toBeGreaterThanOrEqual(cursor);
+    expect(end).toBeLessThan(value.length);
   });
 });
 

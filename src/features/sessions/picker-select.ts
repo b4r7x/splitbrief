@@ -10,7 +10,7 @@ export function handleSessionSelect(session: Session, projectDir: string) {
   if (session.status === 'interrupted') {
     let resumeState: WorkflowState | null;
     try {
-      resumeState = loadState(projectDir, session.id);
+      resumeState = loadState({ projectDir, sessionId: session.id });
     } catch (err) {
       feedbackStore.setError(`Cannot resume "${session.feature}": ${toErrorMessage(err)}`);
       return;

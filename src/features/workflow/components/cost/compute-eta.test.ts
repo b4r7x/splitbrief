@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeEta } from './footer.js';
+import { computeEta } from './compute-eta.js';
 
 describe('computeEta', () => {
   it('returns empty when no tasks completed yet', () => {

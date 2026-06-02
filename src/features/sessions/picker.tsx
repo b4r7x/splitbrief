@@ -26,7 +26,7 @@ export function SessionsPicker() {
     sessionsStore.loadAll(projectDir);
   }, [projectDir]);
 
-  const panelWidth = getResponsivePanelWidth(cols, isSmall);
+  const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
   const featureColWidth = Math.max(8, Math.min(isSmall ? 28 : 40, Math.max(1, panelWidth - 8)));
 
   return (

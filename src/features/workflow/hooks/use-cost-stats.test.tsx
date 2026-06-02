@@ -63,18 +63,22 @@ describe('useCostStats', () => {
 
 describe('formatCostDisplay', () => {
   it('hides zero-dollar savings estimates', () => {
-    const display = formatCostDisplay(100, {
-      hypotheticalCost: 0,
-      actualPlannerCost: 0,
-      actualImplementerCost: 0,
-      totalActualCost: 0,
-      savingsAmount: 0,
-      savingsPercentage: 0,
-      localCompletionRate: 1,
-      hasPricedUsage: true,
-      hasUnpricedUsage: false,
-      hasSavingsEstimate: true,
-    });
+    const display = formatCostDisplay(
+      100,
+      {
+        hypotheticalCost: 0,
+        actualPlannerCost: 0,
+        actualImplementerCost: 0,
+        totalActualCost: 0,
+        savingsAmount: 0,
+        savingsPercentage: 0,
+        localCompletionRate: 1,
+        hasPricedUsage: true,
+        hasUnpricedUsage: false,
+        hasSavingsEstimate: true,
+      },
+      'priced',
+    );
 
     expect(display.showSavings).toBe(false);
   });

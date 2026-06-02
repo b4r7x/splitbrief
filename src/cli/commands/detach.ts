@@ -9,7 +9,7 @@ import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage } from '../../engine/ipc/protocol.js';
 import { parseServerMessage } from '../../engine/ipc/protocol.js';
-import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
+import { resolveSessionAlias } from '../session-aliases.js';
 import { resolveRunningSession } from '../session-resolve.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 
@@ -66,11 +66,8 @@ export async function detachCommand(
   assertNotWindows();
 
   const resolvedId =
-    sessionId === undefined
-      ? await resolveRunningSession(opts.projectDir, deps)
-      : isNumericAlias(sessionId)
-        ? await resolveNumericAlias(sessionId, opts.projectDir)
-        : sessionId;
+    (await resolveSessionAlias(sessionId, opts.projectDir)) ??
+    (await resolveRunningSession(opts.projectDir, deps));
   const sessDir = sessionDir(opts.projectDir, resolvedId);
   const status = await deps.checkServerStatus(sessDir);
 

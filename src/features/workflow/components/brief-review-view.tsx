@@ -5,10 +5,8 @@ import { useTheme } from '../../../components/theme.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../../engine/spec/brief-quality.js';
-import {
-  planEditorStore,
-  type PlanTaskReviewMetadata,
-} from '../../../stores/workflow/plan-editor.js';
+import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
 import {
   buildPlanReviewScorecard,
   type PlanReviewScorecardEntry,
@@ -22,6 +20,7 @@ import {
   getTaskStatusSymbol,
 } from './brief-review-format.js';
 import { loadPlanEditorData } from './plan-editor/loader.js';
+import { BRIEFS_REVIEW_HINT } from '../review-parser.js';
 
 const SIMPLE_REVIEW_CHROME_ROWS = 7;
 const SIMPLE_TASK_ROW_HEIGHT = 3;
@@ -59,6 +58,37 @@ export function PlanReviewScorecardLine({
     <Text color={getScorecardColor(scorecard.buckets, t)} wrap="truncate">
       {text}
     </Text>
+  );
+}
+
+export function PlanReviewHeader({
+  tasks,
+  quality,
+  reviewMetadata,
+  filePath,
+}: {
+  tasks: Task[];
+  quality: BriefQualityReport | null;
+  reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
+  filePath: string;
+}) {
+  const t = useTheme();
+  const qualityDisplay = formatQualityDisplay(quality);
+  const qualityColor = quality === null ? t.textDim : quality.passed ? t.success : t.error;
+
+  return (
+    <>
+      <Box flexDirection="row" gap={2}>
+        <Text bold color={t.accent}>
+          Task Briefs
+        </Text>
+        <Text color={t.textDim}>{formatTaskCount(tasks.length)}</Text>
+        <Text color={qualityColor}>{qualityDisplay}</Text>
+      </Box>
+      <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
+      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
+      <Text color={t.textDim}>{filePath}</Text>
+    </>
   );
 }
 
@@ -205,24 +235,17 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
   const { tasks, quality, loadError } = useBriefData(filePath);
   const reviewMetadata = planEditorStore.use((s) => s.reviewMetadata);
 
-  const qualityDisplay = formatQualityDisplay(quality);
-
-  const qualityColor = quality === null ? t.textDim : quality.passed ? t.success : t.error;
   const taskRowBudget = Math.max(0, (height ?? 24) - SIMPLE_REVIEW_CHROME_ROWS);
   const { visibleTasks, omittedCount } = getVisibleBriefTaskWindow(tasks, taskRowBudget);
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">
-      <Box flexDirection="row" gap={2}>
-        <Text bold color={t.accent}>
-          Task Briefs
-        </Text>
-        <Text color={t.textDim}>{formatTaskCount(tasks.length)}</Text>
-        <Text color={qualityColor}>{qualityDisplay}</Text>
-      </Box>
-      <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
-      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
-      <Text color={t.textDim}>{filePath}</Text>
+      <PlanReviewHeader
+        tasks={tasks}
+        quality={quality}
+        reviewMetadata={reviewMetadata}
+        filePath={filePath}
+      />
       {loadError !== null && (
         <Text color={t.error} wrap="truncate">
           {loadError}
@@ -237,7 +260,7 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
         {omittedCount > 0 && <Text color={t.textDim}>+ {omittedCount} more tasks</Text>}
       </Box>
       <Box height={1} />
-      <Text color={t.textDim}>approve | e/edit | comment {'<text>'} | reject</Text>
+      <Text color={t.textDim}>{BRIEFS_REVIEW_HINT}</Text>
     </Box>
   );
 }

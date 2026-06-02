@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../../core/types/config-options.js';
+import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
 import { isProviderLocal } from '../../../core/providers/catalog.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
@@ -22,12 +22,13 @@ export interface ResolvedModelCatalogEntry extends DetectedModel {
   pricingMode: PricingMode;
 }
 
-function mergeModelMetadata(
-  providerId: ProviderId,
-  base: ResolvedModelCatalogEntry,
-  runtime: DetectedModel | undefined,
-  modelsDev: DetectedModel | undefined,
-): ResolvedModelCatalogEntry {
+function mergeModelMetadata(opts: {
+  providerId: ProviderId;
+  base: ResolvedModelCatalogEntry;
+  runtime: DetectedModel | undefined;
+  modelsDev: DetectedModel | undefined;
+}): ResolvedModelCatalogEntry {
+  const { providerId, base, runtime, modelsDev } = opts;
   const apiPriced = isApiPricedProvider(providerId);
   const { pricingInput: seedIn, pricingOutput: seedOut, isFree: seedFree, ...seedRest } = base;
   const contextLength = modelsDev?.contextLength ?? runtime?.contextLength ?? base.contextLength;
@@ -72,15 +73,15 @@ function toBundledEntry(
     ...(apiPriced && entry.isFree !== undefined && { isFree: entry.isFree }),
   };
 
-  return mergeModelMetadata(
+  return mergeModelMetadata({
     providerId,
     base,
-    undefined,
-    entry.catalogModelId
+    runtime: undefined,
+    modelsDev: entry.catalogModelId
       ? (findModelMetadata(entry.catalogProvider ?? providerId, entry.catalogModelId, cache) ??
-          undefined)
+        undefined)
       : undefined,
-  );
+  });
 }
 
 function toRuntimeEntry(
@@ -88,19 +89,19 @@ function toRuntimeEntry(
   entry: DetectedModel,
   cache: ModelCacheAccessor,
 ): ResolvedModelCatalogEntry {
-  return mergeModelMetadata(
+  return mergeModelMetadata({
     providerId,
-    {
+    base: {
       id: entry.id,
       source: 'runtime',
       pricingMode: getPricingMode(providerId),
       isDetected: true,
     },
-    entry,
-    isApiPricedProvider(providerId)
+    runtime: entry,
+    modelsDev: isApiPricedProvider(providerId)
       ? (findModelMetadata(providerId, entry.id, cache) ?? undefined)
       : undefined,
-  );
+  });
 }
 
 function toModelsDevEntry(
@@ -108,16 +109,16 @@ function toModelsDevEntry(
   entry: DetectedModel,
   cache: ModelCacheAccessor,
 ): ResolvedModelCatalogEntry {
-  return mergeModelMetadata(
+  return mergeModelMetadata({
     providerId,
-    {
+    base: {
       id: entry.id,
       source: 'models-dev',
       pricingMode: getPricingMode(providerId),
     },
-    lookupRuntimeModel(providerId, entry.id, cache) ?? undefined,
-    entry,
-  );
+    runtime: lookupRuntimeModel(providerId, entry.id, cache) ?? undefined,
+    modelsDev: entry,
+  });
 }
 
 function mergeCatalogEntries(
@@ -144,12 +145,12 @@ function mergeCatalogEntries(
     const existing = byId.get(canonicalId);
     if (!existing) return;
 
-    const merged = mergeModelMetadata(
+    const merged = mergeModelMetadata({
       providerId,
-      { ...existing },
-      entry.source === 'runtime' ? entry : undefined,
-      entry.source === 'models-dev' ? entry : undefined,
-    );
+      base: { ...existing },
+      runtime: entry.source === 'runtime' ? entry : undefined,
+      modelsDev: entry.source === 'models-dev' ? entry : undefined,
+    });
     const mergedIsDefault = existing.isDefault ?? entry.isDefault;
     const mergedIsDetected = existing.isDetected || entry.isDetected;
     if (mergedIsDefault !== undefined) merged.isDefault = mergedIsDefault;

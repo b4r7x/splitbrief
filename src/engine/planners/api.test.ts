@@ -160,7 +160,6 @@ describe('createApiPlanner', () => {
 
     const result = await planner.regenerate({
       prompt: 'the prompt',
-      artifactType: 'spec',
       projectDir,
       callbacks: { onOutput: (text) => collected.push(text) },
     });
@@ -181,7 +180,6 @@ describe('createApiPlanner', () => {
 
     const result = await planner.regenerate({
       prompt: 'the prompt',
-      artifactType: 'spec',
       projectDir,
       callbacks: { onOutput: (text) => collected.push(text) },
     });

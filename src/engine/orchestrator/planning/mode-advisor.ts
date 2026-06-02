@@ -1,4 +1,4 @@
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import { WORKFLOW_MODES, type WorkflowMode } from '../../../core/schemas/enums.js';
 
 export type WorkRisk = 'trivial' | 'small' | 'normal' | 'high';
 export type ModeAdviceKind = 'none' | 'downgrade' | 'upgrade' | 'missing-context';
@@ -80,8 +80,6 @@ const VALIDATION_HINT_RE =
 const VAGUE_RE =
   /^(improve|fix|make better|make it better|make it work|update|enhance)\s*(it|this|that)?\s*$/i;
 
-const MODE_ORDER: readonly WorkflowMode[] = ['instant', 'quick', 'standard', 'speckit'];
-
 function riskToMode(risk: WorkRisk): WorkflowMode {
   return ({ trivial: 'instant', small: 'quick', normal: 'standard', high: 'speckit' } as const)[
     risk
@@ -89,7 +87,7 @@ function riskToMode(risk: WorkRisk): WorkflowMode {
 }
 
 function modeIndex(mode: WorkflowMode): number {
-  return MODE_ORDER.indexOf(mode);
+  return WORKFLOW_MODES.indexOf(mode);
 }
 
 export type AdvisorResult = {

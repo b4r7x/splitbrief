@@ -174,7 +174,7 @@ describe('useWorkflowRunner', () => {
       ...createInitialState('add auth'),
       phase: 'reviewing-spec',
     };
-    saveState(projectDir, sessionId, saved);
+    saveState({ projectDir, sessionId }, saved);
     writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(
@@ -212,7 +212,7 @@ describe('useWorkflowRunner', () => {
       ...createInitialState('add auth'),
       phase: 'implementing',
     };
-    saveState(projectDir, sessionId, saved);
+    saveState({ projectDir, sessionId }, saved);
     writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(

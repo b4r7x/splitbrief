@@ -5,6 +5,16 @@ import { useCompletionNavigation } from '../use-completion-navigation.js';
 
 const MAX_RESULTS = 50;
 
+const fzfCache = new WeakMap<string[], Fzf<string[]>>();
+
+function getFzf(files: string[]): Fzf<string[]> {
+  const cached = fzfCache.get(files);
+  if (cached) return cached;
+  const fzf = new Fzf(files);
+  fzfCache.set(files, fzf);
+  return fzf;
+}
+
 interface UseReferenceCompletionOptions {
   files: string[];
   value: string;
@@ -36,7 +46,7 @@ function isTokenBoundary(value: string, index: number): boolean {
   return index === 0 || value[index - 1] === ' ' || value[index - 1] === '\n';
 }
 
-export function findReferenceToken(value: string): ReferenceToken | null {
+function findReferenceToken(value: string): ReferenceToken | null {
   for (let i = value.length - 1; i >= 0; i--) {
     const char = value[i];
     if (char === '@') {
@@ -52,8 +62,7 @@ export function findReferenceToken(value: string): ReferenceToken | null {
 
 function filterFiles(files: string[], query: string): string[] {
   if (!query) return files.slice(0, MAX_RESULTS);
-  const fzf = new Fzf(files);
-  return fzf
+  return getFzf(files)
     .find(query)
     .slice(0, MAX_RESULTS)
     .map((entry: FzfResultItem<string>) => entry.item);

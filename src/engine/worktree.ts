@@ -145,10 +145,6 @@ async function readSessionState(
   return { phase: null, lastUpdated };
 }
 
-async function resolveWorktreeBranch(wtDir: string): Promise<string> {
-  return getCurrentBranch(wtDir);
-}
-
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
   validateWorktreeName(slug);
@@ -190,7 +186,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
 
     let branch = '';
     try {
-      branch = await resolveWorktreeBranch(wtDir);
+      branch = await getCurrentBranch(wtDir);
     } catch {
       continue;
     }

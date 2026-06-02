@@ -6,6 +6,7 @@ import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { makeConfig } from '../../../testing/helpers/factories/config.js';
 import { makeSummary } from '../../../testing/helpers/factories/summary.js';
 import { makeTask } from '../../../testing/helpers/factories/task.js';
+import { taskId } from '../../core/schemas/task.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger.js';
@@ -75,7 +76,7 @@ describe('SummaryScreen', () => {
         implementerModel: 'qwen-small',
         taskBreakdown: [
           {
-            taskId: 'T001' as never,
+            taskId: taskId('T001'),
             taskTitle: 'Local task',
             method: 'local',
             implementerTokens: 100,
@@ -86,7 +87,7 @@ describe('SummaryScreen', () => {
             implementerProfile: 'local-qwen',
           },
           {
-            taskId: 'T002' as never,
+            taskId: taskId('T002'),
             taskTitle: 'Cloud task',
             method: 'local',
             implementerTokens: 100,

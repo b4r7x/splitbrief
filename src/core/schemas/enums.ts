@@ -85,7 +85,9 @@ const TASK_COMPLETION_METHODS = [
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
-export const ValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
+export const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
+export const ValidationStageSchema = z.enum(VALIDATION_STAGES);
+export type ValidationStage = z.infer<typeof ValidationStageSchema>;
 
 export const RECOVERY_REASONS = [
   'implementation-error',
@@ -184,14 +186,17 @@ const ACTION_CLASSES = [
 export const ActionClassSchema = z.enum(ACTION_CLASSES);
 export type ActionClass = z.infer<typeof ActionClassSchema>;
 
-const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
+export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
 
-const THEME_MODES = ['terminal', 'mono'] as const;
+export const THEME_MODES = ['terminal', 'mono'] as const;
 export const ThemeModeSchema = z.enum(THEME_MODES);
 
-const SHIKI_THEMES = ['github-dark', 'github-light'] as const;
+export const SHIKI_THEMES = ['github-dark', 'github-light'] as const;
 export const ShikiThemeSchema = z.enum(SHIKI_THEMES);
+
+export const SESSION_SCOPES = ['project', 'global'] as const;
+export const SessionScopeSchema = z.enum(SESSION_SCOPES);
 
 const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);

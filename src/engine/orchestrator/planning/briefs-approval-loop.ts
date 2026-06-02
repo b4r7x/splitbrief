@@ -1,90 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { PlannerCallbacksContext } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { createBusTextHandler, publishError } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { labelError } from '../../../utils/format-errors.js';
-import { countBySeverity } from '../../../utils/collections.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { BRIEF_QUALITY_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { evaluateBriefQuality, firstBriefErrorMessage } from '../../spec/brief-quality.js';
+import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
-import { drainQueue, formatDrainedMessages } from '../queue.js';
+import { runBriefQualityGate } from './planning-helpers.js';
 import { regenerateTasks } from './regen.js';
 import { readPersistedTasks, readTasksForApproval } from './planning-io.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
-
-export function drainAndFormat(
-  projectDir: string,
-  sessionId: string,
-  state: WorkflowState,
-  bus: EventBus,
-): { state: WorkflowState; prefix: string } {
-  const drain = drainQueue(projectDir, sessionId, state, bus);
-  if (drain.messages.length === 0) return { state, prefix: '' };
-  return { state: drain.state, prefix: formatDrainedMessages(drain.messages) };
-}
-
-export function handlePlanningFailure(opts: {
-  err: unknown;
-  projectDir: string;
-  sessionId: string;
-  state: WorkflowState;
-  wctx: PlannerCallbacksContext;
-}): { state: WorkflowState; tasks: Task[]; cancelled: true } {
-  const { err, projectDir, sessionId, state, wctx } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase }, labelError('Planning failed', err));
-  return {
-    state: transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' }),
-    tasks: [],
-    cancelled: true,
-  };
-}
-
-export function runBriefQualityGate(opts: {
-  tasks: Task[];
-  projectDir: string;
-  sessionId: string;
-  bus: EventBus;
-  phase: Phase;
-}): { report: BriefQualityReport; ok: boolean } {
-  const { tasks, projectDir, sessionId, bus, phase } = opts;
-  const report = evaluateBriefQuality(tasks);
-  writeSpecFile(
-    { projectDir, sessionId },
-    BRIEF_QUALITY_FILE,
-    JSON.stringify(report, null, 2),
-    null,
-  );
-  const { error: errorCount, warning: warningCount } = countBySeverity(report.issues);
-  if (report.passed) {
-    bus.publish({
-      type: 'brief_quality_passed',
-      ts: Date.now(),
-      phase,
-      score: report.score,
-      warningCount,
-    });
-  } else {
-    bus.publish({
-      type: 'brief_quality_failed',
-      ts: Date.now(),
-      phase,
-      score: report.score,
-      errorCount,
-      warningCount,
-    });
-  }
-  return { report, ok: report.passed };
-}
 
 function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {
   publishError(
@@ -109,7 +40,7 @@ export async function runBriefsApprovalLoop(
     }
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
 
   while (true) {
     if (signal?.aborted) return { state, tasks, rejected: false };
@@ -134,23 +65,23 @@ export async function runBriefsApprovalLoop(
         continue;
       }
       tasks = edited.tasks;
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
       continue;
     }
 
     if (!result.approved && !result.comment) {
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'REJECT_BRIEFS' });
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: 'REJECT_BRIEFS' });
       return { state, tasks, rejected: true };
     }
 
     if (!result.comment) {
-      const approved = await readTasksForApproval(
+      const approved = await readTasksForApproval({
         tasksFilePath,
-        tasks,
+        currentTasks: tasks,
         projectDir,
         sessionId,
         metadata,
-      );
+      });
       if (!approved.ok) {
         publishError({ bus: bus, phase: state.phase }, approved.message);
         continue;
@@ -167,8 +98,8 @@ export async function runBriefsApprovalLoop(
         continue;
       }
       tasks = approved.tasks;
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_BRIEFS' });
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_BRIEFS' });
       return { state, tasks, rejected: false };
     }
 
@@ -179,7 +110,10 @@ export async function runBriefsApprovalLoop(
       phase: state.phase,
       deliveredViaNative: false as const,
     };
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'ENQUEUE_USER_MSG',
+      message,
+    });
 
     const regen = await regenerateTasks({
       projectDir,
@@ -207,6 +141,6 @@ export async function runBriefsApprovalLoop(
       );
     }
 
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
   }
 }

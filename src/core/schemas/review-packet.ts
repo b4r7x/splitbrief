@@ -10,10 +10,11 @@ import {
 } from './enums.js';
 import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
-import { CostBreakdownSchema } from './summary.js';
+import { CostBreakdownSchema, ReviewFinalReviewStatusSchema } from './summary.js';
 import { TaskIdSchema } from './task.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
+import { ReadinessNextActionKindSchema, ReadinessStatusSchema } from '../readiness/types.js';
 
 export const REVIEW_PACKET_VERSION = 1;
 
@@ -47,18 +48,8 @@ const ReviewPacketRunSchema = z.object({
 const ReviewPacketReadinessSchema = z.object({
   path: z.string(),
   present: z.boolean(),
-  status: z.enum(['ready', 'ready-with-warnings', 'blocked']).nullable(),
-  nextAction: z
-    .enum([
-      'continue',
-      'run-init',
-      'fix-config',
-      'clean-or-isolate-repo',
-      'raise-context',
-      'set-budget',
-      'exit',
-    ])
-    .nullable(),
+  status: ReadinessStatusSchema.nullable(),
+  nextAction: ReadinessNextActionKindSchema.nullable(),
   blockerCount: z.number().int().nonnegative().nullable(),
   warningCount: z.number().int().nonnegative().nullable(),
   checks: z.array(
@@ -115,7 +106,6 @@ const ReviewPacketCheckpointSchema = z.object({
   isRunCheckpoint: z.boolean(),
   diffCommand: z.string(),
   restoreCommand: z.string(),
-  safety: ReviewPacketCheckpointSafetySchema,
 });
 
 const ReviewPacketRunLedgerSchema = z.object({
@@ -133,6 +123,7 @@ const ReviewPacketCheckpointsSchema = z.object({
   latestRunCheckpoint: ReviewPacketCheckpointSchema.nullable(),
   preFinalReview: ReviewPacketCheckpointSchema.nullable(),
   runLedger: ReviewPacketRunLedgerSchema,
+  safety: ReviewPacketCheckpointSafetySchema,
 });
 
 const ReviewPacketValidationTaskSchema = z.object({
@@ -358,7 +349,7 @@ const ReviewPacketCostSchema = z.object({
 
 const ReviewPacketFinalReviewSchema = z.object({
   path: z.string(),
-  status: z.enum(['written', 'failed', 'missing', 'skipped']),
+  status: ReviewFinalReviewStatusSchema,
   evidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
   statusText: z.string(),
   excerpt: z.string().nullable(),

@@ -90,7 +90,7 @@ A type stays in `src/core/types/` only if it meets **both** criteria:
 
 Currently three files qualify (TS-only, no Zod schema):
 
-- `core/types/config-options.ts` — `DetectedModel`, `WorkflowOpts`, `PlannerDetection`, `ProviderDetection`, `PlannerTool`
+- `core/types/config-options.ts` — `WorkflowOpts` (the provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`)
 - `core/types/state-actions.ts` — `StateAction`, `TokenBudget`, `CodeContext`, `ProjectContext`
 - `core/types/summary.ts` — `ImplementerResult`, `ValidationResult`
 

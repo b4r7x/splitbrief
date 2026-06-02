@@ -20,8 +20,7 @@ export function buildScopeLines(scope: Task['scope']): string[] {
 function formatSingleTask(task: Task): string {
   const lines: string[] = [];
 
-  const dependsOnYaml =
-    task.dependsOn.length > 0 ? task.dependsOn.map((id) => `  - ${id}`).join('\n') : '[]';
+  const dependsOnYaml = task.dependsOn.map((id) => `  - ${id}`).join('\n');
 
   lines.push('---');
   lines.push(`id: ${task.id}`);

@@ -2,16 +2,21 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonSafeAsync } from '../../lib/fs.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { sessionDir, SPEC_FILE, PLAN_FILE, STATE_FILE, SUMMARY_FILE } from '../../core/paths.js';
+import {
+  sessionDir,
+  SPEC_FILE,
+  PLAN_FILE,
+  STATE_FILE,
+  SUMMARY_FILE,
+  BRIEF_HASH_FILE,
+} from '../../core/paths.js';
 import { SessionSchema } from '../../core/schemas/session.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { getCurrentCommitSha } from '../../lib/git.js';
 
 async function readBriefHash(projectDir: string, sessionId: string): Promise<string | null> {
-  const parsed = await readJsonSafeAsync(
-    join(sessionDir(projectDir, sessionId), 'brief-hash.json'),
-  );
+  const parsed = await readJsonSafeAsync(join(sessionDir(projectDir, sessionId), BRIEF_HASH_FILE));
   return isRecord(parsed) && typeof parsed.hash === 'string' ? parsed.hash : null;
 }
 

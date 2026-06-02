@@ -26,7 +26,11 @@ export function computeCompletionOverlayRows(args: {
     args.itemCount > 0 ? Math.min(args.itemCount, args.maxVisible) : args.hasFuzzyMatch ? 1 : 0;
   if (rowCount === 0) return 0;
 
-  const scrollOffset = computeScrollOffset(args.selectedIndex, args.maxVisible, args.itemCount);
+  const scrollOffset = computeScrollOffset({
+    index: args.selectedIndex,
+    windowSize: args.maxVisible,
+    totalItems: args.itemCount,
+  });
   const indicatorRows =
     args.itemCount > 0
       ? Number(scrollOffset > 0) + Number(scrollOffset + args.maxVisible < args.itemCount)

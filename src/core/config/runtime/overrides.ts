@@ -14,8 +14,10 @@ import {
 import { configError } from '../errors.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Config } from '../../schemas/config.js';
+import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
+import type { WorkflowOpts } from '../../types/config-options.js';
 
 const RunnerOverrideSchema = z.object({
   tool: z.string().optional(),
@@ -41,6 +43,27 @@ export const CLIOverridesSchema = z.object({
 });
 
 export type CLIOverrides = z.infer<typeof CLIOverridesSchema>;
+
+export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
+  return {
+    planner: {
+      tool: opts.planner,
+      model: opts.plannerModel,
+      command: opts.plannerCommand,
+    },
+    implementer: {
+      tool: opts.implementer ?? opts.provider,
+      model: opts.implementerModel ?? opts.model,
+      command: opts.implementerCommand,
+    },
+    autoApprove: opts.auto,
+    approve: opts.approve,
+    mode: opts.mode,
+    budget: opts.budget,
+    plannerEffort: opts.plannerEffort,
+    yolo: opts.yolo,
+  };
+}
 
 export interface RunnerOverrides {
   tool?: string | undefined;
@@ -213,7 +236,7 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     next = applyPlannerEffort(next, effort);
   }
   if (overrides.yolo) {
-    const approval = next.approval ?? { enabled: true, feedRejectionsToPlanner: true };
+    const approval = next.approval ?? defaultApprovalConfig();
     next = {
       ...next,
       approval: { ...approval, enabled: false },

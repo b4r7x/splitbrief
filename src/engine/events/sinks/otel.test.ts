@@ -6,6 +6,7 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { createOtelSink } from './otel.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 describe('createOtelSink', () => {
   let exporter: InMemorySpanExporter;
@@ -86,7 +87,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: 'T1' as never,
+      taskId: taskId('T1'),
       title: 'Add foo',
       index: 0,
       total: 1,
@@ -97,7 +98,7 @@ describe('createOtelSink', () => {
       type: 'task_completed',
       ts: 50,
       phase: 'implementing',
-      taskId: 'T1' as never,
+      taskId: taskId('T1'),
       title: 'Add foo',
       method: 'local',
       retries: 0,
@@ -127,14 +128,14 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: 'T2' as never,
+      taskId: taskId('T2'),
       title: 'Modify bar',
       index: 0,
       total: 1,
       file: 'b.ts',
       action: 'modify',
     });
-    sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: 'T2' as never });
+    sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: taskId('T2') });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
@@ -148,7 +149,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: 'T3' as never,
+      taskId: taskId('T3'),
       title: 'Old task',
       index: 0,
       total: 1,
@@ -159,7 +160,7 @@ describe('createOtelSink', () => {
       type: 'task_skipped',
       ts: 30,
       phase: 'implementing',
-      taskId: 'T3' as never,
+      taskId: taskId('T3'),
       title: 'Old task',
       reason: 'already done',
     });
@@ -177,7 +178,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: 'T4' as never,
+      taskId: taskId('T4'),
       title: 'A',
       index: 0,
       total: 1,
@@ -224,7 +225,7 @@ describe('createOtelSink', () => {
       type: 'validate',
       ts: 30,
       phase: 'implementing',
-      taskId: 'T5' as never,
+      taskId: taskId('T5'),
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },

@@ -6,6 +6,7 @@ import {
   assertExistingPathConfined,
   assertPathConfined,
   assertWritablePathConfined,
+  isPathConfined,
 } from './path-confinement.js';
 
 const ROOT = '/safe/root/dir';
@@ -59,5 +60,18 @@ describe('assertPathConfined', () => {
     symlinkSync(join(outside, 'target'), join(root, 'linked-dir'));
 
     expect(() => assertWritablePathConfined('linked-dir/file.ts', root)).toThrow(/unsafe path/);
+  });
+});
+
+describe('isPathConfined', () => {
+  it('recognizes a nested path as confined and an escaping path as not', () => {
+    expect(isPathConfined('handoffs/spec-kit', ROOT)).toBe(true);
+    expect(isPathConfined('', ROOT)).toBe(true);
+    expect(isPathConfined('../escape', ROOT)).toBe(false);
+  });
+
+  it('rejects Windows drive-absolute paths regardless of separator', () => {
+    expect(isPathConfined('C:\\windows', ROOT)).toBe(false);
+    expect(isPathConfined('C:/windows', ROOT)).toBe(false);
   });
 });

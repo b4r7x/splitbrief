@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { loadHookModule } from './load-module.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookContext } from './types.js';
+import { taskId } from '../../core/schemas/task.js';
 
 const projectDir = resolve('.');
 const ctx: HookContext = { projectDir, sessionId: 's' };
@@ -12,7 +13,7 @@ const allowEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: 'T1' as never,
+  taskId: taskId('T1'),
   title: 'normal task',
   index: 0,
   total: 1,
@@ -23,7 +24,7 @@ const forbiddenEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: 'T2' as never,
+  taskId: taskId('T2'),
   title: 'forbidden task',
   index: 0,
   total: 1,

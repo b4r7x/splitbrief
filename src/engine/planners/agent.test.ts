@@ -43,7 +43,6 @@ describe('createAgentPlanner', () => {
 
     const result = await planner.regenerate({
       prompt: 'test prompt',
-      artifactType: 'spec',
       projectDir,
       callbacks,
     });

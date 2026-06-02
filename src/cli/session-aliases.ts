@@ -51,6 +51,15 @@ export function isNumericAlias(input: string): boolean {
   return NUMERIC_PATTERN.test(input);
 }
 
+export async function resolveSessionAlias(
+  sessionId: string | undefined,
+  projectDir: string,
+): Promise<string | undefined> {
+  if (sessionId === undefined) return undefined;
+  if (isNumericAlias(sessionId)) return resolveNumericAlias(sessionId, projectDir);
+  return sessionId;
+}
+
 export async function resolveNumericAlias(input: string, projectDir: string): Promise<string> {
   const num = parseInt(input, 10);
 

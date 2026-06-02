@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../picker-utils.js';
+import { clampIndex } from '../../../utils/indexing.js';
 import { handleKeyboardInput } from './two-column-keyboard.js';
 import { useColumnState } from './use-column-state.js';
 import {
@@ -123,7 +124,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
     ? [{ id: CUSTOM_ROW_ID, isVirtual: true as const }, ...rightCol.items]
     : rightCol.items;
-  const rightEffectiveIndex = Math.min(rightCol.index, Math.max(0, filteredRight.length - 1));
+  const rightEffectiveIndex = clampIndex(rightCol.index, filteredRight.length);
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
   const isSpecial = leftCol.currentItem

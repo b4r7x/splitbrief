@@ -13,7 +13,7 @@ import { findAffectedTestFile } from '../../core/validation/test-discovery.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import { detectValidationHeuristic } from './validation-heuristic.js';
 import { sanitizeDiscoveredValidation } from './planning/sanitize-discovered-validation.js';
-import type { ValidationResult } from './validation-types.js';
+import type { ValidationResult } from './validation-result.js';
 
 const MAX_ERROR_LINES = 20;
 export type ValidationCommandRunner = typeof runCommand;
@@ -90,42 +90,38 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const results: ValidationResult[] = [];
     const stages: ValidationStages = { typecheck: false, lint: false, test: false };
 
+    const runAndRecordStage = async (
+      stage: ValidationResult['stage'],
+      resolved: ResolvedCommand,
+      target?: string,
+    ): Promise<'continue' | 'stop'> => {
+      const args = target !== undefined ? [...resolved.args, '--', target] : resolved.args;
+      const result = await runValidationStep({
+        stage,
+        cmd: resolved.cmd,
+        args,
+        cwd: projectDir,
+        runCommand: commandRunner,
+      });
+      results.push(result);
+      if (!result.passed) return 'stop';
+      stages[stage] = true;
+      onStageComplete?.(stages);
+      return 'continue';
+    };
+
     if (config.validation.typecheck) {
       const resolved = resolveCommand('typecheckCommand', config, discovered, heuristic, {
         cmd: 'npx',
         args: ['tsc', '--noEmit'],
         source: 'default',
       });
-      if (resolved) {
-        const result = await runValidationStep({
-          stage: 'typecheck',
-          cmd: resolved.cmd,
-          args: resolved.args,
-          cwd: projectDir,
-          runCommand: commandRunner,
-        });
-        results.push(result);
-        if (!result.passed) return results;
-        stages.typecheck = true;
-        onStageComplete?.(stages);
-      }
+      if (resolved && (await runAndRecordStage('typecheck', resolved)) === 'stop') return results;
     }
 
     if (config.validation.lint) {
       const resolved = resolveCommand('lintCommand', config, discovered, heuristic, null);
-      if (resolved) {
-        const result = await runValidationStep({
-          stage: 'lint',
-          cmd: resolved.cmd,
-          args: resolved.args,
-          cwd: projectDir,
-          runCommand: commandRunner,
-        });
-        results.push(result);
-        if (!result.passed) return results;
-        stages.lint = true;
-        onStageComplete?.(stages);
-      }
+      if (resolved && (await runAndRecordStage('lint', resolved)) === 'stop') return results;
     }
 
     if (config.validation.test) {
@@ -139,32 +135,11 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         if (useFileTarget) {
           const testPattern = resolveTestPattern(config, discovered, heuristic);
           const testFile = findAffectedTestFile(task.file, projectDir, testPattern);
-          if (testFile) {
-            const args = [...resolved.args, '--', testFile];
-            const result = await runValidationStep({
-              stage: 'test',
-              cmd: resolved.cmd,
-              args,
-              cwd: projectDir,
-              runCommand: commandRunner,
-            });
-            results.push(result);
-            if (!result.passed) return results;
-            stages.test = true;
-            onStageComplete?.(stages);
+          if (testFile && (await runAndRecordStage('test', resolved, testFile)) === 'stop') {
+            return results;
           }
-        } else {
-          const result = await runValidationStep({
-            stage: 'test',
-            cmd: resolved.cmd,
-            args: resolved.args,
-            cwd: projectDir,
-            runCommand: commandRunner,
-          });
-          results.push(result);
-          if (!result.passed) return results;
-          stages.test = true;
-          onStageComplete?.(stages);
+        } else if ((await runAndRecordStage('test', resolved)) === 'stop') {
+          return results;
         }
       }
     }

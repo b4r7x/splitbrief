@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, readFileSync, mkdirSync, symlinkSync, existsSync } from 'node:fs';
+import {
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  symlinkSync,
+  existsSync,
+  chmodSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { applyCode } from './apply.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
@@ -153,6 +160,34 @@ describe('applyCode', () => {
     expect(content).toContain('const b = "$1 captured group";');
     expect(content).toContain('const c = "$& matched text";');
     expect(content).toContain('const d = "$$ escaped dollar";');
+  });
+
+  it('modify action falls back to whole-file create when the file is absent (ENOENT)', async () => {
+    tempDir = createTempDir('impl-test');
+    const task = makeTask({ action: 'modify', file: 'src/missing.ts' });
+    const code = 'export const created = true;\n';
+
+    const result = await applyCode(code, task, tempDir);
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(tempDir, 'src', 'missing.ts'), 'utf-8')).toBe(code);
+  });
+
+  itUnix('modify action propagates a non-ENOENT read error instead of clobbering', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'protected.ts');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(filePath, 'export const original = true;\n');
+    // Write-only: reading fails with EACCES while a write would otherwise clobber it.
+    chmodSync(filePath, 0o200);
+
+    const task = makeTask({ action: 'modify', file: 'src/protected.ts' });
+    try {
+      await expect(applyCode('export const clobbered = true;\n', task, tempDir)).rejects.toThrow();
+    } finally {
+      chmodSync(filePath, 0o600);
+    }
+    expect(readFileSync(filePath, 'utf-8')).toBe('export const original = true;\n');
   });
 
   it('rejects path traversal in task file', async () => {

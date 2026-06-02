@@ -92,7 +92,7 @@ export async function checkBudgetAfterTask(opts: {
           createdAt: nowIso(),
         });
 
-  const newState = transitionAndSave(projectDir, sessionId, state, {
+  const newState = transitionAndSave({ projectDir, sessionId }, state, {
     type: 'SET_PENDING_RECOVERY',
     issue,
   });

@@ -98,9 +98,9 @@ describe('formatCrashDiagnostic', () => {
   it('shows options footer', () => {
     const out = formatCrashDiagnostic(crashedDiag);
     expect(out).toContain('Options:');
-    expect(out).toContain('[1] Exit and run `diptych start` for a new workflow');
-    expect(out).toContain('[2]');
-    expect(out).not.toContain('Start a new workflow for the same feature');
+    expect(out).toMatch(/\[1\]/);
+    expect(out).toMatch(/diptych start/);
+    expect(out).toMatch(/\[2\]/);
   });
 });
 

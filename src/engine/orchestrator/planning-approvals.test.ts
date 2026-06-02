@@ -101,11 +101,11 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     // real tasks.md block that parseTasks will accept. The regenerate output is
     // distinctive text so we can observe it flowed through instead of the
     // initial plan's spec.
-    const regenArgs: Array<{ prompt: string; target: string }> = [];
+    const regenArgs: Array<{ prompt: string }> = [];
     const planner = makePassingPlanner({
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
       regenerate: async (opts) => {
-        regenArgs.push({ prompt: opts.prompt, target: opts.artifactType });
+        regenArgs.push({ prompt: opts.prompt });
         return { text: '# Regenerated Spec\n\nauth section added.\n', usage: null };
       },
     });
@@ -121,7 +121,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.state.phase).toBe('implementing');
     expect(regenArgs).toHaveLength(1);
     expect(regenArgs[0]?.prompt).toContain('add auth section');
-    expect(regenArgs[0]?.target).toBe('spec');
+    expect(regenArgs[0]?.prompt).toContain('spec');
   });
 
   it('enters reviewing-briefs phase for invalid briefs in standard mode (user can reject)', async () => {

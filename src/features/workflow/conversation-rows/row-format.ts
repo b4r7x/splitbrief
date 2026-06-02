@@ -25,7 +25,7 @@ export function rowText(rowValue: ConversationRow): string {
   return rowValue.segments.map((segment) => segment.text).join('');
 }
 
-export function wrapText(text: string, width: number): string[] {
+function wrapText(text: string, width: number): string[] {
   return wrapHard(text, Math.max(MIN_ROW_WIDTH, width)).split('\n');
 }
 

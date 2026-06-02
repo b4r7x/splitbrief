@@ -7,6 +7,16 @@ import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
+import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
+
+function printSnapshotResult(manifest: SnapshotManifest, snapshotDir: string, name?: string): void {
+  console.log(`Snapshot created: ${manifest.id}`);
+  if (name) {
+    console.log(`  Name: ${name}`);
+  }
+  console.log(`  Files: ${manifest.trackedFileCount}`);
+  console.log(`  Location: ${snapshotDir}`);
+}
 
 export function registerSnapshotCommand(program: Command): void {
   const snapshot = program
@@ -45,21 +55,11 @@ export function registerSnapshotCommand(program: Command): void {
             ...(opts.name !== undefined && { name: opts.name }),
           });
           console.log('Initialized snapshot baseline.');
-          console.log(`Snapshot created: ${followup.manifest.id}`);
-          if (opts.name) {
-            console.log(`  Name: ${opts.name}`);
-          }
-          console.log(`  Files: ${followup.manifest.trackedFileCount}`);
-          console.log(`  Location: ${followup.snapshotDir}`);
+          printSnapshotResult(followup.manifest, followup.snapshotDir, opts.name);
           return;
         }
 
-        console.log(`Snapshot created: ${result.manifest.id}`);
-        if (opts.name) {
-          console.log(`  Name: ${opts.name}`);
-        }
-        console.log(`  Files: ${result.manifest.trackedFileCount}`);
-        console.log(`  Location: ${result.snapshotDir}`);
+        printSnapshotResult(result.manifest, result.snapshotDir, opts.name);
       });
     });
 

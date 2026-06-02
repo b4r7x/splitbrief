@@ -25,8 +25,8 @@ describe('saveState / loadState roundtrip', () => {
   it('writes JSON and reads it back identically', () => {
     const dir = makeTmp();
     const state = createInitialState('my-feature');
-    saveState(dir, SESSION_ID, state);
-    const loaded = loadState(dir, SESSION_ID);
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
     expect(loaded).toEqual(state);
   });
 
@@ -39,8 +39,8 @@ describe('saveState / loadState roundtrip', () => {
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:14b',
     };
-    saveState(dir, SESSION_ID, state);
-    const loaded = loadState(dir, SESSION_ID);
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
     if (!loaded) throw new Error('expected loadState to return saved state');
     expect(loaded.plannerTool).toBe('openrouter');
     expect(loaded.plannerModel).toBe('claude-sonnet-4-20250514');
@@ -52,7 +52,7 @@ describe('saveState / loadState roundtrip', () => {
     const dir = makeTmp();
     const nested = join(dir, 'deep', 'nested');
     expect(existsSync(nested)).toBe(false);
-    saveState(nested, SESSION_ID, createInitialState('feat'));
+    saveState({ projectDir: nested, sessionId: SESSION_ID }, createInitialState('feat'));
     expect(existsSync(join(nested, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'state.json'))).toBe(
       true,
     );
@@ -88,8 +88,8 @@ describe('saveState / loadState roundtrip', () => {
       pendingRecovery: issue,
     };
 
-    saveState(dir, SESSION_ID, state);
-    const loaded = loadState(dir, SESSION_ID);
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
 
     expect(loaded?.pendingRecovery).toEqual(issue);
     expect(loaded?.phase).toBe('implementing');
@@ -99,7 +99,7 @@ describe('saveState / loadState roundtrip', () => {
 describe('loadState', () => {
   it('returns null when file does not exist', () => {
     const dir = makeTmp();
-    expect(loadState(dir, SESSION_ID)).toBeNull();
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
   it('returns null when state is malformed (missing phase)', () => {
@@ -107,7 +107,7 @@ describe('loadState', () => {
     const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ stateVersion: 2, tasks: [] }));
-    expect(loadState(dir, SESSION_ID)).toBeNull();
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
   it('returns null when state is malformed (tasks not an array)', () => {
@@ -118,7 +118,7 @@ describe('loadState', () => {
       join(stateDir, 'state.json'),
       JSON.stringify({ stateVersion: 2, phase: 'idle', tasks: 'not-array' }),
     );
-    expect(loadState(dir, SESSION_ID)).toBeNull();
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
   it('returns null when state file contains invalid JSON', () => {
@@ -126,7 +126,7 @@ describe('loadState', () => {
     const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), '{not valid json!!!');
-    expect(loadState(dir, SESSION_ID)).toBeNull();
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 });
 
@@ -155,8 +155,8 @@ describe('appendEngineEvent', () => {
       duration: 100,
     };
 
-    appendEngineEvent(dir, SESSION_ID, event1);
-    appendEngineEvent(dir, SESSION_ID, event2);
+    appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event1);
+    appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event2);
 
     const raw = readFileSync(
       join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
@@ -182,7 +182,7 @@ describe('appendEngineEvent', () => {
       phase: 'idle' as const,
       feature: 'test-feature',
     };
-    appendEngineEvent(dir, SESSION_ID, event);
+    appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(
       true,
     );
@@ -190,11 +190,14 @@ describe('appendEngineEvent', () => {
 
   it('persists phase-less events in a schema-valid log entry', () => {
     const dir = makeTmp();
-    appendEngineEvent(dir, SESSION_ID, {
-      ts: 1000,
-      type: 'approval_mode_changed',
-      mode: 'yolo',
-    });
+    appendEngineEvent(
+      { projectDir: dir, sessionId: SESSION_ID },
+      {
+        ts: 1000,
+        type: 'approval_mode_changed',
+        mode: 'yolo',
+      },
+    );
 
     const raw = readFileSync(
       join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
@@ -225,7 +228,9 @@ describe('appendEngineEvent', () => {
         phase: 'idle' as const,
         feature: 'test-feature',
       };
-      expect(() => appendEngineEvent(dir, SESSION_ID, event)).not.toThrow();
+      expect(() =>
+        appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event),
+      ).not.toThrow();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
       expect(output).toContain('failed to persist log entry');
     } finally {
@@ -239,7 +244,11 @@ describe('appendEngineEvent', () => {
 describe('appendMessage', () => {
   it('writes kind:message entry with ISO ts when persistTranscript is true', () => {
     const dir = makeTmp();
-    appendMessage(dir, SESSION_ID, { role: 'user', text: 'add auth' }, true);
+    appendMessage(
+      { projectDir: dir, sessionId: SESSION_ID },
+      { role: 'user', text: 'add auth' },
+      true,
+    );
     const raw = readFileSync(
       join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
@@ -254,7 +263,11 @@ describe('appendMessage', () => {
 
   it('does not write anything when persistTranscript is false', () => {
     const dir = makeTmp();
-    appendMessage(dir, SESSION_ID, { role: 'assistant', text: 'planner output' }, false);
+    appendMessage(
+      { projectDir: dir, sessionId: SESSION_ID },
+      { role: 'assistant', text: 'planner output' },
+      false,
+    );
     const filePath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl');
     expect(existsSync(filePath)).toBe(false);
   });
@@ -262,8 +275,7 @@ describe('appendMessage', () => {
   it('includes optional fields when provided', () => {
     const dir = makeTmp();
     appendMessage(
-      dir,
-      SESSION_ID,
+      { projectDir: dir, sessionId: SESSION_ID },
       { role: 'assistant', phase: 'researching', text: 'hello', interrupted: true },
       true,
     );

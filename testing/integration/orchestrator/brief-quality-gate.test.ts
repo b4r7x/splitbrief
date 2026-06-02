@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
-import { runBriefQualityGate } from '../../../src/engine/orchestrator/planning/briefs-approval-loop.js';
+import { runBriefQualityGate } from '../../../src/engine/orchestrator/planning/planning-helpers.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeCallbacks,

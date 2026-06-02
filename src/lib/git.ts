@@ -61,29 +61,15 @@ export async function getGitStatus(dir: string): Promise<{
   files: Array<{ path: string }>;
   not_added: string[];
 }> {
-  try {
-    return await getGit(dir).status();
-  } catch (err) {
-    throw toGitCommandError('status', err);
-  }
+  return runGit('status', () => getGit(dir).status());
 }
 
 export async function stageAll(dir: string): Promise<void> {
-  try {
-    await getGit(dir).add('.');
-  } catch (err) {
-    throw toGitCommandError('add .', err);
-  }
+  await runGit('add .', () => getGit(dir).add('.'));
 }
 
 export async function commitChanges(dir: string, message: string): Promise<string> {
-  try {
-    const git = getGit(dir);
-    const result = await git.commit(message);
-    return result.commit;
-  } catch (err) {
-    throw toGitCommandError('commit', err);
-  }
+  return runGit('commit', async () => (await getGit(dir).commit(message)).commit);
 }
 
 export async function getCurrentDiff(dir: string): Promise<string> {
@@ -95,38 +81,26 @@ export async function getCurrentDiff(dir: string): Promise<string> {
 }
 
 export async function getCurrentCommitSha(dir: string): Promise<string> {
-  try {
-    const out = await getGit(dir).raw(['rev-parse', 'HEAD']);
-    const sha = out.trim();
+  return runGit('rev-parse HEAD', async () => {
+    const sha = (await getGit(dir).raw(['rev-parse', 'HEAD'])).trim();
     return sha.length > 0 ? sha : 'HEAD';
-  } catch (err) {
-    throw toGitCommandError('rev-parse HEAD', err);
-  }
+  });
 }
 
 export async function getCurrentBranch(dir: string): Promise<string> {
-  try {
-    const out = await getGit(dir).raw(['rev-parse', '--abbrev-ref', 'HEAD']);
-    return out.trim();
-  } catch (err) {
-    throw toGitCommandError('rev-parse --abbrev-ref HEAD', err);
-  }
+  return runGit('rev-parse --abbrev-ref HEAD', async () =>
+    (await getGit(dir).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim(),
+  );
 }
 
 export async function getCurrentChangedFiles(dir: string): Promise<string[]> {
-  try {
-    return getStatusPaths(await getGit(dir).status());
-  } catch (err) {
-    throw toGitCommandError('status --porcelain', err);
-  }
+  return runGit('status --porcelain', async () => getStatusPaths(await getGit(dir).status()));
 }
 
 export async function getCommittedFilesSince(dir: string, baseRef: string): Promise<string[]> {
-  try {
-    return parseNameOnly(await getGit(dir).diff(['--name-only', baseRef, 'HEAD']));
-  } catch (err) {
-    throw toGitCommandError(`diff --name-only ${baseRef} HEAD`, err);
-  }
+  return runGit(`diff --name-only ${baseRef} HEAD`, async () =>
+    parseNameOnly(await getGit(dir).diff(['--name-only', baseRef, 'HEAD'])),
+  );
 }
 
 export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {

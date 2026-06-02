@@ -28,7 +28,7 @@ function setupSession(): { projectDir: string; sessionId: string } {
 
 function planningState() {
   let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
+  state = transition(state, { type: 'START' });
   return state;
 }
 

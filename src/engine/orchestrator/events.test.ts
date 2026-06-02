@@ -10,9 +10,6 @@ import {
   publishPlannerStatus,
   publishValidation,
   publishError,
-  publishCostPrediction,
-  publishBudgetWarning,
-  publishBudgetExceeded,
   publishGitCommit,
   publishDriftChainDetected,
 } from './events.js';
@@ -152,47 +149,6 @@ describe('publish* payload forwarding', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'error', message: 'something went wrong' });
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
-  });
-
-  it('publishCostPrediction — forwards prediction payload', () => {
-    const { bus, events } = makeBusRecorder();
-    publishCostPrediction(
-      { bus: bus, phase: 'implementing' },
-      {
-        estimatedTasks: 5,
-        lowCost: 0.1,
-        expectedCost: 0.25,
-        highCost: 0.5,
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-      },
-    );
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: 'cost_prediction',
-      prediction: {
-        estimatedTasks: 5,
-        lowCost: 0.1,
-        expectedCost: 0.25,
-        highCost: 0.5,
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-      },
-    });
-  });
-
-  it('publishBudgetWarning — forwards cost and budget', () => {
-    const { bus, events } = makeBusRecorder();
-    publishBudgetWarning({ bus: bus, phase: 'implementing', currentCost: 0.8, maxBudget: 1.0 });
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'budget_warning', currentCost: 0.8, maxBudget: 1.0 });
-  });
-
-  it('publishBudgetExceeded — forwards cost and budget', () => {
-    const { bus, events } = makeBusRecorder();
-    publishBudgetExceeded({ bus: bus, phase: 'implementing', currentCost: 1.5, maxBudget: 1.0 });
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'budget_exceeded', currentCost: 1.5, maxBudget: 1.0 });
   });
 
   it('publishGitCommit — includes file when provided', () => {

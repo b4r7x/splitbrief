@@ -1,6 +1,6 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../engine/spec/brief-quality.js';
-import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import {
   STALE_ESTIMATE_STATUSES,
   hasNoCapableWorker,

@@ -48,14 +48,6 @@ function assertSessionExists(projectDir: string, sessionId: string): string | nu
   return null;
 }
 
-function assertTaskExists(ledger: EvidenceLedger | null, taskId: TaskId): string | null {
-  if (ledger === null) return 'Evidence ledger not found for this session';
-  if (!ledger.tasks.some((task) => task.id === taskId)) {
-    return `Task not found in evidence ledger: ${taskId}`;
-  }
-  return null;
-}
-
 export function readCheckedLedger(
   projectDir: string,
   sessionId: string,
@@ -68,8 +60,6 @@ export function readCheckedLedger(
   if (sessionError !== null) return { ok: false, error: sessionError };
 
   const ledger = readEvidenceLedger(projectDir, sessionId);
-  const taskError = assertTaskExists(ledger, taskId);
-  if (taskError !== null) return { ok: false, error: taskError };
   if (ledger === null) return { ok: false, error: 'Evidence ledger not found for this session' };
 
   const task = ledger.tasks.find((t) => t.id === taskId);

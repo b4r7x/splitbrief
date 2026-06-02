@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { ValidationResult } from '../validation-types.js';
+import type { ValidationResult } from '../validation-result.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
@@ -80,7 +80,7 @@ export async function retryAndRecord(
   } catch (err) {
     const message = labelError('Retry/escalation failed', err);
     publishError({ bus: wctx.bus, phase: opts.state.phase }, message);
-    const recoveryBaseState = loadState(wctx.projectDir, wctx.sessionId) ?? opts.state;
+    const recoveryBaseState = loadState(wctx) ?? opts.state;
     if (recoveryBaseState.pendingRecovery) {
       setTrackedState(recoveryBaseState);
       return { state: recoveryBaseState, completed: false };
@@ -97,7 +97,7 @@ export async function retryAndRecord(
       routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
       createdAt: nowIso(),
     });
-    const nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, recoveryBaseState, {
+    const nextState = transitionAndSave(wctx, recoveryBaseState, {
       type: 'SET_PENDING_RECOVERY',
       issue,
     });
@@ -125,7 +125,7 @@ export async function retryAndRecord(
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         createdAt: nowIso(),
       });
-      nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, nextState, {
+      nextState = transitionAndSave(wctx, nextState, {
         type: 'SET_PENDING_RECOVERY',
         issue,
       });

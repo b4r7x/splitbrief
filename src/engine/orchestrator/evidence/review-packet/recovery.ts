@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
-import type { RecoveryAction } from '../../../../core/schemas/enums.js';
+import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { EVIDENCE_FILE, SESSION_LOG_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
 import type { PacketEvent } from './types.js';
@@ -46,6 +46,17 @@ function recoveryIssueSummary(
   };
 }
 
+function isSelectedActionEvent(
+  event: PacketEvent,
+): event is PacketEvent & { issueId: string; reason: RecoveryReason; action: RecoveryAction } {
+  return (
+    event.type === 'recovery_action_selected' &&
+    event.issueId !== undefined &&
+    event.reason !== undefined &&
+    event.action !== undefined
+  );
+}
+
 function buildRecovery(
   state: WorkflowState,
   events: PacketEvent[],
@@ -53,14 +64,11 @@ function buildRecovery(
 ): RecoveryWithoutSources {
   const recoveryEvents = events.filter((event) => event.type.startsWith('recovery_'));
   const selectedActions: RecoverySelectedAction[] = recoveryEvents
-    .filter(
-      (event) =>
-        event.type === 'recovery_action_selected' && event.issueId && event.reason && event.action,
-    )
+    .filter(isSelectedActionEvent)
     .map((event) => ({
-      issueId: event.issueId ?? '',
-      reason: event.reason ?? 'implementation-error',
-      action: (event.action ?? 'pause-run') satisfies RecoveryAction,
+      issueId: event.issueId,
+      reason: event.reason,
+      action: event.action,
       selectedAt: event.ts,
     }));
 

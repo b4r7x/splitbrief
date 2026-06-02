@@ -1,10 +1,9 @@
 import { formatToolModel } from '../../../core/model-display.js';
+import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../engine/events/workflow-events.js';
 import type { EngineEvent, ValidationStages } from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatTruncatedList } from '../../../core/formatting.js';
-
-const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 
 export function formatTaskStartedValue(
   event: Extract<EngineEvent, { type: 'task_started' }>,
@@ -45,9 +44,9 @@ export function formatExternalChangesValue(
 }
 
 export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>): string {
-  const stageText = VALIDATION_STAGES.map(
-    (stage) => `${stage} ${validationStageSymbol(event.stages, stage)}`,
-  ).join(' ');
+  const stageText = ValidationStageSchema.options
+    .map((stage) => `${stage} ${validationStageSymbol(event.stages, stage)}`)
+    .join(' ');
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
   return `validate ${stageText}${dur}`;
 }
@@ -64,9 +63,6 @@ function formatContextFit(
   return `${contextFit} ${tokenLabel}`;
 }
 
-function validationStageSymbol(
-  stages: ValidationStages,
-  stage: (typeof VALIDATION_STAGES)[number],
-): string {
+function validationStageSymbol(stages: ValidationStages, stage: ValidationStage): string {
   return stages[stage] ? '✓' : '○';
 }

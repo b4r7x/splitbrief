@@ -154,10 +154,13 @@ describe('runRpc', () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-status-session';
     ensureSessionDir(projectDir, sessionId);
-    saveState(projectDir, sessionId, {
-      ...createInitialState('status feature'),
-      phase: 'planning',
-    });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('status feature'),
+        phase: 'planning',
+      },
+    );
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let finishWorkflow: (() => void) | undefined;
@@ -301,7 +304,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    saveState(projectDir, sessionId, stateWithRecovery);
+    saveState({ projectDir, sessionId }, stateWithRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();

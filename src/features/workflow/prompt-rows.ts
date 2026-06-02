@@ -1,5 +1,6 @@
 import { wrapHard } from '../../utils/wrap.js';
 import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
+import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ApprovalPromptState } from '../../stores/approval-prompt/store.js';
 import type { CostApprovalState } from '../../stores/cost-approval/store.js';
@@ -38,7 +39,9 @@ function getConfirmRows(actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
   const actionRows = wrappedRows(`[!] Destructive action: ${actionDescription}`, width);
   const phraseStepRows =
-    wrappedRows('    Type "I confirm" to proceed, or press Escape to cancel.', width) + 1 + 1;
+    wrappedRows(`    Type "${CONFIRM_PHRASE}" to proceed, or press Escape to cancel.`, width) +
+    1 +
+    1;
   const reasonStepRows =
     wrappedRows('    Phrase accepted. Enter reason:', width) +
     1 +

@@ -2,7 +2,7 @@ import type { TokenUsage } from '../schemas/tokens.js';
 import type { Phase } from '../schemas/enums.js';
 import { phaseCostRole } from '../phases.js';
 
-export interface TokenDelta {
+export interface PhaseTokenDelta {
   input: number;
   output: number;
   cacheRead: number;
@@ -10,11 +10,11 @@ export interface TokenDelta {
 }
 
 export interface PhaseTokenAttribution {
-  planner: TokenDelta;
-  implementer: TokenDelta;
+  planner: PhaseTokenDelta;
+  implementer: PhaseTokenDelta;
 }
 
-const ZERO_DELTA: TokenDelta = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+const ZERO_DELTA: PhaseTokenDelta = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
 
 function clampDelta(value: number): number {
   return Math.max(0, value);
@@ -25,7 +25,7 @@ export function attributePhaseTokenDelta(
   curr: TokenUsage,
   phase: Phase,
 ): PhaseTokenAttribution {
-  const plannerDelta: TokenDelta = {
+  const plannerDelta: PhaseTokenDelta = {
     input: clampDelta(
       curr.plannerInput - prev.plannerInput + curr.escalationInput - prev.escalationInput,
     ),
@@ -35,7 +35,7 @@ export function attributePhaseTokenDelta(
     cacheRead: clampDelta((curr.plannerCacheRead ?? 0) - (prev.plannerCacheRead ?? 0)),
     cacheCreate: clampDelta((curr.plannerCacheCreate ?? 0) - (prev.plannerCacheCreate ?? 0)),
   };
-  const implementerDelta: TokenDelta = {
+  const implementerDelta: PhaseTokenDelta = {
     input: clampDelta(curr.implementerInput - prev.implementerInput),
     output: clampDelta(curr.implementerOutput - prev.implementerOutput),
     cacheRead: clampDelta((curr.implementerCacheRead ?? 0) - (prev.implementerCacheRead ?? 0)),

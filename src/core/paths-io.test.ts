@@ -112,18 +112,20 @@ describe('readSpecFile', () => {
   it('reads content from .diptych/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'tasks.md', '- task 1');
-    expect(readSpecFile(dir, SESSION_ID, 'tasks.md')).toBe('- task 1');
+    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'tasks.md')).toBe('- task 1');
   });
 
   it('returns null when file does not exist', () => {
     const dir = makeTmp();
     ensureSessionDir(dir, SESSION_ID);
-    expect(readSpecFile(dir, SESSION_ID, 'missing.md')).toBeNull();
+    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'missing.md')).toBeNull();
   });
 
   it('rejects filenames with path traversal', () => {
     const dir = makeTmp();
-    expect(() => readSpecFile(dir, SESSION_ID, '../outside.md')).toThrow('Invalid filename');
+    expect(() => readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, '../outside.md')).toThrow(
+      'Invalid filename',
+    );
   });
 });
 
@@ -131,13 +133,15 @@ describe('readSpecFileOrEmpty', () => {
   it('returns content for an existing file', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# My Spec');
-    expect(readSpecFileOrEmpty(dir, SESSION_ID, 'spec.md')).toBe('# My Spec');
+    expect(readSpecFileOrEmpty({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toBe(
+      '# My Spec',
+    );
   });
 
   it('returns empty string for a non-existent file', () => {
     const dir = makeTmp();
     ensureSessionDir(dir, SESSION_ID);
-    expect(readSpecFileOrEmpty(dir, SESSION_ID, 'missing.md')).toBe('');
+    expect(readSpecFileOrEmpty({ projectDir: dir, sessionId: SESSION_ID }, 'missing.md')).toBe('');
   });
 });
 
@@ -268,7 +272,7 @@ describe('writeSpecFile with metadata', () => {
   it('prepends frontmatter to spec files when metadata is passed', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# My Spec', meta);
-    const content = readSpecFile(dir, SESSION_ID, 'spec.md');
+    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');
     expect(content).toMatch(/^---\n/);
     expect(content).toContain('generated_by: diptych v');
@@ -278,14 +282,16 @@ describe('writeSpecFile with metadata', () => {
   it('does not prepend frontmatter to non-spec files', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'research.md', '# Research', meta);
-    expect(readSpecFile(dir, SESSION_ID, 'research.md')).toBe('# Research');
+    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'research.md')).toBe(
+      '# Research',
+    );
   });
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
     const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', existing, meta);
-    const content = readSpecFile(dir, SESSION_ID, 'spec.md');
+    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');
     const fmCount = (content.match(/generated_by:/g) ?? []).length;
     expect(fmCount).toBe(1);
@@ -294,7 +300,9 @@ describe('writeSpecFile with metadata', () => {
   it('does not prepend when metadata is not passed', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Plain Spec');
-    expect(readSpecFile(dir, SESSION_ID, 'spec.md')).toBe('# Plain Spec');
+    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toBe(
+      '# Plain Spec',
+    );
   });
 });
 
@@ -335,5 +343,27 @@ describe('pathError.isEscapesProject predicate', () => {
     } catch (err) {
       expect(pathError.isEscapesProject(err)).toBe(true);
     }
+  });
+
+  test('validateTaskPath preserves the specific confinement reason as cause', () => {
+    const absoluteCause = (() => {
+      try {
+        validateTaskPath('/tmp/project', '/etc/passwd');
+      } catch (err) {
+        return (err as { cause?: { kind?: string } }).cause;
+      }
+      throw new Error('expected throw');
+    })();
+    expect(absoluteCause?.kind).toBe('path-confined-absolute');
+
+    const traversalCause = (() => {
+      try {
+        validateTaskPath('/tmp/project', '../../evil.ts');
+      } catch (err) {
+        return (err as { cause?: { kind?: string } }).cause;
+      }
+      throw new Error('expected throw');
+    })();
+    expect(traversalCause?.kind).toBe('path-confined-escape');
   });
 });

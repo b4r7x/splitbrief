@@ -3,13 +3,10 @@ import { useTheme } from '../../../components/theme.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import { pluralize } from '../../../utils/format.js';
 
 interface SummaryCheckpointsProps {
   checkpointSummary: CheckpointSummaryRollup | undefined;
-}
-
-function pluralizeCheckpoint(count: number): string {
-  return count === 1 ? 'checkpoint' : 'checkpoints';
 }
 
 function compactCheckpointCount(count: number): string {
@@ -64,7 +61,7 @@ function checkpointSummaryText(
   if (isSmall) return compactCheckpointCount(summary.count);
 
   const parts = [
-    `${summary.count} ${pluralizeCheckpoint(summary.count)}`,
+    `${summary.count} ${pluralize(summary.count, 'checkpoint')}`,
     `latest: ${latest}`,
     summary.preFinalReviewId ? `pre-final-review: ${summary.preFinalReviewId}` : null,
     summary.latestRunCheckpointId && summary.latestRunCheckpointId !== summary.latestId

@@ -174,9 +174,9 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
   const attempts = priorAttempts + 1;
   const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
   if (state.phase === 'implementing') {
-    state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'TASK_SENT' });
+    state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
   }
-  state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'ESCALATE' });
+  state = transitionAndSave(ctx, state, { type: 'ESCALATE' });
   publishPlannerStatus(ctx.bus, state, 'running');
   ctx.bus.publish({
     type: 'task_escalating',
@@ -255,7 +255,7 @@ async function runFullTier(
   let state = input.state;
   const attempts = priorAttempts + 1;
   const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
-  state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'HINT_FAIL' });
+  state = transitionAndSave(ctx, state, { type: 'HINT_FAIL' });
   ctx.bus.publish({
     type: 'hint_failed',
     ts: Date.now(),

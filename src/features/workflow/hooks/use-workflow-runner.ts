@@ -104,12 +104,13 @@ export function useWorkflowRunner({
       inputMode.resetMode();
       const activeSessionId = readActive(projectDir);
       if (!activeSessionId) return;
-      const current = loadState(projectDir, activeSessionId);
+      const ref = { projectDir, sessionId: activeSessionId };
+      const current = loadState(ref);
       if (!current) return;
 
-      const { action, event } = buildRewindAction(request, projectDir, activeSessionId, current);
+      const { action, event } = buildRewindAction(request, ref, current);
       const next = transition(current, action);
-      saveState(projectDir, activeSessionId, next);
+      saveState(ref, next);
       pendingRewindEventRef.current = event;
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
       setInlineResume(next);
@@ -182,7 +183,7 @@ export function useWorkflowRunner({
         if (isWorkflowAborted(controller, abortedRef)) return;
 
         const savedSessionId = readActive(projectDir) ?? activeSessionId;
-        const saved = savedSessionId ? loadState(projectDir, savedSessionId) : null;
+        const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
         if (!saved?.pendingRecovery) return;
 
         activeSessionId = savedSessionId;
@@ -222,7 +223,7 @@ export function useWorkflowRunner({
 
   const handleResume = () => {
     const sessionId = readActive(projectDir);
-    const saved = sessionId ? loadState(projectDir, sessionId) : null;
+    const saved = sessionId ? loadState({ projectDir, sessionId }) : null;
     if (!saved) {
       feedbackStore.setError('No saved state to resume. Press ESC to return home.');
       return;

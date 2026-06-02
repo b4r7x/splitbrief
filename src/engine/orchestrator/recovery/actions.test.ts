@@ -14,7 +14,6 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import { applyRecoveryAction } from './actions.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
-const selectedAt = '2026-04-28T12:05:00.000Z';
 
 let dirs: string[] = [];
 
@@ -40,7 +39,7 @@ function makeBus(): { bus: EventBus; events: EngineEvent[] } {
 
 function implementingState(tasks: Task[]): WorkflowState {
   let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
+  state = transition(state, { type: 'START' });
   state = transition(state, { type: 'RESEARCH_DONE' });
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
@@ -106,7 +105,6 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       action: 'route-bigger-worker',
       bus,
       config: configWithProfiles(),
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -120,7 +118,7 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       pendingRecovery: undefined,
     });
     expect(result.state.tasks[0]).toMatchObject({ id: task.id, status: 'pending' });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -147,7 +145,6 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       action: 'route-bigger-worker',
       bus,
       config: configWithProfiles(),
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -173,7 +170,6 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       action: 'route-bigger-worker',
       bus,
       config: configWithProfiles(),
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -199,7 +195,6 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       action: 'route-bigger-worker',
       bus,
       config: undefined,
-      selectedAt,
     });
 
     expect(result).toMatchObject({

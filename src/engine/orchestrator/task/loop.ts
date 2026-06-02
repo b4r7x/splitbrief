@@ -77,12 +77,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (preEditGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
 
     let refreshedTask = task;
-    ({ task: refreshedTask, state } = await refreshAndPersistCode(
-      task,
-      projectDir,
-      sessionId,
-      state,
-    ));
+    ({ task: refreshedTask, state } = await refreshAndPersistCode(task, wctx, state));
     setTrackedState(state);
 
     const routing = await selectRoutingProfile({

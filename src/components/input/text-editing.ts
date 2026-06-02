@@ -53,6 +53,35 @@ export function findVisualLineStart(value: string, cursor: number, columns: numb
   return logicalStart + offset;
 }
 
+export function findVisualLineEnd(value: string, cursor: number, columns: number): number {
+  const logicalStart = value.lastIndexOf('\n', cursor - 1) + 1;
+  const nextNewline = value.indexOf('\n', logicalStart);
+  const logicalEnd = nextNewline === -1 ? value.length : nextNewline;
+  const logicalLine = value.slice(logicalStart, logicalEnd);
+  const cursorInLine = cursor - logicalStart;
+
+  // Insert cursor space to match Ink rendering (segments are squashed then wrapped).
+  const lineWithCursor = logicalLine.slice(0, cursorInLine) + ' ' + logicalLine.slice(cursorInLine);
+
+  const visualLines = wrapHard(lineWithCursor, columns).split('\n');
+
+  let offset = 0;
+  for (let i = 0; i < visualLines.length; i++) {
+    const line = visualLines[i];
+    if (line === undefined) continue;
+    const lineLen = line.length;
+    const isLast = i === visualLines.length - 1;
+    const rowEnd = offset + lineLen;
+    if (cursorInLine < rowEnd || (isLast && cursorInLine <= rowEnd)) {
+      // rowEnd counts the synthetic cursor space; strip it to map back to original chars.
+      return Math.min(logicalStart + rowEnd - 1, logicalEnd);
+    }
+    offset = rowEnd;
+  }
+
+  return logicalEnd;
+}
+
 function toNfc(value: string, cursor: number): { value: string; cursor: number } {
   const nfc = value.normalize('NFC');
   if (nfc === value) return { value, cursor };
@@ -91,10 +120,14 @@ export function moveToLineStart(value: string, cursor: number, columns?: number)
   return { value: nfc.value, cursor: lineStart };
 }
 
-export function moveToLineEnd(value: string, cursor: number): EditResult {
-  let lineEnd = value.indexOf('\n', cursor);
-  if (lineEnd === -1) lineEnd = value.length;
-  return { value, cursor: lineEnd };
+export function moveToLineEnd(value: string, cursor: number, columns?: number): EditResult {
+  const nfc = toNfc(value, cursor);
+  if (columns != null && columns > 0) {
+    return { value: nfc.value, cursor: findVisualLineEnd(nfc.value, nfc.cursor, columns) };
+  }
+  let lineEnd = nfc.value.indexOf('\n', nfc.cursor);
+  if (lineEnd === -1) lineEnd = nfc.value.length;
+  return { value: nfc.value, cursor: lineEnd };
 }
 
 export function resolveEditAction(

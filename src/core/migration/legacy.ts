@@ -3,6 +3,7 @@ import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { slugify } from '../../utils/slugify.js';
 import { sessionsRoot } from '../paths.js';
+import { MAX_SLUG_LENGTH } from '../sessions/lifecycle.js';
 import { CURRENT_STATE_VERSION } from '../state/machine.js';
 import { sessionError } from '../sessions/errors.js';
 import { findUnusedId } from '../sessions/id/find-unused-id.js';
@@ -25,7 +26,7 @@ export interface DeriveSessionIdInput {
 export function deriveSessionId(input: DeriveSessionIdInput): string {
   const { feature, startedAt, projectDir, now = new Date() } = input;
   const date = datePartFromStartedAt(startedAt, now);
-  const slug = slugify(feature).slice(0, 50) || 'unknown';
+  const slug = slugify(feature, MAX_SLUG_LENGTH) || 'unknown';
   const base = `${date}-${slug}`;
   const root = sessionsRoot(projectDir);
   const id = findUnusedId({

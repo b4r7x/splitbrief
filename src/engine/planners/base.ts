@@ -48,10 +48,9 @@ const PHASE_MAP: Partial<Record<string, Phase>> = {
   specifying: 'specifying',
   planning: 'planning',
   'generating-tasks': 'planning',
-  'quick-planning': 'planning',
 };
 
-type PlannerArtifactPhase = Phase | 'generating-tasks' | 'quick-planning' | 'instant-planning';
+type PlannerArtifactPhase = Phase | 'generating-tasks';
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -125,12 +124,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       ): Promise<string> {
         const plannerPhase = PHASE_MAP[phase];
         if (plannerPhase) callbacks.onPhase?.(plannerPhase);
-        const buffer = createTranscriptBuffer(
+        const buffer = createTranscriptBuffer({
           projectDir,
-          callbacks.sessionId ?? '',
-          plannerPhase,
-          callbacks.persistTranscript ?? true,
-        );
+          sessionId: callbacks.sessionId ?? '',
+          phase: plannerPhase,
+          persistTranscript: callbacks.persistTranscript ?? true,
+        });
 
         const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;
         priorInjected = true;

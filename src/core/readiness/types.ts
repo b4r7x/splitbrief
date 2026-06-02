@@ -1,15 +1,22 @@
+import { z } from 'zod';
+
 export type ReadinessSeverity = 'ok' | 'info' | 'warning' | 'blocker';
 
-export type ReadinessStatus = 'ready' | 'ready-with-warnings' | 'blocked';
+export const READINESS_STATUSES = ['ready', 'ready-with-warnings', 'blocked'] as const;
+export const ReadinessStatusSchema = z.enum(READINESS_STATUSES);
+export type ReadinessStatus = z.infer<typeof ReadinessStatusSchema>;
 
-export type ReadinessNextActionKind =
-  | 'continue'
-  | 'run-init'
-  | 'fix-config'
-  | 'clean-or-isolate-repo'
-  | 'raise-context'
-  | 'set-budget'
-  | 'exit';
+export const READINESS_NEXT_ACTION_KINDS = [
+  'continue',
+  'run-init',
+  'fix-config',
+  'clean-or-isolate-repo',
+  'raise-context',
+  'set-budget',
+  'exit',
+] as const;
+export const ReadinessNextActionKindSchema = z.enum(READINESS_NEXT_ACTION_KINDS);
+export type ReadinessNextActionKind = z.infer<typeof ReadinessNextActionKindSchema>;
 
 export interface ReadinessNextAction {
   kind: ReadinessNextActionKind;

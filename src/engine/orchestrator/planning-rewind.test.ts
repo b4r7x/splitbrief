@@ -41,12 +41,12 @@ describe('runPlanningPhase — rewindPending', () => {
     phase,
     comment,
   }) => {
-    const regenCalls: Array<{ prompt: string; target: string }> = [];
+    const regenCalls: Array<{ prompt: string }> = [];
     let planCalls = 0;
     const planner = makePassingPlanner({
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
       regenerate: async (opts) => {
-        regenCalls.push({ prompt: opts.prompt, target: opts.artifactType });
+        regenCalls.push({ prompt: opts.prompt });
         return { text: 'regenerated', usage: null };
       },
       plan: async () => {
@@ -69,7 +69,7 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(result.cancelled).toBe(false);
     expect(regenCalls).toHaveLength(1);
     expect(regenCalls[0]?.prompt).toContain(comment);
-    expect(regenCalls[0]?.target).toBe(target);
+    expect(regenCalls[0]?.prompt).toContain(target);
     expect(planCalls).toBe(0);
   });
 

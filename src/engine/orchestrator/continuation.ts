@@ -63,6 +63,15 @@ export async function withContinuationLoop<T>(
     partialOutput += text;
   };
 
+  const continueAfterAbort = async (
+    onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>,
+  ): Promise<string> => {
+    applyState(transitionAndSave({ projectDir, sessionId }, state, { type: 'ABORT_TURN' }));
+    const userText = await onContinuationNeeded(partialOutput);
+    applyState(transitionAndSave({ projectDir, sessionId }, state, { type: 'CONTINUE_TURN' }));
+    return buildContinuationPrompt(partialOutput, userText);
+  };
+
   while (true) {
     const callController = new AbortController();
     sinks.setAbortHandler(() => callController.abort());
@@ -79,10 +88,7 @@ export async function withContinuationLoop<T>(
       sinks.setAbortHandler(null);
 
       if (callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
-        applyState(transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' }));
-        const userText = await callbacks.onContinuationNeeded(partialOutput);
-        applyState(transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' }));
-        continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+        continuationPrompt = await continueAfterAbort(callbacks.onContinuationNeeded);
         continue;
       }
 
@@ -97,10 +103,7 @@ export async function withContinuationLoop<T>(
       !ctx.signal?.aborted &&
       callbacks.onContinuationNeeded
     ) {
-      applyState(transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' }));
-      const userText = await callbacks.onContinuationNeeded(partialOutput);
-      applyState(transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' }));
-      continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+      continuationPrompt = await continueAfterAbort(callbacks.onContinuationNeeded);
       continue;
     }
 
@@ -143,7 +146,7 @@ export async function regenerateFromFeedback(
   state = drain.state;
   const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
-  const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
+  const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
   const languageContext = buildProjectLanguageContext(
     projectDir,
     state.discoveredValidation?.language,
@@ -171,7 +174,7 @@ export async function regenerateFromFeedback(
     return { kind: 'plan', state: result.state, plan: result.text };
   }
 
-  const plan = planOverride ?? readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
+  const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
   const basePrompt = buildTasksPrompt(spec, plan, languageContext);
   const result = await runPlannerReview({
     planner,

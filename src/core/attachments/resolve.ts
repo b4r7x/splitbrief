@@ -86,7 +86,7 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
     return { ok: false, reason: 'outside-safe-roots' };
   }
 
-  const mimeType = EXT_TO_MIME[ext] ?? 'application/octet-stream';
+  const mimeType = EXT_TO_MIME[ext];
   const id = `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   return {
@@ -102,7 +102,11 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
   };
 }
 
-export function attachmentShortName(p: string, max = 24): string {
+const ATTACHMENT_SHORT_NAME_MAX = 24;
+
+export function attachmentShortName(p: string): string {
   const base = p.split(/[\\/]/).pop() ?? p;
-  return base.length > max ? base.slice(0, max - 3) + '...' : base;
+  return base.length > ATTACHMENT_SHORT_NAME_MAX
+    ? base.slice(0, ATTACHMENT_SHORT_NAME_MAX - 3) + '...'
+    : base;
 }
