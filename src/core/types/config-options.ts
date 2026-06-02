@@ -6,16 +6,6 @@ import type {
   WorkflowMode,
 } from '../schemas/enums.js';
 
-export interface DetectedModel {
-  id: string;
-  contextLength?: number;
-  pricingInput?: number;
-  pricingOutput?: number;
-  isFree?: boolean;
-  capabilities?: string[];
-  releaseDate?: string;
-}
-
 export interface WorkflowOpts {
   auto?: boolean;
   model?: string;
@@ -43,23 +33,4 @@ export interface WorkflowOpts {
   worktree?: string;
   detach?: boolean;
   yolo?: boolean;
-}
-
-export interface PlannerDetection {
-  tool: PlannerToolId;
-  // agent-sdk excluded: it's programmatic (not detectable via CLI probe).
-  type: 'cli' | 'api' | 'shell';
-  available: boolean;
-  version?: string;
-  description?: string;
-  error?: string;
-}
-
-export interface ProviderDetection {
-  provider: ProviderId;
-  available: boolean;
-  models?: DetectedModel[];
-  isLocal: boolean;
-  hasKey?: boolean;
-  error?: string;
 }

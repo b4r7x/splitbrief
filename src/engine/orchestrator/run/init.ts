@@ -130,7 +130,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const unsubs: Array<() => void> = [];
   if (opts.tuiSink) unsubs.push(bus.subscribe(opts.tuiSink));
   unsubs.push(
-    bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript)),
+    bus.subscribe(
+      createJsonlSink({
+        projectDir,
+        sessionId,
+        persistTranscript: config.workflow.persistTranscript,
+      }),
+    ),
   );
   unsubs.push(bus.subscribe(createTreeRecorderSink({ projectDir, sessionId })));
   if (opts.headless) unsubs.push(bus.subscribe(createStdoutJsonSink()));
@@ -165,7 +171,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       await applyRebuiltContext({
         projectDir,
         sessionId,
-        callbacks,
         bus,
         config,
         resumeHolder,
@@ -209,13 +214,12 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         implementerModel: summaryBase.implementerModel,
       }),
     };
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'START', feature });
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'START' });
     setTrackedState(state);
     publishPlannerStatus(bus, state, 'running');
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     appendMessage(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       { role: 'user', text: feature },
       config.workflow.persistTranscript,
     );

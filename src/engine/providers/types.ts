@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 
 export interface ProviderDef {
   readonly name: string;

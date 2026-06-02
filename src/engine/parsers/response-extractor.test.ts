@@ -7,7 +7,6 @@ describe('extractCode', () => {
     const response = '```typescript\nconst x = 1;\nexport function foo() { return x; }\n```';
     const result = extractCode(response);
     if (!('code' in result)) throw new Error('expected code result');
-    expect(result.confidence).toBe('high');
     expect(result.code).toContain('const x = 1;');
     expect(result.code).toContain('export function foo()');
   });
@@ -16,7 +15,6 @@ describe('extractCode', () => {
     const response = '```\nimport { something } from "./mod.js";\nconsole.log(something);\n```';
     const result = extractCode(response);
     if (!('code' in result)) throw new Error('expected code result');
-    expect(result.confidence).toBe('high');
     expect(result.code).toContain('import { something }');
   });
 
@@ -27,7 +25,6 @@ describe('extractCode', () => {
     const response = `Here is a helper:\n\n\`\`\`ts\n${short}\n\`\`\`\n\nAnd the main code:\n\n\`\`\`typescript\n${long}\n\`\`\``;
     const result = extractCode(response);
     if (!('code' in result)) throw new Error('expected code result');
-    expect(result.confidence).toBe('high');
     expect(result.code).toContain('readFile');
     expect(result.code).toContain('writeFile');
   });
@@ -37,7 +34,6 @@ describe('extractCode', () => {
       'import { join } from "node:path";\n\nexport const base = join("/tmp", "test");';
     const result = extractCode(response);
     if (!('code' in result)) throw new Error('expected code result');
-    expect(result.confidence).toBe('high');
     expect(result.code).toBe(response);
   });
 
@@ -47,7 +43,6 @@ describe('extractCode', () => {
     const response = `Here is the implementation:\n\n${code}\n\nThis should work for your use case.`;
     const result = extractCode(response);
     if (!('code' in result)) throw new Error('expected code result');
-    expect(result.confidence).toBe('medium');
     expect(result.code).toContain('import { foo }');
     expect(result.code).toContain('export const bar');
   });

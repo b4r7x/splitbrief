@@ -6,12 +6,7 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { configStore } from '../../../stores/project/config.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import type { BriefQualityReport } from '../../../engine/spec/brief-quality.js';
-import {
-  formatPlanReviewSummary,
-  formatQualityDisplay,
-  formatTaskCount,
-} from './brief-review-format.js';
-import { PlanReviewScorecardLine } from './brief-review-view.js';
+import { PlanReviewHeader } from './brief-review-view.js';
 import { usePlanEditorKeys } from '../hooks/use-plan-editor-keys.js';
 import { createSaveHandler } from '../hooks/use-plan-editor-save.js';
 import { PlanEditorFooter } from './plan-editor-footer.js';
@@ -90,8 +85,6 @@ export function PlanEditorComponent({
     };
   }, [filePath, sessionDirPath]);
 
-  const qualityDisplay = formatQualityDisplay(quality);
-  const qualityColor = quality === null ? t.textDim : quality.passed ? t.success : t.error;
   const selectedTask = tasks[cursor];
   const selectedTaskMetadata = selectedTask ? reviewMetadata.get(selectedTask.id) : undefined;
   const projectDir = configState.projectDir || sessionDirPath;
@@ -124,16 +117,12 @@ export function PlanEditorComponent({
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">
-      <Box flexDirection="row" gap={2}>
-        <Text bold color={t.accent}>
-          Task Briefs
-        </Text>
-        <Text color={t.textDim}>{formatTaskCount(tasks.length)}</Text>
-        <Text color={qualityColor}>{qualityDisplay}</Text>
-      </Box>
-      <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
-      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
-      <Text color={t.textDim}>{filePath}</Text>
+      <PlanReviewHeader
+        tasks={tasks}
+        quality={quality}
+        reviewMetadata={reviewMetadata}
+        filePath={filePath}
+      />
       {isCollapsedPacketPreview ? (
         <WorkerPacketPreviewPanel preview={packetPreview} rows={previewRows} />
       ) : (

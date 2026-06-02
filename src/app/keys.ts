@@ -98,8 +98,6 @@ function handleShortcutKeys(input: string, key: Key, screen: Screen): AppKeyActi
   if (key.ctrl && input === 'k') return { type: 'open-overlay', overlay: 'command-palette' };
   if (key.ctrl && input === 's' && screen === 'home')
     return { type: 'open-overlay', overlay: 'skills' };
-  if (key.ctrl && input === 'i' && screen === 'home')
-    return { type: 'open-overlay', overlay: 'settings' };
   if (input === '\x1f') return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
   if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
   if (key.ctrl && input === 'q') return { type: 'exit' };

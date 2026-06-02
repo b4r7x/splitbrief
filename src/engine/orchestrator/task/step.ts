@@ -21,7 +21,7 @@ import {
   getChangedFilesSinceSnapshot,
   type ChangedFilesSnapshot,
 } from '../approval/file-snapshots.js';
-import type { EventBus, EngineEvent } from '../../events/types.js';
+import type { EngineEvent } from '../../events/types.js';
 import {
   readDriftChainState,
   writeDriftChainState,
@@ -44,34 +44,24 @@ import { resolveDependsOnFiles } from './resolve-deps.js';
 async function runChainAnalysisSafe(opts: {
   wctx: WorkflowContext;
   task: Task;
-  projectDir: string;
-  sessionId: string;
   state: WorkflowState;
   taskStartSnapshot: ChangedFilesSnapshot;
-  bus: EventBus;
 }): Promise<void> {
+  const { projectDir, sessionId, bus } = opts.wctx;
   try {
-    const taskChangedFiles = await getChangedFilesSinceSnapshot(
-      opts.projectDir,
-      opts.taskStartSnapshot,
-    );
+    const taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
     const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles);
 
     const existing =
-      readDriftChainState(opts.projectDir, opts.sessionId) ??
-      initialDriftChainState(opts.sessionId);
+      readDriftChainState(projectDir, sessionId) ?? initialDriftChainState(sessionId);
 
     const threshold = opts.wctx.config.workflow.driftChainThreshold ?? 0.6;
     const update = analyzeDriftChain(existing, opts.task.id, outOfBoundsFiles, threshold);
 
-    writeDriftChainState(opts.projectDir, opts.sessionId, update.state);
+    writeDriftChainState(projectDir, sessionId, update.state);
 
     if (update.emitted) {
-      publishDriftChainDetected(
-        { bus: opts.bus, phase: opts.state.phase },
-        update.emitted,
-        threshold,
-      );
+      publishDriftChainDetected({ bus, phase: opts.state.phase }, update.emitted, threshold);
     }
   } catch (err) {
     publishWarningFromError(
@@ -130,7 +120,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (state.pendingRecovery || wctx.signal?.aborted) return state;
 
-  state = transitionAndSave(projectDir, sessionId, state, {
+  state = transitionAndSave({ projectDir, sessionId }, state, {
     type: 'START_TASK',
     taskId: opts.task.id,
   });
@@ -138,7 +128,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   let task = opts.task;
   if (opts.taskCodeRefreshed !== true) {
-    ({ task, state } = await refreshAndPersistCode(opts.task, projectDir, sessionId, state));
+    ({ task, state } = await refreshAndPersistCode(opts.task, wctx, state));
     setTrackedState(state);
   }
 
@@ -212,11 +202,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     await runChainAnalysisSafe({
       wctx,
       task,
-      projectDir,
-      sessionId,
       state: retry.state,
       taskStartSnapshot,
-      bus: wctx.bus,
     });
     return retry.state;
   }
@@ -253,11 +240,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     await runChainAnalysisSafe({
       wctx,
       task,
-      projectDir,
-      sessionId,
       state: retry.state,
       taskStartSnapshot,
-      bus: wctx.bus,
     });
     return retry.state;
   }
@@ -279,7 +263,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   state = applyResult.state;
   const taskChangedFiles = applyResult.taskChangedFiles;
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'TASK_SENT' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'TASK_SENT' });
   setTrackedState(state);
 
   if (wctx.signal?.aborted) return state;
@@ -362,11 +346,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     await runChainAnalysisSafe({
       wctx,
       task,
-      projectDir,
-      sessionId,
       state,
       taskStartSnapshot,
-      bus: wctx.bus,
     });
     return state;
   }
@@ -388,11 +369,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   await runChainAnalysisSafe({
     wctx,
     task,
-    projectDir,
-    sessionId,
     state: retry.state,
     taskStartSnapshot,
-    bus: wctx.bus,
   });
   return retry.state;
 }

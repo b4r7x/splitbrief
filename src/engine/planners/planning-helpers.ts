@@ -80,12 +80,12 @@ export async function runSinglePhasePlanning(
   const prompt = repoMapBlock + promptBuilder(feature, projectContext, languageContext);
 
   callbacks.onPhase?.('planning');
-  const buffer = createTranscriptBuffer(
+  const buffer = createTranscriptBuffer({
     projectDir,
-    callbacks.sessionId ?? '',
-    'planning',
-    callbacks.persistTranscript ?? true,
-  );
+    sessionId: callbacks.sessionId ?? '',
+    phase: 'planning',
+    persistTranscript: callbacks.persistTranscript ?? true,
+  });
   const { effectivePrompt, extras } = prepareInvokeArgs({
     prompt,
     priorMessages: callbacks.priorMessages,

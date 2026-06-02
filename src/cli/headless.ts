@@ -5,6 +5,7 @@ import type { Implementer } from '../engine/implementers/types.js';
 import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import { runWorkflow } from '../engine/orchestrator/run/run.js';
+import { BUDGET_PAUSE_THRESHOLD } from '../engine/orchestrator/budget/budget.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { cliError } from './errors.js';
@@ -21,7 +22,7 @@ function buildNoopSinks() {
 function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | undefined): void {
   const recoverySessionId = sessionId ?? readActive(projectDir);
   if (!recoverySessionId) return;
-  const state = loadState(projectDir, recoverySessionId);
+  const state = loadState({ projectDir, sessionId: recoverySessionId });
   const issue = state?.pendingRecovery;
   if (!issue) return;
   process.stdout.write(
@@ -96,7 +97,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       onQuestionAsked: async () => '',
       onBudgetExceeded: async () => true,
       onBudgetPaused: async (currentCost, maxBudget) => {
-        const pauseThreshold = config.workflow.budgetPauseThreshold ?? 0.85;
+        const pauseThreshold = config.workflow.budgetPauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
         process.stdout.write(
           JSON.stringify({
             type: 'budget_paused',

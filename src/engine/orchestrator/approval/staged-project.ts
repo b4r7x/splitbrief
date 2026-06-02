@@ -3,7 +3,6 @@ import { cp, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { DIPTYCH_DIR, TREES_DIR } from '../../../core/paths.js';
-import { warnStderr } from '../../../lib/warn.js';
 import { getChangedFilesSnapshot } from './file-snapshots.js';
 import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots.js';
@@ -30,7 +29,6 @@ function isStagedCopyExcluded(name: string): boolean {
 export async function createStagedProject(projectDir: string): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
   const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
-  warnStderr(`Staged project temp root: ${stagedRoot}`);
   const stagedProjectDir = join(stagedRoot, basename(projectDir));
   await cp(projectDir, stagedProjectDir, {
     recursive: true,

@@ -29,9 +29,12 @@ export function OverlayPanel({
   const t = useTheme();
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
-  const resolvedMaxWidth = maxWidth ?? getResponsivePanelWidth(cols, isSmall);
+  const resolvedMaxWidth =
+    maxWidth ?? getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
   const resolvedWidth =
-    widthProp === 'auto' ? undefined : getClampedTerminalWidth(cols, widthProp ?? resolvedMaxWidth);
+    widthProp === 'auto'
+      ? undefined
+      : getClampedTerminalWidth({ cols, maxWidth: widthProp ?? resolvedMaxWidth });
 
   const titleNode = title && (
     <Box justifyContent="center" marginBottom={1}>

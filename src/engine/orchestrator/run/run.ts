@@ -152,7 +152,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       } catch (err) {
         if (trackedState) {
           try {
-            saveState(projectDir, sessionId, trackedState);
+            saveState({ projectDir, sessionId }, trackedState);
           } catch (saveErr) {
             if (wctx)
               publishWarningFromError(

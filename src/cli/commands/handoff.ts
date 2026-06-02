@@ -3,12 +3,10 @@ import { resolveProjectDir } from '../setup.js';
 import { HANDOFF_TARGETS, validateHandoffTargetName } from '../../core/handoff/targets.js';
 import { getDiptychPath } from '../../core/paths.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
-import { writeHandoffPack } from '../../engine/handoff/write.js';
+import { HANDOFF_WRITE_MODES, writeHandoffPack } from '../../engine/handoff/write.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 import { includes } from '../../utils/type-guards.js';
-
-const VALID_MODES = ['default', 'append', 'overwrite'] as const;
 
 export type HandoffDeps = {
   listCustomRenderers: typeof listCustomRenderers;
@@ -65,9 +63,9 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
           const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
           const rawMode = opts.mode;
-          if (!includes(VALID_MODES, rawMode)) {
+          if (!includes(HANDOFF_WRITE_MODES, rawMode)) {
             throw cliError(
-              `Unknown --mode: "${rawMode}". Valid modes: ${VALID_MODES.join(', ')}`,
+              `Unknown --mode: "${rawMode}". Valid modes: ${HANDOFF_WRITE_MODES.join(', ')}`,
               1,
             );
           }

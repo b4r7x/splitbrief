@@ -120,28 +120,33 @@ function calculateTaskAwareImplementerCost(
   for (const task of taskBreakdowns) {
     if (task.implementerTokens <= 0) continue;
     const tool = task.tool ?? implementerTool;
-    const { inputTokens, outputTokens } = splitTokens(
-      task.implementerTokens,
-      tokenUsage.implementerInput,
-      tokenUsage.implementerOutput,
-    );
+    const { inputTokens, outputTokens } = splitTokens({
+      tokens: task.implementerTokens,
+      inputTotal: tokenUsage.implementerInput,
+      outputTotal: tokenUsage.implementerOutput,
+    });
     applyImplementerUsageCost(
       accounting,
       {
         tool,
-        model: resolveTaskPricingModel(tool, implementerTool, task.model, implementerModel),
+        model: resolveTaskPricingModel({
+          taskTool: tool,
+          fallbackTool: implementerTool,
+          taskModel: task.model,
+          fallbackModel: implementerModel,
+        }),
         inputTokens,
         outputTokens,
-        cacheReadTokens: allocatedCacheTokens(
-          tokenUsage.implementerCacheRead,
-          task.implementerTokens,
-          totalImplementerTokens,
-        ),
-        cacheCreateTokens: allocatedCacheTokens(
-          tokenUsage.implementerCacheCreate,
-          task.implementerTokens,
-          totalImplementerTokens,
-        ),
+        cacheReadTokens: allocatedCacheTokens({
+          cacheTokens: tokenUsage.implementerCacheRead,
+          tokens: task.implementerTokens,
+          totalTokens: totalImplementerTokens,
+        }),
+        cacheCreateTokens: allocatedCacheTokens({
+          cacheTokens: tokenUsage.implementerCacheCreate,
+          tokens: task.implementerTokens,
+          totalTokens: totalImplementerTokens,
+        }),
       },
       cache,
     );
@@ -150,11 +155,11 @@ function calculateTaskAwareImplementerCost(
 
   const residualTokens = Math.max(0, totalImplementerTokens - accountedTokens);
   if (residualTokens > 0) {
-    const { inputTokens, outputTokens } = splitTokens(
-      residualTokens,
-      tokenUsage.implementerInput,
-      tokenUsage.implementerOutput,
-    );
+    const { inputTokens, outputTokens } = splitTokens({
+      tokens: residualTokens,
+      inputTotal: tokenUsage.implementerInput,
+      outputTotal: tokenUsage.implementerOutput,
+    });
     applyImplementerUsageCost(
       accounting,
       {
@@ -162,16 +167,16 @@ function calculateTaskAwareImplementerCost(
         model: implementerModel,
         inputTokens,
         outputTokens,
-        cacheReadTokens: allocatedCacheTokens(
-          tokenUsage.implementerCacheRead,
-          residualTokens,
-          totalImplementerTokens,
-        ),
-        cacheCreateTokens: allocatedCacheTokens(
-          tokenUsage.implementerCacheCreate,
-          residualTokens,
-          totalImplementerTokens,
-        ),
+        cacheReadTokens: allocatedCacheTokens({
+          cacheTokens: tokenUsage.implementerCacheRead,
+          tokens: residualTokens,
+          totalTokens: totalImplementerTokens,
+        }),
+        cacheCreateTokens: allocatedCacheTokens({
+          cacheTokens: tokenUsage.implementerCacheCreate,
+          tokens: residualTokens,
+          totalTokens: totalImplementerTokens,
+        }),
       },
       cache,
     );
@@ -204,38 +209,43 @@ export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): 
   const { task, tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel, cache } =
     options;
   const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
-  const implementerSplit = splitTokens(
-    task.implementerTokens,
-    tokenUsage.implementerInput,
-    tokenUsage.implementerOutput,
-  );
+  const implementerSplit = splitTokens({
+    tokens: task.implementerTokens,
+    inputTotal: tokenUsage.implementerInput,
+    outputTotal: tokenUsage.implementerOutput,
+  });
   const taskTool = task.tool ?? implementerTool;
   const implementerPricing = resolvePricing(
     taskTool,
     cache,
-    resolveTaskPricingModel(taskTool, implementerTool, task.model, implementerModel),
+    resolveTaskPricingModel({
+      taskTool,
+      fallbackTool: implementerTool,
+      taskModel: task.model,
+      fallbackModel: implementerModel,
+    }),
   );
   const implementerCost = calculateUsageCost({
     inputTokens: implementerSplit.inputTokens,
     outputTokens: implementerSplit.outputTokens,
-    cacheReadTokens: allocatedCacheTokens(
-      tokenUsage.implementerCacheRead,
-      task.implementerTokens,
-      totalImplementerTokens,
-    ),
-    cacheCreateTokens: allocatedCacheTokens(
-      tokenUsage.implementerCacheCreate,
-      task.implementerTokens,
-      totalImplementerTokens,
-    ),
+    cacheReadTokens: allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheRead,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    }),
+    cacheCreateTokens: allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheCreate,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    }),
     pricing: implementerPricing,
   });
 
-  const escalationSplit = splitTokens(
-    task.escalationTokens,
-    tokenUsage.escalationInput,
-    tokenUsage.escalationOutput,
-  );
+  const escalationSplit = splitTokens({
+    tokens: task.escalationTokens,
+    inputTotal: tokenUsage.escalationInput,
+    outputTotal: tokenUsage.escalationOutput,
+  });
   const escalationCost = calculateCost(
     escalationSplit.inputTokens,
     escalationSplit.outputTokens,
@@ -246,20 +256,21 @@ export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): 
 }
 
 export function isTaskUsageCostKnown(
-  task: TaskTokenUsage,
-  implementerTool: string,
-  plannerTool: string,
-  implementerModel?: string | undefined,
-  plannerModel?: string | undefined,
-  cache?: ModelCacheAccessor,
+  options: Omit<CalculateTaskUsageCostOptions, 'tokenUsage'>,
 ): boolean {
+  const { task, implementerTool, plannerTool, implementerModel, plannerModel, cache } = options;
   const taskTool = task.tool ?? implementerTool;
   const implementerKnown =
     task.implementerTokens <= 0 ||
     resolvePricing(
       taskTool,
       cache,
-      resolveTaskPricingModel(taskTool, implementerTool, task.model, implementerModel),
+      resolveTaskPricingModel({
+        taskTool,
+        fallbackTool: implementerTool,
+        taskModel: task.model,
+        fallbackModel: implementerModel,
+      }),
     ).isPriced;
   const plannerKnown =
     task.escalationTokens <= 0 || resolvePricing(plannerTool, cache, plannerModel).isPriced;

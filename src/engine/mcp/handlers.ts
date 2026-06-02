@@ -8,6 +8,7 @@ export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
+export const RESOURCE_NOT_FOUND = -32002;
 
 // Current Streamable HTTP MCP version.
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
@@ -113,7 +114,7 @@ export async function handleMessage(
     }
     const content = await resolver.readResource(uri);
     if (content === null) {
-      return { kind: 'error', body: jsonRpcError(-32002, 'Resource not found', id) };
+      return { kind: 'error', body: jsonRpcError(RESOURCE_NOT_FOUND, 'Resource not found', id) };
     }
     return {
       kind: 'response',

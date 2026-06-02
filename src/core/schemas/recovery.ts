@@ -28,7 +28,6 @@ export const RecoveryIssueSchema = z
     availableActions: z.array(RecoveryActionSchema).min(1),
     recommendedAction: RecoveryActionSchema,
     selectedAction: RecoveryActionSchema.optional(),
-    selectedAt: z.string().optional(),
     createdAt: z.string(),
   })
   .refine((issue) => issue.availableActions.includes(issue.recommendedAction), {

@@ -9,14 +9,13 @@ import type { ModelCacheAccessor } from '../../../engine/providers/model/resolut
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
-
-export type CostPricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a';
+import type { PricingState } from '../layout/cost-chrome.js';
 
 interface CostStats {
   localRate: number;
   routedTasks: number;
   costBreakdown: CostBreakdown | null;
-  pricingState: CostPricingState;
+  pricingState: PricingState;
   currentTask: number;
   totalTasks: number;
   taskCompletionTimes: number[];
@@ -48,11 +47,11 @@ function asReactiveModelCache(
   };
 }
 
-export function resolvePricingState(
+function resolvePricingState(
   costBreakdown: CostBreakdown | null,
   plannerMode?: PricingMode | undefined,
   implementerMode?: PricingMode | undefined,
-): CostPricingState {
+): PricingState {
   if (costBreakdown === null) return 'n/a';
   if (costBreakdown.hasPricedUsage && costBreakdown.hasUnpricedUsage) return 'mixed';
   if (costBreakdown.hasPricedUsage) return 'priced';
@@ -63,7 +62,7 @@ export function resolvePricingState(
 
 export function formatSpentText(
   costBreakdown: CostBreakdown | null,
-  pricingState: CostPricingState,
+  pricingState: PricingState,
 ): string {
   if (pricingState === 'priced') return formatCost(costBreakdown?.totalActualCost ?? 0);
   if (pricingState === 'mixed')
@@ -74,11 +73,11 @@ export function formatSpentText(
 export function formatCostDisplay(
   localRate: number,
   costBreakdown: CostBreakdown | null,
+  pricingState: PricingState,
 ): CostDisplay {
   const showSavings =
     (costBreakdown?.hasSavingsEstimate ?? false) && (costBreakdown?.savingsAmount ?? 0) > 0;
   const hasPricedUsage = costBreakdown?.hasPricedUsage ?? false;
-  const pricingState = resolvePricingState(costBreakdown);
   return {
     localRatePct: `${Math.round(localRate)}%`,
     showSavings,

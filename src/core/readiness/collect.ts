@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
 import { configPath, loadConfig } from '../config/load/load.js';
-import { applyCLIOverrides } from '../config/runtime/overrides.js';
+import { applyCLIOverrides, workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
 import { isGitRepo, getGitStatus } from '../../lib/git.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -86,22 +86,9 @@ function loadReadinessConfig(
   try {
     const loaded = loadConfig(options.projectDir);
     const config = applyCLIOverrides(loaded.config, {
-      planner: {
-        tool: options.opts?.planner,
-        model: options.opts?.plannerModel,
-        command: options.opts?.plannerCommand,
-      },
-      implementer: {
-        tool: options.opts?.implementer ?? options.opts?.provider,
-        model: options.opts?.implementerModel ?? options.opts?.model,
-        command: options.opts?.implementerCommand,
-      },
+      ...workflowOptsToCLIOverrides(options.opts ?? {}),
       autoApprove:
         options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
-      approve: options.opts?.approve,
-      mode: options.opts?.mode,
-      budget: options.opts?.budget,
-      plannerEffort: options.opts?.plannerEffort,
     });
     return {
       config,

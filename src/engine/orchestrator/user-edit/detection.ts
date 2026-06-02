@@ -3,7 +3,11 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
-import { classifyUserEditConflict, normalizeUserEditConflictAction } from './conflicts.js';
+import {
+  classifyUserEditConflict,
+  normalizeUserEditConflictAction,
+  DESTRUCTIVE_CONFLICT_ACTIONS,
+} from './conflicts.js';
 import {
   publishRecoveryPrompted,
   publishUserEditConflict,
@@ -14,13 +18,6 @@ import { nowIso } from '../../../utils/format-time.js';
 import { transitionAndSave } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
-
-const CURRENT_TASK_CONFLICT_ACTIONS = [
-  'regenerate-rebase',
-  'pause',
-  'skip-current-task',
-  'abort-workflow',
-] as const;
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;
@@ -48,7 +45,7 @@ export async function checkUserEditConflicts(opts: {
   const { state } = opts;
 
   const promptRecovery = (issue: RecoveryIssue): { state: WorkflowState; stopped: boolean } => {
-    const next = transitionAndSave(projectDir, sessionId, state, {
+    const next = transitionAndSave({ projectDir, sessionId }, state, {
       type: 'SET_PENDING_RECOVERY',
       issue,
     });
@@ -125,7 +122,7 @@ export async function checkUserEditConflicts(opts: {
       currentTaskId: task.id,
       fileConflicts: [],
       safeToContinue: false,
-      availableActions: [...CURRENT_TASK_CONFLICT_ACTIONS],
+      availableActions: [...DESTRUCTIVE_CONFLICT_ACTIONS],
     },
     currentTask: task,
     phase: state.phase,

@@ -336,8 +336,6 @@ describe('rejectRunSnapshot', () => {
     expect(ledger?.accepted).toBe(true);
     expect(ledger?.rejected).toBe(false);
     expect(ledger?.runSnapshotIds).toContain(accepted.snapshotId);
-    expect(ledger?.beforeHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(ledger?.lastDiptychHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('writes rejected state to the run ledger', async () => {

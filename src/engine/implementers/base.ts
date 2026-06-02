@@ -151,6 +151,15 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const prompt = prependSystemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, phase } = opts;
 
+    const failTask = () => {
+      if (phase)
+        baseConfig.publisher?.publishFailed({
+          phase,
+          taskId: task.id,
+          model: config.implementer.model,
+        });
+    };
+
     assertPathConfined(task.file, projectDir);
 
     let oldContent: string | null = null;
@@ -165,7 +174,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     const persistTranscript = config.workflow.persistTranscript;
     const implBuffer = sessionId
-      ? createTranscriptBuffer(projectDir, sessionId, 'implementing', persistTranscript)
+      ? createTranscriptBuffer({
+          projectDir,
+          sessionId,
+          phase: 'implementing',
+          persistTranscript,
+        })
       : null;
     const wrappedOnOutput = baseConfig.extractsCode
       ? (text: string) => {
@@ -196,12 +210,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       }
       if (shouldThrow(err)) throw err;
       const output = isRecord(err) && typeof err.output === 'string' ? err.output : '';
-      if (phase)
-        baseConfig.publisher?.publishFailed({
-          phase,
-          taskId: task.id,
-          model: config.implementer.model,
-        });
+      failTask();
       return { success: false, output, error: formatErrorWithHint(toErrorMessage(err)) };
     }
 
@@ -219,12 +228,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           approveWrite: opts.approveWrite,
         });
         if (!result.success) {
-          if (phase)
-            baseConfig.publisher?.publishFailed({
-              phase,
-              taskId: task.id,
-              model: config.implementer.model,
-            });
+          failTask();
           return { success: false, output: invokeResult.text, error: result.error, ...usageField };
         }
         if (phase) {
@@ -244,12 +248,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (baseConfig.detectChanges) {
         const changes = await baseConfig.detectChanges(projectDir, filesBefore);
         if (!changes.changed) {
-          if (phase)
-            baseConfig.publisher?.publishFailed({
-              phase,
-              taskId: task.id,
-              model: config.implementer.model,
-            });
+          failTask();
           return {
             success: false,
             output: invokeResult.text,
@@ -259,12 +258,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         }
       }
     } catch (err) {
-      if (phase)
-        baseConfig.publisher?.publishFailed({
-          phase,
-          taskId: task.id,
-          model: config.implementer.model,
-        });
+      failTask();
       return {
         success: false,
         output: invokeResult.text,

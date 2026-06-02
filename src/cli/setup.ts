@@ -13,6 +13,10 @@ export function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());
 }
 
+export function isInteractiveTty(): boolean {
+  return Boolean(process.stdout.isTTY) && !process.env['CI'];
+}
+
 export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConfig> {
   try {
     return loadConfig(projectDir);
@@ -48,7 +52,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
 
   await assertGitRepo(projectDir);
 
-  const isInteractive = process.stdout.isTTY && !process.env['CI'];
+  const isInteractive = isInteractiveTty();
   const useFullscreen = opts.fullscreen !== false && isInteractive;
   const useMouse = opts.mouse !== false && useFullscreen;
 

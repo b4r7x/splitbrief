@@ -98,7 +98,7 @@ describe('openExternalEditor edit mode', () => {
     });
     planEditorStore.initEditor([task]);
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     const updatedTasks = planEditorStore.get().tasks;
     expect(updatedTasks).toHaveLength(1);
@@ -112,7 +112,7 @@ describe('openExternalEditor edit mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('EDITOR', join(sessionDir, 'missing-editor'));
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).toContain('Failed to open editor');
     expect(planEditorStore.get().saveError).toContain('ENOENT');
@@ -128,7 +128,7 @@ describe('openExternalEditor edit mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'exit-42');
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().tasks[0]?.title).toBe('Original');
     expect(planEditorStore.get().saveError).toContain('Editor exited with status 42');
@@ -138,7 +138,7 @@ describe('openExternalEditor edit mode', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
 
-    openExternalEditor(task, 'edit', join(sessionDir, 'missing-session'));
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: join(sessionDir, 'missing-session') });
 
     expect(planEditorStore.get().saveError).toContain('Failed to write editor file');
   });
@@ -148,7 +148,7 @@ describe('openExternalEditor edit mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'delete-file');
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).toContain('Failed to read editor file');
   });
@@ -161,7 +161,7 @@ describe('openExternalEditor edit mode', () => {
       makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'),
     );
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).toContain('Edit parse failed');
   });
@@ -171,7 +171,7 @@ describe('openExternalEditor edit mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'two-tasks');
 
-    openExternalEditor(task, 'edit', sessionDir);
+    openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).toContain('expects exactly 1 task');
   });
@@ -183,7 +183,7 @@ describe('openExternalEditor split mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'append-marker');
 
-    openExternalEditor(task, 'split', sessionDir);
+    openExternalEditor({ task, mode: 'split', sessionDirPath: sessionDir });
 
     const leftovers = await readdir(sessionDir);
     expect(leftovers).not.toContain(`split-${task.id}.md`);
@@ -195,7 +195,7 @@ describe('openExternalEditor split mode', () => {
     planEditorStore.initEditor([task]);
     vi.stubEnv('FAKE_EDITOR_MODE', 'invalid-parse');
 
-    openExternalEditor(task, 'split', sessionDir);
+    openExternalEditor({ task, mode: 'split', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).not.toBeNull();
   });

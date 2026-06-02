@@ -41,8 +41,6 @@ export const RunSnapshotLedgerSchema = z.object({
   runSnapshotKinds: z.record(z.string(), RunSnapshotKindSchema).optional(),
   accepted: z.boolean(),
   rejected: z.boolean(),
-  beforeHash: z.string().nullable(),
-  lastDiptychHash: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

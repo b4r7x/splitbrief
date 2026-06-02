@@ -47,20 +47,10 @@ export type SummaryBase = {
   costPrediction?: CostPrediction | undefined;
 };
 
-type BuildSummaryOptions = {
-  feature: string;
+type BuildSummaryOptions = SummaryBase & {
   state: BuildSummaryState;
-  startTime: number;
   taskBreakdowns?: TaskTokenUsage[];
-  plannerTool: string;
-  plannerModel?: string;
-  implementerTool: string;
-  implementerModel?: string;
   phaseTimings?: Record<string, number>;
-  mode?: WorkflowMode;
-  projectDir?: string;
-  sessionId?: string;
-  costPrediction?: CostPrediction | undefined;
 };
 
 function readBriefQualityReport(projectDir: string, sessionId: string): BriefQualityReport | null {
@@ -151,13 +141,13 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     : 'unavailable';
 
   const costedBreakdowns = taskBreakdowns?.map((task) => {
-    const isCostKnown = isTaskUsageCostKnown(
+    const isCostKnown = isTaskUsageCostKnown({
       task,
       implementerTool,
       plannerTool,
       implementerModel,
       plannerModel,
-    );
+    });
     const { cost: _cost, ...rest } = task;
     return {
       ...rest,

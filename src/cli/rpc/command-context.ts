@@ -13,13 +13,14 @@ import { error } from '../../utils/error.js';
 
 const rpcCommandContextError = {
   noActiveSession: () => error('rpc-command-no-active-session', 'No active session.'),
+  noConfig: () => error('rpc-command-no-config', 'No config loaded.'),
 } as const;
 
 export function createRpcCommandContext(opts: {
   projectDir: string;
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
-  getConfig: () => Config;
+  getConfig: () => Config | null;
   setConfig: (config: Config) => void;
   getPhase: () => Phase;
   queueHandler: () => QueueHandler | null;
@@ -45,7 +46,7 @@ export function createRpcCommandContext(opts: {
     },
     getSessionId: () => opts.getSessionId(),
     noActiveSession: () => rpcCommandContextError.noActiveSession(),
-    noConfig: () => rpcCommandContextError.noActiveSession(),
+    noConfig: () => rpcCommandContextError.noConfig(),
     openOverlay: (type) => pushMessage(`Overlay ${type} is not available in RPC mode.`),
     navigateHome: () => pushMessage('Navigation is not available in RPC mode.'),
     quit: () => opts.abort(),
@@ -59,8 +60,12 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const { action } = buildRewindAction(request, opts.projectDir, sessionId, state);
-      transitionAndSave(opts.projectDir, sessionId, state, action);
+      const { action } = buildRewindAction(
+        request,
+        { projectDir: opts.projectDir, sessionId },
+        state,
+      );
+      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
@@ -70,11 +75,10 @@ export function createRpcCommandContext(opts: {
       if (!state || !sessionId) return false;
       const { action } = buildRewindAction(
         { target: 'task', taskId },
-        opts.projectDir,
-        sessionId,
+        { projectDir: opts.projectDir, sessionId },
         state,
       );
-      transitionAndSave(opts.projectDir, sessionId, state, action);
+      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },

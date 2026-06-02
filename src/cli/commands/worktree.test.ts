@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
@@ -134,8 +135,22 @@ describe('worktree switch', () => {
   });
 });
 
+describe('worktree path', () => {
+  it('prints the resolved .trees/<name> path when worktree exists', async () => {
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+
+    await runWorktree(['path', 'my-feature']);
+
+    expect(captureOutput()).toContain(join(tmp, '.trees', 'my-feature'));
+  });
+});
+
 describe('worktree missing target', () => {
-  it.each(['switch', 'remove'])('exits 1 when %s targets a missing worktree', async (command) => {
+  it.each([
+    'switch',
+    'remove',
+    'path',
+  ])('exits 1 when %s targets a missing worktree', async (command) => {
     mockListWorktrees.mockResolvedValue([]);
 
     let captured: unknown;

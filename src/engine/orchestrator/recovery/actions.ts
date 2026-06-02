@@ -11,7 +11,6 @@ import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -36,6 +35,7 @@ export type RecoveryActionBlockedCode =
   | 'action-not-available'
   | 'unsafe-continue'
   | 'missing-current-task'
+  | 'skip-evidence-failed'
   | 'missing-profile'
   | 'profile-not-found'
   | 'planner-proposal-required';
@@ -74,7 +74,6 @@ export interface ApplyRecoveryActionOptions {
   action: RecoveryAction;
   bus: EventBus;
   config?: Config | undefined;
-  selectedAt?: string | undefined;
   mode?: WorkflowMode | undefined;
 }
 
@@ -147,7 +146,7 @@ function applyContinueRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
   publishRecoveryResolved(opts.bus, issue, opts.action, 'continued');
@@ -160,7 +159,7 @@ function applyPauseRecoveryAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'PAUSE_PENDING_RECOVERY',
   });
   return { ok: true, action: opts.action, issue, state, status: 'paused' };
@@ -171,8 +170,8 @@ function applyAbortRecoveryAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, { type: 'CANCEL' });
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, { type: 'CANCEL' });
+  state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
   publishRecoveryResolved(opts.bus, issue, opts.action, 'aborted');
@@ -209,18 +208,18 @@ function applySkipCurrentTaskRecoveryAction(
     return blockRecoveryAction({
       ...opts,
       issue,
-      code: 'missing-current-task',
+      code: 'skip-evidence-failed',
       message: `Failed to record skip evidence: ${toErrorMessage(err)}`,
       publishSelected: true,
     });
   }
 
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'SKIP_TASK',
     taskId: target.task.id,
   });
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
   publishTaskSkipped(
@@ -301,11 +300,11 @@ function applyRetryCurrentTaskRecoveryAction(
   const effectiveProfile = selectedImplementerProfile ?? issue.selectedImplementerProfile;
 
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'RESET_TASK',
     taskId: target.task.id,
   });
-  state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
+  state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
   publishRecoveryResolved(opts.bus, issue, opts.action, 'retry-current-task', effectiveProfile);
@@ -331,10 +330,9 @@ function markRecoveryApplying(
   issue: RecoveryIssue,
 ): WorkflowState {
   publishRecoveryActionSelected(opts.bus, issue, opts.action);
-  return transitionAndSave(opts.projectDir, opts.sessionId, opts.state, {
+  return transitionAndSave(opts, opts.state, {
     type: 'MARK_RECOVERY_APPLYING',
     action: opts.action,
-    selectedAt: opts.selectedAt ?? nowIso(),
   });
 }
 

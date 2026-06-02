@@ -34,20 +34,20 @@ function setupProject(prefix = 'message-queue-test'): { projectDir: string; sess
 
 function makeResearchingState(): WorkflowState {
   let state = createInitialState('test-feature');
-  state = transition(state, { type: 'START', feature: 'test-feature' });
+  state = transition(state, { type: 'START' });
   return state;
 }
 
 function makeSpecifyingState(): WorkflowState {
   let state = createInitialState('test-feature');
-  state = transition(state, { type: 'START', feature: 'test-feature' });
+  state = transition(state, { type: 'START' });
   state = transition(state, { type: 'RESEARCH_DONE' });
   return state;
 }
 
 function makeStateWithQueue(messages: Omit<QueuedMessage, 'deliveredViaNative'>[]): WorkflowState {
   let state = createInitialState('test-feature');
-  state = transition(state, { type: 'START', feature: 'test-feature' });
+  state = transition(state, { type: 'START' });
   const fullMessages: QueuedMessage[] = messages.map((m) => ({ ...m, deliveredViaNative: false }));
   return { ...state, messageQueue: fullMessages };
 }
@@ -239,10 +239,9 @@ describe('enqueue', () => {
   it('preserves queued messages when a later orchestrator transition starts from stale state', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = transitionAndSave(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       createInitialState('test-feature'),
-      { type: 'START', feature: 'test-feature' },
+      { type: 'START' },
     );
     const staleState = state;
     const { bus } = makeBusRecorder();
@@ -264,7 +263,7 @@ describe('enqueue', () => {
     handler('do not drop me', 'researching');
     await new Promise((r) => setTimeout(r, 0));
 
-    state = transitionAndSave(projectDir, sessionId, staleState, { type: 'RESEARCH_DONE' });
+    state = transitionAndSave({ projectDir, sessionId }, staleState, { type: 'RESEARCH_DONE' });
 
     expect(state.messageQueue.map((m) => m.text)).toEqual(['do not drop me']);
     expect(state.phase).toBe('specifying');
@@ -309,8 +308,7 @@ describe('clear', () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
     saveState(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       makeStateWithQueue([
         makeMessage('persisted pending'),
         {
@@ -345,7 +343,7 @@ describe('drain', () => {
   it('returns empty messages and unchanged state when queue is empty', () => {
     const { projectDir, sessionId } = setupProject();
     let state = createInitialState('test-feature');
-    state = transition(state, { type: 'START', feature: 'test-feature' });
+    state = transition(state, { type: 'START' });
     const { bus } = makeBusRecorder();
 
     const result = drainQueue(projectDir, sessionId, state, bus);
@@ -404,7 +402,7 @@ describe('drain', () => {
   it('drains pending messages from persisted state when caller state is stale', () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = makeResearchingState();
-    saveState(projectDir, sessionId, makeStateWithQueue([makeMessage('persisted pending')]));
+    saveState({ projectDir, sessionId }, makeStateWithQueue([makeMessage('persisted pending')]));
     const { bus } = makeBusRecorder();
 
     const result = drainQueue(projectDir, sessionId, staleState, bus);
@@ -716,7 +714,7 @@ describe('clarifications', () => {
   it('returns state unchanged and does not enqueue when phase is not researching/specifying', async () => {
     const { projectDir, sessionId } = setupProject();
     let state = createInitialState('test-feature');
-    state = transition(state, { type: 'START', feature: 'test-feature' });
+    state = transition(state, { type: 'START' });
     state = transition(state, { type: 'RESEARCH_DONE' });
     state = transition(state, { type: 'SPEC_DONE' });
     const { bus } = makeBusRecorder();

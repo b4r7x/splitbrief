@@ -3,6 +3,7 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import { taskId } from '../schemas/task.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase } from '../schemas/enums.js';
+import type { SessionRef } from '../types/session-ref.js';
 import { appendEngineEvent } from './persistence.js';
 
 export type RewindTarget =
@@ -22,8 +23,7 @@ export interface RewindOutcome {
 
 export function buildRewindAction(
   request: RewindTarget,
-  projectDir: string,
-  activeSessionId: string,
+  ref: SessionRef,
   current: WorkflowState,
 ): RewindOutcome {
   if (request.target === 'spec') {
@@ -33,7 +33,7 @@ export function buildRewindAction(
       phase: current.phase,
       ...(request.comment ? { comment: request.comment } : {}),
     };
-    appendEngineEvent(projectDir, activeSessionId, event);
+    appendEngineEvent(ref, event);
     return {
       action: { type: 'REWIND_TO_SPEC', ...(request.comment ? { comment: request.comment } : {}) },
       event,
@@ -46,7 +46,7 @@ export function buildRewindAction(
       phase: current.phase,
       ...(request.comment ? { comment: request.comment } : {}),
     };
-    appendEngineEvent(projectDir, activeSessionId, event);
+    appendEngineEvent(ref, event);
     return {
       action: { type: 'REWIND_TO_PLAN', ...(request.comment ? { comment: request.comment } : {}) },
       event,
@@ -59,7 +59,7 @@ export function buildRewindAction(
     taskId: tid,
     phase: current.phase,
   };
-  appendEngineEvent(projectDir, activeSessionId, event);
+  appendEngineEvent(ref, event);
   return {
     action: { type: 'RESET_TASK', taskId: tid },
     event,

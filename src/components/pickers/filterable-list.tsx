@@ -63,13 +63,13 @@ export function FilterableList<T>({
 
   const { filter, filtered, selectedIndex } = list;
 
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow(
-    filtered,
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow({
+    items: filtered,
     selectedIndex,
-    rows,
+    terminalRows: rows,
     chromeRows,
-    maxVisibleProp,
-  );
+    maxVisible: maxVisibleProp,
+  });
 
   const useSections = sectionBy && renderSectionHeader;
   const sectionedSlice = useSections ? toSectionedList(visibleSlice, sectionBy) : null;

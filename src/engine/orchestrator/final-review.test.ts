@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -21,7 +21,7 @@ import {
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
+import { runFinalReviewPhase } from './final-review.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
@@ -48,7 +48,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function allTasksDoneState(tasks: Task[]): WorkflowState {
   // Walk the state machine into a state where ALL_DONE is valid.
   let s = createInitialState('feat');
-  s = transition(s, { type: 'START', feature: 'feat' });
+  s = transition(s, { type: 'START' });
   s = transition(s, { type: 'RESEARCH_DONE' });
   s = transition(s, { type: 'SPEC_DONE' });
   s = transition(s, { type: 'APPROVE_SPEC' });
@@ -320,57 +320,5 @@ describe('runFinalReviewPhase', () => {
     if (snapshotEvent?.type === 'snapshot_created') {
       expect(ledger?.runSnapshotIds).toContain(snapshotEvent.snapshotId);
     }
-  });
-});
-
-describe('shutdownWorkflow', () => {
-  it('persists tracked state to disk when one is available', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    const trackedState: WorkflowState = {
-      ...createInitialState('feat'),
-      feature: 'shutdown-test',
-    };
-
-    await shutdownWorkflow(
-      projectDir,
-      sessionId,
-      () => trackedState,
-      () => undefined,
-    );
-
-    const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
-    expect(existsSync(statePath)).toBe(true);
-    const persisted = JSON.parse(readFileSync(statePath, 'utf-8'));
-    expect(persisted.feature).toBe('shutdown-test');
-  });
-
-  it('is safe when there is no tracked state and no current task', async () => {
-    const { projectDir, sessionId } = setupProject();
-    await expect(
-      shutdownWorkflow(
-        projectDir,
-        sessionId,
-        () => undefined,
-        () => undefined,
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it('waits for current task rollback during shutdown', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const file = 'src/generated.ts';
-    const filePath = join(projectDir, file);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(filePath, 'export const generated = true;\n');
-
-    await shutdownWorkflow(
-      projectDir,
-      sessionId,
-      () => undefined,
-      () => ({ file, action: 'create' }),
-    );
-
-    expect(existsSync(filePath)).toBe(false);
   });
 });

@@ -6,13 +6,19 @@ import {
   getRunnerDisplayName,
   getRunnerModelName,
 } from '../../../core/config/accessors/runner-config.js';
+import type { z } from 'zod';
 import type { Config } from '../../../core/schemas/config.js';
-import type { CostPrediction } from '../../../core/schemas/summary.js';
+import type {
+  CostPrediction,
+  EstimateContextConfidenceSchema,
+  EstimatePriceConfidenceSchema,
+  EstimateUnknownCostReasonSchema,
+} from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import { calculateCost } from '../../providers/cost-math.js';
-import { countByValue } from '../../../utils/collections.js';
+import { countByValue, uniquePush } from '../../../utils/collections.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
@@ -24,19 +30,11 @@ import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource } from '../context-routing/types.js';
 import type { TaskContextFit } from '../../events/workflow-events.js';
 
-export type EstimateContextConfidence =
-  | 'context-explicit'
-  | 'context-known-catalog'
-  | 'context-cached-provider'
-  | 'context-conservative-fallback'
-  | 'profile-unavailable';
+export type EstimateContextConfidence = z.infer<typeof EstimateContextConfidenceSchema>;
 
-export type EstimatePriceConfidence = 'price-known' | 'price-unknown' | 'profile-unavailable';
+export type EstimatePriceConfidence = z.infer<typeof EstimatePriceConfidenceSchema>;
 
-export type EstimateUnknownCostReason =
-  | 'implementer-price-unknown'
-  | 'planner-price-unknown'
-  | 'profile-unavailable';
+export type EstimateUnknownCostReason = z.infer<typeof EstimateUnknownCostReasonSchema>;
 
 export interface DeterministicTaskEstimate {
   taskId: TaskId;
@@ -77,10 +75,6 @@ function contextConfidence(source: ContextLengthSource | null): EstimateContextC
   if (source === 'runtime') return 'context-cached-provider';
   if (source === 'conservative-fallback') return 'context-conservative-fallback';
   return 'profile-unavailable';
-}
-
-function pushUnique<T>(values: T[], value: T): void {
-  if (!values.includes(value)) values.push(value);
 }
 
 function profileForContextConfidence(
@@ -194,10 +188,10 @@ function estimateTotals(tasks: DeterministicTaskEstimate[]): DeterministicEstima
   const unknownCostReason: EstimateUnknownCostReason[] = [];
 
   for (const task of tasks) {
-    if (task.selectedProfileId === null) pushUnique(unknownCostReason, 'profile-unavailable');
+    if (task.selectedProfileId === null) uniquePush(unknownCostReason, 'profile-unavailable');
 
     if (task.estimatedImplementerCost === null) {
-      pushUnique(
+      uniquePush(
         unknownCostReason,
         task.selectedProfileId === null ? 'profile-unavailable' : 'implementer-price-unknown',
       );
@@ -206,7 +200,7 @@ function estimateTotals(tasks: DeterministicTaskEstimate[]): DeterministicEstima
     }
 
     if (task.hypotheticalPlannerCost === null) {
-      pushUnique(unknownCostReason, 'planner-price-unknown');
+      uniquePush(unknownCostReason, 'planner-price-unknown');
     } else {
       planner += task.hypotheticalPlannerCost;
     }

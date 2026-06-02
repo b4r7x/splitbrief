@@ -28,7 +28,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   } = opts;
   let state = initialState;
   let task = opts.task;
-  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
+  ({ task, state } = await refreshAndPersistCode(task, ctx, state));
 
   const retryRuntime = await createRetryRuntime(ctx, profileOverride);
   const retryCtx = {
@@ -41,7 +41,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   };
   if (retryRuntime.profile !== undefined) {
     state = stateForRetryProfile(state, retryRuntime.profile);
-    saveState(ctx.projectDir, ctx.sessionId, state);
+    saveState(ctx, state);
   }
 
   const staged = await createStagedProject(ctx.projectDir);

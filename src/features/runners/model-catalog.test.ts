@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import {
   buildImplementerPickerOptions,
   buildPlannerPickerOptions,

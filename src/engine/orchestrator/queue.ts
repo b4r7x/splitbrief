@@ -22,7 +22,7 @@ export function enqueueUserMessage(
   bus: EventBus,
   persistTranscript: boolean,
 ): { state: WorkflowState; queued: boolean; message?: QueuedMessage | undefined } {
-  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
   const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length >= MAX_QUEUE_SIZE) {
     publishWarning(
@@ -40,13 +40,12 @@ export function enqueueUserMessage(
     deliveredViaNative: false,
   };
 
-  const next = transitionAndSave(projectDir, sessionId, base, {
+  const next = transitionAndSave({ projectDir, sessionId }, base, {
     type: 'ENQUEUE_USER_MSG',
     message,
   });
   appendMessage(
-    projectDir,
-    sessionId,
+    { projectDir, sessionId },
     { role: 'user', phase, text, queuedAt: message.queuedAt },
     persistTranscript,
   );
@@ -106,11 +105,11 @@ export function clearPendingQueue(
   state: WorkflowState,
   bus: EventBus,
 ): { state: WorkflowState; count: number } {
-  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
   const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length === 0) return { state: base, count: 0 };
 
-  const next = transitionAndSave(projectDir, sessionId, base, { type: 'CLEAR_QUEUE' });
+  const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'CLEAR_QUEUE' });
   bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: next.phase, count: pending.length });
   return { state: next, count: pending.length };
 }
@@ -133,11 +132,11 @@ export function drainQueue(
   state: WorkflowState,
   bus: EventBus,
 ): { state: WorkflowState; messages: QueuedMessage[] } {
-  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
   const pending = base.messageQueue.filter((m) => !m.drainedAt);
   if (pending.length === 0) return { state: base, messages: [] };
 
-  const next = transitionAndSave(projectDir, sessionId, base, { type: 'DRAIN_QUEUE' });
+  const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'DRAIN_QUEUE' });
   bus.publish({ type: 'queue_drained', ts: Date.now(), phase: next.phase, count: pending.length });
 
   return { state: next, messages: pending };

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { detectionStore } from './detection.js';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 
 describe('detectionStore', () => {
   beforeEach(() => {

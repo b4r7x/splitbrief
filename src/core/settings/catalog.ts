@@ -1,4 +1,14 @@
 import type { Config } from '../schemas/config.js';
+import {
+  APPROVE_LEVELS,
+  COMMIT_STRATEGIES,
+  EFFORT_LEVELS,
+  SESSION_SCOPES,
+  SHIKI_THEMES,
+  THEME_MODES,
+  WORKFLOW_MODES,
+} from '../schemas/enums.js';
+import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
 import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/accessors/runner-config.js';
@@ -51,7 +61,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Planner',
     description: 'Reasoning hint: low | medium | high | xhigh (dropped on unsupported backends)',
     kind: 'enum',
-    options: ['low', 'medium', 'high', 'xhigh'],
+    options: [...EFFORT_LEVELS],
     readValue: (config) => config.planner.effort,
   },
   {
@@ -134,7 +144,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Workflow',
     description: 'instant (0 calls) | quick (1, 0) | standard (4, 1) | speckit (6-7, 2)',
     kind: 'enum',
-    options: ['instant', 'quick', 'standard', 'speckit'],
+    options: [...WORKFLOW_MODES],
   },
   {
     id: 'workflow.approve',
@@ -142,7 +152,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Workflow',
     description: 'Which approval gates block the workflow ("default" follows mode)',
     kind: 'enum',
-    options: ['none', 'spec', 'plan', 'all', 'default'],
+    options: [...APPROVE_LEVELS],
   },
   {
     id: 'workflow.maxRetries',
@@ -160,7 +170,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Workflow',
     description: 'Summary format for transcript compaction',
     kind: 'enum',
-    options: ['auto', 'freeform', 'structured'],
+    options: [...CompactionFormatSchema.options],
   },
   {
     id: 'workflow.git.commitStrategy',
@@ -168,7 +178,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Workflow',
     description: 'none | checkpoint (tags) | per-task (commits)',
     kind: 'enum',
-    options: ['none', 'checkpoint', 'per-task'],
+    options: [...COMMIT_STRATEGIES],
     readValue: (config) => config.workflow.git?.commitStrategy ?? config.workflow.commitStrategy,
   },
   {
@@ -185,7 +195,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Appearance',
     description: 'Color palette mode',
     kind: 'enum',
-    options: ['terminal', 'mono'],
+    options: [...THEME_MODES],
   },
   {
     id: 'shikiTheme',
@@ -193,7 +203,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Appearance',
     description: 'Syntax highlighting theme',
     kind: 'enum',
-    options: ['github-dark', 'github-light'],
+    options: [...SHIKI_THEMES],
   },
   {
     id: 'sessions.scope',
@@ -201,6 +211,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Sessions',
     description: 'Session storage scope',
     kind: 'enum',
-    options: ['project', 'global'],
+    options: [...SESSION_SCOPES],
   },
 ];

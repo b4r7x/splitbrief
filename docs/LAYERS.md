@@ -124,7 +124,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **What lives here:**
 - `core/config/` — YAML config loading, validation, migration
 - `core/schemas/` — Zod schemas + their inferred TS types (the source of truth for `Config`, `Task`, `WorkflowState`, `Session`, token/summary shapes, etc.)
-- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `DetectedModel`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
+- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `ProjectContext`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)

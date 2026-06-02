@@ -1,9 +1,6 @@
 import { join } from 'node:path';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlanResult } from '../../planners/types.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
-import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
@@ -17,26 +14,22 @@ import {
   blocksPlanGate,
   resolveApproveLevel,
 } from '../../../core/config/runtime/resolve.js';
+import { getWorkflowMode } from '../../../core/config/accessors/state.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
-import {
-  drainAndFormat,
-  handlePlanningFailure,
-  runBriefQualityGate,
-  runBriefsApprovalLoop,
-} from './briefs-approval-loop.js';
+import { drainAndFormat, handlePlanningFailure, runBriefQualityGate } from './planning-helpers.js';
+import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { persistPhases } from './planning-io.js';
 import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
-import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningRunContext } from './types.js';
 
 async function runNewPlanning(
   opts: PlanningPhaseOptions,
-  approveLevel: ApproveLevel,
-  metadata: SpecMetadata,
-  skillsContext: string | undefined,
-  state: WorkflowState,
+  ctx: PlanningRunContext,
 ): Promise<PlanningPhaseResult> {
+  const { approveLevel, metadata, skillsContext } = ctx;
+  let state = ctx.state;
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder } = wctx;
   const signal = wctx.signal;
@@ -81,13 +74,13 @@ async function runNewPlanning(
     const discovered = parseDiscoveredValidation(researchPhase.text);
     if (discovered) {
       state = { ...state, discoveredValidation: discovered };
-      saveState(projectDir, sessionId, state);
+      saveState({ projectDir, sessionId }, state);
     }
   }
 
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'RESEARCH_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'RESEARCH_DONE' });
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
     state = await collectAndPersistClarifications({
@@ -114,7 +107,7 @@ async function runNewPlanning(
     }));
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_DONE' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
@@ -149,10 +142,10 @@ async function runNewPlanning(
     }
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_SPEC' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'PLAN_DONE', tasks });
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
@@ -224,14 +217,14 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   const approveLevel =
     opts.approveLevel ??
     resolveApproveLevel({
-      mode: config.workflow.mode ?? 'standard',
+      mode: getWorkflowMode(config),
       configApprove: config.workflow.approve,
     });
   const skipPlanApproval = !blocksPlanGate(approveLevel);
 
   const rewindPending = opts.rewindPending;
   if (rewindPending) {
-    state = transitionAndSave(projectDir, sessionId, state, { type: 'CLEAR_REWIND_PENDING' });
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CLEAR_REWIND_PENDING' });
     try {
       resetDriftChainState(projectDir, sessionId);
     } catch {
@@ -250,5 +243,5 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
     return handleRewindPlan({ opts, rewindPending, skipPlanApproval, metadata, state });
   }
 
-  return runNewPlanning(opts, approveLevel, metadata, skillsContext, state);
+  return runNewPlanning(opts, { approveLevel, metadata, skillsContext, state });
 }

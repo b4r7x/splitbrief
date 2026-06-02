@@ -7,7 +7,7 @@ import type { Implementer } from '../../implementers/types.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
-import type { ValidationResult } from '../validation-types.js';
+import type { ValidationResult } from '../validation-result.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 

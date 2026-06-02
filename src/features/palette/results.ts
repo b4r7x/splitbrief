@@ -94,7 +94,7 @@ function buildCandidates(inputs: PaletteInputs): Candidate[] {
     candidates.push({
       id: 'custom:' + item.id,
       label: item.label,
-      description: item.description ?? '',
+      description: item.description,
       source: 'custom',
       shortcut: null,
       action: item.action,

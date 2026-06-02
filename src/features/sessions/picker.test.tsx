@@ -110,7 +110,7 @@ describe('SessionsPicker handleSessionSelect (Enter routing)', () => {
       summary: null,
     });
     const savedState = { ...createInitialState('saved add auth'), phase: 'implementing' as const };
-    saveState(tmp, session.id, savedState);
+    saveState({ projectDir: tmp, sessionId: session.id }, savedState);
 
     handleSessionSelect(session, tmp);
 

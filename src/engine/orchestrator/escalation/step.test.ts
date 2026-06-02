@@ -255,7 +255,7 @@ describe('runRetryStep', () => {
       tool: 'deepseek',
       model: 'deepseek-chat',
     });
-    expect(loadState(projectDir, sessionId)).toMatchObject({
+    expect(loadState({ projectDir, sessionId })).toMatchObject({
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
     });

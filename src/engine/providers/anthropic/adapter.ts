@@ -3,7 +3,7 @@ import { resolveDefaultApiBase } from '../../../core/providers/catalog.js';
 import { createMetadataProvider } from '../client.js';
 import { ANTHROPIC_API_VERSION, v1ModelsUrl } from '../constants.js';
 import type { ProviderDefWithMetadata, ProviderOverrides } from '../types.js';
-import type { DetectedModel } from '../../../core/types/config-options.js';
+import type { DetectedModel } from '../../../core/discovery/detection.js';
 
 const DEFAULT_ANTHROPIC_BASE_URL =
   resolveDefaultApiBase('anthropic') ?? 'https://api.anthropic.com/v1';

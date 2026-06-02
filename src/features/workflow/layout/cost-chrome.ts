@@ -6,7 +6,7 @@ const STATUS_SEPARATOR = ' \u00b7 ';
 const STATUS_SPLIT_GAP = 4;
 const NARROW_STATUS_WIDTH = 60;
 
-export type CostChromePricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a';
+export type PricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a';
 
 export interface CostStatusLineLayoutInput {
   renderWidth: number;
@@ -16,7 +16,7 @@ export interface CostStatusLineLayoutInput {
   totalActualCost: number;
   prediction: CostPrediction | null;
   totalTasks: number;
-  pricingState: CostChromePricingState;
+  pricingState: PricingState;
   maxBudget: number | undefined;
   plannerInput: number;
   totalInput: number;
@@ -35,17 +35,11 @@ export interface ProjectedCostInput {
   totalActualCost: number;
   prediction: CostPrediction | null;
   totalTasks: number;
-  pricingState?: CostChromePricingState;
+  pricingState: PricingState;
 }
 
 function formatProjected(input: ProjectedCostInput): string {
-  const {
-    completedCount,
-    totalActualCost,
-    prediction,
-    totalTasks,
-    pricingState = 'priced',
-  } = input;
+  const { completedCount, totalActualCost, prediction, totalTasks, pricingState } = input;
   if (pricingState !== 'priced' && pricingState !== 'mixed') return 'proj n/a';
   if (completedCount > 0) {
     const projected = (totalActualCost / completedCount) * totalTasks;

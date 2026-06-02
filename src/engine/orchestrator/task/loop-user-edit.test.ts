@@ -300,7 +300,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       taskId: 'T001',
       affectedTaskIds: ['T001', 'T002'],
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'user-edit-conflict',
       taskId: 'T001',
     });

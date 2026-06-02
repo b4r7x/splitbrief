@@ -6,6 +6,7 @@ import { checkServerStatus, readLockfile, type LockfileData } from '../../engine
 import { sessionsRoot } from '../../core/paths.js';
 import { assignSessionAliases, listSessionDirs } from '../session-aliases.js';
 import { renderTable } from '../render-table.js';
+import { formatTime } from '../../utils/format-time.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type PsDeps = {
@@ -31,16 +32,6 @@ type SessionRow = {
   lockfile: LockfileData | null;
 };
 
-function formatElapsed(startMs: number, endMs: number): string {
-  const totalSec = Math.max(0, Math.floor((endMs - startMs) / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
 async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promise<SessionRow> {
   const data: LockfileData | null = await deps.readLockfile(sessDir);
 
@@ -64,7 +55,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
   let rowStatus: SessionRow['status'];
   if (status.alive) {
     rowStatus = 'running';
-  } else if (!status.alive && status.crashed) {
+  } else if (status.crashed) {
     rowStatus = 'crashed';
   } else {
     rowStatus = 'exited';
@@ -119,7 +110,7 @@ export async function psCommand(
   function elapsedOf(row: SessionRow): string {
     const endMs =
       row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
-    return row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
+    return row.startTimeMs > 0 ? formatTime(endMs - row.startTimeMs) : '-';
   }
 
   const lines = renderTable<SessionRow>({

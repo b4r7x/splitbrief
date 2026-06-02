@@ -18,10 +18,11 @@ export function CostDisplay({
   useRateColor: colorByRate = false,
 }: CostDisplayProps) {
   const t = useTheme();
-  const { localRate, costBreakdown } = useCostStats();
+  const { localRate, costBreakdown, pricingState } = useCostStats();
   const { localRatePct, showSavings, savingsText, hasPricedUsage, spentText } = formatCostDisplay(
     localRate,
     costBreakdown,
+    pricingState,
   );
   const showSpent = hasPricedUsage && (!spentHiddenWhenSavings || !showSavings);
   const localColor = colorByRate ? rateColor(localRate, t) : t.accent;

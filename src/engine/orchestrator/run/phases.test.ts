@@ -691,7 +691,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
 
     expect(result.completed).toBe(false);
     expect(result.summary.totalTasks).toBe(0);
-    expect(loadState(projectDir, sessionId)?.phase).toBe('idle');
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('idle');
     expect(events.find((event) => event.type === 'task_started')).toBeUndefined();
     expect(
       events.find(

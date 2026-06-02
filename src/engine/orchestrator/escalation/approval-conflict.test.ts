@@ -61,6 +61,6 @@ describe('handleApprovalTimeUserEditConflict', () => {
     expect(trackedStates).toEqual([nextState]);
     expect(events.some((e) => e.type === 'paused_external_changes')).toBe(true);
     expect(events.some((e) => e.type === 'recovery_prompted')).toBe(true);
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeDefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeDefined();
   });
 });

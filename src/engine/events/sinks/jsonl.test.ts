@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createJsonlSink } from './jsonl.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 describe('jsonlSink', () => {
   let projectDir: string;
@@ -28,7 +29,7 @@ describe('jsonlSink', () => {
   }
 
   it('writes event-kind entries with on-disk shape (kind, ts ISO, type, phase, data)', () => {
-    const sink = createJsonlSink(projectDir, sessionId, true);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
     sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'add x' });
     sink({ type: 'instant_plan_received', ts: 200, phase: 'planning', taskCount: 3 });
 
@@ -51,7 +52,7 @@ describe('jsonlSink', () => {
   });
 
   it('drops planner_text events when persistTranscript=false', () => {
-    const sink = createJsonlSink(projectDir, sessionId, false);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({ type: 'planner_text', ts: 100, phase: 'researching', text: 'thinking...' });
     sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
     const lines = readLog();
@@ -60,7 +61,7 @@ describe('jsonlSink', () => {
   });
 
   it('drops user_message events when persistTranscript=false', () => {
-    const sink = createJsonlSink(projectDir, sessionId, false);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({ type: 'user_message', ts: 100, phase: 'researching', text: 'hi' });
     sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
     const lines = readLog();
@@ -69,7 +70,7 @@ describe('jsonlSink', () => {
   });
 
   it('drops clarification_answered events when persistTranscript=false', () => {
-    const sink = createJsonlSink(projectDir, sessionId, false);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({ type: 'clarification_answered', ts: 100, phase: 'clarifying', answer: 'yes' });
     sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
     const lines = readLog();
@@ -78,12 +79,12 @@ describe('jsonlSink', () => {
   });
 
   it('drops implementer_generate_done events when persistTranscript=false', () => {
-    const sink = createJsonlSink(projectDir, sessionId, false);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({
       type: 'implementer_generate_done',
       ts: 100,
       phase: 'implementing',
-      taskId: 't1' as never,
+      taskId: taskId('t1'),
       file: 'a.ts',
       linesAdded: 10,
       linesRemoved: 5,
@@ -97,12 +98,12 @@ describe('jsonlSink', () => {
   });
 
   it('serializes taskId outside data when present', () => {
-    const sink = createJsonlSink(projectDir, sessionId, true);
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
     sink({
       type: 'task_started',
       ts: 100,
       phase: 'implementing',
-      taskId: 'task-1' as never,
+      taskId: taskId('task-1'),
       title: 't',
       index: 0,
       total: 1,

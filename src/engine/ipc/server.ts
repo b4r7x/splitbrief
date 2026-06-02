@@ -13,7 +13,8 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { rejectAsAlreadyAttached, tryControlDetach } from './control-detach.js';
 import { createPromptTracker, type IpcPromptUnavailableError } from './prompt-tracker.js';
-import { replaySession, writeServerMessage } from './replay-session.js';
+import { replaySession } from './replay-session.js';
+import { writeServerMessage } from './write-message.js';
 
 export type IpcServerOptions = {
   sessionId: string;

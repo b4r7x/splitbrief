@@ -46,13 +46,11 @@ describe('listProjectFiles', () => {
     expect(files).not.toContain('config/credentials.json');
   });
 
-  it('skips generated and private directories in the filesystem fallback', () => {
+  it('skips generated directories in the filesystem fallback', () => {
     mkdirSync(join(tmpDir, 'node_modules', 'pkg'), { recursive: true });
     mkdirSync(join(tmpDir, 'dist'), { recursive: true });
-    mkdirSync(join(tmpDir, '.diptych', 'sessions', 'abc'), { recursive: true });
     writeFileSync(join(tmpDir, 'node_modules', 'pkg', 'index.js'), '');
     writeFileSync(join(tmpDir, 'dist', 'cli.js'), '');
-    writeFileSync(join(tmpDir, '.diptych', 'sessions', 'abc', 'state.json'), '');
     writeFileSync(join(tmpDir, 'src', 'app.ts'), '');
 
     const files = listProjectFiles(tmpDir);
@@ -60,6 +58,19 @@ describe('listProjectFiles', () => {
     expect(files).toContain('src/app.ts');
     expect(files.some((file) => file.includes('node_modules'))).toBe(false);
     expect(files.some((file) => file.startsWith('dist/'))).toBe(false);
+  });
+
+  it('skips caller-injected directories in the filesystem fallback', () => {
+    mkdirSync(join(tmpDir, '.diptych', 'sessions', 'abc'), { recursive: true });
+    writeFileSync(join(tmpDir, '.diptych', 'sessions', 'abc', 'state.json'), '');
+    writeFileSync(join(tmpDir, 'src', 'app.ts'), '');
+
+    const files = listProjectFiles(tmpDir, {
+      excludePatterns: [/(?:^|\/)\.diptych\/sessions\//],
+      skipRelativeDirs: ['.diptych/sessions'],
+    });
+
+    expect(files).toContain('src/app.ts');
     expect(files.some((file) => file.startsWith('.diptych/sessions/'))).toBe(false);
   });
 

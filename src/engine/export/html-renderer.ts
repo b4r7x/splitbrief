@@ -1,4 +1,4 @@
-import { formatCost } from '../../core/formatting.js';
+import { formatCost, formatPercent } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { costKnownFlags, type CostBreakdown } from '../../core/schemas/summary.js';
 import { formatTime } from '../../utils/format-time.js';
@@ -55,8 +55,8 @@ function renderHeroSavings(data: ExportData): string {
 
   const actual = formatActualCost(costBreakdown);
   const baseline = formatCost(costBreakdown.hypotheticalCost);
-  const percentage = `${Math.round(costBreakdown.savingsPercentage)}%`;
-  const localRate = `${Math.round(costBreakdown.localCompletionRate * 100)}%`;
+  const percentage = formatPercent(costBreakdown.savingsPercentage);
+  const localRate = formatPercent(costBreakdown.localCompletionRate * 100);
 
   return `<section class="report-section">
 <p class="hero">${actual} actual vs ${baseline} all-planner — ${percentage} saved</p>

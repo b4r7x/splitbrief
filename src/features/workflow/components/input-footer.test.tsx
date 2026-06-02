@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../testing/helpers/ink.js';
 import { makeConfig } from '../../../../testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
-import { setAdvisory } from '../../../engine/orchestrator/planning/mode-advisor-store.js';
+import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
+import { _eventsInternal, eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -11,6 +12,27 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { buildInputFooterLayout, InputFooter } from './input-footer.js';
+
+function publishAdvisory(advisory: AdvisorResult): void {
+  if (advisory.kind === 'none') return;
+  _eventsInternal.set((prev) => ({
+    events: [
+      ...prev.events,
+      {
+        type: 'mode_advice',
+        ts: Date.now(),
+        phase: 'planning',
+        kind: advisory.kind,
+        risk: advisory.risk,
+        currentMode: advisory.currentMode,
+        suggestedMode: advisory.suggestedMode,
+        confidence: advisory.confidence,
+        factors: advisory.factors,
+        missing: advisory.missing,
+      },
+    ],
+  }));
+}
 
 describe('buildInputFooterLayout', () => {
   it('keeps narrow footers focused on controls and task progress', () => {
@@ -46,7 +68,7 @@ describe('buildInputFooterLayout', () => {
 
 describe('InputFooter advisory display', () => {
   beforeEach(() => {
-    setAdvisory(null);
+    eventsStore.__testReset();
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
     routerStore.init({ screen: 'workflow', feature: 'demo' });
     conversationScrollStore.__testReset();
@@ -56,7 +78,7 @@ describe('InputFooter advisory display', () => {
   });
 
   afterEach(() => {
-    setAdvisory(null);
+    eventsStore.__testReset();
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
     conversationScrollStore.__testReset();
@@ -67,7 +89,7 @@ describe('InputFooter advisory display', () => {
 
   it('renders downgrade advisory text when advisory state is set', () => {
     const advisory = adviseMode('fix typo in footer', 'standard');
-    setAdvisory(advisory.kind !== 'none' ? advisory : null);
+    publishAdvisory(advisory);
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -80,7 +102,7 @@ describe('InputFooter advisory display', () => {
 
   it('omits advisory text when the advisor has no displayable warning', () => {
     const advisory = adviseMode('add auth with JWT refresh tokens', 'speckit');
-    setAdvisory(advisory.kind !== 'none' ? advisory : null);
+    publishAdvisory(advisory);
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';

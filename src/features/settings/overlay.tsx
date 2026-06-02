@@ -28,7 +28,7 @@ export function SettingsOverlay() {
   const [{ focus: focusSetting }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const chrome = BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0);
-  const panelWidth = getClampedTerminalWidth(cols, MAX_PANEL_WIDTH);
+  const panelWidth = getClampedTerminalWidth({ cols, maxWidth: MAX_PANEL_WIDTH });
 
   const openSubPicker = (def: SettingDef) => {
     overlayStore.open('settings', def.id);
@@ -45,12 +45,12 @@ export function SettingsOverlay() {
       onOpenSubPicker: openSubPicker,
     });
 
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow(
-    filtered,
-    effectiveIndex,
-    rows,
-    chrome,
-  );
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow({
+    items: filtered,
+    selectedIndex: effectiveIndex,
+    terminalRows: rows,
+    chromeRows: chrome,
+  });
 
   const sectionedVisible = toSectionedList(visibleSlice, (def) => def.section);
 
@@ -111,9 +111,7 @@ export function SettingsOverlay() {
 
       {showDescription && selectedDef && (
         <Box marginTop={1}>
-          <Text color={t.textDim} dimColor>
-            {selectedDef.description}
-          </Text>
+          <Text color={t.textDim}>{selectedDef.description}</Text>
         </Box>
       )}
     </OverlayPanel>

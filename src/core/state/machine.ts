@@ -43,7 +43,6 @@ const anytimeActions = [
   'SET_PENDING_RECOVERY',
   'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
-  'CLEAR_PENDING_RECOVERY',
   'RESOLVE_PENDING_RECOVERY',
 ] as const satisfies readonly StateAction['type'][];
 
@@ -142,7 +141,6 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
 function markRecoveryApplying(
   state: WorkflowState,
   action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>,
-  now: Date = new Date(),
 ): WorkflowState {
   if (!state.pendingRecovery) return state;
   return {
@@ -151,7 +149,6 @@ function markRecoveryApplying(
       ...state.pendingRecovery,
       status: 'applying',
       selectedAction: action.action,
-      selectedAt: action.selectedAt ?? now.toISOString(),
     },
   };
 }
@@ -170,7 +167,6 @@ function rewindReset(
     awaitingContinue: false,
     plannerSessionId: undefined,
     clarifications: [],
-    constitutionFailureReason: undefined,
     analysisResult: undefined,
     discoveredValidation: undefined,
     rewindPending: { target, ...(comment ? { comment } : {}) },
@@ -408,10 +404,7 @@ export function transition(
       };
 
     case 'MARK_RECOVERY_APPLYING':
-      return markRecoveryApplying(state, action, now);
-
-    case 'CLEAR_PENDING_RECOVERY':
-      return { ...state, pendingRecovery: undefined };
+      return markRecoveryApplying(state, action);
 
     case 'RESOLVE_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };

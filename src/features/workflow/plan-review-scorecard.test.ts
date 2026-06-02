@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../engine/spec/brief-quality.js';
-import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { buildPlanReviewScorecard } from './plan-review-scorecard.js';
 

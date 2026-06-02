@@ -766,7 +766,7 @@ describe('runSingleTask — happy path', () => {
         'abort-workflow',
       ],
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
     });

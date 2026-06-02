@@ -2,6 +2,7 @@ import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Task } from '../../core/schemas/task.js';
 import { validateTaskPath } from '../../core/paths-io.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 const SEARCH_REPLACE_LINE_THRESHOLD = 200;
@@ -34,7 +35,8 @@ export async function applyCode(
   let existing: string;
   try {
     existing = await readFile(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    if (!isENOENT(err)) throw err;
     await writeFile(filePath, code, 'utf-8');
     return { success: true };
   }

@@ -1,5 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { OrchestratorCallbacks, ResumeContextHolder } from './types.js';
+import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import { publishWarning, publishWarningFromError } from './events.js';
@@ -14,7 +14,6 @@ import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 export type ApplyRebuiltContextOpts = {
   projectDir: string;
   sessionId: string;
-  callbacks: OrchestratorCallbacks;
   bus: EventBus;
   config: Pick<Config, 'workflow'>;
   resumeHolder: ResumeContextHolder | undefined;
@@ -86,7 +85,6 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
 export type SessionExpiredHandlerOpts = {
   projectDir: string;
   sessionId: string;
-  callbacks: OrchestratorCallbacks;
   bus: EventBus;
   config: Pick<Config, 'workflow'>;
   resumeHolder: ResumeContextHolder | undefined;

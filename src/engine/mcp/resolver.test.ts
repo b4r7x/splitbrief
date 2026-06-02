@@ -54,11 +54,14 @@ function makeCompleteSession(id: string) {
 
 function writeCanonicalArtifacts(projectDir: string, sessionId: string): void {
   saveSummary({ projectDir: projectDir, sessionId: sessionId }, makeCompleteSession(sessionId));
-  saveState(projectDir, sessionId, {
-    ...createInitialState('test feature'),
-    stateVersion: CURRENT_STATE_VERSION,
-    tasks: [taskOne, taskTwo],
-  });
+  saveState(
+    { projectDir, sessionId },
+    {
+      ...createInitialState('test feature'),
+      stateVersion: CURRENT_STATE_VERSION,
+      tasks: [taskOne, taskTwo],
+    },
+  );
 }
 
 const TASKS_MD = `---
@@ -251,11 +254,14 @@ describe('readResource - /manifest.json', () => {
     dirs.push(projectDir);
     const id = 'sess-missing-summary';
     ensureSessionDir(projectDir, id);
-    saveState(projectDir, id, {
-      ...createInitialState('test feature'),
-      stateVersion: CURRENT_STATE_VERSION,
-      tasks: [taskOne],
-    });
+    saveState(
+      { projectDir, sessionId: id },
+      {
+        ...createInitialState('test feature'),
+        stateVersion: CURRENT_STATE_VERSION,
+        tasks: [taskOne],
+      },
+    );
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);

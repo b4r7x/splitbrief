@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 
 interface DetectionState {

@@ -17,11 +17,12 @@ function removeTempFile(tmpPath: string): void {
   } catch {}
 }
 
-export function openExternalEditor(
-  task: Task,
-  mode: 'edit' | 'split',
-  sessionDirPath: string,
-): void {
+export function openExternalEditor(opts: {
+  task: Task;
+  mode: 'edit' | 'split';
+  sessionDirPath: string;
+}): void {
+  const { task, mode, sessionDirPath } = opts;
   const editor = resolveEditorCommand();
   const prefix = mode === 'split' ? 'split' : 'edit';
   const tmpPath = join(sessionDirPath, `${prefix}-${task.id}.md`);

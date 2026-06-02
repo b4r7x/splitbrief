@@ -14,7 +14,7 @@ import {
 } from './task-evidence.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval-evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation-types.js';
+import type { ValidationResult } from '../validation-result.js';
 import type {
   ActionClass,
   TaskCompletionMethod,

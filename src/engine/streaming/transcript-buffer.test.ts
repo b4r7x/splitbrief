@@ -25,7 +25,12 @@ function readEntries(projectDir: string, sessionId: string): unknown[] {
 describe('createTranscriptBuffer', () => {
   it('flush() persists buffered text as an assistant message entry', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, SESSION_ID, 'planning', true);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: 'planning',
+      persistTranscript: true,
+    });
 
     buf.append('hello ');
     buf.append('world');
@@ -45,7 +50,12 @@ describe('createTranscriptBuffer', () => {
 
   it('writes nothing when persistTranscript is false', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, SESSION_ID, 'planning', false);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: 'planning',
+      persistTranscript: false,
+    });
 
     buf.append('ignored');
     buf.flush();
@@ -57,7 +67,12 @@ describe('createTranscriptBuffer', () => {
 
   it('writes nothing when sessionId is empty', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, '', 'planning', true);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: '',
+      phase: 'planning',
+      persistTranscript: true,
+    });
 
     buf.append('still no persistence');
     buf.flush();
@@ -71,7 +86,12 @@ describe('createTranscriptBuffer', () => {
 
   it('flushInterrupted() marks the entry as interrupted', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, SESSION_ID, 'implementing', true);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: 'implementing',
+      persistTranscript: true,
+    });
 
     buf.append('partial output');
     buf.flushInterrupted();
@@ -91,7 +111,12 @@ describe('createTranscriptBuffer', () => {
 
   it('auto-persists when the buffer grows beyond the threshold', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, SESSION_ID, undefined, true);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: undefined,
+      persistTranscript: true,
+    });
 
     const blob = 'x'.repeat(17_000);
     buf.append(blob);
@@ -110,7 +135,12 @@ describe('createTranscriptBuffer', () => {
 
   it('flush() on an empty buffer is a no-op', () => {
     tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer(tmp, SESSION_ID, 'planning', true);
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: 'planning',
+      persistTranscript: true,
+    });
 
     buf.flush();
     buf.flushInterrupted();

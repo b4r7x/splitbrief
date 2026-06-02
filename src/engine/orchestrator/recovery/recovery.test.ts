@@ -12,7 +12,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { evidenceLedgerPath, readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import {
   createApprovalPromotionConflict,
@@ -33,7 +33,6 @@ import {
 import { applyRecoveryAction } from './actions.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
-const selectedAt = '2026-04-28T12:05:00.000Z';
 
 let dirs: string[] = [];
 
@@ -90,13 +89,13 @@ function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events
   const bus = createEventBus();
   const events: EngineEvent[] = [];
   bus.subscribe((event) => events.push(event));
-  bus.subscribe(createJsonlSink(projectDir, sessionId, true));
+  bus.subscribe(createJsonlSink({ projectDir, sessionId, persistTranscript: true }));
   return { bus, events };
 }
 
 function implementingState(tasks: Task[], currentTaskIndex = 0): WorkflowState {
   let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
+  state = transition(state, { type: 'START' });
   state = transition(state, { type: 'RESEARCH_DONE' });
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
@@ -407,12 +406,11 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'continue',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -432,7 +430,7 @@ describe('applyRecoveryAction', () => {
       >['availableActions'],
     };
     const state = { ...implementingState([makeTask({ id: 'T031' })]), pendingRecovery: issue };
-    saveState(projectDir, sessionId, state);
+    saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
@@ -441,11 +439,10 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'continue',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({ ok: false, status: 'blocked', code: 'unsafe-continue' });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );
@@ -471,7 +468,6 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'pause-run',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({ ok: true, status: 'paused' });
@@ -479,9 +475,8 @@ describe('applyRecoveryAction', () => {
       id: issue.id,
       status: 'paused',
       selectedAction: 'pause-run',
-      selectedAt,
     });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       id: issue.id,
       status: 'paused',
       selectedAction: 'pause-run',
@@ -510,14 +505,13 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'abort-workflow',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({ ok: true, status: 'aborted' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.state.tasks).toEqual([]);
-    const persisted = loadState(projectDir, sessionId);
+    const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
     expect(persisted?.tasks).toEqual([]);
@@ -549,7 +543,6 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'skip-current-task',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({ ok: true, status: 'skipped-current-task' });
@@ -557,13 +550,40 @@ describe('applyRecoveryAction', () => {
     expect(result.state.currentTaskIndex).toBe(1);
     expect(result.state.tasks[0]?.status).toBe('skipped');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.observedEvidence).toContain(
       'skipped: recovery retry-exhausted: T034 exhausted recovery retries',
     );
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'task_skipped', 'recovery_resolved']),
     );
+  });
+
+  it('blocks skip with a dedicated skip-evidence-failed code when evidence cannot be written', () => {
+    const { projectDir, sessionId } = setupSession('skip-evidence-fail');
+    // Occupy the evidence file path with a directory so the ledger write fails.
+    mkdirSync(evidenceLedgerPath(projectDir, sessionId), { recursive: true });
+
+    const task = makeTask({ id: 'T099', file: 'src/x.ts' });
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      createdAt,
+      validationSummary: 'failed after retries',
+      attempts: 3,
+      maxAttempts: 3,
+    });
+    const state = { ...implementingState([task]), pendingRecovery: issue };
+    const { bus } = makeBus(projectDir, sessionId);
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'skip-current-task',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'skip-evidence-failed' });
   });
 
   it('prepares retry-same-worker by resetting only the current task without advancing', () => {
@@ -591,7 +611,6 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'retry-same-worker',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -603,7 +622,7 @@ describe('applyRecoveryAction', () => {
     expect(result.state.attempt).toBe(0);
     expect(result.state.tasks[0]?.status).toBe('pending');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState(projectDir, sessionId)?.tasks[0]?.status).toBe('pending');
+    expect(loadState({ projectDir, sessionId })?.tasks[0]?.status).toBe('pending');
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -619,7 +638,7 @@ describe('applyRecoveryAction', () => {
       routeBiggerProfile: 'cheap-cloud',
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    saveState(projectDir, sessionId, state);
+    saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
@@ -668,7 +687,6 @@ describe('applyRecoveryAction', () => {
           taskReview: 'none',
         },
       },
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -679,7 +697,7 @@ describe('applyRecoveryAction', () => {
     expect(result.state.currentTaskIndex).toBe(0);
     expect(result.state.tasks[0]?.status).toBe('pending');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -694,7 +712,7 @@ describe('applyRecoveryAction', () => {
       blockedByTaskIds: ['T001' as Task['id']],
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    saveState(projectDir, sessionId, state);
+    saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
@@ -703,7 +721,6 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'planner-split-rebase',
       bus,
-      selectedAt,
     });
 
     expect(result).toMatchObject({
@@ -712,7 +729,7 @@ describe('applyRecoveryAction', () => {
       code: 'planner-proposal-required',
     });
     expect(result.state.pendingRecovery).toEqual(issue);
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );

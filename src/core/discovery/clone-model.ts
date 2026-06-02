@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../types/config-options.js';
+import type { DetectedModel } from './detection.js';
 
 export function cloneDetectedModel(model: DetectedModel): DetectedModel {
   return {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { discoverHookModules, mergeDiscoveredHooks, resolveHooksConfig } from './discover.js';
 import { runPreHooks } from './run-pre-hook.js';
 import type { EngineEvent } from '../events/types.js';
+import { taskId } from '../../core/schemas/task.js';
 import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
 
 let projectDir: string;
@@ -13,7 +14,7 @@ const preTaskEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: 'T1' as never,
+  taskId: taskId('T1'),
   title: 'my task',
   index: 0,
   total: 1,

@@ -251,26 +251,27 @@ describe('listCheckpointSummaries', () => {
     expect(summaries[0]?.restoreCommand).toBe('diptych snapshot restore snap-command-id');
   });
 
-  it('includes structured restore safety metadata for checkpoint display surfaces', async () => {
-    await writeSnapshot({ id: 'snap-safety' });
-
-    const summaries = await listCheckpointSummaries(tmp, 'sess-01');
-
-    expect(summaries[0]?.safety).toBe(CHECKPOINT_RESTORE_SAFETY);
-    expect(summaries[0]?.safety).toMatchObject({
+  it('exposes structured restore safety metadata at the run level', () => {
+    expect(CHECKPOINT_RESTORE_SAFETY).toMatchObject({
       hashGuarded: true,
       conflictsSkippedByDefault: true,
       forceOverwritesConflicts: true,
       partialRestoreExpected: true,
       excludedPaths: ['.git/', '.diptych/', 'node_modules/', '.trees/'],
     });
-    expect(summaries[0]?.safety.text.hashGuarded).toContain('hash-guarded');
-    expect(summaries[0]?.safety.text.conflictsSkippedByDefault).toContain('skipped by default');
-    expect(summaries[0]?.safety.text.forceOverwritesConflicts).toContain('--force is destructive');
-    expect(summaries[0]?.safety.text.forceOverwritesConflicts).toContain('overwrites conflicts');
-    expect(summaries[0]?.safety.text.partialRestoreExpected).toContain(
+    expect(CHECKPOINT_RESTORE_SAFETY.text.hashGuarded).toContain('hash-guarded');
+    expect(CHECKPOINT_RESTORE_SAFETY.text.conflictsSkippedByDefault).toContain(
+      'skipped by default',
+    );
+    expect(CHECKPOINT_RESTORE_SAFETY.text.forceOverwritesConflicts).toContain(
+      '--force is destructive',
+    );
+    expect(CHECKPOINT_RESTORE_SAFETY.text.forceOverwritesConflicts).toContain(
+      'overwrites conflicts',
+    );
+    expect(CHECKPOINT_RESTORE_SAFETY.text.partialRestoreExpected).toContain(
       'Partial restore is expected',
     );
-    expect(summaries[0]?.safety.text.excludedPaths).toContain('.diptych/');
+    expect(CHECKPOINT_RESTORE_SAFETY.text.excludedPaths).toContain('.diptych/');
   });
 });

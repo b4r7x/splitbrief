@@ -1,22 +1,11 @@
-import type {
-  ReadinessCheck,
-  ReadinessReport,
-  ReadinessSection,
-  StartReadinessRecord,
-} from './types.js';
-
-const SEVERITY_LABELS: Record<ReadinessCheck['severity'], string> = {
-  ok: 'ok',
-  info: 'info',
-  warning: 'warning',
-  blocker: 'blocker',
-};
+import { pluralize } from '../../utils/format.js';
+import type { ReadinessReport, ReadinessSection, StartReadinessRecord } from './types.js';
 
 function renderSectionLines(section: ReadinessSection): string[] {
   const lines: string[] = [];
   lines.push(`${section.title}:`);
   for (const check of section.checks) {
-    lines.push(`  ${SEVERITY_LABELS[check.severity]} ${check.id}: ${check.summary}`);
+    lines.push(`  ${check.severity} ${check.id}: ${check.summary}`);
     for (const detail of check.details ?? []) {
       lines.push(`    ${detail}`);
     }
@@ -38,7 +27,7 @@ export function formatReadinessReport(report: ReadinessReport): string {
     );
   } else if (report.counts.warning > 0) {
     lines.push(
-      `Advisory: ${report.counts.warning} warning${report.counts.warning === 1 ? '' : 's'}; start can continue.`,
+      `Advisory: ${report.counts.warning} ${pluralize(report.counts.warning, 'warning')}; start can continue.`,
     );
   } else {
     lines.push('Ready: no blockers or warnings.');

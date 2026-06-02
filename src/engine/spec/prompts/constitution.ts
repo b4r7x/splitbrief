@@ -1,4 +1,4 @@
-import { buildPrompt, instructionsSection } from './shared.js';
+import { buildPrompt, instructionsSection } from './prompt-builder.js';
 
 export interface ConstitutionPromptInput {
   feature: string;

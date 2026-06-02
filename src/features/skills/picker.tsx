@@ -83,7 +83,7 @@ export function SkillsPicker() {
     ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel'
     : '\u2191\u2193 to navigate  Ctrl+A all  Enter confirm  Esc cancel';
 
-  const panelWidth = getResponsivePanelWidth(cols, isSmall);
+  const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
   const nameColWidth = Math.max(8, Math.min(isSmall ? 20 : 26, Math.max(1, panelWidth - 10)));
   const descMaxWidth = Math.max(1, panelWidth - 8 - nameColWidth);
 

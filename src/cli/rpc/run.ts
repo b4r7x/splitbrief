@@ -102,7 +102,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
   const readCurrentState = (): WorkflowState | null => {
     const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
-    return id ? loadState(projectDir, id) : null;
+    return id ? loadState({ projectDir, sessionId: id }) : null;
   };
 
   const writeStatus = () => {
@@ -294,7 +294,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
       if (abortController.signal.aborted) return;
       const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
-      const state = savedSessionId ? loadState(projectDir, savedSessionId) : null;
+      const state = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
       if (!state?.pendingRecovery) return;
       activeSessionId = savedSessionId;
       stateForRun = state;

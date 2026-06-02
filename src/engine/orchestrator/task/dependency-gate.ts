@@ -41,7 +41,7 @@ export async function checkDependencyGate(opts: {
     phase: state.phase,
     createdAt: nowIso(),
   });
-  state = transitionAndSave(projectDir, sessionId, state, {
+  state = transitionAndSave({ projectDir, sessionId }, state, {
     type: 'SET_PENDING_RECOVERY',
     issue,
   });

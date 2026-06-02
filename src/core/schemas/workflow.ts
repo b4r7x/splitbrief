@@ -58,7 +58,6 @@ export const WorkflowStateSchema = z.object({
       }),
     )
     .optional(),
-  constitutionFailureReason: z.string().optional(),
   analysisResult: AnalyzeResultSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),

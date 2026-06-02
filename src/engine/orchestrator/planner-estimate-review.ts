@@ -70,18 +70,18 @@ export function runningPlannerEstimateReview(): PlannerEstimateReview {
   };
 }
 
-function resolveProfileSelections(config: Config): PlannerEstimateReviewPacket['userSelections'] {
+function resolveProfileSelections(
+  config: Config,
+): Omit<PlannerEstimateReviewPacket['userSelections'], 'workflowMode'> {
   try {
     const resolved = resolveImplementerProfiles(config);
     return {
-      workflowMode: config.workflow.mode ?? 'standard',
       defaultProfileId: resolved.defaultProfile.name,
       configuredProfileIds: resolved.profiles.map((profile) => profile.name),
       forcedProfileId: null,
     };
   } catch {
     return {
-      workflowMode: config.workflow.mode ?? 'standard',
       defaultProfileId: config.implementerProfiles?.default ?? null,
       configuredProfileIds: Object.keys(config.implementerProfiles?.profiles ?? {}).sort((a, b) =>
         a.localeCompare(b),

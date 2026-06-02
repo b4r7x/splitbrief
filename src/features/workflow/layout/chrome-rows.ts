@@ -5,8 +5,8 @@ export const CONFIG_CHROME_ROWS = 1;
 export const BOTTOM_FIXED_CHROME_ROWS = 2;
 export const INLINE_CONFIG_MIN_COLS = 88;
 
-export function getChromeContentWidth(cols: number, paddingX = 1): number {
-  return Math.max(1, cols - paddingX * 2);
+export function getChromeContentWidth(cols: number): number {
+  return Math.max(1, cols - 2);
 }
 
 export function getConfigChromeRows(hasConfig: boolean, cols?: number): number {

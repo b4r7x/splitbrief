@@ -1,11 +1,12 @@
 import type { Config } from '../../core/schemas/config.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import {
   CLI_TOOL_IDS,
   KNOWN_API_PROVIDERS,
   LOCAL_PROVIDER_IDS,
   type ProviderId,
+  type RunnerKind,
 } from '../../core/schemas/enums.js';
 import { getProviderDisplayName, hasApiKey } from '../../core/providers/catalog.js';
 import { includes } from '../../utils/type-guards.js';
@@ -78,7 +79,7 @@ export function sortModelsByRecency(models: ModelOption[]): ModelOption[] {
 export interface PickerOption {
   id: string;
   displayName: string;
-  kind: 'cli' | 'api' | 'shell' | 'agent' | 'agent-sdk';
+  kind: RunnerKind;
   available: boolean;
   badge: string;
   version?: string | undefined;

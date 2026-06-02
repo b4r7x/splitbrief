@@ -3,28 +3,11 @@ import type { CLIOverrides } from '../core/config/runtime/overrides.js';
 import type { Config } from '../core/schemas/config.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 import { loadConfig } from '../core/config/load/load.js';
-import { applyCLIOverrides } from '../core/config/runtime/overrides.js';
+import { applyCLIOverrides, workflowOptsToCLIOverrides } from '../core/config/runtime/overrides.js';
 import { warnStderr } from '../lib/warn.js';
 
 export function buildCLIOverrides(opts: WorkflowOpts): CLIOverrides {
-  return {
-    planner: {
-      tool: opts.planner,
-      model: opts.plannerModel,
-      command: opts.plannerCommand,
-    },
-    implementer: {
-      tool: opts.implementer ?? opts.provider,
-      model: opts.implementerModel ?? opts.model,
-      command: opts.implementerCommand,
-    },
-    autoApprove: opts.auto,
-    approve: opts.approve,
-    mode: opts.mode,
-    budget: opts.budget,
-    plannerEffort: opts.plannerEffort,
-    yolo: opts.yolo,
-  };
+  return workflowOptsToCLIOverrides(opts);
 }
 
 export function printConfigWarnings(warnings: readonly string[]): void {

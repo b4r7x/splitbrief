@@ -7,7 +7,12 @@ export function availableRows(rows: number, chrome: number, floor = 3): number {
 export const CURSOR = '\u25B8 ';
 export const NO_CURSOR = '  ';
 
-export function computeScrollOffset(index: number, windowSize: number, totalItems: number): number {
+export function computeScrollOffset(opts: {
+  index: number;
+  windowSize: number;
+  totalItems: number;
+}): number {
+  const { index, windowSize, totalItems } = opts;
   if (totalItems <= windowSize) return 0;
   const half = Math.floor(windowSize / 2);
   return Math.max(0, Math.min(index - half, totalItems - windowSize));
@@ -18,7 +23,11 @@ export function rotateIndex(current: number, length: number, delta: 1 | -1): num
 }
 
 export function windowSlice<T>(items: T[], selectedIndex: number, windowSize: number) {
-  const scrollOffset = computeScrollOffset(selectedIndex, windowSize, items.length);
+  const scrollOffset = computeScrollOffset({
+    index: selectedIndex,
+    windowSize,
+    totalItems: items.length,
+  });
   return {
     scrollOffset,
     visibleSlice: items.slice(scrollOffset, scrollOffset + windowSize),
@@ -36,16 +45,21 @@ export function filterByFields<T>(item: T, query: string, fields: (keyof T)[]): 
   return false;
 }
 
-export function computeScrollWindow<T>(
-  items: T[],
-  selectedIndex: number,
-  terminalRows: number,
-  chromeRows: number,
-  maxVisible?: number,
-) {
+export function computeScrollWindow<T>(opts: {
+  items: T[];
+  selectedIndex: number;
+  terminalRows: number;
+  chromeRows: number;
+  maxVisible?: number | undefined;
+}) {
+  const { items, selectedIndex, terminalRows, chromeRows, maxVisible } = opts;
   const base = availableRows(terminalRows, chromeRows);
   const visible = maxVisible !== undefined ? Math.min(base, maxVisible) : base;
-  const scrollOffset = computeScrollOffset(selectedIndex, visible, items.length);
+  const scrollOffset = computeScrollOffset({
+    index: selectedIndex,
+    windowSize: visible,
+    totalItems: items.length,
+  });
   const visibleSlice = items.slice(scrollOffset, scrollOffset + visible);
   const showScrollUp = scrollOffset > 0;
   const showScrollDown = scrollOffset + visible < items.length;

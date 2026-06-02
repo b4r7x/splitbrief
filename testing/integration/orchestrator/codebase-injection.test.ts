@@ -68,7 +68,7 @@ describe('codebase context injection into planner', () => {
     });
 
     let state = createInitialState('add bar feature');
-    state = transition(state, { type: 'START', feature: 'add bar feature' });
+    state = transition(state, { type: 'START' });
 
     await runPlanningPhase({
       wctx: {
@@ -125,7 +125,7 @@ describe('codebase context injection into planner', () => {
     });
 
     let state = createInitialState('add baz feature');
-    state = transition(state, { type: 'START', feature: 'add baz feature' });
+    state = transition(state, { type: 'START' });
 
     await runPlanningPhase({
       wctx: {

@@ -1,5 +1,5 @@
 import type { Task } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../validation-types.js';
+import type { ValidationResult } from '../../validation-result.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { looksLikeFilePath } from '../../../../utils/path-patterns.js';

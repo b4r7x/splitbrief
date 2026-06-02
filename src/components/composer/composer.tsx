@@ -11,8 +11,10 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { projectFilesStore } from '../../stores/ui/project-files.js';
 import { configStore } from '../../stores/project/config.js';
 import { listProjectFiles } from '../../lib/file-listing.js';
+import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
@@ -39,10 +41,16 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
   return 'describe your feature...';
 }
 
+const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
+const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
+
 function readProjectFiles(projectDir: string): string[] {
   if (!projectDir) return [];
   try {
-    return listProjectFiles(projectDir);
+    return listProjectFiles(projectDir, {
+      excludePatterns: [SESSIONS_EXCLUDE],
+      skipRelativeDirs: [SESSIONS_REL_DIR],
+    });
   } catch {
     return [];
   }
@@ -77,9 +85,7 @@ export function Composer({
   const [visibleRows, setVisibleRows] = useState(1);
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
 
-  const refreshProjectFiles = () => {
-    setProjectFiles(readProjectFiles(projectDir));
-  };
+  const refreshEpoch = projectFilesStore.use((s) => s.refreshEpoch);
 
   const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange } = useHistory({
     currentScreen,
@@ -88,19 +94,12 @@ export function Composer({
     setValue,
   });
 
-  const handleRuntimeCommand = (command: string) => {
-    onRuntimeCommand(command);
-    if (command.trim() === '/refresh') {
-      refreshProjectFiles();
-    }
-  };
-
   const command = useCommandCompletion({
     commands,
     currentScreen,
     value,
     setValue: onChange,
-    onRuntimeCommand: handleRuntimeCommand,
+    onRuntimeCommand,
     disabled,
   });
 
@@ -133,7 +132,7 @@ export function Composer({
     }
 
     if (trimmed.startsWith('/')) {
-      handleRuntimeCommand(trimmed);
+      onRuntimeCommand(trimmed);
     } else {
       onSubmit(trimmed);
     }
@@ -168,8 +167,8 @@ export function Composer({
   const showHomeHint = reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions;
 
   useEffect(() => {
-    refreshProjectFiles();
-  }, [projectDir]);
+    setProjectFiles(readProjectFiles(projectDir));
+  }, [projectDir, refreshEpoch]);
 
   useEffect(() => {
     inputHeightStore.setRows(visibleRows + 2);

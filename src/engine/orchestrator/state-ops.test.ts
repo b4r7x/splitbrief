@@ -28,10 +28,12 @@ describe('transitionAndSave', () => {
     const { projectDir, sessionId } = setupProject();
     try {
       let staleState = createInitialState('feature');
-      staleState = transition(staleState, { type: 'START', feature: 'feature' });
-      saveState(projectDir, sessionId, { ...staleState, messageQueue: [makeQueuedMessage()] });
+      staleState = transition(staleState, { type: 'START' });
+      saveState({ projectDir, sessionId }, { ...staleState, messageQueue: [makeQueuedMessage()] });
 
-      const next = transitionAndSave(projectDir, sessionId, staleState, { type: 'RESEARCH_DONE' });
+      const next = transitionAndSave({ projectDir, sessionId }, staleState, {
+        type: 'RESEARCH_DONE',
+      });
 
       expect(next.phase).toBe('specifying');
       expect(next.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);

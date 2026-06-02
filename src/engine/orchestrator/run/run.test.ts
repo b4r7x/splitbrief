@@ -406,7 +406,7 @@ describe('runWorkflow — recovery resume', () => {
       type: 'SET_PENDING_RECOVERY',
       issue,
     });
-    saveState(projectDir, sessionId, savedState);
+    saveState({ projectDir, sessionId }, savedState);
 
     const { callbacks } = makeCallbacks();
     const isAvailable = async () => {
@@ -436,7 +436,7 @@ describe('runWorkflow — recovery resume', () => {
     });
 
     expect(readActive(projectDir)).toBe(sessionId);
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
     });

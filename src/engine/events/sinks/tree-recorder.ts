@@ -17,7 +17,7 @@ import type {
   CostCheckpointPayload,
   PlanStepPayload,
   RecoveryDecisionPayload,
-} from '../../../core/sessions/tree/entry-types.js';
+} from '../../../core/sessions/tree/payloads.js';
 import * as typeGuards from '../../../utils/type-guards.js';
 
 export interface TreeRecorderOptions {
@@ -48,37 +48,29 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     }
   }
 
+  function initializeTree(ts: number): SessionTree | null {
+    const fresh = createEmptyTree(ts);
+    const root = fresh.entries.get(fresh.meta.leafId);
+    if (!root) return null;
+    try {
+      appendTreeEntry(dir, root);
+      writeTreeMeta(dir, fresh.meta);
+    } catch (err) {
+      warnError('session-tree: initial write failed', err);
+    }
+    return fresh;
+  }
+
   return (event: EngineEvent) => {
     switch (event.type) {
       case 'workflow_started': {
-        tree = createEmptyTree(event.ts);
-        const root = tree.entries.get(tree.meta.leafId);
-        if (!root) return;
-        try {
-          appendTreeEntry(dir, root);
-          writeTreeMeta(dir, tree.meta);
-        } catch (err) {
-          warnError('session-tree: initial write failed', err);
-        }
+        tree = initializeTree(event.ts);
         return;
       }
 
       case 'workflow_resumed': {
         if (!tree) {
-          const existing = reconstructTree(dir);
-          if (existing) {
-            tree = existing;
-          } else {
-            tree = createEmptyTree(event.ts);
-            const root = tree.entries.get(tree.meta.leafId);
-            if (!root) return;
-            try {
-              appendTreeEntry(dir, root);
-              writeTreeMeta(dir, tree.meta);
-            } catch (err) {
-              warnError('session-tree: initial write failed', err);
-            }
-          }
+          tree = reconstructTree(dir) ?? initializeTree(event.ts);
         }
         return;
       }

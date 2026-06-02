@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import type {
@@ -28,19 +27,6 @@ const RUN_LEDGER_FILE = 'run-ledger.json';
 
 function runLedgerPath(projectDir: string, sessionId: string): string {
   return join(snapshotsDir(projectDir, sessionId), RUN_LEDGER_FILE);
-}
-
-function aggregateManifestHash(manifest: SnapshotManifest): string {
-  const hash = createHash('sha256');
-  for (const [path, fileHash] of Object.entries(manifest.fileHashes).sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    hash.update(path);
-    hash.update('\0');
-    hash.update(fileHash);
-    hash.update('\0');
-  }
-  return hash.digest('hex');
 }
 
 async function readRunLedger(
@@ -76,15 +62,6 @@ async function createRunLedger(opts: {
   accepted: boolean;
   rejected: boolean;
 }): Promise<RunSnapshotLedger> {
-  let beforeHash: string | null = null;
-  try {
-    beforeHash = aggregateManifestHash(
-      await readManifest(opts.projectDir, opts.sessionId, SNAPSHOT_BASELINE_ID),
-    );
-  } catch {
-    beforeHash = null;
-  }
-
   const previous = await readRunLedger(opts.projectDir, opts.sessionId);
   const runSnapshotIds = [...(previous?.runSnapshotIds ?? []), opts.runSnapshot.id].filter(
     (id, index, ids) => ids.indexOf(id) === index,
@@ -102,8 +79,6 @@ async function createRunLedger(opts: {
     ...(Object.keys(runSnapshotKinds).length > 0 && { runSnapshotKinds }),
     accepted: opts.accepted,
     rejected: opts.rejected,
-    beforeHash,
-    lastDiptychHash: aggregateManifestHash(opts.runSnapshot),
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
     ...(opts.runSnapshot.taskIndex !== undefined && { taskIndex: opts.runSnapshot.taskIndex }),

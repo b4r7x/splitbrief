@@ -72,7 +72,7 @@ export function isTerminalPhase(phase: Phase): boolean {
   return phase === 'idle' || phase === 'complete';
 }
 
-export function phaseOrder(phase: Phase): number {
+function phaseOrder(phase: Phase): number {
   return PHASES.indexOf(phase);
 }
 
@@ -85,7 +85,7 @@ export function canRevisePlan(phase: Phase): boolean {
 }
 
 export function canRedoTask(phase: Phase): boolean {
-  return phase === 'implementing' || phase === 'validating-task' || phase === 'escalating';
+  return isImplementerPhase(phase);
 }
 
 // awaitingContinue overrides phase check: workflow paused mid-turn is always resumable.

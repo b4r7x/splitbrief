@@ -4,6 +4,7 @@ import { createHookSink } from './sink.js';
 import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
+import { taskId } from '../../core/schemas/task.js';
 import {
   makeCommandHookEntry,
   makeAllowHook,
@@ -60,7 +61,7 @@ const taskCompletedEvent: EngineEvent = {
   type: 'task_completed',
   ts: 1,
   phase: 'implementing',
-  taskId: 'T1' as never,
+  taskId: taskId('T1'),
   title: 'my task',
   method: 'local',
   retries: 0,
@@ -151,7 +152,7 @@ describe('createHookSink', () => {
       type: 'validate',
       ts: 1,
       phase: 'implementing',
-      taskId: 'T1' as never,
+      taskId: taskId('T1'),
       status: 'running',
       passed: false,
       stages: { typecheck: false, lint: false, test: false },
@@ -174,7 +175,7 @@ describe('createHookSink', () => {
       type: 'validate',
       ts: 1,
       phase: 'implementing',
-      taskId: 'T1' as never,
+      taskId: taskId('T1'),
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },

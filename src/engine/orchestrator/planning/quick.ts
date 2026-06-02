@@ -1,11 +1,7 @@
 import type { PlanResult } from '../../planners/types.js';
 import { publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import {
-  drainAndFormat,
-  handlePlanningFailure,
-  runBriefQualityGate,
-} from './briefs-approval-loop.js';
+import { drainAndFormat, handlePlanningFailure, runBriefQualityGate } from './planning-helpers.js';
 import { persistPhases } from './planning-io.js';
 import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
@@ -67,7 +63,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     });
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, {
+  state = transitionAndSave({ projectDir, sessionId }, state, {
     type: 'START_QUICK',
     tasks: planResult.tasks,
   });

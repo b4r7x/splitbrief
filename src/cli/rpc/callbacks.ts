@@ -1,11 +1,12 @@
 import type { TieredApprovalResponse } from '../../core/approval/types.js';
+import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/workflow-events.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { isUserEditConflictAction } from '../../engine/events/workflow-events.js';
 import { normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
 import type { ApprovalGateResult } from './gates.js';
 
-export function parseTaskReviewResponse(text: string): TaskReviewResponse | null {
+function parseTaskReviewResponse(text: string): TaskReviewResponse | null {
   const [rawAction, ...rest] = text.trim().split(/\s+/);
   const notes = rest.join(' ').trim() || undefined;
   if (rawAction === 'continue')
@@ -69,7 +70,7 @@ export function createWorkflowCallbacks(deps: {
       if (request.tier === 'confirm') {
         return {
           decision: 'confirm',
-          phrase: 'I confirm',
+          phrase: CONFIRM_PHRASE,
           reason: result.comment ?? 'Approved via RPC',
         };
       }

@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { join } from 'node:path';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
-import { addWorkflowOptions } from '../options.js';
+import { addWorkflowOptions, assertModeFlagsExclusive } from '../options.js';
 import { setupWorkflow, resolveProjectDir, ensureGitAndConfig } from '../setup.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
@@ -135,9 +135,10 @@ interface DispatchArgs {
   opts: WorkflowOpts;
 }
 
-async function runDetachedStart(args: DispatchArgs): Promise<void> {
-  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
-  const feature = args.feature as string;
+type RequiredFeatureDispatchArgs = DispatchArgs & { feature: string };
+
+async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void> {
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
   const readiness = await collectReadiness({ projectDir, opts });
   assertReadinessCanStart(readiness.report, opts.json);
@@ -170,9 +171,8 @@ async function runDetachedStart(args: DispatchArgs): Promise<void> {
   console.log(`Run: cd ${projectDir} && diptych attach ${result.sessionId}`);
 }
 
-async function runJsonStart(args: DispatchArgs): Promise<void> {
-  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
-  const feature = args.feature as string;
+async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<void> {
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
   const { sessionId, readiness } = await bootstrapSession({
     projectDir,
@@ -194,9 +194,8 @@ async function runJsonStart(args: DispatchArgs): Promise<void> {
   });
 }
 
-async function runRpcStart(args: DispatchArgs): Promise<void> {
-  const { deps, projectDir, enrichedFeature, plannerContext, opts } = args;
-  const feature = args.feature as string;
+async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<void> {
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
   const { sessionId, readiness } = await bootstrapSession({
     projectDir,
@@ -279,7 +278,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       if (opts.json) throw cliError('--detach and --json cannot be combined');
       if (opts.rpc) throw cliError('--detach and --rpc cannot be combined');
     }
-    if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
+    assertModeFlagsExclusive(opts);
     if (opts.rpc && !feature) throw cliError('--rpc requires a feature argument');
     if (opts.json && !feature) throw cliError('--json requires a feature argument');
 
@@ -301,18 +300,17 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
 
     await maybeMigrateAndReport(projectDir, opts);
 
-    if (opts.detach) {
-      await runDetachedStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
-      return;
-    }
-
-    if (opts.json) {
-      await runJsonStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
-      return;
-    }
-
-    if (opts.rpc) {
-      await runRpcStart({ deps, projectDir, feature, enrichedFeature, plannerContext, opts });
+    if ((opts.detach || opts.json || opts.rpc) && feature) {
+      const dispatch = { deps, projectDir, feature, enrichedFeature, plannerContext, opts };
+      if (opts.detach) {
+        await runDetachedStart(dispatch);
+        return;
+      }
+      if (opts.json) {
+        await runJsonStart(dispatch);
+        return;
+      }
+      await runRpcStart(dispatch);
       return;
     }
 

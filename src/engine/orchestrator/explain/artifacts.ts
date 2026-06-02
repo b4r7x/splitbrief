@@ -68,7 +68,7 @@ export async function readExplainArtifacts(
   const [summary, reviewPacket, state, readiness, events, artifacts] = await Promise.all([
     readSummary(projectDir, sessionId),
     readReviewPacket(projectDir, sessionId),
-    Promise.resolve(loadState(projectDir, sessionId)),
+    Promise.resolve(loadState({ projectDir, sessionId })),
     readReadiness(projectDir, sessionId),
     readLogEvents(projectDir, sessionId),
     readArtifacts(projectDir, sessionId),

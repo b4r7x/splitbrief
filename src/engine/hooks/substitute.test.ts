@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { substituteEventFields } from './substitute.js';
 import type { EngineEvent } from '../events/types.js';
+import { taskId } from '../../core/schemas/task.js';
 
 const S = (s: string) => '$' + `{${s}}`;
 
@@ -8,7 +9,7 @@ const baseEvent: EngineEvent = {
   type: 'task_started',
   ts: 1700000000000,
   phase: 'implementing',
-  taskId: 'T001' as never,
+  taskId: taskId('T001'),
   title: 'Add login',
   index: 0,
   total: 5,
@@ -40,7 +41,7 @@ describe('substituteEventFields', () => {
       type: 'validate',
       ts: 1,
       phase: 'validating-task',
-      taskId: 'T1' as never,
+      taskId: taskId('T1'),
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },

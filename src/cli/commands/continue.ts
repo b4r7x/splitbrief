@@ -13,11 +13,12 @@ import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { addWorkflowOptions } from '../options.js';
+import { addWorkflowOptions, assertModeFlagsExclusive } from '../options.js';
 import { maybeMigrateAndReport } from './migrate.js';
+import { renderAttachClient } from './attach.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
-import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
+import { resolveSessionAlias } from '../session-aliases.js';
 import { findSingleRunningSession } from '../sessions/single-running-session.js';
 import { assertResumableState } from '../session-resolve.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
@@ -96,25 +97,12 @@ const defaultContinueDeps: ContinueDeps = {
   showCrashDiagnostic,
 };
 
-export async function resolveSessionInput(
-  input: string | undefined,
-  projectDir: string,
-): Promise<string | undefined> {
-  if (input === undefined) return undefined;
-
-  if (isNumericAlias(input)) {
-    return resolveNumericAlias(input, projectDir);
-  }
-
-  return input;
-}
-
 async function resolveTargetSession(
   sessionInput: string | undefined,
   projectDir: string,
   deps: ContinueDeps,
 ): Promise<string> {
-  const resolved = await resolveSessionInput(sessionInput, projectDir);
+  const resolved = await resolveSessionAlias(sessionInput, projectDir);
   if (resolved !== undefined) return resolved;
 
   // No explicit ID: use the active session pointer (same as resume).
@@ -138,7 +126,7 @@ export async function continueCommand(
   deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
   assertNotWindows();
-  if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
+  assertModeFlagsExclusive(opts);
 
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
   const sessDir = sessionDir(opts.projectDir, sessionId);
@@ -147,17 +135,15 @@ export async function continueCommand(
 
   if (status.alive) {
     if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
-    const sockPath = join(sessDir, IPC_SOCK_FILE);
-    await deps.initStores(opts.projectDir);
-    routerStore.init({
-      screen: 'workflow',
-      feature: status.data.feature,
-      sessionId,
-      attach: { sockPath },
-    });
-
-    const useFullscreen = Boolean(process.stdout.isTTY) && !process.env['CI'];
-    await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useFullscreen });
+    await renderAttachClient(
+      {
+        projectDir: opts.projectDir,
+        sessionId,
+        feature: status.data.feature,
+        sockPath: join(sessDir, IPC_SOCK_FILE),
+      },
+      deps,
+    );
     return;
   }
 
@@ -167,7 +153,7 @@ export async function continueCommand(
 
   await maybeMigrateAndReport(opts.projectDir, opts);
 
-  const state = loadState(opts.projectDir, sessionId);
+  const state = loadState({ projectDir: opts.projectDir, sessionId });
 
   if (!state) {
     throw cliError(

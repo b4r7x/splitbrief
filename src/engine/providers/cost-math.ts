@@ -52,18 +52,24 @@ export function recordProviderCost(
   providerCosts[tool] = { inputTokens, outputTokens, cost };
 }
 
-export function splitTokens(tokens: number, inputTotal: number, outputTotal: number): TokenSplit {
+export function splitTokens(opts: {
+  tokens: number;
+  inputTotal: number;
+  outputTotal: number;
+}): TokenSplit {
+  const { tokens, inputTotal, outputTotal } = opts;
   const total = inputTotal + outputTotal;
   if (tokens <= 0 || total <= 0) return { inputTokens: 0, outputTokens: 0 };
   const inputTokens = tokens * (inputTotal / total);
   return { inputTokens, outputTokens: tokens - inputTokens };
 }
 
-export function allocatedCacheTokens(
-  cacheTokens: number | undefined,
-  tokens: number,
-  totalTokens: number,
-): number {
+export function allocatedCacheTokens(opts: {
+  cacheTokens: number | undefined;
+  tokens: number;
+  totalTokens: number;
+}): number {
+  const { cacheTokens, tokens, totalTokens } = opts;
   if (cacheTokens === undefined || cacheTokens <= 0 || tokens <= 0 || totalTokens <= 0) return 0;
   return cacheTokens * (tokens / totalTokens);
 }
@@ -92,12 +98,13 @@ export function recordPricedUsage(
   recordProviderCost(providerCosts, { tool, inputTokens, outputTokens, cost });
 }
 
-export function resolveTaskPricingModel(
-  taskTool: string,
-  fallbackTool: string,
-  taskModel?: string | undefined,
-  fallbackModel?: string | undefined,
-): string | undefined {
+export function resolveTaskPricingModel(opts: {
+  taskTool: string;
+  fallbackTool: string;
+  taskModel?: string | undefined;
+  fallbackModel?: string | undefined;
+}): string | undefined {
+  const { taskTool, fallbackTool, taskModel, fallbackModel } = opts;
   const trimmed = taskModel?.trim();
   if (trimmed) return resolveAutoModel(trimmed, taskTool) ?? trimmed;
   return taskTool === fallbackTool ? fallbackModel : undefined;

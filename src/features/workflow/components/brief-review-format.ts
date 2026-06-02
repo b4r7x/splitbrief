@@ -6,10 +6,7 @@ import {
   STALE_ESTIMATE_STATUSES,
   hasStaleOrConflict,
 } from '../../../core/plan-review/predicates.js';
-import type {
-  PlanReviewRisk,
-  PlanTaskReviewMetadata,
-} from '../../../stores/workflow/plan-editor.js';
+import type { PlanReviewRisk, PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
 import type { ImplementerCostTier } from '../../../core/schemas/implementer-config.js';
 
 const COST_TIER_ORDER: ImplementerCostTier[] = [

@@ -25,9 +25,12 @@ export function createCommandBasedPlanner(
   overrides?: {
     readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
     capabilities?: PlannerCapabilities | undefined;
+    escalateFullMode?: PlannerBaseConfig['escalateFullMode'] | undefined;
+    notFoundMessage?: string | undefined;
   },
 ): Planner {
-  const notFoundMessage = `${label} command not found: ${config.command}`;
+  const notFoundMessage =
+    overrides?.notFoundMessage ?? `${label} command not found: ${config.command}`;
   const invoke = async ({
     prompt,
     projectDir,
@@ -65,6 +68,7 @@ export function createCommandBasedPlanner(
     invokeEscalate: invoke,
     hintSuccessMode: 'files',
     capabilities: resolveCapabilities(overrides?.capabilities),
+    ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
     ...(overrides?.readPhaseOutput && { readPhaseOutput: overrides.readPhaseOutput }),
     ...createCommandAvailability(config.command),
   });

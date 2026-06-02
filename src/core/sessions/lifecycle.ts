@@ -39,7 +39,7 @@ export function isSessionLive(ref: SessionRef): boolean {
   }
 }
 
-const MAX_SLUG_LENGTH = 50;
+export const MAX_SLUG_LENGTH = 50;
 const MAX_COLLISION_ATTEMPTS = 999;
 
 function findUniqueId(projectDir: string, base: string): string {
@@ -60,7 +60,7 @@ export function generateSessionId(
   now: Date = new Date(),
 ): string {
   const date = now.toLocaleDateString('sv-SE');
-  const slug = slugify(feature).slice(0, MAX_SLUG_LENGTH);
+  const slug = slugify(feature, MAX_SLUG_LENGTH);
   const base = `${date}-${slug}`;
   return findUniqueId(projectDir, base);
 }

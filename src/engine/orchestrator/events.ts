@@ -7,7 +7,7 @@ import type {
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type { EngineEvent, EventBus, ValidationStages } from '../events/types.js';
-import type { ValidationResult } from './validation-types.js';
+import type { ValidationResult } from './validation-result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
@@ -52,6 +52,11 @@ export function publishPlannerStatus(
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),
   });
+}
+
+export function publishPlanApproved(state: WorkflowState, bus: EventBus): void {
+  publishPlannerStatus(bus, state, 'running');
+  bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 }
 
 export function publishTaskStart(

@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { runPreHooks } from './run-pre-hook.js';
 import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
+import { taskId } from '../../core/schemas/task.js';
 import {
   makeCommandHookEntry,
   makeAllowHook,
@@ -16,7 +17,7 @@ const preTaskEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: 'T1' as never,
+  taskId: taskId('T1'),
   title: 'my task',
   index: 0,
   total: 1,

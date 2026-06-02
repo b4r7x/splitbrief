@@ -1,4 +1,5 @@
 import { appendEngineEvent } from '../../../core/state/persistence.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
 const TRANSCRIPT_KINDS = new Set<EngineEvent['type']>([
@@ -9,13 +10,11 @@ const TRANSCRIPT_KINDS = new Set<EngineEvent['type']>([
   'implementer_generate_done',
 ]);
 
-export function createJsonlSink(
-  projectDir: string,
-  sessionId: string,
-  persistTranscript: boolean,
-): EventSink {
+export function createJsonlSink(opts: SessionRef & { persistTranscript: boolean }): EventSink {
+  const { projectDir, sessionId, persistTranscript } = opts;
+  const ref: SessionRef = { projectDir, sessionId };
   return (event) => {
     if (!persistTranscript && TRANSCRIPT_KINDS.has(event.type)) return;
-    appendEngineEvent(projectDir, sessionId, event);
+    appendEngineEvent(ref, event);
   };
 }

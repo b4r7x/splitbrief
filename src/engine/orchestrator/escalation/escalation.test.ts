@@ -51,7 +51,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
   let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
+  state = transition(state, { type: 'START' });
   state = transition(state, { type: 'RESEARCH_DONE' });
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });

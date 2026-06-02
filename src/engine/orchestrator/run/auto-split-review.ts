@@ -4,7 +4,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
-import { runBriefQualityGate } from '../planning/briefs-approval-loop.js';
+import { runBriefQualityGate } from '../planning/planning-helpers.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -41,7 +41,7 @@ export async function reviewAutoSplitOutput(opts: {
     `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`,
   );
 
-  let state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, {
+  let state = transitionAndSave(opts.wctx, opts.state, {
     type: 'BRIEFS_READY',
     tasks: opts.tasks,
   });
@@ -55,7 +55,7 @@ export async function reviewAutoSplitOutput(opts: {
         ? `Auto-split overflow rejected: ${result.comment}`
         : 'Auto-split overflow rejected before implementation.',
     );
-    state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+    state = transitionAndSave(opts.wctx, state, {
       type: 'REJECT_BRIEFS',
     });
     opts.setTrackedState(state);
@@ -86,11 +86,11 @@ export async function reviewAutoSplitOutput(opts: {
     return { state, tasks: approvedTasks, approved: false };
   }
 
-  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+  state = transitionAndSave(opts.wctx, state, {
     type: 'BRIEFS_READY',
     tasks: approvedTasks,
   });
-  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, {
+  state = transitionAndSave(opts.wctx, state, {
     type: 'APPROVE_BRIEFS',
   });
   opts.setTrackedState(state);

@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { ValidationResult } from '../../src/engine/orchestrator/validation-types.js';
+import type { ValidationResult } from '../../src/engine/orchestrator/validation-result.js';
 import type {
   OrchestratorCallbacks,
   WorkflowContext,

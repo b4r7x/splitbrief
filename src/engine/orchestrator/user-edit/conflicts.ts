@@ -9,6 +9,13 @@ import type {
   UserEditConflict,
 } from '../../events/workflow-events.js';
 
+export const DESTRUCTIVE_CONFLICT_ACTIONS: readonly UserEditConflictAction[] = [
+  'regenerate-rebase',
+  'pause',
+  'skip-current-task',
+  'abort-workflow',
+];
+
 function taskPatterns(task: Task): string[] {
   return [task.file, ...(task.scope?.inBounds ?? []), ...(task.scope?.approvedOutOfBounds ?? [])];
 }
@@ -74,7 +81,7 @@ function actionsFor(kind: UserEditConflictKind): UserEditConflictAction[] {
   if (kind === 'future-task-stale-input') {
     return ['continue-unrelated', 'regenerate-rebase', 'pause', 'abort-workflow'];
   }
-  return ['regenerate-rebase', 'pause', 'skip-current-task', 'abort-workflow'];
+  return [...DESTRUCTIVE_CONFLICT_ACTIONS];
 }
 
 export function classifyUserEditConflict(opts: {
@@ -119,7 +126,7 @@ export function createApprovalPromotionConflict(opts: {
       affectedTaskIds,
     })),
     safeToContinue: false,
-    availableActions: ['regenerate-rebase', 'pause', 'skip-current-task', 'abort-workflow'],
+    availableActions: [...DESTRUCTIVE_CONFLICT_ACTIONS],
   };
 }
 

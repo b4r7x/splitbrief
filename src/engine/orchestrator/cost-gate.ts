@@ -1,9 +1,8 @@
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 
-type CostGateMode = 'instant' | 'quick' | 'standard' | 'speckit';
-
 interface CostGateInput {
-  mode: CostGateMode | undefined;
+  mode: WorkflowMode | undefined;
   prediction: CostPrediction | null;
   costGateEnabled: boolean;
 }

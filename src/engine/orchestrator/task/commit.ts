@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation-types.js';
+import type { ValidationResult } from '../validation-result.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
 import {
@@ -66,6 +66,22 @@ export async function validateCommitAndAdvance(
     return { state, completed: false };
   }
 
+  const emitTaskComplete = (nextState: WorkflowState) => {
+    publishTaskComplete(
+      { bus: bus, phase: nextState.phase },
+      {
+        taskId: task.id,
+        title: task.title,
+        method,
+        retries: retryCount ?? state.attempt,
+        duration: taskStartTime ? Date.now() - taskStartTime : 0,
+        ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
+        ...(state.implementerModel !== undefined && { model: state.implementerModel }),
+        ...(implementerProfile !== undefined && { implementerProfile }),
+      },
+    );
+  };
+
   const strategy = config.workflow.git?.commitStrategy;
   if (strategy === 'per-task') {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
@@ -101,22 +117,10 @@ export async function validateCommitAndAdvance(
             { bus: bus, phase: state.phase },
             `pre_commit blocked: ${pre.reason ?? 'hook denied'}`,
           );
-          const nextState = transitionAndSave(projectDir, sessionId, state, {
+          const nextState = transitionAndSave({ projectDir, sessionId }, state, {
             type: transitionType,
           });
-          publishTaskComplete(
-            { bus: bus, phase: nextState.phase },
-            {
-              taskId: task.id,
-              title: task.title,
-              method,
-              retries: retryCount ?? state.attempt,
-              duration: taskStartTime ? Date.now() - taskStartTime : 0,
-              ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
-              ...(state.implementerModel !== undefined && { model: state.implementerModel }),
-              ...(implementerProfile !== undefined && { implementerProfile }),
-            },
-          );
+          emitTaskComplete(nextState);
           return { state: nextState, completed: true };
         }
       }
@@ -141,20 +145,8 @@ export async function validateCommitAndAdvance(
     }
   }
 
-  const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
-  publishTaskComplete(
-    { bus: bus, phase: nextState.phase },
-    {
-      taskId: task.id,
-      title: task.title,
-      method,
-      retries: retryCount ?? state.attempt,
-      duration: taskStartTime ? Date.now() - taskStartTime : 0,
-      ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
-      ...(state.implementerModel !== undefined && { model: state.implementerModel }),
-      ...(implementerProfile !== undefined && { implementerProfile }),
-    },
-  );
+  const nextState = transitionAndSave({ projectDir, sessionId }, state, { type: transitionType });
+  emitTaskComplete(nextState);
 
   return { state: nextState, completed: true };
 }

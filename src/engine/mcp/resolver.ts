@@ -15,6 +15,7 @@ import {
 import { SUMMARY_FILE } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
+import { parseSimpleYamlFrontmatter } from '../../utils/frontmatter.js';
 import { buildManifest, hasCanonicalManifestArtifacts } from './manifest.js';
 
 export type McpResolverConfig = {
@@ -30,14 +31,28 @@ export type McpResolver = {
 
 const BASE = 'mcp://diptych';
 
-const STATIC_RESOURCES: Record<string, { file: string; mimeType: string }> = {
-  'spec.md': { file: SPEC_FILE, mimeType: 'text/markdown' },
-  'plan.md': { file: PLAN_FILE, mimeType: 'text/markdown' },
-  'evidence.json': { file: EVIDENCE_FILE, mimeType: 'application/json' },
-  'drift-report.json': { file: DRIFT_REPORT_FILE, mimeType: 'application/json' },
-  'state.json': { file: STATE_FILE, mimeType: 'application/json' },
-  'summary.json': { file: SUMMARY_FILE, mimeType: 'application/json' },
-};
+const SESSION_RESOURCE_FILES: ReadonlyArray<{
+  key: string;
+  file: string;
+  mimeType: string;
+  label: string;
+}> = [
+  { key: 'spec.md', file: SPEC_FILE, mimeType: 'text/markdown', label: 'Spec' },
+  { key: 'plan.md', file: PLAN_FILE, mimeType: 'text/markdown', label: 'Plan' },
+  { key: 'evidence.json', file: EVIDENCE_FILE, mimeType: 'application/json', label: 'Evidence' },
+  {
+    key: 'drift-report.json',
+    file: DRIFT_REPORT_FILE,
+    mimeType: 'application/json',
+    label: 'Drift report',
+  },
+  { key: 'state.json', file: STATE_FILE, mimeType: 'application/json', label: 'Workflow state' },
+  { key: 'summary.json', file: SUMMARY_FILE, mimeType: 'application/json', label: 'Summary' },
+];
+
+const STATIC_RESOURCES: Record<string, { file: string; mimeType: string }> = Object.fromEntries(
+  SESSION_RESOURCE_FILES.map((r) => [r.key, { file: r.file, mimeType: r.mimeType }]),
+);
 
 function sessionsUri(): string {
   return `${BASE}/sessions`;
@@ -69,22 +84,8 @@ function extractTaskBlock(tasksContent: string, taskId: string): string | null {
 }
 
 function extractIdFromBlock(block: string): string | null {
-  const lines = block.split('\n');
-  let inFrontmatter = false;
-  for (const line of lines) {
-    if (line.trim() === '---') {
-      if (!inFrontmatter) {
-        inFrontmatter = true;
-        continue;
-      }
-      break;
-    }
-    if (inFrontmatter) {
-      const m = line.match(/^id:\s*(.+)/);
-      if (m?.[1]) return m[1].trim();
-    }
-  }
-  return null;
+  const id = parseSimpleYamlFrontmatter(block)?.id;
+  return typeof id === 'string' ? id : null;
 }
 
 export function createResolver(config: McpResolverConfig): McpResolver {
@@ -116,49 +117,13 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         mimeType: 'application/json',
       });
 
-      const conditionalFiles: Array<{ file: string; uri: string; name: string; mimeType: string }> =
-        [
-          {
-            file: SPEC_FILE,
-            uri: `${sessionBase(id)}/spec.md`,
-            name: `Spec (${id})`,
-            mimeType: 'text/markdown',
-          },
-          {
-            file: PLAN_FILE,
-            uri: `${sessionBase(id)}/plan.md`,
-            name: `Plan (${id})`,
-            mimeType: 'text/markdown',
-          },
-          {
-            file: EVIDENCE_FILE,
-            uri: `${sessionBase(id)}/evidence.json`,
-            name: `Evidence (${id})`,
-            mimeType: 'application/json',
-          },
-          {
-            file: DRIFT_REPORT_FILE,
-            uri: `${sessionBase(id)}/drift-report.json`,
-            name: `Drift report (${id})`,
-            mimeType: 'application/json',
-          },
-          {
-            file: STATE_FILE,
-            uri: `${sessionBase(id)}/state.json`,
-            name: `Workflow state (${id})`,
-            mimeType: 'application/json',
-          },
-          {
-            file: SUMMARY_FILE,
-            uri: `${sessionBase(id)}/summary.json`,
-            name: `Summary (${id})`,
-            mimeType: 'application/json',
-          },
-        ];
-
-      for (const entry of conditionalFiles) {
+      for (const entry of SESSION_RESOURCE_FILES) {
         if (existsSync(join(sDir, entry.file))) {
-          descriptors.push({ uri: entry.uri, name: entry.name, mimeType: entry.mimeType });
+          descriptors.push({
+            uri: `${sessionBase(id)}/${entry.key}`,
+            name: `${entry.label} (${id})`,
+            mimeType: entry.mimeType,
+          });
         }
       }
 

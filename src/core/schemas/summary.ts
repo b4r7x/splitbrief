@@ -3,6 +3,29 @@ import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 
+export const ESTIMATE_CONTEXT_CONFIDENCES = [
+  'context-explicit',
+  'context-known-catalog',
+  'context-cached-provider',
+  'context-conservative-fallback',
+  'profile-unavailable',
+] as const;
+export const EstimateContextConfidenceSchema = z.enum(ESTIMATE_CONTEXT_CONFIDENCES);
+
+export const ESTIMATE_PRICE_CONFIDENCES = [
+  'price-known',
+  'price-unknown',
+  'profile-unavailable',
+] as const;
+export const EstimatePriceConfidenceSchema = z.enum(ESTIMATE_PRICE_CONFIDENCES);
+
+export const ESTIMATE_UNKNOWN_COST_REASONS = [
+  'implementer-price-unknown',
+  'planner-price-unknown',
+  'profile-unavailable',
+] as const;
+export const EstimateUnknownCostReasonSchema = z.enum(ESTIMATE_UNKNOWN_COST_REASONS);
+
 export const ChainDriftSummarySchema = z.object({
   score: z.number().min(0).max(1),
   chainLength: z.number().int().nonnegative(),
@@ -104,14 +127,8 @@ export const CostPredictionSchema = z.object({
           estimatedPromptTokens: z.number().int().nonnegative(),
           selectedProfileId: z.string().nullable(),
           contextFit: z.enum([...TASK_CONTEXT_FITS, 'unknown']),
-          contextConfidence: z.enum([
-            'context-explicit',
-            'context-known-catalog',
-            'context-cached-provider',
-            'context-conservative-fallback',
-            'profile-unavailable',
-          ]),
-          priceConfidence: z.enum(['price-known', 'price-unknown', 'profile-unavailable']),
+          contextConfidence: EstimateContextConfidenceSchema,
+          priceConfidence: EstimatePriceConfidenceSchema,
           estimatedImplementerCost: z.number().nonnegative().nullable(),
           hypotheticalPlannerCost: z.number().nonnegative().nullable(),
         }),
@@ -120,9 +137,7 @@ export const CostPredictionSchema = z.object({
         knownActualEstimate: z.number().nonnegative().nullable(),
         hypotheticalAllPlanner: z.number().nonnegative().nullable(),
         estimatedSavings: z.number().nullable(),
-        unknownCostReason: z.array(
-          z.enum(['implementer-price-unknown', 'planner-price-unknown', 'profile-unavailable']),
-        ),
+        unknownCostReason: z.array(EstimateUnknownCostReasonSchema),
       }),
     })
     .optional(),
@@ -142,11 +157,13 @@ export const CheckpointSummaryRollupSchema = z.object({
   restoreCommand: z.string().nullable(),
 });
 
+export const ReviewFinalReviewStatusSchema = z.enum(['written', 'failed', 'missing', 'skipped']);
+
 export const ReviewPacketSummarySchema = z.object({
   jsonPath: z.string(),
   markdownPath: z.string(),
   generatedAt: z.string(),
-  finalReviewStatus: z.enum(['written', 'failed', 'missing', 'skipped']),
+  finalReviewStatus: ReviewFinalReviewStatusSchema,
   driftPassed: z.boolean().nullable(),
   evidenceValidatedTasks: z.number().int().nonnegative(),
   evidenceTotalTasks: z.number().int().nonnegative(),

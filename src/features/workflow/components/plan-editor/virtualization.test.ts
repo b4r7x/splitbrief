@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
+import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
 import { getTaskEditorRowHeight, getVisibleTaskWindow } from './virtualization.js';
 
 function tasks(count: number) {

@@ -1,14 +1,17 @@
 import type { Phase } from '../../core/schemas/enums.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 import { appendMessage } from '../../core/state/persistence.js';
 
 const MAX_BUFFER_BYTES = 16 * 1024;
 
-export function createTranscriptBuffer(
-  projectDir: string,
-  sessionId: string,
-  phase: Phase | undefined,
-  persistTranscript: boolean,
-): { append(chunk: string): void; flush(): void; flushInterrupted(): void } {
+export function createTranscriptBuffer(opts: {
+  projectDir: string;
+  sessionId: string;
+  phase: Phase | undefined;
+  persistTranscript: boolean;
+}): { append(chunk: string): void; flush(): void; flushInterrupted(): void } {
+  const { projectDir, sessionId, phase, persistTranscript } = opts;
+  const ref: SessionRef = { projectDir, sessionId };
   let buffer = '';
   const shouldPersist = persistTranscript && sessionId !== '';
   return {
@@ -17,8 +20,7 @@ export function createTranscriptBuffer(
       buffer += text;
       if (buffer.length > MAX_BUFFER_BYTES) {
         appendMessage(
-          projectDir,
-          sessionId,
+          ref,
           { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
           shouldPersist,
         );
@@ -28,8 +30,7 @@ export function createTranscriptBuffer(
     flush(): void {
       if (!shouldPersist || buffer.length === 0) return;
       appendMessage(
-        projectDir,
-        sessionId,
+        ref,
         { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
         shouldPersist,
       );
@@ -38,8 +39,7 @@ export function createTranscriptBuffer(
     flushInterrupted(): void {
       if (!shouldPersist || buffer.length === 0) return;
       appendMessage(
-        projectDir,
-        sessionId,
+        ref,
         {
           role: 'assistant',
           ...(phase !== undefined && { phase }),

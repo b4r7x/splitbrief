@@ -5,6 +5,7 @@ import {
   ApproveLevelSchema,
   ThemeModeSchema,
   ShikiThemeSchema,
+  SessionScopeSchema,
 } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
@@ -73,6 +74,10 @@ export const ApprovalConfigSchema = z.object({
   allowedPaths: z.array(z.string().min(1)).optional(),
 });
 
+export function defaultApprovalConfig(): z.infer<typeof ApprovalConfigSchema> {
+  return ApprovalConfigSchema.parse({});
+}
+
 /**
  * v3 ConfigSchema. Accepts both `version: 2` and `version: 3` on input for
  * backward compatibility (see migration.md §2.3). Deprecated v2 fields
@@ -117,7 +122,7 @@ export const ConfigSchema = z.object({
   shikiTheme: ShikiThemeSchema.optional(),
   sessions: z
     .object({
-      scope: z.enum(['project', 'global']).optional(),
+      scope: SessionScopeSchema.optional(),
     })
     .optional(),
   escalation: EscalationConfigSchema.optional(),

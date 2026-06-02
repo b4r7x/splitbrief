@@ -6,15 +6,12 @@ import type { PlannerCallbacksContext } from '../types.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { createBusTextHandler, publishPlannerStatus } from '../events.js';
-import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
+import { createBusTextHandler, publishPlannerStatus, publishPlanApproved } from '../events.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { runApprovalLoop } from '../approval/approval.js';
-import {
-  drainAndFormat,
-  runBriefQualityGate,
-  runBriefsApprovalLoop,
-} from './briefs-approval-loop.js';
+import { drainAndFormat, runBriefQualityGate } from './planning-helpers.js';
+import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
@@ -33,7 +30,7 @@ async function finishPlanAndBriefsApproval(args: {
   const signal = wctx.signal;
   let state = args.state;
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'PLAN_DONE', tasks });
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
@@ -91,7 +88,7 @@ async function finishPlanAndBriefsApproval(args: {
   finalTasks = briefsLoop.tasks;
   if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
 
-  state = publishPlanApproved(state, wctx.bus);
+  publishPlanApproved(state, wctx.bus);
   return { state, tasks: finalTasks, cancelled: false };
 }
 
@@ -111,12 +108,11 @@ export async function handleRewindSpec(args: {
 
   if (rewindPending.comment) {
     appendMessage(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       { role: 'user', phase: 'specifying', text: rewindPending.comment },
       config.workflow.persistTranscript,
     );
-    const current = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
+    const current = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const { state: drainedState, prefix: drainPrefix } = drainAndFormat(
       projectDir,
       sessionId,
@@ -130,7 +126,6 @@ export async function handleRewindSpec(args: {
     );
     const regenResult = await planner.regenerate({
       prompt: regenPrompt,
-      artifactType: 'spec',
       projectDir,
       callbacks: {
         onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
@@ -147,7 +142,7 @@ export async function handleRewindSpec(args: {
     });
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_DONE' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
@@ -168,7 +163,7 @@ export async function handleRewindSpec(args: {
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_SPEC' });
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks({
@@ -202,12 +197,11 @@ export async function handleRewindPlan(args: {
 
   if (rewindPending.comment) {
     appendMessage(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       { role: 'user', phase: 'planning', text: rewindPending.comment },
       config.workflow.persistTranscript,
     );
-    const current = readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
+    const current = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
     const { state: drainedState, prefix: drainPrefix } = drainAndFormat(
       projectDir,
       sessionId,
@@ -221,7 +215,6 @@ export async function handleRewindPlan(args: {
     );
     const regenResult = await planner.regenerate({
       prompt: regenPrompt,
-      artifactType: 'plan',
       projectDir,
       callbacks: {
         onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),

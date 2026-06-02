@@ -3,6 +3,8 @@ import type { ActionClass } from '../schemas/enums.js';
 import type { Phase } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
 
+export const CONFIRM_PHRASE = 'I confirm';
+
 export type TieredApprovalRequest = {
   tier: ApprovalTier;
   actionClass: ActionClass;

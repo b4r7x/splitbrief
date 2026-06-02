@@ -1,11 +1,7 @@
 import type { PlannerCallbacks, PlanResult } from '../../planners/types.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import {
-  drainAndFormat,
-  handlePlanningFailure,
-  runBriefQualityGate,
-} from './briefs-approval-loop.js';
+import { drainAndFormat, handlePlanningFailure, runBriefQualityGate } from './planning-helpers.js';
 import { persistPhases } from './planning-io.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
@@ -14,7 +10,7 @@ import { firstBriefError } from '../../spec/brief-quality.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, config, callbacks, metadata, resumeHolder } = wctx;
+  const { projectDir, sessionId, config, metadata, resumeHolder } = wctx;
   let { state } = opts;
   let feature = opts.feature;
 
@@ -34,12 +30,12 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   }
 
   const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
-  const buffer = createTranscriptBuffer(
+  const buffer = createTranscriptBuffer({
     projectDir,
     sessionId,
-    'planning',
-    config.workflow.persistTranscript ?? true,
-  );
+    phase: 'planning',
+    persistTranscript: config.workflow.persistTranscript ?? true,
+  });
 
   const priorMessages =
     resumeHolder && resumeHolder.messages.length > 0 ? resumeHolder.messages : undefined;
@@ -51,7 +47,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       buffer.append(text);
     },
     onSessionId: (id) => {
-      state = transitionAndSave(projectDir, sessionId, state, {
+      state = transitionAndSave({ projectDir, sessionId }, state, {
         type: 'SET_PLANNER_SESSION_ID',
         sessionId: id,
       });
@@ -59,7 +55,6 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     onSessionExpired: createSessionExpiredHandler({
       projectDir,
       sessionId,
-      callbacks,
       bus: wctx.bus,
       config,
       resumeHolder,
@@ -130,7 +125,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     });
   }
 
-  state = transitionAndSave(projectDir, sessionId, state, {
+  state = transitionAndSave({ projectDir, sessionId }, state, {
     type: 'START_INSTANT',
     tasks: planResult.tasks,
   });

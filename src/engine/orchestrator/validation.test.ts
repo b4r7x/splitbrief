@@ -3,8 +3,10 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createValidator, formatValidationError } from './validation.js';
 import type { ValidationCommandRunner } from './validation.js';
+import { createEventBus } from '../events/bus.js';
+import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { findAffectedTestFile } from '../../core/validation/test-discovery.js';
-import type { ValidationResult } from './validation-types.js';
+import type { ValidationResult } from './validation-result.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -482,21 +484,21 @@ describe('validation output redaction', () => {
     );
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
-    const events: Array<Record<string, unknown>> = [];
-    const bus = {
-      publish: (e: Record<string, unknown>) => events.push(e),
-      subscribe: () => () => {},
-    };
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
       task: makeTask({ file: 'src/a.ts' }),
       projectDir: tempDir,
       config,
-      bus: bus as never,
+      bus,
       phase: 'implementing',
     });
 
-    const validateEvent = events.find((e) => e.type === 'validate' && e.status === 'done');
+    const validateEvent = events.find(
+      (e): e is EngineEventOf<'validate'> => e.type === 'validate' && e.status === 'done',
+    );
     expect(validateEvent).toBeDefined();
     expect(String(validateEvent?.error ?? '')).not.toContain('TEST123456789012345678');
     expect(String(validateEvent?.error ?? '')).toContain('REDACTED');

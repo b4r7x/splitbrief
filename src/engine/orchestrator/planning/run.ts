@@ -5,7 +5,6 @@ import { runInstantPlanning } from './instant.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
 import { adviseMode } from './mode-advisor.js';
-import { setAdvisory } from './mode-advisor-store.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
@@ -15,7 +14,6 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   const approveLevel = resolveApproveLevel({ mode, configApprove: config.workflow.approve });
 
   const advisory = adviseMode(opts.feature, mode);
-  setAdvisory(advisory.kind !== 'none' ? advisory : null);
   if (advisory.kind !== 'none') {
     wctx.bus.publish({
       type: 'mode_advice',

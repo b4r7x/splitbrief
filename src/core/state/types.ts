@@ -4,7 +4,7 @@ import type { RecoveryAction } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery.js';
 
 export type StateAction =
-  | { type: 'START'; feature: string }
+  | { type: 'START' }
   | { type: 'START_QUICK'; tasks: Task[] }
   | { type: 'START_INSTANT'; tasks: Task[] }
   | { type: 'RESEARCH_DONE' }
@@ -19,7 +19,7 @@ export type StateAction =
   | { type: 'SPEC_CLARIFY_START' }
   | { type: 'SPEC_CLARIFY_DONE' }
   | { type: 'CONSTITUTION_CHECK_PASS' }
-  | { type: 'CONSTITUTION_CHECK_FAIL'; reason: string }
+  | { type: 'CONSTITUTION_CHECK_FAIL' }
   | { type: 'ANALYZE_START' }
   | { type: 'ANALYZE_DONE' }
   | { type: 'START_TASK'; taskId: TaskId }
@@ -49,8 +49,7 @@ export type StateAction =
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'PAUSE_PENDING_RECOVERY' }
-  | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction; selectedAt?: string }
-  | { type: 'CLEAR_PENDING_RECOVERY' }
+  | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }
   | { type: 'RESOLVE_PENDING_RECOVERY' };
 
 export interface TokenBudget {

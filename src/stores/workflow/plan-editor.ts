@@ -1,19 +1,8 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { Task } from '../../core/schemas/task.js';
-import type {
-  PlanReviewRisk,
-  PlanReviewContextFit,
-  PlanReviewEstimateStatus,
-  PlanTaskReviewMetadata,
-} from '../../core/plan-review/types.js';
+import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { deepEqual } from '../../utils/deep-equal.js';
-
-export type {
-  PlanReviewRisk,
-  PlanReviewContextFit,
-  PlanReviewEstimateStatus,
-  PlanTaskReviewMetadata,
-};
+import { clampIndex } from '../../utils/indexing.js';
 
 export interface PlanEditorState {
   tasks: Task[];
@@ -153,7 +142,7 @@ function setRuntimeRichMode(value: boolean): void {
 
 function setCursor(n: number): void {
   store.set((s) => {
-    const clamped = s.tasks.length === 0 ? 0 : Math.max(0, Math.min(n, s.tasks.length - 1));
+    const clamped = clampIndex(n, s.tasks.length);
     if (clamped === s.cursor) return s;
     return { ...s, cursor: clamped };
   });

@@ -6,6 +6,7 @@ import {
   type CLIOverrides,
 } from '../../core/config/runtime/overrides.js';
 import type { Config } from '../../core/schemas/config.js';
+import { defaultApprovalConfig } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
 import { warnStderr } from '../../lib/warn.js';
 import {
@@ -90,7 +91,7 @@ function setApprovalEnabled(enabled: boolean) {
     if (!s.config) return s;
     const currentEnabled = s.config.approval?.enabled !== false;
     if (currentEnabled === enabled) return s;
-    const base = s.config.approval ?? { enabled: true, feedRejectionsToPlanner: true };
+    const base = s.config.approval ?? defaultApprovalConfig();
     return {
       ...s,
       config: {

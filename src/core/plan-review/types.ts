@@ -1,8 +1,12 @@
 import type { ImplementerCostTier } from '../schemas/implementer-config.js';
-import type { CurrentCodeContextMode, UserEditConflictKind } from '../schemas/enums.js';
+import type {
+  CurrentCodeContextMode,
+  TaskContextFit,
+  UserEditConflictKind,
+} from '../schemas/enums.js';
+import type { TaskId } from '../schemas/task.js';
 
 export type PlanReviewRisk = 'low' | 'medium' | 'high';
-export type PlanReviewContextFit = 'fits' | 'tight' | 'overflow';
 export type PlanReviewEstimateStatus =
   | 'refreshed-current-code'
   | 'brief-current-code'
@@ -19,11 +23,11 @@ export interface PlanReviewConflictMetadata {
 }
 
 export interface PlanTaskReviewMetadata {
-  taskId: string;
+  taskId: TaskId;
   workerProfile?: string | undefined;
   selectedCostTier?: ImplementerCostTier | undefined;
   costPosture?: string | undefined;
-  contextFit?: PlanReviewContextFit | undefined;
+  contextFit?: TaskContextFit | undefined;
   estimatedTokens?: number | undefined;
   contextLength?: number | undefined;
   estimateStatus?: PlanReviewEstimateStatus | undefined;

@@ -75,9 +75,7 @@ export function CommandPaletteOverlay({
           commandPaletteMruStore.record(item.id);
           overlayStore.close();
           try {
-            void Promise.resolve(item.action()).catch((err: unknown) =>
-              feedbackStore.setError(toErrorMessage(err)),
-            );
+            item.action();
           } catch (err) {
             feedbackStore.setError(toErrorMessage(err));
           }

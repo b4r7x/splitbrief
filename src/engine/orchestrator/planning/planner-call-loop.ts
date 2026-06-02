@@ -71,7 +71,7 @@ export async function runPlannerCallInContinuationLoop(
             textHandler(text);
           },
           onSessionId: (id) => {
-            state = transitionAndSave(projectDir, sessionId, state, {
+            state = transitionAndSave({ projectDir, sessionId }, state, {
               type: 'SET_PLANNER_SESSION_ID',
               sessionId: id,
             });
@@ -79,7 +79,6 @@ export async function runPlannerCallInContinuationLoop(
           onSessionExpired: createSessionExpiredHandler({
             projectDir,
             sessionId,
-            callbacks,
             bus: wctx.bus,
             config,
             resumeHolder,

@@ -1,6 +1,7 @@
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, buildTaskFormatExample, instructionsSection } from './shared.js';
+import { buildPrompt, instructionsSection } from './prompt-builder.js';
+import { buildTaskFormatExample } from './task-format-example.js';
 import { requiredBriefSectionsProse } from './required-sections.js';
 
 export function buildInstantPrompt(

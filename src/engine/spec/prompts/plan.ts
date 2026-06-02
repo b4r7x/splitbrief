@@ -1,6 +1,6 @@
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
+import { buildPrompt, instructionsSection, requiredSectionsSection } from './prompt-builder.js';
 
 type PlanPromptSpec = {
   content: string;

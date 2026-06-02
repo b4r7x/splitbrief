@@ -76,9 +76,7 @@ export function writeSecureFile(filePath: string, content: string): void {
   chmodSync(filePath, SECURE_FILE_MODE);
 }
 
-export async function writeSecureFileAsync(filePath: string, content: string): Promise<void> {
-  ensureSecureDir(dirname(filePath));
-
+async function atomicSecureWriteAsync(filePath: string, content: string): Promise<void> {
   try {
     const st = await lstat(filePath);
     if (st.isSymbolicLink()) {
@@ -95,6 +93,11 @@ export async function writeSecureFileAsync(filePath: string, content: string): P
   await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
   await rename(tmpPath, filePath);
   await chmod(filePath, SECURE_FILE_MODE);
+}
+
+export async function writeSecureFileAsync(filePath: string, content: string): Promise<void> {
+  ensureSecureDir(dirname(filePath));
+  await atomicSecureWriteAsync(filePath, content);
 }
 
 // Root-aware secure async write. Unlike `writeSecureFileAsync`, this resolves
@@ -115,22 +118,7 @@ export async function writeConfinedSecureFileAsync(
   // target, and the existing target (if any) must not be a symlink we follow.
   assertWritablePathConfined(relativePath, rootDir);
 
-  try {
-    const st = await lstat(filePath);
-    if (st.isSymbolicLink()) {
-      throw fsError.symlinkWrite(filePath);
-    }
-  } catch (err: unknown) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
-
-  const dir = dirname(filePath);
-  const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
-  const tmpPath = join(dir, tmpName);
-
-  await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
-  await rename(tmpPath, filePath);
-  await chmod(filePath, SECURE_FILE_MODE);
+  await atomicSecureWriteAsync(filePath, content);
 }
 
 export function readValidatedJson<T>(

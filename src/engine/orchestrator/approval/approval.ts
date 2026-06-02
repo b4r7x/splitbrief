@@ -50,7 +50,7 @@ export async function runApprovalLoop(
     const result = await callbacks.onApprovalNeeded(type, filePath);
     if (signal?.aborted) return { state, rejected: false, regenerated };
     if (!result.approved && !result.comment) {
-      state = transitionAndSave(projectDir, sessionId, state, { type: rejectType });
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: rejectType });
       publishPlannerStatus(bus, state, 'done');
       bus.publish({ type: rejectedEvent, ts: Date.now(), phase: state.phase });
       return { state, rejected: true, regenerated };
@@ -58,8 +58,7 @@ export async function runApprovalLoop(
     if (!result.comment) return { state, rejected: false, regenerated };
 
     appendMessage(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       {
         role: 'user',
         phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
@@ -68,7 +67,7 @@ export async function runApprovalLoop(
       persistTranscript,
     );
 
-    const current = readSpecFileOrEmpty(projectDir, sessionId, filename);
+    const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
     createBusTextHandler({ bus: bus, phase: state.phase })(
       `\n[Regenerating ${type} with feedback: ${result.comment}]\n`,
@@ -77,7 +76,6 @@ export async function runApprovalLoop(
     try {
       regenResult = await planner.regenerate({
         prompt: regenPrompt,
-        artifactType: type,
         projectDir,
         callbacks: {
           onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),

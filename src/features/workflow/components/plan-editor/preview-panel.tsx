@@ -6,7 +6,7 @@ import type { Task } from '../../../../core/schemas/task.js';
 import type {
   PlanReviewEstimateStatus,
   PlanTaskReviewMetadata,
-} from '../../../../stores/workflow/plan-editor.js';
+} from '../../../../core/plan-review/types.js';
 import {
   buildWorkerPacketPreview,
   refreshTaskForRoutingPreview,

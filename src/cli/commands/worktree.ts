@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import { worktreePath } from '../../core/paths.js';
 import { createGitClient } from '../../lib/git.js';
 import { renderTable } from '../render-table.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
@@ -87,6 +88,22 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
       console.log('');
       console.log('Or add the following shell function to your profile:');
       console.log('  diptych-switch() { cd "$(diptych worktree path "$1")"; }');
+    });
+
+  worktree
+    .command('path <name>')
+    .description('Print the resolved filesystem path of a worktree')
+    .option('--project <dir>', 'Project directory (default: cwd)')
+    .action(async (name: string, opts: { project?: string }) => {
+      const projectDir = resolveProjectDir(opts.project);
+      const worktrees = await deps.listWorktrees(projectDir);
+      const found = worktrees.some((w) => w.name === name);
+
+      if (!found) {
+        throw cliError(`Worktree "${name}" not found.`, 1);
+      }
+
+      console.log(worktreePath(projectDir, name));
     });
 
   worktree

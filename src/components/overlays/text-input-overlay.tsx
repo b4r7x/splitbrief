@@ -53,7 +53,7 @@ export function TextInputOverlay({
           borderStyle="round"
           borderColor={t.accent}
           paddingX={1}
-          width={getClampedTerminalWidth(cols, 60, 12)}
+          width={getClampedTerminalWidth({ cols, maxWidth: 60, gutter: 12 })}
         >
           <Box flexGrow={1}>
             <MultilineInput

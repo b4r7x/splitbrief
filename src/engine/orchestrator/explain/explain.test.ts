@@ -87,37 +87,46 @@ async function writeRichArtifacts(): Promise<string> {
     implementerTool: 'ollama',
     implementerModel: 'qwen',
   };
-  saveState(projectDir, SESSION_ID, state);
+  saveState({ projectDir, sessionId: SESSION_ID }, state);
   writeReadiness(projectDir);
   writeSecureFile(join(sessionDir(projectDir, SESSION_ID), REVIEW_FILE), 'Final review ok.\n');
-  appendEngineEvent(projectDir, SESSION_ID, {
-    type: 'task_retry',
-    ts: Date.parse('2026-04-29T09:00:00.000Z'),
-    phase: 'validating-task',
-    taskId: taskId('T002'),
-    attempt: 1,
-    maxRetries: 3,
-    error: 'test failed',
-  });
-  appendEngineEvent(projectDir, SESSION_ID, {
-    type: 'task_review_needed',
-    ts: Date.parse('2026-04-29T09:01:00.000Z'),
-    phase: 'implementing',
-    taskId: taskId('T001'),
-    taskTitle: 'Local task',
-    status: 'done',
-    filesTouched: ['src/local.ts'],
-    validation: { passed: true, summary: 'validation passed', stages: [] },
-    evidence: { summary: 'tsc passed', expected: [], observed: ['tsc passed'] },
-    cost: { tokenUsage: state.tokenUsage },
-    availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
-  });
-  appendEngineEvent(projectDir, SESSION_ID, {
-    type: 'warning',
-    ts: Date.parse('2026-04-29T09:02:00.000Z'),
-    phase: 'implementing',
-    message: 'context fit was tight',
-  });
+  appendEngineEvent(
+    { projectDir, sessionId: SESSION_ID },
+    {
+      type: 'task_retry',
+      ts: Date.parse('2026-04-29T09:00:00.000Z'),
+      phase: 'validating-task',
+      taskId: taskId('T002'),
+      attempt: 1,
+      maxRetries: 3,
+      error: 'test failed',
+    },
+  );
+  appendEngineEvent(
+    { projectDir, sessionId: SESSION_ID },
+    {
+      type: 'task_review_needed',
+      ts: Date.parse('2026-04-29T09:01:00.000Z'),
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      taskTitle: 'Local task',
+      status: 'done',
+      filesTouched: ['src/local.ts'],
+      validation: { passed: true, summary: 'validation passed', stages: [] },
+      evidence: { summary: 'tsc passed', expected: [], observed: ['tsc passed'] },
+      cost: { tokenUsage: state.tokenUsage },
+      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+    },
+  );
+  appendEngineEvent(
+    { projectDir, sessionId: SESSION_ID },
+    {
+      type: 'warning',
+      ts: Date.parse('2026-04-29T09:02:00.000Z'),
+      phase: 'implementing',
+      message: 'context fit was tight',
+    },
+  );
 
   const deterministic: NonNullable<CostPrediction['deterministic']> = {
     taskCount: 2,
@@ -314,21 +323,24 @@ describe('buildRunExplain', () => {
       phase: 'implementing' as const,
       tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
     };
-    saveState(projectDir, SESSION_ID, state);
-    appendEngineEvent(projectDir, SESSION_ID, {
-      type: 'task_started',
-      ts: Date.parse('2026-04-29T09:00:00.000Z'),
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      title: 'Create hello module',
-      index: 1,
-      total: 1,
-      file: 'src/hello.ts',
-      action: 'create',
-      implementerProfile: 'local-small',
-      contextFit: 'fits',
-      estimatedTokens: 1000,
-    });
+    saveState({ projectDir, sessionId: SESSION_ID }, state);
+    appendEngineEvent(
+      { projectDir, sessionId: SESSION_ID },
+      {
+        type: 'task_started',
+        ts: Date.parse('2026-04-29T09:00:00.000Z'),
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        title: 'Create hello module',
+        index: 1,
+        total: 1,
+        file: 'src/hello.ts',
+        action: 'create',
+        implementerProfile: 'local-small',
+        contextFit: 'fits',
+        estimatedTokens: 1000,
+      },
+    );
 
     const explain = await buildRunExplain({ projectDir, sessionId: SESSION_ID });
 

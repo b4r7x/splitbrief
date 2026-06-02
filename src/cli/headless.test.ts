@@ -342,7 +342,7 @@ describe('runHeadless — recovery stops', () => {
       },
       { type: 'SET_PENDING_RECOVERY', issue },
     );
-    saveState(projectDir, sessionId, state);
+    saveState({ projectDir, sessionId }, state);
 
     await expect(
       runHeadless({

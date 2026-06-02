@@ -1,7 +1,7 @@
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { ProviderDetection } from '../../core/types/config-options.js';
+import type { ProviderDetection } from '../../core/discovery/detection.js';
 import { validateProviderBaseURL } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';

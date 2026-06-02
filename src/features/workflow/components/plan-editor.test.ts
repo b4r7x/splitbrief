@@ -7,6 +7,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TASKS_FILE } from '../../../core/paths.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -163,7 +164,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         contextFit: 'fits',
@@ -174,7 +175,7 @@ describe('PlanEditorComponent review metadata', () => {
         risk: 'low',
       },
       {
-        taskId: 'T002',
+        taskId: taskId('T002'),
         contextFit: 'overflow',
         estimatedTokens: 42000,
         contextLength: 8192,
@@ -213,7 +214,7 @@ describe('PlanEditorComponent review metadata', () => {
     await writeFile(join(tmpDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         contextFit: 'fits',
@@ -224,7 +225,7 @@ describe('PlanEditorComponent review metadata', () => {
         risk: 'low',
       },
       {
-        taskId: 'T002',
+        taskId: taskId('T002'),
         contextFit: 'overflow',
         estimatedTokens: 42000,
         contextLength: 8192,
@@ -267,7 +268,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         contextFit: 'fits',
@@ -276,7 +277,7 @@ describe('PlanEditorComponent review metadata', () => {
         risk: 'low',
       },
       {
-        taskId: 'T002',
+        taskId: taskId('T002'),
         workerProfile: 'cheap-cloud',
         selectedCostTier: 'cheap',
         contextFit: 'overflow',
@@ -319,7 +320,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         costPosture: 'Selected local cost tier via cheapest-capable routing',
@@ -393,7 +394,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'cheap-cloud',
         selectedCostTier: 'cheap',
         costPosture: 'Selected cheap cost tier via cheapest-capable routing',
@@ -428,7 +429,7 @@ describe('PlanEditorComponent review metadata', () => {
     await writeTasksFile();
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         contextFit: 'overflow',
         conflict: {
           kind: 'current-task-conflict',
@@ -532,6 +533,8 @@ describe('PlanEditorComponent review metadata', () => {
 
   it('toggles selected-task worker packet preview with p', async () => {
     await writeTasksFile();
+    await mkdir(join(tmpDir, 'src'), { recursive: true });
+    await writeFile(join(tmpDir, 'src/a.ts'), 'export const value = 1;', 'utf-8');
 
     const ui = renderComponent(
       createElement(PlanEditorComponent, {
@@ -544,7 +547,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         contextFit: 'fits',
@@ -557,7 +560,10 @@ describe('PlanEditorComponent review metadata', () => {
     await tick();
 
     ui.stdin.write('p');
-    await tick();
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('estimate refreshed-current-code');
+    });
 
     let frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Packet Preview T001');
@@ -573,7 +579,10 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('## Task: Task T001');
 
     ui.stdin.write('p');
-    await tick();
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).not.toContain('Packet Preview T001');
+    });
 
     frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain('Packet Preview T001');
@@ -682,7 +691,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
     planEditorStore.setReviewMetadata([
       {
-        taskId: 'T001',
+        taskId: taskId('T001'),
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         contextFit: 'fits',
@@ -690,7 +699,7 @@ describe('PlanEditorComponent review metadata', () => {
         contextLength: 32768,
       },
       {
-        taskId: 'T002',
+        taskId: taskId('T002'),
         workerProfile: 'cheap-cloud',
         selectedCostTier: 'cheap',
         contextFit: 'tight',

@@ -14,7 +14,7 @@ export function extractMentionedFilenames(
   for (const m of matches) {
     const abs = resolveFromProject(projectDir, m);
     if (existsSync(abs)) {
-      results.push(m);
+      results.push(abs);
       continue;
     }
     const base = basename(m);

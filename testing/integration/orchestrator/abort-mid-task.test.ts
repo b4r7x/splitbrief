@@ -37,7 +37,7 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     ensureSessionDir(projectDir, sessionId);
 
     let state = createInitialState('feat');
-    state = transition(state, { type: 'START', feature: 'feat' });
+    state = transition(state, { type: 'START' });
     state = transition(state, { type: 'RESEARCH_DONE' });
     state = transition(state, { type: 'SPEC_DONE' });
     state = transition(state, { type: 'APPROVE_SPEC' });

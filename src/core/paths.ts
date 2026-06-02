@@ -65,6 +65,7 @@ export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
 export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
+export const BRIEF_HASH_FILE = 'brief-hash.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
