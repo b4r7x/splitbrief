@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { useApp } from 'ink';
+import { useApp, useInput } from 'ink';
+import { isKeyDebugEnabled, logParsedKey } from './lib/terminal/debug-keys.js';
 import { createRuntimeCommands } from './core/runtime/commands/registry.js';
 import { buildCommandContext } from './app/command-context.js';
 import { executeRuntimeCommand } from './core/runtime/commands/dispatch.js';
@@ -56,6 +57,7 @@ export function App() {
 
   useAppKeys({ exit, abortWorkflow: abortTurn });
   useMouseScroll();
+  useInput((input, key) => logParsedKey(input, key), { isActive: isKeyDebugEnabled() });
 
   return (
     <ThemeProvider theme={theme}>

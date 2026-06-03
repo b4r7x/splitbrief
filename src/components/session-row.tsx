@@ -2,7 +2,6 @@ import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
-import { truncateWithEllipsis } from '../utils/truncate.js';
 import { CursorCell } from './pickers/cursor-cell.js';
 
 function formatRelativeTime(timestamp: number): string {
@@ -27,34 +26,32 @@ interface SessionRowProps {
   session: Session;
   showCursor?: boolean;
   isCursor?: boolean;
-  featureColWidth?: number;
 }
 
-export function SessionRow({
-  session,
-  showCursor = false,
-  isCursor = false,
-  featureColWidth,
-}: SessionRowProps) {
+export function SessionRow({ session, showCursor = false, isCursor = false }: SessionRowProps) {
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
-  const feature =
-    featureColWidth !== undefined
-      ? truncateWithEllipsis(session.feature, featureColWidth).padEnd(featureColWidth)
-      : session.feature;
   const time = formatRelativeTime(session.startedAt);
-  const featureColor = showCursor ? (isCursor ? t.accent : t.text) : t.text;
+  const selected = showCursor && isCursor;
+  const bg = selected ? t.selectionBg : undefined;
   return (
-    <Box>
-      {showCursor && <CursorCell isCursor={isCursor} />}
-      <Text color={display.color}>{display.icon} </Text>
-      <Text color={featureColor} bold={showCursor && isCursor}>
-        {feature}
-      </Text>
-      <Text color={t.textDim}>
-        {showCursor ? '  ' : ' '}
-        {time}
-      </Text>
+    <Box width="100%" backgroundColor={bg}>
+      {showCursor && (
+        <Box flexShrink={0} backgroundColor={bg}>
+          <CursorCell isCursor={isCursor} />
+        </Box>
+      )}
+      <Box flexShrink={0} backgroundColor={bg}>
+        <Text color={display.color}>{display.icon} </Text>
+      </Box>
+      <Box flexGrow={1} flexShrink={1} minWidth={0} backgroundColor={bg}>
+        <Text color={selected ? t.accent : t.text} bold={selected} wrap="truncate-end">
+          {session.feature}
+        </Text>
+      </Box>
+      <Box flexShrink={0} backgroundColor={bg}>
+        <Text color={t.textDim}> {time}</Text>
+      </Box>
     </Box>
   );
 }

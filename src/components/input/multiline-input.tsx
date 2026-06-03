@@ -89,6 +89,8 @@ export function MultilineInput({
         return;
       }
 
+      if (key.ctrl) return;
+
       let nextPasteLength = 0;
       if (input.length > 1) {
         nextPasteLength = input.length;

@@ -42,7 +42,8 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   );
 }
 
-const MAX_RECENT_SESSIONS = 10;
+// Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.
+const MAX_RECENT_SESSIONS = 30;
 
 function readSessions(projectDir: string): Session[] {
   const root = sessionsRoot(projectDir);

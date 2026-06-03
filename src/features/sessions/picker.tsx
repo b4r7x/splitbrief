@@ -10,7 +10,7 @@ import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
-import { handleSessionSelect } from './picker-select.js';
+import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 
 const filterSession = (s: Session, query: string): boolean => filterByFields(s, query, ['feature']);
 
@@ -27,7 +27,6 @@ export function SessionsPicker() {
   }, [projectDir]);
 
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
-  const featureColWidth = Math.max(8, Math.min(isSmall ? 28 : 40, Math.max(1, panelWidth - 8)));
 
   return (
     <FilterableList
@@ -47,12 +46,7 @@ export function SessionsPicker() {
         </Text>
       }
       renderItem={(session, { isCursor }) => (
-        <SessionRow
-          session={session}
-          showCursor
-          isCursor={isCursor}
-          featureColWidth={featureColWidth}
-        />
+        <SessionRow session={session} showCursor isCursor={isCursor} />
       )}
     />
   );

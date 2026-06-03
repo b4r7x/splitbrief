@@ -65,6 +65,7 @@ interface ComposerProps {
   currentScreen: Screen;
   width?: number;
   disabled?: boolean;
+  homeHint?: string | undefined;
 }
 
 export function Composer({
@@ -76,6 +77,7 @@ export function Composer({
   currentScreen,
   width,
   disabled,
+  homeHint,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -164,7 +166,11 @@ export function Composer({
       })
     : 0;
   const reserveHomeHint = currentScreen === 'home';
-  const showHomeHint = reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions;
+  const showHomeHint =
+    reserveHomeHint &&
+    homeHint !== undefined &&
+    !showCommandSuggestions &&
+    !showReferenceSuggestions;
 
   useEffect(() => {
     setProjectFiles(readProjectFiles(projectDir));
@@ -178,11 +184,7 @@ export function Composer({
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
         <Box justifyContent="center" height={1}>
-          {showHomeHint ? (
-            <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
-          ) : (
-            <Text> </Text>
-          )}
+          {showHomeHint ? <Text color={theme.textDim}>{homeHint}</Text> : <Text> </Text>}
         </Box>
       )}
       <AttachmentChips />

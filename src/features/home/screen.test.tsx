@@ -5,12 +5,30 @@ import { makeSession } from '../../../testing/helpers/factories/session.js';
 import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { saveState } from '../../core/state/persistence.js';
+import { createInitialState } from '../../core/state/machine.js';
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { CURSOR } from '../../components/pickers/picker-utils.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { FULL_LOGO } from './logo.js';
+import { getLogo } from './logo.js';
 import { HomeScreen } from './screen.js';
+
+const CTRL_R = '\x12';
+const ARROW_DOWN = '\u001b[B';
+const ARROW_UP = '\u001b[A';
+const ESC = '\u001b';
+const ENTER = '\r';
+const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
+const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume  Esc back';
+// Ink collapses the trailing space of the cursor cell when it abuts the next
+// column, so the rendered frame contains the bare ▸ glyph, not "▸ ".
+const CURSOR_GLYPH = CURSOR.trimEnd();
 
 const COMMANDS: RuntimeCommandDef[] = [
   {
@@ -61,7 +79,7 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     const plannerLine = frame.split('\n').find((line) => line.includes('Planner')) ?? '';
     expect(plannerLine.indexOf('Planner')).toBeGreaterThan(0);
-    expect(frame).toContain('/help /config /skills Ctrl+K');
+    expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
   });
 
@@ -72,7 +90,7 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('diptych');
+    expect(frame).toContain('__|_||_|');
     expect(frame).toContain('standard');
     expect(frame).toContain('no recent sessions');
     ui.unmount();
@@ -95,10 +113,10 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('caps recent sessions and reports the hidden count in the home screen', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 18, isSmall: true });
+  it('caps recent sessions and reports a hidden count when capacity is tight', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 25; i++) {
       saveSummary(
         { projectDir: projectDir, sessionId: `session-${i}` },
         makeSession({
@@ -113,27 +131,26 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('feature 9');
-    expect(frame).toContain('feature 8');
-    expect(frame).toContain('+2 more');
+    expect(frame).toContain('feature 24');
+    expect(frame).toMatch(/\+\d+ more/);
     ui.unmount();
   });
 
-  it('does not load recent sessions when the compact layout hides them', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 17, isSmall: true });
+  it('shows recent sessions on short terminals', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
     saveSummary(
-      { projectDir: projectDir, sessionId: 'hidden-session' },
+      { projectDir: projectDir, sessionId: 'short-session' },
       makeSession({
-        id: 'hidden-session',
-        feature: 'hidden feature',
+        id: 'short-session',
+        feature: 'short feature',
       }),
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').not.toContain('hidden feature');
-    expect(sessionsStore.get().sessions).toEqual([]);
+    expect(ui.lastFrame() ?? '').toContain('short feature');
+    expect(sessionsStore.get().sessions.length).toBeGreaterThan(0);
     ui.unmount();
   });
 
@@ -164,38 +181,42 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    for (const line of FULL_LOGO.split('\n')) {
-      expect(frame).toContain(line);
-    }
+    expect(frame).toContain('__| (_)');
+    const renderedLogoLines = getLogo('full')
+      .split('\n')
+      .filter((line) => frame.includes(line.trim()));
+    expect(renderedLogoLines.length).toBeGreaterThanOrEqual(5);
     ui.unmount();
   });
 
-  it('renders small logo on medium terminals', async () => {
+  it('renders ASCII art on medium terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('── diptych ──');
+    expect(frame).toContain('__|_||_|');
+    expect(frame.includes('── diptych ──')).toBe(false);
     ui.unmount();
   });
 
-  it('renders plain text logo on small terminals', async () => {
+  it('renders ASCII art on small terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('diptych');
+    expect(frame).toContain('__|_||_|');
+    expect(frame.includes('── diptych ──')).toBe(false);
     ui.unmount();
   });
 
   it('shows many sessions on tall terminals', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       saveSummary(
         { projectDir: projectDir, sessionId: `session-${i}` },
         makeSession({
@@ -210,9 +231,10 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    for (let i = 0; i < 10; i++) {
-      expect(frame).toContain(`tall feature ${i}`);
-    }
+    const visibleCount = Array.from({ length: 20 }, (_, i) => `tall feature ${i}`).filter((label) =>
+      frame.includes(label),
+    ).length;
+    expect(visibleCount).toBeGreaterThan(12);
     ui.unmount();
   });
 
@@ -237,6 +259,214 @@ describe('HomeScreen', () => {
     expect(logoLine).toBeGreaterThanOrEqual(0);
     expect(sessionLine).toBeGreaterThanOrEqual(0);
     expect(sessionLine - logoLine).toBeLessThan(15);
+    ui.unmount();
+  });
+});
+
+describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
+  let projectDir = '';
+
+  function seedSessions(count: number): void {
+    for (let i = 0; i < count; i++) {
+      saveSummary(
+        { projectDir, sessionId: `focus-session-${i}` },
+        makeSession({
+          id: `focus-session-${i}`,
+          feature: `focus feature ${i}`,
+          status: 'interrupted',
+          summary: null,
+          startedAt: 1_700_000_000 + i,
+        }),
+      );
+    }
+  }
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('home-focus-test');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    cleanupTempDir(projectDir);
+    projectDir = '';
+  });
+
+  it('Ctrl+R focuses the recent-sessions list', async () => {
+    seedSessions(3);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    expect(ui.lastFrame() ?? '').not.toContain(CURSOR_GLYPH);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(CURSOR_GLYPH);
+    expect(frame).toContain(RECENT_SESSIONS_HINT);
+    ui.unmount();
+  });
+
+  it('Ctrl+R is a no-op when there are no sessions', async () => {
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(DEFAULT_HOME_HINT);
+    expect(frame).not.toContain(CURSOR_GLYPH);
+    ui.unmount();
+  });
+
+  it('Down moves the cursor to a later row', async () => {
+    seedSessions(3);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+
+    ui.stdin.write(ARROW_DOWN);
+    await tick(20);
+    const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+
+    expect(after).toBeGreaterThan(before);
+    ui.unmount();
+  });
+
+  it('Esc returns focus to the composer', async () => {
+    seedSessions(3);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+
+    ui.stdin.write(ESC);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).toContain(HOME_HINT);
+    ui.unmount();
+  });
+
+  it('Up at the top returns focus to the composer without wrapping', async () => {
+    seedSessions(3);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+
+    ui.stdin.write(ARROW_UP);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).toContain(HOME_HINT);
+    ui.unmount();
+  });
+
+  it('Enter resumes an interrupted session into the workflow screen', async () => {
+    saveSummary(
+      { projectDir, sessionId: 'resume-me' },
+      makeSession({
+        id: 'resume-me',
+        feature: 'resume feature',
+        status: 'interrupted',
+        summary: null,
+        startedAt: 1_700_000_500,
+      }),
+    );
+    const savedState = {
+      ...createInitialState('resume feature'),
+      phase: 'implementing' as const,
+    };
+    saveState({ projectDir, sessionId: 'resume-me' }, savedState);
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.sessionId).toBe('resume-me');
+    }
+    ui.unmount();
+  });
+
+  it('Enter on a failed session without a summary stays on home and surfaces feedback', async () => {
+    saveSummary(
+      { projectDir, sessionId: 'failed-one' },
+      makeSession({
+        id: 'failed-one',
+        feature: 'broken feature',
+        status: 'failed',
+        summary: null,
+        startedAt: 1_700_000_600,
+      }),
+    );
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(routerStore.get().screen).toBe('home');
+    expect(feedbackStore.get().message ?? '').toContain('broken feature');
+    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    ui.unmount();
+  });
+
+  it('plain Up still recalls input history instead of focusing the list', async () => {
+    seedSessions(3);
+    inputHistoryStore.push('recalled prompt');
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(ARROW_UP);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('recalled prompt');
+    expect(frame).not.toContain(CURSOR_GLYPH);
+    ui.unmount();
+  });
+
+  it('drops focus and keeps the composer usable when the terminal shrinks below the list', async () => {
+    seedSessions(3);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
+    await tick(20);
+    expect(ui.lastFrame() ?? '').not.toContain(CURSOR_GLYPH);
+
+    ui.stdin.write('hi');
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('hi');
     ui.unmount();
   });
 });

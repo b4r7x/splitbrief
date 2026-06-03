@@ -8,6 +8,7 @@ import {
   setActiveFilteredStdin,
 } from '../lib/terminal/mouse.js';
 import { detectKittyKeyboardFlags } from '../lib/terminal/kitty-keyboard.js';
+import { isKeyDebugEnabled, logRawChunk } from '../lib/terminal/debug-keys.js';
 
 interface RenderOptions {
   fullscreen: boolean;
@@ -23,6 +24,11 @@ export async function renderApp(
 
   const useMouse = mouse !== false && fullscreen;
   let filteredStdin: FilteredStdin | undefined;
+
+  const rawKeyTap = isKeyDebugEnabled() ? (chunk: Buffer) => logRawChunk(chunk) : undefined;
+  if (rawKeyTap) {
+    process.stdin.on('data', rawKeyTap);
+  }
 
   if (useMouse) {
     filteredStdin = createFilteredStdin(process.stdin);
@@ -62,5 +68,8 @@ export async function renderApp(
   } finally {
     setActiveFilteredStdin(undefined);
     filteredStdin?.disable();
+    if (rawKeyTap) {
+      process.stdin.off('data', rawKeyTap);
+    }
   }
 }

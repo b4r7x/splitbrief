@@ -13,6 +13,12 @@ const SHORTCUTS: ShortcutInfo[] = [
   { id: 'command-palette', key: 'Ctrl+K', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'Ctrl+/', description: 'Help', screens: ALL_SCREENS },
   { id: 'quit', key: 'Ctrl+Q', description: 'Quit', screens: ALL_SCREENS },
+  {
+    id: 'recent-sessions',
+    key: 'Ctrl+R',
+    description: 'Focus recent sessions',
+    screens: ['home'],
+  },
   { id: 'skills', key: 'Ctrl+S', description: 'Skills picker', screens: ['home'] },
   { id: 'settings', key: 'Ctrl+,', description: 'Settings', screens: ALL_SCREENS },
   { id: 'close-overlay', key: 'Escape', description: 'Close overlay', screens: ALL_SCREENS },

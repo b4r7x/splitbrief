@@ -1,10 +1,10 @@
 import type { Session } from '../../core/schemas/session.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState } from '../../core/state/persistence.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
-import { routerStore } from '../../stores/navigation/router.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { overlayStore } from '../ui/overlay.js';
+import { feedbackStore } from '../ui/feedback.js';
+import { routerStore } from './router.js';
 
 export function handleSessionSelect(session: Session, projectDir: string) {
   if (session.status === 'interrupted') {

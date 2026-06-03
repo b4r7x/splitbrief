@@ -1,23 +1,30 @@
 import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SessionRow } from '../../../components/session-row.js';
+import type { Session } from '../../../core/schemas/session.js';
+import { RecentSessionsList } from './recent-sessions-list.js';
+import { RecentSessionsShell } from './recent-sessions-shell.js';
 
 interface RecentSessionsProps {
   limit?: number | undefined;
-  featureColWidth?: number | undefined;
+  focused?: boolean | undefined;
+  onSelect?: ((session: Session) => void) | undefined;
+  onClose?: (() => void) | undefined;
+  hasOverlay?: boolean | undefined;
 }
 
-export function RecentSessions({ limit, featureColWidth }: RecentSessionsProps) {
-  const [{ sessions }, { isSmall }, { projectDir }] = useStores(
-    sessionsStore,
-    terminalSizeStore,
-    configStore,
-  );
+export function RecentSessions({
+  limit,
+  focused,
+  onSelect,
+  onClose,
+  hasOverlay,
+}: RecentSessionsProps) {
+  const [{ sessions }, { projectDir }] = useStores(sessionsStore, configStore);
   const theme = useTheme();
 
   useEffect(() => {
@@ -38,19 +45,23 @@ export function RecentSessions({ limit, featureColWidth }: RecentSessionsProps) 
   const visibleSessions = sessions.slice(0, limit ?? sessions.length);
   const hiddenCount = sessions.length - visibleSessions.length;
 
+  if (focused && onSelect && onClose) {
+    return (
+      <RecentSessionsList
+        sessions={visibleSessions}
+        hasOverlay={hasOverlay ?? false}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    );
+  }
+
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box marginBottom={isSmall ? 0 : 1}>
-        <Text color={theme.textDim}>Recent sessions</Text>
-      </Box>
+    <RecentSessionsShell>
       {visibleSessions.map((s) => (
-        <SessionRow
-          key={s.id}
-          session={s}
-          {...(featureColWidth !== undefined ? { featureColWidth } : {})}
-        />
+        <SessionRow key={s.id} session={s} />
       ))}
       {hiddenCount > 0 && <Text color={theme.textDim}> +{hiddenCount} more</Text>}
-    </Box>
+    </RecentSessionsShell>
   );
 }

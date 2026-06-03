@@ -657,7 +657,7 @@ src/
 │   │                              recent-sessions)
 │   ├── palette/                   overlay + results (command palette overlay
 │   │                              and cross-store result aggregator)
-│   ├── sessions/                  picker, picker-select
+│   ├── sessions/                  picker (session-select action lives in stores/navigation)
 │   ├── settings/                  overlay + mode-selector +
 │   │                              hooks/{buffer, editor}
 │   ├── setup/screen.tsx           First-run / reconfigure flow

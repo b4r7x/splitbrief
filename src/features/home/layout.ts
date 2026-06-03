@@ -5,6 +5,7 @@ interface HomeLayoutInput {
   cols: number;
   rows: number;
   isSmall: boolean;
+  hasSkills: boolean;
 }
 
 interface HomeLayout {
@@ -13,7 +14,6 @@ interface HomeLayout {
   logoTier: LogoTier;
   inputBottomMargin: number;
   recentSessionLimit: number;
-  recentFeatureColWidth: number;
 }
 
 interface SessionLimitInput {
@@ -21,20 +21,30 @@ interface SessionLimitInput {
   isSmall: boolean;
   logoTier: LogoTier;
   inputBottomMargin: number;
+  hasSkills: boolean;
+}
+
+const RECENT_LIST_MAX_DISPLAY = 20;
+export const CONFIG_SUMMARY_COMPACT_ROWS = 30;
+
+export function getConfigSummaryHeight(isSmall: boolean, rows: number, hasSkills: boolean): number {
+  const compact = isSmall || rows < CONFIG_SUMMARY_COMPACT_ROWS;
+  if (compact) return 1;
+  return 3 + (hasSkills ? 1 : 0);
 }
 
 function getContentAwareSessionLimit(input: SessionLimitInput): number {
-  const { rows, isSmall, logoTier, inputBottomMargin } = input;
-  if (rows < 18) return 0;
-  const logoHeight = getLogoHeight(logoTier);
-  const overhead = isSmall
-    ? logoHeight + 1 + 2 + 4 + 2
-    : logoHeight + 1 + 4 + 2 + 4 + inputBottomMargin + 2;
-  const available = rows - overhead;
-  return Math.max(0, Math.min(available, 12));
+  const { rows, isSmall, logoTier, inputBottomMargin, hasSkills } = input;
+  const inputDock = 1 + 3 + inputBottomMargin;
+  const bodyGaps = isSmall ? 0 : 2;
+  const logoBlock = getLogoHeight(logoTier) + 1;
+  const configBlock = getConfigSummaryHeight(isSmall, rows, hasSkills) + 1;
+  const sessionsChrome = 1 + (isSmall ? 0 : 1) + 1 + 1;
+  const available = rows - (inputDock + bodyGaps + logoBlock + configBlock + sessionsChrome);
+  return Math.max(0, Math.min(available, RECENT_LIST_MAX_DISPLAY));
 }
 
-export function getHomeLayout({ cols, rows, isSmall }: HomeLayoutInput): HomeLayout {
+export function getHomeLayout({ cols, rows, isSmall, hasSkills }: HomeLayoutInput): HomeLayout {
   const inputWidth = getResponsivePanelWidth({
     cols,
     size: isSmall ? 'small' : 'large',
@@ -49,8 +59,8 @@ export function getHomeLayout({ cols, rows, isSmall }: HomeLayoutInput): HomeLay
     isSmall,
     logoTier,
     inputBottomMargin,
+    hasSkills,
   });
-  const recentFeatureColWidth = Math.min(bodyWidth, Math.max(8, bodyWidth - 12));
 
   return {
     inputWidth,
@@ -58,6 +68,5 @@ export function getHomeLayout({ cols, rows, isSmall }: HomeLayoutInput): HomeLay
     logoTier,
     inputBottomMargin,
     recentSessionLimit,
-    recentFeatureColWidth,
   };
 }
