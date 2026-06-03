@@ -9,8 +9,7 @@ import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { getWorkflowMode } from '../../../core/config/accessors/state.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-
-const COMPACT_ROWS_THRESHOLD = 30;
+import { CONFIG_SUMMARY_COMPACT_ROWS } from '../layout.js';
 
 export function HomeConfigSummary() {
   const theme = useTheme();
@@ -22,7 +21,7 @@ export function HomeConfigSummary() {
   const implToolName = getRunnerDisplayName(config.implementer);
   const implModel = config.implementer.model;
   const mode = getWorkflowMode(config);
-  const compact = isSmall || rows < COMPACT_ROWS_THRESHOLD;
+  const compact = isSmall || rows < CONFIG_SUMMARY_COMPACT_ROWS;
 
   if (compact) {
     const plannerText = plannerModel

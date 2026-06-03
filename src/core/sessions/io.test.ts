@@ -73,17 +73,17 @@ describe('listSessions', () => {
     ]);
   });
 
-  it('limits to MAX_RECENT_SESSIONS (10)', () => {
+  it('limits to MAX_RECENT_SESSIONS (30), newest first', () => {
     tmp = createTempDir('sessions-io-test');
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 35; i++) {
       const id = `2024-01-01-sess-${i}`;
       writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
     }
 
     const sessions = listSessions(tmp);
-    expect(sessions).toHaveLength(10);
-    expect(sessions[0]?.startedAt).toBe(14000);
-    expect(sessions[9]?.startedAt).toBe(5000);
+    expect(sessions).toHaveLength(30);
+    expect(sessions[0]?.startedAt).toBe(34000);
+    expect(sessions[29]?.startedAt).toBe(5000);
   });
 
   it('skips subdirectories missing summary.json', () => {
@@ -144,6 +144,50 @@ describe('listAllSessions', () => {
 
     const sessions = listAllSessions(tmp);
     expect(sessions).toHaveLength(15);
+  });
+});
+
+describe('listSessions vs listAllSessions divergence above the cap', () => {
+  it('caps listSessions at 30 newest while listAllSessions returns all 35 from the same directory', () => {
+    tmp = createTempDir('sessions-io-test');
+    for (let i = 0; i < 35; i++) {
+      const id = `2024-01-01-sess-${i}`;
+      writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
+    }
+
+    const capped = listSessions(tmp);
+    const all = listAllSessions(tmp);
+
+    expect(capped).toHaveLength(30);
+    expect(all).toHaveLength(35);
+    expect(capped[0]?.startedAt).toBe(all[0]?.startedAt);
+    expect(capped[0]?.startedAt).toBe(34000);
+  });
+});
+
+describe('listSessions cap boundary', () => {
+  it('retains all 30 sessions at the exact cap', () => {
+    tmp = createTempDir('sessions-io-test');
+    for (let i = 0; i < 30; i++) {
+      const id = `2024-01-01-sess-${i}`;
+      writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
+    }
+
+    expect(listSessions(tmp)).toHaveLength(30);
+  });
+
+  it('drops only the single oldest session at 31', () => {
+    tmp = createTempDir('sessions-io-test');
+    for (let i = 0; i < 31; i++) {
+      const id = `2024-01-01-sess-${i}`;
+      writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
+    }
+
+    const out = listSessions(tmp);
+    expect(out).toHaveLength(30);
+    expect(out.some((s) => s.startedAt === 0)).toBe(false);
+    expect(out.some((s) => s.id === '2024-01-01-sess-0')).toBe(false);
+    expect(out.some((s) => s.startedAt === 30000)).toBe(true);
   });
 });
 
