@@ -11,7 +11,6 @@ import {
 import {
   publishRecoveryPrompted,
   publishUserEditConflict,
-  publishWarning,
   publishWarningFromError,
 } from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -91,13 +90,6 @@ export async function checkUserEditConflicts(opts: {
         }
       }
       return { state, stopped: false };
-    }
-
-    if (selectedAction === 'regenerate-rebase') {
-      publishWarning(
-        { bus: bus, phase: state.phase },
-        'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
-      );
     }
 
     const issue = buildUserEditConflictRecoveryIssue({

@@ -36,11 +36,13 @@ export function createCommandBasedPlanner(
     projectDir,
     callbacks,
     signal,
+    sandboxEnv,
   }: {
     prompt: string;
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
     signal?: AbortSignal | undefined;
+    sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<InvokeResult> => {
     const result = await invokeCommandBasedRunner({
       command: config.command,
@@ -49,6 +51,7 @@ export function createCommandBasedPlanner(
       notFoundMessage,
       prompt,
       projectDir,
+      env: sandboxEnv,
       onOutput: callbacks.onOutput,
       signal,
     });

@@ -15,12 +15,14 @@ import {
   sessionDir,
   REVIEW_FILE,
   SPEC_FILE,
+  TASKS_FILE,
   DRIFT_REPORT_FILE,
   REVIEW_PACKET_JSON_FILE,
   REVIEW_PACKET_MARKDOWN_FILE,
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
+import { loadState } from '../../core/state/persistence.js';
 import { runFinalReviewPhase } from './final-review.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -95,7 +97,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
     const phaseTimings: Record<string, number> = {};
 
-    const summary = await runFinalReviewPhase(
+    const { summary } = await runFinalReviewPhase(
       {
         projectDir,
         sessionId,
@@ -142,7 +144,83 @@ describe('runFinalReviewPhase', () => {
     );
   });
 
-  it('still advances to complete, records phase timing, and calls onComplete even when the planner review throws', async () => {
+  it('reviews the task brief packet, falling back to current state tasks when tasks.md is missing', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nSparse spec.\n', null);
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      [
+        '# Task Briefs',
+        '',
+        'Persisted-only acceptance marker: verify password pepper migration.',
+      ].join('\n'),
+      null,
+    );
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const task = makeTask({
+      id: 'T001',
+      title: 'State fallback task title',
+      description: 'State fallback marker: rotate audit log checksum.',
+      status: 'done',
+    });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task]),
+        planner,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain(
+      'Persisted-only acceptance marker: verify password pepper migration.',
+    );
+
+    const { projectDir: fallbackProjectDir, sessionId: fallbackSessionId } = setupProject();
+    writeSpecFile(
+      { projectDir: fallbackProjectDir, sessionId: fallbackSessionId },
+      SPEC_FILE,
+      '',
+      null,
+    );
+    reviewPrompts.length = 0;
+
+    await runFinalReviewPhase(
+      {
+        projectDir: fallbackProjectDir,
+        sessionId: fallbackSessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task]),
+        planner,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain('State fallback marker: rotate audit log checksum.');
+  });
+
+  it('does not complete the workflow when the planner review throws', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
@@ -160,7 +238,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
     const phaseTimings: Record<string, number> = {};
 
-    const summary = await runFinalReviewPhase(
+    const { summary } = await runFinalReviewPhase(
       {
         projectDir,
         sessionId,
@@ -176,7 +254,6 @@ describe('runFinalReviewPhase', () => {
       phaseTimings,
     );
 
-    // An error event was emitted — the phase did not fail hard.
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent).toBeDefined();
     const message = errorEvent && 'message' in errorEvent ? errorEvent.message : '';
@@ -186,10 +263,10 @@ describe('runFinalReviewPhase', () => {
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(false);
 
-    // Terminal transitions still happened.
-    expect(completions).toHaveLength(1);
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
-    // The state passed to onComplete is internal; the returned summary is the observable.
+    expect(completions).toEqual([]);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
     expect(summary).toBeDefined();
     expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
     const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
@@ -218,7 +295,7 @@ describe('runFinalReviewPhase', () => {
     });
     const phaseTimings: Record<string, number> = {};
 
-    const summary = await runFinalReviewPhase(
+    const { summary } = await runFinalReviewPhase(
       {
         projectDir,
         sessionId,
@@ -253,7 +330,7 @@ describe('runFinalReviewPhase', () => {
     });
     const state = allTasksDoneState([]);
 
-    const result: Summary = await runFinalReviewPhase(
+    const { summary: result } = await runFinalReviewPhase(
       { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner },
       SUMMARY_BASE,
       [],

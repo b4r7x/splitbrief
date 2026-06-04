@@ -14,7 +14,8 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseTasks } from '../../spec/parser.js';
 import { createValidator } from '../validation.js';
 import type { WorkflowSinks } from '../types.js';
@@ -902,5 +903,142 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       ),
     ).toBeUndefined();
     expect(result.summary.totalTasks).toBe(1);
+  });
+
+  it('never dispatches ALL_DONE when resuming a non-implementing state with zero tasks', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = createInitialState('feat');
+    expect(state.phase).toBe('idle');
+    expect(state.tasks).toHaveLength(0);
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = makeNoValidationConfig({ workflow: { commitStrategy: 'none' } });
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(planner.review).not.toHaveBeenCalled();
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
+    expect(events.find((event) => event.type === 'all_tasks_done')).toBeUndefined();
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
+    expect(events.find((event) => event.type === 'error')).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })).toBeNull();
+  });
+
+  it('reports incomplete when final review fails', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn().mockRejectedValue(new Error('review failed')),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
+    expect(events.find((event) => event.type === 'all_tasks_done')).toBeDefined();
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
+    expect(result.summary.reviewPacket?.finalReviewStatus).toBe('failed');
+  });
+
+  it('resumes a persisted failed-final-review state and completes when the review passes', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', status: 'done' });
+    // Persist a state stuck in 'final-review' (a previously failed gate): all tasks done,
+    // currentTaskIndex past the end (as the task loop leaves it before ALL_DONE).
+    const savedState = transition(makeImplState([task], { currentTaskIndex: 1 }), {
+      type: 'ALL_DONE',
+    });
+    expect(savedState.phase).toBe('final-review');
+    saveState({ projectDir, sessionId }, savedState);
+
+    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeDefined();
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('complete');
   });
 });

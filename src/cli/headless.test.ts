@@ -378,13 +378,57 @@ describe('runHeadless — recovery stops', () => {
         type: 'recovery_required',
         sessionId,
         reason: 'retry-exhausted',
-        availableActions: [
-          'planner-split-rebase',
-          'skip-current-task',
-          'pause-run',
-          'abort-workflow',
-        ],
+        availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
       }),
+    );
+  });
+
+  it('exits non-zero and emits final_review_failed when the final review gate fails', async () => {
+    const projectDir = createTempDir('headless-final-review');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeMinimalConfigYaml(projectDir);
+    const sessionId = 'sess-headless-final-review';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
+
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const state = {
+      ...createInitialState('review me'),
+      phase: 'implementing' as const,
+      tasks: [task],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
+    saveState({ projectDir, sessionId }, state);
+
+    const failingPlanner = makePlanner({
+      review: vi.fn().mockRejectedValue(new Error('planner review crashed')),
+    });
+
+    await expect(
+      runHeadless({
+        feature: 'review me',
+        projectDir: projectDir,
+        opts: {},
+        savedState: state,
+        sessionId: sessionId,
+        _planner: failingPlanner,
+        _implementer: implementer,
+      }),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Final review did not pass'),
+    });
+
+    const jsonLines = stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({ type: 'final_review_failed', sessionId }),
     );
   });
 });

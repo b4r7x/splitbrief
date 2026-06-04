@@ -47,7 +47,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
           Keyboard Shortcuts
         </Text>
         {shortcuts.map((s) => (
-          <Box key={s.key}>
+          <Box key={s.id}>
             <Box width={labelColWidth}>
               <Text color={t.accent}>{s.key}</Text>
             </Box>

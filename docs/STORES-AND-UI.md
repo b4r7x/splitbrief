@@ -65,7 +65,7 @@ Runtime state of the active workflow run.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
 - **planEditorStore** -- rich brief editor state (flags, cursor, runtime mode toggle).
 - **conversationScrollStore** -- scroll offset for the conversation view.
-- **abortStore** -- pending abort signal.
+- **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
 - **streamingOutputStore** -- live implementer output lines.
 - **reviewStore** -- which file is under review.
 - **attachmentsStore** -- files attached to the next user message.

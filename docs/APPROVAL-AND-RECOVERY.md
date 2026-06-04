@@ -132,7 +132,6 @@ flowchart TD
     PROMPT --> USER{User picks action}
     USER -->|retry-same-worker| RESET[Reset task, retry from scratch]
     USER -->|route-bigger-worker| BIGGER[Retry with more capable profile]
-    USER -->|planner-split-rebase| SPLIT[Planner breaks task into pieces]
     USER -->|skip-current-task| SKIP[Skip, move to next task]
     USER -->|pause-run| PAUSE[Save state, wait]
     USER -->|abort-workflow| ABORT[End workflow]
@@ -152,14 +151,14 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 | Reason | When | Available actions | Recommended |
 |---|---|---|---|
 | `implementation-error` | Implementer crashed | `retry-same-worker`*, `route-bigger-worker`*, `skip-current-task`, `pause-run`, `abort-workflow` | `retry-same-worker` |
-| `validation-failed` | Tests fail mid-escalation | `retry-same-worker`*, `route-bigger-worker`*, `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `retry-same-worker` |
-| `retry-exhausted` | All escalation tiers failed | `route-bigger-worker`*, `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
-| `context-overflow` | Task too large for any profile | `route-bigger-worker`*, `planner-split-rebase`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
+| `validation-failed` | Tests fail mid-escalation | `retry-same-worker`*, `route-bigger-worker`*, `skip-current-task`, `pause-run`, `abort-workflow` | `retry-same-worker` |
+| `retry-exhausted` | All escalation tiers failed | `route-bigger-worker`*, `retry-same-worker`*, `skip-current-task`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
+| `context-overflow` | Task too large for any profile | `route-bigger-worker`*, `pause-run`, `abort-workflow` | `route-bigger-worker` |
 | `user-edit-conflict` | External file edits conflict | `continue`*, `skip-current-task`, `pause-run`, `abort-workflow` | depends on `safeToContinue` |
-| `approval-promotion-conflict` | Approved changes can't promote | `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `planner-split-rebase` |
+| `approval-promotion-conflict` | Approved changes can't promote | `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
 | `budget-paused` | Cost hit configured pause threshold (default 85%) | `continue`*, `skip-current-task`*, `pause-run`, `abort-workflow` | `pause-run` |
 | `budget-exceeded` | Cost hit 100% of budget | `pause-run`, `abort-workflow` | `pause-run` |
-| `dependency-blocked` | Upstream task failed/skipped | `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `planner-split-rebase` |
+| `dependency-blocked` | Upstream task failed/skipped | `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
 
 \* Conditional. `retry-same-worker` requires retry budget remaining. `route-bigger-worker` requires a bigger profile in config. `continue` on `budget-paused` requires cost still below the hard cap. `continue` on `user-edit-conflict` requires `safeToContinue`. `skip-current-task` on `budget-paused` requires a next task.
 
@@ -169,7 +168,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 
 `route-bigger-worker` — Same as retry, but the recovery issue carries a `routeBiggerProfile` fact. The orchestrator uses this profile name to create a more capable implementer for the retry. Blocked if the profile doesn't exist in config.
 
-`planner-split-rebase` — Blocked with code `planner-proposal-required`. The action is listed as available, but execution requires a separate flow: the planner must propose new Task Briefs, and the user must approve/edit/reject them before the workflow resumes. This prevents silent task proliferation.
+`planner-split-rebase` — Legacy/manual only. New recovery issues do not offer it. If a saved state still contains it, selecting it blocks with `planner-proposal-required`; execution requires a separate flow where the planner proposes new Task Briefs and the user approves/edits/rejects them before the workflow resumes.
 
 `skip-current-task` — Records skip evidence in the evidence ledger, transitions `SKIP_TASK`, resolves recovery, publishes `task_skipped`. The workflow advances to the next task.
 

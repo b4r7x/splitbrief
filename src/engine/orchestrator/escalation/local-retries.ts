@@ -57,6 +57,8 @@ export async function runLocalRetries(
         implementer,
         config,
         signal,
+        sandboxEnv,
+        fileIgnoreProjectDir,
       }) =>
         implementer.retry({
           task: t,
@@ -73,6 +75,8 @@ export async function runLocalRetries(
           onOutput: textHandler,
           phase: state.phase,
           signal,
+          sandboxEnv,
+          fileIgnoreProjectDir,
         }),
     });
 

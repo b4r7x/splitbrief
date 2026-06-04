@@ -52,17 +52,17 @@ describe('recovery prompt', () => {
     expect(prompt).toContain('Recommended: route to bigger worker: cheap-cloud');
     expect(prompt).toContain('[r] retry same worker');
     expect(prompt).toContain('[b] route to bigger worker: cheap-cloud');
-    expect(prompt).toContain('[p] ask planner to split/rebase (approve/edit/reject proposal)');
     expect(prompt).toContain('[s] skip task');
     expect(prompt).toContain('[space] pause');
     expect(prompt).toContain('[a] abort');
+    expect(prompt).not.toContain('ask planner');
     expect(prompt).not.toContain('[c] continue');
   });
 
   it('parses answers into typed recovery actions and falls back to pause safely', () => {
     expect(parseRecoveryActionAnswer('r', baseIssue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('route bigger', baseIssue)).toBe('route-bigger-worker');
-    expect(parseRecoveryActionAnswer('p', baseIssue)).toBe('planner-split-rebase');
+    expect(parseRecoveryActionAnswer('p', baseIssue)).toBe('pause-run');
     expect(parseRecoveryActionAnswer('skip', baseIssue)).toBe('skip-current-task');
     expect(parseRecoveryActionAnswer(' ', baseIssue)).toBe('pause-run');
     expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('abort-workflow');
@@ -119,7 +119,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('c', issue)).toBe('pause-run');
   });
 
-  it('labels user-edit planner rebase as proposal-gated', () => {
+  it('hides legacy planner rebase actions and falls back to pause', () => {
     const issue: RecoveryIssue = {
       id: 'rec_user_edit',
       reason: 'user-edit-conflict',
@@ -142,8 +142,11 @@ describe('recovery prompt', () => {
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
-    expect(formatRecoveryPrompt(issue)).toContain(
-      '[p] ask planner to rebase on your edits (approve/edit/reject proposal)',
-    );
+    const prompt = formatRecoveryPrompt(issue);
+
+    expect(prompt).toContain('Recommended: pause');
+    expect(prompt).toContain('[space] pause');
+    expect(prompt).not.toContain('ask planner');
+    expect(parseRecoveryActionAnswer('p', issue)).toBe('pause-run');
   });
 });

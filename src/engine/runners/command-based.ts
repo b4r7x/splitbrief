@@ -9,6 +9,7 @@ export interface CommandBasedOptions {
   args?: string[] | undefined;
   outputFormat?: OutputFormat | undefined;
   supportPromptPlaceholder?: boolean | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
   timeout?: number | undefined;
   notFoundMessage?: string | undefined;
 }
@@ -70,6 +71,7 @@ export async function invokeCommandBasedRunner(
       command: finalCommand,
       args: finalArgs,
       cwd: projectDir,
+      env: opts.env,
       timeout: opts.timeout,
       onProgress: onOutput ?? (() => {}),
       stdinInput: useStdin ? prompt : undefined,
@@ -93,6 +95,7 @@ export async function invokeCommandBasedRunner(
       command: finalCommand,
       args: finalArgs,
       cwd: projectDir,
+      env: opts.env,
       stdin: useStdin ? prompt : undefined,
       format,
       notFoundMessage: opts.notFoundMessage,

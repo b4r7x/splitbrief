@@ -342,9 +342,9 @@ expect(clearSpy).toHaveBeenCalled();
 ```
 Good:
 ```ts
-abortStore.set({ pending: true });
+abortStore.arm('exit');
 resetWorkflow();
-expect(abortStore.get().pending).toBe(false);
+expect(abortStore.get().armed).toBe('none');
 ```
 Why: contract is "after reset, abort is cleared", not "reset invoked a named method".
 

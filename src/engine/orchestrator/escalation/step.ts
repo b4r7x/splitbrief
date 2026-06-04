@@ -58,6 +58,8 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
         implementerProfile: retryRuntime.implementerProfile,
       }),
       signal: ctx.signal,
+      sandboxEnv: staged.sandboxEnv,
+      fileIgnoreProjectDir: ctx.projectDir,
     });
   } catch (err) {
     staged.cleanup();

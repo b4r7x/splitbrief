@@ -41,6 +41,20 @@ function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | un
   throw cliError(`Recovery required: ${issue.message}`, 1);
 }
 
+function failIfFinalReviewIncomplete(projectDir: string, sessionId: string | undefined): void {
+  const reviewSessionId = sessionId ?? readActive(projectDir);
+  if (!reviewSessionId) return;
+  const state = loadState({ projectDir, sessionId: reviewSessionId });
+  if (state?.phase !== 'final-review') return;
+  process.stdout.write(
+    JSON.stringify({
+      type: 'final_review_failed',
+      sessionId: reviewSessionId,
+    }) + '\n',
+  );
+  throw cliError('Final review did not pass — workflow is incomplete.', 1);
+}
+
 export interface RunHeadlessOptions {
   feature: string;
   projectDir: string;
@@ -114,4 +128,5 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   });
 
   emitRecoveryAndFailIfPending(projectDir, sessionId);
+  failIfFinalReviewIncomplete(projectDir, sessionId);
 }

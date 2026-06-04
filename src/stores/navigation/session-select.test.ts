@@ -60,6 +60,28 @@ describe('handleSessionSelect (Enter routing)', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
+  it('refuses to resume an interrupted session whose saved state never reached a resumable phase', () => {
+    overlayStore.open('sessions');
+    const session = makeSession({
+      id: 'sess-poisoned',
+      feature: 'add auth',
+      status: 'interrupted',
+      summary: null,
+    });
+    const savedState = createInitialState('saved add auth');
+    expect(savedState.phase).toBe('idle');
+    saveState({ projectDir: tmp, sessionId: session.id }, savedState);
+
+    handleSessionSelect(session, tmp);
+
+    expect(overlayStore.get().active).toBe('sessions');
+    expect(routerStore.get().screen).toBe('home');
+    const feedback = feedbackStore.get();
+    expect(feedback.isError).toBe(true);
+    expect(feedback.message ?? '').toContain('interrupted before it made progress');
+    expect(feedback.message ?? '').toContain('add auth');
+  });
+
   it('keeps the picker open and surfaces feedback when an interrupted session has no valid state', () => {
     overlayStore.open('sessions');
     const session = makeSession({

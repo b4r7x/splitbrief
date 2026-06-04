@@ -128,12 +128,12 @@ describe('recovery issue builders', () => {
     expect(issue.availableActions).toEqual(
       expect.arrayContaining([
         'route-bigger-worker',
-        'planner-split-rebase',
         'skip-current-task',
         'pause-run',
         'abort-workflow',
       ]),
     );
+    expect(issue.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(issue);
 
     const override = buildRetryExhaustedRecoveryIssue({
@@ -145,6 +145,7 @@ describe('recovery issue builders', () => {
       allowRetryOverride: true,
     });
     expect(override.availableActions).toContain('retry-same-worker');
+    expect(override.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(override);
   });
 
@@ -162,13 +163,9 @@ describe('recovery issue builders', () => {
     expect(withRoute.reason).toBe('context-overflow');
     expect(withRoute.recommendedAction).toBe('route-bigger-worker');
     expect(withRoute.availableActions).toEqual(
-      expect.arrayContaining([
-        'route-bigger-worker',
-        'planner-split-rebase',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'abort-workflow']),
     );
+    expect(withRoute.availableActions).not.toContain('planner-split-rebase');
     expect(withRoute.facts).toMatchObject({
       estimatedTokens: 45_000,
       contextLength: 32_768,
@@ -182,10 +179,11 @@ describe('recovery issue builders', () => {
       routingDecision,
     });
 
-    expect(withoutRoute.recommendedAction).toBe('planner-split-rebase');
+    expect(withoutRoute.recommendedAction).toBe('pause-run');
     expect(withoutRoute.availableActions).toEqual(
-      expect.arrayContaining(['planner-split-rebase', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['pause-run', 'abort-workflow']),
     );
+    expect(withoutRoute.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(withoutRoute);
 
     const explicitlyUnavailableRoute = buildContextOverflowRecoveryIssue({
@@ -197,8 +195,9 @@ describe('recovery issue builders', () => {
     });
 
     expect(explicitlyUnavailableRoute.availableActions).toEqual(
-      expect.arrayContaining(['planner-split-rebase', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['pause-run', 'abort-workflow']),
     );
+    expect(explicitlyUnavailableRoute.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(explicitlyUnavailableRoute);
   });
 
@@ -222,14 +221,10 @@ describe('recovery issue builders', () => {
     expect(issue.files).toEqual(['src/current.ts']);
     expect(issue.affectedTaskIds).toEqual([task.id]);
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining([
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
     );
-    expect(issue.recommendedAction).toBe('planner-split-rebase');
+    expect(issue.availableActions).not.toContain('planner-split-rebase');
+    expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
   });
 
@@ -296,13 +291,9 @@ describe('recovery issue builders', () => {
     expect(issue.reason).toBe('approval-promotion-conflict');
     expect(issue.message).toBe('Approval promotion blocked for T016');
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining([
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
     );
+    expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(issue);
   });
@@ -373,14 +364,10 @@ describe('recovery issue builders', () => {
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining([
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
     );
-    expect(issue.recommendedAction).toBe('planner-split-rebase');
+    expect(issue.availableActions).not.toContain('planner-split-rebase');
+    expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
   });
 });
@@ -706,11 +693,15 @@ describe('applyRecoveryAction', () => {
   it('blocks planner-split-rebase until a proposal approval flow exists', () => {
     const { projectDir, sessionId } = setupSession('planner-proposal-required');
     const task = makeTask({ id: 'T037' });
-    const issue = buildDependencyBlockedRecoveryIssue({
-      task,
-      createdAt,
-      blockedByTaskIds: ['T001' as Task['id']],
-    });
+    const issue = {
+      ...buildDependencyBlockedRecoveryIssue({
+        task,
+        createdAt,
+        blockedByTaskIds: ['T001' as Task['id']],
+      }),
+      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'planner-split-rebase',
+    } satisfies ReturnType<typeof buildDependencyBlockedRecoveryIssue>;
     const state = { ...implementingState([task]), pendingRecovery: issue };
     saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);

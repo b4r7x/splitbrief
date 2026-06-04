@@ -66,6 +66,27 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(written).toContain('return "hi"');
   });
 
+  it('forwards the abort signal to the underlying fetch call', async () => {
+    const code = '```ts\nexport const x = 1;\n```';
+    fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
+
+    const controller = new AbortController();
+    const implementer = createApiImplementer(makeConfig());
+    const task = makeTask({ id: 'T-signal', file: 'src/signal.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      signal: controller.signal,
+    });
+
+    const init = fetchMock.mock.calls.at(0)?.[1] as { signal?: unknown } | undefined;
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('returns failure when the stream response has no extractable code', async () => {
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([{ content: 'I think you should try writing this yourself.' }]),
@@ -264,6 +285,37 @@ describe('api implementer — Anthropic path', () => {
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.usage).toEqual({ inputTokens: 88, outputTokens: 44 });
+  });
+
+  it('forwards the abort signal to the Anthropic fetch call', async () => {
+    const code = '```ts\nexport const x = 1;\n```';
+    fetchMock.mockResolvedValue(
+      makeAnthropicSseResponse(code, { input_tokens: 1, output_tokens: 1 }),
+    );
+
+    const cfg = makeConfig({
+      implementer: {
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'test-key',
+        model: 'claude-sonnet-4-6',
+      },
+    });
+    const controller = new AbortController();
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T-ant-signal', file: 'src/ant-signal.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      signal: controller.signal,
+    });
+
+    const init = fetchMock.mock.calls.at(0)?.[1] as { signal?: unknown } | undefined;
+    expect(init?.signal).toBe(controller.signal);
   });
 
   it('picks up ANTHROPIC_API_KEY from env when no apiKey is configured', async () => {

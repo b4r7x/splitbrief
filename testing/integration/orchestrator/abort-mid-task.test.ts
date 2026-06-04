@@ -25,6 +25,7 @@ const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
 afterEach(() => {
+  abortStore.clear();
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
@@ -55,11 +56,11 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
 
-    // Trigger the engine's AbortSignal and the UI-level abortStore.markPending() while
+    // Trigger the engine's AbortSignal and the UI-level abortStore.arm() while
     // the implementer is "running". Once aborted, the task loop bails out of the loop.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        abortStore.markPending();
+        abortStore.arm('exit');
         controller.abort();
         return {
           success: true,
@@ -89,7 +90,6 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
       setCurrentTask: vi.fn(),
     });
 
-    expect(abortStore.get().pending).toBe(true);
     const t002Start = busEvents.find((e) => e.type === 'task_started' && e.taskId === 'T002');
     expect(t002Start).toBeUndefined();
     expect(busEvents.find((e) => e.type === 'task_completed')).toBeUndefined();

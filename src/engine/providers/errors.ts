@@ -42,6 +42,17 @@ export const providerError = {
       apiBase: redactSecrets(apiBase),
       reason,
     }),
+  apiKeyEnvMissing: (envVar: string) =>
+    error(
+      'provider-api-key-env-missing',
+      `Configured apiKey references ${envVar}, but that environment variable is not set`,
+      { envVar },
+    ),
+  invalidApiKeyEnvReference: () =>
+    error(
+      'provider-invalid-api-key-env-reference',
+      'Invalid apiKey env reference; expected env:VARIABLE_NAME',
+    ),
   apiBaseExfiltration: (provider: string, envVar: string) =>
     error(
       'provider-api-base-exfiltration',

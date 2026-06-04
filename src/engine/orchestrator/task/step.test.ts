@@ -759,12 +759,7 @@ describe('runSingleTask — happy path', () => {
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
       files: ['src/race.ts'],
-      availableActions: [
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',

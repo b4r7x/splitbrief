@@ -1,8 +1,8 @@
 import { buildPrompt, fenced, instructionsSection } from './prompt-builder.js';
 
-const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.`;
+const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.`;
 
-const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from the spec. Is it satisfied by the implementation?
+const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from the spec and task briefs. Is it satisfied by the implementation?
 2. **Functional Requirements**: Are all inputs handled? Is processing correct? Are outputs as specified?
 3. **Error Handling**: Are error cases handled as specified?
 4. **Edge Cases**: Are boundary conditions addressed?
@@ -27,13 +27,19 @@ List any issues found, categorized as:
 ### Summary
 One-paragraph overall assessment.`;
 
-export function buildFinalReviewPrompt(spec: string, diff: string, driftReport?: string): string {
+export function buildFinalReviewPrompt(opts: {
+  spec: string;
+  taskBriefs: string;
+  diff: string;
+  driftReport?: string | undefined;
+}): string {
   const sections = [
-    { heading: 'Specification', body: spec },
-    { heading: 'Implementation Diff', body: fenced(diff, 'diff') },
+    { heading: 'Specification', body: opts.spec },
+    { heading: 'Task Briefs', body: opts.taskBriefs },
+    { heading: 'Implementation Diff', body: fenced(opts.diff, 'diff') },
   ];
-  if (driftReport) {
-    sections.push({ heading: 'Deterministic Drift Report', body: driftReport });
+  if (opts.driftReport) {
+    sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });
   }
   sections.push(
     instructionsSection(REVIEW_INSTRUCTIONS),

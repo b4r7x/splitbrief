@@ -938,10 +938,20 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--planner <tool>` | Planner tool override | start, resume, continue, last |
 | `--planner-model <m>` | Planner model override | start, resume, continue, last |
 | `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume, continue, last |
+| `--planner-api-base <url>` | Planner API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
+| `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api/agent-sdk only; warns + ignored otherwise) | start, resume, continue, last |
+| `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
+| `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
+| `--planner-context-length <tokens>` | Planner context length (tokens) | start, resume, continue, last |
 | `--planner-effort <level>` | Planner effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
 | `--implementer <p>` | Implementer provider override | start, resume, continue, last |
 | `--implementer-model <m>` | Implementer model override | start, resume, continue, last |
 | `--implementer-command <cmd>` | Custom implementer command (kind=shell) | start, resume, continue, last |
+| `--implementer-api-base <url>` | Implementer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
+| `--implementer-api-key-env <var>` | Implementer API key env var, stored as `env:<var>` (kind=api/agent-sdk only; warns + ignored otherwise) | start, resume, continue, last |
+| `--implementer-args <arg>` | Append an implementer CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
+| `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
+| `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue, last |
 | `--project <dir>` | Project directory (default cwd) | most commands |
 | `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last |
 | `--no-mouse` | Disable mouse tracking | start, resume, continue, last |
@@ -949,7 +959,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
 | `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
-| `--worktree [name]` | Start in a linked git worktree | start |
+| `--worktree [name]` | Run in a linked git worktree | start, resume, continue, last |
 | `--yolo` | Skip action-level tiered approval prompts for this session | start, resume, continue, last |
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |

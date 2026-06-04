@@ -44,6 +44,14 @@ export function requestCancel(): boolean {
   return true;
 }
 
+export type InterruptResult = 'turn' | 'workflow' | 'none';
+
+export function interruptTurn(): InterruptResult {
+  if (abortTurn()) return 'turn';
+  if (requestCancel()) return 'workflow';
+  return 'none';
+}
+
 export function requestRewind(request: RewindTarget): boolean {
   if (!handlers.rewind) return false;
   handlers.rewind(request);

@@ -61,7 +61,7 @@ export function createClaudeCodePlanner(opts: {
       return { text: result.text, usage: result.usage };
     },
 
-    async invokeEscalate({ prompt, projectDir, callbacks, signal }) {
+    async invokeEscalate({ prompt, projectDir, callbacks, signal, sandboxEnv }) {
       return runClaudeOneShot({
         prompt,
         projectDir,
@@ -69,6 +69,7 @@ export function createClaudeCodePlanner(opts: {
         model: resolvedModel,
         ...(effort !== undefined && { effort }),
         ...(signal !== undefined && { signal }),
+        ...(sandboxEnv !== undefined && { env: sandboxEnv }),
       });
     },
 

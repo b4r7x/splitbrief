@@ -4,7 +4,7 @@ import type { Attachment } from '../core/schemas/attachment.js';
 import type { TokenDelta } from '../core/schemas/tokens.js';
 import { effortToAnthropicBudget } from '../core/schemas/enums.js';
 import { accumulateUsage, toTokenDelta } from './streaming/token-utils.js';
-import { createChangeDetector } from './change-detection.js';
+import { createChangeDetector, type ChangeDetector } from './change-detection.js';
 import { createSessionResumeState, runWithResumeFallback } from './session-expiry.js';
 import { error } from '../utils/error.js';
 import { throwIfAborted } from '../utils/abort.js';
@@ -183,14 +183,12 @@ export interface AgentSdkInvokeOpts {
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  env?: Record<string, string | undefined> | undefined;
 }
 
 export interface AgentSdkBackend {
   invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
-  detectChanges?: (
-    projectDir: string,
-    before: string[],
-  ) => Promise<{ changed: boolean; output: string }>;
+  detectChanges?: ChangeDetector;
 }
 
 function buildPromptWithImages(prompt: string, images: Attachment[] | undefined): string {
@@ -219,6 +217,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       effort,
       images,
       signal,
+      env,
     }) {
       throwIfAborted(signal);
       const { query } = await loadSdk();
@@ -242,10 +241,17 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
         if (resumeId) options.resume = resumeId;
         if (effort)
           options.thinking = { type: 'enabled', budgetTokens: effortToAnthropicBudget(effort) };
-        // Scope ANTHROPIC_API_KEY to this SDK call via the `env` option so concurrent
-        // workflows with different keys don't race. Omit `env` entirely when no override
-        // is set so the SDK inherits process.env as usual.
-        if (apiKey) options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey };
+        // Set `options.env` for two reasons: `env` carries the sandbox HOME/XDG/cache
+        // redirect (opts.sandboxEnv) that isolates a staged direct-implementer run, and
+        // `apiKey` scopes ANTHROPIC_API_KEY to this SDK call so concurrent workflows with
+        // different keys don't race. Omit `env` entirely only when neither is set, so the
+        // SDK inherits process.env as usual.
+        if (env || apiKey) {
+          options.env = {
+            ...(env ?? process.env),
+            ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
+          };
+        }
         if (forwardedAbort.controller) options.abortController = forwardedAbort.controller;
         try {
           return await processStream({

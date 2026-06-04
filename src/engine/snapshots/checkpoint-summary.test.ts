@@ -257,7 +257,7 @@ describe('listCheckpointSummaries', () => {
       conflictsSkippedByDefault: true,
       forceOverwritesConflicts: true,
       partialRestoreExpected: true,
-      excludedPaths: ['.git/', '.diptych/', 'node_modules/', '.trees/'],
+      excludedPaths: ['.git/', '.diptych/', '.diptych-sandbox/', 'node_modules/', '.trees/'],
     });
     expect(CHECKPOINT_RESTORE_SAFETY.text.hashGuarded).toContain('hash-guarded');
     expect(CHECKPOINT_RESTORE_SAFETY.text.conflictsSkippedByDefault).toContain(

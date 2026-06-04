@@ -177,10 +177,11 @@ export interface ClaudeOneShotOpts {
   model?: string | undefined;
   effort?: EffortLevel | undefined;
   signal?: AbortSignal | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
-  const { prompt, projectDir, onOutput, model, effort, signal } = opts;
+  const { prompt, projectDir, onOutput, model, effort, signal, env } = opts;
   const { state, handleLine } = createStreamHandler({ onOutput });
   const args = buildClaudeArgs({ model });
 
@@ -188,6 +189,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeR
     command: 'claude',
     args,
     cwd: projectDir,
+    env,
     stdin: applyEffortPrefix(prompt, effort),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,

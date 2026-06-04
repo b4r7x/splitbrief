@@ -17,6 +17,10 @@ import {
 } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { truncateByChars } from '../../../utils/truncate.js';
+import { createStagedProject } from '../approval/staged-project.js';
+import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
+import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
+import { persistRetryApprovalEvidence } from './retry-evidence.js';
 import { runRetryStep } from './step.js';
 import {
   MAX_HINT_ERROR_LENGTH,
@@ -108,7 +112,15 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
     commitSuffix: 'intermediate',
     usageCategory: 'implementer',
     retryFailureFallback: 'Intermediate escalation failed',
-    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, signal }) =>
+    invokeRetry: async ({
+      task: t,
+      lastError: err,
+      attempts: a,
+      projectDir,
+      signal,
+      sandboxEnv,
+      fileIgnoreProjectDir,
+    }) =>
       intermediateImplementer.retry({
         task: t,
         projectDir,
@@ -124,6 +136,8 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
         onOutput: textHandler,
         phase: state.phase,
         signal,
+        sandboxEnv,
+        fileIgnoreProjectDir,
       }),
   });
 }
@@ -190,17 +204,48 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
     ctx.projectDir,
     state.discoveredValidation?.language,
   );
-  const tier1Result = await ctx.planner.escalateHint({
-    task: initialTask,
-    error: lastError,
-    projectDir: ctx.projectDir,
-    callbacks: {
-      onOutput: textHandler,
-      signal: ctx.signal,
-    },
-    languageContext,
-  });
+  const staged = await createStagedProject(ctx.projectDir);
+  let tier1Result: Awaited<ReturnType<typeof ctx.planner.escalateHint>>;
+  try {
+    tier1Result = await ctx.planner.escalateHint({
+      task: initialTask,
+      error: lastError,
+      projectDir: staged.projectDir,
+      callbacks: {
+        onOutput: textHandler,
+        signal: ctx.signal,
+      },
+      languageContext,
+      sandboxEnv: staged.sandboxEnv,
+      fileIgnoreProjectDir: ctx.projectDir,
+    });
+  } catch (err) {
+    staged.cleanup();
+    throw err;
+  }
   state = addUsageAndSave(ctx, state, 'escalation', tier1Result.usage);
+
+  const gateResult = await gateAndPromoteChangedFiles({
+    task: initialTask,
+    state,
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    bus: ctx.bus,
+    callbacks: ctx.callbacks,
+    config: ctx.config,
+    staged,
+    usesStaging: true,
+    taskStartSnapshot: ctx.taskStartSnapshot,
+    dependsOnFiles: ctx.dependsOnFiles,
+    promoteFromStagingOnly: true,
+    catchChangedFilesError: true,
+    signal: ctx.signal,
+    cleanup: staged.cleanup,
+    handleConflict: (s, files) =>
+      handleApprovalTimeUserEditConflict({ ctx, state: s, task: initialTask, files }),
+    onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, initialTask, decision),
+  });
+  state = gateResult.state;
 
   if (tier1Result.output) {
     textHandler(tier1Result.output);
@@ -231,6 +276,8 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
       implementer,
       config,
       signal,
+      sandboxEnv,
+      fileIgnoreProjectDir,
     }) =>
       implementer.retry({
         task: t,
@@ -244,6 +291,8 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
         onOutput: textHandler,
         phase: state.phase,
         signal,
+        sandboxEnv,
+        fileIgnoreProjectDir,
       }),
   });
 }
@@ -280,13 +329,22 @@ async function runFullTier(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    invokeRetry: async ({ task: t, lastError: err, projectDir, signal }) =>
+    invokeRetry: async ({
+      task: t,
+      lastError: err,
+      projectDir,
+      signal,
+      sandboxEnv,
+      fileIgnoreProjectDir,
+    }) =>
       ctx.planner.escalateFull({
         task: t,
         error: err,
         projectDir,
         callbacks: { onOutput: textHandler, signal },
         languageContext,
+        sandboxEnv,
+        fileIgnoreProjectDir,
       }),
     onValidationAfterRetryFail: (validationError) => {
       publishWarning(

@@ -358,18 +358,21 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+/` | Open help overlay (sent as control character `\x1f`) | `src/app/keys.ts` |
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
 | `Ctrl+Q` | Quit application | `src/app/keys.ts` |
-| `Ctrl+C` | Abort in-flight turn (workflow screen) or exit otherwise | `src/app/keys.ts` |
-| `Ctrl+C` ×2 | Force exit (within 2 seconds — `DOUBLE_PRESS_WINDOW_MS`) | `src/app/keys.ts` |
-| `Esc` | Close the topmost overlay | `src/app/keys.ts` |
+| `Ctrl+C` | Interrupt in-flight turn (workflow screen) or exit otherwise | `src/app/keys.ts` |
+| `Ctrl+C` ×2 | Exit (second press while exit is armed, within 2s) | `src/app/keys.ts` |
+| `Esc Esc` | Interrupt current step / cancel workflow at a prompt (workflow screen) | `src/app/keys.ts` |
+| `Esc` | Close the topmost overlay, or navigate home once the workflow is cancelled | `src/app/keys.ts` |
 
-`Ctrl+C` behaviour on the workflow screen depends on phase: if a live phase is running (`isLivePhase` from `src/core/phases.ts`) and the workflow is not already cancelled, the first press calls `abortTurn`, marks the abort store as pending, kills tracked subprocesses via `killAllProcesses` (`src/lib/process/registry.ts`), and shows `"Aborting… Ctrl+C again to exit"`. A second press within the window exits.
+`Ctrl+C` behaviour depends on the screen. Off the workflow screen (and for an attach client), it exits immediately. On the workflow screen, if a live phase is running (`isLivePhase` from `src/core/phases.ts`) and the workflow is not already cancelled, the first press interrupts the turn, kills tracked subprocesses via `killAllProcesses` (`src/lib/process/registry.ts`), then arms the abort store for exit via `abortStore.arm('exit')` (`src/stores/workflow/abort.ts`), which shows `"Ctrl+C again to exit"`. A second press while `armed` is `'exit'` (within the 2s auto-clear window) exits.
+
+`Esc Esc` is a double-press on the workflow screen. The first press arms an abort intent — `interrupt` while a live phase runs, or `cancel` while a question prompt is open (`abortStore.arm(...)`); the second press fires it (interrupting the step or cancelling the workflow). The abort store tracks one `armed` kind at a time (`none`, `exit`, `interrupt`, or `cancel`) and auto-clears after 2 seconds.
 
 ### Home screen only
 
 | Key | Action | Source |
 |---|---|---|
 | `Ctrl+S` | Open the skills overlay | `src/app/keys.ts` |
-| `Ctrl+I` | Open the settings overlay (alternate binding) | `src/app/keys.ts` |
+| `Ctrl+R` | Focus the recent sessions list | `src/features/home/use-recent-sessions-focus.ts` |
 
 ### Workflow screen
 
@@ -380,7 +383,7 @@ These keys are handled in `src/features/workflow/hooks/use-workflow-keys.ts` and
 | `$` | Open the cost drilldown overlay (any key dismisses it) | `use-workflow-keys.ts:85` |
 | `Ctrl+E` | Toggle the sidebar (only when terminal is wide enough) | `keyboard.ts:33` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts:37` |
-| `Esc` | Navigate home (only when the workflow has been cancelled) | `keyboard.ts:21` |
+| `Esc` | Navigate home (only when the workflow has been cancelled) | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts:69` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts:72` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts:76` |
@@ -412,12 +415,15 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 
 | ID | Key | Description | Screens |
 |---|---|---|---|
-| `exit` | `Ctrl+C` | Exit (double-press) | all |
+| `exit` | `Ctrl+C` | Interrupt, then exit (press again) | workflow |
+| `exit` | `Ctrl+C` | Exit | home, summary, setup |
 | `command-palette` | `Ctrl+K` | Command palette | all |
 | `help` | `Ctrl+/` | Help | all |
 | `quit` | `Ctrl+Q` | Quit | all |
+| `interrupt` | `Esc Esc` | Interrupt current step (press again) | workflow |
+| `cancel` | `Esc Esc` | Cancel workflow at a prompt (press again) | workflow |
+| `recent-sessions` | `Ctrl+R` | Focus recent sessions | home |
 | `skills` | `Ctrl+S` | Skills picker | home |
-| `config` | `Ctrl+I` | Config picker | home |
 | `settings` | `Ctrl+,` | Settings | all |
 | `close-overlay` | `Esc` | Close overlay | all |
 | `toggle-sidebar` | `Ctrl+E` | Toggle sidebar | workflow |

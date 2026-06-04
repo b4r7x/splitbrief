@@ -8,12 +8,16 @@ import {
 } from '../agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
+import { resolveApiKeyOverride } from '../providers/client.js';
 
 export function createAgentSdkImplementer(
   config: Config,
   options?: ImplementerFactoryOptions,
 ): Implementer {
-  const apiKey = config.implementer.kind === 'agent-sdk' ? config.implementer.apiKey : undefined;
+  const apiKey =
+    config.implementer.kind === 'agent-sdk'
+      ? resolveApiKeyOverride(config.implementer.apiKey)
+      : undefined;
   const effectiveModel =
     resolveAutoModel(config.implementer.model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
@@ -28,7 +32,14 @@ export function createAgentSdkImplementer(
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal } = opts;
-      return backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput, signal });
+      return backend.invoke({
+        prompt,
+        projectDir,
+        model: effectiveModel,
+        onOutput,
+        signal,
+        env: opts.sandboxEnv,
+      });
     },
 
     ...(backend.detectChanges && { detectChanges: backend.detectChanges }),

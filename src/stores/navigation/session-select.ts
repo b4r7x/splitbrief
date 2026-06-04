@@ -1,6 +1,7 @@
 import type { Session } from '../../core/schemas/session.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState } from '../../core/state/persistence.js';
+import { isResumable } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { overlayStore } from '../ui/overlay.js';
 import { feedbackStore } from '../ui/feedback.js';
@@ -18,6 +19,12 @@ export function handleSessionSelect(session: Session, projectDir: string) {
     if (!resumeState) {
       feedbackStore.setError(
         `Cannot resume "${session.feature}": saved workflow state is missing or invalid`,
+      );
+      return;
+    }
+    if (!isResumable(resumeState)) {
+      feedbackStore.setError(
+        `Cannot resume "${session.feature}": interrupted before it made progress — start it again.`,
       );
       return;
     }

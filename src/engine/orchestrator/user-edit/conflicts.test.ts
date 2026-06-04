@@ -31,12 +31,7 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.kind).toBe('current-task-conflict');
     expect(conflict.safeToContinue).toBe(false);
     expect(conflict.affectedTaskIds).toEqual(['T001']);
-    expect(conflict.availableActions).toEqual([
-      'regenerate-rebase',
-      'pause',
-      'skip-current-task',
-      'abort-workflow',
-    ]);
+    expect(conflict.availableActions).toEqual(['pause', 'skip-current-task', 'abort-workflow']);
   });
 
   it('marks future task inputs stale without blocking the current task', () => {
@@ -52,12 +47,7 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.kind).toBe('future-task-stale-input');
     expect(conflict.safeToContinue).toBe(true);
     expect(conflict.affectedTaskIds).toEqual(['T002']);
-    expect(conflict.availableActions).toEqual([
-      'continue-unrelated',
-      'regenerate-rebase',
-      'pause',
-      'abort-workflow',
-    ]);
+    expect(conflict.availableActions).toEqual(['continue-unrelated', 'pause', 'abort-workflow']);
   });
 
   it('classifies dependency task files as blocking', () => {

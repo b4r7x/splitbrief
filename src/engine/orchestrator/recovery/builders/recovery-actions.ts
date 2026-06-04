@@ -1,10 +1,11 @@
 import type { RecoveryAction } from '../../../../core/schemas/enums.js';
-import type { UserEditConflict, UserEditConflictAction } from '../../../events/workflow-events.js';
+import type { UserEditConflict } from '../../../events/workflow-events.js';
+
+export { userEditActionToRecoveryAction as mapUserEditAction } from '../../../../core/recovery/user-edit-actions.js';
 
 const ACTION_ORDER: RecoveryAction[] = [
   'retry-same-worker',
   'route-bigger-worker',
-  'planner-split-rebase',
   'continue',
   'skip-current-task',
   'pause-run',
@@ -31,14 +32,7 @@ export function chooseUserEditRecommendation(
   actions: RecoveryAction[],
 ): RecoveryAction {
   if (conflict.safeToContinue && actions.includes('continue')) return 'continue';
-  return chooseRecommended(actions, ['planner-split-rebase', 'pause-run']);
-}
-
-export function mapUserEditAction(action: UserEditConflictAction): RecoveryAction {
-  if (action === 'continue-unrelated') return 'continue';
-  if (action === 'regenerate-rebase') return 'planner-split-rebase';
-  if (action === 'pause') return 'pause-run';
-  return action;
+  return chooseRecommended(actions, ['pause-run']);
 }
 
 export function hasRouteBigger(opts: {

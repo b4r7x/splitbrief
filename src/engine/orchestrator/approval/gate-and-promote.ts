@@ -69,9 +69,10 @@ export async function gateAndPromoteChangedFiles(
   let changedFiles: string[];
   let fromStaging = Boolean(staged);
   try {
+    const changedFilesSnapshot = staged?.snapshot ?? taskStartSnapshot;
     changedFiles = await getChangedFilesSinceSnapshot(
       staged?.projectDir ?? projectDir,
-      taskStartSnapshot,
+      changedFilesSnapshot,
     );
     if (usesStaging && changedFiles.length === 0) {
       changedFiles = await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
@@ -136,12 +137,18 @@ export async function gateAndPromoteChangedFiles(
 
   const shouldPromote = staged !== undefined && (opts.promoteFromStagingOnly ? fromStaging : true);
   if (staged && shouldPromote) {
-    const promoteResult = await promoteStagedChanges({
-      targetProjectDir: projectDir,
-      stagedProjectDir: staged.projectDir,
-      files: changedFiles,
-      expectedCurrentContents: preApprovalChangedFileContents,
-    });
+    let promoteResult: Awaited<ReturnType<typeof promoteStagedChanges>>;
+    try {
+      promoteResult = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: staged.projectDir,
+        files: changedFiles,
+        expectedCurrentContents: preApprovalChangedFileContents,
+      });
+    } catch (err) {
+      cleanup?.();
+      return { outcome: 'error', state, error: err };
+    }
     if (promoteResult.conflictedFiles.length > 0) {
       state = await handleConflict(state, promoteResult.conflictedFiles);
       cleanup?.();

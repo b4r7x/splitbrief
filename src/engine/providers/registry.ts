@@ -2,7 +2,7 @@ import type { ProviderDef, ProviderOverrides } from './types.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/discovery/detection.js';
-import { validateProviderBaseURL } from './client.js';
+import { apiKeyEnvReference, validateProviderBaseURL } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenRouterProvider } from './openrouter.js';
@@ -77,10 +77,12 @@ function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): 
   const info = PROVIDER_CATALOG[name];
   if (!info.apiKeyEnv) return;
   if (info.baseURL && overrides.apiBase && isSameOrigin(overrides.apiBase, info.baseURL)) return;
-  if (overrides.apiKey) return;
-  const envKey = process.env[info.apiKeyEnv];
+  const envRef = apiKeyEnvReference(overrides.apiKey);
+  if (overrides.apiKey && !envRef) return;
+  const envVar = envRef ?? info.apiKeyEnv;
+  const envKey = process.env[envVar];
   if (!envKey) return;
-  throw providerError.apiBaseExfiltration(name, info.apiKeyEnv);
+  throw providerError.apiBaseExfiltration(name, envVar);
 }
 
 function getImplementerProvider(config: Config): ProviderDef {

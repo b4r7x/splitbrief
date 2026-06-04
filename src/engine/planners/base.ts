@@ -59,6 +59,7 @@ type InternalInvokeFn = (opts: {
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }) => Promise<InvokeResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.

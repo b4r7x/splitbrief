@@ -79,8 +79,9 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     mode: 'plan' | 'escalate';
     resumeId: string | null;
     signal?: AbortSignal | undefined;
+    sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<InvokeResult> {
-    const { prompt, projectDir, callbacks, mode, resumeId, signal } = opts;
+    const { prompt, projectDir, callbacks, mode, resumeId, signal, sandboxEnv } = opts;
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
       prompt,
@@ -95,6 +96,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       command: tool.command,
       args: planner.buildArgs(buildOpts),
       cwd: projectDir,
+      env: sandboxEnv,
       notFoundMessage: tool.notFoundMessage,
       parseLine: planner.parseLine,
       onText: callbacks.onOutput,
@@ -122,17 +124,26 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>;
     mode: 'plan' | 'escalate';
     signal?: AbortSignal | undefined;
+    sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<InvokeResult> {
-    const { prompt, projectDir, callbacks, mode, signal } = opts;
+    const { prompt, projectDir, callbacks, mode, signal, sandboxEnv } = opts;
     if (!supportsSessionResume) {
-      return runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal });
+      return runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal, sandboxEnv });
     }
 
     const priorId = session.getResumeId();
     return runWithResumeFallback(
       session,
       (resumeId) =>
-        runOnce({ prompt, projectDir, callbacks, mode, resumeId: resumeId ?? null, signal }),
+        runOnce({
+          prompt,
+          projectDir,
+          callbacks,
+          mode,
+          resumeId: resumeId ?? null,
+          signal,
+          sandboxEnv,
+        }),
       () => {
         if (priorId) callbacks.onSessionExpired?.(priorId);
       },
@@ -142,8 +153,8 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   return createPlannerBase({
     invokePlan: ({ prompt, projectDir, callbacks, signal }) =>
       invoke({ prompt, projectDir, callbacks, mode: 'plan', signal }),
-    invokeEscalate: ({ prompt, projectDir, callbacks, signal }) =>
-      invoke({ prompt, projectDir, callbacks, mode: 'escalate', signal }),
+    invokeEscalate: ({ prompt, projectDir, callbacks, signal, sandboxEnv }) =>
+      invoke({ prompt, projectDir, callbacks, mode: 'escalate', signal, sandboxEnv }),
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 

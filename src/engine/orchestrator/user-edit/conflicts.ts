@@ -10,7 +10,6 @@ import type {
 } from '../../events/workflow-events.js';
 
 export const DESTRUCTIVE_CONFLICT_ACTIONS: readonly UserEditConflictAction[] = [
-  'regenerate-rebase',
   'pause',
   'skip-current-task',
   'abort-workflow',
@@ -75,11 +74,8 @@ function dominantKind(fileConflicts: UserEditConflictFile[]): UserEditConflictKi
 }
 
 function actionsFor(kind: UserEditConflictKind): UserEditConflictAction[] {
-  if (kind === 'unrelated') {
+  if (kind === 'unrelated' || kind === 'future-task-stale-input') {
     return ['continue-unrelated', 'pause', 'abort-workflow'];
-  }
-  if (kind === 'future-task-stale-input') {
-    return ['continue-unrelated', 'regenerate-rebase', 'pause', 'abort-workflow'];
   }
   return [...DESTRUCTIVE_CONFLICT_ACTIONS];
 }

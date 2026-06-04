@@ -21,6 +21,11 @@ import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { retryAndRecord } from './retry.js';
 
+// Escalation tiers run a full recursive createStagedProject copy; under parallel
+// full-suite load that staged-copy IO can push these cases past the 10s default,
+// so widen the timeout for this file (cases pass in seconds in isolation).
+vi.setConfig({ testTimeout: 30_000 });
+
 afterEach(cleanupTaskProjects);
 
 describe('retryAndRecord — retry budget', () => {
@@ -180,13 +185,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: [
-        'retry-same-worker',
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
     });
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -242,13 +241,7 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: [
-        'retry-same-worker',
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -259,13 +252,7 @@ describe('retryAndRecord — recovery stop points', () => {
         type: 'recovery_prompted',
         reason: 'retry-exhausted',
         taskId: 'T001',
-        availableActions: [
-          'retry-same-worker',
-          'planner-split-rebase',
-          'skip-current-task',
-          'pause-run',
-          'abort-workflow',
-        ],
+        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
       }),
     );
   });

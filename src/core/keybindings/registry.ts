@@ -9,10 +9,33 @@ interface ShortcutInfo {
 }
 
 const SHORTCUTS: ShortcutInfo[] = [
-  { id: 'exit', key: 'Ctrl+C', description: 'Exit (double-press)', screens: ALL_SCREENS },
+  {
+    id: 'exit',
+    key: 'Ctrl+C',
+    description: 'Interrupt, then exit (press again)',
+    screens: ['workflow'],
+  },
+  {
+    id: 'exit',
+    key: 'Ctrl+C',
+    description: 'Exit',
+    screens: ['home', 'summary', 'setup'],
+  },
   { id: 'command-palette', key: 'Ctrl+K', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'Ctrl+/', description: 'Help', screens: ALL_SCREENS },
   { id: 'quit', key: 'Ctrl+Q', description: 'Quit', screens: ALL_SCREENS },
+  {
+    id: 'interrupt',
+    key: 'Esc Esc',
+    description: 'Interrupt current step (press again)',
+    screens: ['workflow'],
+  },
+  {
+    id: 'cancel',
+    key: 'Esc Esc',
+    description: 'Cancel workflow at a prompt (press again)',
+    screens: ['workflow'],
+  },
   {
     id: 'recent-sessions',
     key: 'Ctrl+R',
