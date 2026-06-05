@@ -3,7 +3,6 @@ import type { Section } from '../../core/sections/event-sections.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
-  | { type: 'navigate-home' }
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; index: number }
   | { type: 'review-scroll'; offset: number }
@@ -18,12 +17,6 @@ export type WorkflowKeyAction =
   | { type: 'conversation-scroll-bottom'; renderableCount: number };
 
 const NONE: WorkflowKeyAction = { type: 'none' };
-
-export function handleWorkflowEscape(key: Key, cancelled: boolean): WorkflowKeyAction {
-  if (!key.escape) return NONE;
-  if (cancelled) return { type: 'navigate-home' };
-  return NONE;
-}
 
 export interface WorkflowCtrlChordsInput {
   input: string;

@@ -154,7 +154,7 @@ export function useWorkflowRunner({
           stop: () => streamingOutputStore.stopStreaming(),
         };
 
-        await runWorkflow({
+        const summary = await runWorkflow({
           feature,
           plannerContext,
           projectDir,
@@ -184,6 +184,14 @@ export function useWorkflowRunner({
 
         const savedSessionId = readActive(projectDir) ?? activeSessionId;
         const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
+
+        // A failed final-review gate returns without onComplete and leaves the phase at
+        // 'final-review' (a LIVE_PHASE). Drive the screen to the terminal summary view so
+        // the user is not stranded on a live-looking workflow screen.
+        if (!saved?.pendingRecovery && saved?.phase === 'final-review') {
+          onComplete(summary);
+          return;
+        }
         if (!saved?.pendingRecovery) return;
 
         activeSessionId = savedSessionId;

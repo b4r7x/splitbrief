@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { wireMouseScroll } from './use-mouse-scroll.js';
-import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/mouse.js';
+import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -20,6 +20,7 @@ function createMockFilteredStdin() {
           listener = undefined;
         };
       },
+      isPasteActive: () => false,
       disable: () => {},
     } satisfies FilteredStdin,
     emit: (type: 'wheel-up' | 'wheel-down', x = 1, y = 1) =>

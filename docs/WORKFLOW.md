@@ -313,7 +313,7 @@ Recovery actions:
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
 | `pause-run` | Keeps issue pending and session resumable |
 | `abort-workflow` | Exits through normal shutdown |
-| `planner-split-rebase` | Typed but deferred — proposal generation is blocked |
+| `planner-split-rebase` | Legacy/manual only; new prompts do not offer it, and old states block with `planner-proposal-required` |
 
 Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `CLEAR_PENDING_RECOVERY` or `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `diptych resume`.
 

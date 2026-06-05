@@ -1,7 +1,5 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { routerStore } from '../../../stores/navigation/router.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { getSections } from '../../../stores/workflow/actions.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -11,7 +9,6 @@ import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { findLatestRenderableDiffEventIndex } from '../../../core/sections/event-sections.js';
 import {
-  handleWorkflowEscape,
   handleWorkflowCtrlChords,
   handleReviewScroll,
   handleConversationScroll,
@@ -22,9 +19,6 @@ import { readConversationScrollSnapshot, readReviewContentHeight } from '../layo
 function applyAction(action: WorkflowKeyAction) {
   switch (action.type) {
     case 'none':
-      return;
-    case 'navigate-home':
-      routerStore.navigate({ to: 'home' });
       return;
     case 'toggle-sidebar':
       controlsStore.toggleSidebar();
@@ -94,15 +88,6 @@ export function useWorkflowKeys(isActive: boolean) {
 
   useInput(
     (input, key) => {
-      if (key.escape) {
-        const { cancelled } = lifecycleStore.get();
-        const action = handleWorkflowEscape(key, cancelled);
-        if (action.type !== 'none') {
-          applyAction(action);
-          return;
-        }
-      }
-
       const sections = getSections();
 
       const chord = handleWorkflowCtrlChords({

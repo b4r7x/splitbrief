@@ -1,18 +1,23 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DIPTYCH_DIR } from '../../../core/paths.js';
+import { DIPTYCH_DIR, SANDBOX_DIR } from '../../../core/paths.js';
+import { assertWritablePathConfined } from '../../../lib/path-confinement.js';
 import {
   discardChangedFiles,
   getCommittedFilesSince,
   getCurrentChangedFiles,
   getCurrentCommitSha,
 } from '../../../lib/git.js';
+import { collectTrackedFiles, type CollectTrackedFilesOptions } from '../../snapshots/files.js';
+import { hashFiles } from '../../change-detection.js';
 
 export type ChangedFilesSnapshot = {
   head: string;
   files: string[];
   dirtyFileContents: Record<string, string | null>;
+  baselineFileHashes?: Record<string, string | null> | undefined;
+  ignoreProjectDir?: string | undefined;
 };
 
 export type FileContentSnapshot = Record<string, string | null>;
@@ -26,7 +31,20 @@ export function uniqueProjectFiles(files: string[]): string[] {
   return Array.from(new Set(files))
     .filter((file) => file.length > 0)
     .filter((file) => !file.startsWith(`${DIPTYCH_DIR}/`))
+    .filter((file) => !file.startsWith(`${SANDBOX_DIR}/`))
     .sort();
+}
+
+function hasGitMetadata(projectDir: string): boolean {
+  return existsSync(join(projectDir, '.git'));
+}
+
+export async function captureProjectFileHashes(
+  projectDir: string,
+  opts: CollectTrackedFilesOptions = {},
+): Promise<Record<string, string | null>> {
+  const files = uniqueProjectFiles(await collectTrackedFiles(projectDir, opts));
+  return hashFiles(projectDir, files);
 }
 
 export async function getChangedFilesSnapshot(projectDir: string): Promise<ChangedFilesSnapshot> {
@@ -48,10 +66,33 @@ export async function getChangedFilesSnapshot(projectDir: string): Promise<Chang
   };
 }
 
+async function getChangedFilesSinceBaselineHashes(
+  projectDir: string,
+  baselineFileHashes: Record<string, string | null>,
+  opts: CollectTrackedFilesOptions = {},
+): Promise<string[]> {
+  const currentFiles = uniqueProjectFiles(await collectTrackedFiles(projectDir, opts));
+  const currentHashes = await hashFiles(projectDir, currentFiles);
+  const allFiles = new Set([...Object.keys(baselineFileHashes), ...currentFiles]);
+  const changedFiles: string[] = [];
+
+  for (const file of allFiles) {
+    if (currentHashes[file] !== baselineFileHashes[file]) changedFiles.push(file);
+  }
+
+  return changedFiles.sort();
+}
+
 export async function getChangedFilesSinceSnapshot(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
 ): Promise<string[]> {
+  if (snapshot.baselineFileHashes !== undefined && !hasGitMetadata(projectDir)) {
+    return getChangedFilesSinceBaselineHashes(projectDir, snapshot.baselineFileHashes, {
+      ignoreProjectDir: snapshot.ignoreProjectDir,
+    });
+  }
+
   const baseline = new Set(snapshot.files);
   const currentFiles = uniqueProjectFiles(await getCurrentChangedFiles(projectDir));
 
@@ -76,6 +117,7 @@ export async function getChangedFilesSinceSnapshot(
   );
   return Array.from(new Set([...newChanges, ...modifiedDirtyFiles, ...committedFiles]))
     .filter((file) => !file.startsWith(`${DIPTYCH_DIR}/`))
+    .filter((file) => !file.startsWith(`${SANDBOX_DIR}/`))
     .sort();
 }
 
@@ -95,12 +137,16 @@ export async function writeCurrentFileContent(
   file: string,
   content: string | null,
 ): Promise<void> {
+  assertWritablePathConfined(file, projectDir);
   const path = join(projectDir, file);
   if (content === null) {
     await rm(path, { force: true });
     return;
   }
   await mkdir(dirname(path), { recursive: true });
+  // Re-check after mkdir: creating the parent may have materialized a symlink
+  // target, and the existing target (if any) must not be a symlink we follow.
+  assertWritablePathConfined(file, projectDir);
   await writeFile(path, content, 'utf-8');
 }
 

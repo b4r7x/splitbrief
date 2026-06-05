@@ -12,6 +12,7 @@ import {
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { SANDBOX_DIR } from '../../../core/paths.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -31,6 +32,12 @@ const TEST_SINKS: WorkflowSinks = {
 };
 
 const TEST_VALIDATOR = createValidator();
+
+// Hint/full escalation tiers each run a full recursive createStagedProject copy;
+// under parallel full-suite load that staged-copy IO can push these cases past
+// the 10s default, so widen the timeout for this file (cases pass in ~8-25s
+// in isolation).
+vi.setConfig({ testTimeout: 30_000 });
 
 let dirs: string[] = [];
 
@@ -152,6 +159,58 @@ describe('handleRetryAndEscalation', () => {
     const escalateTier2 = busEvents.find((e) => e.type === 'escalate' && e.tier === 2);
     expect(escalateTier1).toBeDefined();
     expect(escalateTier2).toBeDefined();
+  });
+
+  it('runs tier-1 hint escalation sandboxed (staged projectDir + sandboxEnv + fileIgnoreProjectDir)', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const task = makeTask();
+    const state = makeValidatingState();
+
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'still broken',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+
+    const escalateHint = vi.fn().mockImplementation(async (opts) => {
+      expect(opts.projectDir).not.toBe(projectDir);
+      expect(opts.fileIgnoreProjectDir).toBe(projectDir);
+      expect(opts.sandboxEnv?.HOME).toBe(join(opts.projectDir, SANDBOX_DIR, 'home'));
+      return { success: false, output: 'hint text', code: null, usage: null };
+    });
+
+    const planner = makePlanner({
+      escalateHint,
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+    });
+
+    await handleRetryAndEscalation({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
+      },
+      task,
+      initialError: 'error',
+      currentState: state,
+    });
+
+    expect(escalateHint).toHaveBeenCalled();
   });
 
   it('hint-assisted retry succeeds → completed with method=escalated-hint', async () => {
@@ -300,6 +359,18 @@ describe('handleRetryAndEscalation', () => {
       }),
     });
 
+    const escalateFull = vi.fn().mockImplementation(async (opts) => {
+      expect(opts.projectDir).not.toBe(projectDir);
+      expect(opts.fileIgnoreProjectDir).toBe(projectDir);
+      expect(opts.sandboxEnv?.HOME).toBe(join(opts.projectDir, SANDBOX_DIR, 'home'));
+      return {
+        success: true,
+        output: 'full code',
+        code: 'code',
+        usage: { inputTokens: 200, outputTokens: 100 },
+      };
+    });
+
     const planner = makePlanner({
       escalateHint: vi.fn().mockResolvedValue({
         success: true,
@@ -307,12 +378,7 @@ describe('handleRetryAndEscalation', () => {
         code: null,
         usage: { inputTokens: 50, outputTokens: 25 },
       }),
-      escalateFull: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'full code',
-        code: 'code',
-        usage: { inputTokens: 200, outputTokens: 100 },
-      }),
+      escalateFull,
     });
 
     const { result } = await handleRetryAndEscalation({
@@ -334,6 +400,7 @@ describe('handleRetryAndEscalation', () => {
       currentState: state,
     });
 
+    expect(escalateFull).toHaveBeenCalled();
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-full');
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 2)).toBeDefined();
@@ -726,5 +793,5 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     // Tier 0 fires, fails, Tier 1 runs.
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeDefined();
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
-  }, 20_000);
+  });
 });

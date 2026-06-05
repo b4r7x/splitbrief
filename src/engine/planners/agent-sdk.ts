@@ -10,6 +10,7 @@ import {
 } from '../agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
+import { resolveApiKeyOverride } from '../providers/client.js';
 
 export function createAgentSdkPlanner(opts: {
   model?: string | undefined;
@@ -17,7 +18,8 @@ export function createAgentSdkPlanner(opts: {
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
 }): Planner {
-  const { model, apiKey, initialSessionId, effort } = opts;
+  const { model, initialSessionId, effort } = opts;
+  const apiKey = resolveApiKeyOverride(opts.apiKey);
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
     allowedTools: [...PLANNER_ALLOWED_TOOLS],

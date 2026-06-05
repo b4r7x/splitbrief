@@ -105,13 +105,13 @@ describe('addEvent — cancelled gate', () => {
 describe('resetWorkflow', () => {
   beforeEach(() => resetWorkflow());
 
-  it('clears abort pending state before resetting sub-stores', () => {
-    // Seed the abort store into a pending state, then verify resetWorkflow clears it
+  it('clears armed abort state before resetting sub-stores', () => {
+    // Seed the abort store into an armed state, then verify resetWorkflow clears it
     // — this is the observable contract the dispatcher must preserve.
-    abortStore.markPending();
-    expect(abortStore.get().pending).toBe(true);
+    abortStore.arm('exit');
+    expect(abortStore.get().armed).toBe('exit');
     resetWorkflow();
-    expect(abortStore.get().pending).toBe(false);
+    expect(abortStore.get().armed).toBe('none');
   });
 
   it('resets all four sub-stores to initial state', () => {

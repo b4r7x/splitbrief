@@ -37,7 +37,7 @@ export interface ResolvedImplementerProfiles {
   profiles: ResolvedImplementerProfile[];
 }
 
-function stripProfileMetadata(profile: ImplementerProfileConfig): ImplementerConfig {
+export function stripProfileMetadata(profile: ImplementerProfileConfig): ImplementerConfig {
   const { label: _label, costTier: _costTier, capabilities: _capabilities, ...config } = profile;
   return ImplementerConfigSchema.parse(config);
 }

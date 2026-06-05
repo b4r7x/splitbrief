@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
+import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
@@ -16,9 +17,7 @@ export interface CommandBasedImplementerOpts {
     outputFormat?: OutputFormat | undefined;
     timeout?: number | undefined;
   };
-  detectChanges?:
-    | ((projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>)
-    | undefined;
+  detectChanges?: ChangeDetector | undefined;
   shouldThrow?: ((err: unknown) => boolean) | undefined;
 }
 
@@ -45,6 +44,7 @@ export function createCommandBasedImplementer(
         notFoundMessage,
         prompt,
         projectDir,
+        env: invokeOpts.sandboxEnv,
         onOutput,
         signal,
       });

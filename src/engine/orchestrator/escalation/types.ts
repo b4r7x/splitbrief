@@ -50,6 +50,8 @@ export type RetryInvokeArgs = {
   implementer: Implementer;
   implementerProfile?: string | undefined;
   signal?: AbortSignal | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
+  fileIgnoreProjectDir?: string | undefined;
 };
 
 export type RetryStepOpts = {

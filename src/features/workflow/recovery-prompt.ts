@@ -8,7 +8,6 @@ import { assertNever } from '../../utils/type-guards.js';
 const ACTION_ORDER: RecoveryAction[] = [
   'retry-same-worker',
   'route-bigger-worker',
-  'planner-split-rebase',
   'continue',
   'skip-current-task',
   'pause-run',
@@ -28,14 +27,7 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
 const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
-  'planner-split-rebase': [
-    'p',
-    'planner',
-    'split',
-    'rebase',
-    'split rebase',
-    'planner-split-rebase',
-  ],
+  'planner-split-rebase': [],
   continue: ['c', 'continue', 'cont'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
   'pause-run': ['space', 'pause', 'pause run', 'pause-run'],

@@ -1,5 +1,8 @@
 import { useEffect } from 'react';
-import { getActiveFilteredStdin, type FilteredStdin } from '../../../lib/terminal/mouse.js';
+import {
+  getActiveFilteredStdin,
+  type FilteredStdin,
+} from '../../../lib/terminal/filtered-stdin.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';

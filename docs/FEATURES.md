@@ -364,7 +364,7 @@ diptych stats --rebuild
 | `pause-run` | Leaves the active session resumable with the issue intact. |
 | `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
-| `planner-split-rebase` | Typed/deferred: currently returns `planner-proposal-required` and preserves the pending issue. |
+| `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
 **Resume/headless.** `diptych resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
 

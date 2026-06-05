@@ -40,6 +40,8 @@ export interface ImplementerOptions {
   onOutput: (text: string) => void;
   sessionId?: string | undefined;
   signal?: AbortSignal | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
+  fileIgnoreProjectDir?: string | undefined;
   continuationPrompt?: string | undefined;
   languageContext?: LanguageContext | undefined;
   phase?: Phase | undefined;
@@ -63,6 +65,7 @@ export interface InvokeOpts {
   systemPreamble: string;
   temperature?: number;
   signal?: AbortSignal | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }
 
 export interface Implementer extends RunnerRuntime {

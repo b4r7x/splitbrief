@@ -97,6 +97,30 @@ describe('agent implementer', () => {
     ).rejects.toThrow(/timed out/);
   });
 
+  it('aborts an in-flight spawned process when the signal fires', async () => {
+    const config = makeConfig({
+      command: 'node',
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+    });
+
+    const controller = new AbortController();
+    const implementer = createAgentImplementer(config);
+    const pending = implementer.implement({
+      task: makeTask(),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+      signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await pending;
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toBe('Aborted');
+  }, 10_000);
+
   it('throws when command is not found', async () => {
     const config = makeConfig({
       command: 'nonexistent-command-xyz-12345',
@@ -162,6 +186,33 @@ describe('agent implementer', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('threads a sandbox env through to the spawned subprocess', async () => {
+    const envOutFile = join(testDir, 'env-out.txt');
+    const writtenFile = join(testDir, 'sandbox-written.txt');
+    const config = makeConfig({
+      command: 'node',
+      args: [
+        '-e',
+        'const fs=require("node:fs");fs.writeFileSync(process.argv[1],process.env.DIPTYCH_SANDBOX_MARKER??"");fs.writeFileSync(process.argv[2],"done")',
+        envOutFile,
+        writtenFile,
+      ],
+    });
+
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+      sandboxEnv: { ...process.env, DIPTYCH_SANDBOX_MARKER: 'sandbox-value' },
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(envOutFile, 'utf-8')).toBe('sandbox-value');
   });
 
   it('captures stdout as output', async () => {

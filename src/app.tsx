@@ -5,7 +5,7 @@ import { createRuntimeCommands } from './core/runtime/commands/registry.js';
 import { buildCommandContext } from './app/command-context.js';
 import { executeRuntimeCommand } from './core/runtime/commands/dispatch.js';
 import { useAppKeys } from './app/keys.js';
-import { abortTurn } from './features/workflow/handlers.js';
+import { interruptTurn } from './features/workflow/handlers.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
 import { ThemeProvider, getTheme } from './components/theme.js';
@@ -55,7 +55,7 @@ export function App() {
     });
   };
 
-  useAppKeys({ exit, abortWorkflow: abortTurn });
+  useAppKeys({ exit, interruptWorkflow: interruptTurn });
   useMouseScroll();
   useInput((input, key) => logParsedKey(input, key), { isActive: isKeyDebugEnabled() });
 

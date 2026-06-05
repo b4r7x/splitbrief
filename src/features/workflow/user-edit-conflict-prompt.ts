@@ -1,31 +1,13 @@
-import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type {
   UserEditConflict,
   UserEditConflictAction,
 } from '../../engine/events/workflow-events.js';
 import { formatRecoveryActionChoice } from './recovery-prompt.js';
-import { assertNever } from '../../utils/type-guards.js';
+import { userEditActionToRecoveryAction } from '../../core/recovery/user-edit-actions.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 
 function formatFiles(files: string[]): string {
   return formatTruncatedList(files, 3) || 'no files';
-}
-
-function toRecoveryAction(action: UserEditConflictAction): RecoveryAction {
-  switch (action) {
-    case 'continue-unrelated':
-      return 'continue';
-    case 'regenerate-rebase':
-      return 'planner-split-rebase';
-    case 'pause':
-      return 'pause-run';
-    case 'skip-current-task':
-      return 'skip-current-task';
-    case 'abort-workflow':
-      return 'abort-workflow';
-    default:
-      return assertNever(action);
-  }
 }
 
 export function formatUserEditConflictPrompt(conflict: UserEditConflict): string {
@@ -40,7 +22,9 @@ export function formatUserEditConflictPrompt(conflict: UserEditConflict): string
       : '',
     '',
     ...conflict.availableActions.map((action) =>
-      formatRecoveryActionChoice(toRecoveryAction(action), { reason: 'user-edit-conflict' }),
+      formatRecoveryActionChoice(userEditActionToRecoveryAction(action), {
+        reason: 'user-edit-conflict',
+      }),
     ),
   ];
   return lines
@@ -58,17 +42,6 @@ export function parseUserEditConflictAnswer(
 
   if ((value === 'continue' || value === 'c') && allowed.has('continue-unrelated'))
     return 'continue-unrelated';
-  if (
-    (value === 'regenerate' ||
-      value === 'rebase' ||
-      value === 'planner' ||
-      value === 'split' ||
-      value === 'p' ||
-      value === 'r') &&
-    allowed.has('regenerate-rebase')
-  ) {
-    return 'regenerate-rebase';
-  }
   if ((value === 'skip' || value === 's') && allowed.has('skip-current-task'))
     return 'skip-current-task';
   const isWhitespaceOnly = input.length > 0 && input.trim().length === 0;

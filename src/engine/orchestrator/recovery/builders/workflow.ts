@@ -116,7 +116,7 @@ export function buildApprovalPromotionConflictRecoveryIssue(
       safeToContinue: false,
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['planner-split-rebase', 'pause-run']),
+    recommendedAction: chooseRecommended(actions, ['pause-run']),
     createdAt: opts.createdAt,
   });
 }

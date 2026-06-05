@@ -21,9 +21,13 @@ import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { processError } from '../../lib/process/errors.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
-import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { isRecord } from '../../utils/type-guards.js';
+import {
+  captureChangeDetectorBaseline,
+  type ChangeDetector,
+  type ChangeDetectorBaseline,
+} from '../change-detection.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
 const DEFAULT_RETRY_TEMPERATURE = 0.7;
@@ -93,10 +97,7 @@ export interface ImplementerBaseConfig {
   buildPrompt?(opts: ImplementerOptions): string;
   buildRetryPrompt?(opts: RetryOptions): string;
 
-  detectChanges?(
-    projectDir: string,
-    before: string[],
-  ): Promise<{ changed: boolean; output: string }>;
+  detectChanges?: ChangeDetector;
   retryTemperatureStep?: number;
   shouldThrow?(err: unknown): boolean;
 
@@ -167,9 +168,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       oldContent = await readFileSafeAsync(join(projectDir, task.file));
     }
 
-    let filesBefore: string[] = [];
+    let changeBaseline: ChangeDetectorBaseline | undefined;
     if (!baseConfig.extractsCode && baseConfig.detectChanges) {
-      filesBefore = await getCurrentChangedFiles(projectDir);
+      changeBaseline = await captureChangeDetectorBaseline(projectDir, {
+        ignoreProjectDir: opts.fileIgnoreProjectDir,
+      });
     }
 
     const persistTranscript = config.workflow.persistTranscript;
@@ -202,6 +205,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         systemPreamble,
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
+        sandboxEnv: opts.sandboxEnv,
       });
     } catch (err) {
       if (opts.signal?.aborted) {
@@ -245,8 +249,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         return { success: true, output: invokeResult.text, ...usageField };
       }
 
-      if (baseConfig.detectChanges) {
-        const changes = await baseConfig.detectChanges(projectDir, filesBefore);
+      if (baseConfig.detectChanges && changeBaseline) {
+        const changes = await baseConfig.detectChanges(projectDir, changeBaseline);
         if (!changes.changed) {
           failTask();
           return {

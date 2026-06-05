@@ -80,12 +80,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       reason: 'dependency-blocked',
       taskId: 'T002',
       affectedTaskIds: ['T001', 'T002'],
-      availableActions: [
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
     });
     expect(result.state.pendingRecovery?.affectedTaskIds).toEqual(
       expect.arrayContaining(['T001', 'T002']),
@@ -99,13 +94,8 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
         type: 'recovery_prompted',
         reason: 'dependency-blocked',
         taskId: 'T002',
-        availableActions: [
-          'planner-split-rebase',
-          'skip-current-task',
-          'pause-run',
-          'abort-workflow',
-        ],
-        recommendedAction: 'planner-split-rebase',
+        availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+        recommendedAction: 'pause-run',
       }),
     );
   });
@@ -165,8 +155,8 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
       taskId: 'T001',
-      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
-      recommendedAction: 'planner-split-rebase',
+      availableActions: ['pause-run', 'abort-workflow'],
+      recommendedAction: 'pause-run',
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
@@ -174,15 +164,15 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     });
     expect(events.find((event) => event.type === 'error')).toMatchObject({
       type: 'error',
-      message: expect.stringContaining('Ask the planner to split the task'),
+      message: expect.stringContaining('T001 cannot be routed to an implementer profile'),
     });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'recovery_prompted',
         reason: 'context-overflow',
         taskId: 'T001',
-        availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
-        recommendedAction: 'planner-split-rebase',
+        availableActions: ['pause-run', 'abort-workflow'],
+        recommendedAction: 'pause-run',
       }),
     );
   });

@@ -64,6 +64,45 @@ describe('getProvider', () => {
   });
 });
 
+describe('apiKey env references', () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('resolves env: apiKey overrides for known providers', () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-env-key';
+    const p = getProvider('openrouter', { apiKey: 'env:OPENROUTER_API_KEY' });
+    expect(p.apiKey()).toBe('sk-or-env-key');
+  });
+
+  it('throws when an env: apiKey override references a missing variable', () => {
+    delete process.env.OPENROUTER_API_KEY;
+    expect(() => getProvider('openrouter', { apiKey: 'env:OPENROUTER_API_KEY' })).toThrow(
+      /OPENROUTER_API_KEY/,
+    );
+  });
+
+  it('throws when an env: apiKey override has an empty variable name', () => {
+    expect(() => getProvider('openrouter', { apiKey: 'env:' })).toThrow(/env:VARIABLE_NAME/);
+  });
+
+  it('throws when an env: apiKey override has a whitespace-only variable name', () => {
+    expect(() => getProvider('openrouter', { apiKey: 'env:   ' })).toThrow(/env:VARIABLE_NAME/);
+  });
+
+  it('rejects env-referenced keys with a custom apiBase for known providers', () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-env-key';
+    expect(() =>
+      getProvider('openrouter', {
+        apiBase: 'https://proxy.example.com/v1',
+        apiKey: 'env:OPENROUTER_API_KEY',
+      }),
+    ).toThrow(/exfiltrat/i);
+  });
+});
+
 describe('apiBase exfiltration guard', () => {
   setupFetchMock();
   const ORIGINAL_ENV = { ...process.env };

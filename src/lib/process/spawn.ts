@@ -9,6 +9,7 @@ interface SpawnPipeOptions<T> {
   command: string;
   args: string[];
   cwd?: string | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
   detached?: boolean | undefined;
   stdin?: string | undefined;
   signal?: AbortSignal | undefined;
@@ -45,6 +46,7 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     try {
       proc = spawn(opts.command, opts.args, {
         cwd: opts.cwd,
+        env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: opts.detached ?? false,
       });
@@ -153,6 +155,7 @@ export interface SpawnOptions {
   command: string;
   args: string[];
   cwd: string;
+  env?: NodeJS.ProcessEnv | undefined;
   timeout: number;
   onProgress: (text: string) => void;
   stdinInput?: string | undefined;
@@ -169,6 +172,7 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     command: opts.command,
     args: opts.args,
     cwd: opts.cwd,
+    env: opts.env,
     detached: true,
     stdin: opts.stdinInput,
     signal: opts.signal,
@@ -233,6 +237,7 @@ export async function spawnWithStdin(opts: {
   command: string;
   args: string[];
   cwd: string;
+  env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   onLine: (line: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
@@ -247,6 +252,7 @@ export async function spawnWithStdin(opts: {
     command: opts.command,
     args: opts.args,
     cwd: opts.cwd,
+    env: opts.env,
     stdin: opts.stdin,
     signal: opts.signal,
     onStdout: (chunk) => {

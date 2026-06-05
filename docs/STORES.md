@@ -52,7 +52,7 @@ src/stores/
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── workflow.ts           # Event log, phase, task counters
 │   ├── reducers.ts           # Pure reducer functions for workflow updates
-│   ├── abort.ts              # Abort pending flag + auto-clear timer
+│   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   └── review.ts             # Review file path + scroll
 ├── navigation/               # Screen routing
@@ -175,7 +175,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, cancelled, queueDepth }` | internal writes via `actions.addEvent` |
-| `abortStore` | `workflow/abort.ts` | `{ pending: boolean }` | `markPending()` (2s auto-clear), `clear()` |
+| `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, lineCount }` | `setReviewFile()`, `setScrollOffset()`, `clearReview()` |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |

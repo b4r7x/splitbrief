@@ -100,6 +100,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         stage,
         cmd: resolved.cmd,
         args,
+        source: resolved.source,
         cwd: projectDir,
         runCommand: commandRunner,
       });
@@ -185,15 +186,24 @@ async function runValidationStep(opts: {
   stage: ValidationResult['stage'];
   cmd: string;
   args: string[];
+  source: CommandSource;
   cwd: string;
   runCommand: ValidationCommandRunner;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, cwd, runCommand } = opts;
+  const { stage, cmd, args, source, cwd, runCommand } = opts;
   try {
     const { stdout } = await runCommand(cmd, args, { cwd });
     return { passed: true, stage, output: sanitizeValidationOutput(stdout) };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
+      if (source === 'config') {
+        return {
+          passed: false,
+          stage,
+          error: `Configured ${stage} command not found: ${cmd}`,
+          output: '',
+        };
+      }
       return { passed: true, stage, output: `${cmd} not found, skipping ${stage}` };
     }
     if (processError.isExitCode(err)) {

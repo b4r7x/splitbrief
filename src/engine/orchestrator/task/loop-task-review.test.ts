@@ -316,7 +316,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
         }),
     });
     const { callbacks } = makeCallbacks({
-      onUserEditConflict: vi.fn().mockResolvedValue('regenerate-rebase'),
+      onUserEditConflict: vi.fn().mockResolvedValue('pause'),
       onTaskReviewNeeded: async () => ({ action: 'continue' }),
     });
     const { bus, events } = makeBusRecorder();

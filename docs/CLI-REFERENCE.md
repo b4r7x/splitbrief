@@ -64,7 +64,11 @@ Launch a complete plan-and-implement workflow. Without a feature argument the TU
 ```
 diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
+  [--planner-output-format <format>] [--planner-context-length <tokens>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
+  [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
@@ -82,10 +86,20 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `agent-sdk`, `anthropic`, `openrouter`, `shell`. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
+| `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
+| `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
+| `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
+| `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. |
 | `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
 | `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
+| `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
+| `--implementer-api-key-env <var>` | string | from config | Environment variable holding the implementer API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
+| `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
+| `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow stops when exceeded. |
@@ -160,6 +174,7 @@ diptych start --worktree migration "Postgres 17 upgrade"
 - `clearStaleSession()` runs before a new session begins, so leftover lockfiles from crashed runs do not block a fresh start.
 - When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
+- Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--implementer-api-key-env` apply only to `api` and `agent-sdk` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
 
 ---
 
@@ -468,17 +483,21 @@ Resume the most recently active session. Validates the saved state version and c
 ```
 diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
+  [--planner-output-format <format>] [--planner-context-length <tokens>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
+  [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] \
-  [--project <dir>] \
+  [--budget <amount>] [--planner-effort <level>] [--yolo] \
+  [--project <dir>] [--worktree [name]] \
   [--no-fullscreen] [--no-mouse] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
 
-Resume accepts workflow override options except `--detach` and `--worktree`. See [`diptych start`](#diptych-start) for the shared runner, mode, budget, OTel, and approval flags.
+Resume accepts the same workflow override options as `start` except `--detach` (which is start-only). See [`diptych start`](#diptych-start) for the shared runner, mode, budget, OTel, and approval flags.
 
 | Flag | Notes |
 |---|---|

@@ -17,6 +17,7 @@ import { runPlanningPhase } from '../planning/run.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { drainQueue } from '../queue.js';
+import { transitionAndSave } from '../state-ops.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
 
 export function applyPostPlanDrain(opts: {
@@ -41,6 +42,13 @@ export type RunPlanningPhasesOptions = {
   setTrackedState: (s: WorkflowState) => void;
 };
 
+function isInterruptedPlanningTurn(state: WorkflowState): boolean {
+  return (
+    state.awaitingContinue &&
+    (state.phase === 'researching' || state.phase === 'specifying' || state.phase === 'planning')
+  );
+}
+
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
 ): Promise<{ state: WorkflowState; cancelled: boolean }> {
@@ -48,7 +56,15 @@ export async function runPlanningPhases(
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, planner } = wctx;
 
-  if (!savedState || savedState.rewindPending) {
+  const interrupted = isInterruptedPlanningTurn(state);
+  const shouldRunPlanning = !savedState || Boolean(savedState.rewindPending) || interrupted;
+
+  if (interrupted) {
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CONTINUE_TURN' });
+    setTrackedState(state);
+  }
+
+  if (shouldRunPlanning) {
     const plannerFeature = wctx.plannerContext
       ? `${state.feature}\n\n<user-context>\n${wctx.plannerContext}\n</user-context>`
       : state.feature;
@@ -238,7 +254,11 @@ export async function runTasksAndReview(
     };
   }
 
-  if (taskResult.status !== 'complete') {
+  // runFinalReviewPhase dispatches ALL_DONE (legal only from 'implementing') on a fresh
+  // run; a resumed 'final-review' state (a previously failed gate) re-enters review
+  // directly to retry it to completion. Any other phase short-circuits to the summary.
+  const canRunFinalReview = state.phase === 'implementing' || state.phase === 'final-review';
+  if (taskResult.status !== 'complete' || !canRunFinalReview) {
     return {
       summary: buildSummary({
         ...summaryBase,
@@ -250,7 +270,7 @@ export async function runTasksAndReview(
     };
   }
 
-  const summary = await runFinalReviewPhase(
+  const finalReview = await runFinalReviewPhase(
     {
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -266,5 +286,8 @@ export async function runTasksAndReview(
     taskResult.taskBreakdowns,
     phaseTimings,
   );
-  return { summary, completed: !wctx.signal?.aborted };
+  return {
+    summary: finalReview.summary,
+    completed: !wctx.signal?.aborted && finalReview.state.phase === 'complete',
+  };
 }

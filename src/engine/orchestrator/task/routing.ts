@@ -46,7 +46,7 @@ export function routingBlockMessage(decision: RoutingDecision): string {
       : `${decision.estimatedTokens}/${decision.contextLength} estimated tokens`;
   return [
     `Task ${decision.taskId} cannot be routed to an implementer profile (${context}).`,
-    'Ask the planner to split the task, reduce required context, or escalate to a larger implementer profile.',
+    'Pause and revise the plan, reduce required context, or configure a larger implementer profile.',
     decision.reason,
   ].join(' ');
 }

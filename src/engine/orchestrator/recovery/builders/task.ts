@@ -52,15 +52,14 @@ export function buildRetryExhaustedRecoveryIssue(
   const actions = orderedActions([
     opts.allowRetryOverride ? 'retry-same-worker' : undefined,
     hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
-    'planner-split-rebase',
     'skip-current-task',
     'pause-run',
     'abort-workflow',
   ]);
   const recommendedAction = chooseRecommended(actions, [
     'route-bigger-worker',
-    'planner-split-rebase',
-    'skip-current-task',
+    'retry-same-worker',
+    'pause-run',
   ]);
 
   return createRecoveryIssue({
@@ -137,14 +136,10 @@ export function buildContextOverflowRecoveryIssue(
   });
   const actions = orderedActions([
     canRouteBigger ? 'route-bigger-worker' : undefined,
-    'planner-split-rebase',
     'pause-run',
     'abort-workflow',
   ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'route-bigger-worker',
-    'planner-split-rebase',
-  ]);
+  const recommendedAction = chooseRecommended(actions, ['route-bigger-worker', 'pause-run']);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -203,12 +198,7 @@ export function buildDependencyBlockedRecoveryIssue(
   ]);
   const affectedTaskIds = uniqueSortedIds([opts.task.id, ...blockedByTaskIds]);
   const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.file);
-  const actions = orderedActions([
-    'planner-split-rebase',
-    'skip-current-task',
-    'pause-run',
-    'abort-workflow',
-  ]);
+  const actions = orderedActions(['skip-current-task', 'pause-run', 'abort-workflow']);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -223,7 +213,7 @@ export function buildDependencyBlockedRecoveryIssue(
       blockedByTaskIds: blockedByTaskIds.join(', '),
     }),
     availableActions: actions,
-    recommendedAction: 'planner-split-rebase',
+    recommendedAction: chooseRecommended(actions, ['pause-run']),
     createdAt: opts.createdAt,
   });
 }

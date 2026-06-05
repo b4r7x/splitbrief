@@ -3,6 +3,7 @@ import { fsError } from '../lib/fs.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 
 export const DIPTYCH_DIR = '.diptych';
+export const SANDBOX_DIR = '.diptych-sandbox';
 export const CODEX_DIR = '.codex';
 export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';

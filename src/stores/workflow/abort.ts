@@ -1,34 +1,36 @@
 import { createStore, storeBase } from '../create-store.js';
 
+export type ArmedKind = 'none' | 'exit' | 'interrupt' | 'cancel';
+
 interface AbortState {
-  pending: boolean;
+  armed: ArmedKind;
 }
 
-const initial: AbortState = { pending: false };
+const initial: AbortState = { armed: 'none' };
 const store = createStore<AbortState>(initial);
 
 const WINDOW_MS = 2000;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let armTimer: ReturnType<typeof setTimeout> | null = null;
 
-function markPending(): void {
-  if (pendingTimer) clearTimeout(pendingTimer);
-  store.set({ pending: true });
-  pendingTimer = setTimeout(() => {
-    store.set({ pending: false });
-    pendingTimer = null;
+function arm(kind: Exclude<ArmedKind, 'none'>): void {
+  if (armTimer) clearTimeout(armTimer);
+  store.set({ armed: kind });
+  armTimer = setTimeout(() => {
+    store.set({ armed: 'none' });
+    armTimer = null;
   }, WINDOW_MS);
 }
 
 function clear(): void {
-  if (pendingTimer) {
-    clearTimeout(pendingTimer);
-    pendingTimer = null;
+  if (armTimer) {
+    clearTimeout(armTimer);
+    armTimer = null;
   }
-  store.set({ pending: false });
+  store.set({ armed: 'none' });
 }
 
 export const abortStore = {
   ...storeBase(store),
-  markPending,
+  arm,
   clear,
 };

@@ -29,6 +29,7 @@ export function createCliImplementer(
       const effectiveModel = resolveAutoModel(config.model, toolName);
       const timeoutSignal = AbortSignal.timeout(timeout);
       const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      const env = opts.sandboxEnv;
 
       try {
         if (toolName === 'claude-code') {
@@ -38,6 +39,7 @@ export function createCliImplementer(
             onOutput,
             model: effectiveModel,
             signal: composedSignal,
+            env,
           });
         }
 
@@ -48,6 +50,7 @@ export function createCliImplementer(
           command: tool.command,
           args,
           cwd: projectDir,
+          env,
           parseLine: tool.implementer.parseLine ?? parseTextLine,
           notFoundMessage: tool.notFoundMessage,
           onText: onOutput,

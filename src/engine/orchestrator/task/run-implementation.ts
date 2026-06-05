@@ -74,6 +74,8 @@ export async function runImplementation(opts: {
           },
           sessionId,
           signal,
+          sandboxEnv: staged?.sandboxEnv,
+          fileIgnoreProjectDir: staged ? projectDir : undefined,
           continuationPrompt,
           phase: state.phase,
           approveWrite: async (file) => {

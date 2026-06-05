@@ -5,6 +5,7 @@ import {
   ApproveLevelSchema,
   EFFORT_LEVELS,
   EffortLevelSchema,
+  OutputFormatSchema,
   WORKFLOW_MODES,
   WorkflowModeSchema,
   normalizeLegacyMode,
@@ -13,22 +14,33 @@ import {
 } from '../../schemas/enums.js';
 import { configError } from '../errors.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { warnStderr } from '../../../lib/warn.js';
+import type { RunnerKind } from '../../schemas/enums.js';
 import type { Config } from '../../schemas/config.js';
 import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
-import type { ImplementerConfig } from '../../schemas/implementer-config.js';
+import {
+  ImplementerProfileConfigSchema,
+  type ImplementerConfig,
+  type ImplementerProfileConfig,
+} from '../../schemas/implementer-config.js';
 import type { WorkflowOpts } from '../../types/config-options.js';
+import { pickDefaultProfileName, stripProfileMetadata } from '../accessors/implementer-profiles.js';
 
 const RunnerOverrideSchema = z.object({
   tool: z.string().optional(),
   model: z.string().optional(),
   command: z.string().optional(),
+  apiBase: z.string().optional(),
+  apiKey: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  outputFormat: OutputFormatSchema.optional(),
+  contextLength: z.number().optional(),
 });
 
 export const CLIOverridesSchema = z.object({
   planner: RunnerOverrideSchema.optional(),
   implementer: RunnerOverrideSchema.optional(),
-  contextLength: z.number().optional(),
   autoApprove: z.boolean().optional(),
   approve: z.string().optional(),
   mode: z
@@ -38,6 +50,7 @@ export const CLIOverridesSchema = z.object({
     )
     .optional(),
   budget: z.number().optional(),
+  contextLength: z.number().optional(),
   plannerEffort: z.string().optional(),
   yolo: z.boolean().optional(),
 });
@@ -50,11 +63,21 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
       tool: opts.planner,
       model: opts.plannerModel,
       command: opts.plannerCommand,
+      apiBase: opts.plannerApiBase,
+      apiKey: opts.plannerApiKeyEnv,
+      args: opts.plannerArgs,
+      outputFormat: opts.plannerOutputFormat,
+      contextLength: opts.plannerContextLength,
     },
     implementer: {
       tool: opts.implementer ?? opts.provider,
       model: opts.implementerModel ?? opts.model,
       command: opts.implementerCommand,
+      apiBase: opts.implementerApiBase,
+      apiKey: opts.implementerApiKeyEnv,
+      args: opts.implementerArgs,
+      outputFormat: opts.implementerOutputFormat,
+      contextLength: opts.implementerContextLength,
     },
     autoApprove: opts.auto,
     approve: opts.approve,
@@ -65,12 +88,7 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
   };
 }
 
-export interface RunnerOverrides {
-  tool?: string | undefined;
-  model?: string | undefined;
-  command?: string | undefined;
-  contextLength?: number | undefined;
-}
+type RunnerOverrides = z.infer<typeof RunnerOverrideSchema>;
 
 export function existingToOpts(existing: PlannerConfig | ImplementerConfig): BuildRunnerOpts {
   if (existing.kind === 'cli') {
@@ -108,34 +126,124 @@ export function applyRunnerOverrides(
   overrides: RunnerOverrides,
   config: Config,
 ): Config {
-  const { tool, model, command, contextLength } = overrides;
+  if (role === 'planner') {
+    const updated = buildRunnerFromOverrides('planner', overrides, config.planner);
+    return updated === undefined ? config : { ...config, planner: updated };
+  }
+
+  const updated = buildRunnerFromOverrides('implementer', overrides, config.implementer);
+  return updated === undefined ? config : { ...config, implementer: updated };
+}
+
+function warnUnusableProviderOverrides(
+  role: 'planner' | 'implementer',
+  kind: RunnerKind,
+  apiBase: string | undefined,
+  apiKey: string | undefined,
+): void {
+  const usesApiKey = kind === 'api' || kind === 'agent-sdk';
+  const usesApiBase = kind === 'api';
+  if (apiKey !== undefined && !usesApiKey) {
+    warnStderr(`--${role}-api-key-env is ignored: the ${role} '${kind}' runner does not use it.`);
+  }
+  if (apiBase !== undefined && !usesApiBase) {
+    warnStderr(`--${role}-api-base is ignored: the ${role} '${kind}' runner does not use it.`);
+  }
+}
+
+function buildRunnerFromOverrides(
+  role: 'planner',
+  overrides: RunnerOverrides,
+  existing: PlannerConfig,
+): PlannerConfig | undefined;
+function buildRunnerFromOverrides(
+  role: 'implementer',
+  overrides: RunnerOverrides,
+  existing: ImplementerConfig,
+): ImplementerConfig | undefined;
+function buildRunnerFromOverrides(
+  role: 'planner' | 'implementer',
+  overrides: RunnerOverrides,
+  existing: PlannerConfig | ImplementerConfig,
+): PlannerConfig | ImplementerConfig | undefined {
+  const { tool, model, command, apiBase, apiKey, args, outputFormat, contextLength } = overrides;
   if (
     tool === undefined &&
     model === undefined &&
     command === undefined &&
+    apiBase === undefined &&
+    apiKey === undefined &&
+    args === undefined &&
+    outputFormat === undefined &&
     contextLength === undefined
   ) {
-    return config;
+    return undefined;
   }
 
-  const existing = config[role];
-  const opts: BuildRunnerOpts = {
-    ...(tool !== undefined
+  const baseOpts =
+    tool !== undefined
       ? { kind: inferKindFromTool(tool), tool }
       : command !== undefined
-        ? { kind: 'shell' }
-        : existingToOpts(existing)),
+        ? { kind: 'shell' as const }
+        : apiBase !== undefined && existing.kind !== 'api'
+          ? { kind: 'api' as const }
+          : existingToOpts(existing);
+  warnUnusableProviderOverrides(role, baseOpts.kind ?? existing.kind, apiBase, apiKey);
+  const opts: BuildRunnerOpts = {
+    ...baseOpts,
     ...(model !== undefined && { model }),
     ...(command !== undefined && { command }),
+    ...(apiBase !== undefined && { apiBase }),
+    ...(apiKey !== undefined && { apiKey }),
+    ...(args !== undefined && { args }),
+    ...(outputFormat !== undefined && { outputFormat }),
     ...(contextLength !== undefined && { contextLength }),
     existing,
   };
 
-  const updated =
-    role === 'planner'
-      ? buildRunnerConfig('planner', opts)
-      : buildRunnerConfig('implementer', opts);
-  return { ...config, [role]: updated };
+  return role === 'planner'
+    ? buildRunnerConfig('planner', opts)
+    : buildRunnerConfig('implementer', opts);
+}
+
+function mergeImplementerProfileMetadata(
+  existing: ImplementerProfileConfig,
+  updated: ImplementerConfig,
+): ImplementerProfileConfig {
+  return ImplementerProfileConfigSchema.parse({
+    ...updated,
+    ...(existing.label !== undefined && { label: existing.label }),
+    ...(existing.costTier !== undefined && { costTier: existing.costTier }),
+    ...(existing.capabilities !== undefined &&
+      existing.kind === updated.kind && { capabilities: existing.capabilities }),
+  });
+}
+
+function applyImplementerOverrides(overrides: RunnerOverrides, config: Config): Config {
+  const profiles = config.implementerProfiles;
+  if (!profiles) return applyRunnerOverrides('implementer', overrides, config);
+
+  const defaultName = pickDefaultProfileName(profiles);
+  const defaultProfile = defaultName === undefined ? undefined : profiles.profiles[defaultName];
+  if (defaultName === undefined || defaultProfile === undefined) {
+    return applyRunnerOverrides('implementer', overrides, config);
+  }
+
+  const existing = stripProfileMetadata(defaultProfile);
+  const updated = buildRunnerFromOverrides('implementer', overrides, existing);
+  if (updated === undefined) return config;
+
+  return {
+    ...config,
+    implementer: updated,
+    implementerProfiles: {
+      ...profiles,
+      profiles: {
+        ...profiles.profiles,
+        [defaultName]: mergeImplementerProfileMetadata(defaultProfile, updated),
+      },
+    },
+  };
 }
 
 export function applyApproveOverride(config: Config, level: ApproveLevel): Config {
@@ -165,26 +273,16 @@ function parseOverrideOrThrow<T>(
 export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
   let next = config;
   if (overrides.planner) {
-    next = applyRunnerOverrides(
-      'planner',
-      {
-        ...(overrides.planner.tool !== undefined && { tool: overrides.planner.tool }),
-        ...(overrides.planner.model !== undefined && { model: overrides.planner.model }),
-        ...(overrides.planner.command !== undefined && { command: overrides.planner.command }),
-      },
-      next,
-    );
+    next = applyRunnerOverrides('planner', overrides.planner, next);
   }
   if (overrides.implementer || overrides.contextLength !== undefined) {
-    next = applyRunnerOverrides(
-      'implementer',
+    next = applyImplementerOverrides(
       {
-        ...(overrides.contextLength !== undefined && { contextLength: overrides.contextLength }),
-        ...(overrides.implementer?.tool !== undefined && { tool: overrides.implementer.tool }),
-        ...(overrides.implementer?.model !== undefined && { model: overrides.implementer.model }),
-        ...(overrides.implementer?.command !== undefined && {
-          command: overrides.implementer.command,
-        }),
+        ...overrides.implementer,
+        ...(overrides.implementer?.contextLength !== undefined ||
+        overrides.contextLength !== undefined
+          ? { contextLength: overrides.implementer?.contextLength ?? overrides.contextLength }
+          : {}),
       },
       next,
     );

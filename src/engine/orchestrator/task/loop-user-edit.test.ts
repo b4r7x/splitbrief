@@ -245,7 +245,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     });
   }, 20_000);
 
-  it('pauses explicitly when the user chooses regenerate-rebase for a future stale edit', async () => {
+  it('pauses explicitly when a future stale edit cannot continue automatically', async () => {
     const { projectDir, sessionId } = setupProject();
     const first = makeTask({ id: 'T001', file: 'src/current.ts' });
     const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
@@ -275,7 +275,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
           },
         ),
     });
-    const onUserEditConflict = vi.fn().mockResolvedValue('regenerate-rebase');
+    const onUserEditConflict = vi.fn().mockResolvedValue('pause');
     const { callbacks } = makeCallbacks({ onUserEditConflict });
     const { bus, events } = makeBusRecorder();
 
@@ -306,16 +306,13 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     });
     expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
-      selectedAction: 'regenerate-rebase',
+      selectedAction: 'pause',
       conflict: {
         kind: 'future-task-stale-input',
         files: ['src/future.ts'],
         affectedTaskIds: ['T002'],
       },
     });
-    expect(events.find((event) => event.type === 'warning')).toMatchObject({
-      type: 'warning',
-      message: expect.stringContaining('regenerate/rebase'),
-    });
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
 });

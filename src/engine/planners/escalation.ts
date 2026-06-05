@@ -1,7 +1,6 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
-import { getCurrentChangedFiles } from '../../lib/git.js';
-import { createChangeDetector } from '../change-detection.js';
+import { captureChangeDetectorBaseline, createChangeDetector } from '../change-detection.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../spec/prompts/escalation.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
@@ -13,6 +12,7 @@ type PlannerEscalationConfig = {
     projectDir: string;
     callbacks: PlannerOutputCallbacks;
     signal?: AbortSignal | undefined;
+    sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }) => Promise<InvokeResult>;
   capabilities: { supportsHintEscalation: boolean };
   hintSuccessMode?: 'text' | 'files';
@@ -40,14 +40,20 @@ export async function escalateHint(
   );
   const useFiles = config.hintSuccessMode === 'files';
   const detect = useFiles ? createChangeDetector('Hint escalation') : null;
-  const filesBefore = useFiles ? await getCurrentChangedFiles(projectDir) : [];
+  const baseline = useFiles
+    ? await captureChangeDetectorBaseline(projectDir, {
+        ignoreProjectDir: opts.fileIgnoreProjectDir,
+      })
+    : null;
   const result = await config.invokeEscalate({
     prompt: hintPrompt,
     projectDir,
     callbacks,
     signal: callbacks.signal,
+    sandboxEnv: opts.sandboxEnv,
   });
-  const success = detect ? (await detect(projectDir, filesBefore)).changed : result.text.length > 0;
+  const success =
+    detect && baseline ? (await detect(projectDir, baseline)).changed : result.text.length > 0;
   return { success, output: result.text, code: null, usage: result.usage };
 }
 
@@ -65,14 +71,17 @@ export async function escalateFull(
 
   if (config.escalateFullMode === 'files') {
     const detect = createChangeDetector('Full escalation');
-    const filesBefore = await getCurrentChangedFiles(projectDir);
+    const baseline = await captureChangeDetectorBaseline(projectDir, {
+      ignoreProjectDir: opts.fileIgnoreProjectDir,
+    });
     const result = await config.invokeEscalate({
       prompt: escalationPrompt,
       projectDir,
       callbacks,
       signal: callbacks.signal,
+      sandboxEnv: opts.sandboxEnv,
     });
-    const { changed } = await detect(projectDir, filesBefore);
+    const { changed } = await detect(projectDir, baseline);
     return { success: changed, output: result.text, code: null, usage: result.usage };
   }
 
@@ -81,6 +90,7 @@ export async function escalateFull(
     projectDir,
     callbacks,
     signal: callbacks.signal,
+    sandboxEnv: opts.sandboxEnv,
   });
 
   const extracted = extractCode(result.text);

@@ -283,6 +283,32 @@ describe('layer priority', () => {
     expect(tc?.output).toContain('not found');
   });
 
+  it('fails when a configured validation command is not found', async () => {
+    const enoent = Object.assign(new Error('spawn missing-typecheck ENOENT'), { code: 'ENOENT' });
+    const validator = createValidator({ runCommand: makeCommandRunner(enoent) });
+    const config = makeConfig({
+      typecheck: true,
+      typecheckCommand: 'missing-typecheck --strict',
+      lint: false,
+      test: false,
+    });
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const tc = results.find((r) => r.stage === 'typecheck');
+    expect(tc).toMatchObject({
+      passed: false,
+      stage: 'typecheck',
+    });
+    expect(tc?.error).toContain('Configured typecheck command not found: missing-typecheck');
+  });
+
   it('TS project uses default npx tsc --noEmit when heuristic returns null', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });

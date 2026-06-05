@@ -42,6 +42,7 @@ type ConfigInput = {
   approval?: Config['approval'];
   plannerEstimateReview?: Config['plannerEstimateReview'];
   autoSplitOverflow?: Config['autoSplitOverflow'];
+  implementerProfiles?: Config['implementerProfiles'];
 };
 
 function makeImplementerConfig(overrides?: Partial<ImplementerConfig>): Partial<ImplementerConfig> {
@@ -86,6 +87,8 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     base.plannerEstimateReview = overrides.plannerEstimateReview;
   if (overrides?.autoSplitOverflow !== undefined)
     base.autoSplitOverflow = overrides.autoSplitOverflow;
+  if (overrides?.implementerProfiles !== undefined)
+    base.implementerProfiles = overrides.implementerProfiles;
   return ConfigSchema.parse(base);
 }
 

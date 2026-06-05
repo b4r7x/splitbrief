@@ -43,6 +43,16 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
+  if (planResult.tasks.length === 0) {
+    return handlePlanningFailure({
+      err: new Error('quick planner returned zero tasks; cannot proceed'),
+      projectDir,
+      sessionId,
+      state,
+      wctx,
+    });
+  }
+
   const { report: qualityReport, ok: qualityOk } = runBriefQualityGate({
     tasks: planResult.tasks,
     projectDir,

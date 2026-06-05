@@ -1,6 +1,7 @@
 import type {
   ApproveLevel,
   EffortLevel,
+  OutputFormat,
   PlannerToolId,
   ProviderId,
   WorkflowMode,
@@ -13,9 +14,19 @@ export interface WorkflowOpts {
   planner?: PlannerToolId;
   plannerModel?: string;
   plannerCommand?: string;
+  plannerApiBase?: string;
+  plannerApiKeyEnv?: string;
+  plannerArgs?: string[];
+  plannerOutputFormat?: OutputFormat;
+  plannerContextLength?: number;
   implementer?: ProviderId;
   implementerModel?: string;
   implementerCommand?: string;
+  implementerApiBase?: string;
+  implementerApiKeyEnv?: string;
+  implementerArgs?: string[];
+  implementerOutputFormat?: OutputFormat;
+  implementerContextLength?: number;
   project?: string;
   fullscreen?: boolean;
   mouse?: boolean;

@@ -142,6 +142,8 @@ export interface EscalateOptions {
   projectDir: string;
   callbacks: PlannerOutputCallbacks;
   languageContext?: LanguageContext | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
+  fileIgnoreProjectDir?: string | undefined;
 }
 
 export interface RegenerateOptions {

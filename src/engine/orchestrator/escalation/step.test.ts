@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
 import type { Config } from '../../../core/schemas/config.js';
 import type { RetryOptions } from '../../implementers/types.js';
 import type { WorkflowSinks } from '../types.js';
@@ -18,6 +19,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runRetryStep } from './step.js';
+import type { RetryInvokeArgs } from './types.js';
 import { validateAndCommit } from './validate-and-commit.js';
 
 const TEST_METADATA = {
@@ -121,6 +123,52 @@ describe('runRetryStep', () => {
     expect(invokeRetry).toHaveBeenCalledWith(
       expect.objectContaining({ signal: controller.signal }),
     );
+  });
+
+  it('passes the staged sandbox env to retry invocation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T00S', file: 'src/sandbox.ts' });
+    const state = makeImplState([task]);
+    const config = configWithProfiles();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const invokeRetry = vi.fn().mockImplementation(async (args: RetryInvokeArgs) => {
+      expect(args.projectDir).not.toBe(projectDir);
+      expect(args.fileIgnoreProjectDir).toBe(projectDir);
+      expect(args.sandboxEnv?.HOME?.startsWith(args.projectDir)).toBe(true);
+      expect(existsSync(args.sandboxEnv?.HOME ?? '')).toBe(true);
+      return { success: false, error: 'still failing' };
+    });
+
+    await runRetryStep({
+      ctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner: makePlanner(),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      invokeRetry,
+    });
+
+    expect(invokeRetry).toHaveBeenCalledOnce();
   });
 
   it('does not commit retry results when the signal aborts during validation', async () => {

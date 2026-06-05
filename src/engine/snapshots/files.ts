@@ -3,7 +3,11 @@ import { createReadStream, type Dirent } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { checkIgnoredPaths } from '../../lib/git.js';
-import { DIPTYCH_DIR, TREES_DIR } from '../../core/paths.js';
+import { DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR } from '../../core/paths.js';
+
+export type CollectTrackedFilesOptions = {
+  ignoreProjectDir?: string | undefined;
+};
 
 export async function hashFile(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -15,7 +19,7 @@ export async function hashFile(filePath: string): Promise<string | null> {
   });
 }
 
-export const ALWAYS_EXCLUDED = ['.git', DIPTYCH_DIR, 'node_modules', TREES_DIR];
+export const ALWAYS_EXCLUDED = ['.git', DIPTYCH_DIR, SANDBOX_DIR, 'node_modules', TREES_DIR];
 
 async function readdirRecursive(dir: string, base: string): Promise<string[]> {
   let entries: Dirent[];
@@ -41,11 +45,14 @@ async function readdirRecursive(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
-export async function collectTrackedFiles(projectDir: string): Promise<string[]> {
+export async function collectTrackedFiles(
+  projectDir: string,
+  opts: CollectTrackedFilesOptions = {},
+): Promise<string[]> {
   const allFiles = await readdirRecursive(projectDir, projectDir);
   if (allFiles.length === 0) return [];
 
-  const ignoredPaths = await checkIgnoredPaths(projectDir, allFiles);
+  const ignoredPaths = await checkIgnoredPaths(opts.ignoreProjectDir ?? projectDir, allFiles);
 
   const ignored = new Set(ignoredPaths);
   const filtered = allFiles.filter((rel) => !ignored.has(rel));

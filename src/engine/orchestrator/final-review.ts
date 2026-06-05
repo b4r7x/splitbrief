@@ -5,7 +5,7 @@ import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
+import { SPEC_FILE, REVIEW_FILE, TASKS_FILE } from '../../core/paths.js';
 import { getCurrentDiff, getCurrentChangedFiles } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
@@ -26,6 +26,9 @@ import { createSnapshot } from '../snapshots/create.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
+import { formatTasks } from '../spec/formatter.js';
+
+export type FinalReviewResult = { summary: Summary; state: WorkflowState };
 
 export async function runFinalReviewPhase(
   opts: {
@@ -42,11 +45,15 @@ export async function runFinalReviewPhase(
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
-): Promise<Summary> {
+): Promise<FinalReviewResult> {
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, bus, planner, metadata } = opts;
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ALL_DONE' });
+  // On resume the state is already persisted in 'final-review' (a previously failed
+  // gate); only dispatch ALL_DONE from 'implementing' on a fresh forward run.
+  if (state.phase === 'implementing') {
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ALL_DONE' });
+  }
 
   if (config.snapshots?.auto?.preFinalReview === true) {
     try {
@@ -69,20 +76,23 @@ export async function runFinalReviewPhase(
   }
 
   const finalReviewStart = Date.now();
-  const interruptedSummary = (): Summary => {
+  const interruptedSummary = (): FinalReviewResult => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
     publishPlannerStatus(bus, state, 'done', {
       duration: Date.now() - finalReviewStart,
       summary: 'Final review aborted',
     });
-    return buildSummary({
-      ...summaryBase,
-      projectDir,
-      sessionId,
+    return {
+      summary: buildSummary({
+        ...summaryBase,
+        projectDir,
+        sessionId,
+        state,
+        taskBreakdowns,
+        ...(phaseTimings && { phaseTimings }),
+      }),
       state,
-      taskBreakdowns,
-      ...(phaseTimings && { phaseTimings }),
-    });
+    };
   };
   if (opts.signal?.aborted) return interruptedSummary();
   publishPlannerStatus(bus, state, 'running');
@@ -100,6 +110,8 @@ export async function runFinalReviewPhase(
         `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
     }
     const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
+    const taskBriefs =
+      readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
 
     let driftPromptSection: string | undefined;
     try {
@@ -121,7 +133,12 @@ export async function runFinalReviewPhase(
 
     const review = await runPlannerReview({
       planner,
-      prompt: buildFinalReviewPrompt(spec, diff, driftPromptSection),
+      prompt: buildFinalReviewPrompt({
+        spec,
+        taskBriefs,
+        diff,
+        driftReport: driftPromptSection,
+      }),
       projectDir,
       sessionId,
       bus,
@@ -151,9 +168,18 @@ export async function runFinalReviewPhase(
     warnError('Failed to record final review evidence', err);
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'REVIEW_DONE' });
-  publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
-  bus.publish({ type: 'workflow_complete', ts: Date.now(), phase: state.phase });
+  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
+
+  if (reviewStatus === 'failed') {
+    publishPlannerStatus(bus, state, 'done', {
+      duration: Date.now() - finalReviewStart,
+      summary: 'Final review failed',
+    });
+  } else {
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'REVIEW_DONE' });
+    publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
+    bus.publish({ type: 'workflow_complete', ts: Date.now(), phase: state.phase });
+  }
 
   const summaryOpts = {
     ...summaryBase,
@@ -181,8 +207,7 @@ export async function runFinalReviewPhase(
     );
   }
 
-  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
   const summary = buildSummary(summaryOpts);
-  callbacks.onComplete(summary);
-  return summary;
+  if (reviewStatus !== 'failed') callbacks.onComplete(summary);
+  return { summary, state };
 }

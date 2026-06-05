@@ -9,6 +9,7 @@ interface SpawnAndCollectOptions {
   command: string;
   args: string[];
   cwd: string;
+  env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   format?: OutputFormat | undefined;
   parseLine?: ((line: string) => ParsedLine) | undefined;
@@ -32,6 +33,7 @@ export async function spawnAndCollect(
     command: opts.command,
     args: opts.args,
     cwd: opts.cwd,
+    env: opts.env,
     stdin: opts.stdin,
     notFoundMessage: opts.notFoundMessage,
     onStderr: opts.onStderr,

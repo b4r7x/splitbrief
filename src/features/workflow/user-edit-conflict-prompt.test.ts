@@ -13,7 +13,7 @@ const conflict: UserEditConflict = {
   currentTaskId: taskId('T001'),
   fileConflicts: [],
   safeToContinue: false,
-  availableActions: ['regenerate-rebase', 'pause', 'skip-current-task', 'abort-workflow'],
+  availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
 };
 
 describe('user edit conflict prompt', () => {
@@ -23,19 +23,15 @@ describe('user edit conflict prompt', () => {
     expect(prompt).toContain('Recovery needed: user edit conflicts with T001');
     expect(prompt).toContain('Files: src/a.ts, src/b.ts, src/c.ts, +1 more');
     expect(prompt).toContain('Affected tasks: T001');
-    expect(prompt).toContain(
-      '[p] ask planner to rebase on your edits (approve/edit/reject proposal)',
-    );
     expect(prompt).toContain('[space] pause');
     expect(prompt).toContain('[s] skip task');
     expect(prompt).toContain('[a] abort');
+    expect(prompt).not.toContain('ask planner');
   });
 
   it('maps user answers to allowed conflict actions', () => {
-    expect(parseUserEditConflictAnswer('p', conflict.availableActions)).toBe('regenerate-rebase');
-    expect(parseUserEditConflictAnswer('rebase', conflict.availableActions)).toBe(
-      'regenerate-rebase',
-    );
+    expect(parseUserEditConflictAnswer('p', conflict.availableActions)).toBe('pause');
+    expect(parseUserEditConflictAnswer('rebase', conflict.availableActions)).toBe('pause');
     expect(parseUserEditConflictAnswer('skip', conflict.availableActions)).toBe(
       'skip-current-task',
     );

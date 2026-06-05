@@ -79,6 +79,23 @@ export function createClientFromProvider(provider: ProviderDef): OpenAI {
   return new OpenAI({ baseURL: provider.baseURL, apiKey: provider.apiKey() });
 }
 
+const API_KEY_ENV_PREFIX = 'env:';
+
+export function apiKeyEnvReference(apiKey: string | undefined): string | undefined {
+  if (!apiKey?.startsWith(API_KEY_ENV_PREFIX)) return undefined;
+  const envVar = apiKey.slice(API_KEY_ENV_PREFIX.length).trim();
+  if (!envVar) throw providerError.invalidApiKeyEnvReference();
+  return envVar;
+}
+
+export function resolveApiKeyOverride(apiKey: string | undefined): string | undefined {
+  const envVar = apiKeyEnvReference(apiKey);
+  if (!envVar) return apiKey;
+  const value = process.env[envVar];
+  if (!value) throw providerError.apiKeyEnvMissing(envVar);
+  return value;
+}
+
 export async function fetchModelList<T>(options: {
   endpoint: string;
   apiKey?: string | undefined;
@@ -136,9 +153,10 @@ export function createMetadataProvider<TRaw extends { id: string }>(
   overrides?: ProviderOverrides,
 ): ProviderDefWithMetadata {
   const baseURL = validateProviderBaseURL(overrides?.apiBase ?? opts.defaultBaseURL);
+  const resolvedApiKey = resolveApiKeyOverride(overrides?.apiKey);
   const shell = createProviderShell({ name: opts.name, baseURL, isLocal: opts.isLocal });
   const apiKey = (): string =>
-    overrides?.apiKey ?? process.env[opts.envKeyName] ?? opts.apiKeyDefault ?? '';
+    resolvedApiKey ?? process.env[opts.envKeyName] ?? opts.apiKeyDefault ?? '';
 
   function getUrl(): string {
     return opts.modelsUrl ? opts.modelsUrl(baseURL) : `${baseURL}/models`;

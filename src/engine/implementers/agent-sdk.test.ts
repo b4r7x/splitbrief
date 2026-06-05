@@ -87,6 +87,50 @@ describe('createAgentSdkImplementer', () => {
     );
   });
 
+  it('forwards an abort controller to the SDK query call', async () => {
+    setQueryResponse('done');
+    writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
+
+    const cfg = makeAgentSdkConfig();
+    const implementer = createAgentSdkImplementer(cfg);
+    const controller = new AbortController();
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      signal: controller.signal,
+    });
+
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ abortController: expect.any(AbortController) }),
+      }),
+    );
+  });
+
+  it('short-circuits without invoking the SDK when the signal is already aborted', async () => {
+    setQueryResponse('done');
+
+    const cfg = makeAgentSdkConfig();
+    const implementer = createAgentSdkImplementer(cfg);
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      signal: AbortSignal.abort(),
+    });
+
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toBe('Aborted');
+  });
+
   it('resolves model "auto" to the agent-sdk default', async () => {
     setQueryResponse('done');
     writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
@@ -187,6 +231,91 @@ describe('createAgentSdkImplementer', () => {
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+  });
+
+  it('resolves an env:NAME apiKey reference against process.env before injecting it', async () => {
+    const origEnv = process.env['ANTHROPIC_API_KEY'];
+    delete process.env['ANTHROPIC_API_KEY'];
+    process.env['DIPTYCH_TEST_KEY'] = 'sk-resolved-from-env';
+
+    queryMock.mockImplementationOnce(async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
+      writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
+      yield {
+        type: 'result',
+        result: 'ok',
+        session_id: 'sess-1',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+
+    try {
+      const cfg = makeAgentSdkConfig({ apiKey: 'env:DIPTYCH_TEST_KEY' });
+      const implementer = createAgentSdkImplementer(cfg);
+
+      await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config: cfg,
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            env: expect.objectContaining({ ANTHROPIC_API_KEY: 'sk-resolved-from-env' }),
+          }),
+        }),
+      );
+      expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();
+    } finally {
+      delete process.env['DIPTYCH_TEST_KEY'];
+      if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = origEnv;
+    }
+  });
+
+  it('threads a sandbox env through to the SDK query options.env', async () => {
+    queryMock.mockImplementationOnce(async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
+      writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
+      yield {
+        type: 'result',
+        result: 'ok',
+        session_id: 'sess-1',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+
+    const cfg = makeAgentSdkConfig();
+    const implementer = createAgentSdkImplementer(cfg);
+    const sandboxHome = join(projectDir, '.diptych-sandbox', 'home');
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      sandboxEnv: { HOME: sandboxHome },
+    });
+
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          env: expect.objectContaining({ HOME: sandboxHome }),
+        }),
+      }),
+    );
+  });
+
+  it('throws a clear error when an env:NAME apiKey references an unset variable', () => {
+    delete process.env['DIPTYCH_MISSING_KEY'];
+    const cfg = makeAgentSdkConfig({ apiKey: 'env:DIPTYCH_MISSING_KEY' });
+    expect(() => createAgentSdkImplementer(cfg)).toThrow(/DIPTYCH_MISSING_KEY/);
   });
 
   it('threads apiKey through to the SDK via the scoped env option without mutating process.env', async () => {

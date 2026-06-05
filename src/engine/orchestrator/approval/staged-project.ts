@@ -1,14 +1,17 @@
 import { rmSync } from 'node:fs';
-import { cp, mkdtemp } from 'node:fs/promises';
+import { cp, lstat, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { DIPTYCH_DIR, TREES_DIR } from '../../../core/paths.js';
-import { getChangedFilesSnapshot } from './file-snapshots.js';
+import { DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR } from '../../../core/paths.js';
+import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { createSandboxEnv } from '../../runners/sandbox-env.js';
+import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots.js';
 import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots.js';
 
 export type StagedProject = {
   projectDir: string;
+  sandboxEnv: NodeJS.ProcessEnv;
   snapshot: ChangedFilesSnapshot;
   cleanup: () => void;
 };
@@ -18,7 +21,14 @@ export type PromoteStagedChangesResult = {
   conflictedFiles: string[];
 };
 
-const STAGED_COPY_EXCLUDE = new Set(['node_modules', DIPTYCH_DIR, TREES_DIR, '.env']);
+const STAGED_COPY_EXCLUDE = new Set([
+  'node_modules',
+  DIPTYCH_DIR,
+  SANDBOX_DIR,
+  TREES_DIR,
+  '.git',
+  '.env',
+]);
 
 function isStagedCopyExcluded(name: string): boolean {
   if (STAGED_COPY_EXCLUDE.has(name)) return true;
@@ -26,22 +36,37 @@ function isStagedCopyExcluded(name: string): boolean {
   return false;
 }
 
+async function shouldCopyToStagedProject(source: string): Promise<boolean> {
+  if (isStagedCopyExcluded(basename(source))) return false;
+  return !(await lstat(source)).isSymbolicLink();
+}
+
 export async function createStagedProject(projectDir: string): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
   const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
-  const stagedProjectDir = join(stagedRoot, basename(projectDir));
-  await cp(projectDir, stagedProjectDir, {
-    recursive: true,
-    verbatimSymlinks: true,
-    filter: (source) => !isStagedCopyExcluded(basename(source)),
-  });
-  return {
-    projectDir: stagedProjectDir,
-    snapshot,
-    cleanup: () => {
-      rmSync(stagedRoot, { recursive: true, force: true });
-    },
-  };
+  try {
+    const stagedProjectDir = join(stagedRoot, basename(projectDir));
+    await cp(projectDir, stagedProjectDir, {
+      recursive: true,
+      verbatimSymlinks: true,
+      filter: shouldCopyToStagedProject,
+    });
+    const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
+      ignoreProjectDir: projectDir,
+    });
+    const sandboxEnv = await createSandboxEnv(stagedProjectDir);
+    return {
+      projectDir: stagedProjectDir,
+      sandboxEnv,
+      snapshot: { ...snapshot, baselineFileHashes, ignoreProjectDir: projectDir },
+      cleanup: () => {
+        rmSync(stagedRoot, { recursive: true, force: true });
+      },
+    };
+  } catch (err) {
+    rmSync(stagedRoot, { recursive: true, force: true });
+    throw err;
+  }
 }
 
 export async function promoteStagedChanges(opts: {
@@ -52,6 +77,10 @@ export async function promoteStagedChanges(opts: {
 }): Promise<PromoteStagedChangesResult> {
   const { targetProjectDir, stagedProjectDir, files, expectedCurrentContents } = opts;
   const promotedFiles: string[] = [];
+  for (const file of files) {
+    assertPathConfined(file, targetProjectDir);
+    assertPathConfined(file, stagedProjectDir);
+  }
   const conflictResults = await Promise.all(
     files.map(async (file): Promise<string | null> => {
       if (!Object.hasOwn(expectedCurrentContents, file)) return null;
