@@ -4,8 +4,8 @@ import {
   writeEvidenceLedger,
   readEvidenceLedger,
 } from '../../../core/evidence/ledger.js';
-import { makeTask } from '../../../../testing/helpers/factories/task.js';
-import { setupEvidenceTmpDir } from '../../../../testing/helpers/fixtures/evidence-test-setup.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
 
 const tmpDir = setupEvidenceTmpDir();
 

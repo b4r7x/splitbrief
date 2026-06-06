@@ -12,9 +12,9 @@ import { writeSpecFile } from '../../../core/paths-io.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
-import { runBriefQualityGate } from './planning-helpers.js';
+import { runBriefQualityGate } from './brief-quality-gate.js';
 import { regenerateTasks } from './regen.js';
-import { readPersistedTasks, readTasksForApproval } from './planning-io.js';
+import { readPersistedTasks, readTasksForApproval } from './io.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 
 function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {

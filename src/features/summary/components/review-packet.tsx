@@ -4,7 +4,7 @@ import type { ReviewPacketSummary, Summary } from '../../../core/schemas/summary
 import { DIPTYCH_DIR } from '../../../core/paths.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 
 interface SummaryReviewPacketProps {
   summary: Summary;

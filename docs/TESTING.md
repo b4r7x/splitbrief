@@ -39,14 +39,18 @@ How many top-level folders does the test import from?
           engine-written store updates?      → testing/integration/ui/
 ```
 
+The flowchart covers `src/**` source. Two trees outside it also hold colocated tests: `scripts/` (repo tooling such as `check-invariants.test.ts` and `import-boundaries.test.ts`, kept next to `check-invariants.ts` / `import-boundaries.ts`) and the single eval driver `evals/eval.test.ts`. Discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']` — five globs, all picked up by a single `npm test`.
+
 | Kind | Location | Suffix |
 |---|---|---|
 | Pure unit / single-folder integration | next to source (`foo.test.ts` by `foo.ts`) | `.test.ts` / `.test.tsx` |
 | Boundary test (fs, git, subprocess, http) touching one folder | next to source | `.test.ts` |
+| Repo tooling unit (gate runner, import-boundary checker) | next to source in `scripts/` (`check-invariants.test.ts` by `check-invariants.ts`) | `.test.ts` |
 | Feature-seam Ink test (one feature's screen, no engine) | next to feature entry | `.test.tsx` |
 | Multi-folder CLI flow (commander → engine → stores) | `testing/integration/cli/` | `.test.ts` |
 | Multi-phase orchestrator flow (`runWorkflow()` + fakes) | `testing/integration/orchestrator/` | `.test.ts` |
 | Multi-store UI flow (Ink screen + engine events via stores) | `testing/integration/ui/` | `.test.tsx` |
+| End-to-end scenario (real planner/implementer or recorded cassette) | `testing/e2e/scenarios/` (cassettes in `testing/e2e/cassettes/`) | `.test.ts` — isolated by `testing/e2e/vitest.e2e.config.ts`, not by suffix |
 | Shared factories (pure TS constructors) | `testing/helpers/factories/<domain>.ts` — ≥ 2 consumers | n/a |
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
 | Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
@@ -91,10 +95,10 @@ npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
 npm test -- src/core/state/persistence.test.ts
 npm test -- src/engine/orchestrator/recovery/recovery.test.ts
-npm test -- src/engine/orchestrator/budget/budget.test.ts
-npm test -- src/engine/orchestrator/task/loop.test.ts
+npm test -- src/engine/orchestrator/budget/check.test.ts
+npm test -- src/engine/orchestrator/task/loop-happy-path.test.ts
 npm test -- src/engine/orchestrator/task/step.test.ts
-npm test -- src/engine/orchestrator/run/run.test.ts
+npm test -- src/engine/orchestrator/run/workflow.test.ts
 npm test -- src/engine/orchestrator/session-lifecycle.test.ts
 npm test -- src/cli/headless.test.ts
 npm test -- src/features/workflow/recovery-prompt.test.ts
@@ -141,8 +145,8 @@ it('start writes state.json and exits 0', async () => {
 
 ```ts
 import { createFakePlanner, createFakeImplementer } from '../../helpers/orchestrator-factories.js';
-import { runWorkflow } from '#src/engine/orchestrator/run/run.js'; // adjust path
-import type { EngineEvent } from '#src/engine/events/types.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 it('quick mode completes one task via local implementer', async () => {
   const planner = createFakePlanner({ script: [/* ... */] });
@@ -178,8 +182,8 @@ The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus an
 
 ```ts
 import { renderFeature, tick } from '../../helpers/ink.ts';
-import { addEvent } from '#src/stores/workflow/actions.js';
-import { WorkflowScreen } from '#src/features/workflow/screen.js';
+import { addEvent } from '../../../src/stores/workflow/actions.js';
+import { WorkflowScreen } from '../../../src/features/workflow/screen.js';
 
 it('workflow screen shows an escalation card when escalate event arrives', async () => {
   const { lastFrame } = renderFeature(<WorkflowScreen />);
@@ -195,6 +199,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
 - **Zero new fakes.** Use `createFakePlanner` / `createFakeImplementer` from `testing/helpers/orchestrator-factories.ts`. Extend them via their `script` parameter, not by copying their shape into a new file.
 - **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (persistence home-dir), `node:fs` (disk-full simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
+- **Import `testing/helpers/**` from `src/**` tests via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a long relative `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`).
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
 
 ## How to extend the fakes
@@ -212,27 +217,29 @@ Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the onl
 CLI command handlers accept an optional `deps` parameter for dependency injection. This is the standard pattern for testing commands without `vi.mock`:
 
 ```ts
-// src/cli/commands/attach.ts
-export type AttachDeps = {
-  findSession: typeof findSession;
-  attachToSession: typeof attachToSession;
-};
+// src/cli/commands/start.ts
+export interface StartDeps {
+  spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
+  runHeadless: typeof runHeadless;
+  runRpc: typeof runRpc;
+  initStores: typeof initStores;
+  renderApp: typeof renderApp;
+}
 
-const defaultDeps: AttachDeps = { findSession, attachToSession };
+const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc, initStores, renderApp };
 
-export function registerAttach(program: Command, deps: AttachDeps = defaultDeps) { ... }
+export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void { ... }
 ```
 
 In tests, inject fakes directly:
 
 ```ts
-registerAttach(program, {
-  findSession: () => makeSession({ id: 's1' }),
-  attachToSession: vi.fn(),
-});
+const program = new Command();
+program.exitOverride();
+registerStartCommand(program, fakeDeps); // fakeDeps: StartDeps with stubbed renderApp/runHeadless/…
 ```
 
-**Commands using this pattern:** `attach.ts` (`AttachDeps`), `last.ts` (`LastDeps`), `start.ts` (`StartDeps`), `worktree.ts` (`WorktreeDeps`).
+**Commands using this pattern:** `start.ts` (`StartDeps`) and `worktree.ts` (`WorktreeDeps`) expose `deps` on the `register*Command(program, deps = default)` signature itself. `attach.ts` (`AttachDeps`) and `last.ts` (`LastDeps`) keep `register*Command(program)` thin and inject `deps` one level down, on the internal helper (`attachCommand(…, deps = defaultDeps)`, `lastCommand(…, deps = defaultDeps)`).
 
 **Rule:** `vi.mock` is now reserved for TRUE system boundaries only — `process.kill`, `execSync`, `node:net` sockets, and the sanctioned targets listed in [Test I/O and fixtures](#test-io-and-fixtures). All other test isolation uses the `Deps` interface pattern.
 
@@ -278,11 +285,11 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 - Cassette record/replay (`testing/helpers/cassette/`) for e2e tests — real protocol traffic.
 - Shell runners (`kind: 'shell'`) in integration tests — real subprocess spawn with scripted stdout.
 - `testing/helpers/factories/` (config, task, workflow-state) — pure constructors, no mock behavior.
-- `testing/helpers/bus-recorder.ts` — event capture at the EventBus boundary.
+- `testing/helpers/events.ts` — event capture at the EventBus boundary.
 
 ## Test shape
 
-**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary.test.ts`.
+**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary-build.test.ts` (pricing/cost cases now live in `src/engine/providers/cost.test.ts`).
 
 **Schema tests.** Only invariants and error paths. Do not write "parse a valid literal returns that literal" — `tsc` proves it. Zod `.strict()` only needs one repo-wide rejection test; don't duplicate per schema.
 
@@ -292,7 +299,7 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 
 **Component / feature tests.** Use `ink-testing-library`. Render with real stores (reset in `beforeEach`). Drive by setting store state or simulating input. Assert on `lastFrame()` text or observable store state. Never mock `ink`, `FilterableList`, or any internal component.
 
-**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.diptych/` contents (pattern: `src/cli/commands/migrate.test.ts`). Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
+**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.diptych/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
 
 ## Forbidden patterns
 
@@ -321,8 +328,8 @@ expect(emitEvent).toHaveBeenCalledWith({ type: 'phase-complete' });
 ```
 Good:
 ```ts
-import { createEventBus } from '#src/engine/events/bus.js';
-import type { EngineEvent } from '#src/engine/events/types.js';
+import { createEventBus } from '../../../src/engine/events/bus.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 const events: EngineEvent[] = [];
 const bus = createEventBus();
@@ -374,7 +381,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions in `testing/helpers/factories.ts` (`makeTask`, `makeConfig`, `makeSession`, `makeSummary`). On-disk artefacts live in `testing/fixtures/`; the single consumer currently reaches them via a relative path (`src/core/migration/executor.test.ts`).
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; the single consumer currently reaches them via a relative path (`src/core/migration/executor.test.ts`).
 - Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (home dir for `stores/ui/persistence`), `node:fs` (disk-full only), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist
@@ -417,6 +424,7 @@ When a testing rule appears in multiple docs, the canonical source is cited firs
 | Colocated tests (`foo.test.ts` next to `foo.ts`) | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy, `CLAUDE.md` §Core conventions |
 | Blast-radius rule for placement | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
 | `testing/integration/{cli,orchestrator,ui}/` structure | this doc §How to add an integration test | `STRUCTURE.md` §Test strategy |
+| `testing/e2e/` layer (scenarios + cassettes, isolated by `vitest.e2e.config.ts`) | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
 | Zero `vi.mock()` on internal modules | this doc §How to add an integration test and §Test I/O | — |
 | No new fakes — extend `createFakePlanner` / `createFakeImplementer` | this doc §How to extend the fakes | — |
 | Engine tested at `runWorkflow()` boundary | this doc | `STRUCTURE.md` §Test strategy |
@@ -444,7 +452,7 @@ Ink needs a real TTY; the agent test runner cannot drive it. Manual steps:
 mkdir /tmp/smoke-tui && cd /tmp/smoke-tui
 git init && git config user.email x@x.com && git config user.name X
 # Seed .diptych/config.yaml with a shell planner + shell implementer
-#   (same shape as testing/fixtures/config/*.yaml)
+#   (same shape as evals/fixtures/*/.diptych/config.yaml)
 npm run dev -- --project /tmp/smoke-tui start "smoke tui test"
 ```
 

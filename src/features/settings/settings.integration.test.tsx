@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsOverlay } from './overlay.js';
-import { renderFeature, tick } from '../../../testing/helpers/ink.js';
-import { resetAllStores } from '../../../testing/helpers/stores.js';
-import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
-import { loadConfig } from '../../core/config/load/load.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { loadConfig } from '../../core/config/load/io.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 

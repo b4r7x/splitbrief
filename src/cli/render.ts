@@ -10,6 +10,11 @@ import {
 import { detectKittyKeyboardFlags } from '../lib/terminal/kitty-keyboard.js';
 import { isKeyDebugEnabled, logRawChunk } from '../lib/terminal/debug-keys.js';
 import { killAllProcesses } from '../lib/process/registry.js';
+import {
+  installTerminalOutputErrorGuard,
+  isBrokenOutputError,
+  restoreTerminalControl,
+} from '../lib/terminal/control.js';
 
 interface RenderOptions {
   fullscreen: boolean;
@@ -23,18 +28,22 @@ const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
 
 type TerminationSignal = 'SIGINT' | 'SIGTERM';
 
-const EXIT_ALT_BUFFER = '\u001b[?1049l';
-const SHOW_CURSOR = '\u001b[?25h';
+interface RestoreTerminalOptions {
+  fullscreen: boolean;
+  mouse?: boolean | undefined;
+  stdin?: NodeJS.ReadStream | undefined;
+}
 
 // fullscreen-ink restores the main screen buffer only after `waitUntilExit()` resolves, but a
 // signal handler that calls `process.exit()` terminates before that async cleanup can run. So
 // on a signal during fullscreen we must exit the alternate buffer and unhide the cursor here,
 // otherwise the terminal is left on the alternate screen and needs a manual `reset`.
-export function restoreTerminal(fullscreen: boolean): void {
-  if (!fullscreen) return;
-  process.stdout.write(EXIT_ALT_BUFFER);
-  process.stdout.write(SHOW_CURSOR);
-  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+export function restoreTerminal(options: RestoreTerminalOptions): void {
+  restoreTerminalControl({
+    fullscreen: options.fullscreen,
+    mouse: options.mouse ?? false,
+    stdin: options.stdin,
+  });
 }
 
 // Fires when Ctrl+C reaches the OS instead of Ink (a child owns the terminal, so raw
@@ -48,7 +57,11 @@ export function createTerminationHandler(deps: {
   return (signal) => {
     if (handled) return;
     handled = true;
-    deps.cleanup();
+    try {
+      deps.cleanup();
+    } catch {
+      // signal shutdown must still exit even when terminal cleanup races a closed TTY
+    }
     deps.exit(SIGNAL_EXIT_CODE[signal]);
   };
 }
@@ -59,9 +72,11 @@ export async function renderApp(
 ): Promise<void> {
   const { fullscreen, mouse } = options;
   const kittyKeyboard = detectKittyKeyboardFlags();
+  installTerminalOutputErrorGuard();
 
   const useMouse = mouse !== false && fullscreen;
   let filteredStdin: FilteredStdin | undefined;
+  let filteredDisabled = false;
 
   const rawKeyTap = isKeyDebugEnabled() ? (chunk: Buffer) => logRawChunk(chunk) : undefined;
   if (rawKeyTap) {
@@ -73,13 +88,26 @@ export async function renderApp(
     setActiveFilteredStdin(filteredStdin);
   }
 
+  const disableFilteredStdin = () => {
+    if (filteredDisabled) return;
+    filteredDisabled = true;
+    filteredStdin?.disable();
+  };
+
+  const cleanupTerminal = () => {
+    setActiveFilteredStdin(undefined);
+    disableFilteredStdin();
+    if (rawKeyTap) process.stdin.off('data', rawKeyTap);
+    restoreTerminal({ fullscreen, stdin: process.stdin });
+  };
+
   const onTerminationSignal = createTerminationHandler({
     cleanup: () => {
-      killAllProcesses();
-      setActiveFilteredStdin(undefined);
-      filteredStdin?.disable();
-      if (rawKeyTap) process.stdin.off('data', rawKeyTap);
-      restoreTerminal(fullscreen);
+      try {
+        killAllProcesses();
+      } finally {
+        cleanupTerminal();
+      }
     },
     exit: (code) => process.exit(code),
   });
@@ -99,19 +127,31 @@ export async function renderApp(
 
   try {
     if (fullscreen) {
+      const inkStdin = filteredStdin?.stdin;
+      let ink: ReturnType<typeof withFullScreen> | undefined;
       try {
-        const inkStdin = filteredStdin?.stdin;
-        const ink = withFullScreen(appElement, {
+        ink = withFullScreen(appElement, {
           exitOnCtrlC: false,
           kittyKeyboard,
           ...(inkStdin ? { stdin: inkStdin } : {}),
         });
         await ink.start();
-        await ink.waitUntilExit();
       } catch (err) {
+        if (isBrokenOutputError(err)) return;
         warnError('Fullscreen init failed, falling back to inline mode', err);
         const inst = renderFallback();
-        await inst.waitUntilExit();
+        try {
+          await inst.waitUntilExit();
+        } catch (fallbackErr) {
+          if (!isBrokenOutputError(fallbackErr)) throw fallbackErr;
+        }
+        return;
+      }
+      if (!ink) return;
+      try {
+        await ink.waitUntilExit();
+      } catch (err) {
+        if (!isBrokenOutputError(err)) throw err;
       }
     } else {
       const inst = renderFallback();
@@ -120,10 +160,6 @@ export async function renderApp(
   } finally {
     process.off('SIGINT', onTerminationSignal);
     process.off('SIGTERM', onTerminationSignal);
-    setActiveFilteredStdin(undefined);
-    filteredStdin?.disable();
-    if (rawKeyTap) {
-      process.stdin.off('data', rawKeyTap);
-    }
+    cleanupTerminal();
   }
 }

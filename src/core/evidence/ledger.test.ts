@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEvidenceLedger, writeEvidenceLedger, readEvidenceLedger } from './ledger.js';
-import { makeTask } from '../../../testing/helpers/factories/task.js';
-import { setupEvidenceTmpDir } from '../../../testing/helpers/fixtures/evidence-test-setup.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
 
 const tmpDir = setupEvidenceTmpDir();
 

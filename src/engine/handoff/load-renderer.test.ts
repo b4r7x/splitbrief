@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { loadRenderer, listCustomRenderers } from './load-renderer.js';
 import { renderHandoffWithCustom } from './render.js';
 import type { HandoffInput } from './types.js';
-import { makeTask } from '../../../testing/helpers/factories/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 let tmp: string;
 

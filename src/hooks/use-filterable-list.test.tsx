@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { useFilterableList } from './use-filterable-list.js';
-import { renderFeature, tick } from '../../testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 
 const DOWN = '\u001b[B';
 const ENTER = '\r';

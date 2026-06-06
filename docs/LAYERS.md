@@ -13,8 +13,8 @@ Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [
 | `src/utils/` | Generic primitives — pure, stateless, zero domain | Node stdlib, npm, other `utils/` | anyone |
 | `src/lib/` | Infrastructure wrappers — single-purpose adapters for Node/terminal/external libs | Node stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
 | `src/core/` | Domain logic — knows diptych concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
-| `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/` |
-| `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/` | anyone |
+| `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/`, `features/runners/` |
+| `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only `app.tsx` |
 
 Import direction is one-way, top to bottom. For the cross-check table and blockers, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree).
@@ -79,9 +79,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **What lives here:**
 - `lib/git.ts` — `simple-git` wrapper (commit, diff, status)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
-- `lib/highlight.ts` — Shiki syntax highlighting wrapper
 - `lib/warn.ts` — `stderr` formatter
-- `lib/availability.ts` — command availability probing
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`)
 - `lib/terminal/` — terminal I/O (`mouse` events, `kitty-keyboard` protocol)
 
@@ -128,7 +126,6 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
-- `core/layout/` — pure layout/geometry helpers for the TUI (no React, no hooks)
 - `core/paths.ts`, `core/paths-io.ts` — `.diptych/` path derivation and validation
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
@@ -163,14 +160,15 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/streaming/` — streaming transport layer
 - `engine/detection/` — auto-detect installed tools
 - `engine/skill-discovery.ts` — planner skill source discovery
-- `engine/errors/` — engine-scoped error diagnosis (provider hints, etc.)
+- `engine/availability.ts` — command availability probing
+- `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
 - `engine/events/` — event bus subsystem: `types.ts` (`EngineEvent` discriminated union, `EventBus`/`EventSink` types), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
   - `sinks/stdout-json.ts` — NDJSON emitter for `diptych start --json` / headless mode
   - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
-- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution), `run-pre-hook.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
+- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
 - `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
@@ -180,6 +178,8 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 ## `stores/` — external state
 
 See [`STORES.md`](./STORES.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
+
+Stores may import engine **types only** (`import type`) — `EngineEvent` from `engine/events/types.ts` and the detection service types from `engine/detection/service.ts`. No engine values cross into `stores/`.
 
 ---
 

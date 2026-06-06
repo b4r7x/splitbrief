@@ -10,7 +10,7 @@ import {
   EVIDENCE_FILE,
 } from '../../../../core/paths.js';
 import { countBySeverity, countByValue, uniqueSorted } from '../../../../utils/collections.js';
-import { readDriftChainState } from '../../drift/chain-state.js';
+import type { DriftChainState } from '../../../../core/schemas/drift-chain.js';
 import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
 import type { BuildReviewPacketOptions, BriefQualityArtifact, PacketEvent } from './types.js';
 import { retryCountsFromEvents } from '../retry-counts.js';
@@ -134,12 +134,10 @@ export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evid
 }
 
 export function buildDrift(
-  projectDir: string,
-  sessionId: string,
+  chainState: DriftChainState | null,
   drift: DriftReport | null,
   briefQuality: BriefQualityArtifact | null,
 ): ReviewPacket['drift'] {
-  const chainState = readDriftChainState(projectDir, sessionId);
   const topChain =
     chainState && chainState.emittedChains.length > 0
       ? chainState.emittedChains.reduce((best, chain) => (best.score >= chain.score ? best : chain))

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
-import { makeConfig } from '../../../../testing/helpers/factories/config.js';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { _eventsInternal, eventsStore } from '../../../stores/workflow/events.js';

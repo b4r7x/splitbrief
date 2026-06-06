@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Box } from 'ink';
-import { renderFeature } from '../../testing/helpers/ink.js';
-import { makeSession } from '../../testing/helpers/factories/session.js';
-import { resetAllStores } from '../../testing/helpers/stores.js';
-import { CURSOR, NO_CURSOR } from './pickers/picker-utils.js';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { CURSOR, NO_CURSOR } from './pickers/cursor-glyph.js';
 import { SessionRow } from './session-row.js';
 
 const CURSOR_GLYPH = CURSOR.trimEnd();

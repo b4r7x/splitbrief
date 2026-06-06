@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
-import { enforceBudget } from '../budget/budget.js';
+import { enforceBudget } from '../budget/check.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
 import { transitionAndSave } from '../state-ops.js';

@@ -140,7 +140,7 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 **Where to start when we do it.**
 
 - New command at `src/cli/commands/sessions.ts`.
-- Reuse `conversationFlow` and event-cards renderer in read-only mode.
+- Reuse `ConversationFlow` and event-cards renderer in read-only mode.
 
 ---
 
@@ -191,7 +191,7 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 - Extend the `EngineEvent` union with an `injection_separator` variant (`src/engine/events/types.ts`).
 - Publish it from the mid-stream dispatch path in `src/engine/orchestrator/` when a queued message is folded into a live session.
-- Add a renderer in `src/components/event-cards/`.
+- Add a renderer in `src/features/workflow/components/event-cards/`.
 
 ---
 

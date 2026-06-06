@@ -18,7 +18,7 @@ import {
   publishTaskComplete,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 
 type GitOps = {
   stageAll: typeof stageAll;

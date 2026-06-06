@@ -2,8 +2,8 @@ import { wrapHard } from '../../utils/wrap.js';
 import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
-import type { ApprovalPromptState } from '../../stores/approval-prompt/store.js';
-import type { CostApprovalState } from '../../stores/cost-approval/store.js';
+import type { ApprovalPromptState } from '../../stores/approval-prompt/prompt.js';
+import type { CostApprovalState } from '../../stores/cost-approval/prompt.js';
 
 const MIN_TEXT_WIDTH = 1;
 const BORDER_ROWS = 2;

@@ -4,10 +4,23 @@
     "src/cli.ts",
     "src/engine/ipc/server-entry.ts",
     "scripts/check-invariants.ts",
+    "evals/cli.ts",
+    "evals/eval.test.ts",
+    "testing/e2e/vitest.e2e.config.ts",
+    "testing/e2e/scenarios/**/*.test.ts",
     "src/**/*.test.ts",
     "src/**/*.test.tsx"
   ],
-  "project": ["src/**/*.{ts,tsx}"],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.ts",
+    "evals/**/*.ts",
+    "testing/**/*.ts",
+    "!**/*.test.ts",
+    "!evals/fixtures/**",
+    "!testing/fixtures/**"
+  ],
+  "ignoreDependencies": ["tree-sitter-typescript", "@anthropic-ai/claude-agent-sdk"],
   "ignoreExportsUsedInFile": true,
   "includeEntryExports": true
 }

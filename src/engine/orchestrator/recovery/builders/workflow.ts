@@ -3,16 +3,16 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSortedIds } from '../../../../utils/collections.js';
-import type { RecoveryBuilderBase } from './recovery-issue.js';
+import type { RecoveryBuilderBase } from './issue.js';
 import { budgetPercentOf, formatCostFact, formatPercent } from '../../../../core/formatting.js';
-import { compactFacts, createRecoveryIssue } from './recovery-issue.js';
+import { compactFacts, createRecoveryIssue } from './issue.js';
 import {
   chooseRecommended,
   chooseUserEditRecommendation,
   mapUserEditAction,
   orderedActions,
-} from './recovery-actions.js';
-import { fileConflictDetails, taskFiles } from './recovery-details.js';
+} from './actions.js';
+import { fileConflictDetails, taskFiles } from './details.js';
 
 export interface UserEditConflictRecoveryOptions extends RecoveryBuilderBase {
   conflict: UserEditConflict;

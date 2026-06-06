@@ -438,7 +438,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 3. If the file is intentionally out of scope, add it to `scope.approvedOutOfBounds` in the brief.
 4. For repeat offenders, tighten future brief scope strings or add intentional shared files to `approvedOutOfBounds`.
 
-**Prevention:** Write brief scope sections with full project-relative paths (`src/engine/orchestrator/run/run.ts`), never bare names (`run.ts`).
+**Prevention:** Write brief scope sections with full project-relative paths (`src/engine/orchestrator/run/workflow.ts`), never bare names (`workflow.ts`).
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), `src/engine/orchestrator/final-review.ts`.
 
@@ -461,11 +461,11 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Edits to `drift.ts` do not change behavior
 
-**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/step.ts` through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/drift.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
+**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/step.ts` through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
 
 **Fix:**
 1. For repeated off-scope edits across tasks, inspect `drift-chains.json` and `src/engine/orchestrator/drift/chain.ts`.
-2. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/drift.ts`.
+2. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/analyze.ts`.
 3. Use `summary.json` only for the aggregate drift summary.
 4. Edit the correct file, re-run, and re-verify in `drift-chains.json`, `drift-report.json`, or the drift summary in `summary.json`.
 

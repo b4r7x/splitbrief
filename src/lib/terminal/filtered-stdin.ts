@@ -1,4 +1,5 @@
 import { PassThrough } from 'node:stream';
+import { setTerminalInputModes } from './control.js';
 
 export interface MouseEvent {
   type: 'wheel-up' | 'wheel-down';
@@ -17,13 +18,6 @@ const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
 const PARTIAL_SGR_MOUSE_RE = /^(?:\u001b|\u001b\[|\u001b\[<[\d;]*)$/;
 const COMPLETE_SGR_MOUSE_RE = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/;
 // biome-ignore-end lint/suspicious/noControlCharactersInRegex: matches ANSI escape (U+001B) in terminal input
-const ENABLE_MOUSE_TRACKING = '\u001b[?1000h';
-const ENABLE_SGR_MODE = '\u001b[?1006h';
-const DISABLE_MOUSE_TRACKING = '\u001b[?1000l';
-const DISABLE_SGR_MODE = '\u001b[?1006l';
-
-const ENABLE_BRACKETED_PASTE = '\u001b[?2004h';
-const DISABLE_BRACKETED_PASTE = '\u001b[?2004l';
 const PASTE_START = '\u001b[200~';
 const PASTE_END = '\u001b[201~';
 
@@ -163,12 +157,6 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
   // Ink types require tty.ReadStream, while the filter must be a writable PassThrough.
   // The TTY members Ink uses are bridged above; the cast is the interop boundary.
   return filtered as unknown as NodeJS.ReadStream;
-}
-
-function setTerminalInputModes(enabled: boolean): void {
-  process.stdout.write(enabled ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING);
-  process.stdout.write(enabled ? ENABLE_SGR_MODE : DISABLE_SGR_MODE);
-  process.stdout.write(enabled ? ENABLE_BRACKETED_PASTE : DISABLE_BRACKETED_PASTE);
 }
 
 function splitMouseChunk(raw: string): { processable: string; partial: string } {

@@ -9,7 +9,7 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError, publishRecoveryPrompted } from '../events.js';
-import { handleRetryAndEscalation } from '../escalation/escalation.js';
+import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';

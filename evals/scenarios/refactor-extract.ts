@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { readSourceFiles, runNpmTest } from './shared.js';
+import { readSourceFiles, runNpmTest } from './quality-checks.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 type SourceFile = {

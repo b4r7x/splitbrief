@@ -1,14 +1,14 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
-import { createDefaultConfig } from '../../core/config/load/load.js';
+import { createDefaultConfig } from '../../core/config/load/io.js';
 import { createPlanner } from '../runners/factory.js';
 import { detectAvailableProviders, KNOWN_PROVIDERS } from '../providers/registry.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
-import { CLI_TOOLS } from '../cli-tools.js';
+import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isPlannerToolId, type PlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
 import { typedEntries } from '../../utils/type-guards.js';

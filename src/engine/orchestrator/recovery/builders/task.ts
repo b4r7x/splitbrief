@@ -4,16 +4,16 @@ import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation-result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
-import type { RecoveryBuilderBase, TaskRecoveryContext } from './recovery-issue.js';
-import { compactFacts, createRecoveryIssue } from './recovery-issue.js';
-import { chooseRecommended, hasRouteBigger, orderedActions } from './recovery-actions.js';
+import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
+import { compactFacts, createRecoveryIssue } from './issue.js';
+import { chooseRecommended, hasRouteBigger, orderedActions } from './actions.js';
 import {
   attemptDetails,
   implementerDetails,
   routeBiggerDetails,
   summarizeValidation,
   taskFiles,
-} from './recovery-details.js';
+} from './details.js';
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   validationResults?: ValidationResult[] | undefined;

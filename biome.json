@@ -13,6 +13,7 @@
       "!**/coverage",
       "!**/.claude",
       "!**/.specify",
+      "!**/.nuke",
       "!**/specs",
       "!**/.diptych",
       "!**/.tiny-spec",
@@ -35,7 +36,11 @@
       "style": {
         "noNonNullAssertion": "off",
         "useImportType": "error",
-        "useTemplate": "off"
+        "useTemplate": "off",
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": { "filenameCases": ["kebab-case"], "requireAscii": true }
+        }
       },
       "complexity": {
         "useLiteralKeys": "off"

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
-import { renderFeature, tick } from '../../testing/helpers/ink.js';
-import { resetAllStores } from '../../testing/helpers/stores.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore, _lifecycleInternal } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
@@ -11,8 +11,8 @@ import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
-import { openApprovalPrompt } from '../stores/approval-prompt/actions.js';
-import { openCostApprovalPrompt } from '../stores/cost-approval/actions.js';
+import { openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import type { CostPrediction } from '../core/schemas/summary.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)

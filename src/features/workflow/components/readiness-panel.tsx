@@ -2,7 +2,7 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 
 interface ReadinessPanelProps {
   report: ReadinessReport;

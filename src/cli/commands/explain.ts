@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
-import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
+import { buildRunExplain } from '../../engine/orchestrator/explain/build.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
 import { withCliErrors } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
-import { resolveSessionOrThrow } from '../session-resolve.js';
+import { resolveSessionOrThrow } from '../sessions/resolve.js';
 
 interface ExplainOpts {
   project?: string | undefined;

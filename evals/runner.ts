@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { ConfigSchema, type Config } from '../src/core/schemas/config.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
-import { runWorkflow } from '../src/engine/orchestrator/run/run.js';
+import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
 import { createCassetteRecorder } from '../testing/helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '../testing/helpers/cassette/replayer.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';

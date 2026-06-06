@@ -9,8 +9,8 @@ import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage } from '../../engine/ipc/protocol.js';
 import { parseServerMessage } from '../../engine/ipc/protocol.js';
-import { resolveSessionAlias } from '../session-aliases.js';
-import { resolveRunningSession } from '../session-resolve.js';
+import { resolveSessionAlias } from '../sessions/aliases.js';
+import { resolveRunningSession } from '../sessions/resolve.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 
 export type DetachDeps = {

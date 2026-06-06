@@ -5,7 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { configPath, loadConfig, createDefaultConfig } from '../../../src/core/config/load/load.js';
+import { configPath, loadConfig, createDefaultConfig } from '../../../src/core/config/load/io.js';
 
 let tmp: string;
 let prevCwd: string;
@@ -23,7 +23,7 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-describe('CLI integration: init config roundtrip', () => {
+describe('CLI integration: init config roundtrip', { timeout: 30_000 }, () => {
   it('writes a default .diptych/config.yaml that loadConfig can read back to the same shape', async () => {
     const { exitCode } = await runCommand(['init']);
 

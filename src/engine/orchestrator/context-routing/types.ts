@@ -7,7 +7,7 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
-import type { TaskContextFit, CurrentCodeContextMode } from '../../events/workflow-events.js';
+import type { TaskContextFit, CurrentCodeContextMode } from '../../../core/schemas/enums.js';
 
 export interface TaskPromptEstimateOptions {
   task: Task;

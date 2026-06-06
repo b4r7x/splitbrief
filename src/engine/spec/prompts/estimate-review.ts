@@ -1,4 +1,4 @@
-import { buildPrompt, fenced, instructionsSection } from './prompt-builder.js';
+import { buildPrompt, fenced, instructionsSection } from './builder.js';
 
 export function buildPlannerEstimateReviewPrompt(packet: unknown): string {
   return buildPrompt({

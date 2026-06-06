@@ -2,7 +2,7 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 import type { CLIOverrides } from '../core/config/runtime/overrides.js';
 import type { Config } from '../core/schemas/config.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
-import { loadConfig } from '../core/config/load/load.js';
+import { loadConfig } from '../core/config/load/io.js';
 import { applyCLIOverrides, workflowOptsToCLIOverrides } from '../core/config/runtime/overrides.js';
 import { warnStderr } from '../lib/warn.js';
 

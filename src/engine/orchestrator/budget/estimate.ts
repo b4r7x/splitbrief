@@ -28,7 +28,7 @@ import {
 } from '../context-routing/context-length.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource } from '../context-routing/types.js';
-import type { TaskContextFit } from '../../events/workflow-events.js';
+import type { TaskContextFit } from '../../../core/schemas/enums.js';
 
 export type EstimateContextConfidence = z.infer<typeof EstimateContextConfidenceSchema>;
 

@@ -10,7 +10,7 @@ import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
 /**
  * Agent SDK implementer — exercised against the real wrapper in
- * `src/engine/agent-sdk-backend.ts`. The only sanctioned mock here is the optional
+ * `src/engine/runners/agent-sdk-backend.ts`. The only sanctioned mock here is the optional
  * peer dep `@anthropic-ai/claude-agent-sdk`, whose `query()` is stubbed to
  * yield a canned stream. Everything else (resolveAutoModel, known-models
  * defaults, change detection via git, apiKey env threading) runs for real.

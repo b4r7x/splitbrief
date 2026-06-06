@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { Box } from 'ink';
 import type { ComponentProps } from 'react';
 import { Composer } from './composer.js';
-import { renderFeature, tick } from '../../../testing/helpers/ink.js';
-import { resetAllStores } from '../../../testing/helpers/stores.js';
-import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../stores/project/config.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 

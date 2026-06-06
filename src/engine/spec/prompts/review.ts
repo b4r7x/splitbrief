@@ -1,4 +1,4 @@
-import { buildPrompt, fenced, instructionsSection } from './prompt-builder.js';
+import { buildPrompt, fenced, instructionsSection } from './builder.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.`;
 

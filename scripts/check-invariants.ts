@@ -58,7 +58,7 @@ const gates: Gate[] = [
     id: '7',
     description: 'No global env mutation in agent-sdk-backend',
     command:
-      '{ rg "process\\.env(?:\\.[A-Z_]+|\\[[\'\\"\'][A-Z_]+[\'\\"]\\])\\s*=" src/engine/agent-sdk-backend.ts || true; } | wc -l',
+      '{ rg "process\\.env(?:\\.[A-Z_]+|\\[[\'\\"\'][A-Z_]+[\'\\"]\\])\\s*=" src/engine/runners/agent-sdk-backend.ts || true; } | wc -l',
     expected: 0,
   },
   {
@@ -102,9 +102,10 @@ const gates: Gate[] = [
   },
   {
     id: '12c',
-    description: 'Engine must not import from src/components/ or src/hooks/ or src/cli/',
+    description:
+      'Engine must not import from src/components/ or src/hooks/ or src/cli/ (resolver-based, depth-independent)',
     command:
-      "{ rg -n \"from '\\.\\./\\.\\./\\.\\./(hooks|components|cli)/\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+      '{ BOUNDARY_VERBOSE=1 tsx scripts/import-boundaries.ts src 2>&1 1>/dev/null | rg "src/engine/\\*\\* must not import" || true; } | wc -l',
     expected: 0,
   },
   {
@@ -116,8 +117,7 @@ const gates: Gate[] = [
   {
     id: '14',
     description: 'React architecture refactor guard',
-    command:
-      '{ rg -n -e "components/input-bar" -e "core/slash-commands" -e "features/tool-picker" -e "hooks/use-app-keys" -e "workflow/components/command-palette-overlay" -e "engine/palette-aggregate" -e "InputBar" -e "toPaletteItems" -e "slashItems" -e "source: \'slash\'" -e "\'slash:\'" src CLAUDE.md docs --glob \'*.md\' --glob \'!docs/INVARIANTS.md\' --glob \'!docs/superpowers/**\' --glob \'!docs/audits/**\' || true; } | wc -l',
+    command: `{ rg -n -e "components/input-bar" -e "core/slash-commands" -e "features/tool-picker" -e "hooks/use-app-keys" -e "workflow/components/command-palette-overlay" -e "engine/palette-aggregate" -e "InputBar" -e "toPaletteItems" -e "slashItems" -e "source: 'slash'" -e "'slash:'" src || true; rg -n -e "components/input-bar" -e "core/slash-commands" -e "features/tool-picker" -e "hooks/use-app-keys" -e "workflow/components/command-palette-overlay" -e "engine/palette-aggregate" -e "InputBar" -e "toPaletteItems" -e "slashItems" -e "source: 'slash'" -e "'slash:'" CLAUDE.md docs --glob '*.md' --glob '!docs/INVARIANTS.md' || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -137,7 +137,7 @@ const gates: Gate[] = [
   {
     id: '17',
     description: 'No incidental non-null assertions (sanctioned files in CLAUDE.md allow-listed)',
-    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/(utils/type-guards|stores/create-store|stores/use-stores|engine/codebase/graph|engine/codebase/pagerank|lib/terminal/mouse)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/(stores/use-stores|engine/codebase/graph|engine/codebase/pagerank)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -150,7 +150,7 @@ const gates: Gate[] = [
     id: '17c',
     description:
       'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract and sanctioned files)',
-    command: `{ rg -n -P "[)\\]A-Za-z0-9_>] as [A-Z][A-Za-z0-9_]*(?=[;),<\\].}>]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|engine/hooks/dispatch|utils/error|core/project-meta|core/schemas/drift|engine/ipc/prompt-tracker)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[)\\]A-Za-z0-9_>] as [A-Z][A-Za-z0-9_]*(?=[;),<\\].}>]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|engine/hooks/dispatch|utils/error)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -158,6 +158,20 @@ const gates: Gate[] = [
     description: 'No dead exports/files (knip)',
     command:
       '{ npx knip --no-progress --no-config-hints --tags=-lintignore --include exports,types,files --reporter compact 2>/dev/null | rg . || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '19',
+    description: 'No runtime circular deps + layer-direction graph (dependency-cruiser)',
+    command:
+      '{ npx depcruise --config .dependency-cruiser.cjs --output-type err-long src 2>/dev/null | rg "^\\s+error " || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '20',
+    description: 'Test files must import testing/helpers via #testing alias, not relative paths',
+    command:
+      '{ rg -n "from [\'\\"]\\.\\.?/.*testing/helpers" src/ -g "*.test.ts" -g "*.test.tsx" || true; } | wc -l',
     expected: 0,
   },
 ];

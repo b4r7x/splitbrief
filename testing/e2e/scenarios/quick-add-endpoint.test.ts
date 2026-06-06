@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SESSION_LOG_FILE, sessionsRoot } from '../../../src/core/paths.js';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
-import { makeE2eScenarioConfig } from '../helpers/e2e-config.js';
-import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
+import { makeE2eScenarioConfig } from '../helpers/config.js';
+import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 
 const scenario = {
   name: 'quick mode - add endpoint',

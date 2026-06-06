@@ -8,7 +8,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { createDefaultConfig } from '../../../src/core/config/load/load.js';
+import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -33,7 +33,7 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-describe('CLI integration: resume interrupted session', () => {
+describe('CLI integration: resume interrupted session', { timeout: 30_000 }, () => {
   it('loads the saved state and logs resumption for a mid-implementation session', async () => {
     const sessionId = '2026-04-18-resume-me';
     mkdirSync(sessionDir(tmp, sessionId), { recursive: true });

@@ -7,7 +7,7 @@ import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { Planner } from '../../engine/planners/types.js';
 import type { Implementer } from '../../engine/implementers/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
-import { runWorkflow } from '../../engine/orchestrator/run/run.js';
+import { runWorkflow } from '../../engine/orchestrator/run/workflow.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import { loadState } from '../../core/state/persistence.js';

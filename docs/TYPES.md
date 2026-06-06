@@ -40,9 +40,9 @@ For any TS-only type (not a Zod schema), the placement depends on who uses it.
 **Inline into that file.**
 
 ```ts
-// src/stores/navigation/router.ts
-type Screen = 'home' | 'workflow' | 'summary' | 'setup';
-type InputMode = 'default' | 'review' | 'question';
+// src/core/navigation/types.ts
+export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
+export type InputMode = 'normal' | 'review' | 'question';
 // ... types used only by this file live here, not in a separate *-types.ts
 ```
 
@@ -83,16 +83,15 @@ Why: if producers and stores/features both consume the type, place the contract 
 
 ### Exception — genuinely cross-cutting types
 
-A type stays in `src/core/types/` only if it meets **both** criteria:
+A type stays in `src/core/types/` only if it meets **either** the cross-cutting bar or a documented carve-out:
 
-- Fan-in > 30 files
-- Consumers span ≥3 top-level folders (e.g., `engine/` + `features/` + `stores/`)
+- **Cross-cutting bar** — fan-in is broad (tens of consumers) and spans ≥3 top-level folders (e.g., `engine/` + `features/` + `stores/`).
+- **Carve-out** — a small boundary shape that no single folder owns. It is the contract for an option bag or reference that is constructed at the CLI/entry edge and threaded through many downstream files, with no natural producer folder to host it.
 
-Currently three files qualify (TS-only, no Zod schema):
+The current residents (TS-only, no Zod schema):
 
-- `core/types/config-options.ts` — `WorkflowOpts` (the provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`)
-- `core/types/state-actions.ts` — `StateAction`, `TokenBudget`, `CodeContext`, `ProjectContext`
-- `core/types/summary.ts` — `ImplementerResult`, `ValidationResult`
+- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (9 consumers under `cli/`; carve-out — no single folder owns the option contract). The provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
+- `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
 
 Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
 
@@ -110,14 +109,12 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside `EngineEvent`; ports for `createEventBus()` and sink subscribers |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
-| `ThemeColors` | `core/types/theme.ts` | `components/theme.tsx` (inline) | Only used by the theme component |
-| `SidebarTask` | `core/types/app.ts` | `features/workflow/components/sidebar.tsx` (inline) | Single consumer |
-| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `stores/navigation/router.ts` (inline) | Single consumer |
+| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: 18 consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
 | `RuntimeCommandDef`, `RuntimeCommandContext`, `CommandPaletteItem` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
 
 **Banned anti-patterns:**
 
-- ❌ `src/types.ts` or `src/types/` as a top-level dumping ground
+- ❌ `src/types.ts` or `src/types/` as a top-level dumping ground — the ban targets first-party `.ts` type buckets, not `.d.ts` ambient declarations (e.g. `src/types/anthropic-agent-sdk.d.ts`, which augments a third-party module with no shipped types, is fine)
 - ❌ Feature-scoped types in `src/core/types/`
 - ❌ `*-types.ts` suffix when the folder name already implies the domain
 - ❌ A `core/types/app.ts` kitchen-sink grouping unrelated types
@@ -133,10 +130,10 @@ Types should live where their domain meaning is created — not in a central `ty
 
 ## Schemas — `src/core/schemas/`
 
-All Zod validators live in this folder at the top of `core/`. Flat — no subfolders (the folder is itself cohesive: "runtime data shapes").
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). It sits at the top of `core/` and is flat — no subfolders (the folder is itself cohesive: "runtime data shapes"). A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/sessions/tree/schemas.ts`, `core/config/runtime/overrides.ts`) rather than being hoisted here.
 
 ```
-src/core/schemas/
+src/core/schemas/          # ~29 files — representative subset below (non-exhaustive)
 ├── config.ts              # ConfigSchema + Config type
 ├── enums.ts               # PlannerKind, ImplementerKind, Mode enums
 ├── implementer-config.ts
@@ -149,7 +146,8 @@ src/core/schemas/
 ├── session-log.ts         # SessionLog entries (JSONL)
 ├── summary.ts
 ├── question.ts
-└── models-dev.ts          # models.dev catalog — remote JSON boundary
+├── models-dev.ts          # models.dev catalog — remote JSON boundary
+└── …                      # analyze, drift, evidence, recovery, snapshot, stats, hooks, … (flat, no subfolders)
 ```
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:
@@ -201,7 +199,7 @@ This matters in this project because:
 
 Example from this codebase:
 ```ts
-// features/workflow/components/event-cards/event-card.tsx renders engine events
+// features/workflow/components/event-cards/planner-status.tsx renders engine events
 import type { EngineEvent } from '../../../../engine/events/types.js';
 ```
 
@@ -224,6 +222,7 @@ If it turns out a value (constant, helper fn) from `features/workflow/` is neede
 | `<folder>/<name>.types.ts` | ❌ | Same as above, different punctuation |
 | `src/types.ts` | ❌ | Top-level dumping ground |
 | `src/types/<name>.ts` | ❌ | Outside `src/core/types/` (which is reserved for truly cross-cutting types) |
+| `src/types/<name>.d.ts` (ambient module declaration) | ✅ | Augments a third-party module with no shipped types |
 | Inline into consumer file | ✅ | Case A — one consumer |
 
 ---
@@ -233,8 +232,8 @@ If it turns out a value (constant, helper fn) from `features/workflow/` is neede
 **Q: I'm adding a `ReviewAction` type used only by `features/workflow/review-parser.ts`.**
 A: Inline into `review-parser.ts` (Case A).
 
-**Q: I'm adding a `PlannerDetection` type used by three files inside `engine/detection/`.**
-A: `engine/detection/types.ts` (Case B).
+**Q: I'm adding a `PlannerDetection` type produced in `core/discovery/detection.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
+A: Keep it with its producer in `core/discovery/detection.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
 
 **Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache.ts`.**
 A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import type`. (Case C)
@@ -249,7 +248,7 @@ A: Is it persisted (written to session log, IPC, etc.)? → schema (`core/schema
 A: Yes — that is what `types.ts` is for. The folder is the naming context.
 
 **Q: Should I create `src/types/` for types used by many places?**
-A: No. Use `src/core/types/` only for types meeting the exception threshold (fan-in > 30, ≥3 top-level folders). Most "shared types" actually have a producer and should live there.
+A: No. Use `src/core/types/` only for types that clear the exception rule (the cross-cutting bar or a documented carve-out — see "Exception — genuinely cross-cutting types"). Most "shared types" actually have a producer and should live there.
 
 ---
 

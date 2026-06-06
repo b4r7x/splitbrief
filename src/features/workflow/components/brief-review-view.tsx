@@ -18,7 +18,7 @@ import {
   formatTaskCount,
   formatTaskReviewLine,
   getTaskStatusSymbol,
-} from './brief-review-format.js';
+} from '../brief-review-format.js';
 import { loadPlanEditorData } from './plan-editor/loader.js';
 import { BRIEFS_REVIEW_HINT } from '../review-parser.js';
 

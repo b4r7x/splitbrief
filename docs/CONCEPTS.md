@@ -154,7 +154,7 @@ On validation failure:
   - **Hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
   - **Full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
 
-Escalation logic: `src/engine/orchestrator/escalation/escalation.ts`.
+Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.
 
 ---
 
@@ -172,13 +172,13 @@ On a gate:
 - Comment without approve → the planner regenerates the artifact using the comment as feedback, then loops back to the gate.
 - Reject without comment → cancel the workflow, return to idle.
 
-Implementation: `src/engine/orchestrator/approval/approval.ts` via `callbacks.onApprovalNeeded`.
+Implementation: `src/engine/orchestrator/approval/loop.ts` via `callbacks.onApprovalNeeded`.
 
 ---
 
 ## Clarifying questions
 
-During `specifying`, a conversation-capable planner can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question-parser.ts`.
+During `specifying`, a conversation-capable planner can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question.ts`.
 
 Up to 5 questions per run. User can answer each, type `skip` to skip one, or type `done` to stop accepting questions.
 
@@ -340,7 +340,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.
 
-Typed event schema: `src/engine/events/types.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/components/event-cards/event-card.tsx`.
+Typed event schema: `src/engine/events/types.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/conversation-rows/event-rows.ts`.
 
 ---
 

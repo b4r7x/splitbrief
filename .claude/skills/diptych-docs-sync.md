@@ -1,6 +1,6 @@
 ---
 name: diptych-docs-sync
-description: Audit whether docs/ matches the current state of the code. Use when the user asks to sync docs, verify doc accuracy, check for stale references, or after a change that may have diverged docs from code. Does not rewrite specs in plans/ — those are immutable.
+description: Audit whether docs/ matches the current state of the code. Use when the user asks to sync docs, verify doc accuracy, check for stale references, or after a change that may have diverged docs from code. Does not rewrite specs under notes/superpowers/specs/ or notes/specs/ — those are immutable.
 ---
 
 # Sync diptych docs with current code
@@ -9,7 +9,7 @@ Docs describe **current code, not plans**. After any code change that touches a 
 
 ## When to run
 
-- After implementing a `plans/<NNN>` spec (the spec's own Doc Sync tasks handle the primary updates — this skill is a second-pass verification).
+- After implementing a spec under `notes/superpowers/specs/` (the spec's own Doc Sync brief handles the primary updates — this skill is a second-pass verification).
 - When the user says "docs look out of date".
 - Before a release.
 - Before handing off to a fresh AI context (so that primer docs are accurate).
@@ -30,8 +30,8 @@ In scope:
 
 Out of scope:
 
-- `plans/<NNN>/*` — immutable after writing.
-- `specs/<NNN>/*` — historical speckit specs; treat as archive.
+- `notes/superpowers/specs/**` — numbered + dated execution specs; immutable after writing.
+- `notes/specs/**` — dated handoff / spec archives; treat as archive.
 - `docs/VISION.md` — strategic, rarely needs sync.
 
 ## Audit checklist
@@ -46,7 +46,7 @@ Grep for `diptych <command>` patterns in docs. Verify each command actually exis
 grep -rn "diptych start\|diptych spec\|diptych init\|diptych resume\|diptych status\|diptych migrate\|diptych sessions" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-For each hit, cross-reference with `src/cli.ts` and `src/cli/commands/`. Commands missing from code but present in docs → remove from docs (or, if intended as a target-state mention, mark with "(planned — see plans/NNN)").
+For each hit, cross-reference with `src/cli.ts` and `src/cli/commands/`. Commands missing from code but present in docs → remove from docs (or, if intended as a target-state mention, mark with "(planned — see the relevant spec under `notes/superpowers/specs/`)").
 
 ### 2. Phase list
 
@@ -93,7 +93,7 @@ Every "see `src/...`" or "see `docs/...`" link in a doc file must point at a rea
 ### 8. README freshness
 
 - Quick-start commands copy-paste-able and working today.
-- Config YAML example matches current `src/core/types/schemas/config.ts`.
+- Config YAML example matches current `src/core/schemas/config.ts`.
 - Every feature mentioned exists (no aspirational copy).
 
 ### 9. CLAUDE.md
@@ -145,6 +145,6 @@ Files modified:
 ## Constraints
 
 - Do not commit or stage.
-- Do not modify `plans/`, `specs/`, `.specify/`.
+- Do not modify `notes/superpowers/specs/`, `notes/specs/`, `.specify/`.
 - Do not invent information to fill gaps — if code is unclear, ask the user rather than guess.
 - Prefer small surgical edits to full rewrites. An out-of-date paragraph gets a targeted fix, not a section rewrite.

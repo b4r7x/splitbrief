@@ -11,8 +11,8 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { resolveSessionAlias } from '../session-aliases.js';
-import { resolveRunningSession } from '../session-resolve.js';
+import { resolveSessionAlias } from '../sessions/aliases.js';
+import { resolveRunningSession } from '../sessions/resolve.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 export interface AttachDeps {

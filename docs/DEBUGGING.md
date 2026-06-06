@@ -124,9 +124,9 @@ Cause: missing `.js` extension in a relative import. ESM requires explicit `.js`
 
 ```ts
 // correct
-import { loadConfig } from './core/config/load/load.js';
+import { loadConfig } from './core/config/load/io.js';
 // wrong — ERR_MODULE_NOT_FOUND
-import { loadConfig } from './core/config/load/load';
+import { loadConfig } from './core/config/load/io';
 ```
 
 See [PRINCIPLES.md](./PRINCIPLES.md) — ESM rule.
@@ -155,7 +155,7 @@ Cause: config file contains `apiKey: sk-...` inline. diptych detects and warns v
 
 ### `.diptych/config.yaml` permissions warning
 
-Cause: on non-Windows, the config file permissions are looser than `0600`. Source: `src/core/config/load/load.ts`. Fix:
+Cause: on non-Windows, the config file permissions are looser than `0600`. Source: `src/core/config/load/io.ts`. Fix:
 
 ```bash
 chmod 600 .diptych/config.yaml

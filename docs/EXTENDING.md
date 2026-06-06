@@ -26,7 +26,7 @@ Existing example to follow: `src/cli/commands/start.ts`.
    - `handler` — sync or async function
    - `validScreens` — array of screens where the command is available (use `ALL_SCREENS` from `src/core/navigation/types.ts` for global)
    - Optional: `label` (for command palette), `shortcut`, `description`, `aliases`
-4. Phase guards: add a `phaseGuard` function if the command should only run in certain phases (see `canReviseSpec` / `canRevisePlan` in the same file)
+4. Phase guards: add a `phaseGuard` function if the command should only run in certain phases (see `canReviseSpec` / `canRevisePlan` in `src/core/phases.ts`)
 5. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
 
 ---
@@ -79,7 +79,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
    - `src/core/schemas/implementer-config.ts` — implementer-side config discriminated union
 5. Add factory cases in `src/engine/runners/factory.ts`:
    - Add a lazy loader: `const loadMyPlanner = lazy(() => import('../planners/<name>.js'));`
-   - Add the `case '<kind>':` branch in both `loadPlanner()` and `loadImplementer()`
+   - Add the `case '<kind>':` branch in both `loadPlanner()` and `createImplementer()`
 6. Declare a `capabilities` struct — the orchestrator reads capability flags, never backend identity
 7. Write colocated tests: `src/engine/planners/<name>.test.ts`, `src/engine/implementers/<name>.test.ts`
 
@@ -92,7 +92,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
    - Add the phase to `phaseActions` (allowed state-action combinations)
    - Add transition logic in the reducer function
 3. Update phase taxonomy in `src/core/phases.ts`:
-   - Add to the correct sets: `CANCELLABLE_PHASES`, `RESUMABLE_PHASES`, `IMPLEMENTER_PHASES` / `PLANNER_COST_PHASES` / `IMPLEMENTER_COST_PHASES`
+   - Add to the correct sets: `RESUMABLE_PHASES`, `LIVE_PHASES`, `IMPLEMENTER_PHASES` / `PLANNER_COST_PHASES` / `IMPLEMENTER_COST_PHASES`
    - Update `phaseRole()` if needed
 4. Add orchestrator logic — typically a new file under `src/engine/orchestrator/planning/` or `src/engine/orchestrator/task/`
 5. If the phase has a visual: update `WorkflowScreen` components in `src/features/workflow/`
@@ -137,7 +137,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 1. Open `src/features/workflow/conversation-rows/event-rows.ts`
 2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
 3. Add your event type to:
-   - `src/features/workflow/event-role.ts` when it needs planner/implementer gutter styling
+   - `src/features/workflow/conversation-rows/event-role.ts` when it needs planner/implementer gutter styling
    - `eventRows()` when it should appear in the scrollable conversation
 4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping, cards, and gutters.
 5. Events that should remain silent in the conversation should return `[]`.
@@ -163,7 +163,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 ## 11. New config key
 
 1. Add the field to the appropriate schema in `src/core/schemas/config.ts` (or a sub-schema it imports)
-2. If the field needs a runtime accessor, create or extend a file under `src/core/config/accessors/` (existing: `runner-config.ts`, `implementer-profiles.ts`, `state.ts`)
+2. If the field needs a runtime accessor, create or extend a file under `src/core/config/accessors/` (existing: `runner-config.ts`, `implementer-profiles.ts`, `values.ts`)
 3. If the field affects readiness, add a check in the matching `src/core/readiness/checks/` file
 4. If the field needs a CLI flag, add it in `src/cli/options.ts` and map it in `applyCLIOverrides()` (`src/core/config/runtime/overrides.ts`)
 5. Document in `docs/CONFIGURATION.md`
@@ -175,7 +175,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 1. Add the event name to `HookEventSchema` in `src/core/schemas/hooks.ts`
    - Names follow the convention: `pre_*`, `post_*`, `on_*`
 2. For `pre_*` hooks (blocking, before the action happens):
-   - Call `runPreHooks()` from `src/engine/hooks/run-pre-hook.ts` at the orchestrator call site
+   - Call `runPreHooks()` from `src/engine/hooks/run-pre.ts` at the orchestrator call site
    - `runPreHooks()` returns `{ allow: boolean; reason?: string }` — abort the action if `allow` is false
 3. For `post_*` / `on_*` hooks (fire-and-forget, after the action):
    - Add a mapping case in `eventToHookKey()` inside `src/engine/hooks/sink.ts`

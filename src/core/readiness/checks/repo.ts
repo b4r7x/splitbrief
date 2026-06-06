@@ -1,4 +1,4 @@
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {

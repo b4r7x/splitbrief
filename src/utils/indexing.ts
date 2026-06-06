@@ -3,6 +3,10 @@ export const clampIndex = (current: number, length: number): number => {
   return Math.min(Math.max(0, current), length - 1);
 };
 
+export function rotateIndex(current: number, length: number, delta: 1 | -1): number {
+  return (current + delta + length) % length;
+}
+
 export const navigateIndex = (
   direction: 'up' | 'down',
   current: number,

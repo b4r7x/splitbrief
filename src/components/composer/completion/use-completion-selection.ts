@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { rotateIndex } from '../../pickers/picker-utils.js';
+import { rotateIndex } from '../../../utils/indexing.js';
 
 interface SelectionState {
   key: string;

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { discoverHookModules, mergeDiscoveredHooks, resolveHooksConfig } from './discover.js';
-import { runPreHooks } from './run-pre-hook.js';
+import { runPreHooks } from './run-pre.js';
 import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
 import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';

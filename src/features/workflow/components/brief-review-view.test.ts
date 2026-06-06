@@ -8,8 +8,8 @@ import {
   getTaskStatusSymbol,
   buildTaskDetailParts,
   formatTaskCount,
-} from './brief-review-format.js';
-import { refreshPlanReviewMetadata } from './plan-review-metadata.js';
+} from '../brief-review-format.js';
+import { refreshPlanReviewMetadata } from '../plan-review-metadata.js';
 import { buildRoutingPreviewMetadata } from '../../../engine/facades/routing-preview.js';
 import type { BriefQualityReport, BriefQualityIssue } from '../../../engine/spec/brief-quality.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { readSourceFiles, runNpmTest } from './shared.js';
+import { readSourceFiles, runNpmTest } from './quality-checks.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 function hasZodUsage(content: string): boolean {

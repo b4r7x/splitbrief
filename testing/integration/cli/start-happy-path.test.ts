@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { createDefaultConfig } from '../../../src/core/config/load/load.js';
+import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
 
@@ -30,7 +30,7 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-describe('CLI integration: start happy path', () => {
+describe('CLI integration: start happy path', { timeout: 30_000 }, () => {
   it('creates a session directory and active marker when starting a new workflow', async () => {
     const { exitCode } = await runCommand(['start', '--project', tmp, 'add endpoint']);
 

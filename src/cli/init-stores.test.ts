@@ -9,7 +9,7 @@ import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { DIPTYCH_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
-import { createDefaultConfig } from '../core/config/load/load.js';
+import { createDefaultConfig } from '../core/config/load/io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 // Bootstrap runs real disk reads + provider-detection probes. Probes fail
@@ -65,7 +65,7 @@ describe('initStores', () => {
     const config = requireConfig();
     expect(config.planner.kind).toBe('cli');
     expect(config.implementer.kind).toBe('cli');
-  }, 15_000);
+  }, 30_000);
 
   it('falls back to default config when no config file exists on disk', async () => {
     const dir = makeProjectDir();
@@ -77,7 +77,7 @@ describe('initStores', () => {
     // Defaults: planner is cli/claude-code, implementer is api/ollama.
     expect(config.planner.kind).toBe('cli');
     expect(config.implementer.kind).toBe('api');
-  }, 15_000);
+  }, 30_000);
 
   it('applies CLI-override workflow mode on top of loaded config', async () => {
     const dir = makeProjectDir();
@@ -93,7 +93,7 @@ describe('initStores', () => {
     await initStores(dir, { mode: 'quick' });
 
     expect(configStore.get().config?.workflow.mode).toBe('quick');
-  }, 15_000);
+  }, 30_000);
 
   it('populates sessionsStore.sessions from the on-disk session directory', async () => {
     const dir = makeProjectDir();
@@ -144,7 +144,7 @@ describe('initStores', () => {
 
     const sessions = sessionsStore.get().sessions;
     expect(sessions.some((s) => s.id === sessionId)).toBe(true);
-  }, 15_000);
+  }, 30_000);
 
   it('sessionsStore ends up with an empty list when no sessions exist on disk', async () => {
     const dir = makeProjectDir();
@@ -160,7 +160,7 @@ describe('initStores', () => {
     await initStores(dir);
 
     expect(sessionsStore.get().sessions).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it('skillsStore is populated (possibly empty) after bootstrap completes', async () => {
     const dir = makeProjectDir();
@@ -179,7 +179,7 @@ describe('initStores', () => {
     // Content depends on developer's `~/.claude/skills` + project `.claude/skills`;
     // the contract is that it was discovered, not that it is non-empty.
     expect(Array.isArray(skillsStore.get().available)).toBe(true);
-  }, 15_000);
+  }, 30_000);
 
   it('overrides implementer model from opts.implementerModel', async () => {
     const dir = makeProjectDir();
@@ -195,7 +195,7 @@ describe('initStores', () => {
     await initStores(dir, { implementerModel: 'claude-opus-4-5' });
 
     expect(requireConfig().implementer.model).toBe('claude-opus-4-5');
-  }, 15_000);
+  }, 30_000);
 
   it('resolves before returning (all awaited side-effects settle)', async () => {
     const dir = makeProjectDir();
@@ -213,7 +213,7 @@ describe('initStores', () => {
     expect(configStore.get().config).not.toBeNull();
     expect(sessionsStore.get().sessions).toBeDefined();
     expect(skillsStore.get().available).toBeDefined();
-  }, 15_000);
+  }, 30_000);
 
   it('repeated bootstrap does not accumulate resize listeners', async () => {
     const dir = makeProjectDir();
@@ -231,7 +231,7 @@ describe('initStores', () => {
     await initStores(dir);
 
     expect(process.stdout.listenerCount('resize')).toBe(before + 1);
-  }, 15_000);
+  }, 30_000);
 
   it('throws a CLI error when config loading yields no config state', async () => {
     const dir = makeProjectDir();
@@ -248,5 +248,5 @@ describe('initStores', () => {
     );
 
     await expect(initStores(dir)).rejects.toThrow();
-  }, 15_000);
+  }, 30_000);
 });

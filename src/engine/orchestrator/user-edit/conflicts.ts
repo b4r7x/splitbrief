@@ -2,12 +2,8 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
 
-import type {
-  UserEditConflictKind,
-  UserEditConflictAction,
-  UserEditConflictFile,
-  UserEditConflict,
-} from '../../events/workflow-events.js';
+import type { UserEditConflictKind, UserEditConflictAction } from '../../../core/schemas/enums.js';
+import type { UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
 
 export const DESTRUCTIVE_CONFLICT_ACTIONS: readonly UserEditConflictAction[] = [
   'pause',

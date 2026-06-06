@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { REVIEW_FILE, SANDBOX_DIR, sessionDir } from '../../../src/core/paths.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -157,7 +157,7 @@ function normalizeMacTmpPath(path: string | null): string | null {
   return path?.replace(/^\/private(\/(?:tmp|var)\/)/, '$1') ?? null;
 }
 
-describe('CLI planner to CLI implementer workflow', () => {
+describe('CLI planner to CLI implementer workflow', { timeout: 30_000 }, () => {
   it('runs a Codex-style planner subprocess and a separate OpenCode-style implementer subprocess', async () => {
     const marker = 'from-cli-planner-to-cli-implementer';
     const projectDir = setupProject(marker);

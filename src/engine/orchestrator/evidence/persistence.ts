@@ -11,8 +11,8 @@ import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
-} from './task-evidence.js';
-import { recordApprovalEvidence, recordRejectionEvidence } from './approval-evidence.js';
+} from './task.js';
+import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation-result.js';
 import type {

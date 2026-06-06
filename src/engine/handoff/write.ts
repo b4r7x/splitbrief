@@ -10,7 +10,7 @@ import { renderHandoffWithCustom } from './render.js';
 import { buildManifest, writeManifest } from './manifest.js';
 import { loadState } from '../../core/state/persistence.js';
 import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
-import { loadConfig } from '../../core/config/load/load.js';
+import { loadConfig } from '../../core/config/load/io.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
 import {

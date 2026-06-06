@@ -1,5 +1,5 @@
 import { wrapHard } from '../../../utils/wrap.js';
-import type { GutterRole } from '../event-role.js';
+import type { GutterRole } from './event-role.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const MIN_ROW_WIDTH = 1;

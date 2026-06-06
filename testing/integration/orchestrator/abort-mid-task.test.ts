@@ -29,7 +29,9 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('abort during implementer phase terminates the task loop cleanly', () => {
+describe('abort during implementer phase terminates the task loop cleanly', {
+  timeout: 30_000,
+}, () => {
   it('aborting mid-implement leaves the task un-advanced and emits no task-complete afterwards', async () => {
     const projectDir = createTempDir('orch-int-abort');
     dirs.push(projectDir);

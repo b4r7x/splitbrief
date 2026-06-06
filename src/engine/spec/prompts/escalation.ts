@@ -5,7 +5,7 @@ import {
   codeFenceLanguage,
   isJavaScriptLikeLanguage,
 } from './language-context.js';
-import { buildPrompt, fenced, instructionsSection, type PromptSection } from './prompt-builder.js';
+import { buildPrompt, fenced, instructionsSection, type PromptSection } from './builder.js';
 import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
 
 function taskMetaSection(task: Task, ctx: LanguageContext): PromptSection {

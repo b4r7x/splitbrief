@@ -12,7 +12,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
-import { createDefaultConfig } from '../../core/config/load/load.js';
+import { createDefaultConfig } from '../../core/config/load/io.js';
 import { processError } from '../../lib/process/errors.js';
 
 function makeConfig(overrides: Partial<Config['validation']>): Config {

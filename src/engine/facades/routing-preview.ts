@@ -18,12 +18,12 @@ import { hasNoCapableWorker, hasStaleOrConflict } from '../../core/plan-review/p
 import { routeTaskToImplementerProfile } from '../orchestrator/context-routing/route.js';
 import { currentCodeContextMode as inferCurrentCodeContextModeFromPrompt } from '../orchestrator/context-routing/headings.js';
 import type { RoutingDecision } from '../orchestrator/context-routing/types.js';
-import type { CurrentCodeContextMode, TaskContextFit } from '../events/workflow-events.js';
+import type { CurrentCodeContextMode, TaskContextFit } from '../../core/schemas/enums.js';
 import { formatTaskPrompt } from '../spec/prompt-formatter.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { assertWritablePathConfined } from '../../lib/path-confinement.js';

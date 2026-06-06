@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderHandoff } from './render.js';
 import type { HandoffInput } from './types.js';
 import type { HandoffTarget } from '../../core/handoff/targets.js';
-import { makeTask } from '../../../testing/helpers/factories/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 const t1 = makeTask({
   id: 'T001',

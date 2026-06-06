@@ -61,7 +61,7 @@ Screen selection is a switch on `routerStore`'s `screen` field:
 - **summary** — `<SummaryScreen/>` — post-completion results
 - **setup** — `<SetupScreen/>` — first-run configuration wizard
 
-`<WorkflowScreen/>` is where the engine starts. Its `useWorkflowRunner()` hook (`src/features/workflow/hooks/use-workflow-runner.ts`) triggers `runWorkflow()` from the engine. The hook creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system.
+`<WorkflowScreen/>` is where the engine starts. Its `useWorkflowRunner()` hook (`src/features/workflow/hooks/use-runner.ts`) triggers `runWorkflow()` from the engine. The hook creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system.
 
 The callbacks are how the engine asks for human decisions without importing React. `onApprovalNeeded` switches to review mode and resolves when the user responds. `onCostApprovalNeeded` opens the cost approval prompt. `onTaskReviewNeeded` switches to question mode. The engine `await`s these promises — it's blocked until the user answers.
 
@@ -69,7 +69,7 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 ## Workflow initialization
 
-`runWorkflow()` (`src/engine/orchestrator/run/run.ts`) is the top-level engine entry. It generates a session ID, builds a summary base with planner/implementer metadata, wraps the entire run in `withShutdownHandlers()` (SIGINT/SIGTERM handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
+`runWorkflow()` (`src/engine/orchestrator/run/workflow.ts`) is the top-level engine entry. It generates a session ID, builds a summary base with planner/implementer metadata, wraps the entire run in `withShutdownHandlers()` (SIGINT/SIGTERM handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
 
 `initializeWorkflow()` does the following, in order:
 
@@ -188,7 +188,7 @@ Every workflow run produces files on disk under `.diptych/sessions/<id>/`:
 
 **`snapshots/`** — content-addressed working-tree snapshots for undo, created at configurable points (pre-task, post-task, pre-final-review).
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/final-review.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
 
 ---
 

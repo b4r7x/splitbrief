@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeTask } from '../../testing/helpers/factories/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { hashTaskBrief } from './brief-hash.js';
 
 describe('hashTaskBrief', () => {

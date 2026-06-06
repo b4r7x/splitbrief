@@ -10,7 +10,7 @@ These subsystems sit outside the core workflow loop but are essential to the ful
 
 User-declared commands that fire on workflow events. Configured in the `hooks` section of the diptych config file, or auto-discovered from `.diptych/hooks/` as ES module files named by event (e.g. `pre-task.ts`, `post-commit.js`). Discovery and merge logic lives in `src/engine/hooks/discover.ts`.
 
-**Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`, `pre_compact`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre-hook.ts`, which also runs active built-in hooks before user entries.
+**Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`, `pre_compact`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre.ts`, which also runs active built-in hooks before user entries.
 
 **Post-hooks and on-hooks** (`post_task`, `post_validation`, `post_commit`, `on_complete`, `on_error`) fire asynchronously after the action through the hook sink on the EventBus (`src/engine/hooks/sink.ts`). A deny outcome from a post-hook is informational only -- it cannot block the already-completed action.
 
@@ -24,7 +24,7 @@ Hooks support two kinds: `command` (spawns a subprocess, receives the event as J
 
 `src/engine/snapshots/`
 
-Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store (`src/engine/snapshots/store.ts`) handles creation, manifest management, and file collection. Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run.ts`.
+Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store handles creation (`src/engine/snapshots/create.ts`), manifest management (`src/engine/snapshots/manifest.ts`), and file collection (`src/engine/snapshots/files.ts`). Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run.ts`.
 
 The first snapshot creates the **baseline snapshot** -- the "before" state. It stores every tracked file (excluding `.git`, `.diptych`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
 
@@ -141,7 +141,7 @@ Compaction summarizes older turns in `session.jsonl` without deleting them. A su
 
 ## 12. Evidence ledger
 
-`src/engine/orchestrator/evidence/{ledger,persistence,reporting,task-evidence}.ts`, `src/core/schemas/evidence.ts`
+`src/core/evidence/ledger.ts`, `src/engine/orchestrator/evidence/{approval,persistence,reporting,retry-counts,task}.ts`, `src/core/schemas/evidence.ts`
 
 The evidence ledger records what happened during implementation -- approval decisions, validation outcomes, task completions, skip reasons, escalation results, and rejection reasons. One ledger per session, persisted as `evidence.json` inside the session directory (`.diptych/sessions/<id>/evidence.json`).
 

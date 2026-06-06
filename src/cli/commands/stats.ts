@@ -7,7 +7,7 @@ import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { withCliErrors } from '../errors.js';
 import { writeJsonLine } from '../json-line.js';
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import type { StatsUpdateInput } from '../../core/stats/persistence.js';
 
 export function registerStatsCommand(program: Command): void {

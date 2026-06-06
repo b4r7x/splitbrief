@@ -26,7 +26,7 @@ src/
 ├── stores/                                  # external stores — see STORES.md
 ├── components/                              # shared UI (cross-feature)
 ├── hooks/                                   # shared hooks (cross-feature) — see HOOKS.md
-├── lib/                                     # infrastructure wrappers (git, fs, process, terminal, highlight) — see LAYERS.md
+├── lib/                                     # infrastructure wrappers (git, fs, process, terminal) — see LAYERS.md
 ├── utils/                                   # generic primitives (zero domain, zero infra) — see LAYERS.md
 └── features/                                # business features
     ├── help/
@@ -61,16 +61,29 @@ src/cli/
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
 ├── otel-bootstrap.ts  # OTEL_TRACES_EXPORTER=console shortcut (BasicTracerProvider + ConsoleSpanExporter)
-└── commands/          # commander subcommand handlers (thin — delegate to core)
-    ├── start.ts
-    ├── resume.ts
-    ├── spec.ts
-    ├── init.ts
-    ├── status.ts
-    └── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
+├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core)
+│   ├── start.ts
+│   ├── resume.ts
+│   ├── spec.ts
+│   ├── init.ts
+│   ├── status.ts
+│   └── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
+├── rpc/               # attached-client RPC: reader/writer framing, gates, command dispatch, run loop
+│   ├── run.ts
+│   ├── dispatch.ts
+│   ├── gates.ts
+│   ├── reader.ts
+│   ├── writer.ts
+│   ├── callbacks.ts
+│   ├── command-context.ts
+│   └── types.ts
+└── sessions/          # session-id resolution for subcommands
+    ├── resolve.ts          # resolveSessionOrThrow(dir, opt) — active pointer → single-running fallback
+    ├── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
+    └── single-running.ts   # findSingleRunningSession scan (single | none | multiple)
 ```
 
-The previous `cli/workflow.ts` is split into `options.ts` + `setup.ts`; `cli/input-history-persistence.ts` moved to `stores/ui/persistence.ts`.
+`cli/input-history-persistence.ts` moved to `stores/ui/persistence.ts`.
 
 ### `src/stores/ui/` — ephemeral UI chrome stores
 
@@ -108,7 +121,7 @@ src/engine/hooks/
 ├── dispatch.ts        # runHook(entry, event, ctx) — subprocess for command hooks
 ├── load-module.ts     # dynamic import() for `kind: module` hooks
 ├── substitute.ts      # ${event.<path>} regex substitution (no eval)
-├── run-pre-hook.ts    # sequential pre_* runner; deny short-circuits
+├── run-pre.ts         # sequential pre_* runner; deny short-circuits
 ├── sink.ts            # bus sink fan-out for post_*/on_* (fire-and-forget)
 ├── types.ts           # HookOutcome, HookContext
 └── builtins/
@@ -167,7 +180,17 @@ src/core/sessions/
 ├── io.ts              # read/write session state + log files
 ├── lifecycle.ts       # active-session pointer (readActive, writeActive, clearActive)
 ├── log-reader.ts      # JSONL session log reader
-└── guards.ts          # clearStaleSession and related session-state predicates
+├── guards.ts          # clearStaleSession and related session-state predicates
+├── compaction.ts      # session-log compaction
+├── display.ts         # session display formatting
+├── errors.ts          # session error factory + predicates — see ERRORS.md
+├── find-unused-id.ts  # findUnusedId(input) — first free session id (flat, not under id/)
+└── tree/              # session tree entry model
+    ├── io.ts          # append/read tree entries
+    ├── parse-entry.ts # parse a tree entry envelope
+    ├── payloads.ts    # entry payload Zod schemas
+    ├── schemas.ts     # TreeEntryEnvelope + EntryId schemas
+    └── store.ts       # in-memory tree store
 ```
 
 ### `src/core/migration/` — pre-v3 state migration
@@ -211,8 +234,8 @@ features/workflow/
 │   ├── conversation-flow/    # sub-component folder
 │   └── event-cards/          # fixed workflow chrome cards
 ├── hooks/                    # feature-local hooks
-│   ├── use-workflow.ts
-│   └── use-workflow-keys.ts
+│   ├── use-runner.ts
+│   └── use-keys.ts
 ├── handlers.ts               # pure helper — engine↔UI bridge
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
 └── layout.ts                 # pure helper — geometry snapshots
@@ -224,6 +247,7 @@ features/workflow/
 features/settings/
 ├── overlay.tsx               # feature entry — rendered when overlay active
 ├── mode-selector.tsx         # secondary overlay
+├── presentation.ts           # pure formatters on SettingDef (value color, filter match, validate, display) — feature-local
 └── hooks/
     ├── buffer.ts             # useEditBuffer — feature-local
     └── editor.ts             # useSettingsEditor — feature-local
@@ -333,7 +357,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column-picker.tsx`, `pickers/two-column-picker/`, plus the `hooks/use-static-selector.ts` selection hook.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/two-column-picker/`, plus the `src/hooks/use-static-selector.ts` selection hook.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 
@@ -378,10 +402,12 @@ Tests follow a hybrid layout driven by **blast radius** — how many top-level f
 
 | Blast radius | Location | Example |
 |---|---|---|
-| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/validation.test.ts`, `src/features/workflow/components/header.test.tsx` |
+| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/drift/analyze.test.ts`, `src/features/workflow/components/header.test.tsx` |
 | ≥ 2 top-level folders | `testing/integration/<layer>/` | `testing/integration/cli/`, `testing/integration/orchestrator/`, `testing/integration/ui/` |
 
 The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
+
+`scripts/` is the second sanctioned colocated-test home alongside `src/`: tooling like `scripts/check-invariants.ts` and `scripts/import-boundaries.ts` keep their tests next to source (`check-invariants.test.ts`, `import-boundaries.test.ts`), which is why `vitest.config.ts` includes a `scripts/**/*.test.{ts,tsx}` glob.
 
 **Companion rules:**
 
@@ -393,7 +419,7 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 - **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [`test-behavior-not-implementation`](../CLAUDE.md#testing-policy).
 
-Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
+Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
 
 ## Design decisions
 
@@ -457,7 +483,7 @@ Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlay
 
 Folder names describe **what** the code does in the domain, not **which** technical layer it sits in.
 
-✅ `orchestrator/planning/`, `orchestrator/escalation/`, `orchestrator/validation/`, `features/workflow/`
+✅ `orchestrator/planning/`, `orchestrator/escalation/`, `orchestrator/drift/`, `features/workflow/`
 ❌ `services/`, `use-cases/`, `controllers/`, `repositories/`, `handlers/`
 
 A reader opening a folder should immediately know what workflow capability lives there. When you are deciding a folder name, ask: does the name reveal the domain or only the tech layer? If the latter, rename.
@@ -479,9 +505,13 @@ orchestrator/
 │   ├── full.ts       # internal — standard/full planning flow
 │   ├── quick.ts      # internal — quick-mode planning flow
 │   ├── rewind.ts     # internal — rewind-to-approval flow
-│   └── shared.ts     # internal — shared planning helpers
+│   ├── io.ts         # internal — spec/brief read-write helpers
+│   ├── call-loop.ts  # internal — planner call/stream loop
+│   ├── queue-drain.ts # internal — drain queued messages into the planner
+│   ├── failure.ts    # internal — planner failure handling
+│   └── brief-quality-gate.ts # internal — brief severity gate
 ├── task/
-│   ├── step.ts              # entry — single-task execution (283 LOC)
+│   ├── step.ts              # entry — single-task execution (376 LOC)
 │   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot
 │   ├── run-implementation.ts # internal — continuation loop, streaming, staging
 │   ├── apply-changed-files.ts # internal — post-impl approval, promotion, conflict detection

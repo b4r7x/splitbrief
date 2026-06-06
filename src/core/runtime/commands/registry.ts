@@ -6,7 +6,7 @@ import { includes } from '../../../utils/type-guards.js';
 import { canRedoTask, canRevisePlan, canReviseSpec } from '../../phases.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 import { formatRejectRunMessage } from './messages.js';
 
 export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {

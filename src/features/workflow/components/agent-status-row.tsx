@@ -1,7 +1,7 @@
 import { Box } from 'ink';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { PlannerStatusCard } from './event-cards/planner-status-card.js';
-import { createLatestEventByTypeSelector } from './latest-event-selector.js';
+import { PlannerStatusCard } from './event-cards/planner-status.js';
+import { createLatestEventByTypeSelector } from '../latest-event-selector.js';
 
 const selectLatestPlannerStatus = createLatestEventByTypeSelector('planner_status');
 

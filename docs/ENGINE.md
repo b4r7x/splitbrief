@@ -6,7 +6,7 @@ How the orchestrator runs, how events flow, and how the engine talks to the UI w
 
 ## The orchestrator
 
-Entry point: `runWorkflow()` in `src/engine/orchestrator/run/run.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
+Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
 2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (instant, quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
@@ -34,10 +34,10 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 
 - **`planning/`** — Mode-specific planner flows. `instant.ts` does one call producing tasks directly; `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
-- **`escalation/`** — Tiered escalation when the implementer fails. `tier0-intermediate.ts` tries a local code-fix, `tier1-hint.ts` sends error context to an intermediate model, `tier2-full.ts` sends everything to the most capable model.
+- **`escalation/`** — Tiered escalation when the implementer fails. `tier.ts` defines the tiers (`INTERMEDIATE_TIER` tries a local code-fix, `HINT_TIER` sends error context to an intermediate model, `FULL_TIER` sends everything to the most capable model).
 - **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry, skip, split the task, abort.
 - **`approval/`** — Tiered approval system for individual file operations. Classifies actions by risk (in-scope, out-of-scope, destructive, network, package change) and gates them at auto/sticky/confirm tiers.
-- **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates total cost before tasks start; `budget.ts` monitors spend during execution.
+- **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates total cost before tasks start; `check.ts` monitors spend during execution.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner.
 - **`user-edit/`** — Detects when the user edits files outside of diptych during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.

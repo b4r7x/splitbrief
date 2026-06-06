@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { WorkflowConfigCard } from '../../../src/features/workflow/components/event-cards/workflow-config-card.js';
-import { PlannerStatusCard } from '../../../src/features/workflow/components/event-cards/planner-status-card.js';
+import { WorkflowConfigCard } from '../../../src/features/workflow/components/event-cards/config.js';
+import { PlannerStatusCard } from '../../../src/features/workflow/components/event-cards/planner-status.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';
 
 describe('workflow events display', () => {

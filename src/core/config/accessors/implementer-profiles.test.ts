@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveImplementerProfiles } from './implementer-profiles.js';
-import { createDefaultConfig } from '../load/load.js';
+import { createDefaultConfig } from '../load/io.js';
 import type { Config } from '../../schemas/config.js';
 
 function configWithProfiles(profiles: NonNullable<Config['implementerProfiles']>): Config {

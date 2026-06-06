@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/store.js';
-import { closeApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+} from '../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getApprovalPromptRows } from '../prompt-rows.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';

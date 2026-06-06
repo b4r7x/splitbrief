@@ -1,15 +1,12 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
-import { type FilterableItem, availableRows } from '../picker-utils.js';
+import type { FilterableItem } from '../filtering.js';
+import { availableRows } from '../scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../../utils/terminal-width.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { SingleColumnPicker } from '../single-column-picker.js';
-import {
-  useTwoColumnState,
-  type LeftColumnProps,
-  type RightColumnProps,
-} from './use-two-column-state.js';
+import { SingleColumnPicker } from '../single-column.js';
+import { useTwoColumnState, type LeftColumnProps, type RightColumnProps } from './use-nav-state.js';
 import { CUSTOM_ROW_ID, isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: string }> {

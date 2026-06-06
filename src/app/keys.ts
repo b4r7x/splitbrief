@@ -4,8 +4,8 @@ import { routerStore } from '../stores/navigation/router.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
-import { approvalPromptStore } from '../stores/approval-prompt/store.js';
-import { costApprovalStore } from '../stores/cost-approval/store.js';
+import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../stores/cost-approval/prompt.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin.js';
 import {

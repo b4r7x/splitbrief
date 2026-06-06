@@ -6,7 +6,7 @@ import { ScrollIndicator } from '../scroll-indicator.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { computeScrollWindow } from './picker-utils.js';
+import { computeScrollWindow } from './scroll-window.js';
 import { toSectionedList } from '../../utils/sectioned-list.js';
 
 interface FilterableListProps<T> {

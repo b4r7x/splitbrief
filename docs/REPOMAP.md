@@ -11,7 +11,7 @@ Without a repo-map, cheap planners (Ollama, DeepSeek, etc.) miss existing helper
 For each file (sorted by [PageRank](#ranking) over the import graph):
 
 ```
-src/engine/orchestrator/run/run.ts:
+src/engine/orchestrator/run/workflow.ts:
   export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary>
   export type RunWorkflowOptions = ...
 

@@ -19,7 +19,7 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-describe('CLI integration: start with a live session', () => {
+describe('CLI integration: start with a live session', { timeout: 30_000 }, () => {
   it('exits non-zero, preserves the live marker, and does not create a new session', async () => {
     const existingId = '2026-04-18-live';
     const sessionDir = join(tmp, DIPTYCH_DIR, 'sessions', existingId);

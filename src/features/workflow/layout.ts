@@ -5,7 +5,7 @@ import {
   getWorkflowContentWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
-} from './layout/workflow-rect.js';
+} from './layout/rect.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../stores/workflow/events.js';
@@ -14,8 +14,8 @@ import { controlsStore } from '../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../stores/workflow/streaming-output.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { approvalPromptStore } from '../../stores/approval-prompt/store.js';
-import { costApprovalStore } from '../../stores/cost-approval/store.js';
+import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../stores/cost-approval/prompt.js';
 import { getWorkflowPromptRows } from './prompt-rows.js';
 import { computeConversationRowScroll } from './conversation-rows/scroll.js';
 

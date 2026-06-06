@@ -10,7 +10,7 @@ import {
   rejectionReason,
   selectedReason,
   costPosture,
-} from './helpers.js';
+} from './decision.js';
 
 function toRejectedProfile(
   profileFit: ProfileFit,

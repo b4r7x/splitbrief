@@ -1,11 +1,11 @@
 ---
 name: diptych-add-feature
-description: Design flow for a new feature that is not yet covered by any spec in plans/. Use when the user wants to add a feature to diptych, extend the workflow, add a new backend, or change an architectural decision. Produces a new plans/<NNN>-<slug>/ folder with spec.md, plan.md, tasks.md — not code.
+description: Design flow for a new feature that is not yet covered by any spec under notes/superpowers/specs/. Use when the user wants to add a feature to diptych, extend the workflow, add a new backend, or change an architectural decision. Produces a new spec folder under notes/superpowers/specs/ with an execute-prompt.md and agent-briefs/ — not code.
 ---
 
 # Add a new feature to diptych
 
-This skill designs a new feature by producing a new spec under `plans/`. It does **not** implement the feature. Use `diptych-implement-spec` for that, after the user reviews and approves the spec.
+This skill designs a new feature by producing a new spec under `notes/superpowers/specs/`. It does **not** implement the feature. Use `diptych-implement-spec` for that, after the user reviews and approves the spec.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ Read if not already loaded:
 - `docs/ARCHITECTURE.md`
 - `docs/WORKFLOW.md`
 - `docs/FUTURE.md`
-- `plans/README.md`
+- `notes/superpowers/specs/README.md`
 
 Without these, the produced spec will duplicate or contradict existing decisions.
 
@@ -39,19 +39,21 @@ Before writing anything, grep:
 - `docs/CONCEPTS.md` — is there a term that already covers this, or contradicts it?
 - `docs/WORKFLOW.md` Part 2 "Still open" — is this one of the deferred items?
 - `docs/FUTURE.md` — is this deferred with a different design in mind?
-- `plans/` — is there an in-flight spec that overlaps?
+- `notes/superpowers/specs/` (and `notes/specs/` dated handoffs) — is there an in-flight spec that overlaps?
 
 Report conflicts to the user before proceeding. Wait for a decision.
 
 ## Step 3 — Decide the spec number
 
-The next number after the highest existing folder in `plans/`. If the feature depends on a still-unimplemented earlier spec, note that dependency in the new spec's `plan.md` (do not invert the dependency order).
+The next number after the highest existing numbered folder in `notes/superpowers/specs/` (currently up to `14-…`). If the feature depends on a still-unimplemented earlier spec, note that dependency in the new spec's `execute-prompt.md` (do not invert the dependency order).
 
 The slug is `kebab-case-description`. Keep under 40 chars.
 
-## Step 4 — Write `spec.md`
+## Step 4 — Write the spec
 
-Use the same section structure as existing specs (see `plans/001-capability-matrix/spec.md` for the template). Required sections:
+A numbered spec folder under `notes/superpowers/specs/` carries an `execute-prompt.md` (the paste-ready execution prompt) plus an `agent-briefs/` directory of per-brief work items; dated specs also add a `README.md` / `decisions.md` for rationale. Use an existing folder as the template (e.g. `notes/superpowers/specs/04-rpc-mode/`).
+
+Capture, in the spec's prose (the `README.md` or the prologue of `execute-prompt.md`), these sections:
 
 - **Problem** — the status quo and why it's bad
 - **Goal** — one paragraph describing the target
@@ -62,9 +64,9 @@ Use the same section structure as existing specs (see `plans/001-capability-matr
 
 Reference existing concepts by name (link to `docs/CONCEPTS.md` if a term is load-bearing).
 
-## Step 5 — Write `plan.md`
+## Step 5 — Write the plan
 
-Sections:
+In the same spec prose, capture:
 
 - **Data model** — any schema / type changes, exact file paths, diff-like before/after where illuminating
 - **Architecture** — how the feature fits into the existing layers (engine / ui / stores / CLI); what new modules are needed; what existing modules change
@@ -75,21 +77,21 @@ Sections:
 
 Sharp is better than thorough. Prefer specific file paths and function names to hand-wavy prose.
 
-## Step 6 — Write `tasks.md`
+## Step 6 — Write the agent-briefs
 
-Atomic tasks numbered `T001`, `T002`, … grouped into phases. Each task must include:
+Atomic briefs as `agent-briefs/NN-<slug>.md`, ordered, plus an `execute-prompt.md` that names which skills to load, what to read, and which briefs to implement in what order. Each brief must include:
 
 - File(s) it touches
 - Exact change (code snippet or diff-like description)
 - Verification (usually `npm run typecheck` or a specific test file)
 
-End with a **Phase N — Doc Sync** section containing one task per doc file that will need to change (CONCEPTS / ARCHITECTURE / WORKFLOW, sometimes FUTURE or README).
+End with a **Doc Sync** brief covering each doc file that will need to change (CONCEPTS / ARCHITECTURE / WORKFLOW, sometimes FUTURE or README).
 
-Tasks must be executable by an agent with no other context. Assume they read only `CLAUDE.md` + the docs + this spec.
+Briefs must be executable by an agent with no other context. Assume they read only `CLAUDE.md` + the docs + this spec.
 
-## Step 7 — Update `plans/README.md`
+## Step 7 — Update `notes/superpowers/specs/README.md`
 
-Add a row to the "9 planned specs" table with the new number. Update the dependency graph ASCII art. If the new spec is numbered after 009, consider that 009 is the "finalization" spec and everything after 009 is really a follow-up — ask the user whether to renumber 009 or to leave it and use 010+ for follow-ons.
+Add a row to the "Spec Summary" table with the new number, briefs count, and key deliverable. Update the "Execution Order" dependency graph to slot the new spec into the right phase, and add it to the "Required Skills per Spec" list. If the new work is a dated handoff rather than a numbered spec, place it as a dated folder instead and skip the numbered-table edit.
 
 ## Step 8 — Review with the user
 

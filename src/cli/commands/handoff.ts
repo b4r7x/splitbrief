@@ -5,7 +5,7 @@ import { getDiptychPath } from '../../core/paths.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { HANDOFF_WRITE_MODES, writeHandoffPack } from '../../engine/handoff/write.js';
 import { cliError, withCliErrors } from '../errors.js';
-import { resolveSessionOrThrow } from '../session-resolve.js';
+import { resolveSessionOrThrow } from '../sessions/resolve.js';
 import { includes } from '../../utils/type-guards.js';
 
 export type HandoffDeps = {

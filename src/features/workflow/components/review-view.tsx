@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { renderMarkdownLine } from '../../../components/markdown.js';
-import { getReviewContentLayout } from '../layout/workflow-rect.js';
+import { getReviewContentLayout } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { useStores } from '../../../stores/use-stores.js';

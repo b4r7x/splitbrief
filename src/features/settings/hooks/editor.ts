@@ -3,7 +3,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
-import { getConfigValue, applyEdits } from '../../../core/config/accessors/state.js';
+import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';

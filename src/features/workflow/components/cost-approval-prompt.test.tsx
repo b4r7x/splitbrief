@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { CostApprovalPrompt } from './cost-approval-prompt.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 

@@ -7,7 +7,7 @@ import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import { getEffectiveModelId } from '../../providers/model/resolution.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
-import type { CurrentCodeContextMode, TaskContextFit } from '../../events/workflow-events.js';
+import type { CurrentCodeContextMode, TaskContextFit } from '../../../core/schemas/enums.js';
 import {
   DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
   resolveProfileContextLength,
@@ -15,7 +15,7 @@ import {
 } from './context-length.js';
 import { estimateFormattedTaskPromptTokens, classifyContextFit } from './estimation.js';
 import { currentCodeContextMode } from './headings.js';
-import { requiredWriteModeForTask } from './helpers.js';
+import { requiredWriteModeForTask } from './decision.js';
 
 function determineFit(opts: {
   currentCodeTruncated: boolean;

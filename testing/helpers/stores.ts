@@ -20,8 +20,8 @@ import { detectionStore } from '../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { planEditorStore } from '../../src/stores/workflow/plan-editor.js';
-import { approvalPromptStore } from '../../src/stores/approval-prompt/store.js';
-import { costApprovalStore } from '../../src/stores/cost-approval/store.js';
+import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
 
 export function resetAllStores(): void {

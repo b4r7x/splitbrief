@@ -45,7 +45,7 @@ initStores(projectDir, opts)
 
 | Phase | What it does | Sync/async |
 |---|---|---|
-| `initUIChrome` | Subscribe to terminal resize, apply Shiki theme from config | sync |
+| `initUIChrome` | Subscribe to terminal resize | sync |
 | `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()` | sync |
 | `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, skills + detection + catalog in parallel | async |
 
@@ -93,7 +93,6 @@ Examples that do not (init lives inline in `initStores()`):
 
 ```ts
 terminalSizeStore.subscribeToResize();
-if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
 ```
 
 The rule: if the loading logic is non-trivial (disk I/O, parsing, validation), put it on the store as `.load()`. If it is a one-liner subscribe or an external-library call, inline in `initStores()`.

@@ -2,7 +2,7 @@ import type { RecoveryAction, RecoveryReason } from '../../core/schemas/enums.js
 import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery.js';
 import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery.js';
 import { formatTruncatedList } from '../../core/formatting.js';
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 const ACTION_ORDER: RecoveryAction[] = [

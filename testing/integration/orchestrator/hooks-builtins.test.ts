@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runPreHooks } from '../../../src/engine/hooks/run-pre-hook.js';
+import { runPreHooks } from '../../../src/engine/hooks/run-pre.js';
 import { makeTaskStart } from '#testing/helpers/events.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';

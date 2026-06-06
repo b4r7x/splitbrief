@@ -7,7 +7,7 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import { getProviderDisplayName, isProviderLocal } from '../../../core/providers/catalog.js';
 import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { getWorkflowMode } from '../../../core/config/accessors/state.js';
+import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 import { CONFIG_SUMMARY_COMPACT_ROWS } from '../layout.js';
 

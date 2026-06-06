@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { createStore } from './create-store.js';
 import { useStores } from './use-stores.js';
-import { renderFeature, tick } from '../../testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 
 describe('useStores', () => {
   it('lets callbacks captured from an earlier render read the latest store state', async () => {
