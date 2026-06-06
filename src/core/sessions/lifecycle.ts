@@ -7,7 +7,7 @@ import { writeSecureFile } from '../../lib/fs.js';
 import { slugify } from '../../utils/slugify.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
-import { findUnusedId } from './id/find-unused-id.js';
+import { findUnusedId } from './find-unused-id.js';
 
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);

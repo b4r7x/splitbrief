@@ -40,13 +40,13 @@ Rendering is direct:
 const visibleRows = rows.slice(windowState.windowStart, windowState.windowEnd);
 ```
 
-Each row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/conversation-row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
+Each row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
 
-Completed task summaries are pinned above the dynamic conversation window. `src/core/layout/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state.
+Completed task summaries are pinned above the dynamic conversation window. `src/core/sections/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state.
 
 ## Scroll Window
 
-`src/core/layout/scroll-window.ts` owns row-window math:
+`src/features/workflow/layout/scroll-window.ts` owns row-window math:
 
 - `computeScrollMaxOffset()` computes the maximum offset after reserving scroll indicator rows.
 - `getScrollWindowState()` returns `windowStart`, `windowEnd`, visible above/below counts, and optional new-event row reservation.
@@ -70,7 +70,7 @@ Prompt row budgeting lives in `src/features/workflow/prompt-rows.ts`.
 
 Approval and cost prompts declare the same measured row heights that the workflow layout subtracts. The rendered prompt components use fixed heights, `overflow="hidden"`, and `flexShrink={0}`.
 
-`src/core/layout/workflow-rect.ts` caps prompt rows to the available middle area. `WorkflowScreen` renders prompts inside a fixed-height clipped container, so a very long action description or a narrow terminal can clip the prompt instead of pushing the conversation and footer out of the screen.
+`src/features/workflow/layout/rect.ts` caps prompt rows to the available middle area. `WorkflowScreen` renders prompts inside a fixed-height clipped container, so a very long action description or a narrow terminal can clip the prompt instead of pushing the conversation and footer out of the screen.
 
 ## Removed Legacy Path
 
@@ -97,11 +97,11 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/layout.test.ts`
   - terminal width changes recompute row height
   - prompt rows shrink conversation viewport
-- `src/core/layout/scroll-window.test.ts`
+- `src/features/workflow/layout/scroll-window.test.ts`
   - banner rows stay inside the visible height
-- `src/core/layout/workflow-rect.test.ts`
+- `src/features/workflow/layout/rect.test.ts`
   - prompt rows are capped to the available middle area
-- `src/core/layout/completed-task-summary-rows.test.ts`
+- `src/core/sections/completed-task-summary-rows.test.ts`
   - completed summaries cannot reserve more rows than the viewport has
 
 ## Invariants

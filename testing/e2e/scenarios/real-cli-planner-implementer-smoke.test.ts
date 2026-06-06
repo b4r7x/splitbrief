@@ -1,0 +1,93 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import type { CliToolId } from '../../../src/core/schemas/enums.js';
+import { makeConfig } from '../../helpers/factories/config.js';
+import { makeCallbacks } from '../../helpers/orchestrator-factories.js';
+import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
+import { createTestGitRepo } from '../../helpers/git.js';
+import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
+import { resetAllStores } from '../../helpers/stores.js';
+
+const runRealCliSmoke = process.env.DIPTYCH_REAL_CLI_E2E === '1';
+const itReal = runRealCliSmoke ? it : it.skip;
+
+function realCliTool(name: string, fallback: CliToolId): CliToolId {
+  return (process.env[name] as CliToolId | undefined) ?? fallback;
+}
+
+describe('real CLI smoke: planner to implementer', () => {
+  itReal(
+    'runs configured real planner and implementer CLI binaries through runWorkflow',
+    async () => {
+      resetAllStores();
+      const projectDir = createTempDir('real-cli-planner-implementer');
+      try {
+        createTestGitRepo(projectDir);
+        writeFileSync(
+          join(projectDir, 'validate.mjs'),
+          [
+            "import { existsSync, readFileSync } from 'node:fs';",
+            "const path = 'src/real-cli-smoke.ts';",
+            'if (!existsSync(path)) process.exit(1);',
+            "const content = readFileSync(path, 'utf-8');",
+            "if (!content.includes('real-cli-smoke')) process.exit(1);",
+          ].join('\n') + '\n',
+          'utf-8',
+        );
+
+        const plannerTool = realCliTool('DIPTYCH_REAL_CLI_PLANNER', 'codex');
+        const implementerTool = realCliTool('DIPTYCH_REAL_CLI_IMPLEMENTER', 'opencode');
+        const summary = await runWorkflow({
+          feature:
+            'Create src/real-cli-smoke.ts exporting a string constant named realCliSmoke with value "real-cli-smoke".',
+          projectDir,
+          config: makeConfig({
+            planner: {
+              kind: 'cli',
+              tool: plannerTool,
+              ...(process.env.DIPTYCH_REAL_CLI_PLANNER_MODEL
+                ? { model: process.env.DIPTYCH_REAL_CLI_PLANNER_MODEL }
+                : {}),
+            },
+            implementer: {
+              kind: 'cli',
+              tool: implementerTool,
+              ...(process.env.DIPTYCH_REAL_CLI_IMPLEMENTER_MODEL
+                ? { model: process.env.DIPTYCH_REAL_CLI_IMPLEMENTER_MODEL }
+                : {}),
+              contextLength: 4096,
+            },
+            validation: {
+              typecheck: false,
+              lint: false,
+              test: true,
+              testCommand: 'node validate.mjs',
+            },
+            workflow: {
+              mode: 'quick',
+              approve: 'none',
+              commitStrategy: 'none',
+              maxRetries: 1,
+              persistTranscript: true,
+            },
+          }),
+          callbacks: makeCallbacks().callbacks,
+          sinks: TEST_WORKFLOW_SINKS,
+          sessionId: 'sess-real-cli-planner-implementer',
+        });
+
+        expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
+        expect(summary.failed).toBe(0);
+        expect(readFileSync(join(projectDir, 'src/real-cli-smoke.ts'), 'utf-8')).toContain(
+          'real-cli-smoke',
+        );
+        expect(existsSync(join(projectDir, '.diptych'))).toBe(true);
+      } finally {
+        cleanupTempDir(projectDir);
+      }
+    },
+    180_000,
+  );
+});

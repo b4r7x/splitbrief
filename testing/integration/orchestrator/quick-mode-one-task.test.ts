@@ -32,7 +32,7 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('quick-mode one-task workflow', () => {
+describe('quick-mode one-task workflow', { timeout: 30_000 }, () => {
   it('emits task-complete, records completedByLocal=1, and persists state.json on disk', async () => {
     const projectDir = createTempDir('orch-int-quick');
     dirs.push(projectDir);

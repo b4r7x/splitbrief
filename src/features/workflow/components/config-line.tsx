@@ -2,11 +2,8 @@ import { Box } from 'ink';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import {
-  getWorkflowConfigDensity,
-  WorkflowConfigCard,
-} from './event-cards/workflow-config-card.js';
-import { createLatestEventByTypeSelector } from './latest-event-selector.js';
+import { getWorkflowConfigDensity, WorkflowConfigCard } from './event-cards/config.js';
+import { createLatestEventByTypeSelector } from '../latest-event-selector.js';
 
 const selectLatestWorkflowConfig = createLatestEventByTypeSelector('workflow_config');
 

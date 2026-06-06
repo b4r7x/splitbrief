@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { createApiImplementer } from './api.js';
 
 function makeAnthropicSseResponse(

@@ -16,6 +16,7 @@ Read these to learn how diptych works. Each doc builds on the previous one.
 | Doc | What it covers |
 |-----|---------------|
 | [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, modes, sessions. No code. |
+| [CONCEPTS.md](./CONCEPTS.md) | Concepts & glossary: shared vocabulary used throughout `src/` and the other docs. |
 | [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) | The same flow with file paths and function names. CLI entry → stores → TUI → engine → planning → tasks → review. |
 | [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, abort/continue, resume, rewind. |
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |
@@ -23,6 +24,7 @@ Read these to learn how diptych works. Each doc builds on the previous one.
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
 | [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | Approval gates, tiered approval, escalation tiers, recovery system, drift detection. |
 | [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, IPC/attach, repo-map, handoff, MCP, worktrees, slash commands. |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | How the code is organized: design rationale plus a verified inventory of events, commands, paths, and public API surface. |
 
 ## Doing things
 
@@ -52,6 +54,7 @@ These enforce consistency across the codebase. Read the relevant one before touc
 | Store conventions, zero memoization | [STORES.md](./STORES.md) |
 | React hook conventions | [HOOKS.md](./HOOKS.md) |
 | Pre-merge grep gates | [INVARIANTS.md](./INVARIANTS.md) |
+| The SOTA review bar: judgment calls no grep gate catches | [CODE-STANDARD.md](./CODE-STANDARD.md) |
 
 ## Deep dives
 
@@ -65,6 +68,7 @@ Specialized subsystem docs linked from the main chapters above.
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene
 - [DEBUGGING.md](./DEBUGGING.md) — Diagnosing failures, log locations
 - [WORKTREES.md](./WORKTREES.md) — Git worktree isolation for parallel sessions
+- [WORKFLOW-CONVERSATION-SCROLL.md](./WORKFLOW-CONVERSATION-SCROLL.md) — Row-based scroll model for the workflow conversation
 
 ## Direction and history
 
@@ -73,6 +77,9 @@ Specialized subsystem docs linked from the main chapters above.
 - [FUTURE.md](./FUTURE.md) — Open questions, longer-horizon backlog
 - [FEATURES.md](./FEATURES.md) — Feature catalog
 - [CHANGELOG.md](./CHANGELOG.md) — Release notes
+- [MIGRATION.md](./MIGRATION.md) — Migration guide for the SOTA uplift
+- [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) — Cost-aware implementer: design direction
+- [COST-AWARE-IMPLEMENTER-HANDOFF.md](./COST-AWARE-IMPLEMENTER-HANDOFF.md) — Cost-aware implementer: implementation handoff
 
 ## Project-level
 

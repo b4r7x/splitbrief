@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTerminationHandler, restoreTerminal } from './render.js';
+import { terminalSequences } from '../lib/terminal/control.js';
 
 describe('createTerminationHandler', () => {
   it('cleans up then exits with the conventional code for SIGINT', () => {
@@ -35,10 +36,26 @@ describe('createTerminationHandler', () => {
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
   });
+
+  it('still exits when cleanup throws', () => {
+    const cleanup = vi.fn(() => {
+      throw new Error('cleanup failed');
+    });
+    const exit = vi.fn();
+
+    const handle = createTerminationHandler({ cleanup, exit });
+
+    expect(() => handle('SIGINT')).not.toThrow();
+    expect(exit).toHaveBeenCalledWith(130);
+  });
 });
 
 describe('restoreTerminal', () => {
   let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+  });
 
   afterEach(() => {
     process.stdout.write = originalWrite;
@@ -46,27 +63,42 @@ describe('restoreTerminal', () => {
 
   it('exits the alternate buffer and unhides the cursor in fullscreen mode', () => {
     const written: string[] = [];
-    originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string) => {
       written.push(chunk);
       return true;
     }) as typeof process.stdout.write;
 
-    restoreTerminal(true);
+    restoreTerminal({ fullscreen: true });
 
-    expect(written.join('')).toContain('\x1b[?1049l');
-    expect(written.join('')).toContain('\x1b[?25h');
+    expect(written).toEqual([terminalSequences.exitAltBuffer, terminalSequences.showCursor]);
+  });
+
+  it('disables mouse and paste modes when requested', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+
+    restoreTerminal({ fullscreen: true, mouse: true });
+
+    expect(written).toEqual([
+      terminalSequences.disableMouseTracking,
+      terminalSequences.disableSgrMouse,
+      terminalSequences.disableBracketedPaste,
+      terminalSequences.exitAltBuffer,
+      terminalSequences.showCursor,
+    ]);
   });
 
   it('writes nothing in non-fullscreen mode', () => {
     const written: string[] = [];
-    originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string) => {
       written.push(chunk);
       return true;
     }) as typeof process.stdout.write;
 
-    restoreTerminal(false);
+    restoreTerminal({ fullscreen: false });
 
     expect(written).toEqual([]);
   });

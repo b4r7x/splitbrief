@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { subscribeFeedbackErrors } from '../shared/feedback-events.js';
+import { subscribeFeedbackErrors } from '../channels/feedback.js';
 
 const FEEDBACK_AUTO_CLEAR_MS = 3000;
 

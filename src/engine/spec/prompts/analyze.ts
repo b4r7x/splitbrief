@@ -1,4 +1,4 @@
-import { buildPrompt, instructionsSection } from './prompt-builder.js';
+import { buildPrompt, instructionsSection } from './builder.js';
 
 export interface AnalyzePromptInput {
   spec: string;

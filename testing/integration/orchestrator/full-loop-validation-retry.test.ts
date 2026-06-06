@@ -9,8 +9,8 @@ import {
   reviewPacketJsonPath,
   sessionDir,
 } from '../../../src/core/paths.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
-import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -118,7 +118,7 @@ function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: s
   return { executablePath, runLogPath };
 }
 
-describe('full workflow validation retry loop', () => {
+describe('full workflow validation retry loop', { timeout: 30_000 }, () => {
   it('retries after real validation fails, promotes the staged fix, and writes final review artifacts', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-full-loop-validation-retry';

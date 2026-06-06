@@ -89,7 +89,8 @@ src/
 │   ├── streaming/            Subprocess spawn + output parsers (stream-json, jsonl)
 │   ├── parsers/              Question/code/scope extractors
 │   ├── detection/            Auto-detect available tools on startup
-│   └── skill-discovery.ts    Planner skill source discovery
+│   ├── skill-discovery.ts    Planner skill source discovery
+│   └── availability.ts       Tool-availability probe
 │
 ├── stores/                   External stores (useSyncExternalStore)
 │   ├── create-store.ts       ~45 LOC factory: get/set/subscribe/use/reset
@@ -140,7 +141,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 1. **User** runs `diptych start "add JWT auth"`.
 2. `cli/commands/start.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
-4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/run.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
+4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
@@ -148,7 +149,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
    - `treeRecorderSink` (`src/engine/events/sinks/tree-recorder.ts`) — appends `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`.
    - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `diptych start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
    - `otelSink` (`src/engine/events/sinks/otel.ts`) — opt-in via `config.otel.enabled`; maps `EngineEvent` to OpenTelemetry spans. See [`OTEL.md`](./OTEL.md) §Design decisions.
-   - Hook sink (`src/engine/hooks/sink.ts`) — dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre-hook.ts`.
+   - Hook sink (`src/engine/hooks/sink.ts`) — dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
 
    `saveState()` writes to `.diptych/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
@@ -248,7 +249,7 @@ type PlannerCapabilities = {
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be overridden per-project via config:
 
@@ -418,7 +419,7 @@ diptych is a cost-aware task compiler for AI coding agents. It composes two role
 
 The repository layers many supporting subsystems on top of that core loop:
 
-- **Workflow modes** (`instant` / `quick` / `standard` / `speckit`) trade ceremony for speed, all four converging on the same Task Brief contract and going through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/run.ts`).
+- **Workflow modes** (`instant` / `quick` / `standard` / `speckit`) trade ceremony for speed, all four converging on the same Task Brief contract and going through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`).
 - **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, a session-tree recorder, an opt-in NDJSON-on-stdout sink for `--json` headless runs, an opt-in OpenTelemetry sink, and a workflow-hook dispatcher.
 - **Quality gates** — every mode runs a brief-quality scoring pass before tasks start; standard and speckit additionally enter a `reviewing-briefs` phase for human approval. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; per-task cross-scope accumulation is `drift-chains.json` / `drift_chain_detected`.
 - **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `diptych snapshot create` (CLI-only; no `/snapshot` slash command).
@@ -458,8 +459,8 @@ src/
 │   └── setup.ts                   resolveProjectDir + setup helpers
 │
 ├── core/                          Diptych-domain (no React, no engine)
-│   ├── brief-hash.ts              hashTaskBrief(tasks) — sha256 of
-│   │                              status-stripped canonical-JSON tasks
+│   ├── approval/                  Sticky-grant persistence (store, types)
+│   │                              — .diptych/approvals.json
 │   ├── config/
 │   │   ├── accessors/             runner-config, state accessors
 │   │   ├── load/                  load, migrate (v1→v2→v3), transform,
@@ -472,7 +473,7 @@ src/
 │   │                              completed-task-summary-rows,
 │   │                              diff-height, event-sections,
 │   │                              scroll-window, terminal-width,
-│   │                              workflow-rect
+│   │                              rect
 │   ├── migration/                 executor, legacy migration helpers
 │   ├── model-display.ts           formatToolModel, etc.
 │   ├── paths.ts                   All on-disk path constants + builders
@@ -506,10 +507,9 @@ src/
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
-│   ├── agent-sdk-backend.ts       Anthropic Agent SDK wrapper
+│   ├── brief-hash.ts              hashTaskBrief(tasks) — sha256 of
+│   │                              status-stripped canonical-JSON tasks
 │   ├── change-detection.ts        External-change detection (git status)
-│   ├── claude-runner.ts           Claude-Code CLI subprocess driver
-│   ├── cli-tools.ts               CLI-tool spawn helpers
 │   ├── codebase/                  Repo-map: budget, cache, format, graph,
 │   │                              pagerank, parse, rebuild, repomap, types,
 │   │                              extract-mentioned-filenames
@@ -539,7 +539,7 @@ src/
 │   │   ├── builtins/              block-secrets, prettier-on-change, registry
 │   │   ├── dispatch.ts            Match + spawn for declared hooks
 │   │   ├── load-module.ts         User hook-module loader
-│   │   ├── run-pre-hook.ts        Synchronous pre_* hook runner
+│   │   ├── run-pre.ts             Synchronous pre_* hook runner
 │   │   ├── sink.ts                EventBus sink that fans events into
 │   │   │                          post_* / on_* hook dispatch
 │   │   ├── substitute.ts          ${event.field} substitution
@@ -558,8 +558,6 @@ src/
 │   │   ├── approval/              approval loop, action classifier, staged
 │   │   │                          project, file snapshots, tiered approval
 │   │   │                          gates
-│   │   ├── approvals-store.ts     Sticky-grant persistence
-│   │   │                          (.diptych/approvals.json)
 │   │   ├── budget/                budget gates, prediction, estimates
 │   │   ├── clarifications.ts      Q&A loop helpers
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
@@ -594,11 +592,12 @@ src/
 │   │   │                          WorkflowSinks
 │   │   └── validation.ts          Validator pipeline (typecheck / lint / test)
 │   ├── parsers/                   code-detection, code-patterns,
-│   │                              question-parser, response-extractor,
+│   │                              question, response-extractor,
 │   │                              scope-extractor
 │   ├── planners/                  5 backends: agent, agent-sdk, api,
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, command-invoke, context,
+│   │                              escalation, planning-helpers, summary,
 │   │                              types
 │   ├── providers/                 anthropic adapter+stream (prompt caching:
 │   │                              system sent as block array with
@@ -607,21 +606,30 @@ src/
 │   │                              discovery, errors, groq, lm-studio,
 │   │                              metadata, model/{catalog,parsing,resolution},
 │   │                              models-dev, ollama,
-│   │                              openai-stream, openrouter, pricing,
-│   │                              pricing-resolver, registry, together, types
+│   │                              openai-stream, openrouter, cost,
+│   │                              cost-math, pricing-resolver, registry,
+│   │                              together, types
 │   ├── runners/                   command-based, errors, factory
-│   │                              (createPlanner, createImplementer), types
+│   │                              (createPlanner, createImplementer), types,
+│   │                              agent-sdk-backend (Anthropic Agent SDK
+│   │                              wrapper), claude-invoke (Claude-Code CLI
+│   │                              subprocess driver), cli-tools (CLI-tool
+│   │                              spawn helpers), sandbox-env (sandbox
+│   │                              environment setup), trust (runner trust
+│   │                              prompts)
 │   ├── session-expiry.ts          Stale-session pruning helpers
 │   ├── skill-discovery.ts         Planner skill source discovery
 │   ├── snapshots/
+│   │   ├── path-codec.ts          encodeSnapshotPath, decodeSnapshotPath,
+│   │   │                          generateSnapshotId
+│   │   ├── manifest.ts            writeManifest, readManifest,
+│   │   │                          listSnapshotIds, listSnapshots, hasBaseline
+│   │   ├── files.ts               hashFile, collectTrackedFiles,
+│   │   │                          ALWAYS_EXCLUDED
+│   │   ├── lock.ts                acquireSnapshotLock
+│   │   ├── create.ts              createSnapshot
 │   │   ├── diff.ts                computeSnapshotDiff, formatSnapshotDiff
-│   │   ├── restore.ts             resolveSnapshot, restoreSnapshot
-│   │   └── store.ts               createSnapshot, listSnapshots, hashFile,
-│   │                              encodeSnapshotPath, decodeSnapshotPath,
-│   │                              generateSnapshotId, writeManifest,
-│   │                              readManifest, listSnapshotIds,
-│   │                              collectTrackedFiles, acquireSnapshotLock,
-│   │                              hasBaseline
+│   │   └── restore.ts             resolveSnapshot, restoreSnapshot
 │   ├── spec/
 │   │   ├── brief-quality.ts       Quality scorer + issue codes
 │   │   ├── formatter.ts           tasks.md transport writer
@@ -675,20 +683,20 @@ src/
 │       │                          brief-review-view, config-line,
 │       │                          conversation-flow/,
 │       │                          cost-display/drilldown/footer/status,
-│       │                          event-cards/{planner-status-card,
-│       │                          workflow-config-card},
+│       │                          event-cards/{planner-status,
+│       │                          config},
 │       │                          feedback-row, header, input-footer,
 │       │                          pipeline-bar, plan-editor +
 │       │                          plan-editor/{actions, external-editor},
 │       │                          plan-editor-help-overlay, review-view,
 │       │                          sidebar, task-summary
 │       ├── handlers.ts            Runtime command context actions
-│       ├── hooks/                 use-advisory, use-cost-stats,
-│       │                          use-input-mode, use-ipc-client,
+│       ├── hooks/                 ipc-client-connection, use-advisory,
+│       │                          use-cost-stats, use-input-mode,
+│       │                          use-ipc-client, use-keys,
 │       │                          use-mouse-scroll, use-plan-editor-keys,
-│       │                          use-plan-editor-save, use-review-content,
-│       │                          use-workflow-keys, use-workflow-runner,
-│       │                          build-rewind-action
+│       │                          use-readiness-fetch,
+│       │                          use-review-content, use-runner
 │       ├── keyboard.ts            Workflow keymap
 │       ├── layout.ts              Workflow-screen layout math
 │       ├── review-parser.ts       Review-text parser
@@ -704,13 +712,14 @@ src/
 │   │                              command/{hook, menu},
 │   │                              reference/{hook, menu}}
 │   ├── labeled-row.tsx
-│   ├── markdown.tsx               Shiki-highlighted markdown
+│   ├── markdown.tsx               theme-colored markdown renderer
 │   ├── overlays/                  overlay-panel, text-input-overlay
-│   ├── pickers/                   cursor-cell, filterable-list,
-│   │                              picker-utils, single-column-picker,
+│   ├── pickers/                   cursor-cell, cursor-glyph,
+│   │                              filtering, scroll-window,
+│   │                              filterable-list, single-column,
 │   │                              two-column-picker/{picker,
-│   │                              two-column-keyboard, use-column-state,
-│   │                              use-two-column-state}
+│   │                              keyboard, use-column-state,
+│   │                              use-nav-state}
 │   ├── screen-shell.tsx
 │   ├── scroll-indicator.tsx
 │   ├── session-row.tsx
@@ -718,7 +727,6 @@ src/
 │   └── theme.tsx
 │
 ├── hooks/                         Shared React hooks (cross-feature)
-│   ├── use-async-highlight.ts
 │   ├── use-filterable-list.ts
 │   └── use-static-selector.ts
 │
@@ -726,17 +734,17 @@ src/
 │   The pure list-navigation helper lives at `utils/indexing.ts`.
 │
 ├── lib/                           Third-party adapters
-│   ├── availability.ts            Tool-availability probe
+│   ├── file-listing.ts            listProjectFiles, MAX_PROJECT_FILES
 │   ├── fs.ts                      ensureSecureDir, SECURE_FILE_MODE (0o600)
 │   ├── git.ts                     simple-git helpers
-│   ├── highlight.ts               Shiki wrapper
+│   ├── path-confinement.ts        isPathConfined, assertPathConfined
 │   ├── process/                   errors, line-buffer, registry, spawn
-│   ├── terminal/                  kitty-keyboard, mouse
+│   ├── terminal/                  kitty-keyboard, escape-debounce, filtered-stdin, debug-keys
 │   └── warn.ts                    process.stderr warn helper
 │
 └── utils/                         Pure helpers (no domain)
     canonical-json, diff, error, format-errors, format-time, frontmatter,
-    fuzzy-match, parse-shell-command, redact, sectioned-list, slug, slugify,
+    fuzzy-match, parse-shell-command, redact, sectioned-list, slugify,
     truncate, type-guards, validate-identifier, with-timeout
 ```
 
@@ -747,8 +755,8 @@ src/
 | Layer | Rule | Status |
 |---|---|---|
 | `src/utils/` | pure / generic / no domain (canonical-json is the model) | holds |
-| `src/lib/` | third-party adapters (Node fs, simple-git, Shiki, terminal escapes) | holds |
-| `src/core/` | diptych domain — schemas, paths, phase taxonomy, brief-hash, sessions; **no React, no engine** | holds |
+| `src/lib/` | third-party adapters (Node fs, simple-git, terminal escapes) | holds |
+| `src/core/` | diptych domain — schemas, paths, phase taxonomy, sessions; **no React, no engine** | holds |
 | `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, handoff, providers, mcp, ipc, codebase, parsers, streaming, skills, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
 | `src/features/{X}/` | feature-local screen/picker/overlay + components/hooks/helpers; **never imports another feature** | holds |
 | `src/components/` | shared UI primitives (cross-feature only) | holds |
@@ -772,10 +780,10 @@ Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`), `'ful
 | `standard` (default) | 4 | optional spec | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md` |
 | `speckit` | 6–7 | optional spec + plan + constitution + analyze | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` |
 
-Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers are in `planning/shared.ts`:
+Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
 
-- `runBriefQualityGate(tasks, projectDir, sessionId, bus, phase)` — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Issues: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `non_atomic_task`, `missing_implementation_steps`. Publishes `brief_quality_passed` or `brief_quality_failed`.
-- `runBriefsApprovalLoop({...})` — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
+- `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Issues: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `non_atomic_task`, `missing_implementation_steps`. Publishes `brief_quality_passed` or `brief_quality_failed`.
+- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` and the legacy `mode_downgrade_advised` for trivial requests in higher modes; user can /mode to switch.
 
@@ -800,7 +808,7 @@ Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-si
 | `otelSink` | `events/sinks/otel.ts` | `config.otel.enabled` | maps events to OpenTelemetry spans |
 | Hook sink | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks |
 
-Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orchestrator call site via `src/engine/hooks/run-pre-hook.ts` so they can block the action.
+Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orchestrator call site via `src/engine/hooks/run-pre.ts` so they can block the action.
 
 ### EngineEvent Variants
 
@@ -849,7 +857,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm. **Two switches** must remain exhaustive:
 
-1. `getGutterRole(event)` in `src/features/workflow/event-role.ts` — decides `planner` / `implementer` / `null` gutter color.
+1. `getGutterRole(event)` in `src/features/workflow/conversation-rows/event-role.ts` — decides `planner` / `implementer` / `null` gutter color.
 2. `eventRows(event, ...)` — returns one-row conversation records or `[]` for silent events.
 
 Adding a new EngineEvent variant without adding it to **both** switches is a compile error.
@@ -917,7 +925,7 @@ Single source of truth for `resume`: `state.json` + the session folder it lives 
 
 **Concurrency:** at most one foreground active session per project directory; the presence of `.diptych/active` is the foreground lock. Background sessions register in `lockfile.json` so `diptych ps` and `diptych attach` can find them; `attach` then connects via `ipc.sock`.
 
-Path encoding: snapshots URL-encode each path segment then join with `__` to flatten to a single filename per file (`encodeSnapshotPath` in `engine/snapshots/store.ts`).
+Path encoding: snapshots URL-encode each path segment then join with `__` to flatten to a single filename per file (`encodeSnapshotPath` in `engine/snapshots/path-codec.ts`).
 
 ---
 
@@ -941,7 +949,7 @@ Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared p
 
 The functions other code depends on. All paths absolute under `src/`.
 
-### `core/brief-hash.ts`
+### `engine/brief-hash.ts`
 
 ```ts
 export function hashTaskBrief(tasks: Task[]): string
@@ -970,21 +978,26 @@ export const SnapshotManifestSchema: z.ZodObject<{
 export type SnapshotManifest
 ```
 
-### `engine/snapshots/store.ts`
+### `engine/snapshots/` (path-codec, manifest, files, lock, create)
 
 ```ts
+// path-codec.ts
 export function encodeSnapshotPath(rel: string): string
 export function decodeSnapshotPath(encoded: string): string
 export function generateSnapshotId(now?: Date): string
+// manifest.ts
 export async function writeManifest(projectDir, sessionId, manifest): Promise<void>
 export async function readManifest(projectDir, sessionId, snapshotId): Promise<SnapshotManifest>
 export async function listSnapshotIds(projectDir, sessionId): Promise<string[]>
+export async function hasBaseline(projectDir, sessionId): Promise<boolean>
+export async function listSnapshots(projectDir, sessionId): Promise<{ manifests: SnapshotManifest[] }>
+// files.ts
 export async function hashFile(filePath): Promise<string | null>      // sha256 hex; null on read error
 export async function collectTrackedFiles(projectDir): Promise<string[]>  // honours .gitignore + ALWAYS_EXCLUDED
+// lock.ts
 export async function acquireSnapshotLock(projectDir, sessionId): Promise<() => Promise<void>>
-export async function hasBaseline(projectDir, sessionId): Promise<boolean>
+// create.ts
 export async function createSnapshot(opts: CreateSnapshotOptions): Promise<CreateSnapshotResult>
-export async function listSnapshots(projectDir, sessionId): Promise<{ manifests: SnapshotManifest[] }>
 ```
 
 `ALWAYS_EXCLUDED = ['.git', '.diptych', 'node_modules']` — non-negotiable; see invariants.
@@ -1074,12 +1087,12 @@ export function resetDriftChainState(projectDir, sessionId): void
 export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger
 //  input.briefHash propagates onto the ledger AND every task entry.
 
-// task-evidence.ts
+// task.ts
 export function recordLocalTaskEvidence(input): EvidenceLedger
 export function recordRetryOrEscalationEvidence(input): EvidenceLedger
 export function recordSkippedTaskEvidence(input): EvidenceLedger
 
-// approval-evidence.ts
+// approval.ts
 export function recordRejectionEvidence(input): EvidenceLedger
 
 // reporting.ts
@@ -1202,7 +1215,7 @@ Full verification: `npm run test-ci` (typecheck, lint, Vitest, then invariants).
 Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breaking any of these silently corrupts state or causes exponential I/O.
 
 1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants). The user reviews and commits.
-2. **`.diptych/`, `.git/`, `node_modules/` MUST be excluded from snapshots / drift / file collection.** `ALWAYS_EXCLUDED` in `engine/snapshots/store.ts` enforces this for snapshots; the same set is honoured by `collectTrackedFiles`. Including `.diptych/` causes exponential snapshot growth (snapshots-of-snapshots).
+2. **`.diptych/`, `.git/`, `node_modules/` MUST be excluded from snapshots / drift / file collection.** `ALWAYS_EXCLUDED` in `engine/snapshots/files.ts` enforces this for snapshots; the same set is honoured by `collectTrackedFiles`. Including `.diptych/` causes exponential snapshot growth (snapshots-of-snapshots).
 3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`. Auto-snapshot `postTask` checks `completedTask?.status === 'done'`.
 5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are five+ such points (success, fail, escalate-success, escalate-fail, skip).
@@ -1223,7 +1236,7 @@ Quickest path for a fresh agent:
 
 1. `src/cli.ts` — see what commands exist.
 2. `src/cli/commands/start.ts` — see the bootstrap flow.
-3. `src/engine/orchestrator/run/run.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
+3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts` — see how each mode differs.
 5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
 6. `src/engine/events/types.ts` — see the full event vocabulary.

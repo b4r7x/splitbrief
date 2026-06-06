@@ -12,7 +12,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
-import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import type { SummaryBase } from '../summary.js';
 import { initializeWorkflow } from './init.js';
 

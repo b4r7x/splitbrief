@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { publishFeedbackError } from '../shared/feedback-events.js';
+import { publishFeedbackError } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';

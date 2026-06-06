@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { assertNotWindows } from '../windows-guard.js';
-import { buildAliasedSessions } from '../session-aliases.js';
+import { buildAliasedSessions } from '../sessions/aliases.js';
 import { continueCommand } from './continue.js';
 import { addWorkflowOptions } from '../options.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';

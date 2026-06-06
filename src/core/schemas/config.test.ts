@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from '../config/load/load.js';
+import { createDefaultConfig } from '../config/load/io.js';
 import { ConfigSchema } from './config.js';
 
 const validConfig = createDefaultConfig();

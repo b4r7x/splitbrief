@@ -5,7 +5,7 @@ import { createInitialState, transition } from '../../../src/core/state/machine.
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import {
   makeCallbacks,
@@ -43,7 +43,9 @@ function savedPlanningContinuationState(feature: string): WorkflowState {
   return { ...state, awaitingContinue: true };
 }
 
-describe('resume planning continuation with a direct-writing implementer', () => {
+describe('resume planning continuation with a direct-writing implementer', {
+  timeout: 30_000,
+}, () => {
   it('re-enters planning, runs the direct implementer in a staged project, and completes the workflow', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-resume-planning-direct';

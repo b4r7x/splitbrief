@@ -18,9 +18,9 @@ import { maybeMigrateAndReport } from './migrate.js';
 import { renderAttachClient } from './attach.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
-import { resolveSessionAlias } from '../session-aliases.js';
-import { findSingleRunningSession } from '../sessions/single-running-session.js';
-import { assertResumableState } from '../session-resolve.js';
+import { resolveSessionAlias } from '../sessions/aliases.js';
+import { findSingleRunningSession } from '../sessions/single-running.js';
+import { assertResumableState } from '../sessions/resolve.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 

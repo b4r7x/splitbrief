@@ -12,7 +12,7 @@ import {
   publishWarningFromError,
   publishDriftChainDetected,
 } from '../events.js';
-import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';

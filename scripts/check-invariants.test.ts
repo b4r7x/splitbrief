@@ -1,93 +1,83 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { findImportBoundaryViolations } from './import-boundaries.js';
+import { describe, expect, it, vi } from 'vitest';
+import { execSync } from 'node:child_process';
+import { runInvariantGates, type Gate } from './check-invariants.js';
 
-describe('findImportBoundaryViolations', () => {
-  let root: string;
+describe('check-invariants', () => {
+  it('fails closed when a gate command fails', () => {
+    const gate: Gate = {
+      id: 'broken',
+      description: 'Broken gate',
+      command: 'missing-tool',
+      expected: 0,
+    };
+    const log = vi.fn();
 
-  const write = (relPath: string, source: string): void => {
-    const full = join(root, relPath);
-    mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, source);
-  };
-
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'boundaries-'));
-  });
-
-  afterEach(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it('flags src/components importing from src/features (regression for old terminal-width import)', () => {
-    write('features/workflow/layout/terminal-width.ts', 'export const x = 1;');
-    write(
-      'components/overlays/overlay-panel.tsx',
-      "import { x } from '../../features/workflow/layout/terminal-width.js';\nexport const y = x;",
+    const failed = runInvariantGates(
+      [gate],
+      () => {
+        throw new Error('missing-tool');
+      },
+      log,
     );
 
-    const violations = findImportBoundaryViolations(root);
-
-    expect(violations).toHaveLength(1);
-    const [violation] = violations;
-    expect(violation?.file).toBe('components/overlays/overlay-panel.tsx');
-    expect(violation?.reason).toContain('src/components/** must not import');
+    expect(failed).toBe(1);
+    expect(log).toHaveBeenCalledWith('  ✗ [broken] Broken gate: command failed (expected 0) FAIL');
   });
 
-  it('flags a feature importing from a sibling feature (regression for summary->workflow)', () => {
-    write('features/workflow/status-glyph.ts', 'export const g = 1;');
-    write(
-      'features/summary/components/evidence.tsx',
-      "import { g } from '../../workflow/status-glyph.js';\nexport const v = g;",
+  it('fails closed when a pipeline hides a broken command behind wc', () => {
+    const gate: Gate = {
+      id: 'pipeline',
+      description: 'Broken pipeline',
+      command: '__diptych_missing_command__ | wc -l',
+      expected: 0,
+    };
+    const log = vi.fn();
+
+    expect(
+      execSync('bash -c "__diptych_missing_command__ | wc -l"', {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim(),
+    ).toBe('0');
+    expect(runInvariantGates([gate], undefined, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL',
     );
-
-    const violations = findImportBoundaryViolations(root);
-
-    expect(violations).toHaveLength(1);
-    const [violation] = violations;
-    expect(violation?.reason).toContain('features/summary');
-    expect(violation?.reason).toContain('features/workflow');
   });
 
-  it('allows intra-feature imports', () => {
-    write('features/workflow/a.ts', 'export const a = 1;');
-    write(
-      'features/workflow/components/b.tsx',
-      "import { a } from '../a.js';\nexport const b = a;",
-    );
+  it('fails closed when a silent pipeline stage exits nonzero before wc', () => {
+    const gate: Gate = {
+      id: 'silent-pipeline',
+      description: 'Silent broken pipeline',
+      command: 'false | wc -l',
+      expected: 0,
+    };
+    const log = vi.fn();
 
-    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+    expect(
+      execSync('bash -c "false | wc -l"', {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim(),
+    ).toBe('0');
+    expect(runInvariantGates([gate], undefined, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [silent-pipeline] Silent broken pipeline: command failed (expected 0) FAIL',
+    );
   });
 
-  it('allows features and components importing shared utils/core', () => {
-    write('utils/terminal-width.ts', 'export const w = 1;');
-    write('core/task-status-glyph.ts', 'export const g = 1;');
-    write(
-      'components/overlays/overlay-panel.tsx',
-      "import { w } from '../../utils/terminal-width.js';\nexport const y = w;",
+  it('fails closed when gate output is not numeric', () => {
+    const gate: Gate = {
+      id: 'nonnumeric',
+      description: 'Nonnumeric gate',
+      command: 'printf not-a-number',
+      expected: 0,
+    };
+    const log = vi.fn();
+
+    expect(runInvariantGates([gate], undefined, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [nonnumeric] Nonnumeric gate: invalid output "not-a-number" (expected 0) FAIL',
     );
-    write(
-      'features/summary/components/evidence.tsx',
-      "import { g } from '../../../core/task-status-glyph.js';\nexport const v = g;",
-    );
-
-    expect(findImportBoundaryViolations(root)).toHaveLength(0);
-  });
-
-  it('ignores test files', () => {
-    write('features/workflow/status-glyph.ts', 'export const g = 1;');
-    write(
-      'features/summary/components/evidence.test.ts',
-      "import { g } from '../../workflow/status-glyph.js';\nexport const v = g;",
-    );
-
-    expect(findImportBoundaryViolations(root)).toHaveLength(0);
-  });
-
-  it('reports no violations on the real src tree', () => {
-    const violations = findImportBoundaryViolations('src');
-    expect(violations).toEqual([]);
   });
 });

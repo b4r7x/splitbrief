@@ -14,8 +14,8 @@ import {
   type RoutingDecision,
   type WorkerPacketPreview,
 } from '../../../../engine/facades/routing-preview.js';
-import { buildProjectContext } from '../../project-context.js';
-import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-helpers.js';
+import { buildProjectContext } from './project-context.js';
+import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-format.js';
 
 interface PacketPreviewRefresh {
   sourceTask: Task;

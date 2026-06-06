@@ -8,7 +8,7 @@ For the workflow state machine, see `docs/WORKFLOW.md`. For the event model, see
 
 ## Document approval gates
 
-After the planner writes a spec or plan, the workflow pauses for human review. The approval loop lives in `src/engine/orchestrator/approval/approval.ts`.
+After the planner writes a spec or plan, the workflow pauses for human review. The approval loop lives in `src/engine/orchestrator/approval/loop.ts`.
 
 Three gate types:
 
@@ -111,9 +111,9 @@ When the implementer writes code and validation fails, the escalation system tri
 
 **Tier 0: local retries** (`src/engine/orchestrator/escalation/local-retries.ts`). The implementer retries with the error message appended to its context. No additional API calls beyond the implementer itself. Runs up to `workflow.maxRetries` times (default 3). Each attempt publishes a `retry` event.
 
-**Tier 1: hint escalation** (`src/engine/orchestrator/escalation/tier1-hint.ts`). The planner analyzes the error and produces a short hint. The hint is appended to the error context (truncated to 4000 chars), and the implementer retries once more with the enriched error. Publishes `escalate` with tier 1.
+**Tier 1: hint escalation** (`HINT_TIER` in `src/engine/orchestrator/escalation/tier.ts`). The planner analyzes the error and produces a short hint. The hint is appended to the error context (truncated to 4000 chars), and the implementer retries once more with the enriched error. Publishes `escalate` with tier 1.
 
-**Tier 2: full escalation** (`src/engine/orchestrator/escalation/tier2-full.ts`). The full task context — brief, all prior attempts, all errors — goes to the planner. The planner writes the code itself instead of hinting. Publishes `escalate` with tier 2.
+**Tier 2: full escalation** (`FULL_TIER` in `src/engine/orchestrator/escalation/tier.ts`). The full task context — brief, all prior attempts, all errors — goes to the planner. The planner writes the code itself instead of hinting. Publishes `escalate` with tier 2.
 
 If tier 2 fails, the task publishes `task_full_fail` and enters recovery.
 
@@ -191,7 +191,7 @@ The recovery state tracks the issue lifecycle:
 
 ## Drift detection
 
-Before final review, `src/engine/orchestrator/final-review.ts` calls `analyzeBriefDrift()` from `src/engine/orchestrator/drift/drift.ts` against the current diff, tasks, and evidence ledger.
+Before final review, `src/engine/orchestrator/final-review.ts` calls `analyzeBriefDrift()` from `src/engine/orchestrator/drift/analyze.ts` against the current diff, tasks, and evidence ledger.
 
 `analyzeBriefDrift()` takes the task list, the list of changed files, and the diff text. It checks for:
 

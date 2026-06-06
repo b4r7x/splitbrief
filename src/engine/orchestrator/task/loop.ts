@@ -11,7 +11,7 @@ import {
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { captureChangedFilesBaseline } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
-import { reviewTaskIfNeeded } from './task-review.js';
+import { reviewTaskIfNeeded } from './review-flow.js';
 import { maybeAutoSnapshot } from './auto-snapshot.js';
 import { checkDependencyGate } from './dependency-gate.js';
 import { checkUserEditGate } from './user-edit-gate.js';

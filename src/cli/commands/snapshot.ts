@@ -6,7 +6,7 @@ import { listSnapshots } from '../../engine/snapshots/manifest.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
 import { cliError, withCliErrors } from '../errors.js';
-import { resolveSessionOrThrow } from '../session-resolve.js';
+import { resolveSessionOrThrow } from '../sessions/resolve.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 
 function printSnapshotResult(manifest: SnapshotManifest, snapshotDir: string, name?: string): void {

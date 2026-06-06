@@ -21,7 +21,7 @@ import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
-import { configPath } from '../../core/config/load/load.js';
+import { configPath } from '../../core/config/load/io.js';
 import { READINESS_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { assertNotWindows } from '../windows-guard.js';

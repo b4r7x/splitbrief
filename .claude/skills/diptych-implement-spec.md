@@ -1,30 +1,30 @@
 ---
 name: diptych-implement-spec
-description: Execute a specific implementation spec from plans/. Use when the user asks to implement a numbered spec like "implement 001", "run plans/003", "do the capability matrix spec", or similar. Reads the spec, plan, and tasks files; executes tasks in order; runs tests between phases; updates docs at the end.
+description: Execute a specific implementation spec from notes/superpowers/specs/. Use when the user asks to implement a numbered spec like "implement 01", "run notes/superpowers/specs/04-rpc-mode", "do the polyglot validation spec", or similar. Reads the spec's execute-prompt and agent-briefs; executes briefs in order; runs tests between phases; updates docs at the end.
 ---
 
 # Implement a diptych spec end-to-end
 
-This skill drives a full implementation pass through one `plans/<NNN>-<slug>/` directory. It assumes you have already read the project primer (`diptych-dev` skill) — if not, read those files first.
+This skill drives a full implementation pass through one spec directory under `notes/superpowers/specs/` (numbered, e.g. `04-rpc-mode/`, or dated, e.g. `2026-04-26-command-palette/`). It assumes you have already read the project primer (`diptych-dev` skill) — if not, read those files first.
 
 ## Input
 
 The user says something like:
-- "implement 001" / "run 001" / "do spec 001"
-- "implement plans/003-session-jsonl-log"
-- "run the capability matrix spec"
+- "implement 01" / "run 01" / "do spec 01"
+- "implement notes/superpowers/specs/04-rpc-mode"
+- "run the polyglot validation spec"
 
-Resolve the target spec folder: match by number first (`plans/001-*`), then by slug. If ambiguous, ask. If none found, list available specs via `ls plans/` and ask.
+Resolve the target spec folder under `notes/superpowers/specs/`: match by number first (`04-*`), then by slug. If ambiguous, ask. If none found, list available specs via `ls notes/superpowers/specs/` and ask.
 
 ## Execution flow
 
 ### Step 1 — Read the spec
 
-Read in this order from the target folder:
+Read in this order from the target folder (layout is heterogeneous — read whatever the folder actually contains):
 
-1. `spec.md` — understand problem, goal, user stories, functional requirements, success criteria, non-goals.
-2. `plan.md` — understand data model, architecture, code paths to change, dependencies.
-3. `tasks.md` — the numbered task list (T001…) with per-task file paths and change descriptions.
+1. `execute-prompt.md` — the ready-to-paste prompt: which skills to load, what to read, which agent-briefs to implement and in what order. Numbered specs always have this.
+2. `agent-briefs/*.md` — the per-brief work items (problem, files to touch, change descriptions). Read them in the order `execute-prompt.md` dictates.
+3. Any `README.md` / `decisions.md` in the folder — dated specs often carry these for context and design rationale.
 
 Also re-read these project docs if it's been a while:
 - `docs/CONCEPTS.md` — for any terms referenced in the spec.
@@ -32,14 +32,14 @@ Also re-read these project docs if it's been a while:
 
 ### Step 2 — Check dependencies
 
-Look at the "Depends on" line in `plan.md`. For each dependency:
+Check the dependency graph in `notes/superpowers/specs/README.md` (and any "depends on" note in `execute-prompt.md`). For each dependency:
 
-- If the dependency is another `plans/<NNN>/` and that spec has not been implemented (grep the codebase for the spec's declared success-criteria invariants), stop and warn the user: `Spec <NNN> depends on <dep>, which does not appear implemented yet. Implement <dep> first, or confirm you want to proceed anyway.`
+- If the dependency is another spec under `notes/superpowers/specs/` and that spec has not been implemented (grep the codebase for the spec's declared success-criteria invariants), stop and warn the user: `Spec <NN> depends on <dep>, which does not appear implemented yet. Implement <dep> first, or confirm you want to proceed anyway.`
 - Dependencies on nothing → proceed.
 
 ### Step 3 — Create a TaskCreate tracker
 
-Use `TaskCreate` to register a task for each `T001`, `T002`, … entry in `tasks.md`. Mark the first one `in_progress`. This gives visible progress to the user.
+Use `TaskCreate` to register a task for each agent-brief the spec lists (in `execute-prompt.md` order). Mark the first one `in_progress`. This gives visible progress to the user.
 
 ### Step 4 — Execute tasks in order
 
@@ -57,7 +57,7 @@ Do not batch tasks — one at a time so the user can see progress. Exceptions: t
 
 ### Step 5 — Run the full suite before Doc Sync phase
 
-After the non-doc tasks (everything before the "Phase 6 / Doc Sync" section in `tasks.md`):
+After the non-doc work (everything before the Doc Sync step the `execute-prompt.md` / agent-briefs call for):
 
 ```bash
 npm run typecheck
@@ -72,10 +72,10 @@ All must pass. If tests fail:
 
 ### Step 6 — Doc Sync
 
-Execute the "Phase 6 — Doc Sync" tasks from `tasks.md`:
+Execute the Doc Sync work the spec calls for (its `execute-prompt.md` / final agent-brief names the doc updates):
 
 - Typically updates to `docs/CONCEPTS.md`, `docs/ARCHITECTURE.md`, `docs/WORKFLOW.md`.
-- Each Doc Sync task names exact sections to update. Edit those sections to reflect what was just implemented — NOT what the spec proposed.
+- Each Doc Sync item names exact sections to update. Edit those sections to reflect what was just implemented — NOT what the spec proposed.
 
 Check that docs and code agree by grepping a few spot-check invariants.
 
@@ -84,9 +84,9 @@ Check that docs and code agree by grepping a few spot-check invariants.
 Before returning control to the user, produce a summary:
 
 ```
-Implemented: plans/<NNN>-<slug>
-- Tasks completed: T001-TNN (NN/NN)
-- Tasks skipped: <if any, with reason>
+Implemented: notes/superpowers/specs/<spec-folder>
+- Briefs completed: <NN/NN>
+- Briefs skipped: <if any, with reason>
 - Tests: <passed> passed / <failed> failed
 - Files changed: <count>, bucketed: src/ N, docs/ M, tests N
 - Docs synced: <list of doc sections updated>
@@ -97,15 +97,15 @@ Implemented: plans/<NNN>-<slug>
 Remind the user:
 - Nothing is committed (hook blocks commits).
 - They review and commit manually.
-- Next spec per `plans/README.md` dependency order, if applicable.
+- Next spec per `notes/superpowers/specs/README.md` dependency order, if applicable.
 
 ## Constraints
 
 - **Never run `git add`, `git commit`, or `git stage`.** The hook at `.claude/hooks/block-git-commits.sh` blocks these. Respect it.
-- **Never rename folders under `plans/`.** Those are immutable once the spec is written.
+- **Never rename folders under `notes/superpowers/specs/` or `notes/specs/`.** Those are immutable once the spec is written.
 - **Never skip the Doc Sync phase.** Docs and code must stay synchronized — this is a project invariant.
 - **Never touch other specs' folders** during implementation. If the user wants to work on N, work on N only.
-- **If a task says "research during implementation"** (e.g. "confirm the capability value for codex during T004"), do the research, adjust, and document the adjustment in your summary.
+- **If a brief says "research during implementation"** (e.g. "confirm the capability value for codex during this brief"), do the research, adjust, and document the adjustment in your summary.
 
 ## When things go wrong
 

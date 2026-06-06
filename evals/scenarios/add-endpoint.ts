@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { ensureNodeModules } from './ensure-node-modules.js';
-import { runNpmTest } from './shared.js';
+import { runNpmTest } from './quality-checks.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 function executeHealthRequest(dir: string): QualityCheckResult {

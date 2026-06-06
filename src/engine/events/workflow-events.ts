@@ -10,18 +10,6 @@ import type {
 import { UserEditConflictActionSchema } from '../../core/schemas/enums.js';
 import type { TokenUsage, TaskTokenUsage } from '../../core/schemas/tokens.js';
 
-export {
-  USER_EDIT_CONFLICT_ACTIONS,
-  TASK_CONTEXT_FITS,
-  CURRENT_CODE_CONTEXT_MODES,
-} from '../../core/schemas/enums.js';
-export type {
-  UserEditConflictKind,
-  UserEditConflictAction,
-  TaskContextFit,
-  CurrentCodeContextMode,
-};
-
 export function isUserEditConflictAction(value: string): value is UserEditConflictAction {
   return UserEditConflictActionSchema.safeParse(value).success;
 }

@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import { useTheme } from '../theme.js';
-import { CURSOR, NO_CURSOR } from './picker-utils.js';
+import { CURSOR, NO_CURSOR } from './cursor-glyph.js';
 
 interface CursorCellProps {
   isCursor: boolean;

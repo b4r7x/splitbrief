@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_DEFS } from './catalog.js';
-import { createDefaultConfig } from '../config/load/load.js';
-import { getConfigValue } from '../config/accessors/state.js';
+import { createDefaultConfig } from '../config/load/io.js';
+import { getConfigValue } from '../config/accessors/values.js';
 
 // Settings whose dot-path is structurally valid but intentionally has no default
 // value. They read as `undefined` on a fresh config, so a non-undefined assertion

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../../../testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../../core/schemas/task.js';

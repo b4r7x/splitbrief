@@ -5,7 +5,7 @@ import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
 import { createCommandContext } from '../../app/command-context-factory.js';
 import { buildRewindAction } from '../../core/state/build-rewind-action.js';

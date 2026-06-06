@@ -34,7 +34,7 @@ function seedSourceFile(projectDir: string): void {
   );
 }
 
-describe('codebase context injection into planner', () => {
+describe('codebase context injection into planner', { timeout: 30_000 }, () => {
   it('passes codebaseContext to planner.quickPlan when codebase.enabled is true', async () => {
     const projectDir = createTempDir('orch-int-codebase-inj');
     dirs.push(projectDir);

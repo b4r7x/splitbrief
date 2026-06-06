@@ -11,7 +11,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';

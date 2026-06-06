@@ -399,7 +399,7 @@ Module: `src/engine/hooks/`
 - `dispatch.ts` — `runHook(entry, event, ctx)` — spawns subprocess via `lib/process/spawn.ts`
 - `substitute.ts` — `${event.field}` regex substitution (no eval)
 - `sink.ts` — `EventBus` sink for post_*/on_* events (fire-and-forget)
-- `run-pre-hook.ts` — sequential pre_* runner; deny short-circuits
+- `run-pre.ts` — sequential pre_* runner; deny short-circuits
 - `builtins/{registry,prettier-on-change,block-secrets}.ts` — built-in hook implementations
 
 Trust:

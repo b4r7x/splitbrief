@@ -7,7 +7,7 @@ import {
   createAgentSdkBackend,
   isAgentSdkAvailable,
   PLANNER_ALLOWED_TOOLS,
-} from '../agent-sdk-backend.js';
+} from '../runners/agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 import { resolveApiKeyOverride } from '../providers/client.js';

@@ -4,14 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { ReferenceCompletionMenu } from './menu.js';
 
 const LONG_FILES = [
-  'docs/superpowers/specs/2026-04-30-approval-allowed-paths/spec.md',
-  'docs/superpowers/specs/2026-05-01-session-continuity/agent-briefs/03-numeric-aliases.md',
-  'src/cli/session-aliases.test.ts',
-  'src/cli/session-aliases.ts',
-  'docs/superpowers/specs/09-at-file-autocomplete/README.md',
-  'docs/superpowers/specs/09-at-file-autocomplete/agent-briefs/01-at-file-hook-and-ui.md',
-  'docs/superpowers/specs/09-at-file-autocomplete/decisions.md',
-  'docs/superpowers/specs/09-at-file-autocomplete/execute-prompt.md',
+  'notes/superpowers/specs/2026-04-30-approval-allowed-paths/spec.md',
+  'notes/superpowers/specs/2026-05-01-session-continuity/agent-briefs/03-numeric-aliases.md',
+  'src/cli/sessions/aliases.test.ts',
+  'src/cli/sessions/aliases.ts',
+  'notes/superpowers/specs/09-at-file-autocomplete/README.md',
+  'notes/superpowers/specs/09-at-file-autocomplete/agent-briefs/01-at-file-hook-and-ui.md',
+  'notes/superpowers/specs/09-at-file-autocomplete/decisions.md',
+  'notes/superpowers/specs/09-at-file-autocomplete/execute-prompt.md',
   'docs/extra.md',
 ];
 
@@ -35,10 +35,10 @@ describe('ReferenceCompletionMenu', () => {
     expect(frame).toContain('Tab/Enter fill');
     expect(frame).toContain('↓ more');
     const visiblePathRows = panelInteriorRows(frame).filter(
-      (line) => line.includes('docs/') || line.includes('src/'),
+      (line) => line.includes('notes/') || line.includes('src/'),
     );
     expect(visiblePathRows).toHaveLength(8);
-    expect(visiblePathRows[0]).toContain('docs/superpowers');
+    expect(visiblePathRows[0]).toContain('notes/superpowers');
     ui.unmount();
   });
 

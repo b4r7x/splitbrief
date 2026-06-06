@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
-import { makeSummary } from '../../../../testing/helpers/factories/summary.js';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { SummaryReviewPacket } from './review-packet.js';
 

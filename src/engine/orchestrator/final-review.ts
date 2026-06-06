@@ -13,7 +13,7 @@ import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger.js';
-import { analyzeBriefDrift } from './drift/drift.js';
+import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
 import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
 
@@ -25,7 +25,7 @@ import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/create.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
+import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };

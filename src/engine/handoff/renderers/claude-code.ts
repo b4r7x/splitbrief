@@ -1,5 +1,5 @@
 import type { HandoffInput, HandoffPack } from '../types.js';
-import { buildBaseFiles, buildTaskListSection } from './shared.js';
+import { buildBaseFiles, buildTaskListSection } from './base-files.js';
 
 export function renderClaudeCode(input: HandoffInput): HandoffPack {
   const base = buildBaseFiles(input);

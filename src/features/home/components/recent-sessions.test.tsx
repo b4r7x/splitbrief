@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '../../../../testing/helpers/ink.js';
-import { makeConfig } from '../../../../testing/helpers/factories/config.js';
-import { makeSession } from '../../../../testing/helpers/factories/session.js';
-import { createTempDir, cleanupTempDir } from '../../../../testing/helpers/temp-dir.js';
-import { resetAllStores } from '../../../../testing/helpers/stores.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { CURSOR } from '../../../components/pickers/picker-utils.js';
+import { CURSOR } from '../../../components/pickers/cursor-glyph.js';
 import { RecentSessions } from './recent-sessions.js';
 
 const CURSOR_GLYPH = CURSOR.trimEnd();

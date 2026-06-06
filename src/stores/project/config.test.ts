@@ -7,7 +7,7 @@ import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli, expectShell } from '#testing/helpers/config-narrowing.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
-import { createDefaultConfig, loadConfig } from '../../core/config/load/load.js';
+import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
 
 let tmpDir: string;
 

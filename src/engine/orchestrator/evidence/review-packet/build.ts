@@ -14,6 +14,7 @@ import {
 import { nowIso } from '../../../../utils/format-time.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger.js';
 import { readDriftReport } from '../../drift/io.js';
+import { readDriftChainState } from '../../drift/chain-state.js';
 import {
   buildChanges,
   buildCost,
@@ -50,6 +51,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const drift = readDriftReport(opts.projectDir, opts.sessionId);
   if (!drift) addMissing(missing, DRIFT_REPORT_FILE);
 
+  const chainState = readDriftChainState(opts.projectDir, opts.sessionId);
   if (!existsSync(join(sessionDir(opts.projectDir, opts.sessionId), DRIFT_CHAINS_FILE)))
     addMissing(missing, DRIFT_CHAINS_FILE);
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);
@@ -83,7 +85,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     }),
     validation: buildValidation(opts.state, ledger),
     evidence: buildEvidence(ledger),
-    drift: buildDrift(opts.projectDir, opts.sessionId, drift, briefQuality),
+    drift: buildDrift(chainState, drift, briefQuality),
     escalations: buildEscalations(opts.state, ledger, events),
     cost: buildCost(opts.summary, events),
     finalReview,

@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';

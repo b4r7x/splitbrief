@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { loadConfig, writeConfig, configPath } from '../../core/config/load/load.js';
+import { loadConfig, writeConfig, configPath } from '../../core/config/load/io.js';
 import {
   applyCLIOverrides,
   applyRunnerOverrides,

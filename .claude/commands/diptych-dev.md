@@ -33,7 +33,7 @@ User → CLI (commander) → Orchestrator (main loop)
 
 - **TUI**: Ink 6.8 (React 19) conversation flow with structured event cards
 - **Event model**: `TuiEvent` union type — planner events (conversational), implementer events (structured tool-call cards), validation, git, escalation
-- **Conversational planning**: Planner embeds `<!-- Q:{JSON} -->` markers → `question-parser.ts` extracts → TUI displays inline
+- **Conversational planning**: Planner embeds `<!-- Q:{JSON} -->` markers → `question.ts` extracts → TUI displays inline
 - **Auto-detection**: `detection.ts` discovers planners and implementer endpoints; `cli/picker.ts` for interactive selection
 - **State**: JSON snapshot per transition → resume support
 - **Zero classes**: Pure functions, module-scoped state, ESM only

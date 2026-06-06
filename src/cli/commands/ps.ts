@@ -4,7 +4,7 @@ import { resolveProjectDir } from '../setup.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
-import { assignSessionAliases, listSessionDirs } from '../session-aliases.js';
+import { assignSessionAliases, listSessionDirs } from '../sessions/aliases.js';
 import { renderTable } from '../render-table.js';
 import { formatTime } from '../../utils/format-time.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';

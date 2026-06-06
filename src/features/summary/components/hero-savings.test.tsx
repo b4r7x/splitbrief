@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { HeroSavings } from './hero-savings.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
 

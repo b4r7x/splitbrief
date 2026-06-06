@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { makeConfig } from '../../../testing/helpers/factories/config.js';
 import { makeSession } from '../../../testing/helpers/factories/session.js';
@@ -12,7 +12,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
-import { CURSOR } from '../../../src/components/pickers/picker-utils.js';
+import { CURSOR } from '../../../src/components/pickers/cursor-glyph.js';
 import { App } from '../../../src/app.js';
 
 const CTRL_R = '\x12';
@@ -116,9 +116,10 @@ describe('home navigation flow (through real App)', () => {
     const before = lineIndexContaining(focused, CURSOR_GLYPH);
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
-    const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
-    expect(after).toBeGreaterThan(before);
+    await vi.waitFor(() => {
+      const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+      expect(after).toBeGreaterThan(before);
+    });
 
     ui.stdin.write(ESC);
     await tick(20);

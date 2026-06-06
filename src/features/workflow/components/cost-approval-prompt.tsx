@@ -2,8 +2,10 @@ import { Box, Text, useInput } from 'ink';
 import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { useTheme } from '../../../components/theme.js';
-import { costApprovalStore } from '../../../stores/cost-approval/store.js';
-import { closeCostApprovalPrompt } from '../../../stores/cost-approval/actions.js';
+import {
+  costApprovalStore,
+  closeCostApprovalPrompt,
+} from '../../../stores/cost-approval/prompt.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getCostApprovalPromptRowsForPrediction } from '../prompt-rows.js';
 

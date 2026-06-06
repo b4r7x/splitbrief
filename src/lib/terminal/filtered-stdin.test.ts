@@ -6,6 +6,7 @@ import {
   stripPasteMarkers,
   type MouseEvent,
 } from './filtered-stdin.js';
+import { terminalSequences } from './control.js';
 
 describe('parseMouseEvents', () => {
   it('intercepts wheel-up events and removes them from the clean stream', () => {
@@ -328,6 +329,28 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
 
     expect(events).toEqual([]);
     expect(() => filtered.disable()).not.toThrow();
+  });
+
+  it('enables terminal modes on create and disables them once', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const fakeStdin = makeFakeStdin();
+
+    const filtered = createFilteredStdin(fakeStdin);
+    filtered.disable();
+    filtered.disable();
+
+    expect(written).toEqual([
+      terminalSequences.enableMouseTracking,
+      terminalSequences.enableSgrMouse,
+      terminalSequences.enableBracketedPaste,
+      terminalSequences.disableMouseTracking,
+      terminalSequences.disableSgrMouse,
+      terminalSequences.disableBracketedPaste,
+    ]);
   });
 });
 

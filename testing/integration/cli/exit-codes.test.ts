@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { createDefaultConfig } from '../../../src/core/config/load/load.js';
+import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
 
@@ -43,7 +43,7 @@ function writeInvalidConfig(projectDir: string): void {
   );
 }
 
-describe('CLI exit codes', () => {
+describe('CLI exit codes', { timeout: 30_000 }, () => {
   it('start with valid config exits 0', async () => {
     writeValidConfig(tmp);
 

@@ -19,7 +19,7 @@ Three rewind-family commands also enforce a `phaseGuard`. The guards are the sin
 - `canRevisePlan(phase)` — `src/core/runtime/commands/registry.ts` — true once the plan is written (`reviewing-plan`, `reviewing-briefs`, and later).
 - `canRedoTask(phase)` — `src/core/runtime/commands/registry.ts` — true only during `implementing`, `validating-task`, or `escalating`.
 
-Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, wired up for the TUI in `src/app/command-context.ts`. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/registry.test.ts`).
+Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, wired up for the TUI in `src/app/command-context.ts`. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
 There are 26 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
@@ -262,7 +262,7 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
   - With no args and pending attachments: `"Pending attachments: 1: <path>, 2: <path>"`.
   - With a path on success: `"Attached: <resolved-path>"`.
   - With a path on failure: `"Cannot attach: <reason>"` (file missing, unsupported format, etc.).
-- **Implementation**: catalog in `src/core/runtime/commands/registry.ts`; runtime context wiring in `src/app/command-context.ts`; attachment UI helpers in `src/stores/ui/attachments.ts`, backed by `src/stores/workflow/attachments.ts` and `src/core/attachments/resolve.ts`.
+- **Implementation**: catalog in `src/core/runtime/commands/registry.ts`; runtime context wiring in `src/app/command-context.ts`; attachment helpers in `src/stores/workflow/attachments.ts`, backed by `src/core/attachments/resolve.ts`.
 - **See also**: `/detach`.
 
 ### `/detach <index|id>`
@@ -285,7 +285,7 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
   - `list` prints `"No sticky approvals on record."` if empty, otherwise `"Approvals: <pattern> (<class>, <scope>), …"`.
   - `clear` prints `"Cleared N approval grant(s)."`.
   - Anything else prints `"Unknown approval command: <sub>. Use: /approval list or /approval clear"`.
-- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; backed by `readApprovalsStore` / `writeApprovalsStore` / `clearGrantsByScope` from `src/engine/orchestrator/approvals-store.ts` via the wiring in `src/app/command-context.ts`.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; backed by `readApprovalsStore` / `writeApprovalsStore` / `clearGrantsByScope` from `src/core/approval/store.ts` via the wiring in `src/app/command-context.ts`.
 - **See also**: `/settings`.
 
 ### `/yolo`
@@ -348,7 +348,7 @@ Commands that change which screen is active.
 
 ## Keyboard shortcuts
 
-Most slash commands have no dedicated keybinding — open the command palette with `Ctrl+K` and type. The keys below are bound directly in the input handlers (`src/app/keys.ts`, `src/features/workflow/hooks/use-workflow-keys.ts`) and run without going through the slash dispatcher.
+Most slash commands have no dedicated keybinding — open the command palette with `Ctrl+K` and type. The keys below are bound directly in the input handlers (`src/app/keys.ts`, `src/features/workflow/hooks/use-keys.ts`) and run without going through the slash dispatcher.
 
 ### Global (any screen)
 
@@ -376,11 +376,11 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 
 ### Workflow screen
 
-These keys are handled in `src/features/workflow/hooks/use-workflow-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. They take effect only when no overlay is open and the input mode is `normal` (i.e. you are not typing in a prompt field).
+These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. They take effect only when no overlay is open and the input mode is `normal` (i.e. you are not typing in a prompt field).
 
 | Key | Action | Source |
 |---|---|---|
-| `$` | Open the cost drilldown overlay (any key dismisses it) | `use-workflow-keys.ts:85` |
+| `$` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:107` |
 | `Ctrl+E` | Toggle the sidebar (only when terminal is wide enough) | `keyboard.ts:33` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts:37` |
 | `Esc` | Navigate home (only when the workflow has been cancelled) | `src/app/keys.ts` |
@@ -474,4 +474,4 @@ Alphabetical, for fast lookup:
 - [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, awaiting-continue, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
-- [`src/core/runtime/commands/registry.test.ts`](../src/core/runtime/commands/registry.test.ts) — exhaustive phase / screen / arg matrix.
+- [`src/core/runtime/commands/`](../src/core/runtime/commands/) — `dispatch.test.ts`, `lookup.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, `registry-workflow.test.ts` cover the phase / screen / arg matrix.

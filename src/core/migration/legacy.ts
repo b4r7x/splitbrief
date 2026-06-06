@@ -6,7 +6,7 @@ import { sessionsRoot } from '../paths.js';
 import { MAX_SLUG_LENGTH } from '../sessions/lifecycle.js';
 import { CURRENT_STATE_VERSION } from '../state/machine.js';
 import { sessionError } from '../sessions/errors.js';
-import { findUnusedId } from '../sessions/id/find-unused-id.js';
+import { findUnusedId } from '../sessions/find-unused-id.js';
 
 const MAX_MIGRATION_COLLISION_ATTEMPTS = 999;
 

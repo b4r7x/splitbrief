@@ -1,5 +1,4 @@
 tasks.md
-!docs/superpowers/specs/**/tasks.md
 
 # Dependencies
 node_modules/
@@ -10,6 +9,7 @@ dist/
 
 # Runtime state (diptych working directory)
 .diptych/
+.tiny-spec/
 testing/fixtures/**/.diptych/
 !evals/fixtures/**/.diptych/
 !evals/fixtures/**/.diptych/config.yaml
@@ -24,6 +24,16 @@ evals/results/*
 .specify/scripts/
 .specify/templates/
 .specify/init-options.json
+.specify/features/
+
+# Agent worktrees
+.claude/worktrees/
+
+# Audit scratch
+.nuke/
+
+# Non-reference working artifacts (audits, dated specs, superpowers runs)
+notes/
 
 # Environment
 .env

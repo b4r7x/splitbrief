@@ -45,31 +45,53 @@ src/stores/
 │   ├── controls.ts           # Sidebar visibility + input mode (cross-tree flags)
 │   ├── terminal-size.ts      # Terminal dimensions + responsive layout
 │   ├── overlay.ts            # Active overlay panel + stack
-│   ├── feedback.ts           # Info/error feedback messages
+│   ├── feedback.ts           # Info/error feedback messages (subscribes channels/feedback)
 │   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in stores/ui/persistence.ts
 │   ├── input-height.ts       # Input bar rendered height
+│   ├── command-palette-mru.ts # Command palette most-recently-used order
+│   ├── project-files.ts      # Project file list for mention/attach pickers
 │   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
-│   ├── workflow.ts           # Event log, phase, task counters
-│   ├── reducers.ts           # Pure reducer functions for workflow updates
+│   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
+│   ├── tasks.ts              # Task map + counters
+│   ├── tokens.ts             # Local / escalated token counts
+│   ├── lifecycle.ts          # Phase, cancelled, queue depth
+│   ├── actions.ts            # Namespace module — composite writes across sub-stores
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
+│   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
+│   ├── plan-editor.ts        # Plan-editor draft state
+│   ├── streaming-output.ts   # Live streamed runner output
 │   └── review.ts             # Review file path + scroll
+├── approval-prompt/          # Tiered approval request/response prompt
+│   └── prompt.ts             # approvalPromptStore (via channels/prompt)
+├── cost-approval/            # Cost-prediction approval prompt
+│   └── prompt.ts             # costApprovalStore (via channels/prompt)
+├── channels/                 # Cross-store messaging channels
+│   ├── prompt.ts             # createPromptChannel — request/response with supersede/cancel
+│   └── feedback.ts           # Feedback error publish/subscribe
 ├── navigation/               # Screen routing
-│   └── router.ts             # Route state + transition guards
+│   ├── router.ts             # Route state + transition guards
+│   └── session-select.ts     # Session-picker selection state
 ├── project/                  # Loaded-from-disk state tied to projectDir
 │   ├── config.ts
+│   ├── config-persistence.ts
 │   ├── sessions.ts
 │   ├── skills.ts
 │   └── detection.ts
 └── discovery/                # External-world reads with TTL cache
-    └── model-cache.ts
+    ├── model-cache.ts
+    └── detection-adapter.ts
 ```
+
+`stores/` is grouped by concern, one directory per domain.
+
+`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` and `costApprovalStore` (with supersede / cancel semantics).
 
 **Import pattern:**
 
 ```typescript
-import { workflowStore } from '../stores/workflow/workflow.js';
+import { eventsStore } from '../stores/workflow/events.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { configStore } from '../stores/project/config.js';
 ```
@@ -171,6 +193,8 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
 | `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
+| `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |
+| `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` | `requestRefresh()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
@@ -178,6 +202,11 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, lineCount }` | `setReviewFile()`, `setScrollOffset()`, `clearReview()` |
+| `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
+| `planEditorStore` | `workflow/plan-editor.ts` | `{ tasks, cursor, expandedIds, dirty, ... }` | `initEditor()`, `moveCursor()`, `setCursor()`, `setTasks()`, `toggleExpand()`, `toggleFlag()` |
+| `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
+| `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
+| `costApprovalStore` | `cost-approval/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', prediction, resolve }` | `openCostApprovalPrompt()`, `closeCostApprovalPrompt()` (via `channels/prompt`) |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |

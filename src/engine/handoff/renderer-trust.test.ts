@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { renderHandoff, renderHandoffWithCustom } from './render.js';
 import type { HandoffInput } from './types.js';
-import { makeTask } from '../../../testing/helpers/factories/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 let tmp: string;
 

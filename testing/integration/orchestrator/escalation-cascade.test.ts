@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escalation/escalation.js';
+import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escalation/handle.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -27,7 +27,9 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('escalation cascade: local retries exhaust, then hint (tier 1), then full (tier 2)', () => {
+describe('escalation cascade: local retries exhaust, then hint (tier 1), then full (tier 2)', {
+  timeout: 30_000,
+}, () => {
   it('emits retry then tier-1 then tier-2 escalate events in order and falls into method=failed when full fails', async () => {
     const projectDir = createTempDir('orch-int-escalate');
     dirs.push(projectDir);

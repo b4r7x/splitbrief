@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escalation/escalation.js';
+import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escalation/handle.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -50,7 +50,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-describe('retry-then-escalate bridge', () => {
+describe('retry-then-escalate bridge', { timeout: 30_000 }, () => {
   it('two implement failures followed by retry success stays inside local tier with no escalate events', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();

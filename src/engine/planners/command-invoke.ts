@@ -2,7 +2,7 @@ import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
-import { extractQuestionsFromStream } from '../parsers/question-parser.js';
+import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandAvailability } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 

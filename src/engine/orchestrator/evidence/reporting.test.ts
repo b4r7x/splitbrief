@@ -5,8 +5,8 @@ import {
   recordFinalReviewEvidence,
 } from './reporting.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
-import { recordLocalTaskEvidence } from './task-evidence.js';
-import { makeTask } from '../../../../testing/helpers/factories/task.js';
+import { recordLocalTaskEvidence } from './task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import type { ValidationResult } from '../validation-result.js';
 
 function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {

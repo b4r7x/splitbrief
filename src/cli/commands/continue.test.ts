@@ -5,7 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './continue.js';
 import type { ContinueDeps } from './continue.js';
-import { resolveSessionAlias } from '../session-aliases.js';
+import { resolveSessionAlias } from '../sessions/aliases.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 import { routerStore } from '../../stores/navigation/router.js';

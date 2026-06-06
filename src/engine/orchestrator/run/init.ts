@@ -22,7 +22,7 @@ import { createOtelSink } from '../../events/sinks/otel.js';
 import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
 import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
-import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { error } from '../../../utils/error.js';

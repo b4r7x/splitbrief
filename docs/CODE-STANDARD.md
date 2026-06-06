@@ -134,7 +134,7 @@ When a function immediately fans its positional args into an options object for 
 
 - **kebab-case** files and folders (`models-dev.ts`, `lm-studio.ts`); single word where natural (`pricing.ts`).
 - **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`format-cost-gate-summary.ts` → `formatCostGateSummary`).
-- **No stutter beyond the sanctioned entry-file pattern.** `run/run.ts`, `escalation/escalation.ts` are the deliberate no-barrel entry convention and are fine. `commands/commands.ts` (already fixed to `dispatch.ts`/`registry.ts`) is the anti-pattern.
+- **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
 - **No two sibling exports sharing a name with different signatures.** Two `formatContextFit` / two `buildSelectionKey` in one feature force readers to disambiguate by file — rename to distinct intent names.
 - **No misleading directory placement.** Terminal-display helpers (theme colors, glyphs) do not belong in `core/` (React-free domain) just because one feature consumes them; move to the feature.
 - **Banned type-file names:** `*-types.ts` suffix, top-level `src/types.ts`, kitchen-sink `core/types/app.ts`. See [TYPES.md §Banned file names](./TYPES.md#banned-file-names-for-types).

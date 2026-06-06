@@ -201,7 +201,7 @@ The output must match the shape above.
 ## See also
 
 - `src/core/schemas/task.ts` — authoritative Zod schema.
-- `src/core/types/state-actions.ts` — state-machine actions that mutate tasks.
+- `src/core/state/types.ts` — state-machine actions that mutate tasks.
 - `docs/WORKFLOW.md` §1.1 — full phase-transition table.
 - `docs/CONCEPTS.md` — session folder structure.
 

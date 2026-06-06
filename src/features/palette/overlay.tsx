@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { windowSlice } from '../../components/pickers/picker-utils.js';
+import { windowSlice } from '../../components/pickers/scroll-window.js';
 import { buildPaletteResults } from './results.js';
 import type { PaletteResult } from './results.js';
 import { buildPaletteSources } from './sources.js';

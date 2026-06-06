@@ -21,7 +21,7 @@ import {
   readEvidenceLedger,
   writeEvidenceLedger,
 } from '../../../core/evidence/ledger.js';
-import { recordSkippedTaskEvidence } from '../evidence/task-evidence.js';
+import { recordSkippedTaskEvidence } from '../evidence/task.js';
 import {
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,

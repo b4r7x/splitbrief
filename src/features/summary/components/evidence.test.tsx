@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { SummaryEvidence } from './evidence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { recordFinalReviewEvidence } from '../../../engine/orchestrator/evidence/reporting.js';
 import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
-} from '../../../engine/orchestrator/evidence/task-evidence.js';
-import { makeTask } from '../../../../testing/helpers/factories/task.js';
+} from '../../../engine/orchestrator/evidence/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 
 const baseSummary: Summary = {

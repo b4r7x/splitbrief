@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
-import { reviewTaskIfNeeded } from './task-review.js';
+import { reviewTaskIfNeeded } from './review-flow.js';
 
 export async function stopWithReview(opts: {
   wctx: WorkflowContext;

@@ -4,7 +4,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
-import { runBriefQualityGate } from '../planning/planning-helpers.js';
+import { runBriefQualityGate } from '../planning/brief-quality-gate.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';

@@ -1,6 +1,6 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
-import type { TaskContextFit } from '../../../engine/events/workflow-events.js';
+import type { TaskContextFit } from '../../../core/schemas/enums.js';
 import type { EngineEvent, ValidationStages } from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatTruncatedList } from '../../../core/formatting.js';

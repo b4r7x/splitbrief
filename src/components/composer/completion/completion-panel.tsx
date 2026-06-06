@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
-import { windowSlice } from '../../pickers/picker-utils.js';
+import { windowSlice } from '../../pickers/scroll-window.js';
 
 export function CompletionPanel<T>({
   items,

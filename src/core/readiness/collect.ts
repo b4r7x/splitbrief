@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
-import { configPath, loadConfig } from '../config/load/load.js';
+import { configPath, loadConfig } from '../config/load/io.js';
 import { applyCLIOverrides, workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
 import { isGitRepo, getGitStatus } from '../../lib/git.js';

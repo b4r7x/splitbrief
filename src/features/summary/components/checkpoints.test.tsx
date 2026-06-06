@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../../testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { SummaryCheckpoints } from './checkpoints.js';

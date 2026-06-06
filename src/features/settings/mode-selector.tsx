@@ -8,7 +8,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../core/schemas/enums.js';
-import { getWorkflowMode } from '../../core/config/accessors/state.js';
+import { getWorkflowMode } from '../../core/config/accessors/values.js';
 
 interface ModeDef {
   mode: WorkflowMode;

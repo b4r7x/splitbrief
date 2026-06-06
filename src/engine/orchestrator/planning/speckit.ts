@@ -14,7 +14,7 @@ import {
 import { readFileOrEmpty, writeSecureFile } from '../../../lib/fs.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
-import { runBriefQualityGate } from './planning-helpers.js';
+import { runBriefQualityGate } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type {

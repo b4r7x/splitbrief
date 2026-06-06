@@ -8,19 +8,21 @@ import { buildSkillsSection } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
-import { runApprovalLoop } from '../approval/approval.js';
+import { runApprovalLoop } from '../approval/loop.js';
 import {
   blocksSpecGate,
   blocksPlanGate,
   resolveApproveLevel,
 } from '../../../core/config/runtime/resolve.js';
-import { getWorkflowMode } from '../../../core/config/accessors/state.js';
+import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
-import { drainAndFormat, handlePlanningFailure, runBriefQualityGate } from './planning-helpers.js';
+import { drainAndFormat } from './queue-drain.js';
+import { handlePlanningFailure } from './failure.js';
+import { runBriefQualityGate } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
-import { persistPhases } from './planning-io.js';
-import { runPlannerCallInContinuationLoop } from './planner-call-loop.js';
+import { persistPhases } from './io.js';
+import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningRunContext } from './types.js';
 

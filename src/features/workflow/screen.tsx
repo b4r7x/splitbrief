@@ -6,14 +6,14 @@ import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { WorkflowBody } from './components/workflow-body.js';
-import { WorkflowFooter, WorkflowHeader } from './components/workflow-chrome.js';
+import { WorkflowBody } from './components/body.js';
+import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
-import { useWorkflowRunner } from './hooks/use-workflow-runner.js';
+import { useWorkflowRunner } from './hooks/use-runner.js';
 import { useIpcClient } from './hooks/use-ipc-client.js';
-import { useIpcPromptDispatcher } from './hooks/use-ipc-prompt-dispatcher.js';
+import { createIpcPromptDispatcher } from './ipc-prompt-dispatcher.js';
 import { useReadinessFetch } from './hooks/use-readiness-fetch.js';
-import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
+import { useWorkflowKeys } from './hooks/use-keys.js';
 import { createReviewInputHandler } from './review-parser.js';
 import { resolveAttachInputHint, resolveInputHint } from './input-hints.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -30,8 +30,8 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
-import { approvalPromptStore } from '../../stores/approval-prompt/store.js';
-import { costApprovalStore } from '../../stores/cost-approval/store.js';
+import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../stores/cost-approval/prompt.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
   clampWorkflowPromptRows,
@@ -39,7 +39,7 @@ import {
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
-} from './layout/workflow-rect.js';
+} from './layout/rect.js';
 import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.js';
 
 interface WorkflowScreenProps {
@@ -88,7 +88,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     enabled: !isAttachedClient && readinessLoaded && !readinessBlocked,
   });
   const review = createReviewInputHandler(inputMode);
-  const handleIpcPrompt = useIpcPromptDispatcher(inputMode);
+  const handleIpcPrompt = createIpcPromptDispatcher(inputMode);
   const [ipcState, ipcActions] = useIpcClient({
     sockPath: attach?.sockPath ?? '',
     enabled: isAttachedClient,

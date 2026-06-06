@@ -7,10 +7,10 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
-import { pluralize } from '../../../../utils/format.js';
+import { pluralize } from '../../../../utils/pluralize.js';
 import type { Section } from '../../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
-import { ConversationRowView } from './conversation-row-view.js';
+import { ConversationRowView } from './row-view.js';
 
 interface ConversationFlowProps {
   sections: Section<EngineEvent>[];

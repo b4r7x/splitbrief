@@ -1,10 +1,10 @@
 import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig } from '../../core/config/load/load.js';
+import { loadConfig } from '../../core/config/load/io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import { writeLockfile, markExited, markCrashed, markSignaled } from './lockfile.js';
 import { startHeartbeat } from './heartbeat.js';
-import { runWorkflow } from '../orchestrator/run/run.js';
+import { runWorkflow } from '../orchestrator/run/workflow.js';
 import { startIpcServer } from './server.js';
 import { createEventBus } from '../events/bus.js';
 import { normalizeLegacyMode } from '../../core/schemas/enums.js';

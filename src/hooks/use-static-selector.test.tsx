@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { useStaticSelector } from './use-static-selector.js';
-import { renderFeature, tick } from '../../testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 
 const UP = '\u001b[A';
 const DOWN = '\u001b[B';

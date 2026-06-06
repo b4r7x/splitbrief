@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRpcCommandContext } from './command-context.js';
 import { createEventBus } from '../../engine/events/bus.js';
-import { createDefaultConfig } from '../../core/config/load/load.js';
+import { createDefaultConfig } from '../../core/config/load/io.js';
 
 function makeRpcContext(getConfig: () => ReturnType<typeof createDefaultConfig> | null) {
   return createRpcCommandContext({

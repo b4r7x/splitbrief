@@ -1,7 +1,5 @@
-import type {
-  UserEditConflict,
-  UserEditConflictAction,
-} from '../../engine/events/workflow-events.js';
+import type { UserEditConflictAction } from '../../core/schemas/enums.js';
+import type { UserEditConflict } from '../../engine/events/workflow-events.js';
 import { formatRecoveryActionChoice } from './recovery-prompt.js';
 import { userEditActionToRecoveryAction } from '../../core/recovery/user-edit-actions.js';
 import { formatTruncatedList } from '../../core/formatting.js';

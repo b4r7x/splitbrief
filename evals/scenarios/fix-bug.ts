@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runNpmTest } from './shared.js';
+import { runNpmTest } from './quality-checks.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 const paginationPath = 'src/pagination.ts';

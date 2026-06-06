@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
 import { createStore } from './create-store.js';
-import { renderFeature, tick } from '../../testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 
 describe('createStore.use', () => {
   it('supports selectors that return unstable object snapshots without entering a render loop', async () => {

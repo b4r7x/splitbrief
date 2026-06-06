@@ -8,7 +8,7 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { CLI_TOOLS } from '../cli-tools.js';
+import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';

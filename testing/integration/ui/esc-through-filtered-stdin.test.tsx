@@ -5,7 +5,7 @@ import { tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { ThemeProvider } from '../../../src/components/theme.js';
 import { useAppKeys } from '../../../src/app/keys.js';
-import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-workflow-keys.js';
+import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-keys.js';
 import { FeedbackRow } from '../../../src/features/workflow/components/feedback-row.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { lifecycleStore, _lifecycleInternal } from '../../../src/stores/workflow/lifecycle.js';

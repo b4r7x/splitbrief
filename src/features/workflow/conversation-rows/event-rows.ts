@@ -1,9 +1,9 @@
 import { formatCost } from '../../../core/formatting.js';
 import { formatModelName } from '../../../core/model-display.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { getGutterRole } from '../event-role.js';
+import { getGutterRole } from './event-role.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import {
   formatExternalChangesValue,

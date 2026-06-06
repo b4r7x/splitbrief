@@ -4,6 +4,10 @@ import type {
   RecoveryAction,
   TaskCompletionMethod,
   WorkflowMode,
+  UserEditConflictAction,
+  CurrentCodeContextMode,
+  TaskContextFit,
+  Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type { EngineEvent, EventBus, ValidationStages } from '../events/types.js';
@@ -12,15 +16,13 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
-import type { BusContext } from '../types/bus-context.js';
-import type {
-  UserEditConflict,
-  UserEditConflictAction,
-  CurrentCodeContextMode,
-  TaskContextFit,
-  TaskReviewRequest,
-} from '../events/workflow-events.js';
+import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
+
+type BusContext = {
+  bus: EventBus;
+  phase: Phase;
+};
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 

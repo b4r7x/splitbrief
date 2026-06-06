@@ -1,4 +1,4 @@
-import { pluralize } from '../../utils/format.js';
+import { pluralize } from '../../utils/pluralize.js';
 import type { ReadinessReport, ReadinessSection, StartReadinessRecord } from './types.js';
 
 function renderSectionLines(section: ReadinessSection): string[] {

@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
-import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import { transitionAndSave } from '../state-ops.js';
 import { publishTaskStart, publishTaskSkipped, publishWarning, publishError } from '../events.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';

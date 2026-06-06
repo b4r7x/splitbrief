@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Text } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '../../../testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { MultilineInput } from './multiline-input.js';
 
 const CTRL_R = '\x12';

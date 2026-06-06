@@ -1,6 +1,6 @@
 ---
 name: diptych-dev
-description: Use at the start of EVERY diptych conversation, including simple questions and clarifications. Establishes project context by requiring the assistant to read CLAUDE.md, docs/CONCEPTS.md, docs/ARCHITECTURE.md, docs/WORKFLOW.md, docs/FUTURE.md, and plans/README.md before any other response. Required before answering any question about diptych code, architecture, specs, or tasks. Do not skip this even if the question looks trivial — context from the docs is load-bearing for everything else.
+description: Use at the start of EVERY diptych conversation, including simple questions and clarifications. Establishes project context by requiring the assistant to read CLAUDE.md, docs/CONCEPTS.md, docs/ARCHITECTURE.md, docs/WORKFLOW.md, docs/FUTURE.md, and notes/superpowers/specs/README.md before any other response. Required before answering any question about diptych code, architecture, specs, or tasks. Do not skip this even if the question looks trivial — context from the docs is load-bearing for everything else.
 ---
 
 # diptych — session primer (auto-load)
@@ -22,17 +22,17 @@ Read in this order. Do not paraphrase from memory — these files evolve, and wh
 3. **`docs/ARCHITECTURE.md`** — code layers, entry points, data flow, capability matrix per backend, persistence model, "Where to add things" decision table.
 4. **`docs/WORKFLOW.md`** — state machine, interaction model (Ctrl-C abort / queue / continue / resume), escalation, per-phase persistence timing.
 5. **`docs/FUTURE.md`** — scope explicitly deferred (message-level rewind, Cursor-style snapshot undo, transcript compaction, parallel sessions, non-TS support, Windows). Do not implement these unless the user asks.
-6. **`plans/README.md`** — implementation roadmap for the 2026-04-14 redesign: 9 specs (`001-capability-matrix` through `009-migration-and-docs-finalization`), dependency graph, conventions.
+6. **`notes/superpowers/specs/README.md`** — index of the numbered execution specs (`notes/superpowers/specs/01-…` through `14-…`), with execution order, dependency graph, and per-spec required skills.
 
 After reading, wait for the user's specific task. Do **not** start implementing from the primer alone.
 
 ## Invariants you must not violate
 
 - **Zero classes.** Pure functions, module-scoped state, ESM imports with `.js` extensions everywhere.
-- **`src/engine/**` has zero React/Ink imports.** `src/ui/` and `src/components/` have zero engine business logic. Bridge is the stores (`src/stores/`).
+- **`src/engine/**` has zero React/Ink imports.** `src/features/` and `src/components/` have zero engine business logic. Bridge is the stores (`src/stores/`).
 - **No `useMemo`, `useCallback`, `useRef`, `React.memo`, `forwardRef`, `useImperativeHandle`** in React code. Stores + `useSyncExternalStore` make them unnecessary.
 - **Docs describe current code, not future plans.** When implementing a spec, update docs AFTER the code lands (the spec's Doc Sync phase). Never write aspirational docs.
-- **Plans in `plans/` are immutable once implemented.** They stay as historical record. Do not edit old specs.
+- **Specs under `notes/superpowers/specs/` and `notes/specs/` are immutable once implemented.** They stay as historical record. Do not edit old specs.
 - **Never commit or stage.** The hook blocks you. Leave changes unstaged.
 - **Tests are colocated** (`foo.test.ts` next to `foo.ts`), not in a separate `tests/` directory.
 
@@ -46,7 +46,7 @@ After reading, wait for the user's specific task. Do **not** start implementing 
 | How does Ctrl-C / queue / resume work? | `docs/WORKFLOW.md` §1.5-1.7 |
 | What does backend X support? | `docs/ARCHITECTURE.md` → "Capability matrix" |
 | Is feature Y deferred? | `docs/FUTURE.md` |
-| Implementing a specific spec | `plans/<NNN>/spec.md` + `plan.md` + `tasks.md` |
+| Implementing a specific spec | the spec's folder under `notes/superpowers/specs/` (`execute-prompt.md` + `agent-briefs/`) |
 
 If docs contradict the code, **code is authoritative**, docs are stale. Flag the drift to the user before writing code that trusts either.
 
@@ -63,8 +63,8 @@ npm run build                 # tsc → dist/
 
 ## Related skills
 
-- **`diptych-implement-spec`** — execute a specific `plans/<NNN>/` spec end-to-end (reads spec+plan+tasks, runs tasks in order, ends with Doc Sync).
-- **`diptych-add-feature`** — design flow for new features not yet in `plans/` (writes a new spec, does NOT implement).
+- **`diptych-implement-spec`** — execute a specific `notes/superpowers/specs/` spec end-to-end (reads its `execute-prompt.md` + `agent-briefs/`, runs briefs in order, ends with Doc Sync).
+- **`diptych-add-feature`** — design flow for new features not yet covered by a spec under `notes/superpowers/specs/` (writes a new spec, does NOT implement).
 - **`diptych-docs-sync`** — audit + fix drift between docs and current code.
 
 Invoke the right one for the task. If unclear, ask the user.

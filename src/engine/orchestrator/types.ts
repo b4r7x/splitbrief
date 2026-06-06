@@ -1,5 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import type { Phase, UserEditConflictAction } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
@@ -12,7 +12,6 @@ import type { EventBus } from '../events/types.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type {
   UserEditConflict,
-  UserEditConflictAction,
   TaskReviewRequest,
   TaskReviewResponse,
 } from '../events/workflow-events.js';

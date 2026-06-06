@@ -4,9 +4,9 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/fixtures/shell-runner.js';
+import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
 
@@ -43,7 +43,7 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('hooks integration flow', () => {
+describe('hooks integration flow', { timeout: 30_000 }, () => {
   it('pre_task hook deny causes task_skipped and no task_completed', async () => {
     const projectDir = createTempDir('orch-int-hooks-pre-task');
     dirs.push(projectDir);

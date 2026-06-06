@@ -10,6 +10,7 @@ import {
   type WorkflowMode,
   ActionClassSchema,
   PhaseSchema,
+  type UserEditConflictAction,
 } from '../../core/schemas/enums.js';
 import {
   ClarificationQuestionSchema,
@@ -21,7 +22,6 @@ import { TaskIdSchema } from '../../core/schemas/task.js';
 import { CostPredictionSchema, type CostPrediction } from '../../core/schemas/summary.js';
 import type {
   UserEditConflict,
-  UserEditConflictAction,
   TaskReviewRequest,
   TaskReviewResponse,
 } from '../events/workflow-events.js';

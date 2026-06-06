@@ -12,7 +12,7 @@ This document is a field-by-field reference. For end-user mode semantics see [WO
 <project-root>/.diptych/config.yaml
 ```
 
-- The file is created on first `diptych init` (or implicitly on first `diptych start`). Missing file → diptych runs with `createDefaultConfig()` (`src/core/config/load/load.ts`).
+- The file is created on first `diptych init` (or implicitly on first `diptych start`). Missing file → diptych runs with `createDefaultConfig()` (`src/core/config/load/io.ts`).
 - **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `diptych migrate` is for legacy session layout migration, not config rewriting.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`.
 - **Permissions:** the loader warns on stderr if the file is mode `>0600` on POSIX systems. `init` writes it `0600` via `writeSecureFile`.
@@ -199,7 +199,7 @@ In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/agent-sdk-backend.ts`). |
+| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/runners/agent-sdk-backend.ts`). |
 | `model` | string | planner: no; implementer: yes | Planner defaults to `claude-sonnet-4-6` when omitted. Implementer config must include a model; `auto` resolves to the same default. |
 
 ```yaml
@@ -880,7 +880,7 @@ sessions:
 
 ## 14. Environment variables
 
-Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
+Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/runners/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
 
 ### Provider authentication
 
@@ -970,7 +970,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 ## 16. Validation behavior
 
-Config is validated on every load (`src/core/config/load/load.ts:loadConfig`).
+Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
 
 - Errors → `ConfigError` (`src/core/config/errors.ts`) → top-level catch in `src/cli/setup.ts` → exit code 1.
 - Non-fatal warnings on stderr (`warnStderr` in `src/lib/warn.ts`):

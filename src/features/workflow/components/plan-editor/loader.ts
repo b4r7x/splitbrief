@@ -7,7 +7,7 @@ import {
 } from '../../../../engine/spec/brief-quality.js';
 import { parseTasks } from '../../../../engine/spec/parser.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
-import { refreshPlanReviewMetadata } from '../plan-review-metadata.js';
+import { refreshPlanReviewMetadata } from '../../plan-review-metadata.js';
 
 interface LoadPlanEditorDataOptions {
   filePath: string;

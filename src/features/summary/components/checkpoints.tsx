@@ -3,7 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { pluralize } from '../../../utils/format.js';
+import { pluralize } from '../../../utils/pluralize.js';
 
 interface SummaryCheckpointsProps {
   checkpointSummary: CheckpointSummaryRollup | undefined;
