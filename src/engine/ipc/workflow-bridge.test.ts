@@ -55,7 +55,7 @@ describe('createIpcWorkflowBridge', () => {
       expect.objectContaining({
         type: 'warning',
         phase: 'idle',
-        message: expect.stringContaining('queue was ready'),
+        message: expect.stringContaining('queue not ready'),
       }),
     ]);
     bridge.close();

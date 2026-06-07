@@ -4,8 +4,8 @@ import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/sche
 import { sessionDir, sessionsRoot } from '../../../core/paths.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import {
+  mutateEvidenceLedger,
   readEvidenceLedger,
-  writeEvidenceLedger,
   withUpdatedTask,
 } from '../../../core/evidence/ledger.js';
 import { uniquePush } from '../../../utils/collections.js';
@@ -17,6 +17,7 @@ import {
   ReportValidationResultInputSchema,
 } from './schemas.js';
 import type { ToolCallResult } from '../types.js';
+import { evidenceError } from '../../../core/evidence/errors.js';
 
 type EvidenceTask = EvidenceLedger['tasks'][number];
 
@@ -81,10 +82,9 @@ export function handleReportEvidence(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  writeEvidenceLedger(
-    projectDir,
-    sessionId,
-    withUpdatedTask(loaded.ledger, taskId, (task) => {
+  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+    if (ledger === null) throw evidenceError.ledgerNotFound();
+    return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
         ...task,
         observedEvidence: [...task.observedEvidence],
@@ -93,8 +93,8 @@ export function handleReportEvidence(
       for (const evidence of observedEvidence) uniquePush(updated.observedEvidence, evidence);
       for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
       return updated;
-    }),
-  );
+    });
+  });
   return {
     ok: true,
     content: `Recorded ${observedEvidence.length} evidence item(s) for ${taskId}`,
@@ -117,15 +117,14 @@ export function handleReportProgress(
       ? `progress: ${message} (${percentComplete}%)`
       : `progress: ${message}`;
 
-  writeEvidenceLedger(
-    projectDir,
-    sessionId,
-    withUpdatedTask(loaded.ledger, taskId, (task) => {
+  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+    if (ledger === null) throw evidenceError.ledgerNotFound();
+    return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = { ...task, observedEvidence: [...task.observedEvidence] };
       uniquePush(updated.observedEvidence, progressEntry);
       return updated;
-    }),
-  );
+    });
+  });
   return { ok: true, content: `Progress recorded for ${taskId}: ${message}` };
 }
 
@@ -140,10 +139,9 @@ export function handleMarkTaskDone(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  writeEvidenceLedger(
-    projectDir,
-    sessionId,
-    withUpdatedTask(loaded.ledger, taskId, (task) => {
+  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+    if (ledger === null) throw evidenceError.ledgerNotFound();
+    return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
         ...task,
         status: 'done',
@@ -156,8 +154,8 @@ export function handleMarkTaskDone(
       if (summary !== undefined) uniquePush(updated.observedEvidence, `summary: ${summary}`);
       for (const evidence of observedEvidence ?? []) uniquePush(updated.observedEvidence, evidence);
       return updated;
-    }),
-  );
+    });
+  });
   return {
     ok: true,
     content: `Task ${taskId} marked done. ${changedFiles.length} file(s) recorded.`,
@@ -181,10 +179,9 @@ export function handleReportValidationResult(
     entry.changedFiles = [...changedFiles];
   }
 
-  writeEvidenceLedger(
-    projectDir,
-    sessionId,
-    withUpdatedTask(loaded.ledger, taskId, (task) => {
+  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+    if (ledger === null) throw evidenceError.ledgerNotFound();
+    return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
         ...task,
         validation: [...task.validation, entry],
@@ -194,8 +191,8 @@ export function handleReportValidationResult(
       if (passed) uniquePush(updated.observedEvidence, `${stage} passed`);
       for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
       return updated;
-    }),
-  );
+    });
+  });
   const statusLabel = passed ? 'passed' : 'failed';
   return { ok: true, content: `Validation ${stage} ${statusLabel} for ${taskId}` };
 }
@@ -211,10 +208,9 @@ export function handleReportError(
   const loaded = readCheckedLedger(projectDir, sessionId, taskId);
   if (!loaded.ok) return loaded;
 
-  writeEvidenceLedger(
-    projectDir,
-    sessionId,
-    withUpdatedTask(loaded.ledger, taskId, (task) => {
+  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+    if (ledger === null) throw evidenceError.ledgerNotFound();
+    return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
         ...task,
         status: 'failed',
@@ -228,7 +224,7 @@ export function handleReportError(
       }
       for (const file of changedFiles ?? []) uniquePush(updated.changedFiles, file);
       return updated;
-    }),
-  );
+    });
+  });
   return { ok: true, content: `Error recorded for ${taskId}: ${error}` };
 }

@@ -12,6 +12,8 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { readFileOrEmpty, writeSecureFile } from '../../../lib/fs.js';
+import { confinedReadFileOrEmpty } from '../../../lib/confined-fs.js';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
@@ -78,8 +80,10 @@ function parseAnalyze(text: string): AnalyzeResult {
   };
 }
 
+const CONSTITUTION_RELATIVE_PATH = join('.specify', 'memory', 'constitution.md');
+
 async function readConstitution(projectDir: string): Promise<string> {
-  return readFileOrEmpty(join(projectDir, '.specify', 'memory', 'constitution.md'));
+  return confinedReadFileOrEmpty(projectDir, CONSTITUTION_RELATIVE_PATH);
 }
 
 async function readArtifact(dir: string, file: string): Promise<string> {
@@ -103,20 +107,22 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
 
   const constitutionContent = await readConstitution(projectDir);
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_START' });
-  publishPlannerStatus(bus, state, 'running');
   writeSecureFile(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder());
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_DONE' });
-  publishPlannerStatus(bus, state, 'done');
+
+  const planResult = await runFullPlanning({ ...opts, state, deferBriefGate: true });
+  state = planResult.state;
+  if (planResult.cancelled) return planResult;
+  let tasks = planResult.tasks;
 
   publishPlannerStatus(bus, state, 'running');
   let constitutionResult: ConstitutionCheckResult;
   if (constitutionContent.trim() === '') {
     constitutionResult = { passed: true, violations: [] };
   } else {
+    const specText = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const prompt = buildConstitutionPrompt({
       feature: opts.feature,
-      spec: '',
+      spec: specText,
       constitutionContent,
     });
     const review = await runPlannerReview({
@@ -142,19 +148,8 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
       phase: state.phase,
       message: `constitution check failed: ${reason}`,
     });
-    state = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'CONSTITUTION_CHECK_FAIL',
-    });
-    publishPlannerStatus(bus, state, 'done');
     return { state, tasks: [], cancelled: true };
   }
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CONSTITUTION_CHECK_PASS' });
-  publishPlannerStatus(bus, state, 'done');
-
-  const planResult = await runFullPlanning({ ...opts, state, deferBriefGate: true });
-  state = planResult.state;
-  if (planResult.cancelled) return planResult;
-  let tasks = planResult.tasks;
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
@@ -206,7 +201,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   });
   state = briefsLoop.state;
   tasks = briefsLoop.tasks;
-  if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+  if (briefsLoop.rejected || briefsLoop.aborted) return { state, tasks: [], cancelled: true };
 
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });

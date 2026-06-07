@@ -51,6 +51,7 @@ export async function runImplementation(opts: {
       ctx: {
         projectDir: staged?.projectDir ?? projectDir,
         sessionId,
+        persistRef: { projectDir, sessionId },
         callbacks,
         signal: wctx.signal,
         sinks: wctx.sinks,

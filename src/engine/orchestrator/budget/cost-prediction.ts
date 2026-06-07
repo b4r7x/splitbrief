@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
-import { calculateCost } from '../../providers/cost-math.js';
+import { calculateCost, calculateUsageCost } from '../../providers/cost-math.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
@@ -30,8 +30,18 @@ function estimatePlannerCost(opts: PredictCostOptions): number {
   const { taskCount, plannerTool, plannerModel, tokenUsage } = opts;
   const plannerPricing = resolvePricing(plannerTool, opts.cache, plannerModel);
 
-  if (tokenUsage && (tokenUsage.plannerInput > 0 || tokenUsage.plannerOutput > 0)) {
-    return calculateCost(tokenUsage.plannerInput, tokenUsage.plannerOutput, plannerPricing);
+  if (tokenUsage) {
+    const plannerInputTotal = tokenUsage.plannerInput + tokenUsage.escalationInput;
+    const plannerOutputTotal = tokenUsage.plannerOutput + tokenUsage.escalationOutput;
+    if (plannerInputTotal > 0 || plannerOutputTotal > 0) {
+      return calculateUsageCost({
+        inputTokens: plannerInputTotal,
+        outputTokens: plannerOutputTotal,
+        cacheReadTokens: tokenUsage.plannerCacheRead ?? 0,
+        cacheCreateTokens: tokenUsage.plannerCacheCreate ?? 0,
+        pricing: plannerPricing,
+      });
+    }
   }
 
   const estimatedTokens = taskCount * DEFAULT_PLANNER_TOKENS_PER_TASK;

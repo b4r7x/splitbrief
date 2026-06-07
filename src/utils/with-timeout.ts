@@ -4,7 +4,6 @@ export const timeoutError = {
   idle: (message = 'Idle timeout') => error('idle-timeout', message, { message }),
   isIdle: matches('idle-timeout'),
   elapsed: (ms: number) => error('timeout-elapsed', `Timed out after ${ms}ms`, { ms }),
-  isElapsed: matches('timeout-elapsed'),
 } as const;
 
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

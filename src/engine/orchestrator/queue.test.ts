@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
@@ -204,6 +204,57 @@ describe('enqueue', () => {
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
     expect(state?.messageQueue).toHaveLength(50);
+  });
+
+  it('persists later messages before a slow native injection resolves', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeResearchingState();
+    const { bus } = makeBusRecorder();
+    let releaseFirst: (() => void) | undefined;
+    const firstInjection = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let injectionCount = 0;
+    const planner = makePlanner({
+      capabilities: {
+        supportsConversationalPlanning: true,
+        supportsHintEscalation: false,
+        supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
+        supportsSelfSummarisation: false,
+      },
+      injectUserTurn: async () => {
+        injectionCount += 1;
+        if (injectionCount === 1) await firstInjection;
+      },
+    });
+
+    const handler = createQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
+      bus,
+      persistTranscript: false,
+      planner,
+      serialize: createStateSerializer(),
+    });
+
+    handler('first', 'researching');
+    handler('second', 'researching');
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(state?.messageQueue.map((m) => m.text)).toEqual(['first', 'second']);
+    expect(loadState({ projectDir, sessionId })?.messageQueue.map((m) => m.text)).toEqual([
+      'first',
+      'second',
+    ]);
+    releaseFirst?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(injectionCount).toBeGreaterThanOrEqual(1);
   });
 
   it('serializes concurrent handler invocations so no messages are lost', async () => {

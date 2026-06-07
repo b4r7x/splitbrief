@@ -15,6 +15,10 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import { eventPhase } from '../../engine/events/schema.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
+import {
+  finalizeRecoveryResult,
+  loadPendingRecoveryState,
+} from '../../engine/orchestrator/recovery/driver.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
@@ -23,6 +27,7 @@ import { resolveRunConfig } from '../build-overrides.js';
 import { createApprovalGate, createGate } from './gates.js';
 import { createCommandReader } from './reader.js';
 import { createResponseWriter } from './writer.js';
+import { rpcError } from './errors.js';
 import { createWorkflowCallbacks } from './callbacks.js';
 import { createCommandHandler } from './dispatch.js';
 
@@ -80,7 +85,13 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     deps = {},
   } = options;
   let config = resolveRunConfig({ projectDir, opts, readiness });
-  const writer = createResponseWriter(deps.output ?? process.stdout);
+  let rpcClosed = false;
+
+  const writer = createResponseWriter({
+    stream: deps.output ?? process.stdout,
+    onClose: (reason) => shutdownRpc(reason),
+  });
+
   const bus = createEventBus();
   const approvalGate = createApprovalGate();
   const messageGate = createGate<string>();
@@ -92,7 +103,16 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   let queueHandler: QueueHandler | null = null;
   let clearQueueHandler: ClearQueueHandler | null = null;
   let abortTurnHandler: (() => void) | null = null;
-  const queuedRecoveryActions: string[] = [];
+
+  const shutdownRpc = (reason: string) => {
+    if (rpcClosed) return;
+    rpcClosed = true;
+    abortTurnHandler?.();
+    abortController.abort(new Error(reason));
+    approvalGate.reject(new Error(reason));
+    messageGate.reject(new Error(reason));
+    recoveryGate.reject(new Error(reason));
+  };
 
   bus.subscribe((event) => {
     const phase = eventPhase(event);
@@ -119,23 +139,29 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   };
 
   const waitForRecoveryAction = (): Promise<string> => {
-    const queued = queuedRecoveryActions.shift();
-    if (queued) return Promise.resolve(queued);
+    if (rpcClosed) throw rpcError.transportClosed();
     return recoveryGate.wait();
   };
 
   const receiveRecoveryAction = (action: string) => {
-    if (recoveryGate.resolve(action)) return;
-    queuedRecoveryActions.push(action);
+    if (!recoveryGate.isPending()) {
+      writer.error(`No pending recovery prompt for action: ${action}`);
+      return;
+    }
+    if (!recoveryGate.resolve(action)) {
+      writer.error(`Recovery action already resolved: ${action}`);
+    }
   };
 
   const waitForApproval = async (data: unknown) => {
+    if (rpcClosed) throw rpcError.transportClosed();
     const pending = approvalGate.wait();
     writer.status(data);
     return pending;
   };
 
   const waitForMessage = async (data: unknown) => {
+    if (rpcClosed) throw rpcError.transportClosed();
     const pending = messageGate.wait();
     writer.status(data);
     return pending;
@@ -149,7 +175,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     retryProfileOverride?: string | undefined;
     retryProfileOverrideTaskId?: TaskId | undefined;
   }> => {
-    if (!state.pendingRecovery) return { shouldRun: true, state };
     const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
     if (!id) {
       writer.error('No active session is available for recovery.');
@@ -157,26 +182,32 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     }
 
     activeSessionId = id;
-    publishRecoveryPrompted(bus, state.pendingRecovery);
-    writer.status({ pending: 'recovery', issue: state.pendingRecovery });
+    const latest = readCurrentState() ?? state;
+    const issue = latest.pendingRecovery;
+    if (!issue) return { shouldRun: true, state: latest };
 
-    while (!abortController.signal.aborted) {
-      const action = await waitForRecoveryAction();
+    if (issue.status === 'paused') {
+      return { shouldRun: false, state: latest };
+    }
+
+    const applyAction = async (action: string) => {
       const parsed = RecoveryActionSchema.safeParse(action);
       if (!parsed.success) {
         writer.error(`Invalid recovery action: ${action}`);
-        continue;
+        return null;
       }
 
-      const latest = readCurrentState() ?? state;
-      const issue = latest.pendingRecovery;
-      if (!issue) return { shouldRun: true, state: latest };
-      const selectedImplementerProfile = issue.selectedImplementerProfile;
-      const retryProfileOverrideTaskId = issue.taskId ?? latest.tasks[latest.currentTaskIndex]?.id;
+      const current = readCurrentState() ?? latest;
+      const currentIssue = current.pendingRecovery;
+      if (!currentIssue) return { shouldRun: true as const, state: current };
+
+      const selectedImplementerProfile = currentIssue.selectedImplementerProfile;
+      const retryProfileOverrideTaskId =
+        currentIssue.taskId ?? current.tasks[current.currentTaskIndex]?.id;
       const result = applyRecoveryAction({
         projectDir,
         sessionId: id,
-        state: latest,
+        state: current,
         action: parsed.data,
         bus,
         config,
@@ -184,10 +215,19 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       });
       if (!result.ok) {
         writer.error(result.message);
-        continue;
+        return null;
       }
 
       writer.ack('recovery', { action: result.action, status: result.status });
+      if (result.status === 'aborted') {
+        finalizeRecoveryResult({
+          projectDir,
+          sessionId: id,
+          state: result.state,
+          config,
+          status: result.status,
+        });
+      }
       const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
       return {
         shouldRun: result.status !== 'paused' && result.status !== 'aborted',
@@ -198,9 +238,37 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
           result.status === 'retry-current-task' &&
           retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       };
+    };
+
+    if (issue.status === 'applying') {
+      const action = issue.selectedAction;
+      if (!action) {
+        writer.error('Recovery is applying but no action is selected.');
+        return { shouldRun: false, state: latest };
+      }
+      const applied = await applyAction(action);
+      if (!applied) return { shouldRun: false, state: latest };
+      return applied;
+    }
+
+    const pending = loadPendingRecoveryState({ projectDir, sessionId: id }, latest);
+    if (!pending.pending) return { shouldRun: true, state: pending.state };
+
+    publishRecoveryPrompted(bus, pending.issue);
+    writer.status({ pending: 'recovery', issue: pending.issue });
+
+    while (!abortController.signal.aborted) {
+      const action = await waitForRecoveryAction();
+      const applied = await applyAction(action);
+      if (!applied) continue;
+      return applied;
     }
 
     return { shouldRun: false, state };
+  };
+
+  const triggerAbort = (reason?: unknown) => {
+    shutdownRpc(reason != null ? String(reason) : 'aborted');
   };
 
   const handleCommand = createCommandHandler({
@@ -214,10 +282,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     getPhase: () => currentPhase,
     getQueueHandler: () => queueHandler,
     getClearQueueHandler: () => clearQueueHandler,
-    abort: (reason?: unknown) => {
-      abortTurnHandler?.();
-      abortController.abort(reason);
-    },
+    abort: triggerAbort,
     bus,
     approvalGate,
     messageGate,
@@ -227,18 +292,11 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     pendingQueueDepth,
   });
 
-  const stdinClosedError = new Error('stdin closed unexpectedly');
-
   const reader = createCommandReader({
     stream: deps.input ?? process.stdin,
     onCommand: handleCommand,
     onError: (message) => writer.error(message),
-    onClose: () => {
-      abortController.abort(stdinClosedError);
-      approvalGate.reject(stdinClosedError);
-      messageGate.reject(stdinClosedError);
-      recoveryGate.reject(stdinClosedError);
-    },
+    onClose: () => shutdownRpc('stdin closed unexpectedly'),
   });
 
   try {
@@ -258,6 +316,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         waitForApproval,
         waitForMessage,
         reportError: (message) => writer.error(message),
+        abort: triggerAbort,
       });
 
       await runWorkflowImpl({
@@ -295,7 +354,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       if (abortController.signal.aborted) return;
       const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
       const state = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
-      if (!state?.pendingRecovery) return;
+      if (!state?.pendingRecovery && !state?.rewindPending) return;
       activeSessionId = savedSessionId;
       stateForRun = state;
     }

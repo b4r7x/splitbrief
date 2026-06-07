@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '../../../testing/helpers/ink.js';
-import { makeConfig } from '../../../testing/helpers/factories/config.js';
-import { makeSession } from '../../../testing/helpers/factories/session.js';
-import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
-import { resetAllStores } from '../../../testing/helpers/stores.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createInitialState } from '../../../src/core/state/machine.js';

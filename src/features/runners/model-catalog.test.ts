@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import {
   buildImplementerPickerOptions,
   buildPlannerPickerOptions,
   buildRightModels,
+  isCurrentConfig,
   modelsForImplementerProvider,
   modelsForPlannerTool,
   sortModelsByRecency,
@@ -119,5 +121,42 @@ describe('picker options', () => {
     expect(implementerItems.some((item) => item.id === 'agent' && item.kind === 'agent')).toBe(
       true,
     );
+  });
+
+  it('marks the resolved default implementer profile as current', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'deepseek',
+        apiBase: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+      },
+      implementerProfiles: {
+        default: 'local-qwen',
+        profiles: {
+          'local-qwen': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen2.5-coder:7b',
+          },
+        },
+      },
+    });
+
+    expect(
+      isCurrentConfig(
+        { id: 'ollama', displayName: 'Ollama', kind: 'api', available: true, badge: 'API' },
+        config,
+        'implementer',
+      ),
+    ).toBe(true);
+    expect(
+      isCurrentConfig(
+        { id: 'deepseek', displayName: 'DeepSeek', kind: 'api', available: true, badge: 'API' },
+        config,
+        'implementer',
+      ),
+    ).toBe(false);
   });
 });

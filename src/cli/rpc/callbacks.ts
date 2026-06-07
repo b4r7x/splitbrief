@@ -4,7 +4,7 @@ import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { isUserEditConflictAction } from '../../engine/events/workflow-events.js';
 import { normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
-import type { ApprovalGateResult } from './gates.js';
+import { validateConfirmApprovalFields, type ApprovalGateResult } from './gates.js';
 
 function parseTaskReviewResponse(text: string): TaskReviewResponse | null {
   const [rawAction, ...rest] = text.trim().split(/\s+/);
@@ -24,6 +24,7 @@ export function createWorkflowCallbacks(deps: {
   waitForApproval: (data: unknown) => Promise<ApprovalGateResult>;
   waitForMessage: (data: unknown) => Promise<string>;
   reportError: (message: string) => void;
+  abort: () => void;
 }): RunWorkflowOptions['callbacks'] {
   return {
     onApprovalNeeded: async (approvalType, filePath) => {
@@ -68,11 +69,11 @@ export function createWorkflowCallbacks(deps: {
         return { decision: 'deny', reason: result.comment ?? 'Rejected via RPC' };
       }
       if (request.tier === 'confirm') {
-        return {
-          decision: 'confirm',
-          phrase: CONFIRM_PHRASE,
-          reason: result.comment ?? 'Approved via RPC',
-        };
+        const confirmed = validateConfirmApprovalFields(result);
+        if (!confirmed.ok) {
+          return { decision: 'deny', reason: 'invalid_confirm_phrase' };
+        }
+        return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: confirmed.reason };
       }
       return { decision: 'allow', scope: 'once' };
     },
@@ -80,7 +81,10 @@ export function createWorkflowCallbacks(deps: {
       while (true) {
         const answer = await deps.waitForMessage({ pending: 'task_review', request });
         const response = parseTaskReviewResponse(answer);
-        if (response) return response;
+        if (response) {
+          if (response.action === 'abort') deps.abort();
+          return response;
+        }
         deps.reportError(
           'Invalid task review response. Use: continue, redo, revise-plan, or abort.',
         );

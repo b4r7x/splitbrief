@@ -126,9 +126,10 @@ async function runNewPlanning(
       state,
       signal,
       persistTranscript: config.workflow.persistTranscript,
+      specMetadata: metadata,
     });
     state = specLoop.state;
-    if (specLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (specLoop.rejected || specLoop.aborted) return { state, tasks: [], cancelled: true };
     if (specLoop.regenerated) {
       ({ state, tasks } = await regeneratePlanAndTasks({
         projectDir,
@@ -164,9 +165,10 @@ async function runNewPlanning(
       state,
       signal,
       persistTranscript: config.workflow.persistTranscript,
+      specMetadata: metadata,
     });
     state = planLoop.state;
-    if (planLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (planLoop.rejected || planLoop.aborted) return { state, tasks: [], cancelled: true };
     if (planLoop.regenerated) {
       const taskRegen = await regenerateTasks({
         projectDir,
@@ -199,7 +201,7 @@ async function runNewPlanning(
     });
     state = briefsLoop.state;
     tasks = briefsLoop.tasks;
-    if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (briefsLoop.rejected || briefsLoop.aborted) return { state, tasks: [], cancelled: true };
 
     publishPlannerStatus(wctx.bus, state, 'running');
     wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });

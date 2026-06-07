@@ -19,7 +19,7 @@ import {
   formatTaskReviewLine,
   getTaskStatusSymbol,
 } from '../brief-review-format.js';
-import { loadPlanEditorData } from './plan-editor/loader.js';
+import { loadPlanEditorData } from '../plan-editor/loader.js';
 import { BRIEFS_REVIEW_HINT } from '../review-parser.js';
 
 const SIMPLE_REVIEW_CHROME_ROWS = 7;
@@ -85,9 +85,13 @@ export function PlanReviewHeader({
         <Text color={t.textDim}>{formatTaskCount(tasks.length)}</Text>
         <Text color={qualityColor}>{qualityDisplay}</Text>
       </Box>
-      <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
+      <Text color={t.textDim} wrap="truncate">
+        {formatPlanReviewSummary(tasks, reviewMetadata)}
+      </Text>
       <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
-      <Text color={t.textDim}>{filePath}</Text>
+      <Text color={t.textDim} wrap="truncate">
+        {filePath}
+      </Text>
     </>
   );
 }

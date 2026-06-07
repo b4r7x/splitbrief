@@ -32,7 +32,8 @@ export function openCostApprovalPrompt(prediction: CostPrediction): Promise<bool
   return channel.open(prediction);
 }
 
-export function closeCostApprovalPrompt(approved: boolean): void {
+export function closeCostApprovalPrompt(result: { approved: boolean }): void {
+  const { approved } = result;
   channel.close(approved);
 }
 

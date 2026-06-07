@@ -58,7 +58,7 @@ export async function buildManifest(
   const specExists = existsSync(join(sDir, SPEC_FILE));
   const planExists = existsSync(join(sDir, PLAN_FILE));
   const taskIds = state.tasks.map((t) => t.id);
-  const existingTaskFiles = taskIds.map((id) => `tasks/${id}.md`);
+  const existingTaskFiles = taskIds.map((id) => `tasks/${id}`);
 
   const briefHashFromFile = await readBriefHash(projectDir, sessionId);
   const briefHash = briefHashFromFile ?? hashTaskBrief(state.tasks);

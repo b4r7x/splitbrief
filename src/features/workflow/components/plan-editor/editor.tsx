@@ -9,8 +9,8 @@ import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.j
 import { PlanReviewHeader } from '../brief-review-view.js';
 import { usePlanEditorKeys } from '../../hooks/use-plan-editor-keys.js';
 import { createSaveHandler } from '../../plan-editor-save.js';
+import { loadPlanEditorData } from '../../plan-editor/loader.js';
 import { PlanEditorFooter } from './footer.js';
-import { loadPlanEditorData } from './loader.js';
 import { WorkerPacketPreviewPanel, usePacketPreview } from './preview-panel.js';
 import { TaskEditorRow } from './task-row.js';
 import { getVisibleTaskWindow } from './virtualization.js';

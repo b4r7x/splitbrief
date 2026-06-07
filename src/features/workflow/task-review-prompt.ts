@@ -1,5 +1,17 @@
-import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/workflow-events.js';
+import type {
+  TaskReviewCommand,
+  TaskReviewRequest,
+  TaskReviewResponse,
+} from '../../engine/events/workflow-events.js';
 import { formatTruncatedList } from '../../core/formatting.js';
+
+const COMMAND_LABELS: Record<TaskReviewCommand, string> = {
+  continue: 'continue',
+  'redo-task': 'redo',
+  'edit-notes': 'notes <text>',
+  'revise-plan': 'revise-plan <notes>',
+  abort: 'abort',
+};
 
 const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
   c: 'continue',
@@ -29,7 +41,7 @@ export function formatTaskReviewPrompt(request: TaskReviewRequest): string {
     ...formatRoutingLines(request),
     ...formatRecoveryLines(request),
     '',
-    'Commands: continue, redo, notes <text>, revise-plan <notes>, abort',
+    `Commands: ${formatTaskReviewCommands(request.availableCommands)}`,
   ];
   return lines.filter(Boolean).join('\n');
 }
@@ -91,4 +103,8 @@ function formatRecoveryLines(request: TaskReviewRequest): string[] {
 function formatList(values: string[], max = 4): string {
   if (values.length === 0) return 'none';
   return formatTruncatedList(values, max);
+}
+
+function formatTaskReviewCommands(commands: readonly TaskReviewCommand[]): string {
+  return commands.map((command) => COMMAND_LABELS[command]).join(', ');
 }

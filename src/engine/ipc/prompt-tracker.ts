@@ -22,6 +22,7 @@ type PendingPrompt = {
   request: IpcPromptRequest;
   resolve: (response: IpcPromptResponse) => void;
   reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
 type PromptTrackerOptions = {
@@ -30,6 +31,8 @@ type PromptTrackerOptions = {
   currentSocket: () => Socket | null;
   writeMessage: (socket: Socket, msg: ServerMessage) => void;
 };
+
+const PROMPT_TIMEOUT_MS = 30_000;
 
 function createNoClientPromptError(request: IpcPromptRequest): IpcPromptUnavailableError {
   return Object.assign(
@@ -57,6 +60,18 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     handleResponse(requestId: string, response: IpcPromptResponse): boolean {
       const pending = pendingPrompts.get(requestId);
       if (!pending) return false;
+
+      if (response.kind !== pending.request.kind) {
+        opts.bus.publish({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: `IPC: response kind mismatch for ${requestId}: expected ${pending.request.kind}, got ${response.kind}`,
+        });
+        return false;
+      }
+
+      if (pending.timer) clearTimeout(pending.timer);
       pendingPrompts.delete(requestId);
       pending.resolve(response);
       return true;
@@ -64,6 +79,17 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     sendPendingPrompts(socket: Socket): void {
       for (const pending of pendingPrompts.values()) {
         sendPrompt(socket, pending.request);
+        if (!pending.timer) {
+          pending.timer = setTimeout(() => {
+            if (!pendingPrompts.has(pending.request.requestId)) return;
+            pendingPrompts.delete(pending.request.requestId);
+            pending.reject(
+              new Error(
+                `IPC prompt timed out after ${PROMPT_TIMEOUT_MS / 1000}s: ${pending.request.kind}`,
+              ),
+            );
+          }, PROMPT_TIMEOUT_MS);
+        }
       }
     },
     requestClientPrompt(requestWithoutId: IpcPromptRequestInput): Promise<IpcPromptResponse> {
@@ -86,19 +112,26 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
           return;
         }
 
-        const timer = setTimeout(() => {
-          pendingPrompts.delete(request.requestId);
-          reject(new Error(`IPC prompt timed out after 30s: ${request.kind}`));
-        }, 30_000);
+        const timer: ReturnType<typeof setTimeout> | null = currentSocket
+          ? setTimeout(() => {
+              pendingPrompts.delete(request.requestId);
+              reject(
+                new Error(
+                  `IPC prompt timed out after ${PROMPT_TIMEOUT_MS / 1000}s: ${request.kind}`,
+                ),
+              );
+            }, PROMPT_TIMEOUT_MS)
+          : null;
 
         pendingPrompts.set(request.requestId, {
           request,
+          timer,
           resolve: (response) => {
-            clearTimeout(timer);
+            if (timer) clearTimeout(timer);
             resolve(response);
           },
           reject: (err) => {
-            clearTimeout(timer);
+            if (timer) clearTimeout(timer);
             reject(err);
           },
         });
@@ -116,6 +149,7 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     },
     rejectAll(errFor: (request: IpcPromptRequest) => Error): void {
       for (const pending of pendingPrompts.values()) {
+        if (pending.timer) clearTimeout(pending.timer);
         pending.reject(errFor(pending.request));
       }
       pendingPrompts.clear();

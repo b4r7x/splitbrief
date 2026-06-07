@@ -6,7 +6,9 @@ import { clampIndex } from '../../utils/indexing.js';
 
 export interface PlanEditorState {
   tasks: Task[];
+  savedTasks: Task[];
   cursor: number;
+  revision: number;
   expandedIds: ReadonlySet<string>;
   /**
    * True when the in-memory task list differs from what is on disk.
@@ -31,10 +33,15 @@ export interface PlanEditorState {
   flaggedIds: ReadonlySet<string>;
 }
 
+export const PLAN_EDITOR_STALE_SAVE_ERROR =
+  'Plan changed during save. Save again to persist the latest edits.';
+
 function makeInitialState(): PlanEditorState {
   return {
     tasks: [],
+    savedTasks: [],
     cursor: 0,
+    revision: 0,
     expandedIds: new Set<string>(),
     dirty: false,
     runtimeRichMode: false,
@@ -70,6 +77,11 @@ function __testReset(next?: Partial<PlanEditorState>): void {
     ...base,
     ...next,
     tasks: next.tasks ? cloneTasks(next.tasks) : base.tasks,
+    savedTasks: next.savedTasks
+      ? cloneTasks(next.savedTasks)
+      : next.tasks
+        ? cloneTasks(next.tasks)
+        : base.savedTasks,
     expandedIds: next.expandedIds ? new Set(next.expandedIds) : base.expandedIds,
     reviewMetadata: next.reviewMetadata
       ? cloneReviewMetadataMap(next.reviewMetadata)
@@ -80,10 +92,13 @@ function __testReset(next?: Partial<PlanEditorState>): void {
 
 function initEditor(tasks: Task[]): void {
   const nextTasks = cloneTasks(tasks);
+  const nextSavedTasks = cloneTasks(tasks);
   store.set((s) => ({
     ...s,
     tasks: nextTasks,
+    savedTasks: nextSavedTasks,
     cursor: 0,
+    revision: sameTasks(s.tasks, nextTasks) && !s.dirty ? s.revision : s.revision + 1,
     expandedIds: new Set<string>(),
     dirty: false,
     saveError: null,
@@ -110,6 +125,27 @@ function sameTasks(a: Task[], b: Task[]): boolean {
   return a.every((t, i) => deepEqual(t, b[i]));
 }
 
+function taskMapById(tasks: Task[]): Map<string, Task> {
+  return new Map(tasks.map((task) => [task.id, task]));
+}
+
+function stableTaskIds(
+  currentTasks: Task[],
+  nextTasks: Task[],
+  taskIds: ReadonlySet<string>,
+): Set<string> {
+  if (taskIds.size === 0) return new Set<string>();
+  const currentById = taskMapById(currentTasks);
+  const nextById = taskMapById(nextTasks);
+  const stable = new Set<string>();
+  for (const id of taskIds) {
+    const current = currentById.get(id);
+    const next = nextById.get(id);
+    if (current && next && deepEqual(current, next)) stable.add(id);
+  }
+  return stable;
+}
+
 function setTasks(tasks: Task[]): void {
   const nextTasks = cloneTasks(tasks);
   store.set((s) => {
@@ -117,9 +153,12 @@ function setTasks(tasks: Task[]): void {
     return {
       ...s,
       tasks: nextTasks,
+      revision: s.revision + 1,
       dirty: true,
       saveError: null,
+      expandedIds: stableTaskIds(s.tasks, nextTasks, s.expandedIds),
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+      flaggedIds: stableTaskIds(s.tasks, nextTasks, s.flaggedIds),
     };
   });
 }
@@ -220,8 +259,42 @@ function sameReviewMetadata(
 
 function markSaved(): void {
   store.set((s) => {
-    if (!s.dirty && s.saveError === null) return s;
-    return { ...s, dirty: false, saveError: null };
+    if (!s.dirty && s.saveError === null && sameTasks(s.savedTasks, s.tasks)) return s;
+    return { ...s, savedTasks: cloneTasks(s.tasks), dirty: false, saveError: null };
+  });
+}
+
+function markSavedIfRevision(revision: number): boolean {
+  let saved = false;
+  store.set((s) => {
+    if (s.revision !== revision) {
+      return s.saveError === PLAN_EDITOR_STALE_SAVE_ERROR
+        ? s
+        : { ...s, saveError: PLAN_EDITOR_STALE_SAVE_ERROR };
+    }
+    saved = true;
+    if (!s.dirty && s.saveError === null && sameTasks(s.savedTasks, s.tasks)) return s;
+    return { ...s, savedTasks: cloneTasks(s.tasks), dirty: false, saveError: null };
+  });
+  return saved;
+}
+
+function discardEdits(): void {
+  store.set((s) => {
+    const nextTasks = cloneTasks(s.savedTasks);
+    const changed = !sameTasks(s.tasks, nextTasks) || s.dirty;
+    return {
+      ...s,
+      tasks: nextTasks,
+      cursor: clampIndex(s.cursor, nextTasks.length),
+      revision: changed ? s.revision + 1 : s.revision,
+      expandedIds: new Set<string>(),
+      dirty: false,
+      runtimeRichMode: false,
+      saveError: null,
+      reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+      flaggedIds: new Set<string>(),
+    };
   });
 }
 
@@ -241,4 +314,6 @@ export const planEditorStore = {
   setReviewMetadata,
   upsertTaskReviewMetadata,
   markSaved,
+  markSavedIfRevision,
+  discardEdits,
 };

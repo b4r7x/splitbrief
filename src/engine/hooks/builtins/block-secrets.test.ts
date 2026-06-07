@@ -11,7 +11,7 @@ function makeEvent(file: string): EngineEvent {
     type: 'task_started',
     ts: 1,
     phase: 'implementing',
-    taskId: taskId('T1'),
+    taskId: taskId('T001'),
     title: 't',
     index: 0,
     total: 1,
@@ -93,6 +93,19 @@ describe('blockSecrets', () => {
     const f = join(dir, 'f.ts');
     writeFileSync(f, 'const k = "xai-abcdefghijklmnopqrstuvwxyz0123456789";');
     const outcome = await blockSecrets(makeEvent('f.ts'), { projectDir: dir, sessionId: 's' });
+    expect(outcome.kind).toBe('deny');
+  });
+
+  it('denies when a secret is present in ctx.files but not event.file', async () => {
+    const clean = join(dir, 'task.ts');
+    const secret = join(dir, 'secret.env');
+    writeFileSync(clean, 'export const ok = true;');
+    writeFileSync(secret, 'API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD');
+    const outcome = await blockSecrets(makeEvent('task.ts'), {
+      projectDir: dir,
+      sessionId: 's',
+      files: ['task.ts', 'secret.env'],
+    });
     expect(outcome.kind).toBe('deny');
   });
 

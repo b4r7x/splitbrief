@@ -90,6 +90,44 @@ function configWithProfiles(): Config {
   return { ...makeConfig(), implementerProfiles };
 }
 
+describe('applyRecoveryAction: reason policy', () => {
+  it('blocks actions that violate the reason policy even when advertised in state', () => {
+    const { projectDir, sessionId } = setupSession('policy-block');
+    const task = makeTask({ id: 'T200', status: 'in_progress' });
+    const issue: RecoveryIssue = {
+      id: 'rec_budget_skip',
+      reason: 'budget-exceeded',
+      phase: 'implementing',
+      status: 'awaiting-user',
+      taskId: task.id,
+      taskTitle: task.title,
+      files: [task.file],
+      affectedTaskIds: [task.id],
+      message: 'Budget exceeded',
+      details: [],
+      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'pause-run',
+      createdAt,
+    };
+    const state = { ...implementingState([task]), pendingRecovery: issue };
+    const { bus } = makeBus();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'skip-current-task',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('action-not-available');
+    expect(result.message).toContain('not allowed');
+  });
+});
+
 describe('applyRecoveryAction: route-bigger-worker', () => {
   it('retries the current task with the bigger profile when it exists', () => {
     const { projectDir, sessionId } = setupSession('route-bigger-success');

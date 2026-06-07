@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { findAffectedTestFile } from './test-discovery.js';
+import { findAffectedTestFile, isTestPatternSafe } from './test-discovery.js';
 
 describe('findAffectedTestFile', () => {
   let tmpDir: string;
@@ -35,5 +35,20 @@ describe('findAffectedTestFile', () => {
     writeFileSync(join(tmpDir, 'src', 'test_handler.py'), '');
     const result = findAffectedTestFile('src/handler.py', tmpDir, 'test_*.py');
     expect(result).toContain('test_handler.py');
+  });
+
+  it('returns null for traversal test patterns', () => {
+    writeFileSync(join(tmpDir, 'src', 'handler.test.ts'), '');
+    expect(findAffectedTestFile('src/handler.ts', tmpDir, '../secret.test.ts')).toBeNull();
+    expect(findAffectedTestFile('src/handler.ts', tmpDir, '../../outside.test.ts')).toBeNull();
+  });
+});
+
+describe('isTestPatternSafe', () => {
+  it('rejects path separators and parent traversal', () => {
+    expect(isTestPatternSafe('*.test.ts')).toBe(true);
+    expect(isTestPatternSafe('../secret.test.ts')).toBe(false);
+    expect(isTestPatternSafe('nested/handler.test.ts')).toBe(false);
+    expect(isTestPatternSafe('')).toBe(false);
   });
 });

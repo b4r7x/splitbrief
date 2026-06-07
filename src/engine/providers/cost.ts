@@ -5,8 +5,8 @@ import type { ModelCacheAccessor } from './model/resolution.js';
 import {
   allocatedCacheTokens,
   calculateCacheReadSavings,
-  calculateCost,
   calculateUsageCost,
+  usageCostIsFullyKnown,
   recordPricedUsage,
   recordProviderCost,
   resolveTaskPricingModel,
@@ -18,6 +18,7 @@ type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
   totalTasks: number;
   escalatedCount: number;
+  completedLocalTasks?: number | undefined;
   plannerTool: string;
   implementerTool: string;
   plannerModel?: string | undefined;
@@ -56,9 +57,19 @@ function applyImplementerUsageCost(
 
   accounting.actualImplementerCost += cost;
   accounting.cacheReadSavings += calculateCacheReadSavings(opts.cacheReadTokens, pricing);
-  if (pricing.isPriced) {
+  const fullyKnown = usageCostIsFullyKnown({
+    inputTokens: opts.inputTokens,
+    outputTokens: opts.outputTokens,
+    cacheReadTokens: opts.cacheReadTokens,
+    cacheCreateTokens: opts.cacheCreateTokens,
+    pricing,
+  });
+  if (fullyKnown) {
     accounting.hasPricedUsage = true;
-  } else {
+  } else if (
+    opts.inputTokens + opts.outputTokens + opts.cacheReadTokens + opts.cacheCreateTokens >
+    0
+  ) {
     accounting.hasUnpricedUsage = true;
   }
   recordPricedUsage(accounting.providerCosts, {
@@ -193,6 +204,8 @@ export type TaskCostTokenUsage = Pick<
   | 'escalationOutput'
   | 'implementerCacheRead'
   | 'implementerCacheCreate'
+  | 'plannerCacheRead'
+  | 'plannerCacheCreate'
 >;
 
 export interface CalculateTaskUsageCostOptions {
@@ -246,11 +259,29 @@ export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): 
     inputTotal: tokenUsage.escalationInput,
     outputTotal: tokenUsage.escalationOutput,
   });
-  const escalationCost = calculateCost(
-    escalationSplit.inputTokens,
-    escalationSplit.outputTokens,
-    resolvePricing(plannerTool, cache, plannerModel),
-  );
+  const totalEscalationTokens = tokenUsage.escalationInput + tokenUsage.escalationOutput;
+  const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
+  const escalationCacheRead =
+    task.escalationCacheReadTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheRead,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
+  const escalationCacheCreate =
+    task.escalationCacheCreateTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheCreate,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
+  const escalationCost = calculateUsageCost({
+    inputTokens: escalationSplit.inputTokens,
+    outputTokens: escalationSplit.outputTokens,
+    cacheReadTokens: escalationCacheRead,
+    cacheCreateTokens: escalationCacheCreate,
+    pricing: plannerPricing,
+  });
 
   return implementerCost + escalationCost;
 }
@@ -272,8 +303,18 @@ export function isTaskUsageCostKnown(
         fallbackModel: implementerModel,
       }),
     ).isPriced;
+  const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
+  const escalationCacheRead = task.escalationCacheReadTokens ?? 0;
+  const escalationCacheCreate = task.escalationCacheCreateTokens ?? 0;
   const plannerKnown =
-    task.escalationTokens <= 0 || resolvePricing(plannerTool, cache, plannerModel).isPriced;
+    task.escalationTokens <= 0 ||
+    usageCostIsFullyKnown({
+      inputTokens: task.escalationTokens,
+      outputTokens: 0,
+      cacheReadTokens: escalationCacheRead,
+      cacheCreateTokens: escalationCacheCreate,
+      pricing: plannerPricing,
+    });
   return implementerKnown && plannerKnown;
 }
 
@@ -281,13 +322,10 @@ export function calculateCostBreakdown(
   opts: CostBreakdownOptions,
   cache?: ModelCacheAccessor,
 ): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, plannerTool, plannerModel } = opts;
+  const { tokenUsage, totalTasks, escalatedCount, completedLocalTasks, plannerTool, plannerModel } =
+    opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const implementerPricing = resolvePricing(opts.implementerTool, cache, opts.implementerModel);
-
-  const hypotheticalImplementerCost = plannerPricing.isPriced
-    ? calculateCost(tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing)
-    : 0;
 
   const plannerInputTotal = tokenUsage.plannerInput + tokenUsage.escalationInput;
   const plannerOutputTotal = tokenUsage.plannerOutput + tokenUsage.escalationOutput;
@@ -316,20 +354,44 @@ export function calculateCostBreakdown(
     tokenUsage.implementerOutput +
     (tokenUsage.implementerCacheRead ?? 0) +
     (tokenUsage.implementerCacheCreate ?? 0);
-  const isActualPlannerCostKnown = plannerUsageTokens <= 0 || plannerPricing.isPriced;
+  const isActualPlannerCostKnown =
+    plannerUsageTokens <= 0 ||
+    usageCostIsFullyKnown({
+      inputTokens: plannerInputTotal,
+      outputTokens: plannerOutputTotal,
+      cacheReadTokens: tokenUsage.plannerCacheRead ?? 0,
+      cacheCreateTokens: tokenUsage.plannerCacheCreate ?? 0,
+      pricing: plannerPricing,
+    });
   const isActualImplementerCostKnown =
     implementerUsageTokens <= 0 || !implementerAccounting.hasUnpricedUsage;
   const isTotalActualCostKnown = isActualPlannerCostKnown && isActualImplementerCostKnown;
-  const isAllPlannerBaselineKnown = implementerUsageTokens <= 0 || plannerPricing.isPriced;
-  const hasSavingsEstimate = isAllPlannerBaselineKnown && isActualImplementerCostKnown;
-  const savingsAmount = hasSavingsEstimate
-    ? hypotheticalImplementerCost - actualImplementerCost
+  const hypotheticalImplementerCost = calculateUsageCost({
+    inputTokens: tokenUsage.implementerInput,
+    outputTokens: tokenUsage.implementerOutput,
+    cacheReadTokens: tokenUsage.implementerCacheRead ?? 0,
+    cacheCreateTokens: tokenUsage.implementerCacheCreate ?? 0,
+    pricing: plannerPricing,
+  });
+  const isHypotheticalImplementerCostKnown =
+    implementerUsageTokens <= 0 ||
+    usageCostIsFullyKnown({
+      inputTokens: tokenUsage.implementerInput,
+      outputTokens: tokenUsage.implementerOutput,
+      cacheReadTokens: tokenUsage.implementerCacheRead ?? 0,
+      cacheCreateTokens: tokenUsage.implementerCacheCreate ?? 0,
+      pricing: plannerPricing,
+    });
+  const isAllPlannerBaselineKnown = isActualPlannerCostKnown && isHypotheticalImplementerCostKnown;
+  const hypotheticalCost = isAllPlannerBaselineKnown
+    ? actualPlannerCost + hypotheticalImplementerCost
     : 0;
+  const hasSavingsEstimate = isAllPlannerBaselineKnown && isTotalActualCostKnown;
+  const savingsAmount = hasSavingsEstimate ? hypotheticalCost - totalActualCost : 0;
   const savingsPercentage =
-    hasSavingsEstimate && hypotheticalImplementerCost > 0
-      ? (savingsAmount / hypotheticalImplementerCost) * 100
-      : 0;
-  const localCompletionRate = totalTasks > 0 ? (totalTasks - escalatedCount) / totalTasks : 0;
+    hasSavingsEstimate && hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
+  const localSuccesses = completedLocalTasks ?? Math.max(0, totalTasks - escalatedCount);
+  const localCompletionRate = totalTasks > 0 ? localSuccesses / totalTasks : 0;
   const hasPricedUsage = plannerPricing.isPriced || implementerAccounting.hasPricedUsage;
   const hasUnpricedUsage = !plannerPricing.isPriced || implementerAccounting.hasUnpricedUsage;
 
@@ -369,7 +431,7 @@ export function calculateCostBreakdown(
   }
 
   return {
-    hypotheticalCost: hypotheticalImplementerCost,
+    hypotheticalCost,
     actualPlannerCost,
     actualImplementerCost,
     totalActualCost,

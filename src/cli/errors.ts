@@ -1,20 +1,21 @@
+import { error, matches, type AppError } from '../utils/error.js';
 import { toErrorMessage } from '../utils/format-errors.js';
+import { isRecord } from '../utils/type-guards.js';
 
-export class CliError extends Error {
+export type CliError = AppError<'cli-error', { exitCode: number }> & {
+  readonly name: 'CliError';
   readonly exitCode: number;
-  constructor(message: string, exitCode = 1) {
-    super(message);
-    this.name = 'CliError';
-    this.exitCode = exitCode;
-  }
-}
+};
+
+const isCliErrorKind = matches('cli-error');
 
 export function cliError(message: string, exitCode = 1): CliError {
-  return new CliError(message, exitCode);
+  const name: CliError['name'] = 'CliError';
+  return Object.assign(error('cli-error', message, { exitCode }), { name, exitCode });
 }
 
 export function isCliError(err: unknown): err is CliError {
-  return err instanceof CliError;
+  return isCliErrorKind(err) && isRecord(err) && typeof err.exitCode === 'number';
 }
 
 export function rethrowAsCli(err: unknown): never {

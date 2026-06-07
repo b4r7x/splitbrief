@@ -13,6 +13,26 @@ export function parseNumberOption(value: string): number {
   return parsed;
 }
 
+export function parsePositiveIntegerOption(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError(`'${value}' must be a positive integer.`);
+  }
+  return parsed;
+}
+
+export function parseBudgetOption(value: string): number {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || !/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new InvalidArgumentError(`'${value}' is not a valid budget amount.`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError(`'${value}' must be a positive number.`);
+  }
+  return parsed;
+}
+
 function parseEnvRefOption(value: string): string {
   return value.startsWith('env:') ? value : `env:${value}`;
 }
@@ -29,7 +49,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
     .option(
       '--planner <tool>',
-      'Planner tool (claude-code, codex, opencode, aider, copilot, kilo-code, agent-sdk, anthropic, openrouter, shell)',
+      'Planner tool (claude-code, codex, opencode, aider, copilot, kilo-code, anthropic, openai, groq, together, deepseek, openrouter, shell, agent, agent-sdk)',
     )
     .option('--planner-model <model>', 'Planner model (for API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
@@ -44,10 +64,14 @@ export function addWorkflowOptions(cmd: Command): Command {
       '--planner-output-format <format>',
       'Planner output format: stream-json, jsonl, text, or opencode',
     )
-    .option('--planner-context-length <tokens>', 'Planner context length', parseNumberOption)
+    .option(
+      '--planner-context-length <tokens>',
+      'Planner context length',
+      parsePositiveIntegerOption,
+    )
     .option(
       '--implementer <provider>',
-      'Implementer provider (ollama, lm-studio, deepseek, openrouter, claude-code, codex, opencode, aider, copilot, kilo-code, shell)',
+      'Implementer provider (ollama, lm-studio, anthropic, openai, groq, together, deepseek, openrouter, claude-code, codex, opencode, aider, copilot, kilo-code, shell, agent, agent-sdk)',
     )
     .option('--implementer-model <model>', 'Implementer model')
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
@@ -69,7 +93,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option(
       '--implementer-context-length <tokens>',
       'Implementer context length',
-      parseNumberOption,
+      parsePositiveIntegerOption,
     )
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
@@ -78,7 +102,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       '--mode <mode>',
       'Workflow mode: instant, quick, standard, or speckit (full=speckit alias)',
     )
-    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat)
+    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',
       'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',

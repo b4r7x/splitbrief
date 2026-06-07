@@ -19,7 +19,6 @@ export function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): Recov
     availableActions: [
       'retry-same-worker',
       'route-bigger-worker',
-      'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',

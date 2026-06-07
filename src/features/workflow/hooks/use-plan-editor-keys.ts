@@ -1,13 +1,8 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
-import {
-  deleteTask,
-  mergeWithPrevious,
-  moveTaskDown,
-  moveTaskUp,
-} from '../components/plan-editor/actions.js';
-import { openExternalEditor } from '../components/plan-editor/external-editor.js';
+import { deleteTask, mergeWithPrevious, moveTaskDown, moveTaskUp } from '../plan-editor/actions.js';
+import { openExternalEditor } from '../plan-editor/external-editor.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Task } from '../../../core/schemas/task.js';
 
@@ -121,7 +116,7 @@ export function applyPlanEditorAction(
       void onSave();
       return;
     case 'discard': {
-      planEditorStore.reset();
+      planEditorStore.discardEdits();
       return;
     }
     default:

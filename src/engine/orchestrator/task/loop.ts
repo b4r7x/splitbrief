@@ -167,6 +167,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
     }
+    if (reviewDecision.decision === 'redo-task') {
+      i--;
+      continue;
+    }
 
     if (state.currentTaskIndex <= i) {
       setCurrentTask(undefined);

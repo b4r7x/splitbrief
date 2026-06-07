@@ -25,6 +25,7 @@ function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | un
   const state = loadState({ projectDir, sessionId: recoverySessionId });
   const issue = state?.pendingRecovery;
   if (!issue) return;
+  if (issue.status !== 'awaiting-user') return;
   process.stdout.write(
     JSON.stringify({
       type: 'recovery_required',

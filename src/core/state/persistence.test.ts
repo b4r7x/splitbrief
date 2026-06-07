@@ -1,5 +1,16 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { saveState, loadState, appendEngineEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
@@ -11,6 +22,7 @@ import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
@@ -58,6 +70,17 @@ describe('saveState / loadState roundtrip', () => {
     );
   });
 
+  it('preserves external metadata in roundtrip', () => {
+    const dir = makeTmp();
+    const state = {
+      ...createInitialState('external-meta'),
+      external: { 'my-board': { lanes: { T001: 'in-review' } } },
+    };
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+    expect(loaded?.external).toEqual({ 'my-board': { lanes: { T001: 'in-review' } } });
+  });
+
   it('preserves pending recovery in roundtrip', () => {
     const dir = makeTmp();
     const issue = makeRecoveryIssue({
@@ -74,12 +97,7 @@ describe('saveState / loadState roundtrip', () => {
         estimatedTokens: 42_000,
         contextLimit: 32_768,
       },
-      availableActions: [
-        'route-bigger-worker',
-        'planner-split-rebase',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['route-bigger-worker', 'retry-same-worker', 'pause-run', 'abort-workflow'],
       recommendedAction: 'route-bigger-worker',
     });
     const state = {
@@ -93,6 +111,15 @@ describe('saveState / loadState roundtrip', () => {
 
     expect(loaded?.pendingRecovery).toEqual(issue);
     expect(loaded?.phase).toBe('implementing');
+  });
+
+  it('rejects unsafe session ids before writing state', () => {
+    const dir = makeTmp();
+
+    expect(() =>
+      saveState({ projectDir: dir, sessionId: '../outside' }, createInitialState('feat')),
+    ).toThrow(/Invalid session id/);
+    expect(existsSync(join(dir, 'outside', 'state.json'))).toBe(false);
   });
 });
 
@@ -186,6 +213,23 @@ describe('appendEngineEvent', () => {
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(
       true,
     );
+  });
+
+  itUnix('creates session logs with 0600 permissions', () => {
+    const dir = makeTmp();
+    appendEngineEvent(
+      { projectDir: dir, sessionId: SESSION_ID },
+      {
+        ts: 1000,
+        type: 'workflow_started',
+        phase: 'idle',
+        feature: 'test-feature',
+      },
+    );
+
+    const mode =
+      statSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl')).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
   it('persists phase-less events in a schema-valid log entry', () => {
@@ -286,5 +330,44 @@ describe('appendMessage', () => {
     const entry = JSON.parse(raw.trim());
     expect(entry.phase).toBe('researching');
     expect(entry.interrupted).toBe(true);
+  });
+});
+
+describe('session append symlink confinement', () => {
+  itUnix('appendEngineEvent refuses to append through a symlinked session log', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const dir = makeTmp();
+    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(sessionPath, { recursive: true });
+    const outsideLog = join(outside, 'session.jsonl');
+    writeFileSync(outsideLog, '');
+    symlinkSync(outsideLog, join(sessionPath, 'session.jsonl'));
+
+    expect(() =>
+      appendEngineEvent(
+        { projectDir: dir, sessionId: SESSION_ID },
+        { ts: 1000, type: 'workflow_started', phase: 'planning' },
+      ),
+    ).toThrow(/refusing to write through symlink/);
+    expect(readFileSync(outsideLog, 'utf-8')).toBe('');
+
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  itUnix('appendMessage refuses to append through a symlinked session log', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const dir = makeTmp();
+    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(sessionPath, { recursive: true });
+    const outsideLog = join(outside, 'session.jsonl');
+    writeFileSync(outsideLog, '');
+    symlinkSync(outsideLog, join(sessionPath, 'session.jsonl'));
+
+    expect(() =>
+      appendMessage({ projectDir: dir, sessionId: SESSION_ID }, { role: 'user', text: 'hi' }, true),
+    ).toThrow(/refusing to write through symlink/);
+    expect(readFileSync(outsideLog, 'utf-8')).toBe('');
+
+    rmSync(outside, { recursive: true, force: true });
   });
 });

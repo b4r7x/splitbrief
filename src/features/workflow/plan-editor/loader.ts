@@ -1,13 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Task } from '../../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import {
   isBriefQualityReport,
   type BriefQualityReport,
-} from '../../../../engine/spec/brief-quality.js';
-import { parseTasks } from '../../../../engine/spec/parser.js';
-import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
-import { refreshPlanReviewMetadata } from '../../plan-review-metadata.js';
+} from '../../../engine/spec/brief-quality.js';
+import { parseTasksStrict } from '../../../engine/spec/parser.js';
+import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { refreshPlanReviewMetadata } from '../plan-review-metadata.js';
 
 interface LoadPlanEditorDataOptions {
   filePath: string;
@@ -43,7 +43,7 @@ export async function loadPlanEditorData(
   ]);
   if (opts.signal?.aborted) return { tasks: [], quality: null };
 
-  const tasks = parseTasks(tasksText);
+  const tasks = parseTasksStrict(tasksText);
   const quality = parseQualityReport(qualityText);
   if (!opts.skipInitEditor) planEditorStore.initEditor(tasks);
   const metadata = await refreshPlanReviewMetadata(tasks);

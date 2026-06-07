@@ -1,9 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { readSessionLog, readMessages, readEvents } from './log-reader.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test';
@@ -94,6 +96,22 @@ describe('readSessionLog', () => {
     await expect(
       collect(readSessionLog({ projectDir: dir, sessionId: '../outside' })),
     ).rejects.toThrow('Invalid session id');
+  });
+
+  itUnix('treats a symlinked session.jsonl as empty', async () => {
+    const dir = makeTmp();
+    const outside = createTempDir('log-reader-outside');
+    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    try {
+      mkdirSync(sessionPath, { recursive: true });
+      writeFileSync(join(outside, 'session.jsonl'), FIXTURE_LINES.join('\n') + '\n');
+      symlinkSync(join(outside, 'session.jsonl'), join(sessionPath, 'session.jsonl'));
+
+      const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
+      expect(entries).toHaveLength(0);
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 });
 

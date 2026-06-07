@@ -38,6 +38,7 @@ hooks:          { builtin, pre_task, post_task, ... }
 otel:           { enabled, serviceName }
 snapshots:      { auto: { preTask, postTask, preFinalReview } }
 palette:        { customActions: [...] }
+trust:          { customRenderers }
 approval:       { enabled, headless, tiers, feedRejectionsToPlanner }
 ```
 
@@ -749,7 +750,34 @@ Manual snapshots are always available via `diptych snapshot create`.
 
 ---
 
-## 11. `approval`
+## 11. `trust`
+
+Repo-local extension trust.
+
+### Schema
+
+```ts
+trust: {
+  customRenderers?: boolean;   // default false
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `customRenderers` | boolean | `false` | Allow `diptych handoff <custom-target>` to import `.diptych/handoff-renderers/<target>.ts` or `.js`. |
+
+YAML:
+
+```yaml
+trust:
+  customRenderers: true
+```
+
+Leave this off unless you trust the repository. `diptych handoff --list` can discover custom targets without this setting. Executing a custom target requires either this setting or the per-command `--allow-custom-renderer` flag.
+
+---
+
+## 12. `approval`
 
 Tiered approval system for fine-grained operation gating. Sits orthogonal to `workflow.approve` (which controls spec/plan gates).
 
@@ -824,7 +852,7 @@ approval:
 
 ---
 
-## 12. `palette`
+## 13. `palette`
 
 Custom slash-command actions for the in-TUI command palette.
 
@@ -861,7 +889,7 @@ palette:
 
 ---
 
-## 13. `theme`, `shikiTheme`, `sessions`
+## 14. `theme`, `shikiTheme`, `sessions`
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -878,7 +906,7 @@ sessions:
 
 ---
 
-## 14. Environment variables
+## 15. Environment variables
 
 Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/runners/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
 
@@ -923,7 +951,7 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 
 ---
 
-## 15. CLI flags
+## 16. CLI flags
 
 Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `continue`, `last`) plus command-specific registrations. These flags **override** the matching config field for the current invocation only. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag matrix.
 
@@ -956,6 +984,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last |
 | `--no-mouse` | Disable mouse tracking | start, resume, continue, last |
 | `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
+| `--allow-custom-renderer` | Trust repo-local handoff renderer for this invocation | handoff |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
 | `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
@@ -964,11 +993,11 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |
 | `--history` | Show cost history across sessions | status |
-| `-p, --project <dir>` | Project dir (migrate only) | migrate |
+| `-p, --project <dir>` | Project directory | `migrate`, `export` |
 
 ---
 
-## 16. Validation behavior
+## 17. Validation behavior
 
 Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
 
@@ -983,7 +1012,7 @@ Unknown top-level keys are tolerated; unknown nested keys in `.strict()` blocks 
 
 ---
 
-## 17. Migration
+## 18. Migration
 
 Config migration happens during load: supported older shapes are normalized in memory by `migrateV1ToV2 → migrateV2ToV3` (`src/core/config/load/migrate.ts`). Subsequent config writes use the current v3 shape.
 
@@ -1003,7 +1032,7 @@ The loader runs `migrateConfig` automatically on load, so even if you forget to 
 
 ---
 
-## 18. Full production example
+## 19. Full production example
 
 A representative config: Claude Code subscription as planner, Sonnet via direct Anthropic API as implementer, mid-tier escalation through OpenRouter, budget caps, snapshots, hooks, OTel, and tiered approval. Use it as a starting point, then adjust credentials, budgets, hooks, and approval tiers for your environment.
 
@@ -1149,7 +1178,7 @@ diptych start --allow-hooks "your feature description"
 
 ---
 
-## 19. See also
+## 20. See also
 
 - [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model

@@ -1,13 +1,14 @@
-import { writeFile, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { existsSync, realpathSync, lstatSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { resolve, relative, isAbsolute, dirname, basename, sep } from 'node:path';
 import { z } from 'zod';
-import { LOCKFILE } from '../../core/paths.js';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { DIPTYCH_DIR, LOCKFILE, SESSIONS_DIR } from '../../core/paths.js';
+import { writeSecureFileAsync } from '../../lib/fs.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 import { WorkflowModeSchema } from '../../core/schemas/enums.js';
+import { error } from '../../utils/error.js';
 
 const LockfileDataSchema = z.object({
   version: z.literal(1),
@@ -17,6 +18,7 @@ const LockfileDataSchema = z.object({
   sessionId: z.string(),
   mode: WorkflowModeSchema,
   feature: z.string(),
+  authToken: z.string().optional(),
   exitedAt: z.number().optional(),
   exitCode: z.number().optional(),
   signal: z.string().optional(),
@@ -29,8 +31,96 @@ export type ServerStatus =
   | { alive: true; data: LockfileData }
   | { alive: false; crashed: boolean; data: LockfileData | null };
 
+const sessionIoError = {
+  symlinkRead: (path: string) =>
+    error('session-io-read', `Refusing to read through symlink: ${path}`, { path }),
+  symlinkWrite: (path: string) =>
+    error('session-io-write', `Refusing to write through symlink: ${path}`, { path }),
+  escapesRoot: (path: string, root: string) =>
+    error('session-io-escape', `Path escapes session root`, { path, root }),
+  mismatchedSessionId: (expected: string, actual: string) =>
+    error(
+      'session-io-mismatched-id',
+      `Lockfile sessionId '${actual}' does not match expected '${expected}'`,
+      { expected, actual },
+    ),
+};
+
+function isInside(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function assertNoSessionPathSymlink(sessionDir: string): void {
+  const resolved = resolve(sessionDir);
+  const marker = `${sep}${DIPTYCH_DIR}${sep}${SESSIONS_DIR}${sep}`;
+  const markerIndex = resolved.indexOf(marker);
+  const startIndex = markerIndex === -1 ? resolved.length : markerIndex + 1;
+  const suffix = resolved.slice(startIndex).split(sep).filter(Boolean);
+  let current = resolved.slice(0, startIndex);
+  if (current.endsWith(sep) && current !== sep) current = current.slice(0, -1);
+
+  for (const part of suffix) {
+    current = current.length === 0 || current === sep ? `${sep}${part}` : `${current}${sep}${part}`;
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        throw sessionIoError.symlinkRead(current);
+      }
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        typeof (err as { kind?: unknown }).kind === 'string' &&
+        String((err as { kind?: unknown }).kind).startsWith('session-io-')
+      ) {
+        throw err;
+      }
+    }
+  }
+}
+
+export function assertSessionConfinement(filePath: string, sessionDir: string): void {
+  assertNoSessionPathSymlink(sessionDir);
+  const realSession = realpathSync(sessionDir);
+
+  try {
+    const st = lstatSync(filePath);
+    if (st.isSymbolicLink()) {
+      throw sessionIoError.symlinkRead(filePath);
+    }
+    const realFile = realpathSync(filePath);
+    if (!isInside(realSession, realFile)) {
+      throw sessionIoError.escapesRoot(filePath, sessionDir);
+    }
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      typeof (err as { kind?: unknown }).kind === 'string' &&
+      String((err as { kind?: unknown }).kind).startsWith('session-io-')
+    ) {
+      throw err;
+    }
+    try {
+      const realParent = realpathSync(dirname(filePath));
+      if (!isInside(realSession, realParent)) {
+        throw sessionIoError.escapesRoot(filePath, sessionDir);
+      }
+    } catch {
+      throw sessionIoError.escapesRoot(filePath, sessionDir);
+    }
+  }
+}
+
+export function validateLockfileSessionId(sessionDir: string, data: LockfileData): void {
+  const realSession = realpathSync(sessionDir);
+  const expected = basename(realSession);
+  if (data.sessionId !== expected) {
+    throw sessionIoError.mismatchedSessionId(expected, data.sessionId);
+  }
+}
+
 function lockfilePath(sessionDir: string): string {
-  return join(sessionDir, LOCKFILE);
+  assertSessionConfinement(resolve(sessionDir, LOCKFILE), sessionDir);
+  return resolve(sessionDir, LOCKFILE);
 }
 
 export async function writeLockfile(
@@ -38,7 +128,7 @@ export async function writeLockfile(
   data: Omit<LockfileData, 'version'>,
 ): Promise<void> {
   const payload: LockfileData = { version: 1, ...data };
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(payload), { mode: SECURE_FILE_MODE });
+  await writeSecureFileAsync(lockfilePath(sessionDir), JSON.stringify(payload));
 }
 
 async function updateLockfile(
@@ -48,7 +138,7 @@ async function updateLockfile(
   const data = await readLockfile(sessionDir);
   if (!data) return;
   mutate(data);
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
+  await writeSecureFileAsync(lockfilePath(sessionDir), JSON.stringify(data));
 }
 
 export async function updateHeartbeat(sessionDir: string): Promise<void> {
@@ -89,7 +179,28 @@ export async function readLockfile(sessionDir: string): Promise<LockfileData | n
   if (!existsSync(p)) return null;
   try {
     const raw = await readFile(p, 'utf-8');
-    return LockfileDataSchema.parse(JSON.parse(raw));
+    const data = LockfileDataSchema.parse(JSON.parse(raw));
+    validateLockfileSessionId(sessionDir, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function confinedReadLockfile(
+  sessionDir: string,
+  expectedSessionId: string,
+): Promise<LockfileData | null> {
+  const p = lockfilePath(sessionDir);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = await readFile(p, 'utf-8');
+    const data = LockfileDataSchema.parse(JSON.parse(raw));
+    validateLockfileSessionId(sessionDir, data);
+    if (data.sessionId !== expectedSessionId) {
+      return null;
+    }
+    return data;
   } catch {
     return null;
   }

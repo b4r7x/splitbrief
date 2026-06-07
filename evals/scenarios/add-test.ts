@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { uniqueInOrder } from '../../src/utils/collections.js';
 import { runNpmTest } from './quality-checks.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
@@ -46,7 +47,7 @@ function findEmailTestFiles(dir: string): string[] {
     return isTestFile && lowerPath.includes('email');
   });
 
-  return Array.from(new Set([...explicitMatches, ...discoveredMatches]));
+  return uniqueInOrder([...explicitMatches, ...discoveredMatches]);
 }
 
 function readEmailTestContent(dir: string): string {

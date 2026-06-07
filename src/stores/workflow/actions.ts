@@ -90,7 +90,7 @@ export function resetWorkflow(resume?: WorkflowState): void {
     _lifecycleInternal.set((s) => ({
       ...s,
       phase: resume.phase,
-      queueDepth: resume.messageQueue.length,
+      queueDepth: resume.messageQueue.filter((m) => !m.drainedAt).length,
     }));
     _tasksInternal.set((s) => ({ ...s, ...tasksStateFromResume(resume) }));
     _tokensInternal.set((s) => ({ ...s, ...tokensStateFromResume(resume) }));

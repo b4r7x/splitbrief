@@ -10,7 +10,19 @@ import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
 
-const FILE_DROP_PATTERN = new RegExp(`^\\S+\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
+const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
+
+function parseDroppedImagePath(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.includes('\n')) return null;
+  const unquoted =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1)
+      : trimmed;
+  if (!unquoted || !FILE_DROP_EXT_PATTERN.test(unquoted)) return null;
+  return unquoted;
+}
 
 interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
@@ -72,9 +84,12 @@ export function MultilineInput({
         return;
       }
 
-      if (input.length > 1 && onFileDrop && FILE_DROP_PATTERN.test(input.trim())) {
-        onFileDrop(input.trim());
-        return;
+      if (input.length > 1 && onFileDrop) {
+        const droppedPath = parseDroppedImagePath(input);
+        if (droppedPath) {
+          onFileDrop(droppedPath);
+          return;
+        }
       }
 
       const action = resolveEditAction(input, key);

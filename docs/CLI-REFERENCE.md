@@ -83,7 +83,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. `full` is a legacy alias for `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--auto` | boolean | `false` | Auto-approve spec and plan. Equivalent to `--approve none`. |
 | `--approve <level>` | enum | `default` | Approval gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `agent-sdk`, `anthropic`, `openrouter`, `shell`. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `shell`, `agent`, `agent-sdk`. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -92,7 +92,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. |
 | `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`. |
+| `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`, `agent`, `agent-sdk`. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -731,7 +731,7 @@ Last updated: 2026-05-13T08:00:00.000Z
 **Synopsis**
 
 ```
-diptych export [session-id] [--out <path>] [--project <dir>]
+diptych export [session-id] [-o <path>] [-p <dir>]
 ```
 
 Export a completed session as a standalone HTML report. If `session-id` is omitted, diptych uses the active session when it is complete, otherwise the newest completed session.
@@ -740,8 +740,8 @@ Export a completed session as a standalone HTML report. If `session-id` is omitt
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--out <path>` | path | `.diptych/sessions/<id>/report.html` | Output file path. |
-| `--project <dir>` | path | cwd | Project directory. |
+| `-o, --out <path>` | path | `.diptych/sessions/<id>/report.html` | Output file path. |
+| `-p, --project <dir>` | path | cwd | Project directory. |
 
 ### Examples
 
@@ -839,7 +839,7 @@ Export a Handoff Pack — a directory of artifacts (spec, plan, tasks, optional 
 
 ```
 diptych handoff [target] [--session <id>] [--out <dir>] [--task <ids>] \
-  [--mode <mode>] [--project <dir>] [--list]
+  [--mode <mode>] [--project <dir>] [--allow-custom-renderer] [--list]
 ```
 
 The optional `target` argument defaults to `spec-kit`.
@@ -853,6 +853,7 @@ The optional `target` argument defaults to `spec-kit`.
 | `--task <ids>` | csv | all tasks | Comma-separated list of task IDs to include. |
 | `--mode <mode>` | enum | `default` | Write mode: `default` (refuse on conflict), `append`, or `overwrite`. |
 | `--project <dir>` | path | cwd | Project directory. |
+| `--allow-custom-renderer` | boolean | `false` | Trust and load repo-local custom renderers for this invocation. |
 | `--list` | boolean | `false` | List built-in and custom render targets, then exit. |
 
 ### Examples
@@ -872,16 +873,19 @@ diptych handoff --mode overwrite
 
 # See what targets are available (built-in + custom renderers under .diptych/)
 diptych handoff --list
+
+# Execute a repo-local custom renderer
+diptych handoff linear-ticket --allow-custom-renderer
 ```
 
 ### Exit codes
 
 - `0` — pack written or `--list` printed.
-- `1` — no active session and `--session` omitted, invalid `--mode`, missing renderer, or write failure.
+- `1` — no active session and `--session` omitted, invalid `--mode`, missing renderer, untrusted custom renderer, or write failure.
 
 ### Files affected
 
-- **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}`, custom renderer modules under `.diptych/handoff-renderers/`.
+- **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}`. Custom renderer modules under `.diptych/handoff-renderers/` are read only when `--allow-custom-renderer` is set or config has `trust.customRenderers: true`.
 - **Writes:** every file in `--out` (default `.diptych/handoffs/<target>/`).
 
 ### See also
@@ -894,6 +898,8 @@ diptych handoff --list
 - `--list` prints built-in `HANDOFF_TARGETS` first, then a `Custom renderers:` block when renderers exist.
 - The default target string is `spec-kit`. If you pass an unknown target without `--list`, the renderer factory throws and the command exits `1`.
 - `--mode default` refuses to clobber existing files. Use `append` for additive updates, `overwrite` to start clean.
+- `copilot-issue` writes `manifest.json` plus a single `issue.md` body. It does not emit per-task files.
+- Listing custom renderers does not trust them. Executing one requires `--allow-custom-renderer` or `trust.customRenderers: true`.
 - Output prints `Handoff written to: <dir>` followed by every emitted relative file path, one per line.
 
 ---
@@ -1237,7 +1243,7 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 diptych worktree <subcommand> [options]
 ```
 
-List, switch into, or remove diptych-managed git worktrees under `.trees/<slug>` (branch `diptych/<slug>`). Created with `diptych start --worktree`. Subcommands: `list`, `switch`, `remove`.
+List, switch into, print paths for, or remove diptych-managed git worktrees under `.trees/<slug>` (branch `diptych/<slug>`). Created with `diptych start --worktree`. Subcommands: `list`, `switch`, `path`, `remove`.
 
 ---
 
@@ -1297,6 +1303,30 @@ diptych worktree switch migration
 #### Exit codes
 
 - `0` — instructions printed.
+- `1` — worktree not found.
+
+---
+
+### diptych worktree path
+
+**Synopsis**
+
+```
+diptych worktree path <name> [--project <dir>]
+```
+
+Print the resolved filesystem path for a diptych-managed worktree. Useful for shell wrappers such as `cd "$(diptych worktree path migration)"`.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<name>` | string (positional) | — | Worktree slug. Required. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Exit codes
+
+- `0` — path printed on stdout.
 - `1` — worktree not found.
 
 ---
@@ -1532,7 +1562,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | Flag | Commands | Default | Notes |
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
-| `-p, --project <dir>` | `migrate` | `.` | The only command with the `-p` short alias. |
+| `-p, --project <dir>` | `migrate`, `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
 | `--auto` | `start`, `resume`, `continue`, `last`, `spec` | `false` | On workflow commands it aliases `--approve none`; on `spec` it auto-approves spec and plan. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |

@@ -171,7 +171,7 @@ Commands that open an overlay for interactive selection. None of these mutate st
 - **Args**: none.
 - **Shortcut**: `Ctrl+S` (home screen only — see `src/core/keybindings/registry.ts`).
 - **Example**: `/skills`
-- **Behavior**: Opens the `skills` overlay. Selection persists to the project config so subsequent `start` commands inherit the skill set.
+- **Behavior**: Opens the `skills` overlay. Selection applies to the current home-screen session only and is not written to `config.yaml`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/settings`, `/planner`.
 

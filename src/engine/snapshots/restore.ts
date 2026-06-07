@@ -1,9 +1,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
 import { error } from '../../utils/error.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { assertPathConfined, assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { acquireSnapshotLock } from './lock.js';
@@ -42,6 +44,20 @@ export const snapshotRestoreError = {
       { sessionId },
     ),
 } as const;
+
+function assertBlobNotSymlink(blobPath: string): void {
+  try {
+    if (lstatSync(blobPath).isSymbolicLink()) {
+      throw error(
+        'snapshot-blob-symlink',
+        `Refusing to read snapshot blob through symlink: ${blobPath}`,
+        { blobPath },
+      );
+    }
+  } catch (cause: unknown) {
+    if (!isENOENT(cause)) throw cause;
+  }
+}
 
 export async function resolveSnapshot(
   projectDir: string,
@@ -134,12 +150,14 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
       const snapshotHash = manifest.fileHashes[path];
 
       if (currentHash === snapshotHash || currentHash === null) {
+        assertBlobNotSymlink(sourceFilePath);
         const contents = await readFile(sourceFilePath);
         await mkdir(dirname(absPath), { recursive: true });
         assertWritablePathConfined(path, projectDir);
         await writeFile(absPath, contents);
         restoredPaths.push(path);
       } else if (force) {
+        assertBlobNotSymlink(sourceFilePath);
         const contents = await readFile(sourceFilePath);
         await mkdir(dirname(absPath), { recursive: true });
         assertWritablePathConfined(path, projectDir);

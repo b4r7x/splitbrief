@@ -4,7 +4,7 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { parseTasks } from '../../spec/parser.js';
+import { parseTasksStrict } from '../../spec/parser.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import type { PlanResult } from '../../planners/types.js';
@@ -48,7 +48,7 @@ export async function readPersistedTasks(tasksFilePath: string): Promise<Persist
   }
 
   try {
-    const parsed = parseTasks(text);
+    const parsed = parseTasksStrict(text);
     if (parsed.length === 0) {
       return {
         ok: false,

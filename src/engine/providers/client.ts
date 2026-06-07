@@ -5,6 +5,7 @@ import type { DetectedModel } from '../../core/discovery/detection.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { redactSecrets } from '../../utils/redact.js';
+import { validateApiBaseUrl } from '../../core/providers/validate-api-base.js';
 import { providerError } from './errors.js';
 
 interface ProviderShell {
@@ -60,19 +61,13 @@ export async function fetchJsonWithTimeout(url: string, timeoutMs: number): Prom
 }
 
 export function validateProviderBaseURL(baseURL: string): string {
-  let parsed: URL;
   try {
-    parsed = new URL(baseURL);
-  } catch {
-    throw providerError.invalidApiBase(baseURL, 'must be an absolute URL');
+    return validateApiBaseUrl(baseURL);
+  } catch (err) {
+    const reason =
+      err instanceof Error ? err.message.replace(/^Invalid apiBase [^:]+: /, '') : String(err);
+    throw providerError.invalidApiBase(baseURL, reason);
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw providerError.invalidApiBase(baseURL, 'must use http or https');
-  }
-  if (parsed.username || parsed.password) {
-    throw providerError.invalidApiBase(baseURL, 'must not include credentials');
-  }
-  return baseURL;
 }
 
 export function createClientFromProvider(provider: ProviderDef): OpenAI {

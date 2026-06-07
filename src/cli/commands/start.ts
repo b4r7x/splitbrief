@@ -8,7 +8,7 @@ import { setupWorkflow, resolveProjectDir, ensureGitAndConfig } from '../setup.j
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
-import { beginSession, generateSessionId } from '../../core/sessions/lifecycle.js';
+import { beginSession } from '../../core/sessions/lifecycle.js';
 import { sessionError } from '../../core/sessions/errors.js';
 import { maybeMigrateAndReport } from './migrate.js';
 import { runHeadless } from '../headless.js';
@@ -21,9 +21,10 @@ import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
-import { configPath } from '../../core/config/load/io.js';
+import { configPath, loadConfig } from '../../core/config/load/io.js';
+import { ensureHooksTrusted } from '../hook-trust-prompt.js';
+import { resolveHooksConfig } from '../../engine/hooks/discover.js';
 import { READINESS_FILE, sessionDir } from '../../core/paths.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { collectReadiness } from '../../core/readiness/collect.js';
@@ -133,6 +134,7 @@ interface DispatchArgs {
   enrichedFeature: string | undefined;
   plannerContext: string | undefined;
   opts: WorkflowOpts;
+  attachments?: Array<{ id: string; path: string; mimeType: string }>;
 }
 
 type RequiredFeatureDispatchArgs = DispatchArgs & { feature: string };
@@ -140,13 +142,20 @@ type RequiredFeatureDispatchArgs = DispatchArgs & { feature: string };
 async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
+  const { config } = loadConfig(projectDir);
+  const mergedHooks = await resolveHooksConfig(projectDir, config.hooks);
+  await ensureHooksTrusted({
+    projectDir,
+    hooks: mergedHooks,
+    allowHooks: opts.allowHooks ?? false,
+  });
   const readiness = await collectReadiness({ projectDir, opts });
   assertReadinessCanStart(readiness.report, opts.json);
 
   const mode = opts.mode ?? 'standard';
-  const sessId = generateSessionId(projectDir, feature);
+  clearStaleSessionForCli(projectDir);
+  const sessId = beginSession(projectDir, feature);
   const sessDir = sessionDir(projectDir, sessId);
-  ensureSessionDir(projectDir, sessId);
   persistStartReadiness({ projectDir, sessionId: sessId }, readiness.report);
 
   const overrides = { ...buildCLIOverrides(opts), mode };
@@ -161,6 +170,10 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
     overrides,
     ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
     ...(plannerContext !== undefined && { plannerContext }),
+    ...(args.attachments !== undefined &&
+      args.attachments.length > 0 && {
+        attachments: args.attachments,
+      }),
   });
 
   if (!result.ok) {
@@ -203,7 +216,10 @@ async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<void> {
     opts,
     assertJson: true,
     emitReadiness: (report) => {
-      createResponseWriter(process.stdout).status({ type: 'readiness_report', report });
+      createResponseWriter({ stream: process.stdout, onClose: () => {} }).status({
+        type: 'readiness_report',
+        report,
+      });
     },
   });
   await deps.runRpc({
@@ -259,7 +275,11 @@ async function runInteractiveStart(args: DispatchArgs): Promise<void> {
     });
   }
 
-  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+  await deps.renderApp(createElement(App), {
+    fullscreen: useFullscreen,
+    mouse: useMouse,
+    projectDir,
+  });
 }
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void {
@@ -288,11 +308,15 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
 
     let enrichedFeature = feature;
     let plannerContext: string | undefined;
+    const parsedAttachments: Array<{ id: string; path: string; mimeType: string }> = [];
     if (feature && files.length > 0) {
       const parsed = parseAtFiles(feature, files, projectDir);
       enrichedFeature = parsed.feature;
       if (parsed.textContext) plannerContext = parsed.textContext;
-      for (const att of parsed.attachments) attachmentsStore.add(att);
+      for (const att of parsed.attachments) {
+        attachmentsStore.add(att);
+        parsedAttachments.push({ id: att.id, path: att.path, mimeType: att.mimeType });
+      }
       for (const err of parsed.errors) {
         console.error(`Warning: @${err.path}: ${err.reason}`);
       }
@@ -301,7 +325,15 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     await maybeMigrateAndReport(projectDir, opts);
 
     if ((opts.detach || opts.json || opts.rpc) && feature) {
-      const dispatch = { deps, projectDir, feature, enrichedFeature, plannerContext, opts };
+      const dispatch = {
+        deps,
+        projectDir,
+        feature,
+        enrichedFeature,
+        plannerContext,
+        opts,
+        ...(parsedAttachments.length > 0 && { attachments: parsedAttachments }),
+      };
       if (opts.detach) {
         await runDetachedStart(dispatch);
         return;

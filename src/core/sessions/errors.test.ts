@@ -19,17 +19,9 @@ describe('sessionError factories', () => {
   });
 });
 
-describe('sessionError predicates', () => {
-  test('isInvalidData matches factory output', () => {
-    expect(sessionError.isInvalidData(sessionError.invalidData('id', 'why'))).toBe(true);
-    expect(sessionError.isInvalidData(sessionError.idCollision('base', 10))).toBe(false);
-    expect(sessionError.isInvalidData(new Error('plain'))).toBe(false);
-    expect(sessionError.isInvalidData(null)).toBe(false);
-  });
-
-  test('isIdCollision matches factory output', () => {
-    expect(sessionError.isIdCollision(sessionError.idCollision('base', 10))).toBe(true);
-    expect(sessionError.isIdCollision(sessionError.invalidData('id', 'r'))).toBe(false);
-    expect(sessionError.isIdCollision(undefined)).toBe(false);
+describe('sessionError.isStillActive', () => {
+  test('matches stillActive factory output', () => {
+    expect(sessionError.isStillActive(sessionError.stillActive('sess-1'))).toBe(true);
+    expect(sessionError.isStillActive(sessionError.invalidData('id', 'why'))).toBe(false);
   });
 });

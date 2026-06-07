@@ -1,10 +1,11 @@
 import { createStore, storeBase } from '../create-store.js';
 import { loadConfig, writeConfig, configPath } from '../../core/config/load/io.js';
+import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
+import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import {
-  applyCLIOverrides,
-  applyRunnerOverrides,
-  type CLIOverrides,
-} from '../../core/config/runtime/overrides.js';
+  resolveImplementerProfiles,
+  updateDefaultImplementerConfig,
+} from '../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../core/schemas/config.js';
 import { defaultApprovalConfig } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
@@ -41,7 +42,12 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
   const { config: loaded, warnings } = loadConfig(projectDir);
   for (const w of warnings) warnStderr(`⚠ ${w}`);
   const base = cloneConfig(loaded);
-  const config = applyCLIOverrides(base, overrides);
+  const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
+    base,
+    overrides,
+    baseWarnings: warnings,
+  });
+  for (const w of effectiveWarnings) warnStderr(`⚠ ${w}`);
   store.set({
     config,
     diskConfig: cloneConfig(loaded),
@@ -78,10 +84,14 @@ function useConfig(): Config {
 function setContextLength(contextLength: number) {
   store.set((s) => {
     if (!s.config) return s;
-    if (s.config.implementer.contextLength === contextLength) return s;
+    const current = resolveImplementerProfiles(s.config).defaultProfile.config.contextLength;
+    if (current === contextLength) return s;
     return {
       ...s,
-      config: applyRunnerOverrides('implementer', { contextLength }, s.config),
+      config: updateDefaultImplementerConfig(s.config, (existing) => ({
+        ...existing,
+        contextLength,
+      })),
     };
   });
 }

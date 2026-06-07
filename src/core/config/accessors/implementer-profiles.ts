@@ -1,6 +1,7 @@
 import { configError } from '../errors.js';
 import {
   ImplementerConfigSchema,
+  ImplementerProfileConfigSchema,
   defaultImplementerWriteMode,
 } from '../../schemas/implementer-config.js';
 import type { Config } from '../../schemas/config.js';
@@ -90,4 +91,47 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
   }
 
   return { defaultProfile, profiles };
+}
+
+export function mergeImplementerProfileMetadata(
+  existing: ImplementerProfileConfig,
+  updated: ImplementerConfig,
+): ImplementerProfileConfig {
+  return ImplementerProfileConfigSchema.parse({
+    ...updated,
+    ...(existing.label !== undefined && { label: existing.label }),
+    ...(existing.costTier !== undefined && { costTier: existing.costTier }),
+    ...(existing.capabilities !== undefined &&
+      existing.kind === updated.kind && { capabilities: existing.capabilities }),
+  });
+}
+
+export function updateDefaultImplementerConfig(
+  config: Config,
+  updater: (existing: ImplementerConfig) => ImplementerConfig,
+): Config {
+  const profiles = config.implementerProfiles;
+  if (!profiles) {
+    return { ...config, implementer: updater(config.implementer) };
+  }
+
+  const defaultName = pickDefaultProfileName(profiles);
+  const defaultProfile = defaultName === undefined ? undefined : profiles.profiles[defaultName];
+  if (defaultName === undefined || defaultProfile === undefined) {
+    return { ...config, implementer: updater(config.implementer) };
+  }
+
+  const existing = stripProfileMetadata(defaultProfile);
+  const updated = updater(existing);
+  return {
+    ...config,
+    implementer: updated,
+    implementerProfiles: {
+      ...profiles,
+      profiles: {
+        ...profiles.profiles,
+        [defaultName]: mergeImplementerProfileMetadata(defaultProfile, updated),
+      },
+    },
+  };
 }

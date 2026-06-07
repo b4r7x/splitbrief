@@ -7,7 +7,7 @@ import {
   buildProjectLanguageContext,
   type LanguageContext,
 } from '../spec/prompts/language-context.js';
-import { parseTasks } from '../spec/parser.js';
+import { parseTasksStrict } from '../spec/parser.js';
 import { buildProjectContextMarkdown } from './context.js';
 import type { InvokeResult } from '../runners/types.js';
 
@@ -112,7 +112,7 @@ export async function runSinglePhasePlanning(
   const tasksContent = config.readPhaseOutput
     ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
     : result.text;
-  const tasks = parseTasks(tasksContent);
+  const tasks = parseTasksStrict(tasksContent);
   const rawOutput = tasksContent !== result.text ? result.text : undefined;
   return {
     spec: '',

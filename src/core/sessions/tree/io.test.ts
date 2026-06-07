@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -26,6 +35,8 @@ describe('treeMetaPath', () => {
     expect(treeMetaPath('/tmp/session')).toBe(join('/tmp/session', 'tree-meta.json'));
   });
 });
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 describe('appendTreeEntry', () => {
   it('creates the file and writes an entry', async () => {
@@ -76,6 +87,30 @@ describe('appendTreeEntry', () => {
 
       const lines = readFileSync(treeJsonlPath(dir), 'utf-8').trim().split('\n');
       expect(lines).toHaveLength(2);
+    });
+  });
+
+  itUnix('refuses to append through a symlinked tree jsonl file', async () => {
+    await withTempDir('tree-io-symlink', async (dir) => {
+      const outside = mkdtempSync(join(tmpdir(), 'tree-outside-'));
+      try {
+        const outsideFile = join(outside, 'session-tree.jsonl');
+        writeFileSync(outsideFile, '');
+        symlinkSync(outsideFile, treeJsonlPath(dir));
+
+        const entry = {
+          id: entryId('E0001'),
+          parentId: null,
+          type: 'session-start',
+          timestamp: 1000,
+          payload: null,
+        };
+
+        expect(() => appendTreeEntry(dir, entry)).toThrow(/refusing to write through symlink/);
+        expect(readFileSync(outsideFile, 'utf-8')).toBe('');
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
     });
   });
 });

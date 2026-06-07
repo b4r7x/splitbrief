@@ -1,7 +1,9 @@
-import { readFile, unlink } from 'node:fs/promises';
-import { relative } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { confinedUnlinkSync } from '../../lib/confined-fs.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 import type {
   DetectedModel,
   PlannerDetection,
@@ -133,9 +135,11 @@ export async function saveDetectionCache(
   }
 }
 
+const CACHE_RELATIVE_PATH = join(DIPTYCH_DIR, CACHE_FILENAME);
+
 export async function invalidateCache(projectDir: string): Promise<void> {
   try {
-    await unlink(cachePath(projectDir));
+    confinedUnlinkSync(projectDir, CACHE_RELATIVE_PATH);
   } catch {
     // File doesn't exist or can't be deleted — non-critical
   }

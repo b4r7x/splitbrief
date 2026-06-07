@@ -39,15 +39,8 @@ export function phaseCostRole(phase: Phase): PhaseRole | null {
 }
 
 const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  'reviewing-spec',
-  'clarifying',
-  'constitution-check',
-  'reviewing-plan',
-  'reviewing-briefs',
-  'analyzing',
+  'planning',
   'implementing',
-  'validating-task',
-  'escalating',
   'final-review',
 ]);
 

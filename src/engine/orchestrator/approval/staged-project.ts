@@ -28,6 +28,9 @@ const STAGED_COPY_EXCLUDE = new Set([
   TREES_DIR,
   '.git',
   '.env',
+  '.npmrc',
+  '.netrc',
+  '.git-credentials',
 ]);
 
 function isStagedCopyExcluded(name: string): boolean {

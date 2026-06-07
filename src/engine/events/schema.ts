@@ -20,6 +20,7 @@ import { TaskIdSchema } from '../../core/schemas/task.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from './types.js';
+import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 
 const stringArray = z.array(z.string());
 const taskIdArray = z.array(TaskIdSchema);
@@ -125,7 +126,7 @@ export const taskReviewRequestFields = {
     })
     .passthrough()
     .optional(),
-  availableCommands: z.array(z.enum(['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'])),
+  availableCommands: z.array(z.enum(TASK_REVIEW_COMMANDS)),
 } as const;
 
 export const EngineEventSchema = z.discriminatedUnion('type', [
@@ -289,8 +290,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     .extend({
       taskId: TaskIdSchema,
       title: z.string(),
-      index: z.number(),
-      total: z.number(),
+      index: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
       file: z.string(),
       action: FileActionSchema,
       tool: z.string().optional(),
@@ -311,8 +312,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
       taskId: TaskIdSchema,
       title: z.string(),
       method: TaskCompletionMethodSchema,
-      retries: z.number(),
-      duration: z.number(),
+      retries: z.number().int().nonnegative(),
+      duration: z.number().int().nonnegative(),
       tool: z.string().optional(),
       model: z.string().optional(),
       implementerProfile: z.string().optional(),
@@ -328,8 +329,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('task_retry')
     .extend({
       taskId: TaskIdSchema,
-      attempt: z.number(),
-      maxRetries: z.number(),
+      attempt: z.number().int().nonnegative(),
+      maxRetries: z.number().int().nonnegative(),
       error: z.string(),
     })
     .passthrough(),
@@ -340,9 +341,9 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     .extend({
       taskId: TaskIdSchema,
       method: TaskCompletionMethodSchema,
-      implementerTokens: z.number(),
-      escalationTokens: z.number(),
-      retryCount: z.number(),
+      implementerTokens: z.number().int().nonnegative(),
+      escalationTokens: z.number().int().nonnegative(),
+      retryCount: z.number().int().nonnegative(),
       tool: z.string().optional(),
       model: z.string().optional(),
       implementerProfile: z.string().optional(),
@@ -434,8 +435,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     .passthrough(),
   phaseEvent('message_queued').extend({ id: z.string() }).passthrough(),
   phaseEvent('message_injected_native').extend({ id: z.string() }).passthrough(),
-  phaseEvent('queue_drained').extend({ count: z.number() }).passthrough(),
-  phaseEvent('queue_cleared').extend({ count: z.number() }).passthrough(),
+  phaseEvent('queue_drained').extend({ count: z.number().int().nonnegative() }).passthrough(),
+  phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }).passthrough(),
   phaseEvent('user_message').extend({ text: z.string() }).passthrough(),
   phaseEvent('planner_attachments_dropped')
     .extend({

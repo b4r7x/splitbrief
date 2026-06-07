@@ -88,7 +88,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       return {
         spec: '',
         plan: '',
-        tasks: [makePassingTask('T-QUICK')],
+        tasks: [makePassingTask('T099')],
         usage: { inputTokens: 50, outputTokens: 25 },
       };
     };

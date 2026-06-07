@@ -15,7 +15,7 @@ export function modelSupportsEffort(provider: ProviderId, model: string | undefi
   if (provider === 'anthropic') return /claude-(opus|sonnet)-[4-9]/i.test(key);
   if (provider === 'openai' || provider === 'openrouter')
     return /^(o[1345]|gpt-[5-9])/i.test(key) || /(?:^|-)r1(?:-|$)|reasoner/i.test(key);
-  if (provider === 'deepseek') return /r1|reasoner/i.test(key);
+  if (provider === 'deepseek') return /(?:^|-)r1(?:-|$)|reasoner|deepseek-v4/i.test(key);
   return false;
 }
 
@@ -26,4 +26,14 @@ export function modelSupportsImages(provider: ProviderId, model: string | undefi
   if (provider === 'openai') return OPENAI_IMAGE_MODEL_RE.test(key);
   if (provider === 'openrouter') return true;
   return false;
+}
+
+export function usesOpenAiMaxCompletionTokens(
+  provider: string,
+  model: string,
+  apiBase?: string | undefined,
+): boolean {
+  if (provider !== 'openai') return false;
+  if (apiBase !== undefined && !apiBase.includes('api.openai.com')) return false;
+  return /^o[0-9]/i.test(modelKey(model));
 }

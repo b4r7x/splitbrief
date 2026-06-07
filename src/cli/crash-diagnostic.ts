@@ -1,6 +1,8 @@
 import type { ServerStatus } from '../engine/ipc/lockfile.js';
 import { buildCrashDiagnostic, type CrashDiagnostic } from '../engine/ipc/crash-diagnostic.js';
 
+export type { CrashDiagnostic };
+
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return 'unknown';
   const d = new Date(ms);
@@ -69,14 +71,21 @@ export async function waitForCrashDiagnosticOption(): Promise<string> {
   });
 }
 
+export async function printCrashDiagnostic(
+  sessionDir: string,
+  status: ServerStatus,
+): Promise<CrashDiagnostic> {
+  const diag = await buildCrashDiagnostic(sessionDir, status);
+  process.stdout.write(formatCrashDiagnostic(diag) + '\n');
+  return diag;
+}
+
 export async function showCrashDiagnostic(
   sessionDir: string,
   status: ServerStatus,
   waitForKey: () => Promise<string> = waitForCrashDiagnosticOption,
 ): Promise<void> {
-  const diag = await buildCrashDiagnostic(sessionDir, status);
-  const formatted = formatCrashDiagnostic(diag);
-  process.stdout.write(formatted + '\n');
+  await printCrashDiagnostic(sessionDir, status);
 
   const key = await waitForKey();
   if (key === '1') {

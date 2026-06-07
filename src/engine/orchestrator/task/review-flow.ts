@@ -6,7 +6,44 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import { publishTaskReviewNeeded } from '../events.js';
 import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
 import type { TaskReviewRequest } from '../../events/workflow-events.js';
+import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { enqueueUserMessage } from '../queue.js';
+import { transitionAndSave } from '../state-ops.js';
+
+export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task';
+
+function applyTaskReviewRewind(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  request: TaskReviewRequest,
+  response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined },
+): WorkflowState {
+  if (response.action === 'redo-task') {
+    const { action } = buildRewindAction(
+      { target: 'task', taskId: request.taskId },
+      { projectDir, sessionId },
+      state,
+    );
+    let next = transitionAndSave({ projectDir, sessionId }, state, action);
+    if (next.pendingRecovery?.taskId === request.taskId) {
+      next = transitionAndSave({ projectDir, sessionId }, next, {
+        type: 'RESOLVE_PENDING_RECOVERY',
+      });
+    }
+    return next;
+  }
+
+  const { action } = buildRewindAction(
+    {
+      target: 'plan',
+      ...(response.notes ? { comment: response.notes } : {}),
+    },
+    { projectDir, sessionId },
+    state,
+  );
+  return transitionAndSave({ projectDir, sessionId }, state, action);
+}
 
 export async function reviewTaskIfNeeded(opts: {
   wctx: WorkflowContext;
@@ -18,7 +55,7 @@ export async function reviewTaskIfNeeded(opts: {
   taskBreakdowns: TaskTokenUsage[];
   routingDecision?: RoutingDecision | undefined;
   implementerProfile?: string | undefined;
-}): Promise<{ state: WorkflowState; decision: 'continue' | 'stop' }> {
+}): Promise<{ state: WorkflowState; decision: ReviewTaskDecision }> {
   if ((opts.wctx.config.workflow.taskReview ?? 'none') === 'none') {
     return { state: opts.state, decision: 'continue' };
   }
@@ -46,6 +83,34 @@ export async function reviewTaskIfNeeded(opts: {
   const response = opts.wctx.callbacks.onTaskReviewNeeded
     ? await opts.wctx.callbacks.onTaskReviewNeeded(request)
     : { action: 'abort' as const };
+  if (response.action === 'redo-task') {
+    const next = applyTaskReviewRewind(
+      opts.wctx.projectDir,
+      opts.wctx.sessionId,
+      opts.state,
+      request,
+      {
+        action: 'redo-task',
+        ...(response.notes !== undefined ? { notes: response.notes } : {}),
+      },
+    );
+    opts.setTrackedState(next);
+    return { state: next, decision: 'redo-task' };
+  }
+  if (response.action === 'revise-plan') {
+    const next = applyTaskReviewRewind(
+      opts.wctx.projectDir,
+      opts.wctx.sessionId,
+      opts.state,
+      request,
+      {
+        action: 'revise-plan',
+        ...(response.notes !== undefined ? { notes: response.notes } : {}),
+      },
+    );
+    opts.setTrackedState(next);
+    return { state: next, decision: 'stop' };
+  }
   if (response.action !== 'continue') return { state: opts.state, decision: 'stop' };
 
   const notes = response.notes?.trim();

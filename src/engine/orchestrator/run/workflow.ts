@@ -23,6 +23,7 @@ import {
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { runPlanningPhases, runTasksAndReview, applyPostPlanDrain } from './phases.js';
+import { isTerminalPhase } from '../../../core/phases.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
 
@@ -30,7 +31,11 @@ function shouldPreserveActiveSession(
   state: WorkflowState | undefined,
   signal: AbortSignal | undefined,
 ): boolean {
-  return state?.pendingRecovery !== undefined || signal?.reason === WORKFLOW_REWIND_ABORT_REASON;
+  return (
+    state?.pendingRecovery !== undefined ||
+    signal?.reason === WORKFLOW_REWIND_ABORT_REASON ||
+    (state !== undefined && !isTerminalPhase(state.phase))
+  );
 }
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
@@ -48,6 +53,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir,
     sessionId,
+    ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
   };
 
   const metadata: SpecMetadata = {

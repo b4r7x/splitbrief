@@ -4,4 +4,5 @@ export interface SkillMeta {
   description: string;
   path: string;
   scope: 'global' | 'project';
+  projectRoot?: string | undefined;
 }

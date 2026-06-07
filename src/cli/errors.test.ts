@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { CliError, cliError, isCliError, rethrowAsCli } from './errors.js';
+import { cliError, isCliError, rethrowAsCli } from './errors.js';
 
 describe('CliError', () => {
-  it('is a real Error subclass with a default exit code of 1', () => {
+  it('is a decorated Error with a default exit code of 1', () => {
     const err = cliError('boom');
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(CliError);
     expect(err.message).toBe('boom');
+    expect(err.kind).toBe('cli-error');
+    expect(err.data).toEqual({ exitCode: 1 });
     expect(err.exitCode).toBe(1);
     expect(err.name).toBe('CliError');
   });
@@ -15,7 +16,7 @@ describe('CliError', () => {
     expect(cliError('nope', 2).exitCode).toBe(2);
   });
 
-  it('isCliError narrows via instanceof', () => {
+  it('isCliError narrows via the CLI error kind', () => {
     expect(isCliError(cliError('x'))).toBe(true);
     expect(isCliError(new Error('plain'))).toBe(false);
     expect(isCliError({ message: 'x', exitCode: 1 })).toBe(false);

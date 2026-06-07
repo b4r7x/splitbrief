@@ -2,6 +2,7 @@ import type { CostPrediction, PlannerEstimateReview } from '../../core/schemas/s
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import { TaskIdSchema, formatTaskId } from '../../core/schemas/task.js';
 import { topoSort } from '../../core/state/topo-sort.js';
+import { uniqueInOrder } from '../../utils/collections.js';
 import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 
 type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
@@ -56,7 +57,7 @@ const MAX_DUPLICATE_FILE_OWNERSHIP = 2;
 const TASK_ID_NUMBER_PATTERN = /^T(\d+)$/;
 
 function unique<T>(values: T[]): T[] {
-  return Array.from(new Set(values));
+  return uniqueInOrder(values);
 }
 
 function nextTaskId(index: number): TaskId {

@@ -65,4 +65,5 @@ export type BriefsApprovalLoopResult = {
   state: WorkflowState;
   tasks: Task[];
   rejected: boolean;
+  aborted?: boolean | undefined;
 };

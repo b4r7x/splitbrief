@@ -155,7 +155,7 @@ describe('publish* payload forwarding', () => {
     const { bus, events } = makeBusRecorder();
     publishGitCommit(
       { bus: bus, phase: 'implementing' },
-      'T1' as import('../../core/schemas/task.js').TaskId,
+      'T001' as import('../../core/schemas/task.js').TaskId,
       'chore: commit',
       'src/a.ts',
     );
@@ -171,7 +171,7 @@ describe('publish* payload forwarding', () => {
     const { bus, events } = makeBusRecorder();
     publishGitCommit(
       { bus: bus, phase: 'implementing' },
-      'T1' as import('../../core/schemas/task.js').TaskId,
+      'T001' as import('../../core/schemas/task.js').TaskId,
       'chore: commit',
     );
     expect(events).toHaveLength(1);

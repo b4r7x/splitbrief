@@ -14,7 +14,7 @@ const preTaskEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: taskId('T1'),
+  taskId: taskId('T001'),
   title: 'my task',
   index: 0,
   total: 1,
@@ -115,6 +115,6 @@ describe('resolveHooksConfig', () => {
       sessionId: 's',
     });
 
-    expect(result).toEqual({ allow: false, reason: 'auto blocked' });
+    expect(result).toEqual({ allow: false, reason: 'auto blocked', warnings: [] });
   });
 });

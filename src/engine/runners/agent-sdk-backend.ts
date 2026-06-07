@@ -9,7 +9,8 @@ import { createSessionResumeState, runWithResumeFallback } from '../session-expi
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
 
-export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
+export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep'] as const;
+export const PLANNER_PERMISSION_MODE = 'plan' as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
 
 interface SdkBlock {
@@ -167,7 +168,7 @@ function createForwardedAbortController(signal: AbortSignal | undefined): {
 
 export interface AgentSdkBackendOpts {
   allowedTools: string[];
-  permissionMode?: 'acceptEdits' | undefined;
+  permissionMode?: 'acceptEdits' | 'plan' | undefined;
   detectChanges?: boolean | undefined;
   apiKey?: string | undefined;
   initialSessionId?: string | null | undefined;

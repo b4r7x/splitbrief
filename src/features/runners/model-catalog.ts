@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import {
@@ -252,6 +253,7 @@ export function isCurrentConfig(
   config: Config,
   role: 'planner' | 'implementer',
 ): boolean {
-  const runnerConfig = role === 'planner' ? config.planner : config.implementer;
+  const runnerConfig =
+    role === 'planner' ? config.planner : resolveImplementerProfiles(config).defaultProfile.config;
   return item.id === getRunnerDisplayName(runnerConfig);
 }

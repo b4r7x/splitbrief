@@ -1,9 +1,32 @@
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RpcResponse } from './types.js';
 
-export function createResponseWriter(stream: NodeJS.WritableStream) {
+export function createResponseWriter(deps: {
+  stream: NodeJS.WritableStream;
+  onClose: (reason: string) => void;
+}) {
+  let broken = false;
+
+  deps.stream.on('error', (err) => {
+    if (broken) return;
+    broken = true;
+    deps.onClose(`output stream error: ${String(err)}`);
+  });
+
+  deps.stream.on('close', () => {
+    if (broken) return;
+    broken = true;
+    deps.onClose('output stream closed');
+  });
+
   function write(response: RpcResponse): void {
-    stream.write(`${JSON.stringify(response)}\n`);
+    if (broken) return;
+    try {
+      deps.stream.write(`${JSON.stringify(response)}\n`);
+    } catch {
+      broken = true;
+      deps.onClose('output stream write failed');
+    }
   }
 
   return {

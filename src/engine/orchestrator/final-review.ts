@@ -1,5 +1,5 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { OrchestratorCallbacks } from './types.js';
+import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
@@ -27,6 +27,8 @@ import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
+import { drainQueue, formatDrainedMessages } from './queue.js';
+import { withContinuationLoop } from './continuation.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };
 
@@ -41,6 +43,7 @@ export async function runFinalReviewPhase(
     planner: Planner;
     metadata?: SpecMetadata | null;
     signal?: AbortSignal | undefined;
+    sinks?: WorkflowSinks | undefined;
   },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
@@ -131,23 +134,63 @@ export async function runFinalReviewPhase(
       warnError('Failed to compute drift report', err);
     }
 
-    const review = await runPlannerReview({
-      planner,
-      prompt: buildFinalReviewPrompt({
-        spec,
-        taskBriefs,
-        diff,
-        driftReport: driftPromptSection,
-      }),
-      projectDir,
-      sessionId,
-      bus,
-      state,
-      metadata,
-      writeTo: REVIEW_FILE,
-      signal: opts.signal,
+    const drain = drainQueue(projectDir, sessionId, state, bus);
+    state = drain.state;
+    const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
+
+    const basePrompt = buildFinalReviewPrompt({
+      spec,
+      taskBriefs,
+      diff,
+      driftReport: driftPromptSection,
     });
-    state = review.state;
+    const fullPrompt = queueText ? queueText + basePrompt : basePrompt;
+
+    if (opts.sinks) {
+      const loop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
+        ctx: {
+          projectDir,
+          sessionId,
+          callbacks,
+          signal: opts.signal,
+          sinks: opts.sinks,
+        },
+        state,
+        onStateChange: (s) => {
+          state = s;
+        },
+        body: async ({ signal: callSignal, continuationPrompt }) => {
+          const prompt = continuationPrompt ?? fullPrompt;
+          const result = await runPlannerReview({
+            planner,
+            prompt,
+            projectDir,
+            sessionId,
+            bus,
+            state,
+            metadata,
+            writeTo: REVIEW_FILE,
+            signal: callSignal,
+          });
+          state = result.state;
+          return { value: result };
+        },
+      });
+      state = loop.state;
+    } else {
+      const review = await runPlannerReview({
+        planner,
+        prompt: fullPrompt,
+        projectDir,
+        sessionId,
+        bus,
+        state,
+        metadata,
+        writeTo: REVIEW_FILE,
+        signal: opts.signal,
+      });
+      state = review.state;
+    }
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interruptedSummary();
     publishError({ bus: bus, phase: state.phase }, labelError('Final review failed', err));

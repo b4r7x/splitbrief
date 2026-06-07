@@ -127,7 +127,7 @@ describe('runRetryStep', () => {
 
   it('passes the staged sandbox env to retry invocation', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T00S', file: 'src/sandbox.ts' });
+    const task = makeTask({ id: 'T010', file: 'src/sandbox.ts' });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -173,7 +173,7 @@ describe('runRetryStep', () => {
 
   it('does not commit retry results when the signal aborts during validation', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T00A', file: 'src/abort.ts' });
+    const task = makeTask({ id: 'T011', file: 'src/abort.ts' });
     const state = makeImplState([task]);
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();

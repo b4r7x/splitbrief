@@ -1,16 +1,8 @@
 import type { RecoveryAction } from '../../../../core/schemas/enums.js';
+import { PROMPTABLE_RECOVERY_ACTIONS } from '../../../../core/schemas/enums.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 
-export { userEditActionToRecoveryAction as mapUserEditAction } from '../../../../core/recovery/user-edit-actions.js';
-
-const ACTION_ORDER: RecoveryAction[] = [
-  'retry-same-worker',
-  'route-bigger-worker',
-  'continue',
-  'skip-current-task',
-  'pause-run',
-  'abort-workflow',
-];
+const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
 export function orderedActions(actions: Array<RecoveryAction | undefined>): RecoveryAction[] {
   const requested = new Set(actions.filter((action) => action !== undefined));

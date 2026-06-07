@@ -55,7 +55,7 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       return;
     }
 
-    registerProcess(proc);
+    registerProcess(proc, { group: opts.detached ?? false });
     opts.onSpawned?.(proc);
 
     if (opts.signal) {

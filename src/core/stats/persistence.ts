@@ -41,11 +41,14 @@ function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
     updatedAt: new Date().toISOString(),
     totalSessions: stats.totalSessions + 1,
     totalCost: stats.totalCost + input.costBreakdown.totalActualCost,
-    totalSavings: stats.totalSavings + input.costBreakdown.savingsAmount,
+    totalSavings:
+      stats.totalSavings +
+      (input.costBreakdown.hasSavingsEstimate === false ? 0 : input.costBreakdown.savingsAmount),
     totalHypotheticalCost:
       stats.totalHypotheticalCost +
-      input.costBreakdown.hypotheticalCost +
-      input.costBreakdown.actualPlannerCost,
+      (input.costBreakdown.hasSavingsEstimate === false
+        ? 0
+        : input.costBreakdown.hypotheticalCost + input.costBreakdown.actualPlannerCost),
     averageSavingsPercentage: 0,
     totalTasks: stats.totalTasks + input.totalTasks,
     totalLocalTasks: stats.totalLocalTasks + input.completedByLocal,

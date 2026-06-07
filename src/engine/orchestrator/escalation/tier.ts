@@ -10,6 +10,7 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import {
   createBusTextHandler,
   createImplementerPublisher,
+  publishError,
   publishEscalate,
   publishPlannerStatus,
   publishWarning,
@@ -20,7 +21,7 @@ import { truncateByChars } from '../../../utils/truncate.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
-import { persistRetryApprovalEvidence } from './retry-evidence.js';
+import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { runRetryStep } from './step.js';
 import {
   MAX_HINT_ERROR_LENGTH,
@@ -29,6 +30,7 @@ import {
   type RetryResult,
   type RetryStepOutcome,
 } from './types.js';
+import type { GateAndPromoteOutcome } from '../approval/gate-and-promote.js';
 
 type TierConfig =
   | { tier: 0; kind: 'intermediate' }
@@ -245,6 +247,14 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
       handleApprovalTimeUserEditConflict({ ctx, state: s, task: initialTask, files }),
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, initialTask, decision),
   });
+  const gateBlocked = handleHintTierGateOutcome({
+    ctx,
+    task: initialTask,
+    lastError,
+    attempts,
+    gateResult,
+  });
+  if (gateBlocked) return gateBlocked;
   state = gateResult.state;
 
   if (tier1Result.output) {
@@ -295,6 +305,52 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
         fileIgnoreProjectDir,
       }),
   });
+}
+
+function handleHintTierGateOutcome(input: {
+  ctx: EscalationContext;
+  task: Task;
+  lastError: string;
+  attempts: number;
+  gateResult: GateAndPromoteOutcome;
+}): RetryStepOutcome | null {
+  const { ctx, task, lastError, attempts, gateResult } = input;
+  if (gateResult.outcome === 'allow') return null;
+  if (gateResult.outcome === 'error') throw gateResult.error;
+  if (gateResult.outcome === 'aborted') {
+    return {
+      state: gateResult.state,
+      task,
+      lastError,
+      attempts,
+      result: failedRetry(attempts),
+    };
+  }
+  if (gateResult.outcome === 'gate-denied') {
+    const files = gateResult.decision.changedFiles.join(', ');
+    const reason = gateResult.decision.reason ?? 'denied';
+    publishError(
+      { bus: ctx.bus, phase: gateResult.state.phase },
+      `Hint-tier changed files blocked by approval gate: ${reason} (${files})`,
+    );
+    persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
+    return {
+      state: gateResult.state,
+      task,
+      lastError: reason,
+      attempts,
+      result: failedRetry(attempts),
+    };
+  }
+  const reason = `Hint-tier promotion blocked because files changed during approval: ${gateResult.conflictedFiles.join(', ')}`;
+  publishError({ bus: ctx.bus, phase: gateResult.state.phase }, reason);
+  return {
+    state: gateResult.state,
+    task,
+    lastError: reason,
+    attempts,
+    result: failedRetry(attempts),
+  };
 }
 
 async function runFullTier(

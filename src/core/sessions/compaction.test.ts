@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compactTranscript, type TranscriptCompactionPlanner } from './compaction.js';
@@ -7,6 +14,7 @@ import { readCompactedMessages } from './log-reader.js';
 import type { StructuredSummary } from '../schemas/compaction.js';
 
 let sessionDir: string;
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   sessionDir = mkdtempSync(join(tmpdir(), 'diptych-compact-'));
@@ -262,6 +270,34 @@ describe('compactTranscript', () => {
       summarizedUpTo: '1002',
     });
     expect(readLogEntries().at(-1)).not.toHaveProperty('structured');
+  });
+
+  itUnix('refuses to append compaction summary through a symlinked session log', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'compact-outside-'));
+    try {
+      const outsideLog = join(outside, 'session.jsonl');
+      writeFileSync(outsideLog, '');
+      symlinkSync(outsideLog, logFile());
+      appendEntry({ ts: 1000, kind: 'message', role: 'user', text: 'hello' });
+
+      const planner: TranscriptCompactionPlanner = {
+        summarize: async () => 'summary text',
+      };
+
+      await expect(
+        compactTranscript({
+          sessionDir,
+          planner,
+          format: 'freeform',
+          keepRecentCount: 0,
+        }),
+      ).rejects.toThrow(/refusing to write through symlink/);
+      const lines = readFileSync(outsideLog, 'utf-8').trim().split('\n').filter(Boolean);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('"kind":"message"');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 

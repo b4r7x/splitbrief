@@ -2,6 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { DriftFinding, DriftReport } from '../../../core/schemas/drift.js';
+import { uniqueInOrder } from '../../../utils/collections.js';
 import { clamp01 } from '../../../utils/math.js';
 
 export type AnalyzeBriefDriftInput = {
@@ -18,9 +19,9 @@ function isFailedOrSkipped(status: Task['status']): boolean {
 
 export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const findings: DriftFinding[] = [];
-  const expectedFiles = Array.from(new Set(input.tasks.map((t) => t.file).filter(Boolean)));
+  const expectedFiles = uniqueInOrder(input.tasks.map((t) => t.file).filter(Boolean));
   const expectedSet = new Set(expectedFiles);
-  const changedFiles = Array.from(new Set(input.changedFiles));
+  const changedFiles = uniqueInOrder(input.changedFiles);
   const changedSet = new Set(changedFiles);
 
   // Collect explicit out-of-bounds patterns from any task scope

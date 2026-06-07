@@ -1,14 +1,13 @@
-import { createTestGitRepo } from './git.js';
 import {
   makeCallbacks,
   makeBusRecorder,
   makeImplementer,
   makePlanner,
 } from './orchestrator-factories.js';
-import { cleanupTempDir, createTempDir } from './temp-dir.js';
+import { setupGitSessionProject } from './git-session.js';
+import { cleanupTempDir } from './temp-dir.js';
 import { defaultContext, makeConfig } from './factories/config.js';
 import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from './orchestrator-context.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
 import type { WorkflowContext } from '../../src/engine/orchestrator/types.js';
 import { createValidator } from '../../src/engine/orchestrator/validation.js';
 
@@ -23,11 +22,12 @@ export function setupTaskProject(files: Record<string, string> = {}): {
   projectDir: string;
   sessionId: string;
 } {
-  const projectDir = createTempDir('task-step-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'task-step-test',
+    sessionId: 'sess-task-step',
+    files,
+  });
   taskProjectDirs.push(projectDir);
-  createTestGitRepo(projectDir, files);
-  const sessionId = 'sess-task-step';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 

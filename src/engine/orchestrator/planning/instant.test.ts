@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -73,7 +74,7 @@ function instantPlanResult(overrides?: Partial<PlanResult>): PlanResult {
     plan: '',
     tasks: [
       makeTask({
-        id: 'T-INSTANT',
+        id: 'T099',
         scope: { inBounds: ['src/foo.ts'], outOfBounds: ['other files'] },
         evidence: ['brief-quality.json recorded a passing gate'],
         typeDefs: 'type RenameTask = { file: string }',
@@ -89,7 +90,14 @@ function invalidPlanResult(overrides?: Partial<PlanResult>): PlanResult {
   return {
     spec: '',
     plan: '',
-    tasks: [makeTask({ id: 'T-BAD', tests: [], implementationSteps: [] })],
+    tasks: [
+      {
+        ...makeTask(),
+        id: 'T-BAD' as unknown as TaskId,
+        tests: [],
+        implementationSteps: [],
+      },
+    ],
     usage: { inputTokens: 30, outputTokens: 15 },
     phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
     ...overrides,
@@ -140,7 +148,7 @@ describe('runInstantPlanning', () => {
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T-INSTANT');
+    expect(result.tasks[0]?.id).toBe('T099');
   });
 
   it('publishes mode_resolved and instant_plan_received events', async () => {

@@ -1,6 +1,24 @@
+import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import type { RpcCommand } from './types.js';
 
-export type ApprovalGateResult = { approved: boolean; comment?: string | undefined };
+export type ApprovalGateResult = {
+  approved: boolean;
+  comment?: string | undefined;
+  confirmationPhrase?: string | undefined;
+  confirmationReason?: string | undefined;
+};
+
+export function validateConfirmApprovalFields(fields: {
+  confirmationPhrase?: string | undefined;
+  confirmationReason?: string | undefined;
+  comment?: string | undefined;
+}): { ok: true; reason: string } | { ok: false } {
+  const reason = fields.confirmationReason?.trim() || fields.comment?.trim();
+  if (fields.confirmationPhrase === CONFIRM_PHRASE && reason) {
+    return { ok: true, reason };
+  }
+  return { ok: false };
+}
 
 export function createGate<T>() {
   let resolveFn: ((value: T) => void) | null = null;
@@ -42,9 +60,16 @@ export function createApprovalGate() {
     handle(cmd: RpcCommand): boolean {
       if (!gate.isPending()) return false;
       if (cmd.type === 'approve') {
-        return gate.resolve({ approved: true });
+        return gate.resolve({
+          approved: true,
+          confirmationPhrase: cmd.confirmationPhrase,
+          confirmationReason: cmd.confirmationReason,
+        });
       }
       if (cmd.type === 'reject') {
+        return gate.resolve({ approved: false });
+      }
+      if (cmd.type === 'regenerate') {
         return gate.resolve({ approved: false, comment: cmd.comment });
       }
       return false;

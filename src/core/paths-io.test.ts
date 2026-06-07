@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, test } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileOrEmpty } from '../lib/fs.js';
 import {
@@ -126,6 +126,25 @@ describe('readSpecFile', () => {
     expect(() => readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, '../outside.md')).toThrow(
       'Invalid filename',
     );
+  });
+
+  itUnix('rejects reading session artifacts through final symlinks', () => {
+    const dir = makeTmp();
+    const outside = createTempDir('paths-io-spec-outside');
+    try {
+      ensureSessionDir(dir, SESSION_ID);
+      writeFileSync(join(outside, 'secret.md'), 'outside spec');
+      symlinkSync(
+        join(outside, 'secret.md'),
+        join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md'),
+      );
+
+      expect(() => readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toThrow(
+        /unsafe path/,
+      );
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 });
 

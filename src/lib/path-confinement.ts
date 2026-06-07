@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { resolve, isAbsolute, sep, win32, relative, dirname } from 'node:path';
-import { error } from '../utils/error.js';
+import { error, matches } from '../utils/error.js';
 
 export const pathConfinementError = {
   absolutePath: (relativePath: string) =>
@@ -11,6 +11,12 @@ export const pathConfinementError = {
     error('path-confined-escape', `unsafe path: path escapes root directory: ${relativePath}`, {
       relativePath,
     }),
+  symlinkRead: (filePath: string) =>
+    error('path-symlink-read', `refusing to read through symlink: ${filePath}`, { filePath }),
+  symlinkParent: (filePath: string) =>
+    error('path-symlink-parent', `refusing symlinked parent directory: ${filePath}`, { filePath }),
+  isSymlinkRead: matches('path-symlink-read'),
+  isSymlinkParent: matches('path-symlink-parent'),
 } as const;
 
 export function isPathConfined(relativePath: string, rootDir: string): boolean {
@@ -72,5 +78,8 @@ export function assertWritablePathConfined(relativePath: string, rootDir: string
   } catch {
     realTarget = nearestExistingAncestor(dirname(fullPath));
   }
-  assertRealPathInsideRoot(relativePath, rootDir, realTarget);
+  const realRoot = nearestExistingAncestor(rootDir);
+  if (!isInsideRoot(realRoot, realTarget)) {
+    throw pathConfinementError.escapesRoot(relativePath);
+  }
 }

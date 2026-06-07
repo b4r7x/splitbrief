@@ -42,19 +42,21 @@ async function runCommandHook(
     });
 
     if (result.timedOut) {
-      return failureOutcome(entry, `hook timed out after ${entry.timeout_ms}ms`);
+      return failureOutcome(entry, `hook timed out after ${entry.timeout_ms}ms`, result.stderr);
     }
 
-    return interpretHookOutput(entry, result.output, result.code);
+    return interpretHookOutput(entry, result.output, result.code, result.stderr);
   } catch (err) {
     if (isENOENT(err)) {
       return { kind: 'warn', message: `hook command not found: ${entry.command}` };
     }
-    // spawnWithTimeout throws on non-zero exit (D4). A hook may still print a
-    // valid decision before exiting non-zero, so honor it; otherwise the
-    // non-zero exit is a hook failure subject to its on_failure policy.
     if (processError.isExitCode(err)) {
-      return interpretHookOutput(entry, String(err.data.output ?? ''), err.data.code);
+      return interpretHookOutput(
+        entry,
+        String(err.data.output ?? ''),
+        err.data.code,
+        String(err.data.stderr ?? ''),
+      );
     }
     return { kind: 'crash', message: toErrorMessage(err) };
   }
@@ -64,16 +66,26 @@ function interpretHookOutput(
   entry: HookCommandEntry,
   output: string,
   code: number | null,
+  stderr?: string,
 ): HookOutcome {
   const parsed = tryParseResponse(output);
+  const stderrOpt = stderr?.trim() ? { stderr: stderr } : {};
   if (parsed?.decision === 'deny') {
-    return { kind: 'deny', ...(parsed.message !== undefined && { message: parsed.message }) };
+    return {
+      kind: 'deny',
+      ...(parsed.message !== undefined && { message: parsed.message }),
+      ...stderrOpt,
+    };
   }
   if (parsed?.decision === 'warn') {
-    return { kind: 'warn', ...(parsed.message !== undefined && { message: parsed.message }) };
+    return {
+      kind: 'warn',
+      ...(parsed.message !== undefined && { message: parsed.message }),
+      ...stderrOpt,
+    };
   }
-  if (code === 0) return { kind: 'allow' };
-  return failureOutcome(entry, `command exited with code ${code}`);
+  if (code === 0) return { kind: 'allow', ...stderrOpt };
+  return failureOutcome(entry, `command exited with code ${code}`, stderr);
 }
 
 async function runModuleHook(
@@ -133,8 +145,10 @@ function tryParseResponse(stdout: string): HookResponse | null {
 function failureOutcome(
   entry: { on_failure: 'block' | 'warn' | 'ignore' },
   message: string,
+  stderr?: string,
 ): HookOutcome {
-  if (entry.on_failure === 'block') return { kind: 'deny', message };
-  if (entry.on_failure === 'ignore') return { kind: 'allow' };
-  return { kind: 'warn', message };
+  const stderrOpt = stderr?.trim() ? { stderr } : {};
+  if (entry.on_failure === 'block') return { kind: 'deny', message, ...stderrOpt };
+  if (entry.on_failure === 'ignore') return { kind: 'allow', ...stderrOpt };
+  return { kind: 'warn', message, ...stderrOpt };
 }

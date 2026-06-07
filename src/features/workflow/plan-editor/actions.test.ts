@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { Task } from '../../../../core/schemas/task.js';
-import { taskId } from '../../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 import {
   renumberTasks,
   relinkAfterDelete,
@@ -67,7 +67,7 @@ Second task description.
 
 describe('renumberTasks', () => {
   it('assigns T001, T002, T003 in array order', () => {
-    const tasks = [makeTask({ id: 'A' }), makeTask({ id: 'B' }), makeTask({ id: 'C' })];
+    const tasks = [makeTask({ id: 'T901' }), makeTask({ id: 'T902' }), makeTask({ id: 'T903' })];
     const result = renumberTasks(tasks);
     expect(result[0]?.id).toBe('T001');
     expect(result[1]?.id).toBe('T002');
@@ -76,9 +76,9 @@ describe('renumberTasks', () => {
 
   it('remaps dependsOn references to new IDs', () => {
     const tasks = [
-      makeTask({ id: 'A' }),
-      makeTask({ id: 'B', dependsOn: ['A'] }),
-      makeTask({ id: 'C', dependsOn: ['A', 'B'] }),
+      makeTask({ id: 'T901' }),
+      makeTask({ id: 'T902', dependsOn: ['T901'] }),
+      makeTask({ id: 'T903', dependsOn: ['T901', 'T902'] }),
     ];
     const result = renumberTasks(tasks);
     expect(result[1]?.dependsOn).toEqual(['T001']);
@@ -86,7 +86,7 @@ describe('renumberTasks', () => {
   });
 
   it('handles single task → T001', () => {
-    const result = renumberTasks([makeTask({ id: 'X' })]);
+    const result = renumberTasks([makeTask({ id: 'T909' })]);
     expect(result[0]?.id).toBe('T001');
   });
 
@@ -379,23 +379,26 @@ describe('moveTaskUp', () => {
 });
 
 describe('parseSplitResult', () => {
-  it('returns single Task array for valid single-task markdown', () => {
-    const result = parseSplitResult(singleTaskMarkdown);
+  const baseTasks = [makeTask({ id: 'T001', title: 'Original' })];
+
+  it('returns merged tasks for valid single-task markdown', () => {
+    const result = parseSplitResult(singleTaskMarkdown, baseTasks, 0);
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) throw new Error('expected array');
     expect(result).toHaveLength(1);
     expect(result[0]?.status).toBe('pending');
+    expect(result[0]?.title).toBe('Single task');
   });
 
   it('returns error object for zero-task markdown', () => {
-    const result = parseSplitResult('no tasks here');
+    const result = parseSplitResult('no tasks here', baseTasks, 0);
     expect(Array.isArray(result)).toBe(false);
     if (Array.isArray(result)) throw new Error('expected error');
     expect(result.error).toBe('split produced no tasks');
   });
 
-  it('returns multiple tasks for multi-task markdown', () => {
-    const result = parseSplitResult(multiTaskMarkdown);
+  it('returns multiple tasks merged into the full plan', () => {
+    const result = parseSplitResult(multiTaskMarkdown, baseTasks, 0);
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) throw new Error('expected array');
     expect(result).toHaveLength(2);
@@ -404,10 +407,39 @@ describe('parseSplitResult', () => {
   });
 
   it('overrides status to pending on all returned tasks', () => {
-    const result = parseSplitResult(singleTaskMarkdown);
+    const result = parseSplitResult(singleTaskMarkdown, baseTasks, 0);
     if (!Array.isArray(result)) throw new Error('expected array');
     for (const task of result) {
       expect(task.status).toBe('pending');
     }
+  });
+
+  it('allows split tasks to depend on earlier tasks outside the edited block', () => {
+    const fullTasks = [
+      makeTask({ id: 'T001', title: 'First' }),
+      makeTask({ id: 'T002', title: 'Second', dependsOn: [taskId('T001')] }),
+    ];
+    const splitMarkdown = `---
+id: T002
+title: "Split second"
+action: create
+file: src/second.ts
+depends_on: [T001]
+---
+
+### Description
+Depends on the earlier task.
+
+### Tests
+- Should validate against full plan
+
+### Constraints
+- None
+`;
+    const result = parseSplitResult(splitMarkdown, fullTasks, 1);
+    expect(Array.isArray(result)).toBe(true);
+    if (!Array.isArray(result)) throw new Error('expected array');
+    expect(result).toHaveLength(2);
+    expect(result[1]?.dependsOn).toEqual([taskId('T001')]);
   });
 });

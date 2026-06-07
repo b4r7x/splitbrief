@@ -1,33 +1,30 @@
-import { existsSync } from 'node:fs';
-import { mkdir, symlink } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 
-// Credential/config entries that authenticated CLI implementers (claude-code,
-// codex, npm, …) read from the real HOME. The sandbox redirects HOME/XDG to
-// fresh empty dirs so a staged run cannot write into the real home, but that
-// also hides OAuth tokens (~/.claude/.credentials.json, ~/.codex/auth.json) and
-// private-registry tokens (~/.npmrc). We symlink these entries into the sandbox
-// HOME so credential lookup keeps working; the tool's own writes still land in
-// the redirected cache/config/data dirs, not the real home.
-const SEEDED_HOME_ENTRIES = ['.claude', '.codex', '.aider', '.npmrc', '.netrc'];
-
-async function seedCredentials(realHome: string, sandboxHome: string): Promise<void> {
-  if (!realHome || realHome === sandboxHome) return;
-  await Promise.all(
-    SEEDED_HOME_ENTRIES.map(async (entry) => {
-      const source = join(realHome, entry);
-      if (!existsSync(source)) return;
-      try {
-        await symlink(source, join(sandboxHome, entry));
-      } catch {
-        // Best-effort: a pre-existing target or unsupported symlink (e.g. on a
-        // platform without symlink permission) must not abort the staged run.
-      }
-    }),
-  );
-}
+const AMBIENT_SECRET_KEYS = new Set([
+  'NPM_TOKEN',
+  'NPM_AUTH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'DOCKER_PASSWORD',
+  'CI_JOB_TOKEN',
+  'GITLAB_TOKEN',
+  'BITBUCKET_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AZURE_OPENAI_API_KEY',
+  'COHERE_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GROQ_API_KEY',
+  'MISTRAL_API_KEY',
+  'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
+  'TOGETHER_API_KEY',
+]);
 
 export async function createSandboxEnv(projectDir: string): Promise<NodeJS.ProcessEnv> {
   const root = join(projectDir, SANDBOX_DIR);
@@ -44,9 +41,15 @@ export async function createSandboxEnv(projectDir: string): Promise<NodeJS.Proce
       mkdir(dir, { recursive: true }),
     ),
   );
-  await seedCredentials(process.env.HOME ?? homedir(), home);
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !AMBIENT_SECRET_KEYS.has(key)) {
+      env[key] = value;
+    }
+  }
+
   return {
-    ...process.env,
+    ...env,
     HOME: home,
     TMPDIR: tmp,
     TMP: tmp,

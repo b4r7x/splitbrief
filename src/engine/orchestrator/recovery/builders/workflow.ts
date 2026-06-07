@@ -6,12 +6,8 @@ import { uniqueSortedIds } from '../../../../utils/collections.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { budgetPercentOf, formatCostFact, formatPercent } from '../../../../core/formatting.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import {
-  chooseRecommended,
-  chooseUserEditRecommendation,
-  mapUserEditAction,
-  orderedActions,
-} from './actions.js';
+import { userEditActionToRecoveryAction } from '../../../../core/recovery/user-edit-actions.js';
+import { chooseRecommended, chooseUserEditRecommendation, orderedActions } from './actions.js';
 import { fileConflictDetails, taskFiles } from './details.js';
 
 export interface UserEditConflictRecoveryOptions extends RecoveryBuilderBase {
@@ -45,7 +41,7 @@ export function buildUserEditConflictRecoveryIssue(
     opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
   const actions = orderedActions(
     opts.conflict.availableActions
-      .map(mapUserEditAction)
+      .map(userEditActionToRecoveryAction)
       .filter(
         (action) =>
           (hasCurrentTask || action !== 'skip-current-task') &&
@@ -89,7 +85,7 @@ export function buildApprovalPromotionConflictRecoveryIssue(
     opts.currentTask !== undefined || opts.conflict.currentTaskId !== undefined;
   const actions = orderedActions(
     opts.conflict.availableActions
-      .map(mapUserEditAction)
+      .map(userEditActionToRecoveryAction)
       .filter(
         (action) => action !== 'continue' && (hasCurrentTask || action !== 'skip-current-task'),
       ),

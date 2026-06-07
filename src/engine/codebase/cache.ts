@@ -1,7 +1,16 @@
-import { mkdirSync, type Stats } from 'node:fs';
+import { lstatSync, mkdirSync, realpathSync, type Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { FileNode } from './types.js';
+import { error, matches } from '../../utils/error.js';
+
+const repomapCacheError = {
+  dbPathEscapes: (dbPath: string) =>
+    error('repomap-cache-escapes', `repomap cache db path escapes cache directory: ${dbPath}`, {
+      dbPath,
+    }),
+  isDbPathEscapes: matches('repomap-cache-escapes'),
+} as const;
 
 const PARSE_VERSION = 2;
 
@@ -27,7 +36,26 @@ type CacheRow = {
 export async function createParseCache(dbPath: string): Promise<ParseCache> {
   const { default: Database } = await import('better-sqlite3');
 
-  mkdirSync(dirname(dbPath), { recursive: true });
+  const resolvedDbPath = resolve(dbPath);
+  const cacheDir = dirname(resolvedDbPath);
+
+  mkdirSync(cacheDir, { recursive: true });
+  if (lstatSync(cacheDir).isSymbolicLink()) {
+    throw repomapCacheError.dbPathEscapes(dbPath);
+  }
+
+  try {
+    const realDbPath = realpathSync(resolvedDbPath);
+    const realCacheDir = realpathSync(cacheDir);
+    if (!realDbPath.startsWith(`${realCacheDir}/`) && realDbPath !== realCacheDir) {
+      throw repomapCacheError.dbPathEscapes(dbPath);
+    }
+  } catch (err) {
+    if (repomapCacheError.isDbPathEscapes(err)) {
+      throw err;
+    }
+    // File doesn't exist yet — check the parent is real
+  }
 
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');

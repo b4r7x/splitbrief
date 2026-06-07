@@ -48,9 +48,10 @@ async function finishPlanAndBriefsApproval(args: {
       state,
       signal,
       persistTranscript: config.workflow.persistTranscript,
+      specMetadata: metadata,
     });
     state = planLoop.state;
-    if (planLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (planLoop.rejected || planLoop.aborted) return { state, tasks: [], cancelled: true };
     const regen = await regenerateTasksIfNeeded({
       regenerated: planLoop.regenerated,
       projectDir,
@@ -87,7 +88,7 @@ async function finishPlanAndBriefsApproval(args: {
   });
   state = briefsLoop.state;
   finalTasks = briefsLoop.tasks;
-  if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+  if (briefsLoop.rejected || briefsLoop.aborted) return { state, tasks: [], cancelled: true };
 
   publishPlanApproved(state, wctx.bus);
   return { state, tasks: finalTasks, cancelled: false };
@@ -159,9 +160,10 @@ export async function handleRewindSpec(args: {
       state,
       signal,
       persistTranscript: config.workflow.persistTranscript,
+      specMetadata: metadata,
     });
     state = specLoop.state;
-    if (specLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (specLoop.rejected || specLoop.aborted) return { state, tasks: [], cancelled: true };
   }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });

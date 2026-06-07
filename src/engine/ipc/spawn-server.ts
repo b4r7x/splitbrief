@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createConnection } from 'node:net';
 import { SERVER_LOG_FILE, IPC_SOCK_FILE } from '../../core/paths.js';
-import { checkServerStatus } from './lockfile.js';
+import { checkServerStatus, assertSessionConfinement } from './lockfile.js';
 import { writeIpcServerArgsFile } from './server-args.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
@@ -20,6 +20,7 @@ export type SpawnServerOptions = {
   overrides?: CLIOverrides;
   allowHooks?: boolean;
   plannerContext?: string;
+  attachments?: Array<{ id: string; path: string; mimeType: string }>;
 };
 
 export type SpawnServerResult =
@@ -28,6 +29,7 @@ export type SpawnServerResult =
 
 const POLL_INTERVAL_MS = 200;
 const STARTUP_TIMEOUT_MS = 5000;
+const CHILD_KILL_WAIT_MS = 500;
 
 function resolveEntryPoint(): { command: string; args: string[] } {
   const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -94,10 +96,25 @@ export function waitForServerReady(
   });
 }
 
+async function killChildProcess(childPid: number): Promise<void> {
+  try {
+    process.kill(-childPid, 'SIGTERM');
+  } catch {
+    // process group may not exist
+  }
+  await new Promise((r) => setTimeout(r, CHILD_KILL_WAIT_MS));
+  try {
+    process.kill(-childPid, 'SIGKILL');
+  } catch {
+    // already dead
+  }
+}
+
 export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServerResult> {
   const { command, args: entryArgs } = resolveEntryPoint();
 
   const logPath = join(opts.sessionDir, SERVER_LOG_FILE);
+  assertSessionConfinement(logPath, opts.sessionDir);
   const logHandle = await open(logPath, 'a');
 
   const argsFile = writeIpcServerArgsFile(opts.sessionDir, {
@@ -109,6 +126,7 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
     overrides: opts.overrides ?? {},
     ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
+    ...(opts.attachments !== undefined && { attachments: opts.attachments }),
   });
   const argv = buildServerArgv(entryArgs, argsFile);
 
@@ -116,8 +134,22 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
     detached: true,
     stdio: ['ignore', 'ignore', logHandle.fd],
   });
-  child.unref();
   await logHandle.close();
 
-  return waitForServerReady(opts.sessionDir, opts.sessionId);
+  const result = await waitForServerReady(opts.sessionDir, opts.sessionId);
+
+  if (result.ok) {
+    child.unref();
+  } else {
+    if (child.pid !== undefined) {
+      await killChildProcess(child.pid);
+    }
+    try {
+      unlinkSync(argsFile);
+    } catch {
+      // already removed or never created
+    }
+  }
+
+  return result;
 }

@@ -1,29 +1,65 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeFile, sessionDir, sessionsRoot, STATE_FILE, validateSessionId } from '../paths.js';
+import {
+  activeFile,
+  sessionDir,
+  sessionsRoot,
+  STATE_FILE,
+  validateSessionId,
+  DIPTYCH_DIR,
+  SESSIONS_DIR,
+} from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
-import { writeSecureFile } from '../../lib/fs.js';
+import { writeSecureFile, fsError } from '../../lib/fs.js';
+import {
+  assertExistingPathConfined,
+  assertWritablePathConfined,
+} from '../../lib/path-confinement.js';
 import { slugify } from '../../utils/slugify.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
 import { findUnusedId } from './find-unused-id.js';
 
+function rejectSymlinkTarget(filePath: string): void {
+  try {
+    if (lstatSync(filePath).isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+}
+
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);
   if (!existsSync(p)) return null;
+  try {
+    rejectSymlinkTarget(p);
+  } catch {
+    return null;
+  }
+  assertExistingPathConfined(`${DIPTYCH_DIR}/active`, projectDir);
   return readFileSync(p, 'utf-8').trim() || null;
 }
 
 export function writeActive(ref: SessionRef): void {
   const { projectDir, sessionId } = ref;
   validateSessionId(sessionId);
+  assertWritablePathConfined(`${DIPTYCH_DIR}/active`, projectDir);
   writeSecureFile(activeFile(projectDir), sessionId + '\n');
 }
 
 export function clearActive(projectDir: string): void {
   const p = activeFile(projectDir);
-  if (existsSync(p)) unlinkSync(p);
+  if (!existsSync(p)) return;
+  try {
+    rejectSymlinkTarget(p);
+  } catch {
+    return;
+  }
+  assertExistingPathConfined(`${DIPTYCH_DIR}/active`, projectDir);
+  unlinkSync(p);
 }
 
 export function isSessionLive(ref: SessionRef): boolean {
@@ -31,6 +67,11 @@ export function isSessionLive(ref: SessionRef): boolean {
   const stateFile = join(sessionDir(projectDir, sessionId), STATE_FILE);
   if (!existsSync(stateFile)) return false;
   try {
+    rejectSymlinkTarget(stateFile);
+    assertExistingPathConfined(
+      `${DIPTYCH_DIR}/${SESSIONS_DIR}/${sessionId}/${STATE_FILE}`,
+      projectDir,
+    );
     const raw = narrowRecord(JSON.parse(readFileSync(stateFile, 'utf-8')));
     if (!raw || typeof raw.phase !== 'string') return false;
     return raw.phase !== 'complete' && raw.phase !== 'idle';

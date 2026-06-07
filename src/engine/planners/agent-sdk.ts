@@ -7,6 +7,7 @@ import {
   createAgentSdkBackend,
   isAgentSdkAvailable,
   PLANNER_ALLOWED_TOOLS,
+  PLANNER_PERMISSION_MODE,
 } from '../runners/agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
@@ -23,6 +24,7 @@ export function createAgentSdkPlanner(opts: {
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
     allowedTools: [...PLANNER_ALLOWED_TOOLS],
+    permissionMode: PLANNER_PERMISSION_MODE,
     apiKey,
     initialSessionId: initialSessionId ?? null,
   });

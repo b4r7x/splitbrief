@@ -10,7 +10,8 @@ export function buildTargetedRejectionComment(flaggedTasks: Task[]): string {
     '',
     taskLines,
     '',
-    'Please regenerate ONLY these tasks. Keep all other tasks unchanged.',
+    'The Current Task Briefs section lists the full existing task list. Regenerate ONLY the flagged tasks above.',
+    'Keep every other task unchanged, including IDs, ordering, and dependency links.',
     'For each flagged task, keep the same goal and revise the description, scope, tests, and implementation steps to address the user feedback.',
   ].join('\n');
 }

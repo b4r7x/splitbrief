@@ -8,6 +8,8 @@ import type { EngineEvent } from '../events/types.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import type { ServerMessage } from './protocol.js';
 
+const AUTH_TOKEN = 'test-auth-token';
+
 function readLines(socket: Socket, count: number): Promise<ServerMessage[]> {
   return new Promise((resolve, reject) => {
     const messages: ServerMessage[] = [];
@@ -45,6 +47,13 @@ function connectClient(sockPath: string): Promise<Socket> {
   });
 }
 
+async function connectAuthenticated(sockPath: string): Promise<Socket> {
+  const socket = await connectClient(sockPath);
+  sockets.push(socket);
+  socket.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
+  return socket;
+}
+
 const servers: IpcServer[] = [];
 const tmpDirs: string[] = [];
 const sockets: Socket[] = [];
@@ -70,6 +79,7 @@ async function makeServer(overrides?: Partial<Parameters<typeof startIpcServer>[
     startedAt: 1000,
     mode: 'standard',
     feature: 'test feature',
+    authToken: AUTH_TOKEN,
     bus,
     onUserInput,
     ...overrides,
@@ -113,14 +123,14 @@ describe('startIpcServer replay', () => {
       startedAt: 1000,
       mode: 'standard',
       feature: 'feat',
+      authToken: AUTH_TOKEN,
       bus,
       onUserInput: vi.fn(),
       sessionJsonlPath,
     });
     servers.push(srv);
 
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
+    const socket = await connectAuthenticated(srv.sockPath);
 
     const msgs = await readLines(socket, 6);
 
@@ -159,14 +169,14 @@ describe('startIpcServer replay', () => {
       startedAt: 100,
       mode: 'quick',
       feature: 'x',
+      authToken: AUTH_TOKEN,
       bus,
       onUserInput: vi.fn(),
       sessionJsonlPath,
     });
     servers.push(srv);
 
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
+    const socket = await connectAuthenticated(srv.sockPath);
 
     const msgs = await readLines(socket, 7);
 
@@ -202,14 +212,14 @@ describe('startIpcServer replay', () => {
       startedAt: 500,
       mode: 'instant',
       feature: 'y',
+      authToken: AUTH_TOKEN,
       bus,
       onUserInput: vi.fn(),
       sessionJsonlPath,
     });
     servers.push(srv);
 
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
+    const socket = await connectAuthenticated(srv.sockPath);
 
     await readLines(socket, 5);
 
@@ -224,8 +234,7 @@ describe('startIpcServer replay', () => {
 
   it('when no sessionJsonlPath provided, live events arrive immediately after session_meta', async () => {
     const { srv, bus: testBus } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
+    const socket = await connectAuthenticated(srv.sockPath);
 
     await readLines(socket, 1);
 

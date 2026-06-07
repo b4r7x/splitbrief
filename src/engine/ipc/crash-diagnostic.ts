@@ -1,7 +1,9 @@
 import { readFile, stat, open } from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { SERVER_LOG_FILE } from '../../core/paths.js';
 import type { LockfileData, ServerStatus } from './lockfile.js';
+import { assertSessionConfinement } from './lockfile.js';
 
 export type CrashDiagnostic = {
   sessionId: string;
@@ -44,6 +46,21 @@ async function readLastLines(filePath: string, n: number): Promise<string | null
   }
 }
 
+async function readConfinedServerLog(sessionDir: string): Promise<string | null> {
+  const logPath = join(sessionDir, SERVER_LOG_FILE);
+  assertSessionConfinement(logPath, sessionDir);
+
+  try {
+    const st = lstatSync(logPath);
+    if (st.isSymbolicLink()) return null;
+    if (!st.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  return readLastLines(logPath, 20);
+}
+
 export async function buildCrashDiagnostic(
   sessionDir: string,
   status: ServerStatus,
@@ -61,8 +78,7 @@ export async function buildCrashDiagnostic(
 
   const diagStatus: 'crashed' | 'exited' = !status.alive && status.crashed ? 'crashed' : 'exited';
 
-  const logPath = join(sessionDir, SERVER_LOG_FILE);
-  const logTail = await readLastLines(logPath, 20);
+  const logTail = await readConfinedServerLog(sessionDir);
 
   return {
     sessionId,

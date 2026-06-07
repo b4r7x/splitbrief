@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCliPlanner } from './cli.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -21,6 +21,7 @@ import { TASKS_FILE } from '../../core/paths.js';
 let projectDir: string;
 let shimDir: string;
 let originalPath: string | undefined;
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 function installShim(command: string, bodyLines: string[]): void {
   const shimPath = join(shimDir, command);
@@ -166,6 +167,44 @@ Create the CLI-written file.
     expect(result.tasks[0]?.id).toBe('T001');
     expect(result.phases?.[0]?.text).toContain('CLI-written task');
     expect(result.phases?.[0]?.rawOutput).toContain(`Wrote [${TASKS_FILE}]`);
+  });
+
+  itUnix('does not read root tasks.md through a final symlink', async () => {
+    const outside = createTempDir('cli-planner-outside');
+    try {
+      const secretTasks = `---
+id: T999
+title: Symlinked secret task
+action: create
+file: src/secret.ts
+depends_on: []
+---
+
+### Description
+Outside task content.
+`;
+      writeFileSync(join(outside, TASKS_FILE), secretTasks);
+      symlinkSync(join(outside, TASKS_FILE), join(projectDir, TASKS_FILE));
+
+      installShim('codex', [
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: `Wrote [${TASKS_FILE}](${TASKS_FILE}).` },
+        }),
+      ]);
+
+      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+      const result = await planner.quickPlan({
+        feature: 'make it better',
+        projectDir,
+        callbacks: { onOutput: vi.fn() },
+      });
+
+      expect(result.tasks).toHaveLength(0);
+      expect(result.phases?.[0]?.text).not.toContain('Symlinked secret task');
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 
   it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {

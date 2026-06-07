@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -7,8 +8,20 @@ import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
-import { createCommandContext } from '../../app/command-context-factory.js';
+import { createCommandContext } from '../../core/runtime/commands/context-factory.js';
 import { buildRewindAction } from '../../core/state/build-rewind-action.js';
+import { sessionDir } from '../../core/paths.js';
+import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
+import { writeHandoffPack } from '../../engine/handoff/write.js';
+import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
+import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
+import { writeSessionHtmlReport } from '../../engine/export/collect.js';
+import {
+  readApprovalsStore,
+  writeApprovalsStore,
+  clearGrantsByScope,
+} from '../../core/approval/store.js';
+import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
 import { error } from '../../utils/error.js';
 
 const rpcCommandContextError = {
@@ -55,6 +68,9 @@ export function createRpcCommandContext(opts: {
     refreshDetection: async () => {
       pushMessage('Tool detection refresh is not available in RPC mode.');
     },
+    refreshProjectFiles: () => {
+      pushMessage('Project file refresh is not available in RPC mode.');
+    },
     getCurrentPhase: opts.getPhase,
     requestRewind: (request) => {
       const state = opts.getState();
@@ -91,5 +107,31 @@ export function createRpcCommandContext(opts: {
       if (!state || !sessionId) return 0;
       return clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count;
     },
+    rebuildRepomap: async (projectDir, cacheDir) =>
+      rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
+    attachImage,
+    detachImage,
+    listAttachments,
+    writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
+      writeHandoffPack({
+        projectDir,
+        sessionId,
+        target,
+        outDir: join(sessionDir(projectDir, sessionId), 'handoffs', target),
+        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
+        mode: 'overwrite',
+      }),
+    listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
+    clearApprovals: (projectDir, scope) => {
+      const before = readApprovalsStore(projectDir);
+      const after = clearGrantsByScope(before, scope);
+      writeApprovalsStore(projectDir, after);
+      return before.grants.length - after.grants.length;
+    },
+    acceptRunSnapshot,
+    rejectRunSnapshot,
+    compactTranscript: performManualCompaction,
+    exportSession: async (projectDir, sessionId) =>
+      writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
   });
 }

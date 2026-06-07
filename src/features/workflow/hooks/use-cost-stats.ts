@@ -89,6 +89,7 @@ export function formatCostDisplay(
 
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
+  const pricingContext = tokensStore.use((state) => state.pricingContext);
   const modelCache = asReactiveModelCache(
     modelCacheStore.use((s) => ({
       modelsDevCatalog: s.modelsDevCatalog,
@@ -104,8 +105,8 @@ export function useCostStats(): CostStats {
   const routedTasks = localCount + escalatedCount;
   const localRate = routedTasks > 0 ? (localCount / routedTasks) * 100 : 0;
 
-  const { plannerTool, implementerTool, plannerModel, implementerModel } =
-    runPricingIdentity(config);
+  const sessionIdentity = pricingContext ?? runPricingIdentity(config);
+  const { plannerTool, implementerTool, plannerModel, implementerModel } = sessionIdentity;
 
   const costBreakdown = tokenUsage
     ? calculateCostBreakdown(

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
@@ -53,11 +53,15 @@ async function writeServerLockfile(
     pid: process.pid,
     startTimeMs: currentProcessStartTimeMs(),
     lastAliveMs: now,
-    sessionId: 'test-session',
+    sessionId: basename(testDir),
     mode: 'standard',
     feature: 'test feature',
     ...overrides,
   });
+}
+
+function sessionIdFor(dir: string): string {
+  return basename(dir);
 }
 
 beforeEach(() => {
@@ -75,17 +79,17 @@ describe('waitForServerReady', () => {
     await writeServerLockfile();
     await listenOnSocket(join(testDir, IPC_SOCK_FILE));
 
-    const result = await waitForServerReady(testDir, 'test-session');
+    const result = await waitForServerReady(testDir, sessionIdFor(testDir));
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.pid).toBe(process.pid);
-      expect(result.sessionId).toBe('test-session');
+      expect(result.sessionId).toBe(sessionIdFor(testDir));
     }
   });
 
   it('returns { ok: false } when lockfile never appears', async () => {
-    const result = await waitForServerReady(testDir, 'test-session', 600);
+    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 600);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -98,7 +102,7 @@ describe('waitForServerReady', () => {
       lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
     });
 
-    const result = await waitForServerReady(testDir, 'test-session', 600);
+    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 600);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {

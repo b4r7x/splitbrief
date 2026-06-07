@@ -1,18 +1,12 @@
 import type { RecoveryAction, RecoveryReason } from '../../core/schemas/enums.js';
+import { PROMPTABLE_RECOVERY_ACTIONS } from '../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery.js';
 import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { pluralize } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-const ACTION_ORDER: RecoveryAction[] = [
-  'retry-same-worker',
-  'route-bigger-worker',
-  'continue',
-  'skip-current-task',
-  'pause-run',
-  'abort-workflow',
-];
+const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',

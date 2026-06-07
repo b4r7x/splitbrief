@@ -246,7 +246,42 @@ describe('readResource - /manifest.json', () => {
     expect(manifest.generatedAt).toBe(new Date(1700000005000).toISOString());
     expect(manifest.mode).toBe('speckit');
     expect(manifest.taskIds).toEqual(['T001', 'T002']);
-    expect(manifest.artifacts.tasks).toEqual(['tasks/T001.md', 'tasks/T002.md']);
+    expect(manifest.artifacts.tasks).toEqual(['tasks/T001', 'tasks/T002']);
+  });
+
+  it('reads every manifest task artifact URI through resources/read', async () => {
+    const projectDir = createTempDir('resolver-test');
+    dirs.push(projectDir);
+    const id = 'sess-manifest-parity';
+    ensureSessionDir(projectDir, id);
+    writeCanonicalArtifacts(projectDir, id);
+    writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
+
+    const resolver = makeResolver(projectDir, id);
+    const manifestResult = await resolver.readResource(
+      `mcp://diptych/sessions/${id}/manifest.json`,
+    );
+    const manifest = JSON.parse(manifestResult!.text!);
+    for (const artifact of manifest.artifacts.tasks as string[]) {
+      const read = await resolver.readResource(`mcp://diptych/sessions/${id}/${artifact}`);
+      expect(read).not.toBeNull();
+      expect(read?.mimeType).toBe('text/markdown');
+      expect(read?.text?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('reads legacy tasks/<id>.md manifest artifact aliases', async () => {
+    const projectDir = createTempDir('resolver-test');
+    dirs.push(projectDir);
+    const id = 'sess-manifest-alias';
+    ensureSessionDir(projectDir, id);
+    writeCanonicalArtifacts(projectDir, id);
+    writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
+
+    const resolver = makeResolver(projectDir, id);
+    const read = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T001.md`);
+    expect(read).not.toBeNull();
+    expect(read?.text).toContain('id: T001');
   });
 
   it('returns null when summary.json is missing', async () => {

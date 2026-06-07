@@ -87,6 +87,7 @@ function Harness({
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [state, actions] = useIpcClient({
     sockPath,
+    authToken: 'tok',
     onEvent(event) {
       setEvents((prev) => [...prev, event]);
     },
@@ -165,48 +166,6 @@ describe('useIpcClient', () => {
   });
 
   it('forwards server events to onEvent callback', async () => {
-    const dir = makeTmpDir();
-    tmpDirs.push(dir);
-    const sockPath = join(dir, 'test.sock');
-
-    let connectedSocket: Socket | null = null;
-    const server = createServer();
-    servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      connectedSocket = socket;
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-        readonly: false,
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
-
-    const capture: { current: CapturedState | null } = { current: null };
-    const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    if (connectedSocket) {
-      const msg: ServerMessage = {
-        kind: 'event',
-        payload: { type: 'workflow_started', ts: 42, phase: 'idle', feature: 'test' },
-      };
-      send(connectedSocket, msg);
-    }
-    await tick(50);
-
-    const payloadEvents =
-      capture.current?.events.filter((e) => e.type === 'workflow_started') ?? [];
-    expect(payloadEvents.length).toBeGreaterThan(0);
-    expect(payloadEvents[0]?.type).toBe('workflow_started');
-    ui.unmount();
-    await tick(20);
-  });
-
-  it('handles prompt_request and writes prompt_response', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');

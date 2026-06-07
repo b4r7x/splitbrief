@@ -4,6 +4,7 @@ import { TaskSchema } from './task.js';
 import { TokenUsageSchema } from './tokens.js';
 import { AnalyzeResultSchema } from './analyze.js';
 import { RecoveryIssueSchema } from './recovery.js';
+import { topoSort } from '../state/topo-sort.js';
 
 export const DiscoveredValidationSchema = z.object({
   typecheckCommand: z.string().optional(),
@@ -27,41 +28,78 @@ export const QueuedMessageSchema = z.object({
   questionId: z.string().optional(),
 });
 
-export const WorkflowStateSchema = z.object({
-  stateVersion: z.number(),
-  phase: PhaseSchema,
-  feature: z.string(),
-  currentTaskIndex: z.number(),
-  attempt: z.number(),
-  tasks: z.array(TaskSchema),
-  plannerSessionId: z.string().nullable().optional(),
-  startedAt: z.string(),
-  tokenUsage: TokenUsageSchema,
-  plannerTool: z.string().optional(),
-  plannerModel: z.string().optional(),
-  implementerTool: z.string().optional(),
-  implementerModel: z.string().optional(),
-  awaitingContinue: z.boolean().default(false),
-  messageQueue: z.array(QueuedMessageSchema).default([]),
-  rewindPending: z
-    .object({
-      target: z.enum(['spec', 'plan']),
-      comment: z.string().optional(),
-    })
-    .optional(),
-  clarifications: z
-    .array(
-      z.object({
-        id: z.string(),
-        question: z.string(),
-        answer: z.string(),
-      }),
-    )
-    .optional(),
-  analysisResult: AnalyzeResultSchema.optional(),
-  pendingRecovery: RecoveryIssueSchema.optional(),
-  discoveredValidation: DiscoveredValidationSchema.optional(),
-});
+const TASK_ACTIVE_PHASES = new Set(['validating-task', 'escalating']);
+
+export const WorkflowStateSchema = z
+  .object({
+    stateVersion: z.number(),
+    phase: PhaseSchema,
+    feature: z.string(),
+    currentTaskIndex: z.number().int().nonnegative(),
+    attempt: z.number().int().nonnegative(),
+    tasks: z.array(TaskSchema),
+    plannerSessionId: z.string().nullable().optional(),
+    startedAt: z.string(),
+    tokenUsage: TokenUsageSchema,
+    plannerTool: z.string().optional(),
+    plannerModel: z.string().optional(),
+    implementerTool: z.string().optional(),
+    implementerModel: z.string().optional(),
+    awaitingContinue: z.boolean().default(false),
+    messageQueue: z.array(QueuedMessageSchema).default([]),
+    rewindPending: z
+      .object({
+        target: z.enum(['spec', 'plan']),
+        comment: z.string().optional(),
+      })
+      .optional(),
+    clarifications: z
+      .array(
+        z.object({
+          id: z.string(),
+          question: z.string(),
+          answer: z.string(),
+        }),
+      )
+      .optional(),
+    analysisResult: AnalyzeResultSchema.optional(),
+    pendingRecovery: RecoveryIssueSchema.optional(),
+    discoveredValidation: DiscoveredValidationSchema.optional(),
+    external: z.record(z.string(), z.unknown()).optional(),
+  })
+  .superRefine((state, ctx) => {
+    try {
+      topoSort(state.tasks);
+    } catch (err) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tasks'],
+        message: err instanceof Error ? err.message : 'Invalid task graph',
+      });
+    }
+
+    const taskCount = state.tasks.length;
+    if (taskCount === 0) return;
+
+    if (TASK_ACTIVE_PHASES.has(state.phase)) {
+      if (state.currentTaskIndex >= taskCount) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['currentTaskIndex'],
+          message: 'currentTaskIndex must reference an existing task in active task phases',
+        });
+      }
+      return;
+    }
+
+    if (state.currentTaskIndex > taskCount) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['currentTaskIndex'],
+        message: 'currentTaskIndex must not exceed task count',
+      });
+    }
+  });
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;

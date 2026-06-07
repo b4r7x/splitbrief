@@ -1,24 +1,10 @@
 import type { ReactNode } from 'react';
-import type { FilterableItem } from '../filtering.js';
+import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
-export function findNextEnabled<T>(
-  items: T[],
-  from: number,
-  direction: 1 | -1,
-  isDisabled?: (item: T) => boolean,
-): number {
+function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {
   if (items.length === 0) return from;
-  if (!isDisabled) return (from + direction + items.length) % items.length;
-  let next = (from + direction + items.length) % items.length;
-  let steps = 0;
-  while (steps < items.length) {
-    const item = items[next];
-    if (item === undefined || !isDisabled(item)) break;
-    next = (next + direction + items.length) % items.length;
-    steps++;
-  }
-  return steps >= items.length ? from : next;
+  return (from + direction + items.length) % items.length;
 }
 
 export interface KeyboardContext<L extends FilterableItem, R extends { id: string }> {
@@ -116,12 +102,12 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
     const direction: 1 | -1 = key.upArrow ? -1 : 1;
     if (ctx.leftActive) {
       if (ctx.leftFiltered.length === 0) return;
-      const next = findNextEnabled(ctx.leftFiltered, ctx.leftEffectiveIndex, direction);
+      const next = stepIndex(ctx.leftFiltered, ctx.leftEffectiveIndex, direction);
       ctx.setLeftIndex(next);
       ctx.resetRight();
     } else {
       if (ctx.filteredRight.length === 0) return;
-      const next = findNextEnabled(ctx.filteredRight, ctx.rightEffectiveIndex, direction);
+      const next = stepIndex(ctx.filteredRight, ctx.rightEffectiveIndex, direction);
       ctx.setRightIndex(next);
     }
     return;

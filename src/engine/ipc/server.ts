@@ -6,6 +6,7 @@ import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import {
   parseClientMessage,
+  IPC_MAX_FRAME_BYTES,
   type IpcPromptRequestInput,
   type IpcPromptResponse,
 } from './protocol.js';
@@ -22,6 +23,7 @@ export type IpcServerOptions = {
   startedAt: number;
   mode: WorkflowMode;
   feature: string;
+  authToken: string;
   bus: EventBus;
   onUserInput: (text: string) => void;
   sessionJsonlPath?: string;
@@ -36,6 +38,8 @@ export type IpcServer = {
 
 export type { IpcPromptUnavailableError };
 
+const MAX_LIVE_BACKLOG_EVENTS = 1000;
+
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
   const {
     sessionId,
@@ -43,6 +47,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     startedAt,
     mode,
     feature,
+    authToken,
     bus,
     onUserInput,
     sessionJsonlPath,
@@ -75,21 +80,25 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     if (currentClient !== null) {
       tryControlDetach({
         socket,
+        authToken,
         currentSocket: () => currentClient?.socket ?? null,
         rejectAsAlreadyAttached: (rejectSocket) =>
           rejectAsAlreadyAttached(rejectSocket, writeServerMessage),
+        writeMessage: writeServerMessage,
       });
       return;
     }
 
     let detached = false;
+    let authenticated = false;
     let replaying = true;
+    let replayEndTs: number | null = null;
+    let replayStarted = false;
     const liveBacklog: EngineEvent[] = [];
     const client: { socket: Socket; unsubscribe: () => void } = {
       socket,
       unsubscribe: () => undefined,
     };
-    currentClient = client;
 
     function writeEvent(event: EngineEvent): void {
       writeServerMessage(socket, { kind: 'event', payload: event });
@@ -105,56 +114,178 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       bus.publish({ type: 'ipc_client_detached', ts: Date.now(), phase: 'idle' });
     }
 
-    const lineBuffer = createLineBuffer((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      let msg: ReturnType<typeof parseClientMessage>;
-      try {
-        const parsed: unknown = JSON.parse(trimmed);
-        msg = parseClientMessage(parsed);
-        if (!msg) {
-          bus.publish({
-            type: 'warning',
-            ts: Date.now(),
-            phase: 'idle',
-            message: `IPC: invalid message structure from client: ${trimmed}`,
-          });
-          return;
-        }
-      } catch {
-        bus.publish({
-          type: 'warning',
-          ts: Date.now(),
-          phase: 'idle',
-          message: `IPC: malformed JSON from client: ${trimmed}`,
-        });
+    async function startAuthenticatedSession(): Promise<void> {
+      if (replayStarted || detached || socket.destroyed) return;
+      replayStarted = true;
+
+      if (currentClient !== null) {
+        rejectAsAlreadyAttached(socket, writeServerMessage);
+        socket.destroy();
+        detached = true;
         return;
       }
-      if (msg.kind === 'user_input') {
+
+      currentClient = client;
+
+      writeServerMessage(socket, {
+        kind: 'session_meta',
+        sessionId,
+        startedAt,
+        mode,
+        feature,
+        readonly: false,
+      });
+
+      bus.publish({ type: 'ipc_client_attached', ts: Date.now(), phase: 'idle' });
+      promptTracker.sendPendingPrompts(socket);
+
+      const unsubscribe = bus.subscribe((event) => {
+        if (socket.destroyed) return;
+        if (replaying) {
+          if (replayEndTs !== null && event.ts <= replayEndTs) return;
+          if (liveBacklog.length >= MAX_LIVE_BACKLOG_EVENTS) {
+            const warning: EngineEvent = {
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: 'IPC: live backlog exceeded while replaying, closing client',
+            };
+            replaying = false;
+            detachClient();
+            socket.destroy();
+            bus.publish(warning);
+            return;
+          }
+          liveBacklog.push(event);
+          return;
+        }
+        writeEvent(event);
+      });
+      client.unsubscribe = unsubscribe;
+
+      if (sessionJsonlPath) {
         try {
-          onUserInput(msg.text);
+          replayEndTs = await replaySession({
+            socket,
+            sessionJsonlPath,
+            writeMessage: writeServerMessage,
+          });
         } catch (err) {
           bus.publish({
             type: 'warning',
             ts: Date.now(),
             phase: 'idle',
-            message: `IPC: onUserInput threw: ${toErrorMessage(err)}`,
+            message: `IPC: replay failed, closing client: ${toErrorMessage(err)}`,
           });
+          replaying = false;
+          detachClient();
+          socket.destroy();
+          return;
         }
-      } else if (msg.kind === 'prompt_response') {
-        if (!promptTracker.handleResponse(msg.requestId, msg.response)) {
+      }
+
+      replaying = false;
+      for (const event of liveBacklog.splice(0)) {
+        if (replayEndTs !== null && event.ts <= replayEndTs) continue;
+        writeEvent(event);
+      }
+    }
+
+    const lineBuffer = createLineBuffer(
+      (line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let msg: ReturnType<typeof parseClientMessage>;
+        try {
+          const parsed: unknown = JSON.parse(trimmed);
+          msg = parseClientMessage(parsed);
+          if (!msg) {
+            bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: `IPC: invalid message structure from client: ${trimmed}`,
+            });
+            return;
+          }
+        } catch {
           bus.publish({
             type: 'warning',
             ts: Date.now(),
             phase: 'idle',
-            message: `IPC: response for unknown prompt ${msg.requestId}`,
+            message: `IPC: malformed JSON from client: ${trimmed}`,
           });
+          return;
         }
-      } else if (msg.kind === 'detach') {
-        detachClient();
-        socket.destroy();
-      }
-    });
+
+        if (msg.kind === 'authenticate') {
+          if (msg.token !== authToken) {
+            writeServerMessage(socket, {
+              kind: 'error',
+              code: 'unauthorized',
+              message: 'IPC: invalid auth token',
+            });
+            socket.destroy();
+            detachClient();
+            return;
+          }
+          authenticated = true;
+          void startAuthenticatedSession();
+          return;
+        }
+
+        if (!authenticated) {
+          writeServerMessage(socket, {
+            kind: 'error',
+            code: 'unauthorized',
+            message: 'IPC: authenticate before sending commands',
+          });
+          socket.destroy();
+          detachClient();
+          return;
+        }
+
+        if (msg.kind === 'user_input') {
+          try {
+            onUserInput(msg.text);
+          } catch (err) {
+            bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: `IPC: onUserInput threw: ${toErrorMessage(err)}`,
+            });
+          }
+        } else if (msg.kind === 'prompt_response') {
+          if (!promptTracker.handleResponse(msg.requestId, msg.response)) {
+            bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: `IPC: response for unknown prompt ${msg.requestId}`,
+            });
+          }
+        } else if (msg.kind === 'recovery_response') {
+          onUserInput(`${msg.action} recovery issue ${msg.issueId}`);
+        } else if (msg.kind === 'detach') {
+          detachClient();
+          socket.destroy();
+        }
+      },
+      {
+        maxLineBytes: IPC_MAX_FRAME_BYTES,
+        onOverflow: (bytes) => {
+          bus.publish({
+            type: 'warning',
+            ts: Date.now(),
+            phase: 'idle',
+            message: `IPC: client frame too large: ${bytes} bytes`,
+          });
+          socket.destroy();
+          detachClient();
+        },
+      },
+    );
 
     socket.on('data', (chunk: Buffer) => {
       lineBuffer.push(chunk.toString('utf8'));
@@ -173,37 +304,6 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       });
       detachClient();
     });
-
-    writeServerMessage(socket, {
-      kind: 'session_meta',
-      sessionId,
-      startedAt,
-      mode,
-      feature,
-      readonly: false,
-    });
-
-    bus.publish({ type: 'ipc_client_attached', ts: Date.now(), phase: 'idle' });
-    promptTracker.sendPendingPrompts(socket);
-
-    const unsubscribe = bus.subscribe((event) => {
-      if (socket.destroyed) return;
-      if (replaying) {
-        liveBacklog.push(event);
-        return;
-      }
-      writeEvent(event);
-    });
-    client.unsubscribe = unsubscribe;
-
-    if (sessionJsonlPath) {
-      await replaySession({ socket, sessionJsonlPath, writeMessage: writeServerMessage });
-    }
-
-    replaying = false;
-    for (const event of liveBacklog.splice(0)) {
-      writeEvent(event);
-    }
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -228,6 +328,13 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       );
 
       if (currentClient) {
+        try {
+          if (!currentClient.socket.destroyed) {
+            writeServerMessage(currentClient.socket, { kind: 'server_complete' });
+          }
+        } catch {
+          /* ignore */
+        }
         try {
           currentClient.unsubscribe();
         } catch {

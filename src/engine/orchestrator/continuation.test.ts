@@ -3,7 +3,10 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { STATE_FILE } from '../../core/paths.js';
 import {
   buildContinuationPrompt,
   withContinuationLoop,
@@ -186,6 +189,45 @@ describe('withContinuationLoop', () => {
         },
       }),
     ).rejects.toBe(err);
+  });
+
+  it('persists continuation transitions through persistRef when execution cwd differs', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const stagedDir = createTempDir('continuation-staged');
+    dirs.push(stagedDir);
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => 'resume',
+    });
+    const sinks = makeSinks();
+    const state: WorkflowState = createInitialState('feat');
+
+    let attempt = 0;
+    await withContinuationLoop<string>({
+      ctx: {
+        projectDir: stagedDir,
+        sessionId,
+        persistRef: { projectDir, sessionId },
+        callbacks,
+        sinks,
+      },
+      state,
+      body: async ({ signal, recordOutput }) => {
+        attempt += 1;
+        if (attempt === 1) {
+          recordOutput('partial');
+          sinks.trigger();
+          if (signal.aborted) throw new Error('aborted');
+        }
+        return { value: 'done' };
+      },
+    });
+
+    const realStatePath = join(projectDir, '.diptych', 'sessions', sessionId, STATE_FILE);
+    const stagedStatePath = join(stagedDir, '.diptych', 'sessions', sessionId, STATE_FILE);
+    expect(existsSync(realStatePath)).toBe(true);
+    expect(existsSync(stagedStatePath)).toBe(false);
+    const saved = JSON.parse(readFileSync(realStatePath, 'utf8')) as { awaitingContinue?: boolean };
+    expect(saved.awaitingContinue).toBe(false);
   });
 
   it('clears the abort handler sink on normal completion and on rethrow', async () => {

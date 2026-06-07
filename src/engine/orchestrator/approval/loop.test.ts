@@ -7,6 +7,8 @@ import {
   makePlanner,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
 import { SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './loop.js';
@@ -176,6 +178,38 @@ describe('runApprovalLoop', () => {
     expect(regenCalls[0]).toContain('please add auth section');
     expect(regenCalls[0]).toContain('spec');
     expect(approvalCalls).toBe(2);
+  });
+
+  it('writes regenerated spec text to disk before downstream planning reads it', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      regenerate: async () => ({ text: '# Spec\n\nWith auth.\n', usage: null }),
+    });
+
+    await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+    });
+
+    const onDisk = readFileSync(
+      join(projectDir, '.diptych', 'sessions', sessionId, SPEC_FILE),
+      'utf8',
+    );
+    expect(onDisk).toContain('With auth.');
   });
 
   it('passes the abort signal into planner regeneration callbacks', async () => {

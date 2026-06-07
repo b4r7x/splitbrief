@@ -58,7 +58,10 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
           if (model) args.splice(2, 0, '--model', model);
           return args;
         }
-        const args = ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
+        const args =
+          mode === 'plan'
+            ? ['exec', '--json', '--cd', projectDir, prompt]
+            : ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
         if (model) args.unshift('--model', model);
         return args;
       },
@@ -138,7 +141,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
       'Copilot CLI not found. Install: npm install -g @github/copilot — or see https://github.com/github/copilot-cli',
     planner: {
       buildArgs: ({ prompt, model }) => {
-        const args = ['-p', prompt, '--output-format', 'json', '--allow-all'];
+        const args = ['-p', prompt, '--output-format', 'json'];
         if (model) args.unshift('--model', model);
         return args;
       },
@@ -158,7 +161,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     notFoundMessage: 'Kilo Code CLI not found. Install it with: npm install -g @kilocode/cli',
     planner: {
       buildArgs: ({ prompt, model }) => {
-        const args = ['run', '--auto', '--json', '-m', 'architect', prompt];
+        const args = ['run', '--json', '-m', 'architect', prompt];
         if (model) args.push('--model', model);
         return args;
       },

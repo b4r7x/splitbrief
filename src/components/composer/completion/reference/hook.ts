@@ -72,7 +72,7 @@ function completeToken(value: string, token: ReferenceToken, selected: string): 
   return `${value.slice(0, token.start)}@${selected}${value.slice(token.start + token.query.length + 1)}`;
 }
 
-function buildSelectionKey(token: ReferenceToken | null, filtered: string[]): string {
+function buildReferenceSelectionKey(token: ReferenceToken | null, filtered: string[]): string {
   if (!token) return '';
   return [token.start, token.query, filtered.join('\u0000')].join('\u0001');
 }
@@ -88,7 +88,7 @@ export function useReferenceCompletion({
   const token = findReferenceToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
   const showSuggestions = token !== null && filtered.length > 0 && dismissedValue !== value;
-  const selectionKey = buildSelectionKey(token, filtered);
+  const selectionKey = buildReferenceSelectionKey(token, filtered);
   const { effectiveSelectedIndex, latestRef, moveSelection } =
     useCompletionSelection<LatestReferenceState>({
       value,

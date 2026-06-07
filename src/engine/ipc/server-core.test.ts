@@ -7,6 +7,8 @@ import type { EngineEvent } from '../events/types.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import type { ServerMessage } from './protocol.js';
 
+const AUTH_TOKEN = 'test-auth-token';
+
 function readLines(socket: Socket, count: number): Promise<ServerMessage[]> {
   return new Promise((resolve, reject) => {
     const messages: ServerMessage[] = [];
@@ -58,6 +60,17 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+async function connectAndAuth(sockPath: string): Promise<Socket> {
+  const socket = await connectClient(sockPath);
+  sockets.push(socket);
+  socket.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
+  const msgs = await readLines(socket, 1);
+  const meta = msgs[0]!;
+  if (meta.kind !== 'session_meta') throw new Error('expected session_meta');
+  await tick();
+  return socket;
+}
+
 async function waitForEvent(
   bus: ReturnType<typeof createEventBus>,
   type: EngineEvent['type'],
@@ -100,6 +113,7 @@ async function makeServer(overrides?: Partial<Parameters<typeof startIpcServer>[
     startedAt: 1000,
     mode: 'standard',
     feature: 'test feature',
+    authToken: AUTH_TOKEN,
     bus,
     onUserInput,
     ...overrides,
@@ -126,6 +140,7 @@ describe('startIpcServer', () => {
       startedAt: 1000,
       mode: 'quick',
       feature: 'feat',
+      authToken: AUTH_TOKEN,
       bus,
       onUserInput: () => undefined,
     });
@@ -137,10 +152,11 @@ describe('startIpcServer', () => {
     );
   });
 
-  it('sends session_meta on client connect', async () => {
+  it('sends session_meta after client authentication', async () => {
     const { srv } = await makeServer();
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
+    socket.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
     const msgs = await readLines(socket, 1);
     const msg = msgs[0]!;
     expect(msg.kind).toBe('session_meta');
@@ -155,17 +171,13 @@ describe('startIpcServer', () => {
   it('publishes ipc_client_attached when client connects', async () => {
     const { srv, bus } = await makeServer();
     const attachedPromise = waitForEvent(bus, 'ipc_client_attached');
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1); // wait for session_meta
+    await connectAndAuth(srv.sockPath);
     await attachedPromise;
   });
 
   it('forwards bus events as { kind: event, payload } messages', async () => {
     const { srv, bus } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1); // consume session_meta
+    const socket = await connectAndAuth(srv.sockPath);
 
     const linesPromise = readLines(socket, 1);
     bus.publish({ type: 'workflow_started', ts: 123, phase: 'idle', feature: 'x' });
@@ -181,9 +193,7 @@ describe('startIpcServer', () => {
   it('rejects second connection with already_attached', async () => {
     const { srv } = await makeServer();
 
-    const s1 = await connectClient(srv.sockPath);
-    sockets.push(s1);
-    await readLines(s1, 1); // consume session_meta for s1
+    const s1 = await connectAndAuth(srv.sockPath);
 
     const s2 = await connectClient(srv.sockPath);
     sockets.push(s2);
@@ -199,11 +209,45 @@ describe('startIpcServer', () => {
     expect(s1.destroyed).toBe(false);
   });
 
+  it('rejects unauthenticated detach from a second connection', async () => {
+    const { srv } = await makeServer();
+    const s1 = await connectAndAuth(srv.sockPath);
+
+    const s2 = await connectClient(srv.sockPath);
+    sockets.push(s2);
+    s2.write(JSON.stringify({ kind: 'detach' }) + '\n');
+
+    const rejectMsgs = await readLines(s2, 1);
+    const rejectMsg = rejectMsgs[0]!;
+    expect(rejectMsg.kind).toBe('error');
+    if (rejectMsg.kind === 'error') {
+      expect(rejectMsg.code).toBe('unauthorized');
+    }
+
+    await waitForClose(s2);
+    expect(s1.destroyed).toBe(false);
+  });
+
+  it('allows authenticated detach from a second connection', async () => {
+    const { srv } = await makeServer();
+    const s1 = await connectAndAuth(srv.sockPath);
+
+    const s2 = await connectClient(srv.sockPath);
+    sockets.push(s2);
+    s2.write(
+      `${JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN })}\n${JSON.stringify({
+        kind: 'detach',
+      })}\n`,
+    );
+
+    await waitForClose(s1);
+    await waitForClose(s2);
+    expect(s1.destroyed).toBe(true);
+  });
+
   it('calls onUserInput when client sends user_input', async () => {
     const { srv, onUserInput } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1); // session_meta
+    const socket = await connectAndAuth(srv.sockPath);
 
     socket.write(JSON.stringify({ kind: 'user_input', text: 'hello world' }) + '\n');
     await tick();
@@ -215,9 +259,7 @@ describe('startIpcServer', () => {
     const events: EngineEvent[] = [];
     const { srv, bus, onUserInput } = await makeServer();
     bus.subscribe((e) => events.push(e));
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1);
+    const socket = await connectAndAuth(srv.sockPath);
 
     socket.write(JSON.stringify({ kind: 'user_input', text: { value: 'not text' } }) + '\n');
     await tick();
@@ -248,8 +290,12 @@ describe('startIpcServer', () => {
 
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
-    const msgs = await readLines(socket, 2);
-    const prompt = msgs.find((msg) => msg.kind === 'prompt_request');
+    socket.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
+    const allMsgs = await readLines(socket, 2);
+    const meta = allMsgs.find((msg) => msg.kind === 'session_meta');
+    const prompt = allMsgs.find((msg) => msg.kind === 'prompt_request');
+    if (meta?.kind !== 'session_meta') throw new Error('missing session_meta');
+    await tick();
 
     expect(prompt).toBeDefined();
     if (prompt?.kind !== 'prompt_request') throw new Error('missing prompt_request');
@@ -270,9 +316,7 @@ describe('startIpcServer', () => {
     const events: EngineEvent[] = [];
     const { srv, bus } = await makeServer();
     bus.subscribe((e) => events.push(e));
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1);
+    const socket = await connectAndAuth(srv.sockPath);
 
     let settled = false;
     const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
@@ -321,15 +365,18 @@ describe('startIpcServer', () => {
     });
   });
 
-  it('rejects prompt promises after 30s timeout', async () => {
+  it('rejects prompt promises after 30s timeout once a client is attached', async () => {
+    const { srv } = await makeServer();
+    await connectAndAuth(srv.sockPath);
+
     vi.useFakeTimers();
     try {
-      const { srv } = await makeServer();
       const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
-      vi.advanceTimersByTime(30_000);
-      await expect(promptPromise).rejects.toThrow(
+      const assertion = expect(promptPromise).rejects.toThrow(
         'IPC prompt timed out after 30s: external_changes',
       );
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
     } finally {
       vi.useRealTimers();
     }
@@ -337,9 +384,7 @@ describe('startIpcServer', () => {
 
   it('sends prompt requests immediately to an attached client', async () => {
     const { srv } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1);
+    const socket = await connectAndAuth(srv.sockPath);
 
     const promptPromise = srv.requestClientPrompt({
       kind: 'budget_paused',
@@ -366,9 +411,7 @@ describe('startIpcServer', () => {
 
   it('round-trips tiered approval prompts through an attached client', async () => {
     const { srv } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1);
+    const socket = await connectAndAuth(srv.sockPath);
 
     const promptPromise = srv.requestClientPrompt({
       kind: 'tiered_approval',
@@ -412,9 +455,7 @@ describe('startIpcServer', () => {
 
   it('round-trips approval edit actions through an attached client', async () => {
     const { srv } = await makeServer();
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1);
+    const socket = await connectAndAuth(srv.sockPath);
 
     const promptPromise = srv.requestClientPrompt({
       kind: 'approval_needed',
@@ -454,9 +495,7 @@ describe('startIpcServer', () => {
   it('handles detach: closes client socket, server stays up', async () => {
     const { srv } = await makeServer();
 
-    const s1 = await connectClient(srv.sockPath);
-    sockets.push(s1);
-    await readLines(s1, 1); // session_meta
+    const s1 = await connectAndAuth(srv.sockPath);
 
     s1.write(JSON.stringify({ kind: 'detach' }) + '\n');
     await waitForClose(s1);
@@ -464,6 +503,7 @@ describe('startIpcServer', () => {
 
     const s2 = await connectClient(srv.sockPath);
     sockets.push(s2);
+    s2.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
     const afterDetachMsgs = await readLines(s2, 1);
     expect(afterDetachMsgs[0]!.kind).toBe('session_meta');
   });
@@ -471,9 +511,7 @@ describe('startIpcServer', () => {
   it('publishes ipc_client_detached on client disconnect', async () => {
     const { srv, bus } = await makeServer();
 
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1); // session_meta
+    const socket = await connectAndAuth(srv.sockPath);
     await tick();
 
     const detachedPromise = waitForEvent(bus, 'ipc_client_detached');
@@ -484,9 +522,7 @@ describe('startIpcServer', () => {
   it('publishes ipc_client_detached on detach command', async () => {
     const { srv, bus } = await makeServer();
 
-    const socket = await connectClient(srv.sockPath);
-    sockets.push(socket);
-    await readLines(socket, 1); // session_meta
+    const socket = await connectAndAuth(srv.sockPath);
     await tick();
 
     const detachedPromise = waitForEvent(bus, 'ipc_client_detached');
@@ -502,7 +538,6 @@ describe('startIpcServer', () => {
 
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
-    await readLines(socket, 1); // session_meta
 
     socket.write('not valid json\n');
     await tick();
@@ -518,6 +553,40 @@ describe('startIpcServer', () => {
     expect(existsSync(srv.sockPath)).toBe(true);
     await srv.close();
     expect(existsSync(srv.sockPath)).toBe(false);
+    const idx = servers.indexOf(srv);
+    if (idx !== -1) servers.splice(idx, 1);
+  });
+
+  it('close() sends server_complete to the attached client', async () => {
+    const { srv } = await makeServer();
+    const socket = await connectAndAuth(srv.sockPath);
+    const closePromise = srv.close();
+    const messages: ServerMessage[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('timed out waiting for server_complete')),
+        1000,
+      );
+      let buf = '';
+      const onData = (chunk: Buffer) => {
+        buf += chunk.toString('utf8');
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          messages.push(JSON.parse(trimmed) as ServerMessage);
+        }
+        if (messages.some((msg) => msg.kind === 'server_complete')) {
+          clearTimeout(timer);
+          socket.removeListener('data', onData);
+          resolve();
+        }
+      };
+      socket.on('data', onData);
+    });
+    await closePromise;
+    expect(messages.some((msg) => msg.kind === 'server_complete')).toBe(true);
     const idx = servers.indexOf(srv);
     if (idx !== -1) servers.splice(idx, 1);
   });

@@ -16,7 +16,6 @@ import { autoSplitOverflowTasks } from '../auto-split-overflow.js';
 import { runPlanningPhase } from '../planning/run.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
-import { drainQueue } from '../queue.js';
 import { transitionAndSave } from '../state-ops.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
 
@@ -25,11 +24,9 @@ export function applyPostPlanDrain(opts: {
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
 }): WorkflowState {
-  const { ctx, state, setTrackedState } = opts;
-  const drain = drainQueue(ctx.projectDir, ctx.sessionId, state, ctx.bus);
-  if (drain.messages.length === 0) return state;
-  setTrackedState(drain.state);
-  return drain.state;
+  // Post-plan has no planner consumer; leave queued messages for final-review/task drains.
+  void opts;
+  return opts.state;
 }
 
 export type RunPlanningPhasesOptions = {
@@ -281,6 +278,7 @@ export async function runTasksAndReview(
       planner: wctx.planner,
       metadata: wctx.metadata,
       signal: wctx.signal,
+      sinks: wctx.sinks,
     },
     summaryBase,
     taskResult.taskBreakdowns,

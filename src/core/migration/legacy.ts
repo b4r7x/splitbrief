@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { slugify } from '../../utils/slugify.js';
 import { sessionsRoot } from '../paths.js';
@@ -53,11 +51,10 @@ export function migrateState(old: Record<string, unknown>): object {
   };
 }
 
-export function migrateEvents(input: string, output: string): string[] {
-  const lines = readFileSync(input, 'utf-8').split('\n');
+export function migrateEventLines(content: string): { lines: string[]; warnings: string[] } {
   const migrated: string[] = [];
   const warnings: string[] = [];
-  for (const line of lines) {
+  for (const line of content.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
@@ -72,6 +69,5 @@ export function migrateEvents(input: string, output: string): string[] {
       warnings.push(`Skipping corrupt events line: ${line}`);
     }
   }
-  writeSecureFile(output, migrated.join('\n') + '\n');
-  return warnings;
+  return { lines: migrated, warnings };
 }

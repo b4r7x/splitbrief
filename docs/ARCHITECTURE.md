@@ -443,12 +443,13 @@ Generated via `find src -type f \( -name '*.ts' -o -name '*.tsx' \) | sort`. The
 src/
 ├── app.tsx                        Root Ink component; routes screen + overlay
 ├── layout.tsx                     Structural shell (header + body + footer)
-├── cli.ts                         Top-level entry; registers 20 subcommands
+├── cli.ts                         Top-level entry; registers workflow + utility subcommands
 │
 ├── cli/                           Non-React CLI handlers
-│   ├── commands/                  approval, attach, handoff, init, mcp,
-│   │                              migrate, ps, resume, snapshot, spec,
-│   │                              start, status, worktree
+│   ├── commands/                  approval, attach, continue, detach, doctor,
+│   │                              explain, export, handoff, init, last, mcp,
+│   │                              migrate, ps, resume, snapshot, spec, start,
+│   │                              stats, status, worktree
 │   ├── errors.ts                  CliError type + exit-code helpers
 │   ├── headless.ts                runHeadless: --json mode without Ink
 │   ├── hook-trust-prompt.ts       Interactive hook-trust gating
@@ -782,7 +783,7 @@ Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`), `'ful
 
 Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
 
-- `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Issues: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `non_atomic_task`, `missing_implementation_steps`. Publishes `brief_quality_passed` or `brief_quality_failed`.
+- `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
 - `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` and the legacy `mode_downgrade_advised` for trivial requests in higher modes; user can /mode to switch.
@@ -916,6 +917,8 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
                 └── files/<encoded-path>   (delta — only changed files)
 ```
 
+`copilot-issue` uses the same handoff directory root but writes only `manifest.json` and one `issue.md` body.
+
 Also relative to project root, **outside** `.diptych/`:
 
 - `./.trees/<slug>/` — git worktrees managed by `diptych worktree`.
@@ -1028,7 +1031,7 @@ export async function renderHandoffWithCustom(
   input: Omit<HandoffInput, 'target'> & { target: string },
   projectDir: string,
 ): Promise<HandoffPack>
-//  Async; falls back to runtime-loadable .diptych/handoff-renderers/<target>.{ts|js}.
+//  Async; loads .diptych/handoff-renderers/<target>.{ts|js} only when trusted.
 ```
 
 ### `engine/handoff/write.ts`
@@ -1116,7 +1119,7 @@ Registered in `src/cli.ts` (20 commands). [`CLI-REFERENCE.md`](./CLI-REFERENCE.m
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `diptych start` | — | Begin a new workflow. Flags: `--mode`, `--planner`, `--implementer`, `--feature`, `--json`, `--detach`, `--worktree [name]`. Foreground/headless/RPC runs write `.diptych/active`; detached runs create a session folder and lockfile. |
+| `diptych start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--mode`, `--planner`, `--implementer`, `--json`, `--detach`, `--worktree [name]`. Foreground/headless/RPC runs write `.diptych/active`; detached runs create a session folder and lockfile. |
 | `diptych spec` | — | Same as start but exits after planning artifacts are produced. |
 | `diptych init` | — | Interactive setup; writes `.diptych/config.yaml`. |
 | `diptych status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
@@ -1206,7 +1209,7 @@ All sections are optional; absence means the feature is off (snapshots) or uses 
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-Full verification: `npm run test-ci` (typecheck, lint, Vitest, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
+Full verification: `npm run test-ci` (format:check, typecheck, lint, Vitest, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
 
 ---
 

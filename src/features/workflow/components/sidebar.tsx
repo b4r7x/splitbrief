@@ -7,7 +7,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
-import { STATUS_GLYPH } from '../../../core/task-status-glyph.js';
+import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 import { CostDisplay } from './cost/display.js';
 
 interface SidebarProps {

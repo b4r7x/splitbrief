@@ -5,6 +5,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import type { ServerStatus } from '../engine/ipc/lockfile.js';
 import {
   formatCrashDiagnostic,
+  printCrashDiagnostic,
   showCrashDiagnostic,
   waitForCrashDiagnosticOption,
 } from './crash-diagnostic.js';
@@ -101,6 +102,44 @@ describe('formatCrashDiagnostic', () => {
     expect(out).toMatch(/\[1\]/);
     expect(out).toMatch(/diptych start/);
     expect(out).toMatch(/\[2\]/);
+  });
+});
+
+describe('printCrashDiagnostic', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `crash-diag-print-${Date.now()}`);
+    await mkdir(tmpDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes diagnostics without exiting the process', async () => {
+    const written: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (data: unknown) => {
+      written.push(String(data));
+      return true;
+    };
+
+    let exitCode: number | undefined;
+    const origExit = process.exit.bind(process);
+    process.exit = ((code?: number) => {
+      exitCode = code;
+    }) as typeof process.exit;
+
+    try {
+      const diag = await printCrashDiagnostic(tmpDir, BASE_STATUS_CRASHED);
+      expect(diag.status).toBe('crashed');
+      expect(written.join('')).toContain('CRASHED');
+      expect(exitCode).toBeUndefined();
+    } finally {
+      process.stdout.write = origWrite;
+      process.exit = origExit;
+    }
   });
 });
 

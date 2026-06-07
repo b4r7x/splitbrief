@@ -19,7 +19,10 @@
 import { z } from 'zod';
 import { FileActionSchema, TaskStatusSchema } from './enums.js';
 
-export const TaskIdSchema = z.string().brand<'TaskId'>();
+export const TaskIdSchema = z
+  .string()
+  .regex(/^T\d{3}$/)
+  .brand<'TaskId'>();
 export type TaskId = z.infer<typeof TaskIdSchema>;
 export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
 export const taskIdToString = (id: TaskId): string => id;

@@ -41,7 +41,7 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
       summary: opts.summary,
     };
     saveSummary({ projectDir: opts.projectDir, sessionId: opts.sessionId }, session);
-    if (opts.summary.costBreakdown && opts.summary.costBreakdown.hasSavingsEstimate !== false) {
+    if (opts.summary.costBreakdown && opts.summary.costBreakdown.isTotalActualCostKnown !== false) {
       try {
         updateStats(opts.projectDir, {
           costBreakdown: opts.summary.costBreakdown,

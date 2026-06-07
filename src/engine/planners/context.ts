@@ -1,40 +1,59 @@
 import type { Dirent } from 'node:fs';
-import { readFile, readdir, access } from 'node:fs/promises';
+import { readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readPackageJson } from '../../core/project-meta.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
+import { pathConfinementError } from '../../lib/path-confinement.js';
+import { matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
+
+function readPlannerContextFile(projectDir: string, relativePath: string): string | null {
+  try {
+    if (!confinedExists(projectDir, relativePath)) return null;
+    return confinedReadFile(projectDir, relativePath);
+  } catch (err) {
+    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) return null;
+    throw err;
+  }
+}
 
 const MAX_LISTED_ENTRIES = 500;
 
 export async function buildProjectContextMarkdown(projectDir: string): Promise<string> {
   const parts: string[] = [];
 
-  const pkg = readPackageJson(projectDir);
-  if (pkg) {
-    const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
-    const description = typeof pkg.description === 'string' ? pkg.description : '';
-    const rawScripts = isRecord(pkg.scripts) ? pkg.scripts : {};
+  const pkgRaw = readPlannerContextFile(projectDir, 'package.json');
+  if (pkgRaw !== null) {
+    let pkg: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(pkgRaw);
+      pkg = isRecord(parsed) ? parsed : null;
+    } catch {
+      pkg = null;
+    }
+    if (pkg) {
+      const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
+      const description = typeof pkg.description === 'string' ? pkg.description : '';
+      const rawScripts = isRecord(pkg.scripts) ? pkg.scripts : {};
 
-    parts.push(`## Package: ${name}`);
-    if (description) parts.push(description);
-    const scriptEntries = Object.entries(rawScripts).filter(([, v]) => typeof v === 'string');
-    if (scriptEntries.length > 0) {
-      parts.push('\n### Scripts');
-      for (const [scriptName, cmd] of scriptEntries) {
-        parts.push(`- \`${scriptName}\`: \`${cmd}\``);
+      parts.push(`## Package: ${name}`);
+      if (description) parts.push(description);
+      const scriptEntries = Object.entries(rawScripts).filter(([, v]) => typeof v === 'string');
+      if (scriptEntries.length > 0) {
+        parts.push('\n### Scripts');
+        for (const [scriptName, cmd] of scriptEntries) {
+          parts.push(`- \`${scriptName}\`: \`${cmd}\``);
+        }
       }
     }
   }
 
-  const readmePath = join(projectDir, 'README.md');
-  try {
-    await access(readmePath);
-    const readme = await readFile(readmePath, 'utf-8');
+  const readme = readPlannerContextFile(projectDir, 'README.md');
+  if (readme !== null) {
     const first50 = readme.split('\n').slice(0, 50).join('\n');
     parts.push('\n## README (first 50 lines)');
     parts.push(first50);
-  } catch {
-    /* README missing or unreadable */
   }
 
   const srcDir = join(projectDir, 'src');

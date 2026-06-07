@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -9,6 +12,10 @@ import type { PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
+import {
+  capturePlanningMutationBaseline,
+  findUnexpectedPlanningMutations,
+} from './mutation-guard.js';
 import type { PlannerCallbacksContext } from '../types.js';
 
 let dirs: string[] = [];
@@ -21,6 +28,7 @@ afterEach(() => {
 function setupSession(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('shared-planning-test');
   dirs.push(projectDir);
+  createTestGitRepo(projectDir);
   const sessionId = 'sess-shared-test';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
@@ -95,6 +103,27 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
 
     const heartbeatsAfterDelay = events.filter((e) => e.type === 'planner_heartbeat').length;
     expect(heartbeatsAfterDelay).toBe(heartbeatsAfterError);
+  });
+});
+
+describe('planning mutation guard', () => {
+  it('flags project mutations outside the active session directory', async () => {
+    const projectDir = createTempDir('cli-planning-mutation-guard');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    const sessionId = 'sess-shared-test';
+    ensureSessionDir(projectDir, sessionId);
+
+    const baseline = await capturePlanningMutationBaseline(projectDir);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src', 'leak.ts'), 'export const leak = true;\n');
+
+    const unexpected = await findUnexpectedPlanningMutations({
+      projectDir,
+      sessionId,
+      baseline,
+    });
+    expect(unexpected).toContain('src/leak.ts');
   });
 });
 

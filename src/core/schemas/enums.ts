@@ -115,6 +115,15 @@ export const RECOVERY_ACTIONS = [
 export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
 export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 
+export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'continue',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+];
+
 const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
 export const RecoveryStatusSchema = z.enum(RECOVERY_STATUSES);
 

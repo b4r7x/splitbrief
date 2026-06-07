@@ -25,8 +25,8 @@ describe('tasksStore — via addEvent', () => {
 
     // task-complete for an unknown taskId does not add a new entry to taskMap,
     // but its duration is still tracked (duration is event-sourced, not taskMap-sourced).
-    addEvent(makeTaskComplete({ taskId: taskId('UNKNOWN'), duration: 8000 }));
-    expect(tasksStore.get().taskMap.get('UNKNOWN')).toBeUndefined();
+    addEvent(makeTaskComplete({ taskId: taskId('T999'), duration: 8000 }));
+    expect(tasksStore.get().taskMap.get('T999')).toBeUndefined();
     expect(tasksStore.get().taskMap.size).toBe(1);
     expect(tasksStore.get().taskCompletionTimes).toEqual([5000, 8000]);
   });
@@ -55,6 +55,20 @@ describe('tasksStore — via addEvent', () => {
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');
   });
 
+  it('returns failed or done tasks to pending on task_reset', () => {
+    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Failed task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T001'), method: 'failed' }));
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('failed');
+
+    addEvent({
+      type: 'task_reset',
+      ts: Date.now(),
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    });
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('pending');
+  });
+
   it('updates task state from escalation lifecycle events', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Escalating task' }));
     addEvent({
@@ -63,8 +77,7 @@ describe('tasksStore — via addEvent', () => {
       phase: 'escalating',
       taskId: taskId('T001'),
     });
-    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('escalated');
-
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('in_progress');
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Full fail task' }));
     addEvent({
       type: 'task_full_fail',

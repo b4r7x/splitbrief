@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 import { parseJsonLine } from '../json-line.js';
-import { RpcCommandSchema, type RpcCommand } from './types.js';
+import { createLineBuffer } from '../../lib/process/line-buffer.js';
+import { RPC_MAX_FRAME_BYTES, RpcCommandSchema, type RpcCommand } from './types.js';
 
 export interface CommandReaderOptions {
   stream: NodeJS.ReadableStream;
@@ -12,24 +13,33 @@ export interface CommandReaderOptions {
 export function createCommandReader(options: CommandReaderOptions): { close: () => void } {
   const { stream, onCommand, onError, onClose } = options;
   const rl = createInterface({ input: stream, terminal: false });
+  const lineBuffer = createLineBuffer(
+    (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      const parsed = parseJsonLine(trimmed);
+      if (parsed === undefined) {
+        onError(`Invalid JSON: ${trimmed}`);
+        return;
+      }
+
+      const result = RpcCommandSchema.safeParse(parsed);
+      if (result.success) {
+        onCommand(result.data);
+        return;
+      }
+
+      onError(`Invalid command: ${result.error.message}`);
+    },
+    {
+      maxLineBytes: RPC_MAX_FRAME_BYTES,
+      onOverflow: (bytes) => onError(`RPC frame too large: ${bytes} bytes`),
+    },
+  );
 
   rl.on('line', (line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    const parsed = parseJsonLine(trimmed);
-    if (parsed === undefined) {
-      onError(`Invalid JSON: ${trimmed}`);
-      return;
-    }
-
-    const result = RpcCommandSchema.safeParse(parsed);
-    if (result.success) {
-      onCommand(result.data);
-      return;
-    }
-
-    onError(`Invalid command: ${result.error.message}`);
+    lineBuffer.push(`${line}\n`);
   });
 
   if (onClose) {

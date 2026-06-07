@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
-import { STATUS_GLYPH } from '../../../core/task-status-glyph.js';
+import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 
 interface TaskSummaryProps {
   index: number;

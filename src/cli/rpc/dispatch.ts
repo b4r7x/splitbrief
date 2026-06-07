@@ -63,7 +63,7 @@ export function createCommandHandler(deps: {
   };
 
   return (cmd: RpcCommand) => {
-    if (cmd.type === 'approve' || cmd.type === 'reject') {
+    if (cmd.type === 'approve' || cmd.type === 'reject' || cmd.type === 'regenerate') {
       if (deps.approvalGate.handle(cmd)) {
         deps.writer.ack(cmd.type);
         return;

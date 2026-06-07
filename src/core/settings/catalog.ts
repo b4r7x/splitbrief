@@ -106,7 +106,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Implementer',
     description: 'Request timeout (ms)',
     kind: 'number',
-    min: 0,
+    min: 1,
     max: 600000,
     integer: true,
   },

@@ -4,6 +4,8 @@ import {
   loadSdk,
   isAgentSdkAvailable,
   createAgentSdkBackend,
+  PLANNER_ALLOWED_TOOLS,
+  PLANNER_PERMISSION_MODE,
 } from './agent-sdk-backend.js';
 
 describe('isModuleNotFoundError', () => {
@@ -46,6 +48,13 @@ describe('loadSdk', () => {
     await expect(loadSdk()).rejects.toThrow(
       'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
     );
+  });
+});
+
+describe('planner read-only defaults', () => {
+  it('excludes write tools and uses plan permission mode', () => {
+    expect(PLANNER_ALLOWED_TOOLS).toEqual(['Read', 'Glob', 'Grep']);
+    expect(PLANNER_PERMISSION_MODE).toBe('plan');
   });
 });
 

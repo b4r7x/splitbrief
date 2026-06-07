@@ -134,7 +134,7 @@ describe('Routing — wrong method/path', () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(res.status).toBe(405);
-    expect(res.headers.get('allow')).toBe('POST');
+    expect(res.headers.get('allow')).toBe('POST, OPTIONS');
   });
 
   it('returns 404 for POST /unknown-path', async () => {
@@ -261,6 +261,51 @@ describe('Origin validation', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it('returns CORS headers on successful local-origin POST', async () => {
+    const h = await startServer();
+    const origin = 'http://localhost:3000';
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: origin,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(res.headers.get('vary')).toBe('Origin');
+  });
+});
+
+describe('OPTIONS /mcp preflight', () => {
+  it('returns 204 with CORS allow headers before auth for local origins', async () => {
+    const h = await startServer();
+    const origin = 'http://127.0.0.1:5173';
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization, content-type',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(res.headers.get('access-control-allow-methods')).toContain('POST');
+    expect(res.headers.get('access-control-allow-headers')).toMatch(/authorization/i);
+  });
+
+  it('does not require bearer auth for local-origin preflight', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://localhost:3000' },
+    });
+    expect(res.status).toBe(204);
   });
 });
 

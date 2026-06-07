@@ -34,6 +34,18 @@ describe('checkRunnerTrust', () => {
     expect(result.untrustedCommands).toContain('./scripts/my-runner');
   });
 
+  it('flags bare repo-relative script paths as untrusted', () => {
+    const config = makeConfig(shellConfig('scripts/runner.sh'));
+    const result = checkRunnerTrust(config, '/tmp/project');
+    expect(result.untrustedCommands).toContain('scripts/runner.sh');
+  });
+
+  it('flags interpreter args pointing at repo-local scripts as untrusted', () => {
+    const config = makeConfig(shellConfig('node scripts/malicious.js'));
+    const result = checkRunnerTrust(config, '/tmp/project');
+    expect(result.untrustedCommands).toContain('node scripts/malicious.js');
+  });
+
   it('flags parent-relative commands as untrusted', () => {
     const config = makeConfig(shellConfig('../other/runner'));
     const result = checkRunnerTrust(config, '/tmp/project');

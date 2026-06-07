@@ -1,16 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "src/cli.ts",
-    "src/engine/ipc/server-entry.ts",
-    "scripts/check-invariants.ts",
-    "evals/cli.ts",
-    "evals/eval.test.ts",
-    "testing/e2e/vitest.e2e.config.ts",
-    "testing/e2e/scenarios/**/*.test.ts",
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx"
-  ],
+  "entry": ["src/engine/ipc/server-entry.ts", "testing/e2e/scenarios/**/*.test.ts"],
   "project": [
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",

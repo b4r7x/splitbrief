@@ -118,20 +118,20 @@ mode resolved: standard
 phase: researching
 phase: specifying      → spec.md
 phase: reviewing-spec  ← awaiting approval
-  [a]pprove  [c]omment  [r]eject  [e]dit
-> a
+  approve / edit / comment <text> / quit
+> approve
 phase: planning        → plan.md, tasks.md
 phase: reviewing-briefs ← brief approval (simple view)
-> a
+> approve
 phase: implementing
   T001 ✓  T002 ✓  T003 ✓
 phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Press `a` to approve, `c <text>` to send a comment that triggers regeneration, `r` to reject, `e` to open `$EDITOR` for inline edits.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or `edit` / `e` to open `$EDITOR` for inline edits.
 
-**Variations:** `--approve none` skips both gates. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
+**Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3, recipe 5.
 
@@ -563,21 +563,23 @@ phase: reviewing-briefs
   T001 add validator     create  src/auth/validate.ts
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
-  [a]pprove  [c]omment  [r]eject  [e]dit
+  approve | e/edit | comment <text> | reject
 > e
 ```
 
-Pressing `e` opens `$EDITOR` with the brief markdown. Save and exit; diptych re-parses on the way back.
+Pressing `e` opens `$EDITOR` with the brief markdown. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
 ```
 Opened in editor (vim) … saved.
 brief_quality_passed
+phase: reviewing-briefs
+> approve
 phase: implementing
 ```
 
-**Variations:** `c <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
+**Variations:** `comment <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 17.
 
@@ -593,7 +595,7 @@ At the `reviewing-spec` gate:
 
 ```
 phase: reviewing-spec
-> c the validator should be a plain function, not a class. Reuse the existing isEmail helper.
+> comment the validator should be a plain function, not a class. Reuse the existing isEmail helper.
 ```
 
 **You'll see:**
@@ -601,11 +603,11 @@ phase: reviewing-spec
 ```
 spec_regenerated
 phase: reviewing-spec    ← second pass
-> a
+> approve
 planner_status: planning
 ```
 
-A non-empty comment regenerates; an empty comment skips back to the gate without regenerating. Hard reject (`r`) ends the workflow.
+A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 **Variations:** Mid-run, `/revise-spec <text>` rewinds to the spec gate from any phase from `reviewing-spec` onward. `/revise-plan <text>` rewinds only the plan (spec preserved).
 
@@ -624,13 +626,11 @@ workflow:
   briefReview: rich      # default is 'simple'
 ```
 
-Or just press `e` from the simple view to opt into rich mode for the current session.
-
 **Run:**
 
 ```bash
 diptych start "add login form"
-# at reviewing-briefs gate, press: e
+# opens rich review when the run reaches reviewing-briefs
 ```
 
 **You'll see:**
@@ -641,10 +641,10 @@ diptych start "add login form"
     T002 wire validator    │ scope: src/auth/middleware.ts
     T003 add tests         │ scope: src/auth/validate.test.ts
 
-  Use ↑↓ to select, Enter to edit task, ? for keys
+  Use ↑↓ to select, Enter to expand, ? for keys
 ```
 
-Per-task editor lets you rewrite signature, implementationSteps, constraints, and validation evidence inline. Save with `Ctrl+S`, discard with `Esc`.
+Per-task editor lets you rewrite signature, implementationSteps, constraints, and validation evidence inline. Press `e` to open `$EDITOR` for the selected task, `Y` to save and approve, and `q` to discard edits.
 
 **Variations:** The rich editor is opt-in because most briefs only need approve / comment. Set it as the default with `briefReview: rich` if you typically need to tweak.
 
@@ -820,7 +820,7 @@ The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured
 diptych handoff copilot-issue --out .diptych/handoffs/issue
 gh issue create \
   --title "Add JWT auth" \
-  --body-file .diptych/handoffs/issue/issue-body.md
+  --body-file .diptych/handoffs/issue/issue.md
 ```
 
 **You'll see:**
@@ -828,10 +828,10 @@ gh issue create \
 ```
 Handoff written to: .diptych/handoffs/issue
   manifest.json
-  issue-body.md
+  issue.md
 ```
 
-The `copilot-issue` renderer flattens the brief into a single Markdown body with task checkboxes, scope notes, and the supporting spec collapsed into a `<details>` block.
+The `copilot-issue` renderer writes one Markdown issue body. It embeds selected task IDs, titles, files, acceptance criteria, constraints, and validation commands in `issue.md`; it does not emit `tasks/<id>.md` files.
 
 **Variations:** `--task T001,T003` only includes a subset of tasks. Pair with `gh issue edit` to update an existing issue.
 
@@ -927,7 +927,7 @@ export default function render(input) {
 
 ```bash
 diptych handoff --list                  # confirm the custom target appears
-diptych handoff linear-ticket --out handoff/linear
+diptych handoff linear-ticket --allow-custom-renderer --out handoff/linear
 ```
 
 **You'll see:**
@@ -945,7 +945,7 @@ Handoff written to: handoff/linear
   ticket.md
 ```
 
-Custom renderers are dynamically imported from `.diptych/handoff-renderers/`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
+Custom renderers are dynamically imported from `.diptych/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`.
 
@@ -1295,7 +1295,7 @@ exit $status
 
 `--json` exit code is 0 on `workflow_complete`, non-zero on workflow errors. The grep above adds an extra gate on the soft budget signal.
 
-**Variations:** Combine with `--approve none` for unattended runs (no spec / plan prompts).
+**Variations:** Combine with `--approve none` for unattended runs that should skip spec and plan prompts. Standard and speckit still stop at briefs review; use quick mode if you need no brief-review prompt.
 
 **See also:** recipes 6, 35.
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { TaskReviewRequest } from '../../engine/events/workflow-events.js';
+import {
+  TASK_REVIEW_COMMANDS,
+  type TaskReviewRequest,
+} from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 
@@ -51,7 +54,7 @@ const request: TaskReviewRequest = {
     costPosture: 'local',
     reason: 'Selected cheapest capable profile local-small.',
   },
-  availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+  availableCommands: [...TASK_REVIEW_COMMANDS],
 };
 
 describe('task review prompt', () => {

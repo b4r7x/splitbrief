@@ -34,7 +34,7 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
       alignItems="center"
     >
       <Text bold color={t.success}>
-        {actual} actual vs {baseline} all-planner — {pct}% saved
+        {actual} actual vs {baseline} implementer-at-planner-rate — {pct}% saved
       </Text>
       <Text color={t.textDim}>
         Saved {formatCost(costBreakdown.savingsAmount)} by routing{' '}

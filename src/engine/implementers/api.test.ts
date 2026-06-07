@@ -72,7 +72,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     const controller = new AbortController();
     const implementer = createApiImplementer(makeConfig());
-    const task = makeTask({ id: 'T-signal', file: 'src/signal.ts', action: 'create' });
+    const task = makeTask({ id: 'T010', file: 'src/signal.ts', action: 'create' });
 
     await implementer.implement({
       task,
@@ -273,7 +273,7 @@ describe('api implementer — Anthropic path', () => {
       },
     });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T-anthropic', file: 'src/anthropic.ts', action: 'create' });
+    const task = makeTask({ id: 'T011', file: 'src/anthropic.ts', action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -303,7 +303,7 @@ describe('api implementer — Anthropic path', () => {
     });
     const controller = new AbortController();
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T-ant-signal', file: 'src/ant-signal.ts', action: 'create' });
+    const task = makeTask({ id: 'T012', file: 'src/ant-signal.ts', action: 'create' });
 
     await implementer.implement({
       task,
@@ -335,7 +335,7 @@ describe('api implementer — Anthropic path', () => {
         },
       });
       const implementer = createApiImplementer(cfg);
-      const task = makeTask({ id: 'T-ant', file: 'src/ant.ts', action: 'create' });
+      const task = makeTask({ id: 'T013', file: 'src/ant.ts', action: 'create' });
 
       const result = await implementer.implement({
         task,
@@ -364,7 +364,7 @@ describe('api implementer — Anthropic path', () => {
         },
       });
       const implementer = createApiImplementer(cfg);
-      const task = makeTask({ id: 'T-ant-guard', file: 'src/guard.ts', action: 'create' });
+      const task = makeTask({ id: 'T014', file: 'src/guard.ts', action: 'create' });
 
       const result = await implementer.implement({
         task,

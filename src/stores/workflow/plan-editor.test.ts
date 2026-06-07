@@ -89,6 +89,39 @@ describe('planEditorStore', () => {
     expect(planEditorStore.get().reviewMetadata.size).toBe(0);
   });
 
+  it('clears expanded and flagged IDs when renumbering reuses IDs for different tasks', () => {
+    const first = makeTask({ id: 'T001', title: 'First task', file: 'src/first.ts' });
+    const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
+    const third = makeTask({ id: 'T003', title: 'Third task', file: 'src/third.ts' });
+    planEditorStore.initEditor([first, second, third]);
+    planEditorStore.toggleExpand('T002');
+    planEditorStore.toggleFlag('T002');
+
+    planEditorStore.setTasks([
+      { ...second, id: taskId('T001') },
+      { ...third, id: taskId('T002') },
+    ]);
+
+    expect(planEditorStore.get().expandedIds.size).toBe(0);
+    expect(planEditorStore.get().flaggedIds.size).toBe(0);
+    expect(planEditorStore.getFlaggedTasks()).toEqual([]);
+  });
+
+  it('rejects stale save completions after the plan changed', () => {
+    const task = makeTask({ id: 'T001', title: 'Original title' });
+    planEditorStore.initEditor([task]);
+    planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
+    const revision = planEditorStore.get().revision;
+
+    planEditorStore.setTasks([{ ...task, title: 'Edited again' }]);
+
+    expect(planEditorStore.markSavedIfRevision(revision)).toBe(false);
+    expect(planEditorStore.get()).toMatchObject({
+      dirty: true,
+      saveError: 'Plan changed during save. Save again to persist the latest edits.',
+    });
+  });
+
   it('keeps the cursor within the available task list while moving or jumping', () => {
     planEditorStore.initEditor([
       makeTask({ id: 'T001' }),

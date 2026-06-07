@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
 import { configPath, loadConfig } from '../config/load/io.js';
-import { applyCLIOverrides, workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
+import { workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
+import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
 import { isGitRepo, getGitStatus } from '../../lib/git.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -85,19 +86,23 @@ function loadReadinessConfig(
 
   try {
     const loaded = loadConfig(options.projectDir);
-    const config = applyCLIOverrides(loaded.config, {
-      ...workflowOptsToCLIOverrides(options.opts ?? {}),
-      autoApprove:
-        options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
+    const { config, warnings } = resolveEffectiveConfig({
+      base: loaded.config,
+      overrides: {
+        ...workflowOptsToCLIOverrides(options.opts ?? {}),
+        autoApprove:
+          options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
+      },
+      baseWarnings: loaded.warnings,
     });
     return {
       config,
-      warnings: loaded.warnings,
+      warnings,
       configLoad: {
         state: 'loaded',
         path: filePath,
-        warnings: loaded.warnings,
-        migratedInMemory: loaded.warnings.some((warning) => warning.includes('config.version 2')),
+        warnings,
+        migratedInMemory: warnings.some((warning) => warning.includes('config.version 2')),
       },
     };
   } catch (err) {

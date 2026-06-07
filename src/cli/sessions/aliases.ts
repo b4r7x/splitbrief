@@ -1,5 +1,5 @@
 import { readdirSync, existsSync } from 'node:fs';
-import { readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
+import { confinedReadLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot, sessionDir } from '../../core/paths.js';
 import { cliError } from '../errors.js';
 
@@ -37,7 +37,7 @@ export async function buildAliasedSessions(projectDir: string): Promise<AliasedS
 
   for (const name of listSessionDirs(projectDir)) {
     const sessDir = sessionDir(projectDir, name);
-    const data = await readLockfile(sessDir);
+    const data = await confinedReadLockfile(sessDir, name);
     if (!data) continue;
     sessions.push({ sessionId: name, lockfile: data });
   }

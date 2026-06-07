@@ -36,7 +36,7 @@ describe('transition', () => {
   });
 
   it('START_QUICK -> implementing with tasks set', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state = createInitialState('feat');
     const next = transition(state, { type: 'START_QUICK', tasks });
     expect(next.phase).toBe('implementing');
@@ -46,7 +46,7 @@ describe('transition', () => {
   });
 
   it('REJECT_SPEC -> idle', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-spec',
@@ -62,7 +62,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_FAIL with attempt < 3 -> implementing with attempt incremented', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -103,7 +103,7 @@ describe('transition', () => {
   });
 
   it('HINT_SUCCESS -> implementing with index advanced', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -113,11 +113,11 @@ describe('transition', () => {
     const next = transition(state, { type: 'HINT_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(getCompletedTaskIds(next)).toEqual(['t1']);
+    expect(getCompletedTaskIds(next)).toEqual(['T001']);
   });
 
   it('CANCEL -> idle with tasks cleared and counters reset', () => {
-    const tasks = [makeTask({ id: 't0', status: 'done' }), makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T000', status: 'done' }), makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -165,7 +165,7 @@ describe('transition', () => {
   });
 
   it('REJECT_PLAN -> idle', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-plan',
@@ -190,7 +190,7 @@ describe('transition', () => {
   });
 
   it('FULL_SUCCESS -> implementing with index advanced, task in escalatedTasks, attempt reset', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -201,7 +201,7 @@ describe('transition', () => {
     const next = transition(state, { type: 'FULL_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(getEscalatedTaskIds(next)).toEqual(['t1']);
+    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
     expect(next.attempt).toBe(0);
   });
 
@@ -224,7 +224,7 @@ describe('transition', () => {
   });
 
   it('START_TASK resets attempt to 0 (resume retry-budget fix)', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -239,8 +239,8 @@ describe('transition', () => {
 
   it('CLEAR_TASK_CODE removes stale currentCode from the selected task only', () => {
     const tasks = [
-      makeTask({ id: 't1', currentCode: 'stale code' }),
-      makeTask({ id: 't2', currentCode: 'keep code' }),
+      makeTask({ id: 'T001', currentCode: 'stale code' }),
+      makeTask({ id: 'T002', currentCode: 'keep code' }),
     ];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -255,7 +255,7 @@ describe('transition', () => {
   });
 
   it('HINT_SUCCESS resets attempt to 0', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -269,7 +269,7 @@ describe('transition', () => {
   });
 
   it('configurable maxRetries: attempt < custom max stays in implementing', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -283,7 +283,7 @@ describe('transition', () => {
   });
 
   it('configurable maxRetries: attempt >= custom max transitions to escalating', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -296,7 +296,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_FAIL at default max transitions to escalating', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -309,7 +309,7 @@ describe('transition', () => {
   });
 
   it('full workflow: START through REVIEW_DONE', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
 
     let s = createInitialState('full-flow');
     expect(s.phase).toBe('idle');
@@ -341,14 +341,14 @@ describe('transition', () => {
     s = transition(s, { type: 'VALIDATION_PASS' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(1);
-    expect(getCompletedTaskIds(s)).toEqual(['t1']);
+    expect(getCompletedTaskIds(s)).toEqual(['T001']);
 
     s = transition(s, { type: 'TASK_SENT' });
     expect(s.phase).toBe('validating-task');
     s = transition(s, { type: 'VALIDATION_PASS' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(2);
-    expect(getCompletedTaskIds(s)).toEqual(['t1', 't2']);
+    expect(getCompletedTaskIds(s)).toEqual(['T001', 'T002']);
 
     s = transition(s, { type: 'ALL_DONE' });
     expect(s.phase).toBe('final-review');
@@ -357,7 +357,7 @@ describe('transition', () => {
     expect(s.phase).toBe('complete');
 
     expect(s.feature).toBe('full-flow');
-    expect(getCompletedTaskIds(s)).toEqual(['t1', 't2']);
+    expect(getCompletedTaskIds(s)).toEqual(['T001', 'T002']);
     expect(getFailedTaskIds(s)).toEqual([]);
     expect(getEscalatedTaskIds(s)).toEqual([]);
     expect(getSkippedTaskIds(s)).toEqual([]);
@@ -365,7 +365,7 @@ describe('transition', () => {
   });
 
   it('REWIND_TO_SPEC -> specifying with tasks cleared and counters reset', () => {
-    const tasks = [makeTask({ id: 't1', status: 'done' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -391,7 +391,7 @@ describe('transition', () => {
   });
 
   it('REWIND_TO_PLAN -> planning with tasks cleared and counters reset', () => {
-    const tasks = [makeTask({ id: 't1', status: 'done' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -418,9 +418,9 @@ describe('transition', () => {
 
   it('RESET_TASK -> implementing with task set to pending and index rewound', () => {
     const tasks = [
-      makeTask({ id: 't1', status: 'done' }),
-      makeTask({ id: 't2', status: 'done' }),
-      makeTask({ id: 't3' }),
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+      makeTask({ id: 'T003' }),
     ];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -438,14 +438,14 @@ describe('transition', () => {
   });
 
   it('RESET_TASK with unknown taskId returns state unchanged', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       tasks,
       currentTaskIndex: 0,
     };
-    const next = transition(state, { type: 'RESET_TASK', taskId: taskId('nonexistent') });
+    const next = transition(state, { type: 'RESET_TASK', taskId: taskId('T999') });
     expect(next).toBe(state);
   });
 
@@ -472,7 +472,7 @@ describe('transition', () => {
   });
 
   it('RESET_TASK does NOT set rewindPending', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -513,7 +513,7 @@ describe('transition', () => {
   });
 
   it('CONSTITUTION_CHECK_FAIL -> idle and clears awaitingContinue', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'constitution-check',
@@ -545,7 +545,7 @@ describe('transition', () => {
   });
 
   it('BRIEFS_READY -> reviewing-briefs with tasks set', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-plan',
@@ -560,7 +560,7 @@ describe('transition', () => {
   });
 
   it('APPROVE_BRIEFS -> implementing with index and attempt reset', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-briefs',
@@ -573,7 +573,7 @@ describe('transition', () => {
   });
 
   it('REJECT_BRIEFS -> idle', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-briefs',
@@ -589,7 +589,7 @@ describe('transition', () => {
   });
 
   it('BRIEFS_READY can be called from implementing phase', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
     const next = transition(state, { type: 'BRIEFS_READY', tasks });
     expect(next.phase).toBe('reviewing-briefs');
@@ -654,7 +654,7 @@ describe('transition', () => {
   });
 
   it('TASK_SENT strips currentCode from the sent task', () => {
-    const tasks = [makeTask({ id: 't1', currentCode: 'const x = 1;' })];
+    const tasks = [makeTask({ id: 'T001', currentCode: 'const x = 1;' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -667,7 +667,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_PASS strips currentCode from the completed task', () => {
-    const tasks = [makeTask({ id: 't1', currentCode: 'const x = 1;' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001', currentCode: 'const x = 1;' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -680,7 +680,7 @@ describe('transition', () => {
   });
 
   it('SKIP_TASK -> implementing with attempt reset and index advanced', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -692,11 +692,14 @@ describe('transition', () => {
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
     expect(next.attempt).toBe(0);
-    expect(getSkippedTaskIds(next)).toEqual(['t1']);
+    expect(getSkippedTaskIds(next)).toEqual(['T001']);
   });
 
   it('FULL_SUCCESS strips currentCode from the escalated task', () => {
-    const tasks = [makeTask({ id: 't1', currentCode: 'source code here' }), makeTask({ id: 't2' })];
+    const tasks = [
+      makeTask({ id: 'T001', currentCode: 'source code here' }),
+      makeTask({ id: 'T002' }),
+    ];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',

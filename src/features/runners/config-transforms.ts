@@ -1,15 +1,11 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { PlannerConfigSchema, type PlannerConfig } from '../../core/schemas/planner-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
+import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
 import type { PickerOption } from './model-catalog.js';
 
 function setPlanner(config: Config, planner: PlannerConfig): Config {
   return { ...config, planner };
-}
-
-function setImplementer(config: Config, implementer: ImplementerConfig): Config {
-  return { ...config, implementer };
 }
 
 export function commitPlannerSelection(
@@ -31,13 +27,15 @@ export function commitImplementerSelection(
   selection: PickerOption,
   model: { id: string } | null,
 ): Config {
-  const opts = {
-    kind: selection.kind,
-    tool: selection.id,
-    model: model?.id ?? config.implementer.model,
-    existing: config.implementer,
-  };
-  return setImplementer(config, buildRunnerConfig('implementer', opts));
+  return updateDefaultImplementerConfig(config, (existing) => {
+    const opts = {
+      kind: selection.kind,
+      tool: selection.id,
+      model: model?.id ?? existing.model,
+      existing,
+    };
+    return buildRunnerConfig('implementer', opts);
+  });
 }
 
 export interface CommitCustomCommandInput {
@@ -49,15 +47,15 @@ export interface CommitCustomCommandInput {
 
 export function commitCustomCommand(input: CommitCustomCommandInput): Config {
   const { config, role, command, kind } = input;
-  const opts = {
-    kind,
-    command,
-    existing: role === 'planner' ? config.planner : config.implementer,
-    ...(role === 'implementer' && { model: config.implementer.model }),
-  };
-
-  if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
-  return setImplementer(config, buildRunnerConfig('implementer', opts));
+  if (role === 'planner') {
+    return setPlanner(
+      config,
+      buildRunnerConfig('planner', { kind, command, existing: config.planner }),
+    );
+  }
+  return updateDefaultImplementerConfig(config, (existing) =>
+    buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
+  );
 }
 
 export interface CommitCustomModelInput {
@@ -83,7 +81,9 @@ export function commitCustomModel(input: CommitCustomModelInput): Config {
   };
 
   if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
-  return setImplementer(config, buildRunnerConfig('implementer', opts));
+  return updateDefaultImplementerConfig(config, (existing) =>
+    buildRunnerConfig('implementer', { ...opts, existing }),
+  );
 }
 
 export function removeCustomModel(
@@ -100,16 +100,17 @@ export function removeCustomModel(
     // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.
     return setPlanner(config, omitModel(config.planner, filtered));
   }
-  const current = config.implementer.customModels ?? [];
-  const filtered = current.filter((m) => m !== modelId);
-  if (config.implementer.model !== modelId) {
-    return setImplementer(config, { ...config.implementer, customModels: filtered });
-  }
-  const fallbackModel = filtered[0] ?? 'auto';
-  return setImplementer(config, {
-    ...config.implementer,
-    model: fallbackModel,
-    customModels: filtered,
+  return updateDefaultImplementerConfig(config, (existing) => {
+    const current = existing.customModels ?? [];
+    const filtered = current.filter((m) => m !== modelId);
+    if (existing.model !== modelId) {
+      return { ...existing, customModels: filtered };
+    }
+    return {
+      ...existing,
+      model: filtered[0] ?? 'auto',
+      customModels: filtered,
+    };
   });
 }
 

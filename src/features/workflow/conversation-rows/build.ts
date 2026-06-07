@@ -22,12 +22,12 @@ export function buildConversationRows(inputs: ConversationRowInputs): Conversati
     if (section.type === 'completed-task') continue;
     for (const [index, event] of section.items.entries()) {
       const globalIndex = section.startIndex + index;
-      const eventRowList = eventRows(
+      const eventRowList = eventRows({
         event,
         globalIndex,
         ctx,
-        inputs.expandedDiffs.has(globalIndex),
-      );
+        expanded: inputs.expandedDiffs.has(globalIndex),
+      });
       if (eventRowList.length === 0) continue;
       if (rows.length > 0) rows.push(blankRow(`spacer-${globalIndex}`));
       rows.push(...eventRowList);

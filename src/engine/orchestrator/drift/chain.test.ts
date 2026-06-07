@@ -158,12 +158,12 @@ describe('analyzeDriftChain — score formula (deterministic)', () => {
   });
 
   it('length 3, 80% overlap (4/5 files), 3 unique files: approximate score', () => {
-    // We need: T1: {a,b,c,d,e}, T2: {a,b,c,d,e} full overlap chain len 2
-    // T3: {a,b,c,d,f} — 4/5 with T2 (a,b,c,d common, e not in T3, f new)
-    // overlap T2∩T3 = {a,b,c,d} = 4; union T2∪T3 = {a,b,c,d,e,f} = 6
+    // We need: T001: {a,b,c,d,e}, T002: {a,b,c,d,e} full overlap chain len 2
+    // T003: {a,b,c,d,f} — 4/5 with T002 (a,b,c,d common, e not in T003, f new)
+    // overlap T002∩T003 = {a,b,c,d} = 4; union T002∪T003 = {a,b,c,d,e,f} = 6
     // overlapTerm = 4/6 * 0.5 = 0.3333
     // lengthTerm = 3/5 * 0.3 = 0.18
-    // uniqueFiles after T3: {a,b,c,d,e,f} = 6 → 6/10*0.2 = 0.12
+    // uniqueFiles after T003: {a,b,c,d,e,f} = 6 → 6/10*0.2 = 0.12
     // total = 0.18 + 0.3333 + 0.12 = 0.6333
     let state = makeState();
     const files5 = new Set(['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts']);
@@ -179,7 +179,7 @@ describe('analyzeDriftChain — score formula (deterministic)', () => {
     let state = makeState();
     const bigSet = new Set(Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`));
     for (let i = 1; i <= 10; i++) {
-      const update = analyzeDriftChain(state, taskId(`T00${i}`), bigSet, 2);
+      const update = analyzeDriftChain(state, taskId(`T${String(i).padStart(3, '0')}`), bigSet, 2);
       state = update.state;
       expect(state.activeChain.score).toBeGreaterThanOrEqual(0);
       expect(state.activeChain.score).toBeLessThanOrEqual(1);

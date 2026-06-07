@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import type {
   Implementer,
   ImplementerOptions,
@@ -9,8 +8,21 @@ import type {
 } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
-import { readFileOrEmpty, readFileSafeAsync } from '../../lib/fs.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
+import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
+import { matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
+
+async function readTaskFileContent(projectDir: string, file: string): Promise<string | null> {
+  try {
+    if (!confinedExists(projectDir, file)) return null;
+    return await confinedReadFileAsync(projectDir, file);
+  } catch (err) {
+    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) return null;
+    throw err;
+  }
+}
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
 import { extractCode } from '../parsers/response-extractor.js';
@@ -64,8 +76,7 @@ async function processImplementerOutput(opts: {
     return { success: false, error: approval.reason ?? 'write denied by approval gate' };
   }
 
-  const filePath = join(projectDir, task.file);
-  const currentContent = await readFileSafeAsync(filePath);
+  const currentContent = await readTaskFileContent(projectDir, task.file);
   if (currentContent !== approvedBaselineContent) {
     return {
       success: false,
@@ -79,7 +90,7 @@ async function processImplementerOutput(opts: {
     return { success: false, error: applyResult.error ?? 'Failed to apply code' };
   }
 
-  const newContent = await readFileOrEmpty(filePath);
+  const newContent = (await readTaskFileContent(projectDir, task.file)) ?? '';
   const { diff, linesAdded, linesRemoved } = computeDiff(approvedBaselineContent ?? '', newContent);
 
   return { success: true, diff, linesAdded, linesRemoved };
@@ -165,7 +176,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     let oldContent: string | null = null;
     if (baseConfig.extractsCode) {
-      oldContent = await readFileSafeAsync(join(projectDir, task.file));
+      oldContent = await readTaskFileContent(projectDir, task.file);
     }
 
     let changeBaseline: ChangeDetectorBaseline | undefined;

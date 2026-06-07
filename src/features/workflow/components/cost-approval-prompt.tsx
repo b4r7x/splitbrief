@@ -94,8 +94,8 @@ export function CostApprovalPromptConnected() {
   return (
     <CostApprovalPrompt
       prediction={state.prediction}
-      onApprove={() => closeCostApprovalPrompt(true)}
-      onReject={() => closeCostApprovalPrompt(false)}
+      onApprove={() => closeCostApprovalPrompt({ approved: true })}
+      onReject={() => closeCostApprovalPrompt({ approved: false })}
     />
   );
 }

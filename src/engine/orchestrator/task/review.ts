@@ -8,7 +8,11 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 
-import type { TaskReviewRequest, TaskReviewValidation } from '../../events/workflow-events.js';
+import {
+  TASK_REVIEW_COMMANDS,
+  type TaskReviewRequest,
+  type TaskReviewValidation,
+} from '../../events/workflow-events.js';
 
 interface BuildTaskReviewRequestOptions {
   projectDir: string;
@@ -98,7 +102,7 @@ export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): Tas
         recommendedAction: recovery.recommendedAction,
       },
     }),
-    availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+    availableCommands: [...TASK_REVIEW_COMMANDS],
   };
 }
 

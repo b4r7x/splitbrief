@@ -41,7 +41,7 @@ describe('substituteEventFields', () => {
       type: 'validate',
       ts: 1,
       phase: 'validating-task',
-      taskId: taskId('T1'),
+      taskId: taskId('T001'),
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },

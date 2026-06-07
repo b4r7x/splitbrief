@@ -1,5 +1,5 @@
 import type { Task } from '../schemas/task.js';
-import { error, matches } from '../../utils/error.js';
+import { error } from '../../utils/error.js';
 
 export const topoError = {
   circularDependency: (cycle: string[]) =>
@@ -11,11 +11,21 @@ export const topoError = {
       taskId,
       dependencyId,
     }),
-  isCircularDependency: matches('topo-circular-dependency'),
-  isUnknownDependency: matches('topo-unknown-dependency'),
+  duplicateTaskId: (taskId: string) =>
+    error('topo-duplicate-task-id', `Duplicate task ID: ${taskId}`, { taskId }),
 } as const;
 
+export function assertUniqueTaskIds(tasks: Task[]): void {
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    const id = String(task.id);
+    if (seen.has(id)) throw topoError.duplicateTaskId(id);
+    seen.add(id);
+  }
+}
+
 export function topoSort(tasks: Task[]): Task[] {
+  assertUniqueTaskIds(tasks);
   const taskMap = new Map<string, Task>();
   for (const task of tasks) taskMap.set(task.id, task);
 

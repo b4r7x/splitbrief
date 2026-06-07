@@ -1,6 +1,6 @@
-import { appendFile } from 'node:fs/promises';
+import { appendFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { SECURE_FILE_MODE, fsError } from '../../lib/fs.js';
 import { SESSION_LOG_FILE } from '../paths.js';
 import type { ResolvedCompactionFormat, StructuredSummary } from '../schemas/compaction.js';
 import type {
@@ -69,7 +69,20 @@ type LogCompactionState = {
   latestSummary: SessionLogSummaryEntry | null;
 };
 
+async function rejectSessionLogSymlink(sessionDir: string): Promise<void> {
+  const logFile = join(sessionDir, SESSION_LOG_FILE);
+  try {
+    const st = await lstat(logFile);
+    if (st.isSymbolicLink()) {
+      throw fsError.symlinkWrite(logFile);
+    }
+  } catch (err) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+}
+
 async function readLogCompactionState(sessionDir: string): Promise<LogCompactionState> {
+  await rejectSessionLogSymlink(sessionDir);
   const entries: SessionLogEntry[] = [];
   for await (const entry of readSessionLogFromDir(sessionDir)) {
     entries.push(entry);
@@ -117,6 +130,7 @@ async function summarizeMessages(
 }
 
 async function appendSummary(sessionDir: string, entry: SessionLogSummaryEntry): Promise<void> {
+  await rejectSessionLogSymlink(sessionDir);
   await appendFile(join(sessionDir, SESSION_LOG_FILE), `${JSON.stringify(entry)}\n`, {
     mode: SECURE_FILE_MODE,
   });

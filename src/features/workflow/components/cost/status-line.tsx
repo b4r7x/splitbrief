@@ -30,7 +30,8 @@ export function CostStatusLine({
     (sum, p) => sum + p.cacheReadTokens,
     0,
   );
-  const plannerInput = tokens.tokenUsage?.plannerInput ?? 0;
+  const plannerInput =
+    (tokens.tokenUsage?.plannerInput ?? 0) + (tokens.tokenUsage?.escalationInput ?? 0);
   const implementerInput = tokens.tokenUsage?.implementerInput ?? 0;
   const totalInput = plannerInput + implementerInput;
 

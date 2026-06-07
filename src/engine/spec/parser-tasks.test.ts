@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseTasks } from './parser.js';
+import { parseTasks, parseTasksStrict } from './parser.js';
+import { formatTasks } from './formatter.js';
 
 const validTasksMd = `---
 id: T001
@@ -340,15 +341,15 @@ depends_on: []
 
   it('throws on circular dependencies', () => {
     const input = `---
-id: A
+id: T001
 title: "Task A"
 action: create
 file: a.ts
-depends_on: [B]
+depends_on: [T002]
 ---
 
 ### Description
-Depends on B.
+Depends on T002.
 
 ### Tests
 - Test A
@@ -357,11 +358,11 @@ Depends on B.
 - None
 
 ---
-id: B
+id: T002
 title: "Task B"
 action: create
 file: b.ts
-depends_on: [A]
+depends_on: [T001]
 ---
 
 ### Description
@@ -375,6 +376,29 @@ Depends on A.
 `;
 
     expect(() => parseTasks(input)).toThrow('Circular dependency');
+  });
+
+  it('throws on duplicate task IDs instead of silently collapsing', () => {
+    const input = `${dependencyTaskBlock('T001')}
+---
+id: T001
+title: "Duplicate task"
+action: create
+file: src/duplicate.ts
+depends_on: []
+---
+
+### Description
+Second block with the same ID.
+
+### Tests
+- Should fail parse
+
+### Constraints
+- None
+`;
+
+    expect(() => parseTasks(input)).toThrow('Duplicate task ID: T001');
   });
 });
 
@@ -651,6 +675,71 @@ A brief with all Task Brief v1 optional sections.
     expect(task.evidence).toEqual(['npm test passes', 'diff limited to src/full.ts']);
   });
 
+  it('parses approved out of bounds scope bucket when present', () => {
+    const input = `---
+id: T103
+title: "Approved scope"
+action: modify
+file: src/approved.ts
+depends_on: []
+---
+
+### Description
+Task with approved exceptions.
+
+### Scope
+**In bounds:**
+- src/approved.ts
+
+**Out of bounds:**
+- unrelated modules
+
+**Approved out of bounds:**
+- src/shared/config.ts
+
+### Tests
+- Should compile
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    const task = tasks[0];
+    if (!task) throw new Error('expected task');
+    expect(task.scope).toEqual({
+      inBounds: ['src/approved.ts'],
+      outOfBounds: ['unrelated modules'],
+      approvedOutOfBounds: ['src/shared/config.ts'],
+    });
+  });
+
+  it('round-trips approvedOutOfBounds through formatTasks', () => {
+    const input = `---
+id: T104
+title: "Round trip"
+action: modify
+file: src/rt.ts
+depends_on: []
+---
+
+### Description
+Round trip approved scope.
+
+### Scope
+**Approved out of bounds:**
+- src/shared.ts
+
+### Tests
+- ok
+
+### Constraints
+- none
+`;
+    const parsed = parseTasks(formatTasks(parseTasks(input)));
+    expect(parsed[0]?.scope?.approvedOutOfBounds).toEqual(['src/shared.ts']);
+  });
+
   it('sets scope with only one bucket when only one is present', () => {
     const input = `---
 id: T102
@@ -678,6 +767,60 @@ Only in bounds listed.
     const task = tasks[0];
     if (!task) throw new Error('expected task');
     expect(task.scope).toEqual({ inBounds: ['new file src/partial.ts'] });
+  });
+});
+
+describe('parseTasksStrict', () => {
+  it('throws when a task-like block has invalid frontmatter', () => {
+    const input = `${dependencyTaskBlock('T001')}
+---
+id: T002
+title:
+action: create
+file: src/broken.ts
+depends_on: []
+---
+
+### Description
+Malformed title should fail strict parse.
+
+### Tests
+- fail
+
+### Constraints
+- none
+`;
+    expect(() => parseTasksStrict(input)).toThrow(/Invalid task block/);
+  });
+
+  it('preserves fenced --- delimiters inside task bodies', () => {
+    const input = `---
+id: T201
+title: "Fenced delimiter"
+action: modify
+file: src/fenced.ts
+depends_on: []
+---
+
+### Description
+Task body includes a fenced block.
+
+### Pattern
+\`\`\`yaml
+---
+key: value
+---
+\`\`\`
+
+### Tests
+- pattern preserved
+
+### Constraints
+- none
+`;
+    const tasks = parseTasksStrict(input);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.pattern).toContain('key: value');
   });
 });
 

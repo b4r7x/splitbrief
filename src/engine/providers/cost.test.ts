@@ -148,7 +148,7 @@ describe('calculateCostBreakdown', () => {
     expect(result.hasSavingsEstimate).toBe(false);
   });
 
-  it('computes savings only when planner is API-priced', () => {
+  it('computes savings only when the all-planner baseline is priced', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -170,15 +170,9 @@ describe('calculateCostBreakdown', () => {
     expect(result.actualImplementerCost).toBeGreaterThan(0);
     expect(result.hasSavingsEstimate).toBe(true);
 
-    // savingsAmount = hypotheticalCost (implementer tokens @ planner rate) - actualImplementerCost.
-    // It must NOT deduct plannerCost — planner spend is fixed regardless of implementer choice.
-    expect(result.savingsAmount).toBeCloseTo(
-      result.hypotheticalCost - result.actualImplementerCost,
-      10,
-    );
+    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
     expect(result.savingsAmount).toBeGreaterThan(0);
 
-    // savingsPercentage uses hypotheticalCost as the 100% baseline.
     expect(result.savingsPercentage).toBeCloseTo(
       (result.savingsAmount / result.hypotheticalCost) * 100,
       10,
@@ -198,8 +192,7 @@ describe('calculateCostBreakdown', () => {
     });
   });
 
-  it('savings formula excludes planner cost from both sides', () => {
-    // Verify: changing planner token usage does not affect savingsAmount.
+  it('all-planner baseline includes planner spend without changing savings amount', () => {
     const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
 
     const low = calculateCostBreakdown({
@@ -226,10 +219,12 @@ describe('calculateCostBreakdown', () => {
       implementerModel: 'deepseek-chat',
     });
 
-    // hypotheticalCost (implementer tokens @ planner rate) is identical — same implementer tokens.
-    expect(low.hypotheticalCost).toBeCloseTo(high.hypotheticalCost, 10);
-    // savingsAmount must be identical regardless of how much the planner consumed.
+    expect(high.hypotheticalCost).toBeGreaterThan(low.hypotheticalCost);
     expect(low.savingsAmount).toBeCloseTo(high.savingsAmount, 10);
+    expect(low.hypotheticalCost).toBeCloseTo(
+      low.actualPlannerCost + low.savingsAmount + low.actualImplementerCost,
+      10,
+    );
   });
 
   it('treats agent-sdk planner as unpriced-meta with no savings estimate', () => {
@@ -563,6 +558,37 @@ describe('calculateTaskUsageCost', () => {
       plannerTool: 'anthropic',
     });
     expect(cost).toBeGreaterThan(0);
+  });
+
+  it('includes escalation planner cache read/create in per-task cost', () => {
+    const task = {
+      taskId: taskId('T001'),
+      taskTitle: 'test',
+      method: 'escalated-full' as const,
+      implementerTokens: 0,
+      escalationTokens: 150_000,
+      escalationCacheReadTokens: 1_000_000,
+      escalationCacheCreateTokens: 1_000_000,
+      retryCount: 0,
+    };
+    const globalUsage = {
+      implementerInput: 0,
+      implementerOutput: 0,
+      escalationInput: 100_000,
+      escalationOutput: 50_000,
+      plannerCacheRead: 1_000_000,
+      plannerCacheCreate: 1_000_000,
+    };
+
+    const cost = calculateTaskUsageCost({
+      task,
+      tokenUsage: globalUsage,
+      implementerTool: 'ollama',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
+
+    expect(cost).toBeCloseTo(5.1, 6);
   });
 
   it('uses planner model pricing for per-task escalation attribution', () => {

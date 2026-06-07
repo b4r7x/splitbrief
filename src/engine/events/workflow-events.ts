@@ -31,8 +31,15 @@ export type UserEditConflict = {
 };
 
 export type TaskReviewStatus = TaskStatus | 'recovery-required';
-export type TaskReviewCommand = 'continue' | 'redo' | 'edit-notes' | 'revise-plan' | 'abort';
-export type TaskReviewAction = 'continue' | 'redo-task' | 'revise-plan' | 'abort';
+export const TASK_REVIEW_COMMANDS = [
+  'continue',
+  'redo-task',
+  'edit-notes',
+  'revise-plan',
+  'abort',
+] as const;
+export type TaskReviewCommand = (typeof TASK_REVIEW_COMMANDS)[number];
+export type TaskReviewAction = Exclude<TaskReviewCommand, 'edit-notes'>;
 
 export type TaskReviewValidation = {
   passed: boolean | null;

@@ -1,4 +1,4 @@
-import { existsSync, createReadStream } from 'node:fs';
+import { existsSync, createReadStream, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
 import type {
@@ -11,8 +11,17 @@ import type { SessionRef } from '../types/session-ref.js';
 import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { SessionLogEntrySchema } from '../schemas/session-log.js';
 
+function isSymlinkedLog(filePath: string): boolean {
+  try {
+    return lstatSync(filePath).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 async function* readSessionLogFile(file: string): AsyncIterable<SessionLogEntry> {
   if (!existsSync(file)) return;
+  if (isSymlinkedLog(file)) return;
   const stream = createReadStream(file, { encoding: 'utf-8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of rl) {

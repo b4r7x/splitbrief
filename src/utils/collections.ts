@@ -6,6 +6,10 @@ export function uniquePush<T>(arr: T[], value: T): void {
   if (!arr.includes(value)) arr.push(value);
 }
 
+export function uniqueInOrder<T>(values: readonly T[]): T[] {
+  return Array.from(new Set(values));
+}
+
 export function countByValue<T, K extends string>(
   items: readonly T[],
   key: (item: T) => K,

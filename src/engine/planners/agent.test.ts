@@ -128,7 +128,7 @@ describe('createAgentPlanner', () => {
     const callbacks = { onOutput: vi.fn(), onPhase: vi.fn(), sessionId: SESSION_ID };
 
     const tasksContent = `---
-id: task1
+id: T001
 title: Create test
 action: create
 file: test.ts
@@ -149,7 +149,7 @@ Create a test file.
     expect(result.spec).toBe('');
     expect(result.plan).toBe('');
     expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('task1');
+    expect(result.tasks[0]?.id).toBe('T001');
     expect(result.phases).toHaveLength(1);
   });
 
@@ -164,7 +164,7 @@ Create a test file.
       'spec.md': '# Specification\nFeature requirements...',
       'plan.md': '# Plan\nImplementation strategy...',
       'tasks.md': `---
-id: task1
+id: T001
 title: Create feature
 action: create
 file: feature.ts
@@ -186,7 +186,7 @@ Create the main feature.
     expect(result.spec).toContain('Feature requirements');
     expect(result.plan).toContain('Implementation strategy');
     expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('task1');
+    expect(result.tasks[0]?.id).toBe('T001');
     expect(result.phases).toHaveLength(4);
   });
 

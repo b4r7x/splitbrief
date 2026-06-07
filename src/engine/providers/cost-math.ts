@@ -16,6 +16,30 @@ export function calculateCost(
   );
 }
 
+export function cachePricingIsComplete(
+  pricing: ResolvedPricing,
+  cacheReadTokens: number,
+  cacheCreateTokens: number,
+): boolean {
+  if (cacheReadTokens > 0 && pricing.cacheReadPer1M === undefined) return false;
+  if (cacheCreateTokens > 0 && pricing.cacheWritePer1M === undefined) return false;
+  return true;
+}
+
+export function usageCostIsFullyKnown(opts: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreateTokens: number;
+  pricing: ResolvedPricing;
+}): boolean {
+  const total =
+    opts.inputTokens + opts.outputTokens + opts.cacheReadTokens + opts.cacheCreateTokens;
+  if (total <= 0) return true;
+  if (!opts.pricing.isPriced) return false;
+  return cachePricingIsComplete(opts.pricing, opts.cacheReadTokens, opts.cacheCreateTokens);
+}
+
 export function calculateUsageCost(opts: {
   inputTokens: number;
   outputTokens: number;

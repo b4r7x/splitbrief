@@ -49,6 +49,7 @@ describe('EventBus end-to-end flow', { timeout: 30_000 }, () => {
       config,
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
+      allowHooks: true,
       _eventSink: (e) => recorded.push(e),
     });
 

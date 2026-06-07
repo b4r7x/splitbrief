@@ -1,12 +1,10 @@
 import type { ReactNode } from 'react';
 import { useApp, useInput } from 'ink';
-import { isKeyDebugEnabled, logParsedKey } from './lib/terminal/debug-keys.js';
+import { isConfiguredKeyDebugEnabled, logDiptychParsedKey } from './core/key-debug.js';
 import { createRuntimeCommands } from './core/runtime/commands/registry.js';
 import { buildCommandContext } from './app/command-context.js';
 import { executeRuntimeCommand } from './core/runtime/commands/dispatch.js';
 import { useAppKeys } from './app/keys.js';
-import { interruptTurn } from './features/workflow/handlers.js';
-import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
 import { ThemeProvider, getTheme } from './components/theme.js';
 import { routerStore } from './stores/navigation/router.js';
@@ -29,8 +27,12 @@ import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './features/settings/mode-selector.js';
 import { ToolModelPicker } from './features/runners/picker.js';
-import { CostDrilldownOverlay } from './features/workflow/components/cost/drilldown-overlay.js';
-import { PlanEditorHelpOverlay } from './features/workflow/components/plan-editor/help-overlay.js';
+import {
+  interruptWorkflowTurn,
+  renderWorkflowCostDrilldownOverlay,
+  renderWorkflowPlanEditorHelpOverlay,
+  useWorkflowShellMouseScroll,
+} from './features/workflow/app-integration.js';
 import type { RuntimeCommandDef } from './core/runtime/commands/types.js';
 import type { OverlayType, Screen } from './core/navigation/types.js';
 import { assertNever } from './utils/type-guards.js';
@@ -55,9 +57,11 @@ export function App() {
     });
   };
 
-  useAppKeys({ exit, interruptWorkflow: interruptTurn });
-  useMouseScroll();
-  useInput((input, key) => logParsedKey(input, key), { isActive: isKeyDebugEnabled() });
+  useAppKeys({ exit, interruptWorkflow: interruptWorkflowTurn });
+  useWorkflowShellMouseScroll();
+  useInput((input, key) => logDiptychParsedKey(input, key), {
+    isActive: isConfiguredKeyDebugEnabled(),
+  });
 
   return (
     <ThemeProvider theme={theme}>
@@ -155,9 +159,9 @@ function renderOverlay({
     case 'sessions':
       return <SessionsPicker />;
     case 'cost-drilldown':
-      return <CostDrilldownOverlay />;
+      return renderWorkflowCostDrilldownOverlay();
     case 'plan-editor-help':
-      return <PlanEditorHelpOverlay />;
+      return renderWorkflowPlanEditorHelpOverlay();
     default:
       return assertNever(active);
   }

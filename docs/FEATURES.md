@@ -206,7 +206,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ### Brief quality gate
 
-**What it does.** A deterministic linter scores every Task Brief before implementation begins. Issue codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `non_atomic_task`, `missing_implementation_steps`. Any error-level issue blocks transition to `implementing`.
+**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, and `missing_implementation_steps`. `missing_type_definitions` is a warning. Any error-level issue blocks transition to `implementing`.
 
 **How to use.** Always runs in all four modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
 
@@ -226,7 +226,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. Pressing `e` edits the persisted `tasks.md` contract and returns to the gate on parse or quality errors; rich review opens the plan editor for the current session.
+**How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. Pressing `e` opens `$EDITOR` against the persisted `tasks.md` contract and returns to the gate on parse or quality errors. Rich review opens the plan editor for the current session.
 
 ```yaml
 workflow:
@@ -239,7 +239,7 @@ workflow:
 
 Rich review also has a read-only Worker Packet Preview for the selected task. The preview uses the same task formatter and review routing metadata that dispatch relies on, and shows worker/cost/write mode, fit/tokens/context, current-code reduction mode, system preamble, task prompt, and redaction/truncation notices. For modify tasks it refreshes current code from disk for preview; if the target file is missing or unreadable, stale Task Brief `currentCode` is omitted and the preview shows the missing/unavailable estimate state.
 
-**How to use.** Activated when `workflow.briefReview: rich` (or `e` from the simple view). Operates in-memory until you save with `Y`. Press `p` to toggle the selected-task packet preview.
+**How to use.** Activated when `workflow.briefReview: rich`. Operates in-memory until you save with `Y`. Press `p` to toggle the selected-task packet preview.
 
 | Key | Action |
 |---|---|
@@ -458,7 +458,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `spec-kit` | GitHub Spec Kit folder convention |
 | `agents-md` | AGENTS.md / Cursor / opencode |
 | `claude-code` | Claude Code CLI prompt + commands |
-| `copilot-issue` | GitHub Copilot Workspace issue body |
+| `copilot-issue` | Single-file GitHub issue body (`issue.md`) |
 
 Each pack is an inert artifact.
 
@@ -473,11 +473,11 @@ diptych handoff --list                            # list available targets
 
 In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/handoffs/<target>/`.
 
-**Pack shape.** `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when present), `tasks/T001.md`, `tasks/T002.md`, …, `README.md`.
+**Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
 
 ### Custom handoff renderers (advanced)
 
-**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.diptych/handoff-renderers/<name>.<ext>` exporting a default function. `diptych handoff <name>` then dispatches to it via `renderHandoffWithCustom`.
+**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.diptych/handoff-renderers/<name>.<ext>` exporting a default function. `diptych handoff --list` discovers it. Executing it requires `diptych handoff <name> --allow-custom-renderer` or `trust.customRenderers: true`.
 
 **How to use.**
 
@@ -489,7 +489,7 @@ export default async function render(input) {
 ```
 
 ```bash
-diptych handoff jira
+diptych handoff jira --allow-custom-renderer
 ```
 
 **When to use.** When you need to push the brief into a tool diptych does not ship a renderer for.
@@ -760,7 +760,7 @@ Sessions are execution records, not a plan archive or project-management databas
 
 ### Lifecycle hook events
 
-**What it does.** Twelve points in the workflow can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
+**What it does.** Eleven lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
 
 **How to use.** Declare in `.diptych/config.yaml` under `hooks:`. Full list:
 

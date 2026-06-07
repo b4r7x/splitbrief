@@ -10,6 +10,11 @@ import {
   worktreePath,
 } from '../core/paths.js';
 import { readJsonSafeAsync } from '../lib/fs.js';
+import {
+  assertExistingPathConfined,
+  assertWritablePathConfined,
+  pathConfinementError,
+} from '../lib/path-confinement.js';
 import { getCurrentBranch, type GitClient } from '../lib/git.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
@@ -78,7 +83,43 @@ export const worktreeError = {
       `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`,
       { slug },
     ),
+  treesPathEscape: () =>
+    error(
+      'worktree-trees-path-escape',
+      'Worktree directory ".trees" resolves outside the project root.',
+    ),
 } as const;
+
+function isTreesPathEscape(err: unknown): boolean {
+  return (
+    pathConfinementError.isSymlinkParent(err) ||
+    pathConfinementError.isSymlinkRead(err) ||
+    (err instanceof Error && (err as { kind?: unknown }).kind === 'path-confined-escape')
+  );
+}
+
+function resolveConfinedWorktreePath(projectDir: string, slug: string): string {
+  validateWorktreeName(slug);
+  try {
+    assertWritablePathConfined(TREES_DIR, projectDir);
+    assertWritablePathConfined(join(TREES_DIR, slug), projectDir);
+  } catch (err) {
+    if (isTreesPathEscape(err)) throw worktreeError.treesPathEscape();
+    throw err;
+  }
+  return worktreePath(projectDir, slug);
+}
+
+function assertTreesDirReadable(projectDir: string): void {
+  const treesDir = join(projectDir, TREES_DIR);
+  if (!existsSync(treesDir)) return;
+  try {
+    assertExistingPathConfined(TREES_DIR, projectDir);
+  } catch (err) {
+    if (isTreesPathEscape(err)) throw worktreeError.treesPathEscape();
+    throw err;
+  }
+}
 
 export function validateWorktreeName(name: string): void {
   if (typeof name !== 'string' || name.length === 0) {
@@ -147,9 +188,8 @@ async function readSessionState(
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
-  validateWorktreeName(slug);
+  const wtPath = resolveConfinedWorktreePath(projectDir, slug);
   const branch = `diptych/${slug}`;
-  const wtPath = worktreePath(projectDir, slug);
 
   const status = await git.status();
   const dirtyFiles = status.files.filter((file) => {
@@ -172,6 +212,7 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
 export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]> {
   const treesDir = join(projectDir, TREES_DIR);
   if (!existsSync(treesDir)) return [];
+  assertTreesDirReadable(projectDir);
 
   const entries = await readdir(treesDir, { withFileTypes: true });
   const results: WorktreeInfo[] = [];
@@ -229,8 +270,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
 
 export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void> {
   const { projectDir, slug, git, force = false, deleteBranch = false } = opts;
-  validateWorktreeName(slug);
-  const wtPath = worktreePath(projectDir, slug);
+  const wtPath = resolveConfinedWorktreePath(projectDir, slug);
   const branch = `diptych/${slug}`;
 
   if (!existsSync(wtPath)) {

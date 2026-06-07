@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
+import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { openExternalEditor } from './external-editor.js';
 
 let sessionDir: string;
@@ -88,6 +88,8 @@ afterEach(async () => {
   await rm(sessionDir, { recursive: true, force: true });
 });
 
+const itUnix = process.platform === 'win32' ? it.skip : it;
+
 describe('openExternalEditor edit mode', () => {
   it('writes a temp file, opens the configured editor, applies the edited task, and cleans up', async () => {
     const task = makeTask({
@@ -134,6 +136,24 @@ describe('openExternalEditor edit mode', () => {
     expect(planEditorStore.get().saveError).toContain('Editor exited with status 42');
   });
 
+  itUnix('refuses to open the editor when the temp file path is a symlink', async () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    const outside = await mkdtemp(join(tmpdir(), 'external-editor-outside-'));
+    try {
+      await writeFile(join(outside, 'edit.md'), 'outside');
+      await symlink(join(outside, 'edit.md'), join(sessionDir, `edit-${task.id}.md`));
+
+      openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
+
+      expect(planEditorStore.get().saveError).toContain(
+        'Refusing to write editor file through symlink',
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   it('surfaces temp file write failures', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
@@ -163,7 +183,58 @@ describe('openExternalEditor edit mode', () => {
 
     openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
 
-    expect(planEditorStore.get().saveError).toContain('Edit parse failed');
+    expect(planEditorStore.get().saveError).toMatch(/Edit (parse|validation) failed/);
+  });
+
+  itUnix('does not preserve failed edits through a preexisting .bad symlink', async () => {
+    const task = makeTask({ id: 'T001', implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    vi.stubEnv('FAKE_EDITOR_MODE', 'invalid-parse');
+    const outside = await mkdtemp(join(tmpdir(), 'external-editor-bad-outside-'));
+    try {
+      const outsideBad = join(outside, 'captured.md');
+      await writeFile(outsideBad, 'outside');
+      await symlink(outsideBad, join(sessionDir, `edit-${task.id}.md.bad`));
+
+      openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
+
+      expect(await readFile(outsideBad, 'utf-8')).toBe('outside');
+      expect(await readFile(join(sessionDir, `edit-${task.id}.md.bad.1`), 'utf-8')).toBe(
+        'not a task brief\n',
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('allows edit mode tasks that depend on earlier tasks in the full plan', () => {
+    const first = makeTask({
+      id: 'T001',
+      title: 'First',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
+    const second = makeTask({
+      id: 'T002',
+      title: 'Second',
+      dependsOn: ['T001'],
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
+    planEditorStore.initEditor([first, second]);
+    vi.stubEnv(
+      'FAKE_EDITOR_CONTENT',
+      makeValidTaskMarkdown('T002', 'Updated second').replace(
+        'depends_on: []',
+        'depends_on: [T001]',
+      ),
+    );
+
+    openExternalEditor({ task: second, mode: 'edit', sessionDirPath: sessionDir });
+
+    expect(planEditorStore.get().tasks).toHaveLength(2);
+    expect(planEditorStore.get().tasks[1]?.title).toBe('Updated second');
+    expect(planEditorStore.get().saveError).toBeNull();
   });
 
   it('rejects multiple tasks in edit mode', () => {

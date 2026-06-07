@@ -179,6 +179,12 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
+    case 'task_skipped':
+      return {
+        ...state,
+        completedTaskCount: state.completedTaskCount + 1,
+      };
+
     case 'workflow_started':
     case 'workflow_resumed':
     case 'workflow_complete':
@@ -210,7 +216,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'mode_downgrade_advised':
     case 'mode_advice':
     case 'instant_plan_received':
-    case 'task_skipped':
     case 'task_retry':
     case 'task_escalating':
     case 'task_full_fail':
