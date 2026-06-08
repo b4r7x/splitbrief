@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -8,21 +8,25 @@ import {
   makePlanner,
   makeImplementer,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import type { WorkflowContext } from '../types.js';
 
 const dirs: string[] = [];
 
+afterEach(() => {
+  for (const dir of dirs) cleanupTempDir(dir);
+  dirs.length = 0;
+});
+
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('approval-conflict-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'approval-conflict-test',
+    sessionId: 'sess-approval-conflict',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-approval-conflict';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 

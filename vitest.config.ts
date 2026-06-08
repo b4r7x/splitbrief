@@ -13,7 +13,6 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     testTimeout: 10_000,
-    retry: 1,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

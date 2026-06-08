@@ -10,25 +10,25 @@ For the workflow state machine, see `docs/WORKFLOW.md`. For the event model, see
 
 After the planner writes a spec or plan, the workflow pauses for human review. The approval loop lives in `src/engine/orchestrator/approval/loop.ts`.
 
-Three gate types:
+Three review gates:
 
 **Spec approval** — After the planner writes the spec. `onApprovalNeeded('spec', filePath)` fires. The user gets three choices: approve (workflow continues to planning), comment (the planner regenerates the spec using the feedback), or reject (the workflow ends). If the user comments, the planner calls `regenerate()` with the feedback, publishes a `spec_regenerated` event, and loops back to approval. This can repeat as many times as the user wants.
 
 **Plan approval** — Same mechanics as spec approval, applied to the plan. Active by default only in speckit mode. `onApprovalNeeded('plan', filePath)` fires, with the same approve/comment/reject loop.
 
-**Briefs approval** — After Task Briefs pass the quality gate (see below), the workflow enters the `reviewing-briefs` phase. The user reviews `tasks.md` on disk before any code is written.
+**Briefs review** — After Task Briefs pass the quality gate (see below), standard and speckit enter the `reviewing-briefs` phase. The user reviews `tasks.md` on disk before any code is written. This gate is separate from `workflow.approve`.
 
-Which gates are active depends on the `workflow.approve` setting:
+`workflow.approve` controls only the spec and plan document gates:
 
 | Level | What it gates |
 |---|---|
-| `none` | No document gates at all |
+| `none` | No spec or plan gates |
 | `spec` | Spec only |
 | `plan` | Plan only |
-| `all` | Spec, plan, and briefs |
+| `all` | Spec and plan |
 | `default` | Whatever the mode dictates |
 
-Each mode has a default. `instant` and `quick` default to `none`. `standard` defaults to `spec`. `speckit` defaults to `all`. Override with `--approve` on the CLI or `workflow.approve` in config.
+Each mode has a default. `instant` and `quick` default to `none`. `standard` defaults to `spec`. `speckit` defaults to `all`. Override with `--approve` on the CLI or `workflow.approve` in config. Standard and speckit still run briefs review even when `--approve none` skips spec and plan.
 
 ---
 

@@ -147,7 +147,7 @@ Diagnostic checklist:
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/diptych-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Run the CI pipeline exactly: `npm run test-ci` (typecheck → lint → test → invariants).
+- Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test → invariants).
 
 ### API key warning in logs
 

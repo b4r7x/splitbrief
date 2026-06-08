@@ -19,3 +19,11 @@ describe('SETTINGS_DEFS id resolution', () => {
     });
   }
 });
+
+describe('SETTINGS_DEFS numeric bounds', () => {
+  it('keeps implementer timeout aligned with the positive runner schema', () => {
+    const timeout = SETTINGS_DEFS.find((def) => def.id === 'implementer.timeout');
+
+    expect(timeout).toMatchObject({ kind: 'number', min: 1 });
+  });
+});

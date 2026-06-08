@@ -10,6 +10,20 @@ const tokenUsage = {
   escalationOutput: 0,
 };
 
+const task = {
+  id: 'T001',
+  title: 'Do work',
+  action: 'modify',
+  file: 'src/a.ts',
+  dependsOn: [],
+  description: 'Do work',
+  tests: [],
+  constraints: [],
+  typeDefs: '',
+  implementationSteps: [],
+  status: 'pending',
+};
+
 describe('WorkflowStateSchema recovery compatibility', () => {
   it('parses old state without pendingRecovery', () => {
     const result = WorkflowStateSchema.safeParse({
@@ -72,6 +86,51 @@ describe('WorkflowStateSchema recovery compatibility', () => {
         recommendedAction: 'abort-workflow',
         createdAt: '2026-04-28T12:00:00.000Z',
       },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects duplicate task IDs', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'planning',
+      feature: 'duplicate tasks',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [task, { ...task, title: 'Duplicate' }],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects active task phases with currentTaskIndex outside tasks', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'validating-task',
+      feature: 'bad index',
+      currentTaskIndex: 999,
+      attempt: 0,
+      tasks: [task],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts implementing state after the last task and before final review', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'implementing',
+      feature: 'task boundary',
+      currentTaskIndex: 1,
+      attempt: 0,
+      tasks: [{ ...task, status: 'done' }],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
     });
 
     expect(result.success).toBe(true);

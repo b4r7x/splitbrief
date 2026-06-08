@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   writeLockfile,
@@ -9,11 +9,16 @@ import {
   markCrashed,
   markSignaled,
   readLockfile,
+  confinedReadLockfile,
   checkServerStatus,
 } from './lockfile.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 
 let testDir: string;
+
+function sessionIdFor(dir: string): string {
+  return basename(dir);
+}
 
 beforeEach(() => {
   testDir = join(tmpdir(), `lockfile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -30,7 +35,7 @@ describe('writeLockfile', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -39,7 +44,7 @@ describe('writeLockfile', () => {
     expect(data).not.toBeNull();
     expect(data!.version).toBe(1);
     expect(data!.pid).toBe(1234);
-    expect(data!.sessionId).toBe('test-session');
+    expect(data!.sessionId).toBe(sessionIdFor(testDir));
     expect(data!.mode).toBe('standard');
     expect(data!.feature).toBe('test feature');
   });
@@ -52,7 +57,7 @@ describe('updateHeartbeat', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -70,7 +75,7 @@ describe('updateHeartbeat', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -92,7 +97,7 @@ describe('markExited', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -111,7 +116,7 @@ describe('markCrashed', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -128,7 +133,7 @@ describe('markCrashed', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -150,7 +155,7 @@ describe('markSignaled', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -166,7 +171,7 @@ describe('markSignaled', () => {
       pid: 1234,
       startTimeMs: 1000,
       lastAliveMs: 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -226,6 +231,20 @@ describe('readLockfile', () => {
     const result = await readLockfile(testDir);
     expect(result).toBeNull();
   });
+
+  it('returns null when lockfile sessionId does not match session directory', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'wrong-session-id',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    expect(await readLockfile(testDir)).toBeNull();
+    expect(await confinedReadLockfile(testDir, sessionIdFor(testDir))).toBeNull();
+  });
 });
 
 describe('checkServerStatus', () => {
@@ -239,7 +258,7 @@ describe('checkServerStatus', () => {
       pid: 99999,
       startTimeMs: 1000,
       lastAliveMs: Date.now(),
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -256,7 +275,7 @@ describe('checkServerStatus', () => {
       pid: 99999999,
       startTimeMs: 1000,
       lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1000,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });
@@ -272,7 +291,7 @@ describe('checkServerStatus', () => {
       pid: process.pid,
       startTimeMs: now,
       lastAliveMs: now,
-      sessionId: 'test-session',
+      sessionId: sessionIdFor(testDir),
       mode: 'standard',
       feature: 'test feature',
     });

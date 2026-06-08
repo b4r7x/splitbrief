@@ -2,10 +2,9 @@ import type {
   ReadinessCheck,
   ReadinessCounts,
   ReadinessNextAction,
-  ReadinessNextActionKind,
   ReadinessSection,
-  ReadinessStatus,
 } from './types.js';
+import type { ReadinessNextActionKind, ReadinessStatus } from '../schemas/readiness.js';
 
 const EMPTY_COUNTS: ReadinessCounts = {
   ok: 0,

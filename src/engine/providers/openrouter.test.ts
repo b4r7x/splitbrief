@@ -76,6 +76,18 @@ describe('toDetectedModel', () => {
     expect(model.capabilities).toEqual(['vision']);
   });
 
+  it('extracts vision capability from input_modalities', () => {
+    const model = toDetectedModel({
+      id: 'openai/gpt-4o',
+      architecture: {
+        input_modalities: ['text', 'image'],
+        output_modalities: ['text'],
+      },
+    });
+
+    expect(model.capabilities).toEqual(['vision']);
+  });
+
   it('returns undefined capabilities when no image input', () => {
     const model = toDetectedModel({
       id: 'openai/gpt-4',

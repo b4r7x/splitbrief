@@ -89,6 +89,55 @@ describe('sanitizeDiscoveredValidation', () => {
     }
   });
 
+  it('blocks node scripts/... code-loading forms', () => {
+    const cases = [
+      'node scripts/check-invariants.ts',
+      'node ./scripts/check.ts',
+      'node scripts/foo',
+      'node -e "console.log(1)"',
+      'node --eval "console.log(1)"',
+      'node --require ./evil.js -e ""',
+    ];
+    for (const cmd of cases) {
+      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('allows node without script-loading arguments', () => {
+    const result = sanitizeDiscoveredValidation({ testCommand: 'node --version' });
+    expect(result?.testCommand).toBe('node --version');
+  });
+
+  it('blocks npx forms that execute repo-local scripts or code loaders', () => {
+    const cases = [
+      'npx tsx scripts/pwn.ts',
+      'npx node scripts/pwn.js',
+      'npx ./scripts/pwn.js',
+      'npx --package evil scripts/pwn.js',
+    ];
+    for (const cmd of cases) {
+      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks npm/pnpm/yarn script runners', () => {
+    const cases = ['npm run pwn', 'pnpm run pwn', 'yarn run pwn', 'npm exec scripts/pwn.js'];
+    for (const cmd of cases) {
+      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks vitest/jest config paths that load repo-local files', () => {
+    const cases = ['vitest --config scripts/pwn.js', 'jest -c scripts/pwn.js'];
+    for (const cmd of cases) {
+      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
   it('blocks unrecognized commands', () => {
     const input: DiscoveredValidation = {
       testCommand: 'custom-test-tool --all',
@@ -109,6 +158,16 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(result?.testCommand).toBeUndefined();
     expect(result?.language).toBe('typescript');
     expect(result?.testPattern).toBe('*.test.ts');
+  });
+
+  it('blocks traversal testPattern values', () => {
+    const result = sanitizeDiscoveredValidation({
+      testPattern: '../../outside.test.ts',
+      language: 'typescript',
+    });
+    expect(result?.testPattern).toBeUndefined();
+    expect(result?.language).toBe('typescript');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('../../outside.test.ts'));
   });
 
   it('preserves language and testPattern even when all commands are blocked', () => {

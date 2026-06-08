@@ -19,13 +19,13 @@ import type { RunnerKind } from '../../schemas/enums.js';
 import type { Config } from '../../schemas/config.js';
 import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
-import {
-  ImplementerProfileConfigSchema,
-  type ImplementerConfig,
-  type ImplementerProfileConfig,
-} from '../../schemas/implementer-config.js';
+import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { WorkflowOpts } from '../../types/config-options.js';
-import { pickDefaultProfileName, stripProfileMetadata } from '../accessors/implementer-profiles.js';
+import {
+  mergeImplementerProfileMetadata,
+  pickDefaultProfileName,
+  stripProfileMetadata,
+} from '../accessors/implementer-profiles.js';
 
 const RunnerOverrideSchema = z.object({
   tool: z.string().optional(),
@@ -204,19 +204,6 @@ function buildRunnerFromOverrides(
   return role === 'planner'
     ? buildRunnerConfig('planner', opts)
     : buildRunnerConfig('implementer', opts);
-}
-
-function mergeImplementerProfileMetadata(
-  existing: ImplementerProfileConfig,
-  updated: ImplementerConfig,
-): ImplementerProfileConfig {
-  return ImplementerProfileConfigSchema.parse({
-    ...updated,
-    ...(existing.label !== undefined && { label: existing.label }),
-    ...(existing.costTier !== undefined && { costTier: existing.costTier }),
-    ...(existing.capabilities !== undefined &&
-      existing.kind === updated.kind && { capabilities: existing.capabilities }),
-  });
 }
 
 function applyImplementerOverrides(overrides: RunnerOverrides, config: Config): Config {

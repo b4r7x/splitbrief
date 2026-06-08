@@ -112,7 +112,10 @@ export function useWorkflowRunner({
       if (!current) return;
 
       const { action, event } = buildRewindAction(request, ref, current);
-      const next = transition(current, action);
+      let next = transition(current, action);
+      if (request.target === 'task' && next.pendingRecovery?.taskId === request.taskId) {
+        next = transition(next, { type: 'RESOLVE_PENDING_RECOVERY' });
+      }
       saveState(ref, next);
       pendingRewindEventRef.current = event;
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
@@ -218,6 +221,7 @@ export function useWorkflowRunner({
     if (!enabled) return undefined;
 
     abortedRef.current = false;
+    if (resumeState) resetWorkflow(resumeState);
     const controller = new AbortController();
     void startWorkflow(controller);
     return () => {

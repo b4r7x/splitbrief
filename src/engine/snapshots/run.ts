@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type {
   RunSnapshotKind,
@@ -6,13 +7,15 @@ import type {
   SnapshotManifest,
 } from '../../core/schemas/snapshot.js';
 import { RunSnapshotLedgerSchema } from '../../core/schemas/snapshot.js';
-import { SNAPSHOT_BASELINE_ID, snapshotsDir } from '../../core/paths.js';
+import { SNAPSHOT_BASELINE_ID, sessionDir, snapshotsDir } from '../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import {
   assertExistingPathConfined,
   assertPathConfined,
   assertWritablePathConfined,
 } from '../../lib/path-confinement.js';
+import { error } from '../../utils/error.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { createSnapshot } from './create.js';
 import { hashFile } from './files.js';
@@ -33,10 +36,44 @@ async function readRunLedger(
   projectDir: string,
   sessionId: string,
 ): Promise<RunSnapshotLedger | null> {
+  const target = runLedgerPath(projectDir, sessionId);
   try {
-    const raw = await readFile(runLedgerPath(projectDir, sessionId), 'utf-8');
-    return RunSnapshotLedgerSchema.parse(JSON.parse(raw));
-  } catch {
+    const st = lstatSync(target);
+    if (st.isSymbolicLink()) {
+      throw error(
+        'snapshot-run-ledger-symlink',
+        `Refusing to read run ledger through symlink: ${target}`,
+        { target },
+      );
+    }
+  } catch (cause: unknown) {
+    if (!isENOENT(cause)) throw cause;
+    return null;
+  }
+
+  const sessionRoot = realpathSync(sessionDir(projectDir, sessionId));
+  const realFile = realpathSync(target);
+  if (!realFile.startsWith(`${sessionRoot}/`) && realFile !== sessionRoot) {
+    throw error(
+      'snapshot-run-ledger-escape',
+      `Run ledger path escapes session directory: ${target}`,
+      { target, sessionRoot, realFile },
+    );
+  }
+
+  try {
+    const raw = await readFile(target, 'utf-8');
+    const ledger = RunSnapshotLedgerSchema.parse(JSON.parse(raw));
+    if (ledger.sessionId !== sessionId) {
+      throw error(
+        'snapshot-run-ledger-session-mismatch',
+        `Run ledger belongs to session ${ledger.sessionId}, not ${sessionId}`,
+        { expectedSessionId: sessionId, actualSessionId: ledger.sessionId },
+      );
+    }
+    return ledger;
+  } catch (cause) {
+    if (cause !== null && typeof cause === 'object' && 'domain' in cause) throw cause;
     return null;
   }
 }

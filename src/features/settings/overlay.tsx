@@ -31,7 +31,7 @@ export function SettingsOverlay() {
   const panelWidth = getClampedTerminalWidth({ cols, maxWidth: MAX_PANEL_WIDTH });
 
   const openSubPicker = (def: SettingDef) => {
-    overlayStore.open('settings', def.id);
+    overlayStore.setFocus(def.id);
     const focus = def.id.endsWith('.model') ? 'models' : undefined;
     if (def.id.startsWith('planner.')) overlayStore.open('planner-picker', focus);
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);

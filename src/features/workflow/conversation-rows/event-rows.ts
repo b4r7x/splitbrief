@@ -14,12 +14,13 @@ import { implementerDoneRows, runningImplementerRows } from './implementer-rows.
 import type { ConversationRow, RowBuildContext } from './types.js';
 import { cardRows, prefixedWrappedRows, row, rowText, wrapRows } from './row-format.js';
 
-export function eventRows(
-  event: EngineEvent,
-  globalIndex: number,
-  ctx: RowBuildContext,
-  expanded: boolean,
-): ConversationRow[] {
+export function eventRows(options: {
+  event: EngineEvent;
+  globalIndex: number;
+  ctx: RowBuildContext;
+  expanded: boolean;
+}): ConversationRow[] {
+  const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
   const role = getGutterRole(event);
 

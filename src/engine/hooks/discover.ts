@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import {
+  HOOK_EVENTS,
   HookModuleEntrySchema,
   type HookEvent,
   type HookModuleEntry,
@@ -8,19 +9,9 @@ import {
 } from '../../core/schemas/hooks.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 
-const HOOK_EVENT_BY_FILE_NAME: Record<string, HookEvent> = {
-  'pre-planning': 'pre_planning',
-  'pre-task': 'pre_task',
-  'post-task': 'post_task',
-  'pre-validation': 'pre_validation',
-  'post-validation': 'post_validation',
-  'pre-commit': 'pre_commit',
-  'post-commit': 'post_commit',
-  'pre-escalation': 'pre_escalation',
-  'pre-compact': 'pre_compact',
-  'on-error': 'on_error',
-  'on-complete': 'on_complete',
-};
+const HOOK_EVENT_BY_FILE_NAME = new Map<string, HookEvent>(
+  HOOK_EVENTS.map((event) => [event.replaceAll('_', '-'), event]),
+);
 
 export interface DiscoveredHook {
   event: HookEvent;
@@ -41,7 +32,7 @@ export async function discoverHookModules(projectDir: string): Promise<Discovere
     const ext = extname(entry);
     if (ext !== '.js' && ext !== '.ts') continue;
 
-    const event = HOOK_EVENT_BY_FILE_NAME[basename(entry, ext)];
+    const event = HOOK_EVENT_BY_FILE_NAME.get(basename(entry, ext));
     if (!event) continue;
 
     hooks.push({ event, path: join(DIPTYCH_DIR, 'hooks', entry) });

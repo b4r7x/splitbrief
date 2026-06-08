@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './base.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -11,6 +11,7 @@ import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { createChangeDetector } from '../change-detection.js';
 
 let projectDir: string;
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   projectDir = createTempDir('impl-base');
@@ -78,6 +79,38 @@ describe('createImplementerBase — error paths', () => {
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toMatch(/extract|code/i);
     expect(existsSync(join(projectDir, 'src/nope.ts'))).toBe(false);
+  });
+
+  itUnix('does not read task baseline content through final symlinks', async () => {
+    const outside = createTempDir('impl-base-symlink-outside');
+    try {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(outside, 'secret.ts'), 'outside secret');
+      symlinkSync(join(outside, 'secret.ts'), join(projectDir, 'src', 'leak.ts'));
+
+      const invoke = vi.fn().mockResolvedValue({
+        text: '```ts\nexport const leaked = true;\n```',
+        usage: null,
+      });
+      const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+      const task = makeTask({ id: 'T001', file: 'src/leak.ts', action: 'modify' });
+
+      const result = await implementer.implement({
+        task,
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toMatch(/escapes project directory|changed during approval/i);
+      }
+      expect(readFileSync(join(outside, 'secret.ts'), 'utf-8')).toBe('outside secret');
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 
   it('throws when task file path escapes projectDir', async () => {

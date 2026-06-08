@@ -1,10 +1,10 @@
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSafeAsync } from '../../lib/fs.js';
+import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { warnError } from '../../lib/warn.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import {
-  sessionDir,
+  DIPTYCH_DIR,
+  SESSIONS_DIR,
   SPEC_FILE,
   PLAN_FILE,
   TASKS_FILE,
@@ -91,6 +91,22 @@ function extractIdFromBlock(block: string): string | null {
 export function createResolver(config: McpResolverConfig): McpResolver {
   const { projectDir, sessionIds, diptychVersion } = config;
 
+  function sessionResourcePath(id: string, file: string): string {
+    return join(DIPTYCH_DIR, SESSIONS_DIR, id, file);
+  }
+
+  function sessionFileExists(id: string, file: string): boolean {
+    try {
+      return confinedExists(projectDir, sessionResourcePath(id, file));
+    } catch {
+      return false;
+    }
+  }
+
+  async function readSessionFile(id: string, file: string): Promise<string | null> {
+    return confinedReadFileAsync(projectDir, sessionResourcePath(id, file));
+  }
+
   async function listResources(): Promise<McpResourceDescriptor[]> {
     const descriptors: McpResourceDescriptor[] = [];
 
@@ -101,8 +117,6 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     });
 
     for (const id of sessionIds) {
-      const sDir = sessionDir(projectDir, id);
-
       if (await hasCanonicalManifestArtifacts(projectDir, id)) {
         descriptors.push({
           uri: `${sessionBase(id)}/manifest.json`,
@@ -118,7 +132,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       });
 
       for (const entry of SESSION_RESOURCE_FILES) {
-        if (existsSync(join(sDir, entry.file))) {
+        if (sessionFileExists(id, entry.file)) {
           descriptors.push({
             uri: `${sessionBase(id)}/${entry.key}`,
             name: `${entry.label} (${id})`,
@@ -127,9 +141,8 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         }
       }
 
-      const tasksPath = join(sDir, TASKS_FILE);
-      if (existsSync(tasksPath)) {
-        const content = await readFileSafeAsync(tasksPath);
+      if (sessionFileExists(id, TASKS_FILE)) {
+        const content = await readSessionFile(id, TASKS_FILE);
         if (content) {
           const tasks = parseTasksSafe(content);
           for (const task of tasks) {
@@ -172,7 +185,6 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       if (!sessionIds.includes(id)) return null;
 
       const resource = rest.slice(slashIdx + 1);
-      const sDir = sessionDir(projectDir, id);
 
       if (resource === 'manifest.json') {
         const manifest = await buildManifest(projectDir, id, diptychVersion);
@@ -181,11 +193,10 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       if (resource === 'tasks') {
-        const tasksPath = join(sDir, TASKS_FILE);
-        if (!existsSync(tasksPath)) {
+        if (!sessionFileExists(id, TASKS_FILE)) {
           return { uri, mimeType: 'application/json', text: '[]' };
         }
-        const content = await readFileSafeAsync(tasksPath);
+        const content = await readSessionFile(id, TASKS_FILE);
         if (!content) return { uri, mimeType: 'application/json', text: '[]' };
         const tasks = parseTasksSafe(content);
         const result = tasks.map((t) => ({
@@ -199,9 +210,9 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       if (resource.startsWith('tasks/')) {
-        const taskId = resource.slice('tasks/'.length);
-        const tasksPath = join(sDir, TASKS_FILE);
-        const content = await readFileSafeAsync(tasksPath);
+        let taskId = resource.slice('tasks/'.length);
+        if (taskId.endsWith('.md')) taskId = taskId.slice(0, -'.md'.length);
+        const content = await readSessionFile(id, TASKS_FILE);
         if (!content) return null;
         const block = extractTaskBlock(content, taskId);
         if (!block) return null;
@@ -210,7 +221,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
 
       const staticResource = STATIC_RESOURCES[resource];
       if (staticResource) {
-        const content = await readFileSafeAsync(join(sDir, staticResource.file));
+        const content = await readSessionFile(id, staticResource.file);
         if (!content) return null;
         return { uri, mimeType: staticResource.mimeType, text: content };
       }

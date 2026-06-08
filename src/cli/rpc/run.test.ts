@@ -202,7 +202,7 @@ describe('runRpc', () => {
     await run;
   });
 
-  it('resolves the approval gate with approved:false on reject', async () => {
+  it('resolves the approval gate with approved:false on regenerate', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -218,10 +218,10 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'reject test',
+      feature: 'regenerate test',
       projectDir: projectDir,
       opts: { rpc: true },
-      sessionId: 'rpc-reject-session',
+      sessionId: 'rpc-regenerate-session',
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -236,12 +236,12 @@ describe('runRpc', () => {
     );
     expect(approved).toBeUndefined();
 
-    input.write('{"type":"reject","comment":"needs work"}\n');
+    input.write('{"type":"regenerate","comment":"needs work"}\n');
     await run;
 
     expect(approved).toBe(false);
     expect(comment).toBe('needs work');
-    expect(parseLines(chunks)).toContainEqual({ type: 'ack', command: 'reject' });
+    expect(parseLines(chunks)).toContainEqual({ type: 'ack', command: 'regenerate' });
   });
 
   it('signals abort to the workflow on abort command', async () => {
@@ -277,6 +277,63 @@ describe('runRpc', () => {
 
     finishWorkflow?.();
     await run;
+  });
+
+  it('resumes applying recovery without re-prompting when selectedAction is set', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-applying-session';
+    ensureSessionDir(projectDir, sessionId);
+    const stateWithApplyingRecovery = {
+      ...createInitialState('applying recovery'),
+      phase: 'implementing' as const,
+      pendingRecovery: {
+        id: 'rec-applying',
+        reason: 'implementation-error' as const,
+        phase: 'implementing' as const,
+        status: 'applying' as const,
+        message: 'Task failed',
+        details: ['Retry in progress'],
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker' as const, 'abort-workflow' as const],
+        recommendedAction: 'retry-same-worker' as const,
+        selectedAction: 'abort-workflow' as const,
+        createdAt: new Date().toISOString(),
+      },
+    };
+    saveState({ projectDir, sessionId }, stateWithApplyingRecovery);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const runWorkflowStub = async () => {};
+
+    await runRpc({
+      feature: 'applying recovery',
+      projectDir,
+      opts: { rpc: true },
+      savedState: stateWithApplyingRecovery,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    const lines = parseLines(chunks);
+    expect(
+      lines.some(
+        (line) =>
+          line.type === 'status' &&
+          typeof line.data === 'object' &&
+          line.data !== null &&
+          'pending' in line.data &&
+          (line.data as { pending?: string }).pending === 'recovery',
+      ),
+    ).toBe(false);
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'recovery',
+        data: expect.objectContaining({ action: 'abort-workflow' }),
+      }),
+    );
   });
 
   it('dispatches recovery actions to the recovery gate', async () => {

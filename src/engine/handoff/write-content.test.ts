@@ -1,69 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
+import {
+  handoffWriterTasks,
+  writeHandoffWriterSessionState,
+} from '#testing/helpers/handoff-writer-fixture.js';
 import { writeHandoffPack } from './write.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
-import { createInitialState } from '../../core/state/machine.js';
-import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 
 let tmp: string;
-
-const t1 = makeTask({
-  id: 'T001',
-  title: 'Add auth middleware',
-  action: 'create',
-  file: 'src/middleware/auth.ts',
-  dependsOn: [],
-  description: 'Create an authentication middleware that validates JWT tokens.',
-  tests: ['returns 401 for missing token', 'returns 403 for expired token'],
-  constraints: ['must not introduce new dependencies'],
-  implementationSteps: ['Parse Authorization header', 'Validate JWT'],
-  typeDefs: 'function authMiddleware(req: Request, res: Response): void',
-  status: 'pending',
-});
-
-const t2 = makeTask({
-  id: 'T002',
-  title: 'Add user model',
-  action: 'modify',
-  file: 'src/models/user.ts',
-  dependsOn: ['T001'],
-  description: 'Extend the user model with role field.',
-  tests: ['role field defaults to user'],
-  constraints: ['must not break existing schema'],
-  implementationSteps: ['Add role field to schema'],
-  typeDefs: "type UserRole = 'user' | 'admin'",
-  status: 'pending',
-});
-
-const t3 = makeTask({
-  id: 'T003',
-  title: 'Write integration tests',
-  action: 'create',
-  file: 'src/middleware/auth.test.ts',
-  dependsOn: ['T001', 'T002'],
-  description: 'Write integration tests for the auth middleware.',
-  tests: ['all three test cases pass'],
-  constraints: ['use vitest'],
-  implementationSteps: ['Import authMiddleware', 'Mock JWT'],
-  typeDefs: '',
-  status: 'pending',
-});
-
-function writeSessionState(projectDir: string, sessionId: string): void {
-  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
-  mkdirSync(sessionDir, { recursive: true });
-  const state = {
-    ...createInitialState('Authentication System'),
-    stateVersion: CURRENT_STATE_VERSION,
-    tasks: [t1, t2, t3],
-    phase: 'implementing' as const,
-  };
-  writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state));
-}
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   tmp = createTempDir('write-handoff-test');
@@ -76,7 +24,7 @@ afterEach(() => {
 describe('writeHandoffPack — validation metadata', () => {
   it('includes enabled typecheck, lint, and test commands in manifest.json', async () => {
     const sessionId = 'validation-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
     mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
     writeFileSync(
       join(tmp, DIPTYCH_DIR, 'config.yaml'),
@@ -112,7 +60,7 @@ describe('writeHandoffPack — validation metadata', () => {
 describe('writeHandoffPack — readback correctness', () => {
   it('produces task files with real briefHash matching manifest, correct taskId, and non-empty sections', async () => {
     const sessionId = 'readback-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'readback');
     await writeHandoffPack({
@@ -124,7 +72,7 @@ describe('writeHandoffPack — readback correctness', () => {
     });
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
-    const expectedHash = hashTaskBrief([t1, t2, t3]);
+    const expectedHash = hashTaskBrief(handoffWriterTasks);
 
     // Manifest briefHash is a 64-char hex string matching the expected hash
     expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
@@ -162,6 +110,33 @@ describe('writeHandoffPack — readback correctness', () => {
       const stepsMatch = content.match(/## Implementation Steps\n+(.+)/);
       expect(stepsMatch).not.toBeNull();
       expect(stepsMatch![1]!.trim().length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('writeHandoffPack — confined constitution reads', () => {
+  itUnix('does not include constitution content from symlink escapes', async () => {
+    const outside = createTempDir('handoff-constitution-outside');
+    try {
+      const sessionId = 'constitution-session';
+      writeHandoffWriterSessionState(tmp, sessionId);
+      writeFileSync(join(outside, 'constitution.md'), '# Outside constitution\n\nsecret rules');
+      symlinkSync(join(outside, 'constitution.md'), join(tmp, 'constitution.md'));
+
+      const outDir = join(tmp, 'handoff', 'constitution');
+      const result = await writeHandoffPack({
+        projectDir: tmp,
+        sessionId,
+        target: 'spec-kit',
+        outDir,
+        mode: 'default',
+      });
+
+      expect(result.files).not.toContain('constitution.md');
+      const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+      expect(manifest.constitution ?? null).toBeNull();
+    } finally {
+      cleanupTempDir(outside);
     }
   });
 });

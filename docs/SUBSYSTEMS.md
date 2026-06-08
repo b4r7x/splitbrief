@@ -161,8 +161,9 @@ Activated via `diptych start --rpc`. The workflow runs headlessly with a machine
 
 | `type` | Fields | What it does |
 |---|---|---|
-| `approve` | -- | Resolves a pending approval gate (spec, plan, briefs) |
-| `reject` | optional `comment` | Rejects a pending approval gate, optionally with feedback |
+| `approve` | optional `confirmationPhrase`, `confirmationReason` | Resolves a pending approval gate (spec, plan, briefs). For confirm-tier approvals, the client must supply a valid confirmation phrase and reason. |
+| `reject` | -- | Terminally rejects a pending approval gate without feedback |
+| `regenerate` | `comment` (required) | Rejects a pending approval gate with feedback so the planner can regenerate |
 | `message` | `text` | Sends a user message -- resolves a pending message gate, or queues for the next planner drain |
 | `recovery` | `action` | Picks a recovery action (retry, skip, abort, etc.) |
 | `status` | -- | Requests current workflow state |

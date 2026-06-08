@@ -72,7 +72,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
           return {
             spec: '',
             plan: '',
-            tasks: [makePassingTask('T-QUICK')],
+            tasks: [makePassingTask('T099')],
             usage: { inputTokens: 50, outputTokens: 25 },
           };
         }
@@ -86,7 +86,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.state.phase).toBe('implementing');
     if (useQuickPlan) {
       expect(quickPlanCalls).toBe(1);
-      expect(result.tasks[0]?.id).toBe('T-QUICK');
+      expect(result.tasks[0]?.id).toBe('T099');
     }
   });
 

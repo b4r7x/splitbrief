@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escalation/handle.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -42,11 +41,11 @@ function makeValidatingState(): WorkflowState {
 }
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('orch-int-retry');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'orch-int-retry',
+    sessionId: 'sess-retry',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-retry';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 

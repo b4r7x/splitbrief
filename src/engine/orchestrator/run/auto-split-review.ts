@@ -10,16 +10,24 @@ import { publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { parseTasks } from '../../spec/parser.js';
+import { parseTasksStrict } from '../../spec/parser.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
-async function readApprovedSplitTasks(tasksFilePath: string): Promise<Task[] | null> {
+type ApprovedSplitTasksResult = { ok: true; tasks: Task[] } | { ok: false; message: string };
+
+async function readApprovedSplitTasks(tasksFilePath: string): Promise<ApprovedSplitTasksResult> {
   try {
     const text = await readFile(tasksFilePath, 'utf8');
-    const tasks = parseTasks(text);
-    return tasks.length > 0 ? tasks : null;
-  } catch {
-    return null;
+    const tasks = parseTasksStrict(text);
+    return tasks.length > 0
+      ? { ok: true, tasks }
+      : { ok: false, message: `${tasksFilePath} has no Task Briefs.` };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `${tasksFilePath} contains invalid Task Briefs: ${toErrorMessage(err)}`,
+    };
   }
 }
 
@@ -62,14 +70,15 @@ export async function reviewAutoSplitOutput(opts: {
     return { state, tasks: opts.tasks, approved: false };
   }
 
-  const approvedTasks = await readApprovedSplitTasks(tasksFilePath);
-  if (!approvedTasks) {
+  const approvedTasksResult = await readApprovedSplitTasks(tasksFilePath);
+  if (!approvedTasksResult.ok) {
     publishError(
       { bus: opts.wctx.bus, phase: state.phase },
-      `Auto-split overflow review failed: ${tasksFilePath} has no parseable Task Briefs.`,
+      `Auto-split overflow review failed: ${approvedTasksResult.message}`,
     );
     return { state, tasks: opts.tasks, approved: false };
   }
+  const approvedTasks = approvedTasksResult.tasks;
 
   const { ok, report } = runBriefQualityGate({
     tasks: approvedTasks,

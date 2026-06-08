@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { TwoColumnPicker } from '../../components/pickers/two-column-picker/picker.js';
+import { TwoColumnPicker } from './two-column-picker/picker.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';

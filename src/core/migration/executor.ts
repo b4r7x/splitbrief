@@ -1,5 +1,5 @@
-import { existsSync, renameSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, renameSync, readFileSync, realpathSync, mkdirSync, rmSync } from 'node:fs';
+import { join, relative, isAbsolute } from 'node:path';
 import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import {
@@ -13,7 +13,7 @@ import {
   sessionDir,
 } from '../paths.js';
 import { writeActive } from '../sessions/lifecycle.js';
-import { deriveSessionId, migrateState, migrateEvents } from './legacy.js';
+import { deriveSessionId, migrateState, migrateEventLines } from './legacy.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type MigrationResult =
@@ -21,12 +21,37 @@ export type MigrationResult =
   | { status: 'skipped'; sourceDir: string; warnings: string[] }
   | { status: 'migrated'; sourceDir: string; sessionId: string; warnings: string[] };
 
+function isInsideRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function assertLegacyDirConfined(projectDir: string, dir: string): void {
+  const realProject = realpathSync(projectDir);
+  let realDir: string;
+  try {
+    realDir = realpathSync(dir);
+  } catch {
+    return;
+  }
+  if (!isInsideRoot(realProject, realDir)) {
+    throw new Error(
+      `Legacy directory ${dir} resolves outside project root ${realProject}. Refusing to migrate.`,
+    );
+  }
+}
+
 function findLegacySourceDir(projectDir: string): string | null {
   const candidates = [
     join(projectDir, DIPTYCH_DIR, 'current'),
     join(projectDir, '.tiny-spec', 'current'),
   ];
-  return candidates.find((dir) => existsSync(dir)) ?? null;
+  for (const dir of candidates) {
+    if (!existsSync(dir)) continue;
+    assertLegacyDirConfined(projectDir, dir);
+    return dir;
+  }
+  return null;
 }
 
 export async function migrateCommand(projectDir: string): Promise<MigrationResult> {
@@ -76,7 +101,13 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
 
     const eventsSource = join(sourceDir, 'events.jsonl');
     if (existsSync(eventsSource)) {
-      warnings.push(...migrateEvents(eventsSource, join(tempDir, SESSION_LOG_FILE)));
+      const { lines, warnings: eventWarnings } = migrateEventLines(
+        readFileSync(eventsSource, 'utf-8'),
+      );
+      warnings.push(...eventWarnings);
+      if (lines.length > 0) {
+        writeSecureFile(join(tempDir, SESSION_LOG_FILE), `${lines.join('\n')}\n`);
+      }
     }
 
     for (const fname of [SPEC_FILE, PLAN_FILE, TASKS_FILE] as const) {
@@ -93,6 +124,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
   }
 
   writeActive({ projectDir: projectDir, sessionId: sessionId });
+  assertLegacyDirConfined(projectDir, sourceDir);
   rmSync(sourceDir, { recursive: true, force: true });
 
   return { status: 'migrated', sourceDir, sessionId, warnings };

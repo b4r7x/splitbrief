@@ -10,9 +10,8 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -35,11 +34,11 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('run-phases-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'run-phases-test',
+    sessionId: 'sess-phases',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-phases';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 

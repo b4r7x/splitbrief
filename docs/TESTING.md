@@ -171,7 +171,8 @@ it('start --json emits NDJSON and exits 0', async () => {
     const { stdout, exitCode } = await runCommand(['start', '--json', 'add endpoint'], { cwd: dir });
     expect(exitCode).toBe(0);
     const events = stdout.trim().split('\n').map((l) => JSON.parse(l));
-    expect(events[0]).toMatchObject({ type: 'workflow_started' });
+    expect(events[0]).toMatchObject({ type: 'readiness_report' });
+    expect(events.find((e) => e.type === 'workflow_started')).toBeDefined();
     expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
   });
 });
@@ -466,7 +467,7 @@ From any project with a valid `.diptych/config.yaml`:
 node dist/cli.js start --json --mode quick "smoke feature"
 ```
 
-Verify: NDJSON on stdout, first event is `workflow_started`, last event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
+Verify: NDJSON on stdout, first line is `readiness_report`, the first model-backed workflow event is `workflow_started`, last workflow event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
 
 ### M3. block-secrets hook
 
@@ -498,7 +499,7 @@ cd /tmp/diptych-fresh
 npm ci && npm run test-ci
 ```
 
-Verify: install completes, `npm run test-ci` (typecheck + lint + full test suite + invariants) is green.
+Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test → invariants) is green.
 
 ## References
 

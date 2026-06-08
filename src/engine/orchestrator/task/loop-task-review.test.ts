@@ -14,6 +14,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { TASK_REVIEW_COMMANDS } from '../../events/workflow-events.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -181,7 +182,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(events.find((event) => event.type === 'task_review_needed')).toMatchObject({
       taskId: 'T001',
       status: 'done',
-      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+      availableCommands: [...TASK_REVIEW_COMMANDS],
     });
   });
 
@@ -292,7 +293,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       status: 'recovery-required',
       validation: expect.objectContaining({ passed: false }),
       recovery: expect.objectContaining({ reason: 'context-overflow' }),
-      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+      availableCommands: [...TASK_REVIEW_COMMANDS],
     });
   });
 

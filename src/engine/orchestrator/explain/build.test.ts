@@ -21,6 +21,7 @@ import { writeSecureFile } from '../../../lib/fs.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { TASK_REVIEW_COMMANDS } from '../../events/workflow-events.js';
 import { writeReviewPacket } from '../evidence/review-packet/write.js';
 import { buildRunExplain } from './build.js';
 import { formatRunExplain } from './format.js';
@@ -115,7 +116,7 @@ async function writeRichArtifacts(): Promise<string> {
       validation: { passed: true, summary: 'validation passed', stages: [] },
       evidence: { summary: 'tsc passed', expected: [], observed: ['tsc passed'] },
       cost: { tokenUsage: state.tokenUsage },
-      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+      availableCommands: [...TASK_REVIEW_COMMANDS],
     },
   );
   appendEngineEvent(

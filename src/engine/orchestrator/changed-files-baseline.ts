@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { getCurrentChangedFiles } from '../../lib/git.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
+import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
+import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
+import { matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
 import { matchesActionPattern } from './approval/action-classifier.js';
 import type { Task } from '../../core/schemas/task.js';
 
@@ -18,9 +21,13 @@ export function userVisibleChangedFiles(files: string[]): string[] {
 
 async function fingerprintChangedFile(projectDir: string, file: string): Promise<string> {
   try {
-    const content = await readFile(join(projectDir, file));
+    assertPathConfined(file, projectDir);
+    if (!confinedExists(projectDir, file)) return 'missing';
+    const content = await confinedReadFileAsync(projectDir, file);
+    if (content === null) return 'missing';
     return createHash('sha256').update(content).digest('hex');
-  } catch {
+  } catch (err) {
+    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) return 'missing';
     return 'missing';
   }
 }

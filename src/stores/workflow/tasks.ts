@@ -77,12 +77,25 @@ export function updateTaskMap(
     next.set(event.taskId, { ...existing, status });
     return next;
   }
-  if (event.type === 'task_escalating' || event.type === 'task_full_fail') {
-    const status = event.type === 'task_escalating' ? 'escalated' : 'failed';
+  if (event.type === 'task_escalating') {
     const existing = taskMap.get(event.taskId);
-    if (!existing || existing.status === status) return taskMap;
+    if (!existing || existing.status === 'in_progress') return taskMap;
     const next = new Map(taskMap);
-    next.set(event.taskId, { ...existing, status });
+    next.set(event.taskId, { ...existing, status: 'in_progress' });
+    return next;
+  }
+  if (event.type === 'task_full_fail') {
+    const existing = taskMap.get(event.taskId);
+    if (!existing || existing.status === 'failed') return taskMap;
+    const next = new Map(taskMap);
+    next.set(event.taskId, { ...existing, status: 'failed' });
+    return next;
+  }
+  if (event.type === 'task_reset') {
+    const existing = taskMap.get(event.taskId);
+    if (!existing || existing.status === 'pending') return taskMap;
+    const next = new Map(taskMap);
+    next.set(event.taskId, { ...existing, status: 'pending' });
     return next;
   }
   return taskMap;

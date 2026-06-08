@@ -7,6 +7,7 @@ import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/fron
 import { extractFirstFencedBlock } from '../parsers/code-patterns.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { TASK_BRIEF_HEADINGS } from './headings.js';
+import { error, matches } from '../../utils/error.js';
 
 const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
@@ -26,11 +27,63 @@ const TaskFrontmatterSchema = z.object({
 
 type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
-export function parseTasks(tasksMarkdown: string): Task[] {
+export const parseTasksError = {
+  invalidTaskBlock: (detail: string) =>
+    error('parse-tasks-invalid-block', `Invalid task block: ${detail}`, { detail }),
+  isInvalidTaskBlock: matches('parse-tasks-invalid-block'),
+} as const;
+
+export type ParseTasksOptions = {
+  strict?: boolean;
+};
+
+export function parseTasks(tasksMarkdown: string, options?: ParseTasksOptions): Task[] {
+  const tasks = parseTaskBlocksFromMarkdown(tasksMarkdown, options?.strict ?? false);
+  return topoSort(tasks);
+}
+
+export function parseTasksStrict(tasksMarkdown: string): Task[] {
+  return parseTasks(tasksMarkdown, { strict: true });
+}
+
+export function parseTaskBlocksStrict(tasksMarkdown: string): Task[] {
+  return parseTaskBlocksFromMarkdown(tasksMarkdown, true);
+}
+
+function parseTaskBlocksFromMarkdown(tasksMarkdown: string, strict: boolean): Task[] {
   const stripped = normalizeTaskSeparators(stripFileFrontmatter(tasksMarkdown));
   const blocks = splitTaskBlocks(stripped);
-  const tasks = blocks.map(parseTaskBlock).filter((t): t is Task => t !== null);
-  return topoSort(tasks);
+  const tasks: Task[] = [];
+
+  for (const block of blocks) {
+    const task = parseTaskBlock(block);
+    if (task) {
+      tasks.push(task);
+      continue;
+    }
+    if (strict && looksLikeTaskBlock(block)) {
+      const reason = taskBlockParseFailure(block);
+      throw parseTasksError.invalidTaskBlock(reason);
+    }
+  }
+
+  return tasks;
+}
+
+function looksLikeTaskBlock(block: string): boolean {
+  const trimmed = block.trim();
+  if (!trimmed.startsWith('---')) return false;
+  return /\bid:\s*\S/.test(trimmed);
+}
+
+function taskBlockParseFailure(block: string): string {
+  const raw = parseSimpleYamlFrontmatter(block);
+  if (!raw) return 'malformed YAML frontmatter';
+  const result = TaskFrontmatterSchema.safeParse(raw);
+  if (!result.success) {
+    return result.error.issues.map((issue) => issue.message).join('; ');
+  }
+  return 'missing required task sections';
 }
 
 function normalizeTaskSeparators(content: string): string {
@@ -48,9 +101,15 @@ export function splitTaskBlocks(markdown: string): string[] {
   const lines = markdown.split('\n');
   let current: string[] = [];
   let state: 'idle' | 'in-frontmatter' | 'in-body' = 'idle';
+  let inFence = false;
 
   for (const line of lines) {
-    const isSeparator = line.trim() === '---';
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence;
+    }
+
+    const isSeparator = !inFence && trimmed === '---';
 
     if (state === 'idle' && isSeparator) {
       current = [line];
@@ -100,10 +159,17 @@ function parseTaskBlock(block: string): Task | null {
 
   if (sections.currentCode) task.currentCode = sections.currentCode;
 
-  const scope: { inBounds?: string[]; outOfBounds?: string[] } = {};
+  const scope: {
+    inBounds?: string[];
+    outOfBounds?: string[];
+    approvedOutOfBounds?: string[];
+  } = {};
   if (sections.scopeInBounds.length > 0) scope.inBounds = sections.scopeInBounds;
   if (sections.scopeOutOfBounds.length > 0) scope.outOfBounds = sections.scopeOutOfBounds;
-  if (scope.inBounds || scope.outOfBounds) task.scope = scope;
+  if (sections.scopeApprovedOutOfBounds.length > 0) {
+    scope.approvedOutOfBounds = sections.scopeApprovedOutOfBounds;
+  }
+  if (scope.inBounds || scope.outOfBounds || scope.approvedOutOfBounds) task.scope = scope;
   if (sections.escalation.length > 0) task.escalation = sections.escalation;
   if (sections.evidence.length > 0) task.evidence = sections.evidence;
 
@@ -129,6 +195,7 @@ type Sections = {
   implementationSteps: string[];
   scopeInBounds: string[];
   scopeOutOfBounds: string[];
+  scopeApprovedOutOfBounds: string[];
   escalation: string[];
   evidence: string[];
 };
@@ -162,7 +229,7 @@ function extractSections(block: string): Sections {
   }
 
   const scopeText = sectionMap['scope'] ?? '';
-  const { inBounds, outOfBounds } = extractScopeBuckets(scopeText);
+  const { inBounds, outOfBounds, approvedOutOfBounds } = extractScopeBuckets(scopeText);
 
   return {
     description: readSection(sectionMap, ...TASK_BRIEF_HEADINGS.description.keys).trim(),
@@ -179,18 +246,24 @@ function extractSections(block: string): Sections {
     ),
     scopeInBounds: inBounds,
     scopeOutOfBounds: outOfBounds,
+    scopeApprovedOutOfBounds: approvedOutOfBounds,
     escalation: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.escalation.keys)),
     evidence: extractListItems(readSection(sectionMap, ...TASK_BRIEF_HEADINGS.evidence.keys)),
   };
 }
 
-function extractScopeBuckets(text: string): { inBounds: string[]; outOfBounds: string[] } {
-  if (!text.trim()) return { inBounds: [], outOfBounds: [] };
+function extractScopeBuckets(text: string): {
+  inBounds: string[];
+  outOfBounds: string[];
+  approvedOutOfBounds: string[];
+} {
+  if (!text.trim()) return { inBounds: [], outOfBounds: [], approvedOutOfBounds: [] };
 
-  type Bucket = 'in' | 'out' | null;
+  type Bucket = 'in' | 'out' | 'approved' | null;
   let bucket: Bucket = null;
   const inBounds: string[] = [];
   const outOfBounds: string[] = [];
+  const approvedOutOfBounds: string[] = [];
 
   for (const line of text.split('\n')) {
     const labelMatch = line.match(/^\s*\*\*(.+?):\*\*\s*(.*)$/);
@@ -199,6 +272,12 @@ function extractScopeBuckets(text: string): { inBounds: string[]; outOfBounds: s
       if (label === 'in bounds' || label === 'in-bounds' || label === 'in') bucket = 'in';
       else if (label === 'out of bounds' || label === 'out-of-bounds' || label === 'out')
         bucket = 'out';
+      else if (
+        label === 'approved out of bounds' ||
+        label === 'approved-out-of-bounds' ||
+        label === 'approved'
+      )
+        bucket = 'approved';
       else bucket = null;
       continue;
     }
@@ -206,11 +285,12 @@ function extractScopeBuckets(text: string): { inBounds: string[]; outOfBounds: s
     if (itemMatch?.[1] !== undefined && bucket) {
       const value = itemMatch[1].trim();
       if (bucket === 'in') inBounds.push(value);
-      else outOfBounds.push(value);
+      else if (bucket === 'out') outOfBounds.push(value);
+      else approvedOutOfBounds.push(value);
     }
   }
 
-  return { inBounds, outOfBounds };
+  return { inBounds, outOfBounds, approvedOutOfBounds };
 }
 
 function extractCodeBlock(text: string): string {

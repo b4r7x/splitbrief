@@ -2,12 +2,78 @@ import { z } from 'zod';
 import {
   PhaseSchema,
   RecoveryActionSchema,
+  type RecoveryAction,
   RecoveryReasonSchema,
+  type RecoveryReason,
   RecoveryStatusSchema,
 } from './enums.js';
 import { TaskIdSchema } from './task.js';
 
 export const RecoveryFactSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+const BUDGET_ONLY_ACTIONS = [
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const BUDGET_PAUSED_ACTIONS = [
+  'continue',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const TASK_RECOVERY_ACTIONS = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const CONTEXT_OVERFLOW_ACTIONS = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const CONFLICT_RECOVERY_ACTIONS = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'planner-split-rebase',
+  'continue',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const DEPENDENCY_BLOCKED_ACTIONS = [
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+
+function copyActions(actions: readonly RecoveryAction[]): RecoveryAction[] {
+  return [...actions];
+}
+
+export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[] {
+  switch (reason) {
+    case 'budget-exceeded':
+      return copyActions(BUDGET_ONLY_ACTIONS);
+    case 'budget-paused':
+      return copyActions(BUDGET_PAUSED_ACTIONS);
+    case 'user-edit-conflict':
+    case 'approval-promotion-conflict':
+      return copyActions(CONFLICT_RECOVERY_ACTIONS);
+    case 'implementation-error':
+    case 'validation-failed':
+    case 'retry-exhausted':
+      return copyActions(TASK_RECOVERY_ACTIONS);
+    case 'context-overflow':
+      return copyActions(CONTEXT_OVERFLOW_ACTIONS);
+    case 'dependency-blocked':
+      return copyActions(DEPENDENCY_BLOCKED_ACTIONS);
+    default:
+      return copyActions(BUDGET_ONLY_ACTIONS);
+  }
+}
 
 export const RecoveryIssueSchema = z
   .object({
@@ -40,6 +106,16 @@ export const RecoveryIssueSchema = z
     {
       path: ['selectedAction'],
       message: 'selectedAction must be one of availableActions',
+    },
+  )
+  .refine(
+    (issue) => {
+      const legal = allowedActionsForReason(issue.reason);
+      return issue.availableActions.every((a) => legal.includes(a));
+    },
+    {
+      path: ['availableActions'],
+      message: 'availableActions contain actions illegal for the recovery reason',
     },
   );
 

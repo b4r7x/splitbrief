@@ -1,6 +1,9 @@
 import { basename, join, relative, resolve } from 'node:path';
-import { readFileSafe } from '../../lib/fs.js';
-import { isPathConfined } from '../../lib/path-confinement.js';
+import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
+import { isPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
+import { matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
 import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
@@ -15,11 +18,23 @@ import { createSessionResumeState, runWithResumeFallback } from '../session-expi
 import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { escapeRegExp } from '../../utils/regexp.js';
+import {
+  capturePlanningMutationBaseline,
+  findUnexpectedPlanningMutations,
+  planningMutationError,
+} from '../orchestrator/planning/mutation-guard.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
-  if (!isPathConfined(relative(resolve(projectDir), resolve(candidate)), projectDir)) return null;
-  return readFileSafe(candidate);
+  const relativePath = relative(projectDir, resolve(projectDir, candidate));
+  if (!isPathConfined(relativePath, projectDir)) return null;
+  try {
+    if (!confinedExists(projectDir, relativePath)) return null;
+    return confinedReadFile(projectDir, relativePath);
+  } catch (err) {
+    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) return null;
+    return null;
+  }
 }
 
 function extractMarkdownLinkedArtifact(resultText: string, filename: string): string | null {
@@ -121,32 +136,58 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   async function invoke(opts: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>;
+    callbacks: Pick<
+      PlannerCallbacks,
+      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'sessionId'
+    >;
     mode: 'plan' | 'escalate';
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<InvokeResult> {
     const { prompt, projectDir, callbacks, mode, signal, sandboxEnv } = opts;
+    const planningBaseline =
+      mode === 'plan' && callbacks.sessionId
+        ? await capturePlanningMutationBaseline(projectDir)
+        : null;
+
+    const finish = async (result: InvokeResult): Promise<InvokeResult> => {
+      if (planningBaseline && callbacks.sessionId) {
+        const unexpected = await findUnexpectedPlanningMutations({
+          projectDir,
+          sessionId: callbacks.sessionId,
+          baseline: planningBaseline,
+        });
+        if (unexpected.length > 0) {
+          throw planningMutationError.unexpectedMutations(unexpected);
+        }
+      }
+      return result;
+    };
+
     if (!supportsSessionResume) {
-      return runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal, sandboxEnv });
+      return finish(
+        await runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal, sandboxEnv }),
+      );
     }
 
     const priorId = session.getResumeId();
-    return runWithResumeFallback(
-      session,
-      (resumeId) =>
-        runOnce({
-          prompt,
-          projectDir,
-          callbacks,
-          mode,
-          resumeId: resumeId ?? null,
-          signal,
-          sandboxEnv,
-        }),
-      () => {
-        if (priorId) callbacks.onSessionExpired?.(priorId);
-      },
+    return finish(
+      await runWithResumeFallback(
+        session,
+        (resumeId) =>
+          runOnce({
+            prompt,
+            projectDir,
+            callbacks,
+            mode,
+            resumeId: resumeId ?? null,
+            signal,
+            sandboxEnv,
+          }),
+        () => {
+          if (priorId) callbacks.onSessionExpired?.(priorId);
+        },
+      ),
     );
   }
 

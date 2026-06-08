@@ -53,7 +53,7 @@ describe('mergeEvent throughput', () => {
       events = mergeEvent(
         events,
         makeTaskStart({
-          taskId: taskId(`T${String(i).padStart(5, '0')}`),
+          taskId: taskId(`T${String((i % 999) + 1).padStart(3, '0')}`),
           title: `task-${i}`,
           index: i,
           total: count,
@@ -63,7 +63,7 @@ describe('mergeEvent throughput', () => {
 
     expect(events.length).toBe(MAX_EVENTS);
     const first = events[0]! as { type: string; taskId: string };
-    expect(first.taskId).not.toBe(taskId('T00000'));
+    expect(first.taskId).not.toBe(taskId('T001'));
   });
 
   it('section cache returns same reference for unchanged events', () => {

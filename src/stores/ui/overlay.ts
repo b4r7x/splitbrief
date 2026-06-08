@@ -14,6 +14,7 @@ const store = createStore<OverlayState>(initial);
 
 export const overlayStore = {
   ...storeBase(store),
+  setFocus: (focus?: string) => store.set((s) => (s.focus === focus ? s : { ...s, focus })),
   open: (type: OverlayType, focus?: string) =>
     store.set((s) => {
       if (s.active === type && s.focus === focus && !s.exclusive) return s;

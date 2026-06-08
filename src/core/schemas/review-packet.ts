@@ -14,7 +14,11 @@ import { CostBreakdownSchema, ReviewFinalReviewStatusSchema } from './summary.js
 import { TaskIdSchema } from './task.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
-import { ReadinessNextActionKindSchema, ReadinessStatusSchema } from '../readiness/types.js';
+import {
+  ReadinessNextActionKindSchema,
+  ReadinessSeveritySchema,
+  ReadinessStatusSchema,
+} from './readiness.js';
 
 export const REVIEW_PACKET_VERSION = 1;
 
@@ -55,7 +59,7 @@ const ReviewPacketReadinessSchema = z.object({
   checks: z.array(
     z.object({
       id: z.string(),
-      severity: z.enum(['ok', 'info', 'warning', 'blocker']),
+      severity: ReadinessSeveritySchema,
       summary: z.string(),
     }),
   ),

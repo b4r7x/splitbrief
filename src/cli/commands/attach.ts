@@ -30,7 +30,13 @@ const defaultDeps: AttachDeps = {
 };
 
 export async function renderAttachClient(
-  opts: { projectDir: string; sessionId: string; feature: string; sockPath: string },
+  opts: {
+    projectDir: string;
+    sessionId: string;
+    feature: string;
+    sockPath: string;
+    authToken: string;
+  },
   deps: { initStores: typeof initStores; renderApp: typeof renderApp },
 ): Promise<void> {
   await deps.initStores(opts.projectDir);
@@ -38,7 +44,7 @@ export async function renderAttachClient(
     screen: 'workflow',
     feature: opts.feature,
     sessionId: opts.sessionId,
-    attach: { sockPath: opts.sockPath },
+    attach: { sockPath: opts.sockPath, authToken: opts.authToken },
   });
 
   const useFullscreen = isInteractiveTty();
@@ -61,6 +67,9 @@ export async function attachCommand(
     await deps.showCrashDiagnostic(sessDir, status);
     throw cliError(`session ${resolvedId} is not running`, 1);
   }
+  if (status.data.authToken === undefined) {
+    throw cliError(`session ${resolvedId} does not support authenticated attach`, 1);
+  }
 
   await renderAttachClient(
     {
@@ -68,6 +77,7 @@ export async function attachCommand(
       sessionId: resolvedId,
       feature: status.data.feature,
       sockPath: join(sessDir, IPC_SOCK_FILE),
+      authToken: status.data.authToken,
     },
     deps,
   );

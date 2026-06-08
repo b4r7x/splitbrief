@@ -10,6 +10,7 @@ import {
   calculateTaskUsageCost,
   isTaskUsageCostKnown,
 } from '../providers/cost.js';
+import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import { formatCost } from '../../core/formatting.js';
 import {
   getCompletedTaskIds,
@@ -45,6 +46,7 @@ export type SummaryBase = {
   projectDir?: string;
   sessionId?: string;
   costPrediction?: CostPrediction | undefined;
+  pricingCache?: ModelCacheAccessor | undefined;
 };
 
 type BuildSummaryOptions = SummaryBase & {
@@ -117,6 +119,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     projectDir,
     sessionId,
     costPrediction,
+    pricingCache,
   } = opts;
   const totalTasks = state.tasks.length;
   const completedByLocal = getCompletedTaskIds(state).length;
@@ -126,16 +129,20 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const totalTime = Date.now() - startTime;
   const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
 
-  const costBreakdown = calculateCostBreakdown({
-    tokenUsage: state.tokenUsage,
-    totalTasks,
-    escalatedCount: escalatedToPlanner,
-    plannerTool,
-    implementerTool,
-    plannerModel,
-    implementerModel,
-    taskBreakdowns,
-  });
+  const costBreakdown = calculateCostBreakdown(
+    {
+      tokenUsage: state.tokenUsage,
+      totalTasks,
+      escalatedCount: escalatedToPlanner,
+      completedLocalTasks: completedByLocal,
+      plannerTool,
+      implementerTool,
+      plannerModel,
+      implementerModel,
+      taskBreakdowns,
+    },
+    pricingCache,
+  );
   const estimatedCostSavings = costBreakdown.hasSavingsEstimate
     ? formatCost(costBreakdown.savingsAmount)
     : 'unavailable';
@@ -147,6 +154,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
       plannerTool,
       implementerModel,
       plannerModel,
+      cache: pricingCache,
     });
     const { cost: _cost, ...rest } = task;
     return {
@@ -160,6 +168,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
               plannerTool: plannerTool,
               implementerModel: implementerModel,
               plannerModel: plannerModel,
+              cache: pricingCache,
             }),
           }
         : { costPosture: task.costPosture ?? 'unknown-price' }),

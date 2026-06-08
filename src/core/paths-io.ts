@@ -1,10 +1,23 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageJson } from './project-meta.js';
-import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
-import { ensureSecureDir, fsError, writeSecureFile } from '../lib/fs.js';
-import { assertWritablePathConfined } from '../lib/path-confinement.js';
+import {
+  DIPTYCH_DIR,
+  SESSIONS_DIR,
+  SPEC_FILE,
+  PLAN_FILE,
+  TASKS_FILE,
+  REVIEW_FILE,
+  validateSessionId,
+} from './paths.js';
+import { fsError } from '../lib/fs.js';
+import {
+  confinedEnsureDir,
+  confinedExists,
+  confinedReadFile,
+  confinedWriteFile,
+} from '../lib/confined-fs.js';
+import { assertPathConfined, assertWritablePathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { error, matches } from '../utils/error.js';
 import type { WorkflowMode } from './schemas/enums.js';
@@ -69,11 +82,12 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
 }
 
 export function ensureSessionDir(projectDir: string, sessionId: string): void {
-  ensureSecureDir(sessionDir(projectDir, sessionId));
+  validateSessionId(sessionId);
+  confinedEnsureDir(projectDir, join(DIPTYCH_DIR, SESSIONS_DIR, sessionId));
 }
 
 export function ensureDiptychDir(projectDir: string): void {
-  ensureSecureDir(join(projectDir, DIPTYCH_DIR));
+  confinedEnsureDir(projectDir, DIPTYCH_DIR);
 }
 
 export function validateFilename(filename: string): void {
@@ -100,14 +114,20 @@ export function writeSpecFile(
   if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
-  writeSecureFile(join(sessionDir(ref.projectDir, ref.sessionId), filename), finalContent);
+  confinedWriteFile(ref.projectDir, specFileRelativePath(ref.sessionId, filename), finalContent);
+}
+
+function specFileRelativePath(sessionId: string, filename: string): string {
+  validateSessionId(sessionId);
+  return join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, filename);
 }
 
 export function readSpecFile(ref: SpecFileRef, filename: string): string | null {
   validateFilename(filename);
-  const filePath = join(sessionDir(ref.projectDir, ref.sessionId), filename);
-  if (!existsSync(filePath)) return null;
-  return readFileSync(filePath, 'utf-8');
+  const relativePath = specFileRelativePath(ref.sessionId, filename);
+  assertPathConfined(relativePath, ref.projectDir);
+  if (!confinedExists(ref.projectDir, relativePath)) return null;
+  return confinedReadFile(ref.projectDir, relativePath);
 }
 
 export function readSpecFileOrEmpty(ref: SpecFileRef, filename: string): string {
@@ -124,7 +144,6 @@ export function validateTaskPath(projectDir: string, filePath: string): string {
 }
 
 export function writeProjectFile(projectDir: string, relPath: string, content: string): void {
-  const filePath = validateTaskPath(projectDir, relPath);
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, content, 'utf-8');
+  validateTaskPath(projectDir, relPath);
+  confinedWriteFile(projectDir, relPath, content);
 }

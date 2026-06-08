@@ -16,6 +16,7 @@ export type { IpcClientActions, IpcClientState, IpcClientStatus } from './ipc-cl
 
 export function useIpcClient(opts: {
   sockPath: string;
+  authToken: string;
   onEvent: (event: EngineEvent) => void;
   onPromptRequest?: ((request: IpcPromptRequest) => Promise<IpcPromptResponse>) | undefined;
   enabled?: boolean | undefined;
@@ -88,6 +89,7 @@ export function useIpcClient(opts: {
 
       const socket = createIpcConnection({
         sockPath: opts.sockPath,
+        authToken: opts.authToken,
         callbacks: {
           setState,
           onEvent,
@@ -132,7 +134,7 @@ export function useIpcClient(opts: {
       clearReconnectTimers();
       destroyIpcSockets(sockets, socketRef);
     };
-  }, [enabled, opts.sockPath]);
+  }, [enabled, opts.sockPath, opts.authToken]);
 
   function sendUserInput(text: string) {
     const s = socketRef.current;

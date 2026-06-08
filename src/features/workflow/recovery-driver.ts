@@ -5,10 +5,10 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import {
   applySelectedRecoveryAction,
   createRecoveryBus,
+  finalizeRecoveryResult,
   loadPendingRecoveryState,
   publishPendingRecoveryPrompt,
   recoveryRetryTaskId,
-  saveAbortedRecoverySession,
 } from '../../engine/orchestrator/recovery/driver.js';
 import { createTuiSink } from './tui-sink.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from './recovery-prompt.js';
@@ -50,8 +50,13 @@ export function createRecoveryDriver(): (
       controller,
       republishPrompt,
     }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
-      const issue = state.pendingRecovery;
-      if (!issue) return { shouldRun: true, state };
+      const loaded = loadPendingRecoveryState({ projectDir, sessionId: activeSessionId }, state);
+      if (!loaded.pending) return { shouldRun: true, state: loaded.state };
+      if (loaded.issue.status === 'paused') return { shouldRun: false, state: loaded.state };
+      if (loaded.issue.status !== 'awaiting-user') {
+        return { shouldRun: true, state: loaded.state };
+      }
+      const issue = loaded.issue;
 
       const bus = createRecoveryBus({
         projectDir,
@@ -62,9 +67,14 @@ export function createRecoveryDriver(): (
       publishPendingRecoveryPrompt(bus, issue, republishPrompt);
 
       const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
-      if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
+      if (controller.signal.aborted || abortedRef.current) {
+        return { shouldRun: false, state: loaded.state };
+      }
 
-      const latest = loadPendingRecoveryState({ projectDir, sessionId: activeSessionId }, state);
+      const latest = loadPendingRecoveryState(
+        { projectDir, sessionId: activeSessionId },
+        loaded.state,
+      );
       if (!latest.pending) return { shouldRun: true, state: latest.state };
 
       const action = parseRecoveryActionAnswer(answer, latest.issue);
@@ -92,11 +102,12 @@ export function createRecoveryDriver(): (
       }
 
       if (result.status === 'aborted') {
-        saveAbortedRecoverySession({
+        finalizeRecoveryResult({
           projectDir,
           sessionId: activeSessionId,
           state: result.state,
           config,
+          status: result.status,
         });
         feedbackStore.setMessage('Workflow aborted.');
         return { shouldRun: false, state: result.state };

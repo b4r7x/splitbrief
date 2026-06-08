@@ -46,6 +46,55 @@ describe('trust', () => {
       expect(h.startsWith('sha256:')).toBe(true);
     });
 
+    it('changes when a command hook script changes', () => {
+      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, '.diptych', 'hooks', 'check.sh'), '#!/bin/sh\necho allow\n');
+      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(join(projectDir, '.diptych', 'hooks', 'check.sh'), '#!/bin/sh\necho deny\n');
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
+
+    it('changes when an interpreter-launched command hook script changes', () => {
+      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+      writeFileSync(
+        join(projectDir, 'hooks', 'check.mjs'),
+        'export default () => ({ kind: "allow" });',
+      );
+      const cfg = { pre_task: [{ command: 'node', args: ['hooks/check.mjs'] }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(
+        join(projectDir, 'hooks', 'check.mjs'),
+        'export default () => ({ kind: "deny" });',
+      );
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
+
+    it('changes when an imported module hook dependency changes', () => {
+      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+      writeFileSync(
+        join(projectDir, 'hooks', 'policy.mjs'),
+        'export const policy = () => ({ kind: "allow" });',
+      );
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        "import { policy } from './policy.mjs';\nexport default policy;\n",
+      );
+      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(
+        join(projectDir, 'hooks', 'policy.mjs'),
+        'export const policy = () => ({ kind: "deny" });',
+      );
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
+
     it('changes when a module hook file changes', () => {
       mkdirSync(join(projectDir, 'hooks'), { recursive: true });
       writeFileSync(
@@ -59,6 +108,17 @@ describe('trust', () => {
         join(projectDir, 'hooks', 'pre-task.mjs'),
         'export default () => ({ kind: "deny" });',
       );
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
+
+    it('changes when a command hook script file changes', () => {
+      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 0\n');
+      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 1\n');
 
       expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
     });
@@ -80,6 +140,28 @@ describe('trust', () => {
       expect(isHooksConfigTrusted(projectDir, { pre_task: [{ command: 'eslint' }] })).toBe(false);
     });
 
+    it('returns false after a trusted imported module dependency changes', () => {
+      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+      writeFileSync(
+        join(projectDir, 'hooks', 'policy.mjs'),
+        'export const policy = () => ({ kind: "allow" });',
+      );
+      writeFileSync(
+        join(projectDir, 'hooks', 'pre-task.mjs'),
+        "import { policy } from './policy.mjs';\nexport default policy;\n",
+      );
+      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(
+        join(projectDir, 'hooks', 'policy.mjs'),
+        'export const policy = () => ({ kind: "deny" });',
+      );
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
     it('returns false after a trusted module file changes', () => {
       mkdirSync(join(projectDir, 'hooks'), { recursive: true });
       writeFileSync(
@@ -94,6 +176,18 @@ describe('trust', () => {
         join(projectDir, 'hooks', 'pre-task.mjs'),
         'export default () => ({ kind: "deny" });',
       );
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it('returns false after a trusted command hook script changes', () => {
+      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 0\n');
+      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 1\n');
 
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
     });

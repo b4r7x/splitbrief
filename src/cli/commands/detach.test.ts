@@ -22,6 +22,7 @@ function runningStatus(sessionId: string): ServerStatus {
       sessionId,
       mode: 'quick',
       feature: 'do a thing',
+      authToken: 'test-auth-token',
     },
   };
 }
@@ -129,7 +130,10 @@ describe('detachCommand', () => {
       ),
     ).resolves.toBeUndefined();
 
-    expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
+    expect(received.map((line) => JSON.parse(line))).toEqual([
+      { kind: 'authenticate', token: 'test-auth-token' },
+      { kind: 'detach' },
+    ]);
     expect(logs).toContain('Session alive-session detached.');
   });
 
@@ -150,8 +154,26 @@ describe('detachCommand', () => {
       detachCommand('1', { projectDir: testDir }, createDeps(runningStatus('newer-session'))),
     ).resolves.toBeUndefined();
 
-    expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
+    expect(received.map((line) => JSON.parse(line))).toEqual([
+      { kind: 'authenticate', token: 'test-auth-token' },
+      { kind: 'detach' },
+    ]);
     expect(logs).toContain('Session newer-session detached.');
+  });
+
+  it('fails when a running session has no auth token', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    const status = runningStatus('legacy-session');
+    if (!status.alive) throw new Error('expected alive status');
+    delete status.data.authToken;
+
+    await expect(
+      detachCommand('legacy-session', { projectDir: testDir }, createDeps(status)),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: 'session legacy-session does not support authenticated detach',
+    });
   });
 
   it('fails when the session is not running', async () => {

@@ -108,8 +108,39 @@ function send403(res: ServerResponse): void {
 }
 
 function send405(res: ServerResponse): void {
-  res.writeHead(405, { Allow: 'POST' });
+  res.writeHead(405, { Allow: 'POST, OPTIONS' });
   res.end();
+}
+
+function localOriginCorsHeaders(origin: string | undefined): Record<string, string> {
+  if (origin === undefined) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    Vary: 'Origin',
+  };
+}
+
+function sendOptionsPreflight(res: ServerResponse, origin: string): void {
+  res.writeHead(204, {
+    ...localOriginCorsHeaders(origin),
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers':
+      'Authorization, Content-Type, MCP-Protocol-Version, mcp-protocol-version',
+    'Access-Control-Max-Age': '86400',
+  });
+  res.end();
+}
+
+function writeResponse(
+  res: ServerResponse,
+  status: number,
+  origin: string | undefined,
+  headers: Record<string, string>,
+  body?: string,
+): void {
+  res.writeHead(status, { ...localOriginCorsHeaders(origin), ...headers });
+  if (body === undefined) res.end();
+  else res.end(body);
 }
 
 function send500(res: ServerResponse): void {
@@ -152,6 +183,11 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         return;
       }
 
+      if (req.method === 'OPTIONS' && req.url === '/mcp') {
+        sendOptionsPreflight(res, origin ?? 'http://localhost');
+        return;
+      }
+
       // Auth check for all other routes
       if (!isAuthorized(req, token)) {
         send401(res);
@@ -186,17 +222,21 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
 
         if (result.kind === 'notification') {
           // Accepted: server received the notification; no response body per JSON-RPC
-          res.writeHead(202, { 'MCP-Protocol-Version': negotiatedVersion });
-          res.end();
+          writeResponse(res, 202, origin, { 'MCP-Protocol-Version': negotiatedVersion });
           return;
         }
 
         // kind === 'response' | 'error'
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'MCP-Protocol-Version': negotiatedVersion,
-        });
-        res.end(JSON.stringify(result.body));
+        writeResponse(
+          res,
+          200,
+          origin,
+          {
+            'Content-Type': 'application/json',
+            'MCP-Protocol-Version': negotiatedVersion,
+          },
+          JSON.stringify(result.body),
+        );
         return;
       }
 

@@ -63,9 +63,9 @@ const gates: Gate[] = [
   },
   {
     id: '8',
-    description: 'Zero runtime classes in production source (error subclasses sanctioned, D2)',
+    description: 'Zero runtime classes in production source',
     command:
-      '{ rg "\\bclass\\s+\\w+" src/ --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' | rg -v "\\bextends Error\\b" || true; } | wc -l',
+      "{ rg \"\\bclass\\s+\\w+\" src/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -157,7 +157,7 @@ const gates: Gate[] = [
     id: '18',
     description: 'No dead exports/files (knip)',
     command:
-      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --include exports,types,files --reporter compact 2>/dev/null | rg . || true; } | wc -l',
+      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --reporter compact 2>/dev/null | rg . || true; } | wc -l',
     expected: 0,
   },
   {
@@ -171,7 +171,22 @@ const gates: Gate[] = [
     id: '20',
     description: 'Test files must import testing/helpers via #testing alias, not relative paths',
     command:
-      '{ rg -n "from [\'\\"]\\.\\.?/.*testing/helpers" src/ -g "*.test.ts" -g "*.test.tsx" || true; } | wc -l',
+      '{ rg -n "from [\'\\"]\\.\\.?/.*testing/helpers" src/ testing/ evals/ -g "*.ts" -g "*.tsx" || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '22',
+    description: 'Active agent instruction surfaces must not reference removed APIs',
+    command:
+      "{ rg -n '\\\\bTuiEvent\\\\b|src/screens/|src/ui/' .github/prompts .claude/commands .claude/skills .opencode/command 2>/dev/null || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '21',
+    description:
+      'No present tracked runtime artifacts under .diptych/ or .tiny-spec/ (excluding intentional fixtures)',
+    command:
+      '{ git ls-files -z .diptych/ .tiny-spec/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
     expected: 0,
   },
 ];

@@ -8,6 +8,11 @@ export const TokenUsageLikeSchema = z.looseObject({
   cache_creation_input_tokens: z.number().optional(),
   prompt_tokens: z.number().optional(),
   completion_tokens: z.number().optional(),
+  prompt_tokens_details: z
+    .object({
+      cached_tokens: z.number().optional(),
+    })
+    .optional(),
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
   cacheReadTokens: z.number().optional(),
@@ -22,9 +27,14 @@ export function toTokenDelta(raw: unknown): TokenDelta | null {
 
   const r = parsed.data;
 
-  const input = r.input_tokens ?? r.prompt_tokens ?? r.inputTokens;
+  const cacheRead =
+    r.cache_read_input_tokens ?? r.prompt_tokens_details?.cached_tokens ?? r.cacheReadTokens;
+  const promptInput =
+    r.prompt_tokens === undefined
+      ? undefined
+      : Math.max(0, r.prompt_tokens - (r.prompt_tokens_details?.cached_tokens ?? 0));
+  const input = r.input_tokens ?? promptInput ?? r.inputTokens;
   const output = r.output_tokens ?? r.completion_tokens ?? r.outputTokens;
-  const cacheRead = r.cache_read_input_tokens ?? r.cacheReadTokens;
   const cacheCreate = r.cache_creation_input_tokens ?? r.cacheCreateTokens;
 
   if (input == null && output == null && cacheRead == null && cacheCreate == null) return null;

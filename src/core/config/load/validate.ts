@@ -7,6 +7,15 @@ import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import { missingRunnerCredential } from '../accessors/runner-credentials.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
 import { pickDefaultProfileName } from '../accessors/implementer-profiles.js';
+import { apiBaseValidationError } from '../api-base.js';
+import {
+  customEndpointCredentialSourceError,
+  isInlineApiKey,
+  missingEnvRefError,
+  parseApiKeyEnvRef,
+  resolveConfiguredApiKey,
+  type RunnerCredentialConfig,
+} from '../credentials.js';
 
 export interface ConfigError {
   path: string;
@@ -26,23 +35,19 @@ const KEY_FORMAT_HINTS: Record<string, { pattern: RegExp; example: string }> = {
   deepseek: { pattern: /^sk-/, example: 'sk-...' },
 };
 
-function checkApiKey(opts: {
-  role: 'planner' | 'implementer';
-  path: string;
-  config: PlannerConfig | ImplementerConfig;
-  errors: ConfigError[];
-}): void {
-  const { role, path, config, errors } = opts;
-  const error = missingApiKeyError({ role, path, config });
-  if (error) errors.push(error);
-}
-
 function missingApiKeyError(opts: {
   role: 'planner' | 'implementer';
   path: string;
-  config: PlannerConfig | ImplementerConfig;
+  config: RunnerCredentialConfig;
 }): ConfigError | undefined {
   const { role, path, config } = opts;
+  if (config.kind === 'api' || config.kind === 'agent-sdk') {
+    const envVar = config.apiKey ? parseApiKeyEnvRef(config.apiKey) : undefined;
+    if (envVar && !process.env[envVar]) {
+      return missingEnvRefError(path, envVar);
+    }
+  }
+
   const missing = missingRunnerCredential(config);
   if (!missing) return undefined;
   const credentialTarget = missing.envVar
@@ -59,25 +64,58 @@ function missingApiKeyError(opts: {
   };
 }
 
+function runnerBoundaryErrors(opts: {
+  role: 'planner' | 'implementer';
+  path: string;
+  config: RunnerCredentialConfig;
+  skipMissingKey?: boolean | undefined;
+}): ConfigError[] {
+  const errors: ConfigError[] = [];
+  if (!opts.skipMissingKey) {
+    const missing = missingApiKeyError(opts);
+    if (missing) errors.push(missing);
+  }
+
+  if (opts.config.kind === 'api' && opts.config.apiBase) {
+    const apiBaseError = apiBaseValidationError(opts.config.apiBase);
+    if (apiBaseError) {
+      errors.push({ path: `${opts.path}.apiBase`, message: apiBaseError });
+    }
+  }
+
+  const credentialSourceError = customEndpointCredentialSourceError(opts);
+  if (credentialSourceError) errors.push(credentialSourceError);
+
+  return errors;
+}
+
 function apiKeyErrors(config: Config): ConfigError[] {
   const errors: ConfigError[] = [];
-  checkApiKey({ role: 'planner', path: 'planner', config: config.planner, errors });
+  errors.push(
+    ...runnerBoundaryErrors({ role: 'planner', path: 'planner', config: config.planner }),
+  );
+
   if (!config.implementerProfiles) {
-    checkApiKey({ role: 'implementer', path: 'implementer', config: config.implementer, errors });
+    errors.push(
+      ...runnerBoundaryErrors({
+        role: 'implementer',
+        path: 'implementer',
+        config: config.implementer,
+      }),
+    );
     return errors;
   }
 
-  const selectedName = selectedImplementerProfileName(config);
-  const selectedProfile = selectedName
-    ? config.implementerProfiles.profiles[selectedName]
-    : undefined;
-  if (selectedName && selectedProfile) {
-    const error = missingApiKeyError({
-      role: 'implementer',
-      path: `implementerProfiles.profiles.${selectedName}`,
-      config: selectedProfile,
-    });
-    if (error) errors.push(error);
+  const defaultProfileName = selectedImplementerProfileName(config);
+  for (const [name, profile] of Object.entries(config.implementerProfiles.profiles)) {
+    errors.push(
+      ...runnerBoundaryErrors({
+        role: 'implementer',
+        path: `implementerProfiles.profiles.${name}`,
+        config: profile,
+        skipMissingKey: name !== defaultProfileName,
+      }),
+    );
   }
 
   return errors;
@@ -118,10 +156,10 @@ function plannerKeyInfo(planner: PlannerConfig): KeyInfo {
       const envVar = PROVIDER_CATALOG['agent-sdk'].apiKeyEnv;
       const envKey = envVar ? process.env[envVar] : undefined;
       return {
-        key: planner.apiKey ?? envKey,
+        key: resolveConfiguredApiKey(planner.apiKey) ?? envKey,
         provider: 'agent-sdk',
         envVar,
-        inConfig: !!planner.apiKey,
+        inConfig: isInlineApiKey(planner.apiKey),
         envRecommended: true,
       };
     }
@@ -131,10 +169,10 @@ function plannerKeyInfo(planner: PlannerConfig): KeyInfo {
         : undefined;
       const envKey = envVar ? process.env[envVar] : undefined;
       return {
-        key: planner.apiKey ?? envKey,
+        key: resolveConfiguredApiKey(planner.apiKey) ?? envKey,
         provider: planner.provider,
         envVar,
-        inConfig: !!planner.apiKey,
+        inConfig: isInlineApiKey(planner.apiKey),
         envRecommended: envRecommendedForApiProvider(planner.provider, planner.apiBase),
       };
     }
@@ -157,10 +195,10 @@ function implementerKeyInfo(implementer: ImplementerConfig): KeyInfo {
   const apiKey = getRunnerApiKey(implementer);
   const apiBase = implementer.kind === 'api' ? implementer.apiBase : undefined;
   return {
-    key: apiKey ?? envKey,
+    key: resolveConfiguredApiKey(apiKey) ?? envKey,
     provider: providerId,
     envVar,
-    inConfig: !!apiKey,
+    inConfig: isInlineApiKey(apiKey),
     envRecommended: providerId ? envRecommendedForApiProvider(providerId, apiBase) : false,
   };
 }
@@ -172,7 +210,7 @@ function keyInfoWarnings(role: string, info: KeyInfo): string[] {
       `API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`,
     );
   }
-  if (info.key && info.provider) {
+  if (info.key && info.provider && isInlineApiKey(info.key)) {
     warnings.push(...keyFormatWarnings(info.provider, info.key));
   }
   return warnings;
@@ -210,7 +248,9 @@ function profileCredentialWarnings(config: Config): string[] {
     if (!error) return [];
     if (name === defaultName) return [];
 
-    return [`Unused implementer profile ${name} is missing credentials: ${error.message}.`];
+    return [
+      `Non-default implementer profile ${name} is missing credentials; it will be skipped by automatic task routing until credentials are configured: ${error.message}.`,
+    ];
   });
 }
 

@@ -1,11 +1,12 @@
-import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
 import type { StateAction } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { isENOENT } from '../../lib/process/errors.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
+import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
+import { matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
 import { transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
@@ -50,12 +51,19 @@ export function transitionAndSave(
 
 async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
   assertPathConfined(task.file, projectDir);
-  const filePath = join(projectDir, task.file);
   try {
-    const currentCode = await readFile(filePath, 'utf-8');
+    if (!confinedExists(projectDir, task.file)) {
+      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
+      return taskWithoutCurrentCode;
+    }
+    const currentCode = await confinedReadFileAsync(projectDir, task.file);
+    if (currentCode === null) {
+      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
+      return taskWithoutCurrentCode;
+    }
     return { ...task, currentCode };
   } catch (err) {
-    if (isENOENT(err)) {
+    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) {
       const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
       return taskWithoutCurrentCode;
     }

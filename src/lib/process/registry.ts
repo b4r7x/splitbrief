@@ -4,10 +4,15 @@ import { isNodeError } from './errors.js';
 const SIGKILL_DELAY = 2000;
 const ABORT_KILL_DELAY = 2000;
 
-const activeProcesses = new Set<ChildProcess>();
+type RegisteredProcess = {
+  proc: ChildProcess;
+  group: boolean;
+};
 
-export function registerProcess(proc: ChildProcess): void {
-  activeProcesses.add(proc);
+const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
+
+export function registerProcess(proc: ChildProcess, options?: { group?: boolean }): void {
+  activeProcesses.set(proc, { proc, group: options?.group ?? false });
 }
 
 export function unregisterProcess(proc: ChildProcess): void {
@@ -73,7 +78,7 @@ export function abortProcess(
 }
 
 export function killAllProcesses(): void {
-  for (const proc of activeProcesses) {
-    killProcess(proc);
+  for (const entry of activeProcesses.values()) {
+    killProcess(entry.proc, { group: entry.group });
   }
 }

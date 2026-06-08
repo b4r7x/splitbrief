@@ -82,10 +82,10 @@ describe('PlanEditorComponent review metadata', () => {
         width: 120,
       }),
     );
-    await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Failed to load Task Briefs');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Failed to load Task Briefs');
+    });
     expect(planEditorStore.get().tasks).toEqual([]);
 
     ui.stdin.write('Y');

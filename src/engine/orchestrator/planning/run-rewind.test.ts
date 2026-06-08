@@ -223,7 +223,7 @@ describe('runPlanningPhase — rewindPending', () => {
         return {
           spec: '# Spec',
           plan: '# Plan',
-          tasks: [makePassingTask('T-FROMPLAN')],
+          tasks: [makePassingTask('T099')],
           usage: { inputTokens: 100, outputTokens: 50 },
         };
       },
@@ -239,7 +239,7 @@ describe('runPlanningPhase — rewindPending', () => {
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T-FROMPLAN');
+    expect(result.tasks[0]?.id).toBe('T099');
     expect(result.state.phase).toBe('implementing');
     expect(planCalls).toBe(1);
     expect(regenCalls).toBe(0);

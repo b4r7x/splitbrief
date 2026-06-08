@@ -11,24 +11,15 @@ type PlannerScenario = {
 const PLANNER_SCENARIOS: PlannerScenario[] = [
   {
     tool: 'copilot',
-    plannerBare: ['-p', 'prompt', '--output-format', 'json', '--allow-all'],
-    plannerWithModel: [
-      '--model',
-      'gpt-5.2',
-      '-p',
-      'prompt',
-      '--output-format',
-      'json',
-      '--allow-all',
-    ],
+    plannerBare: ['-p', 'prompt', '--output-format', 'json'],
+    plannerWithModel: ['--model', 'gpt-5.2', '-p', 'prompt', '--output-format', 'json'],
     modelBeforePrompt: true,
   },
   {
     tool: 'kilo-code',
-    plannerBare: ['run', '--auto', '--json', '-m', 'architect', 'prompt'],
+    plannerBare: ['run', '--json', '-m', 'architect', 'prompt'],
     plannerWithModel: [
       'run',
-      '--auto',
       '--json',
       '-m',
       'architect',
@@ -180,7 +171,7 @@ describe('codex planner — session resume (CLI contract)', () => {
     expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);
   });
 
-  it('uses vanilla `exec --json --full-auto` when no sessionId is provided', () => {
+  it('uses read-only `exec --json` in plan mode when no sessionId is provided', () => {
     const args = codex.buildArgs({
       prompt: 'new feature',
       model: 'gpt-5',
@@ -192,14 +183,14 @@ describe('codex planner — session resume (CLI contract)', () => {
       'gpt-5',
       'exec',
       '--json',
-      '--full-auto',
       '--cd',
       '/tmp/proj',
       'new feature',
     ]);
+    expect(args).not.toContain('--full-auto');
   });
 
-  it('ignores sessionId in escalate mode (one-shot exec form)', () => {
+  it('uses write-permissive `--full-auto` in escalate mode', () => {
     const args = codex.buildArgs({
       prompt: 'escalate',
       model: 'gpt-5',
@@ -217,7 +208,6 @@ describe('codex planner — session resume (CLI contract)', () => {
       '/tmp/proj',
       'escalate',
     ]);
-    expect(args).not.toContain('resume');
   });
 });
 

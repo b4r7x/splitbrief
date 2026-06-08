@@ -1,6 +1,6 @@
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
+import { allowedActionsForReason, type RecoveryIssue } from '../../../core/schemas/recovery.js';
 import {
   recoveryFactBoolean,
   recoveryFactNumber,
@@ -99,9 +99,32 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
     });
   }
 
+  if (opts.action === 'continue') {
+    return applyContinueRecoveryAction(opts, issue);
+  }
+
+  if (opts.action === 'planner-split-rebase') {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'planner-proposal-required',
+      message:
+        'Planner split/rebase requires a parseable proposed Task Brief and explicit approve/edit/reject before execution can resume.',
+      implementerProfile: issue.selectedImplementerProfile,
+      publishSelected: true,
+    });
+  }
+
+  if (!allowedActionsForReason(issue.reason).includes(opts.action)) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'action-not-available',
+      message: `Recovery action "${opts.action}" is not allowed for ${issue.reason}.`,
+    });
+  }
+
   switch (opts.action) {
-    case 'continue':
-      return applyContinueRecoveryAction(opts, issue);
     case 'pause-run':
       return applyPauseRecoveryAction(opts, issue);
     case 'abort-workflow':
@@ -112,16 +135,6 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     case 'route-bigger-worker':
       return applyRouteBiggerWorkerRecoveryAction(opts, issue);
-    case 'planner-split-rebase':
-      return blockRecoveryAction({
-        ...opts,
-        issue,
-        code: 'planner-proposal-required',
-        message:
-          'Planner split/rebase requires a parseable proposed Task Brief and explicit approve/edit/reject before execution can resume.',
-        implementerProfile: issue.selectedImplementerProfile,
-        publishSelected: true,
-      });
     default:
       return assertNever(opts.action);
   }
@@ -302,6 +315,12 @@ function applyRetryCurrentTaskRecoveryAction(
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(opts, state, {
     type: 'RESET_TASK',
+    taskId: target.task.id,
+  });
+  opts.bus.publish({
+    type: 'task_reset',
+    ts: Date.now(),
+    phase: state.phase,
     taskId: target.task.id,
   });
   state = transitionAndSave(opts, state, {

@@ -2,6 +2,7 @@ import { relative } from 'node:path';
 import { resolveFromProject } from '../../utils/path-patterns.js';
 import { mkdir, stat } from 'node:fs/promises';
 import { warnError } from '../../lib/warn.js';
+import { uniqueInOrder } from '../../utils/collections.js';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
 import { resolveCodebaseCacheDir, resolveRepoMapDbPath } from './cache-path.js';
@@ -57,7 +58,7 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     const explicitFocusFiles = (opts.focusFiles ?? []).map((f) =>
       resolveFromProject(projectDir, f),
     );
-    const absFocusFiles = [...new Set([...explicitFocusFiles, ...mentionedFiles])];
+    const absFocusFiles = uniqueInOrder([...explicitFocusFiles, ...mentionedFiles]);
     const rankings = pagerank(graph, absFocusFiles);
 
     const displayNodes = nodesAbs.map((n) => ({ ...n, path: relative(projectDir, n.path) }));

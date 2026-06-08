@@ -29,7 +29,12 @@ function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefine
 async function invokeApi(opts: {
   client: StreamClient | null;
   model: string;
-  planner: { provider: string; apiBase?: string | undefined; apiKey: string };
+  planner: {
+    provider: string;
+    apiBase?: string | undefined;
+    apiKey: string;
+    temperature?: number | undefined;
+  };
   prompt: string;
   onOutput: (text: string) => void;
   priorMessages?: PriorMessage[] | undefined;
@@ -45,7 +50,7 @@ async function invokeApi(opts: {
     apiBase: opts.planner.apiBase ?? '',
     model: opts.model,
     messages,
-    temperature: 0.3,
+    temperature: opts.planner.temperature ?? 0.3,
     onProgress: opts.onOutput,
     effort: opts.effort,
     images: opts.images,
@@ -87,7 +92,12 @@ export function createApiPlanner(config: Config): Planner {
     invokeApi({
       client,
       model,
-      planner: { provider, apiBase: resolved.baseURL, apiKey: resolved.apiKey() },
+      planner: {
+        provider,
+        apiBase: resolved.baseURL,
+        apiKey: resolved.apiKey(),
+        temperature: plannerCfg.temperature,
+      },
       prompt,
       onOutput: callbacks.onOutput,
       priorMessages,

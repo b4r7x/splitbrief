@@ -91,6 +91,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const handleIpcPrompt = createIpcPromptDispatcher(inputMode);
   const [ipcState, ipcActions] = useIpcClient({
     sockPath: attach?.sockPath ?? '',
+    authToken: attach?.authToken ?? '',
     enabled: isAttachedClient,
     onEvent: addEvent,
     onPromptRequest: handleIpcPrompt,
@@ -149,6 +150,10 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     ? (text: string) => {
         if (ipcState.status !== 'connected') {
           feedbackStore.setError('Cannot send input: not connected to server.');
+          return;
+        }
+        if (inputMode.mode !== 'normal') {
+          review.handleInput(text);
           return;
         }
         ipcActions.sendUserInput(text);

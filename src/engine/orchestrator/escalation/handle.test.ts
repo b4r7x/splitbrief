@@ -11,11 +11,10 @@ import {
   makeImplementer,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation.js';
@@ -47,11 +46,11 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('escalation-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'escalation-test',
+    sessionId: 'sess-esc',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-esc';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 

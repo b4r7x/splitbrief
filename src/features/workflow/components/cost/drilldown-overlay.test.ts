@@ -12,6 +12,7 @@ import {
   formatInputOutputSplit,
   formatTotalTokens,
   formatPhaseCost,
+  formatSplitPhaseCost,
   calculatePhaseRowCost,
 } from './drilldown-overlay.js';
 import { resolvePricing } from '../../../../engine/providers/pricing-resolver.js';
@@ -191,7 +192,7 @@ describe('renderBar', () => {
     [5, 10, 10, '█████░░░░░'],
     [0, 10, 10, '░░░░░░░░░░'],
   ] as const)('renderBar(%i, %i, %i) → %s', (value, max, width, expected) => {
-    expect(renderBar(value, max, width)).toBe(expected);
+    expect(renderBar({ value, max, width })).toBe(expected);
   });
 });
 
@@ -200,7 +201,7 @@ describe('formatInputOutputSplit', () => {
     [300, 200, 'in: 300 / out: 200'],
     [1500, 500, 'in: 1.5k / out: 0.5k'],
   ] as const)('formatInputOutputSplit(%i, %i) → %s', (input, output, expected) => {
-    expect(formatInputOutputSplit(input, output)).toBe(expected);
+    expect(formatInputOutputSplit({ inputTokens: input, outputTokens: output })).toBe(expected);
   });
 });
 
@@ -222,6 +223,32 @@ describe('formatTotalTokens', () => {
   });
 });
 
+describe('formatSplitPhaseCost', () => {
+  it('shows partial label when only one split role is priced', () => {
+    expect(
+      formatSplitPhaseCost({
+        cost: 18,
+        plannerPriced: true,
+        implementerPriced: false,
+        plannerMode: 'priced',
+        implementerMode: 'unpriced-local',
+      }),
+    ).toBe('$18.00 + partial');
+  });
+
+  it('shows full cost when both split roles are priced', () => {
+    expect(
+      formatSplitPhaseCost({
+        cost: 18,
+        plannerPriced: true,
+        implementerPriced: true,
+        plannerMode: 'priced',
+        implementerMode: 'priced',
+      }),
+    ).toBe('$18.00');
+  });
+});
+
 describe('formatPhaseCost', () => {
   it.each([
     [0, false, 'unpriced-local' as const, 'local'],
@@ -229,7 +256,7 @@ describe('formatPhaseCost', () => {
     [0, false, 'unpriced-meta' as const, 'unpriced'],
     [0, false, 'unpriced-unknown' as const, 'n/a'],
     [0, false, null, 'n/a'],
-  ] as const)('formatPhaseCost(%i, %s, %s) → %s', (cost, isDerived, reason, expected) => {
-    expect(formatPhaseCost(cost, isDerived, reason)).toBe(expected);
+  ] as const)('formatPhaseCost(%i, %s, %s) → %s', (cost, isPhasePriced, pricingMode, expected) => {
+    expect(formatPhaseCost({ cost, isPhasePriced, pricingMode })).toBe(expected);
   });
 });

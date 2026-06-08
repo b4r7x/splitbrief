@@ -86,6 +86,16 @@ export function createIpcPromptDispatcher(
       return { kind: 'tiered_approval', response };
     }
 
+    if (request.kind === 'recovery_needed') {
+      const result = await inputMode.setReviewMode(
+        `Recovery needed: ${request.issue.message}. retry / abort`,
+      );
+      return {
+        kind: 'recovery_needed',
+        action: result.approved ? 'retry-same-worker' : 'abort-workflow',
+      };
+    }
+
     return assertNever(request);
   };
 }

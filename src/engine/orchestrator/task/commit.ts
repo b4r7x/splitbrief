@@ -8,6 +8,7 @@ import {
   commitChanges,
   createTaggedStash,
   stageAll,
+  resetIndex,
   getCurrentChangedFiles,
 } from '../../../lib/git.js';
 import {
@@ -24,6 +25,7 @@ type GitOps = {
   stageAll: typeof stageAll;
   commitChanges: typeof commitChanges;
   createTaggedStash: typeof createTaggedStash;
+  resetIndex: typeof resetIndex;
 };
 
 type ValidateCommitOptions = {
@@ -61,7 +63,13 @@ export async function validateCommitAndAdvance(
     retryCount,
     implementerProfile,
   } = opts;
-  const gitOps: GitOps = { stageAll, commitChanges, createTaggedStash, ...opts.gitOps };
+  const gitOps: GitOps = {
+    stageAll,
+    commitChanges,
+    createTaggedStash,
+    resetIndex,
+    ...opts.gitOps,
+  };
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -113,6 +121,11 @@ export async function validateCommitAndAdvance(
           files,
         });
         if (!pre.allow) {
+          try {
+            await gitOps.resetIndex(projectDir);
+          } catch {
+            // best-effort unstage
+          }
           publishWarning(
             { bus: bus, phase: state.phase },
             `pre_commit blocked: ${pre.reason ?? 'hook denied'}`,
@@ -128,6 +141,11 @@ export async function validateCommitAndAdvance(
       await gitOps.commitChanges(projectDir, commitMsg);
       publishGitCommit({ bus: bus, phase: state.phase }, task.id, commitMsg, task.file);
     } catch (err) {
+      try {
+        await gitOps.resetIndex(projectDir);
+      } catch {
+        // best-effort unstage
+      }
       publishWarningFromError({ bus: bus, phase: state.phase }, 'Failed to commit', err);
     }
   } else if (strategy === 'checkpoint') {

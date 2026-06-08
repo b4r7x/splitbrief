@@ -14,6 +14,12 @@ export type ReplayResult = {
   lastTs: number | null;
 };
 
+export type ReplaySummary = {
+  totalEvents: number;
+  firstTs: number | null;
+  lastTs: number | null;
+};
+
 function entryToEvent(raw: unknown): EngineEvent | null {
   if (!isRecord(raw)) return null;
   const entry = raw;
@@ -41,13 +47,24 @@ function entryToEvent(raw: unknown): EngineEvent | null {
 }
 
 export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResult> {
-  const { sessionJsonlPath } = opts;
-
-  if (!existsSync(sessionJsonlPath)) {
-    return { events: [], firstTs: null, lastTs: null };
+  const events: EngineEvent[] = [];
+  for await (const event of streamReplayEvents(opts)) {
+    events.push(event);
   }
 
-  const events: EngineEvent[] = [];
+  const first = events[0];
+  const last = events[events.length - 1];
+  const firstTs = first ? first.ts : null;
+  const lastTs = last ? last.ts : null;
+
+  return { events, firstTs, lastTs };
+}
+
+export async function* streamReplayEvents(opts: ReplayOptions): AsyncGenerator<EngineEvent> {
+  const { sessionJsonlPath } = opts;
+
+  if (!existsSync(sessionJsonlPath)) return;
+
   const stream = createReadStream(sessionJsonlPath, { encoding: 'utf-8' });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
@@ -61,13 +78,20 @@ export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResul
     }
     const event = entryToEvent(raw);
     if (!event) continue;
-    events.push(event);
+    yield event;
+  }
+}
+
+export async function summarizeReplayEvents(opts: ReplayOptions): Promise<ReplaySummary> {
+  let totalEvents = 0;
+  let firstTs: number | null = null;
+  let lastTs: number | null = null;
+
+  for await (const event of streamReplayEvents(opts)) {
+    firstTs ??= event.ts;
+    lastTs = event.ts;
+    totalEvents += 1;
   }
 
-  const first = events[0];
-  const last = events[events.length - 1];
-  const firstTs = first ? first.ts : null;
-  const lastTs = last ? last.ts : null;
-
-  return { events, firstTs, lastTs };
+  return { totalEvents, firstTs, lastTs };
 }

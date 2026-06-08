@@ -26,7 +26,7 @@ function CatalogProbe({
 
   return (
     <Text>
-      {role}:{catalog.currentItem?.id ?? 'none'}
+      {role}:{catalog.currentItem?.id ?? 'none'}:{catalog.currentModel ?? 'none'}
     </Text>
   );
 }
@@ -47,7 +47,38 @@ describe('usePickerCatalog', () => {
     ui.rerender(<CatalogProbe role="implementer" />);
     await tick(20);
 
-    expect(ui.lastFrame()).toContain('implementer:ollama');
+    expect(ui.lastFrame()).toContain('implementer:ollama:qwen2.5-coder:7b');
+    ui.unmount();
+  });
+
+  it('displays the default implementer profile instead of the stale top-level implementer', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+        },
+        implementerProfiles: {
+          default: 'local-qwen',
+          profiles: {
+            'local-qwen': {
+              kind: 'api',
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
+              model: 'qwen2.5-coder:7b',
+            },
+          },
+        },
+      }),
+    });
+
+    const ui = renderFeature(<CatalogProbe role="implementer" />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('implementer:ollama:qwen2.5-coder:7b');
     ui.unmount();
   });
 });

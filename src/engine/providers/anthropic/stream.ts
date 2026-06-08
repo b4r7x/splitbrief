@@ -230,7 +230,7 @@ export async function streamAnthropicCompletion(
       body: JSON.stringify({
         model: opts.model,
         messages: finalConversation,
-        temperature: opts.temperature,
+        ...(opts.effort === undefined && { temperature: opts.temperature }),
         stream: true,
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         ...(system && { system }),

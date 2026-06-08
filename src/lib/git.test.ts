@@ -9,6 +9,7 @@ import {
   discardChangedFiles,
   branchExists,
   createBranch,
+  createTaggedStash,
   checkIgnoredPaths,
   gitError,
 } from './git.js';
@@ -169,7 +170,7 @@ describe('git utils', () => {
   describe('runGit error wrapping', () => {
     it('wraps a failed simple-git call as a typed GitCommandError', async () => {
       const dir = tracked(createTempDir('diptych-nogit-diff'));
-      await expect(getCurrentDiff(dir)).rejects.toSatisfy(gitError.isCommandFailed);
+      await expect(getCurrentDiff(dir)).rejects.toMatchObject({ kind: 'git-command-failed' });
     });
   });
 
@@ -204,6 +205,27 @@ describe('git utils', () => {
     });
   });
 
+  describe('createTaggedStash', () => {
+    it('leaves the index unstaged when tag creation fails', async () => {
+      const dir = tracked(setupGitRepo());
+      const git = simpleGit(dir);
+      writeFileSync(join(dir, 'seed.txt'), 'seed');
+      await git.add('seed.txt');
+      const seedSha = (await git.raw(['stash', 'create', 'seed stash'])).trim();
+      await git.tag(['diptych/T001', seedSha]);
+      await git.reset();
+
+      writeFileSync(join(dir, 'staged.txt'), 'new content');
+
+      await expect(
+        createTaggedStash(dir, 'diptych checkpoint: T001', 'diptych/T001'),
+      ).rejects.toMatchObject({ kind: 'git-command-failed' });
+
+      const stagedAfter = (await git.diff(['--cached', '--name-only'])).trim();
+      expect(stagedAfter).toBe('');
+    });
+  });
+
   describe('gitError', () => {
     it('creates a discriminated AppError for failed commands', () => {
       const err = gitError.commandFailed('rev-parse HEAD', 'not a git repository');
@@ -212,21 +234,6 @@ describe('git utils', () => {
       expect(err.message).toContain('rev-parse HEAD');
       expect(err.message).toContain('not a git repository');
       expect(err.data).toEqual({ intent: 'rev-parse HEAD', causeMessage: 'not a git repository' });
-    });
-
-    it('narrows created git command errors', () => {
-      const err = gitError.commandFailed('status --porcelain', 'fatal: error');
-      expect(gitError.isCommandFailed(err)).toBe(true);
-    });
-
-    it('returns false for plain Error', () => {
-      expect(gitError.isCommandFailed(new Error('plain'))).toBe(false);
-    });
-
-    it('returns false for non-Error values', () => {
-      expect(gitError.isCommandFailed('string')).toBe(false);
-      expect(gitError.isCommandFailed(null)).toBe(false);
-      expect(gitError.isCommandFailed(42)).toBe(false);
     });
   });
 });

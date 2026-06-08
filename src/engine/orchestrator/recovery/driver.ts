@@ -53,9 +53,14 @@ export function loadPendingRecoveryState(
   fallback: WorkflowState,
 ): PendingRecoveryState {
   const state = loadState(ref) ?? fallback;
-  return state.pendingRecovery
-    ? { pending: true, state, issue: state.pendingRecovery }
-    : { pending: false, state };
+  if (
+    state.pendingRecovery &&
+    state.pendingRecovery.status !== 'applying' &&
+    state.pendingRecovery.status !== 'paused'
+  ) {
+    return { pending: true, state, issue: state.pendingRecovery };
+  }
+  return { pending: false, state };
 }
 
 export function applySelectedRecoveryAction(opts: {
@@ -79,6 +84,23 @@ export function applySelectedRecoveryAction(opts: {
 
 export function recoveryRetryTaskId(state: WorkflowState): TaskId | undefined {
   return state.pendingRecovery?.taskId ?? state.tasks[state.currentTaskIndex]?.id;
+}
+
+export function finalizeRecoveryResult(opts: {
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState;
+  config: Config;
+  status: string;
+}): void {
+  if (opts.status === 'aborted') {
+    saveAbortedRecoverySession({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      state: opts.state,
+      config: opts.config,
+    });
+  }
 }
 
 export function saveAbortedRecoverySession(opts: {

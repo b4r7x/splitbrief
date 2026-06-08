@@ -47,6 +47,7 @@ type Task = {
   scope?: {                          // optional: Task Brief v1 §Scope
     inBounds?: string[];
     outOfBounds?: string[];
+    approvedOutOfBounds?: string[];
   };
   escalation?: string[];             // optional: Task Brief v1 §Escalation
   evidence?: string[];               // optional: Task Brief v1 §Evidence
@@ -126,7 +127,7 @@ Recommended mapping:
 
 ## External metadata (side-channel)
 
-External tools may attach their own metadata in `state.external` under a namespaced key. diptych does NOT read, validate, or serialize these fields — they are passthrough.
+External tools may attach their own metadata in `state.external` under a namespaced key. diptych does not read or validate these fields — they are opaque passthrough metadata.
 
 ```json
 {
@@ -220,14 +221,14 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 | `multi_file_task` | description/steps mention ≥ 2 distinct file paths |
 | `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
 | `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
+| `missing_scope` | `task.scope` absent or empty |
+| `missing_evidence` | `task.evidence` absent or empty |
 
 ### Warnings (reported but do not block)
 
 | Code | Condition |
 |---|---|
-| `missing_scope` | `task.scope` absent or empty |
-| `missing_evidence` | `task.evidence` absent or empty |
-| `non_atomic_task` | `task.typeDefs` is empty |
+| `missing_type_definitions` | `task.typeDefs` is empty |
 
 `multi_file_task` only fires when the brief names 2+ distinct project-relative file paths. Count literal path mentions in prose, bullets, code fences, and examples; repeating the same path does not count.
 

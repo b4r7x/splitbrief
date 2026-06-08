@@ -2,10 +2,7 @@ import type { HandoffInput, HandoffPack } from '../types.js';
 
 export function renderCopilotIssue(input: HandoffInput): HandoffPack {
   const taskList = input.tasks
-    .map(
-      (t) =>
-        `- **${t.id}** — ${t.title} (\`${t.file}\`, \`${t.action}\`) → [tasks/${t.id}.md](tasks/${t.id}.md)`,
-    )
+    .map((t) => `- **${t.id}** — ${t.title} (\`${t.file}\`, \`${t.action}\`)`)
     .join('\n');
 
   const acceptanceCriteria = input.tasks

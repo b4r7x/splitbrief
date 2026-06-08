@@ -1,6 +1,11 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import { PhaseSchema, type Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+
+function phaseFromEvent(event: EngineEvent): Phase | undefined {
+  const result = PhaseSchema.safeParse(event.phase);
+  return result.success ? result.data : undefined;
+}
 
 export interface LifecycleState {
   phase: Phase;
@@ -31,8 +36,9 @@ export const lifecycleStore = {
 };
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
-  if (event.type === 'planner_status' && state.phase !== event.phase) {
-    return { ...state, phase: event.phase };
+  const phase = phaseFromEvent(event);
+  if (phase && state.phase !== phase) {
+    return { ...state, phase };
   }
   return state;
 }

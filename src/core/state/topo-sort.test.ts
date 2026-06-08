@@ -4,43 +4,53 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 
 describe('topoSort', () => {
   test('returns tasks in dependency order', () => {
-    const a = makeTask({ id: 'a' });
-    const b = makeTask({ id: 'b', dependsOn: ['a'] });
-    const c = makeTask({ id: 'c', dependsOn: ['b'] });
+    const a = makeTask({ id: 'T001' });
+    const b = makeTask({ id: 'T002', dependsOn: ['T001'] });
+    const c = makeTask({ id: 'T003', dependsOn: ['T002'] });
     const sorted = topoSort([c, b, a]);
     expect(sorted.map((t) => t.id)).toEqual([a.id, b.id, c.id]);
   });
 
   test('handles independent tasks in insertion order', () => {
-    const a = makeTask({ id: 'a' });
-    const b = makeTask({ id: 'b' });
+    const a = makeTask({ id: 'T001' });
+    const b = makeTask({ id: 'T002' });
     const sorted = topoSort([a, b]);
     expect(sorted).toHaveLength(2);
     expect(sorted.map((t) => t.id)).toEqual([a.id, b.id]);
   });
 
+  test('throws on duplicate task IDs', () => {
+    const first = makeTask({ id: 'T001', title: 'First' });
+    const second = makeTask({ id: 'T001', title: 'Second' });
+    try {
+      topoSort([first, second]);
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toMatchObject({ kind: 'topo-duplicate-task-id', data: { taskId: 'T001' } });
+    }
+  });
+
   test('throws on unknown dependencies', () => {
-    const a = makeTask({ id: 'a', dependsOn: ['missing'] });
+    const a = makeTask({ id: 'T001', dependsOn: ['T999'] });
     try {
       topoSort([a]);
       throw new Error('expected throw');
     } catch (err) {
-      expect(topoError.isUnknownDependency(err)).toBe(true);
-      if (topoError.isUnknownDependency(err)) {
-        expect(err.message).toContain('Task a depends on unknown task missing');
-        expect(err.data).toEqual({ taskId: 'a', dependencyId: 'missing' });
-      }
+      expect(err).toMatchObject({
+        kind: 'topo-unknown-dependency',
+        data: { taskId: 'T001', dependencyId: 'T999' },
+      });
     }
   });
 
   test('throws topoError.circularDependency on cycle', () => {
-    const a = makeTask({ id: 'a', dependsOn: ['b'] });
-    const b = makeTask({ id: 'b', dependsOn: ['a'] });
+    const a = makeTask({ id: 'T001', dependsOn: ['T002'] });
+    const b = makeTask({ id: 'T002', dependsOn: ['T001'] });
     try {
       topoSort([a, b]);
       throw new Error('expected throw');
     } catch (err) {
-      expect(topoError.isCircularDependency(err)).toBe(true);
+      expect(err).toMatchObject({ kind: 'topo-circular-dependency' });
     }
   });
 });
@@ -52,18 +62,6 @@ describe('topoError.circularDependency factory', () => {
     expect(err.kind).toBe('topo-circular-dependency');
     expect(err.message).toContain('a → b → a');
     expect(err.data).toEqual({ cycle: ['a', 'b', 'a'] });
-  });
-});
-
-describe('topoError.isCircularDependency predicate', () => {
-  test('matches circularDependency output', () => {
-    expect(topoError.isCircularDependency(topoError.circularDependency(['a', 'a']))).toBe(true);
-  });
-
-  test('rejects non-matching values', () => {
-    expect(topoError.isCircularDependency(new Error('plain'))).toBe(false);
-    expect(topoError.isCircularDependency(null)).toBe(false);
-    expect(topoError.isCircularDependency({ kind: 'topo-circular-dependency' })).toBe(false);
   });
 });
 

@@ -5,7 +5,7 @@ import type { Phase, TaskStatus } from '../schemas/enums.js';
 import type { TokenUsage } from '../schemas/tokens.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
-import { error, matches } from '../../utils/error.js';
+import { error } from '../../utils/error.js';
 
 export const CURRENT_STATE_VERSION = 3;
 
@@ -16,7 +16,6 @@ export const transitionError = {
       `Cannot apply ${action} while workflow is in ${phase}.`,
       { phase, action },
     ),
-  isInvalidActionForPhase: matches('state-invalid-action-for-phase'),
 } as const;
 
 const zeroTokenUsage: TokenUsage = {
@@ -148,7 +147,7 @@ function markRecoveryApplying(
     pendingRecovery: {
       ...state.pendingRecovery,
       status: 'applying',
-      selectedAction: action.action,
+      ...(state.pendingRecovery.selectedAction === undefined && { selectedAction: action.action }),
     },
   };
 }
@@ -365,6 +364,7 @@ export function transition(
         currentTaskIndex: idx,
         attempt: 0,
         phase: 'implementing',
+        ...(state.pendingRecovery?.taskId === action.taskId ? { pendingRecovery: undefined } : {}),
       };
     }
 

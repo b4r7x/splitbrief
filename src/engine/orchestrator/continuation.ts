@@ -5,7 +5,7 @@ import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
-import { parseTasks } from '../spec/parser.js';
+import { parseTasksStrict } from '../spec/parser.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
@@ -22,6 +22,8 @@ export function buildContinuationPrompt(partialResponse: string, userMessage: st
 export interface ContinuationLoopCtx {
   projectDir: string;
   sessionId: string;
+  /** When execution cwd differs from the real session tree, persist transitions here. */
+  persistRef?: { projectDir: string; sessionId: string } | undefined;
   callbacks: OrchestratorCallbacks;
   signal?: AbortSignal | undefined;
   sinks: WorkflowSinks;
@@ -50,6 +52,7 @@ export async function withContinuationLoop<T>(
 ): Promise<{ state: WorkflowState; value: T }> {
   const { ctx, onStateChange, body } = opts;
   const { projectDir, sessionId, callbacks, sinks } = ctx;
+  const persistRef = ctx.persistRef ?? { projectDir, sessionId };
   let state = opts.state;
   let continuationPrompt: string | undefined;
   let partialOutput = '';
@@ -66,9 +69,9 @@ export async function withContinuationLoop<T>(
   const continueAfterAbort = async (
     onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>,
   ): Promise<string> => {
-    applyState(transitionAndSave({ projectDir, sessionId }, state, { type: 'ABORT_TURN' }));
+    applyState(transitionAndSave(persistRef, state, { type: 'ABORT_TURN' }));
     const userText = await onContinuationNeeded(partialOutput);
-    applyState(transitionAndSave({ projectDir, sessionId }, state, { type: 'CONTINUE_TURN' }));
+    applyState(transitionAndSave(persistRef, state, { type: 'CONTINUE_TURN' }));
     return buildContinuationPrompt(partialOutput, userText);
   };
 
@@ -175,7 +178,7 @@ export async function regenerateFromFeedback(
   }
 
   const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
-  const basePrompt = buildTasksPrompt(spec, plan, languageContext);
+  const basePrompt = buildTasksPrompt(spec, plan, languageContext, state.tasks);
   const result = await runPlannerReview({
     planner,
     prompt: prefix ? prefix + basePrompt : basePrompt,
@@ -187,5 +190,5 @@ export async function regenerateFromFeedback(
     writeTo: TASKS_FILE,
     signal: ctx.signal,
   });
-  return { kind: 'tasks', state: result.state, tasks: parseTasks(result.text) };
+  return { kind: 'tasks', state: result.state, tasks: parseTasksStrict(result.text) };
 }

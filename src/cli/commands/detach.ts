@@ -21,7 +21,7 @@ const defaultDeps: DetachDeps = {
   checkServerStatus,
 };
 
-function sendDetach(sockPath: string): Promise<void> {
+function sendDetach(sockPath: string, authToken: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const socket = createConnection(sockPath);
     let settled = false;
@@ -45,8 +45,9 @@ function sendDetach(sockPath: string): Promise<void> {
     }
 
     socket.on('connect', () => {
-      const msg: ClientMessage = { kind: 'detach' };
-      socket.write(JSON.stringify(msg) + '\n');
+      const auth: ClientMessage = { kind: 'authenticate', token: authToken };
+      const detach: ClientMessage = { kind: 'detach' };
+      socket.write(`${JSON.stringify(auth)}\n${JSON.stringify(detach)}\n`);
     });
 
     socket.on('data', (chunk: Buffer) => {
@@ -74,8 +75,12 @@ export async function detachCommand(
   if (!status.alive) {
     throw cliError(`session ${resolvedId} is not running`, 1);
   }
+  const { authToken } = status.data;
+  if (authToken === undefined) {
+    throw cliError(`session ${resolvedId} does not support authenticated detach`, 1);
+  }
 
-  await withCliErrors(() => sendDetach(join(sessDir, IPC_SOCK_FILE)));
+  await withCliErrors(() => sendDetach(join(sessDir, IPC_SOCK_FILE), authToken));
   console.log(`Session ${resolvedId} detached.`);
 }
 

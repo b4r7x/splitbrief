@@ -43,9 +43,9 @@ export async function runBriefsApprovalLoop(
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
 
   while (true) {
-    if (signal?.aborted) return { state, tasks, rejected: false };
+    if (signal?.aborted) return { state, tasks, rejected: false, aborted: true };
     const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
-    if (signal?.aborted) return { state, tasks, rejected: false };
+    if (signal?.aborted) return { state, tasks, rejected: false, aborted: true };
 
     if (result.action === 'edit') {
       const edited = await readPersistedTasks(tasksFilePath);

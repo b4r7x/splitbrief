@@ -23,14 +23,14 @@ describe('eventsStore — append via addEvent', () => {
 
   it('trims events to MAX_EVENTS when exceeded', () => {
     const events = Array.from({ length: MAX_EVENTS }, (_, i) =>
-      makeRetry({ taskId: taskId(`T${i}`) }),
+      makeRetry({ taskId: taskId(`T${String((i % 999) + 1).padStart(3, '0')}`) }),
     );
     for (const e of events) addEvent(e);
-    addEvent(makeRetry({ taskId: taskId('overflow') }));
+    addEvent(makeRetry({ taskId: taskId('T999') }));
     const s = eventsStore.get();
     expect(s.events).toHaveLength(MAX_EVENTS);
-    expect((s.events[s.events.length - 1] as { taskId: string }).taskId).toBe('overflow');
-    expect((s.events[0] as { taskId: string }).taskId).toBe('T1');
+    expect((s.events[s.events.length - 1] as { taskId: string }).taskId).toBe('T999');
+    expect((s.events[0] as { taskId: string }).taskId).toBe('T002');
   });
 
   it('coalesces consecutive planner-text events', () => {

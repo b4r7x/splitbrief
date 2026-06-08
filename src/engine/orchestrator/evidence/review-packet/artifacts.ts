@@ -12,9 +12,9 @@ import {
 } from '../../../../core/schemas/enums.js';
 import { TaskIdSchema, type TaskId } from '../../../../core/schemas/task.js';
 import {
-  READINESS_NEXT_ACTION_KINDS,
-  READINESS_STATUSES,
-} from '../../../../core/readiness/types.js';
+  StartReadinessRecordSchema,
+  type StartReadinessRecord,
+} from '../../../../core/schemas/readiness.js';
 import {
   BRIEF_QUALITY_FILE,
   READINESS_FILE,
@@ -110,44 +110,15 @@ export function readBriefQuality(
   };
 }
 
-function nonnegativeIntegerOrNull(value: unknown): number | null {
-  return Number.isInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
-}
-
-function recoveryReadinessAction(value: unknown): ReviewPacket['readiness']['nextAction'] {
-  return includes(READINESS_NEXT_ACTION_KINDS, value) ? value : null;
-}
-
-function readinessChecks(value: unknown): ReviewPacket['readiness']['checks'] {
-  if (!Array.isArray(value)) return [];
-  const checks: ReviewPacket['readiness']['checks'] = [];
-  for (const rawCheck of value) {
-    const check = narrowRecord(rawCheck);
-    if (!check) continue;
-    const id = optionalString(check.id);
-    const summary = optionalString(check.summary);
-    const severity =
-      check.severity === 'ok' ||
-      check.severity === 'info' ||
-      check.severity === 'warning' ||
-      check.severity === 'blocker'
-        ? check.severity
-        : undefined;
-    if (id && severity && summary) checks.push({ id, severity, summary });
-  }
-  return checks;
-}
-
 export function readReadinessArtifact(
   projectDir: string,
   sessionId: string,
-): Record<string, unknown> | null {
+): StartReadinessRecord | null {
   const target = join(sessionDir(projectDir, sessionId), READINESS_FILE);
   const raw = readJsonSafe(target);
   if (raw === null) return null;
-  const record = narrowRecord(raw);
-  if (!record || record.type !== 'start-readiness') return null;
-  return record;
+  const parsed = StartReadinessRecordSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 export function readReadiness(
@@ -172,11 +143,11 @@ export function readReadiness(
   return {
     path: READINESS_FILE,
     present: true,
-    status: includes(READINESS_STATUSES, record.status) ? record.status : null,
-    nextAction: recoveryReadinessAction(record.nextAction),
-    blockerCount: nonnegativeIntegerOrNull(record.blockerCount),
-    warningCount: nonnegativeIntegerOrNull(record.warningCount),
-    checks: readinessChecks(record.checks),
+    status: record.status,
+    nextAction: record.nextAction,
+    blockerCount: record.blockerCount,
+    warningCount: record.warningCount,
+    checks: record.checks,
   };
 }
 

@@ -23,7 +23,7 @@ export function enqueueUserMessage(
   persistTranscript: boolean,
 ): { state: WorkflowState; queued: boolean; message?: QueuedMessage | undefined } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
   if (pending.length >= MAX_QUEUE_SIZE) {
     publishWarning(
       { bus: bus, phase: phase },
@@ -71,9 +71,10 @@ export function createQueueHandler(
   const { projectDir, sessionId, getState, setState, bus, persistTranscript, planner, serialize } =
     opts;
   return (text: string, phase: Phase) => {
-    serialize(async () => {
+    let fallbackState: WorkflowState | undefined;
+    serialize(() => {
       const state = getState();
-      if (!state) return;
+      if (!state) return undefined;
 
       const result = enqueueUserMessage(
         projectDir,
@@ -85,17 +86,23 @@ export function createQueueHandler(
         persistTranscript,
       );
       setState(result.state);
-      if (!result.message) return;
-      await dispatchNativeInjection({
-        message: result.message,
-        planner,
-        projectDir,
-        sessionId,
-        getState: () => getState() ?? result.state,
-        setState,
-        bus,
-      });
-    }).catch((err) => warnError('queue-handler failed', err));
+      fallbackState = result.state;
+      return result.message;
+    })
+      .then((message) => {
+        if (!message || fallbackState === undefined) return;
+        const enqueuedState = fallbackState;
+        return dispatchNativeInjection({
+          message,
+          planner,
+          projectDir,
+          sessionId,
+          getState: () => getState() ?? enqueuedState,
+          setState,
+          bus,
+        });
+      })
+      .catch((err) => warnError('queue-handler failed', err));
   };
 }
 
@@ -106,7 +113,7 @@ export function clearPendingQueue(
   bus: EventBus,
 ): { state: WorkflowState; count: number } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
   if (pending.length === 0) return { state: base, count: 0 };
 
   const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'CLEAR_QUEUE' });
@@ -133,7 +140,7 @@ export function drainQueue(
   bus: EventBus,
 ): { state: WorkflowState; messages: QueuedMessage[] } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt);
+  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
   if (pending.length === 0) return { state: base, messages: [] };
 
   const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'DRAIN_QUEUE' });

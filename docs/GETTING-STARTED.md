@@ -41,8 +41,8 @@ For the long version, see [docs/VISION.md](./VISION.md).
 Requires **Node.js 22 or newer** (ESM-only).
 
 ```bash
-git clone https://github.com/<your-org>/diptych
-cd diptych
+git clone https://github.com/b4r7x/tiny-spec.git
+cd tiny-spec
 npm install
 npm run build
 npm link    # exposes the `diptych` binary on your PATH

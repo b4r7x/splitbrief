@@ -1,12 +1,33 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { execSync, spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, mkdtempSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 
+const SKIP_TOP_LEVEL = new Set([
+  'node_modules',
+  'dist',
+  '.git',
+  '.trees',
+  '.diptych',
+  '.tiny-spec',
+]);
+
+function copyProjectForSmoke(src: string, dest: string): void {
+  cpSync(src, dest, {
+    recursive: true,
+    filter: (source) => {
+      const rel = relative(src, source);
+      if (!rel) return true;
+      const top = rel.split(/[/\\]/)[0];
+      return !(top && SKIP_TOP_LEVEL.has(top));
+    },
+  });
+}
+
+let workDir: string;
 let installDir: string;
 let binPath: string;
 let pkgVersion: string;
@@ -14,26 +35,46 @@ let pkgVersion: string;
 beforeAll(() => {
   pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
 
-  execSync('npm run build', { cwd: ROOT, stdio: 'pipe' });
+  workDir = mkdtempSync(join(tmpdir(), 'diptych-smoke-src-'));
+  copyProjectForSmoke(ROOT, workDir);
 
-  installDir = mkdtempSync(join(tmpdir(), 'diptych-smoke-'));
+  execFileSync('npm', ['ci'], {
+    cwd: workDir,
+    stdio: 'pipe',
+    env: { ...process.env, npm_config_cache: join(workDir, '.npm-cache') },
+  });
+  execFileSync('npm', ['run', 'build'], { cwd: workDir, stdio: 'pipe' });
 
-  execSync('npm pack --pack-destination ' + installDir, { cwd: ROOT, stdio: 'pipe' });
+  const packParent = mkdtempSync(join(tmpdir(), 'diptych smoke pack '));
+  const packDir = join(packParent, 'pack');
+  mkdirSync(packDir, { recursive: true });
 
-  const tgz = readdirSync(installDir).find((f) => f.endsWith('.tgz'));
-  if (!tgz) throw new Error('npm pack produced no tarball');
-
-  execSync(`npm install --no-audit --no-fund --ignore-scripts ${join(installDir, tgz)}`, {
-    cwd: installDir,
+  execFileSync('npm', ['pack', '--pack-destination', packDir], {
+    cwd: workDir,
     stdio: 'pipe',
   });
 
+  const tgz = readdirSync(packDir).find((f) => f.endsWith('.tgz'));
+  if (!tgz) throw new Error('npm pack produced no tarball');
+
+  const installParent = mkdtempSync(join(tmpdir(), 'diptych smoke install '));
+  installDir = join(installParent, 'install');
+  mkdirSync(installDir, { recursive: true });
+
+  execFileSync(
+    'npm',
+    ['install', '--no-audit', '--no-fund', '--ignore-scripts', join(packDir, tgz)],
+    { cwd: installDir, stdio: 'pipe' },
+  );
+
   binPath = join(installDir, 'node_modules', '.bin', 'diptych');
-}, 180_000);
+}, 300_000);
 
 afterAll(() => {
+  if (workDir) rmSync(workDir, { recursive: true, force: true });
   if (installDir) {
-    rmSync(installDir, { recursive: true, force: true });
+    const parent = join(installDir, '..');
+    rmSync(parent, { recursive: true, force: true });
   }
 });
 

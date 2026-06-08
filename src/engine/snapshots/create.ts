@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type {
   SnapshotFileEntry,
   SnapshotManifest,
@@ -12,6 +12,10 @@ import {
   SNAPSHOT_BASELINE_ID,
 } from '../../core/paths.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import {
+  assertExistingPathConfined,
+  assertWritablePathConfined,
+} from '../../lib/path-confinement.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { acquireSnapshotLock } from './lock.js';
@@ -43,6 +47,7 @@ async function captureFile(opts: {
   baselineHash?: string | undefined;
 }): Promise<{ hash: string; entry?: SnapshotFileEntry }> {
   const { projectDir, path, filesDir, force, baselineHash } = opts;
+  assertExistingPathConfined(path, projectDir);
   const hash = (await hashFile(join(projectDir, path))) ?? '';
   if (!force && hash === (baselineHash ?? '')) {
     return { hash };
@@ -53,7 +58,9 @@ async function captureFile(opts: {
   try {
     const contents = await readFile(absPath);
     sizeBytes = contents.length;
-    await writeFile(join(filesDir, encodedName), contents, { mode: SECURE_FILE_MODE });
+    const blobPath = join(filesDir, encodedName);
+    assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
+    await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
   } catch {
     // File may be unreadable — skip writing but still record it
   }
@@ -93,7 +100,9 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
 
     if (!(await hasBaseline(projectDir, sessionId))) {
       const filesDir = join(baselineDir(projectDir, sessionId), 'files');
+      assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
       await mkdir(filesDir, { recursive: true });
+      assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
 
       const fileHashes: Record<string, string> = {};
       const fileEntries: SnapshotFileEntry[] = [];
@@ -127,7 +136,9 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
 
       const id = generateSnapshotId();
       const filesDir = snapshotFilesDir(projectDir, sessionId, id);
+      assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
       await mkdir(filesDir, { recursive: true });
+      assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
 
       const fileHashes: Record<string, string> = {};
       const fileEntries: SnapshotFileEntry[] = [];

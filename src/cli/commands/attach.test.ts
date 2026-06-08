@@ -96,6 +96,7 @@ describe('attachCommand', () => {
         sessionId: 'alive-session',
         mode: 'quick',
         feature: 'do a thing',
+        authToken: 'test-auth-token',
       },
     });
 
@@ -133,6 +134,7 @@ describe('attachCommand', () => {
         sessionId: 'solo-session',
         mode: 'instant',
         feature: 'solo feature',
+        authToken: 'test-auth-token',
       },
     });
 

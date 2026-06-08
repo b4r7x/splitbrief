@@ -1,26 +1,14 @@
-import { join } from 'node:path';
-import type { Config } from '../core/schemas/config.js';
-import { defaultApprovalConfig } from '../core/schemas/config.js';
-import type { Phase } from '../core/schemas/enums.js';
-import type { RewindTarget } from '../core/state/build-rewind-action.js';
-import { sessionDir } from '../core/paths.js';
-import type { RuntimeCommandContext, ExportSessionResult } from '../core/runtime/commands/types.js';
-import type { OverlayType } from '../core/navigation/types.js';
-import { rebuildRepomap } from '../engine/codebase/rebuild.js';
-import { writeHandoffPack } from '../engine/handoff/write.js';
-import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
-import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
-import { writeSessionHtmlReport } from '../engine/export/collect.js';
-import {
-  readApprovalsStore,
-  writeApprovalsStore,
-  clearGrantsByScope,
-} from '../core/approval/store.js';
-import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
-import { projectFilesStore } from '../stores/ui/project-files.js';
+import type { Config } from '../../schemas/config.js';
+import { defaultApprovalConfig } from '../../schemas/config.js';
+import type { Phase } from '../../schemas/enums.js';
+import type { RewindTarget } from '../../state/build-rewind-action.js';
+import type { OverlayType } from '../../navigation/types.js';
+import type { RuntimeCommandContext, ExportSessionResult } from './types.js';
 
 type ConfigSaveResult = { ok: true } | { ok: false; errorMessage?: string | undefined };
 type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
+type HandoffTargetArg = Parameters<RuntimeCommandContext['writeHandoff']>[0];
+type ApprovalScope = 'session' | 'always' | 'all';
 
 interface CommandContextFactoryOptions {
   projectDir: () => string;
@@ -37,11 +25,47 @@ interface CommandContextFactoryOptions {
   setFeedbackMessage: (message: string) => void;
   setFeedbackError: (message: string) => void;
   refreshDetection: () => Promise<void>;
+  refreshProjectFiles: RuntimeCommandContext['refreshProjectFiles'];
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
   clearQueue: () => number;
+  rebuildRepomap: (
+    projectDir: string,
+    cacheDir: string | undefined,
+  ) => ReturnType<RuntimeCommandContext['rebuildRepomap']>;
+  attachImage: (
+    input: string,
+    projectDir: string,
+  ) => ReturnType<RuntimeCommandContext['attachImage']>;
+  detachImage: RuntimeCommandContext['detachImage'];
+  listAttachments: RuntimeCommandContext['listAttachments'];
+  writeHandoff: (opts: {
+    projectDir: string;
+    sessionId: string;
+    target: HandoffTargetArg;
+    taskId?: string | undefined;
+  }) => ReturnType<RuntimeCommandContext['writeHandoff']>;
+  listApprovals: (projectDir: string) => ReturnType<RuntimeCommandContext['listApprovals']>;
+  clearApprovals: (projectDir: string, scope: ApprovalScope) => number;
+  acceptRunSnapshot: (
+    projectDir: string,
+    sessionId: string,
+  ) => ReturnType<RuntimeCommandContext['acceptRunSnapshot']>;
+  rejectRunSnapshot: (
+    projectDir: string,
+    sessionId: string,
+  ) => ReturnType<RuntimeCommandContext['rejectRunSnapshot']>;
+  compactTranscript: (
+    config: Config,
+    projectDir: string,
+    sessionId: string,
+  ) => ReturnType<RuntimeCommandContext['compactTranscript']>;
+  exportSession: (
+    projectDir: string,
+    sessionId: string,
+  ) => ReturnType<RuntimeCommandContext['exportSession']>;
 }
 
 export function createCommandContext(opts: CommandContextFactoryOptions): RuntimeCommandContext {
@@ -74,7 +98,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
-    refreshProjectFiles: projectFilesStore.requestRefresh,
+    refreshProjectFiles: opts.refreshProjectFiles,
     getCurrentPhase: opts.getCurrentPhase,
     requestRewind: (target, comment) => {
       const request: CommandRewindRequest = { target, ...(comment ? { comment } : {}) };
@@ -86,30 +110,24 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     rebuildRepomap: async () => {
       const projectDir = opts.projectDir();
       const cacheDir = opts.getConfig()?.codebase?.cacheDir;
-      return rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir });
+      return opts.rebuildRepomap(projectDir, cacheDir);
     },
-    attachImage: (input) => attachImage(input, opts.projectDir()),
-    detachImage,
-    listAttachments,
+    attachImage: (input) => opts.attachImage(input, opts.projectDir()),
+    detachImage: opts.detachImage,
+    listAttachments: opts.listAttachments,
     writeHandoff: async (target, taskId) => {
       const projectDir = opts.projectDir();
       const sessionId = sessionIdOrThrow('handoff');
-      return writeHandoffPack({
+      return opts.writeHandoff({
         projectDir,
         sessionId,
         target,
-        outDir: join(sessionDir(projectDir, sessionId), 'handoffs', target),
-        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
-        mode: 'overwrite',
+        taskId,
       });
     },
-    listApprovals: () => readApprovalsStore(opts.projectDir()).grants,
+    listApprovals: () => opts.listApprovals(opts.projectDir()),
     clearApprovals: (scope = 'all') => {
-      const projectDir = opts.projectDir();
-      const before = readApprovalsStore(projectDir);
-      const after = clearGrantsByScope(before, scope);
-      writeApprovalsStore(projectDir, after);
-      return before.grants.length - after.grants.length;
+      return opts.clearApprovals(opts.projectDir(), scope);
     },
     getApprovalEnabled: () => opts.getConfig()?.approval?.enabled !== false,
     setApprovalEnabled: (enabled) => {
@@ -122,13 +140,15 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
         return { ...current, approval: { ...approval, enabled } };
       });
     },
-    acceptRunSnapshot: () => acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/accept-run')),
-    rejectRunSnapshot: () => rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/reject-run')),
+    acceptRunSnapshot: () =>
+      opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/accept-run')),
+    rejectRunSnapshot: () =>
+      opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/reject-run')),
     compactTranscript: () => {
       const projectDir = opts.projectDir();
       const config = currentConfig('/compact-transcript');
       const sessionId = sessionIdOrThrow('/compact-transcript');
-      return performManualCompaction(config, projectDir, sessionId);
+      return opts.compactTranscript(config, projectDir, sessionId);
     },
     exportSession: async () => {
       const projectDir = opts.projectDir();
@@ -137,7 +157,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
         if (opts.exportMissingSession) return opts.exportMissingSession();
         throw opts.noActiveSession('/export');
       }
-      return writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId);
+      return opts.exportSession(projectDir, sessionId);
     },
   };
 }

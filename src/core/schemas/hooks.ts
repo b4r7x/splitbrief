@@ -19,21 +19,70 @@ export type HookEvent = z.infer<typeof HookEventSchema>;
 
 const FailureModeSchema = z.enum(['block', 'warn', 'ignore']);
 
+const FORBIDDEN_SHELL_COMMANDS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'fish',
+  'ksh',
+  'csh',
+  'tcsh',
+  'powershell',
+  'pwsh',
+  'cmd',
+  'cmd.exe',
+  '/bin/sh',
+  '/bin/bash',
+  '/bin/zsh',
+  '/bin/dash',
+  '/bin/fish',
+  '/bin/ksh',
+  '/usr/bin/env',
+  '/usr/bin/bash',
+  '/usr/bin/zsh',
+  '/usr/bin/sh',
+]);
+
+const SHELL_EVALUATION_FLAGS = new Set(['-c', '--command', '/c', '/C']);
+
 const HookCommandEntrySchema = z
   .object({
     kind: z.literal('command').default('command'),
     name: z.string().min(1).optional(),
-    command: z
-      .string()
-      .min(1)
-      .refine((cmd) => cmd !== 'sh' && cmd !== 'bash' && cmd !== '/bin/sh' && cmd !== '/bin/bash', {
-        message: 'inline shell (sh/bash) is not allowed as hook command — use a script file',
-      }),
+    command: z.string().min(1),
     args: z.array(z.string()).default([]),
     timeout_ms: z.number().int().positive().max(300_000).default(30_000),
     on_failure: FailureModeSchema.default('warn'),
   })
-  .strict();
+  .strict()
+  .superRefine((entry, ctx) => {
+    if (FORBIDDEN_SHELL_COMMANDS.has(entry.command)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `inline shell '${entry.command}' is not allowed as hook command — use a script file`,
+        path: ['command'],
+      });
+    }
+    for (let i = 0; i < entry.args.length; i++) {
+      const arg = entry.args[i];
+      if (arg === undefined) continue;
+      if (SHELL_EVALUATION_FLAGS.has(arg)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `flag '${arg}' enables shell evaluation and is not allowed in hook args — use a script file`,
+          path: ['args', i],
+        });
+      }
+      if (FORBIDDEN_SHELL_COMMANDS.has(arg)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `shell '${arg}' is not allowed in hook args — use a script file`,
+          path: ['args', i],
+        });
+      }
+    }
+  });
 
 export const HookModuleEntrySchema = z
   .object({
@@ -56,21 +105,17 @@ export const HookEntrySchema = z.preprocess(
 export type HookCommandEntry = z.infer<typeof HookCommandEntrySchema>;
 export type HookModuleEntry = z.infer<typeof HookModuleEntrySchema>;
 export type HookEntry = z.infer<typeof HookEntrySchema>;
+export type HooksConfig = {
+  builtin?: Record<string, boolean> | undefined;
+} & Partial<Record<HookEvent, HookEntry[]>>;
 
-export const HooksConfigSchema = z
+const hookEventConfigShape = Object.fromEntries(
+  HOOK_EVENTS.map((event) => [event, z.array(HookEntrySchema).optional()]),
+);
+
+export const HooksConfigSchema: z.ZodType<HooksConfig> = z
   .object({
     builtin: z.record(z.string(), z.boolean()).optional(),
-    pre_planning: z.array(HookEntrySchema).optional(),
-    pre_task: z.array(HookEntrySchema).optional(),
-    post_task: z.array(HookEntrySchema).optional(),
-    pre_validation: z.array(HookEntrySchema).optional(),
-    post_validation: z.array(HookEntrySchema).optional(),
-    pre_commit: z.array(HookEntrySchema).optional(),
-    post_commit: z.array(HookEntrySchema).optional(),
-    pre_escalation: z.array(HookEntrySchema).optional(),
-    pre_compact: z.array(HookEntrySchema).optional(),
-    on_error: z.array(HookEntrySchema).optional(),
-    on_complete: z.array(HookEntrySchema).optional(),
+    ...hookEventConfigShape,
   })
   .strict();
-export type HooksConfig = z.infer<typeof HooksConfigSchema>;

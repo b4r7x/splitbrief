@@ -18,6 +18,7 @@ import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
+import { redactSecrets } from '../../utils/redact.js';
 
 type BusContext = {
   bus: EventBus;
@@ -440,7 +441,7 @@ export function publishImplementerGenerateDone(
     linesRemoved: opts.linesRemoved,
     duration: opts.duration,
   };
-  if (opts.diff !== undefined) event.diff = opts.diff;
+  if (opts.diff !== undefined) event.diff = redactSecrets(opts.diff);
   ctx.bus.publish(event);
 }
 

@@ -1,16 +1,20 @@
 import { getRunnerDisplayName } from '../../config/accessors/runner-config.js';
+import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { isProviderLocal, isProviderSubscription } from '../../providers/catalog.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
+function isPricedRunnerName(name: string): boolean {
+  return !isProviderLocal(name) && !isProviderSubscription(name);
+}
+
 export function buildCostChecks(config: Config): ReadinessCheck[] {
+  const profiles = resolveImplementerProfiles(config);
   const runnerNames = [
     getRunnerDisplayName(config.planner),
-    getRunnerDisplayName(config.implementer),
+    ...profiles.profiles.map((profile) => getRunnerDisplayName(profile.config)),
   ];
-  const priced = runnerNames.some(
-    (name) => !isProviderLocal(name) && !isProviderSubscription(name),
-  );
+  const priced = runnerNames.some(isPricedRunnerName);
   const localOrSubscription = runnerNames.every(
     (name) => isProviderLocal(name) || isProviderSubscription(name),
   );

@@ -429,7 +429,8 @@ describe('applyRecoveryAction', () => {
     });
 
     expect(result).toMatchObject({ ok: false, status: 'blocked', code: 'unsafe-continue' });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })).toBeNull();
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );
@@ -720,7 +721,7 @@ describe('applyRecoveryAction', () => {
       code: 'planner-proposal-required',
     });
     expect(result.state.pendingRecovery).toEqual(issue);
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })).toBeNull();
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );

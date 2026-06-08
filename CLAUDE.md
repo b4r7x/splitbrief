@@ -27,7 +27,7 @@ npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run test-ci                  # format && typecheck && lint && test && invariants
+npm run test-ci                  # format && typecheck && lint && coverage && invariants
 ```
 
 ## Documentation map

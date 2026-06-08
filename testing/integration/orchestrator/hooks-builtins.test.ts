@@ -25,12 +25,12 @@ describe('hooks-builtins integration', () => {
       writeFileSync(f, 'const key = "AKIAIOSFODNN7EXAMPLE"; // planted secret');
 
       const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
-      const commitMsg = 'feat(diptych): T1 - add infra';
+      const commitMsg = 'feat(diptych): T001 - add infra';
       const event: EngineEvent = {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: taskId('T1'),
+        taskId: taskId('T001'),
         message: commitMsg,
         file: 'infra.ts',
       };
@@ -50,8 +50,8 @@ describe('hooks-builtins integration', () => {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: taskId('T1'),
-        message: 'feat(diptych): T1 - clean task',
+        taskId: taskId('T001'),
+        message: 'feat(diptych): T001 - clean task',
         file: 'clean.ts',
       };
 
@@ -68,8 +68,8 @@ describe('hooks-builtins integration', () => {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: taskId('T1'),
-        message: 'feat(diptych): T1 - oops',
+        taskId: taskId('T001'),
+        message: 'feat(diptych): T001 - oops',
       };
 
       const result = await runPreHooks(hooks, 'pre_commit', event, ctx(dir));
@@ -95,7 +95,7 @@ describe('hooks-builtins integration', () => {
         ],
       };
       const event = makeTaskStart({
-        taskId: taskId('T1'),
+        taskId: taskId('T001'),
         title: 'plant file',
         index: 0,
         total: 1,

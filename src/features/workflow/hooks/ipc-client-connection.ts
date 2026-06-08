@@ -5,7 +5,7 @@ import type {
   IpcPromptResponse,
   ServerMessage,
 } from '../../../engine/ipc/protocol.js';
-import { parseServerMessage } from '../../../engine/ipc/protocol.js';
+import { IPC_MAX_FRAME_BYTES, parseServerMessage } from '../../../engine/ipc/protocol.js';
 import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
@@ -97,51 +97,70 @@ export function handleServerMessage(msg: ServerMessage, callbacks: ServerMessage
     setState((prev) => ({ ...prev, status: 'failed' }));
     onEvent({ type: 'warning', ts: Date.now(), phase: 'idle', message: msg.message });
     socket.destroy();
+  } else if (msg.kind === 'server_complete') {
+    callbacks.markDetached();
+    setState((prev) => ({ ...prev, status: 'detached' }));
   }
 }
 
 export function createIpcConnection(opts: {
   sockPath: string;
+  authToken: string;
   callbacks: Omit<ServerMessageCallbacks, 'socket'>;
   onClose: (socket: Socket) => void;
 }): Socket {
   const socket = createConnection(opts.sockPath);
   const { callbacks } = opts;
   const { onEvent } = callbacks;
-  const lineBuffer = createLineBuffer((line) => {
-    if (!callbacks.canMutate(socket)) return;
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      onEvent({
-        type: 'warning',
-        ts: Date.now(),
-        phase: 'idle',
-        message: 'IPC: malformed server message',
-      });
-      return;
-    }
-    const msg = parseServerMessage(parsed);
-    if (msg === null) {
-      onEvent({
-        type: 'warning',
-        ts: Date.now(),
-        phase: 'idle',
-        message: 'IPC: invalid server message structure',
-      });
-      return;
-    }
-    handleServerMessage(msg, { ...callbacks, socket });
-  });
+  const lineBuffer = createLineBuffer(
+    (line) => {
+      if (!callbacks.canMutate(socket)) return;
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        onEvent({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: 'IPC: malformed server message',
+        });
+        return;
+      }
+      const msg = parseServerMessage(parsed);
+      if (msg === null) {
+        onEvent({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: 'IPC: invalid server message structure',
+        });
+        return;
+      }
+      handleServerMessage(msg, { ...callbacks, socket });
+    },
+    {
+      maxLineBytes: IPC_MAX_FRAME_BYTES,
+      onOverflow: (bytes) => {
+        onEvent({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: `IPC: server frame too large: ${bytes} bytes`,
+        });
+        socket.destroy();
+      },
+    },
+  );
 
   socket.on('data', (chunk: Buffer) => {
     lineBuffer.push(chunk.toString('utf8'));
   });
   socket.on('connect', () => {
     if (!callbacks.canMutate(socket)) return;
+    socket.write(JSON.stringify({ kind: 'authenticate', token: opts.authToken }) + '\n');
   });
   socket.on('timeout', () => {
     if (!callbacks.canMutate(socket)) return;

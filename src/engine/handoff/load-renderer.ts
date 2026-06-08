@@ -1,4 +1,4 @@
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, realpathSync, lstatSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { HandoffPack, HandoffRendererInput } from './types.js';
@@ -23,6 +23,20 @@ export async function loadRenderer(
   projectDir: string,
 ): Promise<LoadRendererResult> {
   const absPath = resolveFromProject(projectDir, rendererPath);
+
+  try {
+    if (lstatSync(absPath).isSymbolicLink()) {
+      return { ok: false, reason: 'renderer path is a symlink' };
+    }
+    const realProject = realpathSync(projectDir);
+    const realRenderer = realpathSync(absPath);
+    if (!realRenderer.startsWith(realProject + '/') && realRenderer !== realProject) {
+      return { ok: false, reason: 'renderer path escapes project directory' };
+    }
+  } catch {
+    return { ok: false, reason: 'renderer file not found or inaccessible' };
+  }
+
   const url = pathToFileURL(absPath).href;
   try {
     const mod: unknown = await import(url);

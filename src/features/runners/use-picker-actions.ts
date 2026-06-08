@@ -1,6 +1,7 @@
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { uniqueInOrder } from '../../utils/collections.js';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { formatModelName } from '../../core/model-display.js';
@@ -45,7 +46,7 @@ function runnerChangedPaths(
   extra: string[] = [],
 ): string[] {
   const changed = collectChangedPaths(config[role], updated[role], role);
-  return Array.from(new Set([...changed, ...extra]));
+  return uniqueInOrder([...changed, ...extra]);
 }
 
 export function usePickerActions(opts: {

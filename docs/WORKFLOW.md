@@ -188,7 +188,7 @@ Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. 
 
 - `none` — skip spec/plan document gates. instant/quick default. Briefs review still runs in modes that produce reviewable briefs.
 - `spec` — gate on supporting spec. standard default.
-- `plan` — gate on plan (implies spec gate too).
+- `plan` — gate on plan only.
 - `all` — gate on spec and plan. speckit default.
 
 The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block the transition.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tokensStore } from './tokens.js';
 import { addEvent, resetWorkflow } from './actions.js';
-import { makeTaskComplete, makeCostUpdate } from '#testing/helpers/events.js';
+import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events.js';
 
 describe('tokensStore — cost-update', () => {
   beforeEach(() => resetWorkflow());
@@ -42,5 +42,17 @@ describe('tokensStore — task-complete counters', () => {
     const s = tokensStore.get();
     expect(s.localCount).toBe(localCount);
     expect(s.escalatedCount).toBe(escalatedCount);
+  });
+
+  it('does not count workflow lifecycle events as completed tasks', () => {
+    addEvent({ type: 'workflow_started', ts: Date.now(), phase: 'idle', feature: 'test' });
+
+    expect(tokensStore.get().completedTaskCount).toBe(0);
+  });
+
+  it('counts skipped tasks as completed task slots', () => {
+    addEvent(makeTaskSkipped());
+
+    expect(tokensStore.get().completedTaskCount).toBe(1);
   });
 });

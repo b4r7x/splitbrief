@@ -168,6 +168,8 @@ describe('renderHandoff — copilot-issue', () => {
     expect(c).toContain('## Validation');
     expect(c).toContain('## Do not');
     expect(c).toContain('Authentication System');
+    expect(c).not.toContain('tasks/T001.md');
+    expect(c).toContain('**T001**');
   });
 
   it('flattens tests and constraints across all tasks', () => {

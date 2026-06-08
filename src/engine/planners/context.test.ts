@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildProjectContextMarkdown } from './context.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tempDir: string;
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   tempDir = createTempDir('context-test');
@@ -90,5 +91,20 @@ describe('buildProjectContextMarkdown', () => {
   it('returns empty string when project directory has no recognized files', async () => {
     const result = await buildProjectContextMarkdown(tempDir);
     expect(result).toBe('');
+  });
+
+  itUnix('does not include README content from symlink escapes', async () => {
+    const outside = createTempDir('context-readme-outside');
+    try {
+      writeFileSync(join(outside, 'secret.md'), '# Outside README\n\nsecret content');
+      symlinkSync(join(outside, 'secret.md'), join(tempDir, 'README.md'));
+
+      const result = await buildProjectContextMarkdown(tempDir);
+
+      expect(result).not.toContain('Outside README');
+      expect(result).not.toContain('secret content');
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 });

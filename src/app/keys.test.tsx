@@ -164,7 +164,11 @@ describe('useAppKeys: Ctrl+C ladder', () => {
 
   it('Ctrl+C in attach mode exits immediately on the first press', async () => {
     routerStore.navigate({ to: 'home' });
-    routerStore.navigate({ to: 'workflow', feature: 'test', attach: { sockPath: '/tmp/sock' } });
+    routerStore.navigate({
+      to: 'workflow',
+      feature: 'test',
+      attach: { sockPath: '/tmp/sock', authToken: 'tok' },
+    });
     const exit = vi.fn();
     const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'none');
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);

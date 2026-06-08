@@ -87,7 +87,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: taskId('T1'),
+      taskId: taskId('T001'),
       title: 'Add foo',
       index: 0,
       total: 1,
@@ -98,7 +98,7 @@ describe('createOtelSink', () => {
       type: 'task_completed',
       ts: 50,
       phase: 'implementing',
-      taskId: taskId('T1'),
+      taskId: taskId('T001'),
       title: 'Add foo',
       method: 'local',
       retries: 0,
@@ -110,7 +110,7 @@ describe('createOtelSink', () => {
     const task = spans.find((s) => s.name === 'diptych.task');
     const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
     expect(task).toBeDefined();
-    expect(task?.attributes['diptych.task.id']).toBe('T1');
+    expect(task?.attributes['diptych.task.id']).toBe('T001');
     expect(task?.attributes['diptych.task.title']).toBe('Add foo');
     expect(task?.attributes['diptych.task.file']).toBe('a.ts');
     expect(task?.attributes['diptych.task.action']).toBe('create');
@@ -128,14 +128,14 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: taskId('T2'),
+      taskId: taskId('T002'),
       title: 'Modify bar',
       index: 0,
       total: 1,
       file: 'b.ts',
       action: 'modify',
     });
-    sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: taskId('T2') });
+    sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: taskId('T002') });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
@@ -149,7 +149,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: taskId('T3'),
+      taskId: taskId('T003'),
       title: 'Old task',
       index: 0,
       total: 1,
@@ -160,7 +160,7 @@ describe('createOtelSink', () => {
       type: 'task_skipped',
       ts: 30,
       phase: 'implementing',
-      taskId: taskId('T3'),
+      taskId: taskId('T003'),
       title: 'Old task',
       reason: 'already done',
     });
@@ -178,7 +178,7 @@ describe('createOtelSink', () => {
       type: 'task_started',
       ts: 10,
       phase: 'implementing',
-      taskId: taskId('T4'),
+      taskId: taskId('T004'),
       title: 'A',
       index: 0,
       total: 1,
@@ -225,7 +225,7 @@ describe('createOtelSink', () => {
       type: 'validate',
       ts: 30,
       phase: 'implementing',
-      taskId: taskId('T5'),
+      taskId: taskId('T005'),
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },

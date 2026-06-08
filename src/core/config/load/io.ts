@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { join } from 'node:path';
 import YAML from 'yaml';
 import { ConfigSchema, type Config } from '../../schemas/config.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
@@ -6,7 +6,13 @@ import { validateConfig } from './validate.js';
 import { fromYaml, toYaml } from './transform.js';
 import { DIPTYCH_DIR, CONFIG_FILE, getDiptychPath } from '../../paths.js';
 import { migrateConfig } from './migrate.js';
-import { writeSecureFile, checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
+import { checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
+import {
+  confinedExists,
+  confinedReadFile,
+  confinedWriteFile,
+  confinedEnsureDir,
+} from '../../../lib/confined-fs.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 
@@ -117,12 +123,17 @@ export interface LoadConfigResult {
   warnings: string[];
 }
 
+const CONFIG_RELATIVE_PATH = join(DIPTYCH_DIR, CONFIG_FILE);
+
 export function loadConfig(projectDir: string): LoadConfigResult {
   const filePath = configPath(projectDir);
 
-  if (!fs.existsSync(filePath)) return { config: createDefaultConfig(), warnings: [] };
+  if (!confinedExists(projectDir, CONFIG_RELATIVE_PATH)) {
+    return { config: createDefaultConfig(), warnings: [] };
+  }
 
-  const yamlText = fs.readFileSync(filePath, 'utf-8');
+  const yamlText = confinedReadFile(projectDir, CONFIG_RELATIVE_PATH);
+  if (yamlText === null) return { config: createDefaultConfig(), warnings: [] };
 
   const warnings: string[] = [];
   if (process.platform !== 'win32' && !checkConfigPermissions(filePath)) {
@@ -139,7 +150,9 @@ export function loadConfig(projectDir: string): LoadConfigResult {
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { config: createDefaultConfig(), warnings };
+    throw configError.validationFailed(filePath, [
+      `Configuration in ${DIPTYCH_DIR}/${CONFIG_FILE} must be a YAML object.`,
+    ]);
   }
 
   const camelCased = fromYaml(parsed);
@@ -168,17 +181,19 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 }
 
 export function writeConfig(projectDir: string, config: Config): void {
-  const configFilePath = getDiptychPath(projectDir, CONFIG_FILE);
-  writeSecureFile(configFilePath, YAML.stringify(toYaml(config)));
+  confinedEnsureDir(projectDir, DIPTYCH_DIR);
+  confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, YAML.stringify(toYaml(config)));
 }
 
 export function initConfig(projectDir: string, opts: { force?: boolean } = {}): void {
-  const configFilePath = getDiptychPath(projectDir, CONFIG_FILE);
-
-  if (!opts.force && fs.existsSync(configFilePath)) return;
+  if (!opts.force && confinedExists(projectDir, CONFIG_RELATIVE_PATH)) return;
 
   ensureGitignore(projectDir, '.diptych/');
 
-  const yamlObj = toYaml(createDefaultConfig());
-  writeSecureFile(configFilePath, YAML.stringify(yamlObj));
+  confinedEnsureDir(projectDir, DIPTYCH_DIR);
+  confinedWriteFile(
+    projectDir,
+    CONFIG_RELATIVE_PATH,
+    YAML.stringify(toYaml(createDefaultConfig())),
+  );
 }

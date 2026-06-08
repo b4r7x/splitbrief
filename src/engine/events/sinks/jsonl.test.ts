@@ -84,7 +84,7 @@ describe('jsonlSink', () => {
       type: 'implementer_generate_done',
       ts: 100,
       phase: 'implementing',
-      taskId: taskId('t1'),
+      taskId: taskId('T001'),
       file: 'a.ts',
       linesAdded: 10,
       linesRemoved: 5,
@@ -103,7 +103,7 @@ describe('jsonlSink', () => {
       type: 'task_started',
       ts: 100,
       phase: 'implementing',
-      taskId: taskId('task-1'),
+      taskId: taskId('T099'),
       title: 't',
       index: 0,
       total: 1,
@@ -111,7 +111,7 @@ describe('jsonlSink', () => {
       action: 'create',
     });
     const lines = readLog();
-    expect(lines[0]?.['taskId']).toBe('task-1');
+    expect(lines[0]?.['taskId']).toBe('T099');
     expect((lines[0]?.['data'] as Record<string, unknown>)?.['taskId']).toBeUndefined();
   });
 });

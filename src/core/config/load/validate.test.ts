@@ -85,7 +85,9 @@ describe('validateConfig', () => {
     expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
 
     process.env[envKey] = 'env-key';
-    expect(validateConfig(config).errors.find((e) => e.path === path)).toBeUndefined();
+    expect(validateConfig(config).errors.find((e) => e.path === path)?.message).toMatch(
+      /exfiltration risk/,
+    );
   });
 
   it.each([
@@ -207,7 +209,7 @@ describe('validateConfig', () => {
     ).toBeUndefined();
     expect(
       warnings.some((w) =>
-        w.includes('Unused implementer profile cheap-cloud is missing credentials'),
+        w.includes('Non-default implementer profile cheap-cloud is missing credentials'),
       ),
     ).toBe(true);
   });

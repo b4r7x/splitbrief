@@ -71,6 +71,32 @@ describe('buildAliasedSessions', () => {
     expect(result[2]!.sessionId).toBe('old-session');
   });
 
+  it('skips sessions whose lockfile sessionId does not match the directory name', async () => {
+    const { buildAliasedSessions } = await import('./aliases.js');
+    const projectDir = makeTmpProject();
+
+    makeSessionWithLockfile(projectDir, 'valid-session', 2000);
+    const mismatchedDir = join(projectDir, '.diptych', 'sessions', 'spoofed-session');
+    mkdirSync(mismatchedDir, { recursive: true });
+    writeFileSync(
+      join(mismatchedDir, 'lockfile.json'),
+      JSON.stringify({
+        version: 1,
+        pid: process.pid,
+        startTimeMs: 3000,
+        lastAliveMs: 3000,
+        sessionId: 'other-session',
+        mode: 'standard',
+        feature: 'spoofed',
+        exitedAt: 4000,
+      }),
+    );
+
+    const result = await buildAliasedSessions(projectDir);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.sessionId).toBe('valid-session');
+  });
+
   it('skips sessions without lockfiles', async () => {
     const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();

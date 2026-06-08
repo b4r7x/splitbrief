@@ -61,6 +61,28 @@ describe('useFilterableList', () => {
     ui.unmount();
   });
 
+  it('selects from queued keyboard state before an intermediate render flushes', async () => {
+    const byArrow = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
+
+    byArrow.stdin.write(DOWN);
+    byArrow.stdin.write(ENTER);
+    await tick(20);
+
+    expect(byArrow.lastFrame()).toContain('current:beta|chosen:beta');
+    byArrow.unmount();
+
+    const byFilter = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
+
+    byFilter.stdin.write('g');
+    byFilter.stdin.write(ENTER);
+    await tick(20);
+
+    expect(byFilter.lastFrame()).toContain('filter:g|current:gamma|chosen:gamma');
+    byFilter.unmount();
+  });
+
   it('keeps the visible selection valid when the item list changes', async () => {
     const ui = renderFeature(<Harness items={['alpha', 'beta']} initialIndex={10} />);
     await tick(20);

@@ -16,11 +16,14 @@ Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persi
 
 | Provider | Environment Variable | Notes |
 |----------|---------------------|-------|
-| Anthropic / Agent SDK | `ANTHROPIC_API_KEY` | Required for Claude Code planner and Agent SDK |
+| Anthropic / Agent SDK | `ANTHROPIC_API_KEY` | Required for Anthropic API and Agent SDK |
+| OpenAI | `OPENAI_API_KEY` | |
+| Groq | `GROQ_API_KEY` | |
+| Together AI | `TOGETHER_API_KEY` | |
 | OpenRouter | `OPENROUTER_API_KEY` | |
 | DeepSeek | `DEEPSEEK_API_KEY` | |
+| Ollama | `OLLAMA_API_KEY` | Optional for secured local/proxy deployments |
 | Custom provider | Not inferred | Set `apiKey` inline with `apiBase` unless the provider is added to the catalog |
-| Ollama | Not required | Local provider |
 | LM Studio | Not required | Local provider |
 
 ✅ Environment variables are not committed to git, not stored on disk in project files, and work across all tools that read from the environment.

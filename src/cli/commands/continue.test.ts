@@ -50,6 +50,7 @@ function writeLockfile(sessDir: string, overrides: Record<string, unknown> = {})
     sessionId: 'test-session',
     mode: 'standard',
     feature: 'test-feature',
+    authToken: 'test-auth-token',
     ...overrides,
   };
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
@@ -109,7 +110,18 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       useFullscreen: false,
       useMouse: false,
     }),
-    showCrashDiagnostic: async () => {},
+    printCrashDiagnostic: async () => ({
+      sessionId: 'test',
+      status: 'crashed' as const,
+      pid: null,
+      startedAt: null,
+      lastAliveAt: null,
+      exitedAt: null,
+      signal: null,
+      exitCode: null,
+      cause: null,
+      logTail: null,
+    }),
     ...overrides,
   };
 }
@@ -187,6 +199,7 @@ describe('continueCommand', () => {
           sessionId: '2025-04-01-live',
           mode: 'standard',
           feature: 'live feature',
+          authToken: 'test-auth-token',
         },
       }),
     });
@@ -226,6 +239,43 @@ describe('continueCommand', () => {
     await expect(continueCommand('2025-04-01-old', { projectDir }, deps)).rejects.toThrow(
       /no saved state/,
     );
+  });
+
+  it('prints crash diagnostics for crashed sessions then resumes without exiting', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-crashed';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { sessionId, signal: 'SIGKILL', cause: 'OOM' });
+    writeState(sessDir, 'implementing');
+
+    const diagnosticCalls: string[] = [];
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> => ({
+        alive: false,
+        crashed: true,
+        data: null,
+      }),
+      printCrashDiagnostic: async (dir) => {
+        diagnosticCalls.push(dir);
+        return {
+          sessionId,
+          status: 'crashed',
+          pid: null,
+          startedAt: null,
+          lastAliveAt: null,
+          exitedAt: null,
+          signal: 'SIGKILL',
+          exitCode: null,
+          cause: 'OOM',
+          logTail: null,
+        };
+      },
+    });
+
+    await continueCommand(sessionId, { projectDir }, deps);
+
+    expect(diagnosticCalls).toHaveLength(1);
+    expect(renderRuns).toHaveLength(1);
   });
 
   it('accepts a session with the current stateVersion', async () => {

@@ -1,7 +1,9 @@
+import type { Task } from '../../../core/schemas/task.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
+import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
 const H = TASK_BRIEF_HEADINGS;
@@ -11,7 +13,7 @@ function briefContract(ctx: LanguageContext): string {
 
 1. **Identity** — frontmatter \`id\`, \`title\`, \`action\`, \`file\`, \`depends_on\`.
 2. **Intent** — \`${H.description.heading}\`: what the change is and why it matters.
-3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\` and \`**Out of bounds:**\` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
+3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\`, \`**Out of bounds:**\`, and optional \`**Approved out of bounds:**\` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
 4. **Code Context** — \`${H.signature.heading}\`, \`${H.currentCode.heading}\`, \`${H.typeDefs.heading}\`, and \`${H.pattern.heading}\`: copied verbatim from the project when relevant. The implementer cannot look up other files.
 5. **Implementation Plan** — \`${H.implementationSteps.heading}\`: 3-5 numbered steps with concrete function calls and patterns.
 6. **Validation** — \`${H.tests.heading}\`: REQUIRED concrete test cases with specific inputs and expected outputs. No phrases like "should work correctly."
@@ -42,6 +44,7 @@ export function buildTasksPrompt(
   spec: string,
   plan: string,
   languageContext?: LanguageContext,
+  currentTasks?: Task[],
 ): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
 
@@ -52,6 +55,14 @@ export function buildTasksPrompt(
     sections: [
       { heading: 'Specification', body: spec },
       { heading: 'Implementation Plan', body: plan },
+      ...(currentTasks && currentTasks.length > 0
+        ? [
+            {
+              heading: 'Current Task Briefs',
+              body: `The session already has these Task Briefs on disk. When regenerating, preserve every unmentioned brief unchanged unless the user feedback explicitly requires edits.\n\n${formatTasks(currentTasks)}`,
+            },
+          ]
+        : []),
       ...buildLanguageContextSections(ctx),
       instructionsSection(
         'Write a `tasks.md` file containing one Task Brief per markdown block, ordered by dependency. Each brief represents a single file operation (create or modify one file).',

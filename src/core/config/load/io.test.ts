@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+const itUnix = process.platform === 'win32' ? it.skip : it;
 import YAML from 'yaml';
-import { createDefaultConfig, loadConfig, writeConfig } from './io.js';
+import { createDefaultConfig, initConfig, loadConfig, writeConfig } from './io.js';
 import { toYaml } from './transform.js';
 import { DIPTYCH_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
@@ -82,6 +84,49 @@ describe('config loading', () => {
       const defaults = createDefaultConfig();
       expect(config).toEqual(defaults);
       expect(config.workflow.taskReview).toBe('none');
+    });
+
+    itUnix('rejects initConfig when .diptych is a symlink', () => {
+      const dir = createTempDir('config-symlink-init');
+      const outside = createTempDir('config-symlink-init-outside');
+      try {
+        mkdirSync(join(outside, 'nested'), { recursive: true });
+        symlinkSync(outside, join(dir, DIPTYCH_DIR));
+
+        expect(() => initConfig(dir)).toThrow(/unsafe path|symlink/);
+      } finally {
+        cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
+    });
+
+    itUnix('rejects writeConfig when .diptych is a symlink', () => {
+      const dir = createTempDir('config-symlink-write');
+      const outside = createTempDir('config-symlink-write-outside');
+      try {
+        mkdirSync(join(outside, 'nested'), { recursive: true });
+        symlinkSync(outside, join(dir, DIPTYCH_DIR));
+
+        expect(() => writeConfig(dir, createDefaultConfig())).toThrow(/unsafe path|symlink/);
+      } finally {
+        cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
+    });
+
+    itUnix('rejects reading config through final symlinks', () => {
+      const dir = createTempDir('config-symlink-read');
+      const outside = createTempDir('config-symlink-outside');
+      try {
+        mkdirSync(join(dir, DIPTYCH_DIR), { recursive: true });
+        writeFileSync(join(outside, 'config.yaml'), 'version: 3\n');
+        symlinkSync(join(outside, 'config.yaml'), join(dir, DIPTYCH_DIR, 'config.yaml'));
+
+        expect(() => loadConfig(dir)).toThrow(/unsafe path/);
+      } finally {
+        cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
     });
 
     it('loads YAML config and merges with defaults', () => {
@@ -373,24 +418,22 @@ describe('config loading', () => {
       expect(warnings).toEqual([]);
     });
 
-    it('returns defaults when YAML parses to a primitive', () => {
+    it('throws when YAML parses to a primitive', () => {
       const dir = join(TMP, 'yaml-primitive');
       const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '42', 'utf-8');
 
-      const { config } = loadConfig(dir);
-      expect(config).toEqual(createDefaultConfig());
+      expect(() => loadConfig(dir)).toThrow(/must be a YAML object/);
     });
 
-    it('returns defaults when YAML parses to an array', () => {
+    it('throws when YAML parses to an array', () => {
       const dir = join(TMP, 'yaml-array');
       const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '- item1\n- item2', 'utf-8');
 
-      const { config } = loadConfig(dir);
-      expect(config).toEqual(createDefaultConfig());
+      expect(() => loadConfig(dir)).toThrow(/must be a YAML object/);
     });
 
     it('does not leak api-specific defaults into cli implementer (kind mismatch)', () => {
@@ -436,14 +479,13 @@ describe('config loading', () => {
       expect(config.workflow.commitStrategy).toBe('per-task');
     });
 
-    it('returns defaults for an empty YAML file', () => {
+    it('throws for an empty YAML file', () => {
       const dir = join(TMP, 'empty-yaml');
       const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '', 'utf-8');
 
-      const { config } = loadConfig(dir);
-      expect(config).toEqual(createDefaultConfig());
+      expect(() => loadConfig(dir)).toThrow(/must be a YAML object/);
     });
 
     it('throws a helpful error for malformed YAML', () => {

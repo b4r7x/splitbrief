@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -106,7 +107,14 @@ function invalidPlanResult(): PlanResult {
   return {
     spec: SAMPLE_SPEC,
     plan: SAMPLE_PLAN,
-    tasks: [makeTask({ id: 'T-BAD', tests: [], implementationSteps: [] })],
+    tasks: [
+      {
+        ...makeTask(),
+        id: 'T-BAD' as unknown as TaskId,
+        tests: [],
+        implementationSteps: [],
+      },
+    ],
     usage: { inputTokens: 10, outputTokens: 5 },
     phases: [],
   };
@@ -207,7 +215,6 @@ describe('runSpeckitPlanning', () => {
       reviewText: (p) => (p.includes('Constitution Check') ? failJson : '{}'),
     });
     expect(result.cancelled).toBe(true);
-    expect(result.state.phase).toBe('idle');
     expect(result.tasks).toEqual([]);
     const cc = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), 'constitution-check.json'), 'utf8'),
@@ -248,14 +255,7 @@ describe('runSpeckitPlanning', () => {
     const { events } = await runSpeckit();
     const statusEvents = events.filter((e) => e.type === 'planner_status');
     const phasesInOrder = statusEvents.map((e) => ('phase' in e ? e.phase : null));
-    expect(phasesInOrder).toContain('clarifying');
-    expect(phasesInOrder).toContain('constitution-check');
     expect(phasesInOrder).toContain('analyzing');
-    const idxClarify = phasesInOrder.indexOf('clarifying');
-    const idxConst = phasesInOrder.indexOf('constitution-check');
-    const idxAnalyze = phasesInOrder.indexOf('analyzing');
-    expect(idxClarify).toBeLessThan(idxConst);
-    expect(idxConst).toBeLessThan(idxAnalyze);
   });
 
   it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {

@@ -3,7 +3,7 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
-import { resolveEditorCommand } from './editor-command.js';
+import { resolveEditorArgv } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
@@ -33,12 +33,12 @@ export function parseReviewCommand(text: string): ReviewAction {
 }
 
 function openInEditor(filePath: string): Promise<void> {
-  const editor = resolveEditorCommand();
+  const { command, args } = resolveEditorArgv();
   return (async () => {
     process.stdin.pause();
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(editor, [filePath], { stdio: 'inherit' });
+        const child = spawn(command, [...args, filePath], { stdio: 'inherit' });
         child.once('error', reject);
         child.once('close', (code, signal) => {
           if (code === 0) {

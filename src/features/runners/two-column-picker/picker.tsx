@@ -1,11 +1,11 @@
 import { Box, Text } from 'ink';
-import { useTheme } from '../../theme.js';
-import type { FilterableItem } from '../filtering.js';
-import { availableRows } from '../scroll-window.js';
+import { useTheme } from '../../../components/theme.js';
+import type { FilterableItem } from '../../../components/pickers/filtering.js';
+import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../../utils/terminal-width.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { SingleColumnPicker } from '../single-column.js';
+import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
 import { useTwoColumnState, type LeftColumnProps, type RightColumnProps } from './use-nav-state.js';
 import { CUSTOM_ROW_ID, isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 

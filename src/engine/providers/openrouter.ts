@@ -21,10 +21,12 @@ const OpenRouterModelSchema = z.object({
     .object({
       modality: z
         .object({
-          input: z.array(z.string()).optional(),
-          output: z.array(z.string()).optional(),
+          input: z.union([z.array(z.string()), z.string()]).optional(),
+          output: z.union([z.array(z.string()), z.string()]).optional(),
         })
         .optional(),
+      input_modalities: z.array(z.string()).optional(),
+      output_modalities: z.array(z.string()).optional(),
     })
     .optional(),
 });
@@ -48,7 +50,15 @@ export function toDetectedModel(m: OpenRouterModel): DetectedModel {
     (hasCompletePricing ? inputPrice === 0 && outputPrice === 0 : undefined);
 
   const capabilities: string[] = [];
-  if (m.architecture?.modality?.input?.includes('image')) capabilities.push('vision');
+  const modalityInput = m.architecture?.modality?.input;
+  const inputModalities =
+    m.architecture?.input_modalities ??
+    (Array.isArray(modalityInput)
+      ? modalityInput
+      : typeof modalityInput === 'string'
+        ? [modalityInput]
+        : undefined);
+  if (inputModalities?.includes('image')) capabilities.push('vision');
 
   const result: DetectedModel = {
     id: m.id,

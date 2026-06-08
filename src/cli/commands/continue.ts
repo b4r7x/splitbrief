@@ -8,7 +8,7 @@ import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
-import { showCrashDiagnostic } from '../crash-diagnostic.js';
+import { printCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
@@ -74,7 +74,11 @@ export async function resumeSavedSession(args: {
   await deps.initStores(projectDir, opts);
   routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
 
-  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+  await deps.renderApp(createElement(App), {
+    fullscreen: useFullscreen,
+    mouse: useMouse,
+    projectDir,
+  });
 }
 
 export interface ContinueDeps {
@@ -84,7 +88,7 @@ export interface ContinueDeps {
   runHeadless: typeof runHeadless;
   runRpc: typeof runRpc;
   setupWorkflow: typeof setupWorkflow;
-  showCrashDiagnostic: typeof showCrashDiagnostic;
+  printCrashDiagnostic: typeof printCrashDiagnostic;
 }
 
 const defaultContinueDeps: ContinueDeps = {
@@ -94,7 +98,7 @@ const defaultContinueDeps: ContinueDeps = {
   runHeadless,
   runRpc,
   setupWorkflow,
-  showCrashDiagnostic,
+  printCrashDiagnostic,
 };
 
 async function resolveTargetSession(
@@ -135,12 +139,16 @@ export async function continueCommand(
 
   if (status.alive) {
     if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
+    if (status.data.authToken === undefined) {
+      throw cliError(`session ${sessionId} does not support authenticated attach`, 1);
+    }
     await renderAttachClient(
       {
         projectDir: opts.projectDir,
         sessionId,
         feature: status.data.feature,
         sockPath: join(sessDir, IPC_SOCK_FILE),
+        authToken: status.data.authToken,
       },
       deps,
     );
@@ -148,7 +156,7 @@ export async function continueCommand(
   }
 
   if (status.crashed) {
-    await deps.showCrashDiagnostic(sessDir, status);
+    await deps.printCrashDiagnostic(sessDir, status);
   }
 
   await maybeMigrateAndReport(opts.projectDir, opts);

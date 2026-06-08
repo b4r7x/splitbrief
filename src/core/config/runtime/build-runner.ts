@@ -72,9 +72,9 @@ function resolveGenerationParams(opts: BuildRunnerOpts): GenerationParams {
 function spreadGenParams(gen: ReturnType<typeof resolveGenerationParams>): Record<string, unknown> {
   return {
     ...(gen.model && { model: gen.model }),
-    ...(gen.contextLength && { contextLength: gen.contextLength }),
+    ...(gen.contextLength !== undefined && { contextLength: gen.contextLength }),
     ...(gen.temperature !== undefined && { temperature: gen.temperature }),
-    ...(gen.timeout && { timeout: gen.timeout }),
+    ...(gen.timeout !== undefined && { timeout: gen.timeout }),
     ...(gen.customModels && { customModels: gen.customModels }),
   };
 }

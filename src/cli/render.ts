@@ -8,7 +8,11 @@ import {
   setActiveFilteredStdin,
 } from '../lib/terminal/filtered-stdin.js';
 import { detectKittyKeyboardFlags } from '../lib/terminal/kitty-keyboard.js';
-import { isKeyDebugEnabled, logRawChunk } from '../lib/terminal/debug-keys.js';
+import {
+  configureDiptychKeyDebugLog,
+  isConfiguredKeyDebugEnabled,
+  logDiptychRawKeyChunk,
+} from '../core/key-debug.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import {
   installTerminalOutputErrorGuard,
@@ -19,6 +23,7 @@ import {
 interface RenderOptions {
   fullscreen: boolean;
   mouse?: boolean;
+  projectDir?: string | undefined;
 }
 
 const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
@@ -70,15 +75,19 @@ export async function renderApp(
   appElement: ReturnType<typeof createElement>,
   options: RenderOptions,
 ): Promise<void> {
-  const { fullscreen, mouse } = options;
+  const { fullscreen, mouse, projectDir } = options;
   const kittyKeyboard = detectKittyKeyboardFlags();
   installTerminalOutputErrorGuard();
+
+  configureDiptychKeyDebugLog(projectDir ? { projectDir } : undefined);
 
   const useMouse = mouse !== false && fullscreen;
   let filteredStdin: FilteredStdin | undefined;
   let filteredDisabled = false;
 
-  const rawKeyTap = isKeyDebugEnabled() ? (chunk: Buffer) => logRawChunk(chunk) : undefined;
+  const rawKeyTap = isConfiguredKeyDebugEnabled()
+    ? (chunk: Buffer) => logDiptychRawKeyChunk(chunk)
+    : undefined;
   if (rawKeyTap) {
     process.stdin.on('data', rawKeyTap);
   }

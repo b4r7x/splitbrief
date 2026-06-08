@@ -182,7 +182,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     const available = await planner.isAvailable();
     if (!available) {
       publishError(
-        { bus: bus, phase: 'idle' },
+        { bus: bus, phase: savedState?.phase ?? 'idle' },
         `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`,
       );
       return {

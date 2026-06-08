@@ -45,7 +45,7 @@ interface SelectionKeyInput {
   fuzzyMatch: RuntimeCommandDef | null;
 }
 
-function buildSelectionKey(input: SelectionKeyInput): string {
+function buildCommandSelectionKey(input: SelectionKeyInput): string {
   const { currentScreen, phase, query, filtered, fuzzyMatch } = input;
   return [
     currentScreen,
@@ -80,7 +80,13 @@ export function useCommandCompletion({
   const fuzzyMatch =
     commandMode && filtered.length === 0 ? suggestRuntimeCommand(validCommands, query) : null;
   const showSuggestions = commandMode && (filtered.length > 0 || fuzzyMatch !== null);
-  const selectionKey = buildSelectionKey({ currentScreen, phase, query, filtered, fuzzyMatch });
+  const selectionKey = buildCommandSelectionKey({
+    currentScreen,
+    phase,
+    query,
+    filtered,
+    fuzzyMatch,
+  });
   const { effectiveSelectedIndex, latestRef, moveSelection } =
     useCompletionSelection<LatestCommandState>({
       currentScreen,

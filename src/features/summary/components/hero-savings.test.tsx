@@ -27,7 +27,7 @@ describe('HeroSavings', () => {
   it('renders hero stat when savings are available', () => {
     const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown()} />);
     const output = ui.lastFrame() ?? '';
-    expect(output).toContain('$0.12 actual vs $0.95 all-planner');
+    expect(output).toContain('$0.12 actual vs $0.95 implementer-at-planner-rate');
     expect(output).toContain('87% saved');
     expect(output).toContain('Saved $0.83');
     ui.unmount();

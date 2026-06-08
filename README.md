@@ -65,6 +65,7 @@ The TUI shows planner and implementer working together as a conversation flow �
 git clone https://github.com/b4r7x/tiny-spec.git
 cd tiny-spec
 npm install
+npm run build
 npm link
 
 # Have a planner ready (pick one):
@@ -218,6 +219,10 @@ Anything that speaks the OpenAI chat completions protocol works.
 |----------|-----------------|---------|
 | `ollama` | `http://localhost:11434/v1` | Not needed |
 | `lm-studio` | `http://localhost:1234/v1` | Not needed |
+| `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `groq` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `together` | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
 | `deepseek` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 
@@ -313,12 +318,12 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#eventbus).
-- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md).
-- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](./docs/REPOMAP.md).
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/ARCHITECTURE.md#eventbus).
+- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/HOOKS-CONFIG.md).
+- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; tiered sticky/confirm approvals fail closed unless their tiers allow the action.
 - **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
-- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](./docs/OTEL.md).
+- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/OTEL.md).
 
 ## Current state
 
@@ -326,7 +331,7 @@ Primary development stack is TypeScript/JavaScript. Command-based validation als
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
+See [CONTRIBUTING.md](https://github.com/b4r7x/tiny-spec/blob/main/CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
 
 ## License
 

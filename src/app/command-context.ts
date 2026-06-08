@@ -1,16 +1,30 @@
+import { join } from 'node:path';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { projectFilesStore } from '../stores/ui/project-files.js';
+import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import {
-  requestClearQueue,
-  requestRewind as requestWorkflowRewind,
-} from '../features/workflow/handlers.js';
+  requestWorkflowClearQueue,
+  requestWorkflowRewind,
+} from '../features/workflow/app-integration.js';
 import { refreshDetection } from '../engine/detection/service.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
-import { createCommandContext } from './command-context-factory.js';
+import { createCommandContext } from '../core/runtime/commands/context-factory.js';
+import { sessionDir } from '../core/paths.js';
+import { rebuildRepomap } from '../engine/codebase/rebuild.js';
+import { writeHandoffPack } from '../engine/handoff/write.js';
+import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
+import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
+import { writeSessionHtmlReport } from '../engine/export/collect.js';
+import {
+  readApprovalsStore,
+  writeApprovalsStore,
+  clearGrantsByScope,
+} from '../core/approval/store.js';
 import { error } from '../utils/error.js';
 
 const appCommandContextError = {
@@ -56,10 +70,37 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     refreshDetection: async () => {
       await refreshDetection(configStore.get().projectDir);
     },
+    refreshProjectFiles: projectFilesStore.requestRefresh,
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: requestWorkflowRewind,
     requestTaskRedo: (taskId) => requestWorkflowRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: requestClearQueue,
+    clearQueue: requestWorkflowClearQueue,
+    rebuildRepomap: async (projectDir, cacheDir) =>
+      rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
+    attachImage,
+    detachImage,
+    listAttachments,
+    writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
+      writeHandoffPack({
+        projectDir,
+        sessionId,
+        target,
+        outDir: join(sessionDir(projectDir, sessionId), 'handoffs', target),
+        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
+        mode: 'overwrite',
+      }),
+    listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
+    clearApprovals: (projectDir, scope) => {
+      const before = readApprovalsStore(projectDir);
+      const after = clearGrantsByScope(before, scope);
+      writeApprovalsStore(projectDir, after);
+      return before.grants.length - after.grants.length;
+    },
+    acceptRunSnapshot,
+    rejectRunSnapshot,
+    compactTranscript: performManualCompaction,
+    exportSession: async (projectDir, sessionId) =>
+      writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
   });
 }

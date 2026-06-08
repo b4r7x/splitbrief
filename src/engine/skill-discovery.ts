@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Dirent } from 'node:fs';
-import { readFile, readdir, stat, access } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { readFileSync, type Dirent } from 'node:fs';
+import { readFile, readdir, access, stat } from 'node:fs/promises';
+import { join, basename, relative } from 'node:path';
 import { homedir } from 'node:os';
 import type { PlannerToolId } from '../core/schemas/enums.js';
 import type { SkillMeta } from '../core/skills/types.js';
@@ -10,6 +10,7 @@ import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../utils/frontma
 import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR, getDiptychPath } from '../core/paths.js';
 import { isENOENT } from '../lib/process/errors.js';
 import { warnError } from '../lib/warn.js';
+import { readProjectFileConfined } from '../lib/fs.js';
 
 const MAX_SKILL_CHARS = 16_000;
 const MIN_TRUNCATED_CHARS = 200;
@@ -26,7 +27,22 @@ export function parseFrontmatter(raw: string): { name: string; description: stri
   return result.success ? result.data : null;
 }
 
-async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<SkillMeta[]> {
+function readSkillFile(projectDir: string | undefined, filePath: string): string | null {
+  if (projectDir === undefined) {
+    try {
+      return readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+  return readProjectFileConfined(projectDir, relative(projectDir, filePath));
+}
+
+async function discoverFromDir(
+  dir: string,
+  scope: SkillMeta['scope'],
+  projectDir?: string,
+): Promise<SkillMeta[]> {
   try {
     await access(dir);
   } catch {
@@ -46,44 +62,60 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
 
     const fullPath = join(dir, entry.name);
 
+    if (scope === 'project' && entry.isSymbolicLink()) {
+      continue;
+    }
+
     let isFile = entry.isFile();
     let isDir = entry.isDirectory();
-    if (entry.isSymbolicLink()) {
+    if (entry.isSymbolicLink() && scope !== 'project') {
       try {
-        const s = await stat(fullPath);
-        isFile = s.isFile();
-        isDir = s.isDirectory();
+        const targetStat = await stat(fullPath);
+        isFile = targetStat.isFile();
+        isDir = targetStat.isDirectory();
       } catch {
         continue;
       }
     }
 
     if (isFile && entry.name.endsWith('.md')) {
-      let raw: string;
-      try {
-        raw = await readFile(fullPath, 'utf-8');
-      } catch (err) {
-        if (!isENOENT(err)) warnError(`Failed to read skill ${fullPath}`, err);
+      const raw = readSkillFile(scope === 'project' ? projectDir : undefined, fullPath);
+      if (raw === null) {
+        if (scope === 'project') {
+          warnError(`Failed to read confined skill ${fullPath}`);
+        }
         continue;
       }
       const fm = parseFrontmatter(raw);
       if (fm) {
-        skills.push({ id: basename(entry.name, '.md'), path: fullPath, scope, ...fm });
+        skills.push({
+          id: basename(entry.name, '.md'),
+          path: fullPath,
+          scope,
+          ...(scope === 'project' && projectDir !== undefined && { projectRoot: projectDir }),
+          ...fm,
+        });
       }
     } else if (isDir) {
       const skillMd = join(fullPath, 'SKILL.md');
       try {
         await access(skillMd);
-        let raw: string;
-        try {
-          raw = await readFile(skillMd, 'utf-8');
-        } catch (err) {
-          if (!isENOENT(err)) warnError(`Failed to read skill ${skillMd}`, err);
+        const raw = readSkillFile(scope === 'project' ? projectDir : undefined, skillMd);
+        if (raw === null) {
+          if (scope === 'project') {
+            warnError(`Failed to read confined skill ${skillMd}`);
+          }
           continue;
         }
         const fm = parseFrontmatter(raw);
         if (fm) {
-          skills.push({ id: entry.name, path: skillMd, scope, ...fm });
+          skills.push({
+            id: entry.name,
+            path: skillMd,
+            scope,
+            ...(scope === 'project' && projectDir !== undefined && { projectRoot: projectDir }),
+            ...fm,
+          });
         }
       } catch {
         /* no SKILL.md */
@@ -101,9 +133,8 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
   skills.push(...(await discoverFromDir(globalSkillsDir, 'global')));
 
   const rootAgents = join(projectDir, 'AGENTS.md');
-  try {
-    await access(rootAgents);
-    const raw = await readFile(rootAgents, 'utf-8');
+  const raw = readProjectFileConfined(projectDir, 'AGENTS.md');
+  if (raw !== null) {
     const fm = parseFrontmatter(raw);
     skills.push({
       id: 'agents-root',
@@ -111,11 +142,8 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
       description: fm?.description ?? 'Root agent instructions',
       path: rootAgents,
       scope: 'project',
+      projectRoot: projectDir,
     });
-  } catch (err) {
-    if (!isENOENT(err)) {
-      warnError('Failed to read AGENTS.md', err);
-    }
   }
 
   return skills;
@@ -123,11 +151,12 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
 
 async function discoverConventions(projectDir: string): Promise<SkillMeta[]> {
   const convPath = join(projectDir, 'CONVENTIONS.md');
-  let raw: string;
-  try {
-    raw = await readFile(convPath, 'utf-8');
-  } catch (err) {
-    if (!isENOENT(err)) warnError('Failed to read CONVENTIONS.md', err);
+  const raw = readProjectFileConfined(projectDir, 'CONVENTIONS.md');
+  if (raw === null) {
+    try {
+      await access(convPath);
+      warnError(`discover-conventions: ${convPath}`);
+    } catch {}
     return [];
   }
   const fm = parseFrontmatter(raw);
@@ -138,6 +167,7 @@ async function discoverConventions(projectDir: string): Promise<SkillMeta[]> {
       description: fm?.description ?? 'Project conventions',
       path: convPath,
       scope: 'project',
+      projectRoot: projectDir,
     },
   ];
 }
@@ -172,7 +202,7 @@ export async function discoverSkills(
 
   const [global, project] = await Promise.all([
     discoverFromDir(globalDir, 'global'),
-    discoverFromDir(projDir, 'project'),
+    discoverFromDir(projDir, 'project', projectDir),
   ]);
 
   return mergeSkills(global, project);
@@ -186,11 +216,23 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
 
   for (const skill of skills) {
     let raw: string;
-    try {
-      raw = await readFile(skill.path, 'utf-8');
-    } catch (err) {
-      if (!isENOENT(err)) warnError(`Failed to read skill ${skill.path}`, err);
-      continue;
+    if (skill.scope === 'project' && skill.projectRoot !== undefined) {
+      const confined = readProjectFileConfined(
+        skill.projectRoot,
+        relative(skill.projectRoot, skill.path),
+      );
+      if (confined === null) {
+        warnError(`Failed to read confined skill ${skill.path}`);
+        continue;
+      }
+      raw = confined;
+    } else {
+      try {
+        raw = await readFile(skill.path, 'utf-8');
+      } catch (err) {
+        if (!isENOENT(err)) warnError(`Failed to read skill ${skill.path}`, err);
+        continue;
+      }
     }
     const { body } = extractFrontmatter(raw);
 

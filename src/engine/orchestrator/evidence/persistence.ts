@@ -4,8 +4,8 @@ import type { WorkflowContext } from '../types.js';
 import { publishWarningFromError } from '../events.js';
 import {
   createEvidenceLedger,
+  mutateEvidenceLedger,
   readEvidenceLedger,
-  writeEvidenceLedger,
 } from '../../../core/evidence/ledger.js';
 import {
   recordLocalTaskEvidence,
@@ -66,68 +66,66 @@ export function persistTaskEvidence(opts: {
   const { wctx, state, task, recordKind, details } = opts;
   try {
     const briefHash = hashTaskBrief(state.tasks);
-    const ledger = getOrCreateLedger(
-      wctx.projectDir,
-      wctx.sessionId,
-      state,
-      wctx.config.workflow.mode,
-    );
-    let updated = ledger;
-    if (recordKind === 'local') {
-      updated = recordLocalTaskEvidence({
-        ledger,
-        task,
-        status: details.status,
-        method: details.method,
-        retries: details.retries,
-        durationMs: details.durationMs,
-        validation: details.validation ?? [],
-        changedFiles: details.changedFiles,
-        briefHash,
-        validationRetryState: details.status === 'failed' ? 'failed' : undefined,
-      });
-    } else if (recordKind === 'retry') {
-      if (details.initialValidation && details.initialValidation.length > 0) {
-        updated = recordRetryOrEscalationEvidence({
+    mutateEvidenceLedger(wctx.projectDir, wctx.sessionId, (existing) => {
+      const ledger =
+        existing ??
+        getOrCreateLedger(wctx.projectDir, wctx.sessionId, state, wctx.config.workflow.mode);
+      if (recordKind === 'local') {
+        return recordLocalTaskEvidence({
+          ledger,
+          task,
+          status: details.status,
+          method: details.method,
+          retries: details.retries,
+          durationMs: details.durationMs,
+          validation: details.validation ?? [],
+          changedFiles: details.changedFiles,
+          briefHash,
+          validationRetryState: details.status === 'failed' ? 'failed' : undefined,
+        });
+      }
+      if (recordKind === 'retry') {
+        let updated = ledger;
+        if (details.initialValidation && details.initialValidation.length > 0) {
+          updated = recordRetryOrEscalationEvidence({
+            ledger: updated,
+            task,
+            status: details.status,
+            method: details.method,
+            retries: details.retries,
+            durationMs: details.durationMs,
+            validation: details.initialValidation,
+            escalated: details.escalated ?? false,
+            changedFiles: details.initialChangedFiles,
+            briefHash,
+            validationRetryState: 'initial-failure',
+          });
+        }
+        return recordRetryOrEscalationEvidence({
           ledger: updated,
           task,
           status: details.status,
           method: details.method,
           retries: details.retries,
           durationMs: details.durationMs,
-          validation: details.initialValidation,
+          validation: details.validation,
           escalated: details.escalated ?? false,
-          changedFiles: details.initialChangedFiles,
+          changedFiles: details.changedFiles,
           briefHash,
-          validationRetryState: 'initial-failure',
+          validationRetryState: details.escalated
+            ? 'escalated'
+            : details.status === 'failed'
+              ? 'failed'
+              : undefined,
         });
       }
-      updated = recordRetryOrEscalationEvidence({
-        ledger: updated,
-        task,
-        status: details.status,
-        method: details.method,
-        retries: details.retries,
-        durationMs: details.durationMs,
-        validation: details.validation,
-        escalated: details.escalated ?? false,
-        changedFiles: details.changedFiles,
-        briefHash,
-        validationRetryState: details.escalated
-          ? 'escalated'
-          : details.status === 'failed'
-            ? 'failed'
-            : undefined,
-      });
-    } else {
-      updated = recordSkippedTaskEvidence({
+      return recordSkippedTaskEvidence({
         ledger,
         task,
         reason: details.reason ?? 'skipped',
         briefHash,
       });
-    }
-    writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
+    });
   } catch (err) {
     publishWarningFromError(
       { bus: wctx.bus, phase: state.phase },
@@ -148,21 +146,19 @@ export function persistRejectionEvidence(opts: {
 }): void {
   const { wctx, state, reason, actionClass, tier, actionDescription, taskId } = opts;
   try {
-    const ledger = getOrCreateLedger(
-      wctx.projectDir,
-      wctx.sessionId,
-      state,
-      wctx.config.workflow.mode,
-    );
-    const updated = recordRejectionEvidence({
-      ledger,
-      tier,
-      actionClass,
-      actionDescription,
-      ...(taskId !== undefined && { taskId }),
-      reason,
+    mutateEvidenceLedger(wctx.projectDir, wctx.sessionId, (existing) => {
+      const ledger =
+        existing ??
+        getOrCreateLedger(wctx.projectDir, wctx.sessionId, state, wctx.config.workflow.mode);
+      return recordRejectionEvidence({
+        ledger,
+        tier,
+        actionClass,
+        actionDescription,
+        ...(taskId !== undefined && { taskId }),
+        reason,
+      });
     });
-    writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
   } catch {
     // non-fatal: rejection evidence loss is acceptable vs crashing
   }
@@ -175,25 +171,25 @@ export function persistApprovalEvidence(opts: {
   taskId?: TaskId | undefined;
 }): void {
   const { wctx, state, decision, taskId } = opts;
-  if (!decision.confirmApprovals || decision.confirmApprovals.length === 0) return;
+  const confirmApprovals = decision.confirmApprovals;
+  if (!confirmApprovals || confirmApprovals.length === 0) return;
   try {
-    let ledger = getOrCreateLedger(
-      wctx.projectDir,
-      wctx.sessionId,
-      state,
-      wctx.config.workflow.mode,
-    );
-    for (const approval of decision.confirmApprovals) {
-      ledger = recordApprovalEvidence({
-        ledger,
-        tier: approval.tier,
-        actionClass: approval.actionClass,
-        actionDescription: approval.actionDescription,
-        ...(taskId !== undefined && { taskId }),
-        reason: approval.reason,
-      });
-    }
-    writeEvidenceLedger(wctx.projectDir, wctx.sessionId, ledger);
+    mutateEvidenceLedger(wctx.projectDir, wctx.sessionId, (existing) => {
+      let ledger =
+        existing ??
+        getOrCreateLedger(wctx.projectDir, wctx.sessionId, state, wctx.config.workflow.mode);
+      for (const approval of confirmApprovals) {
+        ledger = recordApprovalEvidence({
+          ledger,
+          tier: approval.tier,
+          actionClass: approval.actionClass,
+          actionDescription: approval.actionDescription,
+          ...(taskId !== undefined && { taskId }),
+          reason: approval.reason,
+        });
+      }
+      return ledger;
+    });
   } catch (err) {
     publishWarningFromError(
       { bus: wctx.bus, phase: state.phase },

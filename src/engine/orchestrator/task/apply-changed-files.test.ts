@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -10,8 +10,6 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import { applyChangedFiles } from './apply-changed-files.js';
-
-import * as git from '../../../lib/git.js';
 
 let dirs: string[] = [];
 
@@ -65,7 +63,7 @@ describe('applyChangedFiles', () => {
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 
-  it('returns blocked-by-approval instead of throwing when the changed-file snapshot errors', async () => {
+  it('returns blocked-by-approval and emits an error when the temp repo cannot produce a changed-file snapshot', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
@@ -74,9 +72,11 @@ describe('applyChangedFiles', () => {
     const cleanup = vi.fn(staged.cleanup);
     const stagedWithSpy = { ...staged, cleanup };
 
-    vi.spyOn(git, 'getCurrentChangedFiles').mockRejectedValue(new Error('git boom'));
+    rmSync(join(projectDir, '.git'), { recursive: true, force: true });
 
+    const events: unknown[] = [];
     const wctx = makeWctx({ projectDir, sessionId });
+    wctx.bus.subscribe((event) => events.push(event));
 
     const result = await applyChangedFiles({
       wctx,
@@ -92,6 +92,12 @@ describe('applyChangedFiles', () => {
 
     expect(result.proceed).toBe(false);
     expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('Task changed files blocked by approval gate'),
+      }),
+    );
   });
 
   it('aborts and runs staged cleanup when the workflow signal is already aborted', async () => {

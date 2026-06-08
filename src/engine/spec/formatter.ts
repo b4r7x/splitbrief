@@ -4,7 +4,10 @@ import { TASK_BRIEF_HEADINGS } from './headings.js';
 export function buildScopeLines(scope: Task['scope']): string[] {
   const inBounds = scope?.inBounds ?? [];
   const outOfBounds = scope?.outOfBounds ?? [];
-  if (inBounds.length === 0 && outOfBounds.length === 0) return [];
+  const approvedOutOfBounds = scope?.approvedOutOfBounds ?? [];
+  if (inBounds.length === 0 && outOfBounds.length === 0 && approvedOutOfBounds.length === 0) {
+    return [];
+  }
 
   const lines: string[] = [];
   if (inBounds.length > 0) {
@@ -13,6 +16,10 @@ export function buildScopeLines(scope: Task['scope']): string[] {
   if (outOfBounds.length > 0) {
     if (lines.length > 0) lines.push('');
     lines.push('**Out of bounds:**', ...outOfBounds.map((b) => `- ${b}`));
+  }
+  if (approvedOutOfBounds.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('**Approved out of bounds:**', ...approvedOutOfBounds.map((b) => `- ${b}`));
   }
   return lines;
 }

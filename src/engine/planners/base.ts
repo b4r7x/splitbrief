@@ -28,7 +28,7 @@ import {
   buildProjectLanguageContext,
   extractLanguageFromResearch,
 } from '../spec/prompts/language-context.js';
-import { parseTasks } from '../spec/parser.js';
+import { parseTasksStrict } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/token-utils.js';
@@ -200,7 +200,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         TASKS_FILE,
       );
 
-      const tasks = parseTasks(tasksMarkdown);
+      const tasks = parseTasksStrict(tasksMarkdown);
 
       return { spec, plan, tasks, usage, phases };
     },

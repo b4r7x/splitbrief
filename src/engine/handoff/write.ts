@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -12,14 +13,17 @@ import { loadState } from '../../core/state/persistence.js';
 import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, SPEC_FILE, PLAN_FILE, SUMMARY_FILE } from '../../core/paths.js';
 import {
   assertPathConfined,
   assertWritablePathConfined,
   isPathConfined,
+  pathConfinementError,
 } from '../../lib/path-confinement.js';
 import { getCurrentCommitSha } from '../../lib/git.js';
 import { error, matches } from '../../utils/error.js';
+
+const isPathEscape = matches('path-confined-escape');
 
 export const HANDOFF_WRITE_MODES = ['default', 'append', 'overwrite'] as const;
 export type HandoffWriteMode = (typeof HANDOFF_WRITE_MODES)[number];
@@ -113,13 +117,15 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   let summaryMode: WorkflowMode | undefined;
   try {
-    const summaryPath = join(sessionDir(projectDir, sessionId), 'summary.json');
-    if (existsSync(summaryPath)) {
-      const raw = await readFile(summaryPath, 'utf-8');
-      const parsed: unknown = JSON.parse(raw);
-      const result = SessionSchema.safeParse(parsed);
-      if (result.success) {
-        summaryMode = result.data.summary?.mode;
+    const summaryRelativePath = join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, SUMMARY_FILE);
+    if (confinedExists(projectDir, summaryRelativePath)) {
+      const raw = await confinedReadFileAsync(projectDir, summaryRelativePath);
+      if (raw !== null) {
+        const parsed: unknown = JSON.parse(raw);
+        const result = SessionSchema.safeParse(parsed);
+        if (result.success) {
+          summaryMode = result.data.summary?.mode;
+        }
       }
     }
   } catch {
@@ -128,10 +134,16 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   const resolvedMode: WorkflowMode = summaryMode ?? configMode ?? 'standard';
 
-  const constitutionPath = join(projectDir, 'constitution.md');
-  const constitutionContent = existsSync(constitutionPath)
-    ? await readFile(constitutionPath, 'utf-8')
-    : undefined;
+  const constitutionRelativePath = 'constitution.md';
+  let constitutionContent: string | undefined;
+  if (confinedExists(projectDir, constitutionRelativePath)) {
+    try {
+      constitutionContent =
+        (await confinedReadFileAsync(projectDir, constitutionRelativePath)) ?? undefined;
+    } catch (err) {
+      if (!pathConfinementError.isSymlinkRead(err) && !isPathEscape(err)) throw err;
+    }
+  }
 
   const brandedTaskIds = selectedTaskIds?.map(taskId);
   const filteredTasks = brandedTaskIds
@@ -171,6 +183,11 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   if (mode === 'overwrite' && existsSync(outDir)) {
     assertSafeOverwriteTarget(outDir, projectDir);
+    const resolvedOut = realpathSync(outDir);
+    const resolvedProject = realpathSync(projectDir);
+    if (!resolvedOut.startsWith(resolvedProject + '/') && resolvedOut !== resolvedProject) {
+      throw pathConfinementError.escapesRoot(relative(projectDir, outDir));
+    }
     await rm(outDir, { recursive: true, force: true });
   }
 

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { simpleGit, type SimpleGit } from 'simple-git';
-import { error, matches } from '../utils/error.js';
+import { error } from '../utils/error.js';
 import { toErrorMessage } from '../utils/format-errors.js';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
@@ -23,7 +23,6 @@ export const gitError = {
     error('git-branch-name-collision', `too many branch name collisions on ${desiredName}`, {
       desiredName,
     }),
-  isCommandFailed: matches('git-command-failed'),
 } as const;
 
 export type GitCommandError = ReturnType<typeof gitError.commandFailed>;
@@ -66,6 +65,10 @@ export async function getGitStatus(dir: string): Promise<{
 
 export async function stageAll(dir: string): Promise<void> {
   await runGit('add .', () => getGit(dir).add('.'));
+}
+
+export async function resetIndex(dir: string): Promise<void> {
+  await runGit('reset', () => getGit(dir).reset(['--mixed', 'HEAD']));
 }
 
 export async function commitChanges(dir: string, message: string): Promise<string> {
@@ -129,14 +132,31 @@ export async function createTaggedStash(
   tagName: string,
 ): Promise<string> {
   await stageAll(dir);
-  return runGit('stash create', async () => {
-    const git = getGit(dir);
-    const stashSha = (await git.raw(['stash', 'create', message])).trim();
-    if (!stashSha) return '';
-    await git.tag([tagName, stashSha]);
-    await git.reset();
-    return tagName;
-  });
+  try {
+    return await runGit('stash create', async () => {
+      const git = getGit(dir);
+      const stashSha = (await git.raw(['stash', 'create', message])).trim();
+      if (!stashSha) {
+        await resetIndex(dir);
+        return '';
+      }
+      try {
+        await git.tag([tagName, stashSha]);
+      } catch (err) {
+        await resetIndex(dir);
+        throw err;
+      }
+      await git.reset();
+      return tagName;
+    });
+  } catch (err) {
+    try {
+      await resetIndex(dir);
+    } catch {
+      // best-effort restore after a failed checkpoint
+    }
+    throw err;
+  }
 }
 
 export async function branchExists(dir: string, name: string): Promise<boolean> {

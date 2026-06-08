@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DIPTYCH_DIR, SANDBOX_DIR } from '../../../core/paths.js';
-import { assertWritablePathConfined } from '../../../lib/path-confinement.js';
+import { confinedExists, confinedReadFileAsync } from '../../../lib/confined-fs.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../../lib/path-confinement.js';
+import { uniqueInOrder } from '../../../utils/collections.js';
 import {
   discardChangedFiles,
   getCommittedFilesSince,
@@ -28,7 +30,7 @@ export type RestoreChangedFilesResult = {
 };
 
 export function uniqueProjectFiles(files: string[]): string[] {
-  return Array.from(new Set(files))
+  return uniqueInOrder(files)
     .filter((file) => file.length > 0)
     .filter((file) => !file.startsWith(`${DIPTYCH_DIR}/`))
     .filter((file) => !file.startsWith(`${SANDBOX_DIR}/`))
@@ -47,16 +49,42 @@ export async function captureProjectFileHashes(
   return hashFiles(projectDir, files);
 }
 
+async function readConfinedProjectFileStrict(
+  projectDir: string,
+  file: string,
+): Promise<string | null> {
+  assertPathConfined(file, projectDir);
+  if (!confinedExists(projectDir, file)) return null;
+  return confinedReadFileAsync(projectDir, file);
+}
+
+async function readConfinedProjectFile(projectDir: string, file: string): Promise<string | null> {
+  try {
+    return await readConfinedProjectFileStrict(projectDir, file);
+  } catch (err) {
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'kind' in err &&
+      (err.kind === 'path-confined-escape' ||
+        err.kind === 'path-confined-absolute' ||
+        err.kind === 'path-symlink-read')
+    ) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 export async function getChangedFilesSnapshot(projectDir: string): Promise<ChangedFilesSnapshot> {
   const files = uniqueProjectFiles(await getCurrentChangedFiles(projectDir));
   const entries = await Promise.all(
-    files.map(async (file): Promise<[string, string | null]> => {
-      try {
-        return [file, await readFile(join(projectDir, file), 'utf-8')];
-      } catch {
-        return [file, null];
-      }
-    }),
+    files.map(
+      async (file): Promise<[string, string | null]> => [
+        file,
+        await readConfinedProjectFile(projectDir, file),
+      ],
+    ),
   );
   const dirtyFileContents: Record<string, string | null> = Object.fromEntries(entries);
   return {
@@ -104,7 +132,8 @@ export async function getChangedFilesSinceSnapshot(
       .map(async (file): Promise<string | null> => {
         const storedContent = snapshot.dirtyFileContents[file];
         try {
-          return (await readFile(join(projectDir, file), 'utf-8')) !== storedContent ? file : null;
+          const current = await readConfinedProjectFile(projectDir, file);
+          return current !== storedContent ? file : null;
         } catch {
           return storedContent !== null ? file : null;
         }
@@ -115,7 +144,7 @@ export async function getChangedFilesSinceSnapshot(
   const committedFiles = uniqueProjectFiles(
     await getCommittedFilesSince(projectDir, snapshot.head),
   );
-  return Array.from(new Set([...newChanges, ...modifiedDirtyFiles, ...committedFiles]))
+  return uniqueInOrder([...newChanges, ...modifiedDirtyFiles, ...committedFiles])
     .filter((file) => !file.startsWith(`${DIPTYCH_DIR}/`))
     .filter((file) => !file.startsWith(`${SANDBOX_DIR}/`))
     .sort();
@@ -125,11 +154,7 @@ export async function readCurrentFileContent(
   projectDir: string,
   file: string,
 ): Promise<string | null> {
-  try {
-    return await readFile(join(projectDir, file), 'utf-8');
-  } catch {
-    return null;
-  }
+  return readConfinedProjectFileStrict(projectDir, file);
 }
 
 export async function writeCurrentFileContent(
@@ -186,12 +211,7 @@ export async function restoreDirtyFilesFromSnapshot(
 
     const storedContent = snapshot.dirtyFileContents[file];
     if (storedContent !== undefined) {
-      if (storedContent === null) {
-        const path = join(projectDir, file);
-        if (existsSync(path)) await rm(path, { force: true });
-      } else {
-        await writeFile(join(projectDir, file), storedContent, 'utf-8');
-      }
+      await writeCurrentFileContent(projectDir, file, storedContent);
       restoredFiles.push(file);
     } else {
       toDiscard.push(file);

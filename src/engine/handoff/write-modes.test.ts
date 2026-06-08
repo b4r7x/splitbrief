@@ -2,67 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { writeHandoffPack } from './write.js';
-import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
-import { createInitialState } from '../../core/state/machine.js';
+import { writeHandoffWriterSessionState } from '#testing/helpers/handoff-writer-fixture.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
+import { writeHandoffPack } from './write.js';
 
 let tmp: string;
-
-const t1 = makeTask({
-  id: 'T001',
-  title: 'Add auth middleware',
-  action: 'create',
-  file: 'src/middleware/auth.ts',
-  dependsOn: [],
-  description: 'Create an authentication middleware that validates JWT tokens.',
-  tests: ['returns 401 for missing token', 'returns 403 for expired token'],
-  constraints: ['must not introduce new dependencies'],
-  implementationSteps: ['Parse Authorization header', 'Validate JWT'],
-  typeDefs: 'function authMiddleware(req: Request, res: Response): void',
-  status: 'pending',
-});
-
-const t2 = makeTask({
-  id: 'T002',
-  title: 'Add user model',
-  action: 'modify',
-  file: 'src/models/user.ts',
-  dependsOn: ['T001'],
-  description: 'Extend the user model with role field.',
-  tests: ['role field defaults to user'],
-  constraints: ['must not break existing schema'],
-  implementationSteps: ['Add role field to schema'],
-  typeDefs: "type UserRole = 'user' | 'admin'",
-  status: 'pending',
-});
-
-const t3 = makeTask({
-  id: 'T003',
-  title: 'Write integration tests',
-  action: 'create',
-  file: 'src/middleware/auth.test.ts',
-  dependsOn: ['T001', 'T002'],
-  description: 'Write integration tests for the auth middleware.',
-  tests: ['all three test cases pass'],
-  constraints: ['use vitest'],
-  implementationSteps: ['Import authMiddleware', 'Mock JWT'],
-  typeDefs: '',
-  status: 'pending',
-});
-
-function writeSessionState(projectDir: string, sessionId: string): void {
-  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
-  mkdirSync(sessionDir, { recursive: true });
-  const state = {
-    ...createInitialState('Authentication System'),
-    stateVersion: CURRENT_STATE_VERSION,
-    tasks: [t1, t2, t3],
-    phase: 'implementing' as const,
-  };
-  writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state));
-}
 
 beforeEach(() => {
   tmp = createTempDir('write-handoff-test');
@@ -75,7 +20,7 @@ afterEach(() => {
 describe('writeHandoffPack — basic output', () => {
   it('creates tasks/T001.md and README.md in the output directory', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     const result = await writeHandoffPack({
@@ -95,7 +40,7 @@ describe('writeHandoffPack — basic output', () => {
 
   it('returned files list matches only written paths', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     const result = await writeHandoffPack({
@@ -115,7 +60,7 @@ describe('writeHandoffPack — basic output', () => {
 describe('writeHandoffPack — mode: default', () => {
   it('throws when output directory already exists', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     mkdirSync(outDir, { recursive: true });
@@ -135,7 +80,7 @@ describe('writeHandoffPack — mode: default', () => {
 describe('writeHandoffPack — mode: append', () => {
   it('skips existing files and writes missing ones', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     mkdirSync(join(outDir, 'tasks'), { recursive: true });
@@ -161,7 +106,7 @@ describe('writeHandoffPack — mode: append', () => {
 
   it('writes a manifest that includes skipped pre-existing task artifacts', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     mkdirSync(join(outDir, 'tasks'), { recursive: true });
@@ -184,7 +129,7 @@ describe('writeHandoffPack — mode: append', () => {
 describe('writeHandoffPack — mode: overwrite', () => {
   it('replaces existing files', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'spec-kit');
     mkdirSync(join(outDir, 'tasks'), { recursive: true });
@@ -206,7 +151,7 @@ describe('writeHandoffPack — mode: overwrite', () => {
 
   it('removes stale task files when overwriting with a narrower selection', async () => {
     const sessionId = 'stale-test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'stale-overwrite');
 
@@ -245,7 +190,7 @@ describe('writeHandoffPack — mode: overwrite', () => {
 describe('writeHandoffPack — selectedTaskIds', () => {
   it('propagates error from renderHandoff for unknown task ids', async () => {
     const sessionId = 'test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'spec-kit');
     await expect(
@@ -264,7 +209,7 @@ describe('writeHandoffPack — selectedTaskIds', () => {
 describe('writeHandoffPack — mode resolution', () => {
   it('uses mode from summary.json when present', async () => {
     const sessionId = 'mode-test-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const sDir = join(tmp, DIPTYCH_DIR, 'sessions', sessionId);
     const session = {
@@ -313,7 +258,7 @@ describe('writeHandoffPack — mode resolution', () => {
 
   it('falls back to standard when no summary.json and no config', async () => {
     const sessionId = 'mode-fallback-session';
-    writeSessionState(tmp, sessionId);
+    writeHandoffWriterSessionState(tmp, sessionId);
 
     const outDir = join(tmp, 'handoff', 'mode-fallback');
     await writeHandoffPack({

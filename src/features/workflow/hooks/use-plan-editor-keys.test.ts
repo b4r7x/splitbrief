@@ -98,8 +98,8 @@ describe('handlePlanEditorInput', () => {
 describe('applyPlanEditorAction', () => {
   beforeEach(() => planEditorStore.__testReset());
 
-  it("'q' discards runtime rich mode edits back to the simple-view baseline", () => {
-    const task = makeTask({ id: 'T001' });
+  it("'q' discards edits without emptying the rich editor store", () => {
+    const task = makeTask({ id: 'T001', title: 'Original title' });
     planEditorStore.setRuntimeRichMode(true);
     planEditorStore.initEditor([task]);
     planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
@@ -108,7 +108,7 @@ describe('applyPlanEditorAction', () => {
     applyPlanEditorAction({ type: 'discard' }, () => Promise.resolve());
 
     expect(planEditorStore.get()).toMatchObject({
-      tasks: [],
+      tasks: [task],
       cursor: 0,
       dirty: false,
       runtimeRichMode: false,

@@ -1,6 +1,6 @@
-import { appendFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, readFileSync, lstatSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { SECURE_FILE_MODE, writeSecureFile } from '../../../lib/fs.js';
+import { SECURE_FILE_MODE, writeSecureFile, fsError } from '../../../lib/fs.js';
 import {
   TreeEntryEnvelopeSchema,
   TreeMetaSchema,
@@ -22,9 +22,20 @@ export function treeMetaPath(sessionDir: string): string {
   return join(sessionDir, TREE_META);
 }
 
+function rejectSymlinkTarget(filePath: string): void {
+  try {
+    if (lstatSync(filePath).isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+}
+
 export function appendTreeEntry(sessionDir: string, entry: TreeEntryEnvelope): void {
   const filePath = treeJsonlPath(sessionDir);
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+  rejectSymlinkTarget(filePath);
   appendFileSync(filePath, JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
   chmodSync(filePath, SECURE_FILE_MODE);
 }
@@ -37,6 +48,12 @@ export function writeTreeMeta(sessionDir: string, meta: TreeMeta): void {
 export function readTreeMeta(sessionDir: string): TreeMeta | null {
   const filePath = treeMetaPath(sessionDir);
   if (!existsSync(filePath)) return null;
+  try {
+    rejectSymlinkTarget(filePath);
+  } catch {
+    warnStderr(`Warning: refusing to read tree meta through symlink ${filePath}`);
+    return null;
+  }
   try {
     const raw: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
     const result = TreeMetaSchema.safeParse(raw);
@@ -54,6 +71,12 @@ export function readTreeMeta(sessionDir: string): TreeMeta | null {
 export function readTreeEntries(sessionDir: string): TreeEntryEnvelope[] {
   const filePath = treeJsonlPath(sessionDir);
   if (!existsSync(filePath)) return [];
+  try {
+    rejectSymlinkTarget(filePath);
+  } catch {
+    warnStderr(`Warning: refusing to read tree entries through symlink ${filePath}`);
+    return [];
+  }
   const content = readFileSync(filePath, 'utf-8');
   const entries: TreeEntryEnvelope[] = [];
   for (const line of content.split('\n')) {

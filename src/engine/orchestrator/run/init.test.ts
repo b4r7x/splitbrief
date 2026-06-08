@@ -92,7 +92,11 @@ describe('initializeWorkflow', () => {
         sessionId,
       });
 
-      expect(result).toEqual({ allow: false, reason: 'blocked by discovered hook' });
+      expect(result).toEqual({
+        allow: false,
+        reason: 'blocked by discovered hook',
+        warnings: [],
+      });
     });
   });
 });

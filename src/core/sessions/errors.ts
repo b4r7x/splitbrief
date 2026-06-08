@@ -22,8 +22,5 @@ export const sessionError = {
       { sessionId },
     ),
 
-  isInvalidData: matches('session-invalid-data'),
-  isIdCollision: matches('session-id-collision'),
-  isIdMismatch: matches('session-id-mismatch'),
   isStillActive: matches('session-still-active'),
 } as const;

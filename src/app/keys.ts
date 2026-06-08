@@ -13,7 +13,10 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import { requestCancel, type InterruptResult } from '../features/workflow/handlers.js';
+import {
+  requestWorkflowCancel,
+  type InterruptResult,
+} from '../features/workflow/app-integration.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
@@ -64,7 +67,7 @@ function fireInterrupt(interruptWorkflow: () => InterruptResult) {
 
 function fireCancel() {
   cancelEscapeAction();
-  requestCancel();
+  requestWorkflowCancel();
   abortStore.clear();
 }
 
@@ -146,7 +149,14 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
       // cancel it before the hint appears. Armed-fire paths above react instantly.
       scheduleEscapeAction(() => abortStore.arm(target));
     },
-    { isActive: route.screen === 'workflow' && !isOpen && !overlayExclusive && !promptPending },
+    {
+      isActive:
+        route.screen === 'workflow' &&
+        !isOpen &&
+        !overlayExclusive &&
+        !promptPending &&
+        !route.attach,
+    },
   );
 
   // Any non-ESC byte cancels a deferred arm: it means the prior `\x1b` was the head

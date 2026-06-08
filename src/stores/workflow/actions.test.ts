@@ -61,14 +61,14 @@ describe('markCancelled', () => {
 
   it('appends cancellation through the bounded event stream', () => {
     for (let i = 0; i < MAX_EVENTS; i += 1) {
-      addEvent(makeRetry({ taskId: taskId(`T${i}`) }));
+      addEvent(makeRetry({ taskId: taskId(`T${String((i % 999) + 1).padStart(3, '0')}`) }));
     }
 
     markCancelled();
 
     const events = eventsStore.get().events;
     expect(events).toHaveLength(MAX_EVENTS);
-    expect((events[0] as { taskId: string }).taskId).toBe('T1');
+    expect((events[0] as { taskId: string }).taskId).toBe('T002');
     expect(events[events.length - 1]?.type).toBe('workflow_cancelled');
   });
 });
@@ -138,9 +138,9 @@ describe('resetWorkflow', () => {
       currentTaskIndex: 2,
       attempt: 0,
       tasks: [
-        makeTask({ id: 'T1', status: 'done' }),
-        makeTask({ id: 'T2', status: 'done' }),
-        makeTask({ id: 'T3', status: 'pending' }),
+        makeTask({ id: 'T001', status: 'done' }),
+        makeTask({ id: 'T002', status: 'done' }),
+        makeTask({ id: 'T003', status: 'pending' }),
       ],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
@@ -172,11 +172,11 @@ describe('resetWorkflow', () => {
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(3);
     expect(tasksStore.get().tasks.map((task) => [task.id, task.status])).toEqual([
-      ['T1', 'done'],
-      ['T2', 'done'],
-      ['T3', 'pending'],
+      ['T001', 'done'],
+      ['T002', 'done'],
+      ['T003', 'pending'],
     ]);
-    expect(tasksStore.get().taskMap.get('T2')?.status).toBe('done');
+    expect(tasksStore.get().taskMap.get('T002')?.status).toBe('done');
     expect(tokensStore.get().tokenUsage).toEqual({
       plannerInput: 0,
       plannerOutput: 0,
@@ -203,7 +203,7 @@ describe('resetWorkflow', () => {
       feature: 'f',
       currentTaskIndex: 0,
       attempt: 0,
-      tasks: [makeTask({ id: 'T1', status: 'pending' })],
+      tasks: [makeTask({ id: 'T001', status: 'pending' })],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: {

@@ -3,6 +3,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { useStores } from '../../stores/use-stores.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import { normalizeConfiguredModel } from '../../core/providers/model-selection.js';
 import {
@@ -57,10 +58,10 @@ export function usePickerCatalog(
   const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
   const initialLeftIdx = configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
-  const customModels = isPlanner
-    ? (config.planner.customModels ?? [])
-    : (config.implementer.customModels ?? []);
-  const runnerConfig = isPlanner ? config.planner : config.implementer;
+  const runnerConfig = isPlanner
+    ? config.planner
+    : resolveImplementerProfiles(config).defaultProfile.config;
+  const customModels = runnerConfig.customModels ?? [];
 
   const initialItem = items[initialLeftIdx] ?? items[0];
   const currentItemId = currentSelection?.role === role ? currentSelection.itemId : null;

@@ -77,10 +77,21 @@ export function addUsage(
   };
 }
 
+function clampNonNegative(value: number): number {
+  return Math.max(0, value);
+}
+
 function tokenDelta(
   before: TokenUsage,
   after: TokenUsage,
-): { implementerTokens: number; escalationTokens: number } {
+): {
+  implementerTokens: number;
+  escalationTokens: number;
+  implementerCacheReadTokens: number;
+  implementerCacheCreateTokens: number;
+  escalationCacheReadTokens: number;
+  escalationCacheCreateTokens: number;
+} {
   const implementerBefore = before.implementerInput + before.implementerOutput;
   const implementerAfter = after.implementerInput + after.implementerOutput;
   const escalationBefore = before.escalationInput + before.escalationOutput;
@@ -88,6 +99,18 @@ function tokenDelta(
   return {
     implementerTokens: implementerAfter - implementerBefore,
     escalationTokens: escalationAfter - escalationBefore,
+    implementerCacheReadTokens: clampNonNegative(
+      (after.implementerCacheRead ?? 0) - (before.implementerCacheRead ?? 0),
+    ),
+    implementerCacheCreateTokens: clampNonNegative(
+      (after.implementerCacheCreate ?? 0) - (before.implementerCacheCreate ?? 0),
+    ),
+    escalationCacheReadTokens: clampNonNegative(
+      (after.plannerCacheRead ?? 0) - (before.plannerCacheRead ?? 0),
+    ),
+    escalationCacheCreateTokens: clampNonNegative(
+      (after.plannerCacheCreate ?? 0) - (before.plannerCacheCreate ?? 0),
+    ),
   };
 }
 
@@ -105,6 +128,18 @@ function emitTaskTokens(
     method: usage.method,
     implementerTokens: usage.implementerTokens,
     escalationTokens: usage.escalationTokens,
+    ...(usage.implementerCacheReadTokens !== undefined && {
+      implementerCacheReadTokens: usage.implementerCacheReadTokens,
+    }),
+    ...(usage.implementerCacheCreateTokens !== undefined && {
+      implementerCacheCreateTokens: usage.implementerCacheCreateTokens,
+    }),
+    ...(usage.escalationCacheReadTokens !== undefined && {
+      escalationCacheReadTokens: usage.escalationCacheReadTokens,
+    }),
+    ...(usage.escalationCacheCreateTokens !== undefined && {
+      escalationCacheCreateTokens: usage.escalationCacheCreateTokens,
+    }),
     retryCount: usage.retryCount,
     ...(usage.tool !== undefined && { tool: usage.tool }),
     ...(usage.model !== undefined && { model: usage.model }),
@@ -163,6 +198,18 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     method,
     implementerTokens: delta.implementerTokens,
     escalationTokens: delta.escalationTokens,
+    ...(delta.implementerCacheReadTokens > 0 && {
+      implementerCacheReadTokens: delta.implementerCacheReadTokens,
+    }),
+    ...(delta.implementerCacheCreateTokens > 0 && {
+      implementerCacheCreateTokens: delta.implementerCacheCreateTokens,
+    }),
+    ...(delta.escalationCacheReadTokens > 0 && {
+      escalationCacheReadTokens: delta.escalationCacheReadTokens,
+    }),
+    ...(delta.escalationCacheCreateTokens > 0 && {
+      escalationCacheCreateTokens: delta.escalationCacheCreateTokens,
+    }),
     retryCount: retryCount ?? 0,
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),

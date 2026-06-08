@@ -26,7 +26,7 @@ function parseJsonLines(chunks: string[]): unknown[] {
 describe('createResponseWriter', () => {
   it('writes ack, error, status, and event responses as JSON lines', () => {
     const { chunks, stream } = createCaptureStream();
-    const writer = createResponseWriter(stream);
+    const writer = createResponseWriter({ stream, onClose: () => {} });
     const event = {
       type: 'warning',
       ts: 1,
@@ -50,7 +50,7 @@ describe('createResponseWriter', () => {
 
   it('keeps embedded newlines inside a single JSON response line', () => {
     const { chunks, stream } = createCaptureStream();
-    const writer = createResponseWriter(stream);
+    const writer = createResponseWriter({ stream, onClose: () => {} });
 
     writer.status({ message: 'line one\nline two' });
 

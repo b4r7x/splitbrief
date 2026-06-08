@@ -17,7 +17,7 @@ const preTaskEvent: EngineEvent = {
   type: 'task_started',
   ts: 1,
   phase: 'implementing',
-  taskId: taskId('T1'),
+  taskId: taskId('T001'),
   title: 'my task',
   index: 0,
   total: 1,

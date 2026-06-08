@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { createSandboxEnv } from './sandbox-env.js';
@@ -33,14 +33,15 @@ describe('createSandboxEnv', () => {
     expect(existsSync(join(root, 'home'))).toBe(true);
   });
 
-  itUnix('seeds the sandbox HOME with credential entries from the real HOME', async () => {
+  itUnix('does not symlink tool credential dirs into the sandbox HOME', async () => {
     const fakeHome = createTempDir('sandbox-real-home');
     const projectDir = createTempDir('sandbox-env-creds');
     dirs.push(fakeHome, projectDir);
 
     mkdirSync(join(fakeHome, '.claude'), { recursive: true });
+    mkdirSync(join(fakeHome, '.codex'), { recursive: true });
+    mkdirSync(join(fakeHome, '.aider'), { recursive: true });
     writeFileSync(join(fakeHome, '.claude', '.credentials.json'), '{"token":"secret"}');
-    writeFileSync(join(fakeHome, '.npmrc'), '//registry/:_authToken=abc\n');
 
     originalHome = process.env.HOME;
     process.env.HOME = fakeHome;
@@ -48,10 +49,27 @@ describe('createSandboxEnv', () => {
     const env = await createSandboxEnv(projectDir);
 
     const sandboxHome = env.HOME as string;
-    expect(readFileSync(join(sandboxHome, '.claude', '.credentials.json'), 'utf-8')).toBe(
-      '{"token":"secret"}',
-    );
-    expect(readFileSync(join(sandboxHome, '.npmrc'), 'utf-8')).toBe('//registry/:_authToken=abc\n');
+    expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
+    expect(existsSync(join(sandboxHome, '.codex'))).toBe(false);
+    expect(existsSync(join(sandboxHome, '.aider'))).toBe(false);
+  });
+
+  itUnix('does not seed writable credential files into the sandbox HOME', async () => {
+    const fakeHome = createTempDir('sandbox-real-home');
+    const projectDir = createTempDir('sandbox-env-no-creds');
+    dirs.push(fakeHome, projectDir);
+
+    writeFileSync(join(fakeHome, '.npmrc'), '//registry/:_authToken=abc\n');
+    writeFileSync(join(fakeHome, '.netrc'), 'machine example.com login user password pass\n');
+
+    originalHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+
+    const env = await createSandboxEnv(projectDir);
+
+    const sandboxHome = env.HOME as string;
+    expect(existsSync(join(sandboxHome, '.npmrc'))).toBe(false);
+    expect(existsSync(join(sandboxHome, '.netrc'))).toBe(false);
   });
 
   itUnix('does not fail when the real HOME has no credential entries', async () => {

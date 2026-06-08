@@ -8,6 +8,7 @@
   },
   "files": [
     "dist/",
+    "docs/",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -35,7 +36,7 @@
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
     "knip": "knip",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run check:invariants",
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run check:invariants",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

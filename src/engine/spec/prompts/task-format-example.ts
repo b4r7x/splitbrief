@@ -52,6 +52,8 @@ Existing codebase pattern or exact snippet the implementer should follow.
 - Concrete change this brief is allowed to make
 **Out of bounds:**
 - Adjacent change the implementer must NOT make
+**Approved out of bounds:**
+- Intentional exception paths that tiered approval may allow
 
 ### Escalation
 - Stop and ask when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.

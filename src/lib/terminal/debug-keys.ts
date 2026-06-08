@@ -1,21 +1,61 @@
-import { appendFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { appendFileSync, lstatSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { confinedAppendFileSync, confinedEnsureDir } from '../confined-fs.js';
 
-const LOG_FILENAME = 'diptych-keys.log';
+export type KeyDebugLogTarget =
+  | { kind: 'project'; projectDir: string; relativeDir: string; filePrefix: string }
+  | { kind: 'temp'; filePrefix: string };
 
-let enabled: boolean | undefined;
+let enabled = false;
+let targetConfig: KeyDebugLogTarget | undefined;
+let logTarget:
+  | { kind: 'project'; projectDir: string; relativePath: string }
+  | { kind: 'temp'; absolutePath: string }
+  | undefined;
+
+export function configureKeyDebugLog(options: {
+  enabled: boolean;
+  target?: KeyDebugLogTarget | undefined;
+}): void {
+  enabled = options.enabled;
+  targetConfig = options.target;
+  logTarget = undefined;
+}
 
 export function isKeyDebugEnabled(): boolean {
-  if (enabled === undefined) {
-    const flag = process.env['DIPTYCH_DEBUG_KEYS'];
-    enabled = flag !== undefined && flag !== '' && flag !== '0' && flag !== 'false';
-  }
   return enabled;
 }
 
-export function keyLogPath(): string {
-  return join(tmpdir(), LOG_FILENAME);
+export function initKeyDebugLog(target = targetConfig): void {
+  if (!isKeyDebugEnabled()) return;
+  if (!target) return;
+  const suffix = randomBytes(8).toString('hex');
+  if (target.kind === 'project') {
+    const relativePath = join(target.relativeDir, `${target.filePrefix}-${suffix}.log`);
+    confinedEnsureDir(target.projectDir, target.relativeDir);
+    logTarget = { kind: 'project', projectDir: target.projectDir, relativePath };
+    return;
+  }
+  logTarget = {
+    kind: 'temp',
+    absolutePath: join(tmpdir(), `${target.filePrefix}-${suffix}.log`),
+  };
+}
+
+export function keyLogPath(): string | undefined {
+  if (!logTarget) return undefined;
+  if (logTarget.kind === 'project') {
+    return join(logTarget.projectDir, logTarget.relativePath);
+  }
+  return logTarget.absolutePath;
+}
+
+export function resetKeyDebugForTests(): void {
+  enabled = false;
+  targetConfig = undefined;
+  logTarget = undefined;
 }
 
 function escapeBytes(text: string): string {
@@ -34,8 +74,23 @@ function escapeBytes(text: string): string {
 }
 
 function append(line: string): void {
+  if (!logTarget) initKeyDebugLog();
+  if (!logTarget) return;
+
   try {
-    appendFileSync(keyLogPath(), `${line}\n`, 'utf8');
+    if (logTarget.kind === 'project') {
+      confinedAppendFileSync(logTarget.projectDir, logTarget.relativePath, `${line}\n`);
+      return;
+    }
+
+    const path = logTarget.absolutePath;
+    try {
+      if (lstatSync(path).isSymbolicLink()) return;
+    } catch {
+      // File doesn't exist yet — ok to create
+    }
+    mkdirSync(tmpdir(), { recursive: true });
+    appendFileSync(path, `${line}\n`, { encoding: 'utf8', mode: 0o600 });
   } catch {
     // Best-effort diagnostic sink: a debug logger must never disrupt the TUI.
   }

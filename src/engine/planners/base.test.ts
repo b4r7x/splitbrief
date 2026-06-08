@@ -97,7 +97,7 @@ describe('createPlannerBase — phase artifact content', () => {
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       readPhaseOutput: (_filename, _resultText, _projectDir) => `---
-id: t1
+id: T001
 title: Test task
 action: create
 file: test.ts
@@ -120,7 +120,7 @@ A test task.
       callbacks: { onOutput: () => {} },
     });
     expect(result.phases).toHaveLength(1);
-    expect(result.phases![0]!.text).toContain('id: t1');
+    expect(result.phases![0]!.text).toContain('id: T001');
     expect(result.phases![0]!.rawOutput).toBe('raw quick output');
   });
 

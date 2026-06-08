@@ -94,7 +94,22 @@ function writeLiveSession(projectDir: string, sessionId: string): void {
 
 function writeConfigMarker(projectDir: string): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-  writeFileSync(join(projectDir, DIPTYCH_DIR, CONFIG_FILE), '# test config marker\n');
+  writeFileSync(
+    join(projectDir, DIPTYCH_DIR, CONFIG_FILE),
+    [
+      'version: 3',
+      'planner:',
+      '  kind: cli',
+      '  tool: claude-code',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  apiBase: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  contextLength: 32768',
+    ].join('\n'),
+    'utf-8',
+  );
 }
 
 function writeReadyReadinessFixtures(projectDir: string): void {
@@ -274,6 +289,9 @@ describe('start command — --worktree flag', () => {
   });
 
   it('persists detached CLI overrides in the server args artifact', async () => {
+    writeReadyReadinessFixtures(tmp);
+    process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+    process.env.PLANNER_KEY = 'test-planner-key';
     spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
 

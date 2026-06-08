@@ -1,5 +1,6 @@
 import { pluralize } from '../../utils/pluralize.js';
-import type { ReadinessReport, ReadinessSection, StartReadinessRecord } from './types.js';
+import { StartReadinessRecordSchema, type StartReadinessRecord } from '../schemas/readiness.js';
+import type { ReadinessReport, ReadinessSection } from './types.js';
 
 function renderSectionLines(section: ReadinessSection): string[] {
   const lines: string[] = [];
@@ -99,7 +100,7 @@ export function createStartReadinessRecord(report: ReadinessReport): StartReadin
       summary: check.summary,
     }));
 
-  return {
+  return StartReadinessRecordSchema.parse({
     type: 'start-readiness',
     generatedAt: report.generatedAt,
     status: report.status,
@@ -107,5 +108,5 @@ export function createStartReadinessRecord(report: ReadinessReport): StartReadin
     blockerCount: report.counts.blocker,
     warningCount: report.counts.warning,
     checks,
-  };
+  });
 }

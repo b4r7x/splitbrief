@@ -14,7 +14,7 @@ export function formatTaskStartedValue(
   if (event.implementerProfile) parts.push(`profile ${event.implementerProfile}`);
   if (event.contextFit) {
     parts.push(
-      `fit ${formatContextFit(event.contextFit, event.estimatedTokens, event.contextLength)}`,
+      `fit ${formatEventContextFit(event.contextFit, event.estimatedTokens, event.contextLength)}`,
     );
   }
   if (event.currentCodeContextMode && event.currentCodeContextMode !== 'none') {
@@ -51,7 +51,7 @@ export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>)
   return `validate ${stageText}${dur}`;
 }
 
-function formatContextFit(
+function formatEventContextFit(
   contextFit: TaskContextFit,
   estimatedTokens: number | undefined,
   contextLength: number | undefined,

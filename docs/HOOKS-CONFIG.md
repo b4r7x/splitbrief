@@ -116,7 +116,7 @@ Return value shape:
 | `{ kind: 'deny', message?: string }` | Block action (respects `on_failure`) |
 | `{ kind: 'warn', message?: string }` | Log warning, continue          |
 | `{ kind: 'crash', message: string }` | Treated as crash                |
-| Any other shape                     | Treated as `allow` (defensive)  |
+| Any other shape                     | Treated as `warn` with an unrecognized-outcome message |
 
 **Module loading:** Modules are loaded via ESM `import()` which is cached by URL — each module is loaded once per process lifetime. The default export must be a function. A missing default export or a non-function default fails with a clear load error and then follows `on_failure`.
 

@@ -322,7 +322,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
 2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the action. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `diptych continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so they do not prompt.
-3. Check `workflow.approve` in config; `workflow.approve: none` skips all workflow gates, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For action-level control, see the `approval.tiers` config block.
+3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For action-level control, see the `approval.tiers` config block.
 
 **Prevention:** Decide up front whether a run is interactive, `--json`, or `--rpc`; configure approval policy to match.
 
@@ -501,7 +501,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. For `.js`, ensure the file exports `export default function render(input) { ... }` (or async).
 2. For `.ts`, type the function with `RendererFunction` or annotate `input` and return; `.ts` also needs runtime loader support.
 3. Place the file at `.diptych/handoff-renderers/<target>.ts` (or `.js`). The loader scans that directory automatically — there is no `handoff.renderersDir` config field.
-4. Re-run `diptych handoff <target>`; loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
+4. Re-run `diptych handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in `.diptych/config.yaml`. Loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
 
 **Prevention:** Copy from a known-good renderer template when starting a new one rather than writing from scratch.
 
@@ -516,8 +516,8 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Run `diptych handoff --list` to enumerate known targets.
 2. If the name is a typo, correct it.
-3. If you want a new target, add a runtime-loadable custom renderer at `.diptych/handoff-renderers/<target>.ts` or `.js` — the loader picks it up automatically.
-4. Verify with `diptych handoff --list` that the new target now appears.
+3. If you want a new target, add a runtime-loadable custom renderer at `.diptych/handoff-renderers/<target>.ts` or `.js` — `diptych handoff --list` can discover it without trusting it.
+4. Execute it with `diptych handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in config.
 
 **Prevention:** Define custom renderers as soon as you adopt a new downstream consumer, and document the available targets in your team handbook.
 

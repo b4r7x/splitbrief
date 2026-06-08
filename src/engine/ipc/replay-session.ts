@@ -1,35 +1,36 @@
 import type { Socket } from 'node:net';
 import type { ServerMessage } from './protocol.js';
-import { readReplayEvents } from './replay.js';
+import { streamReplayEvents, summarizeReplayEvents } from './replay.js';
 
 type ReplaySessionOptions = {
   socket: Socket;
   sessionJsonlPath: string;
-  writeMessage: (socket: Socket, msg: ServerMessage) => void;
+  writeMessage: (socket: Socket, msg: ServerMessage) => boolean;
 };
 
-export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
+export async function replaySession(opts: ReplaySessionOptions): Promise<number | null> {
   const { socket, sessionJsonlPath, writeMessage } = opts;
   const replayStart = Date.now();
-  const result = await readReplayEvents({ sessionJsonlPath });
-  const { events: replayedEvents, firstTs, lastTs } = result;
-  const totalEvents = replayedEvents.length;
+  const { totalEvents, firstTs, lastTs } = await summarizeReplayEvents({ sessionJsonlPath });
 
   if (!socket.destroyed) {
-    writeMessage(socket, {
-      kind: 'event',
-      payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents },
-    });
+    if (
+      !writeMessage(socket, {
+        kind: 'event',
+        payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents },
+      })
+    )
+      return lastTs;
   }
 
   const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
   if (!socket.destroyed) {
-    writeMessage(socket, replayMeta);
+    if (!writeMessage(socket, replayMeta)) return lastTs;
   }
 
-  for (const event of replayedEvents) {
+  for await (const event of streamReplayEvents({ sessionJsonlPath })) {
     if (socket.destroyed) break;
-    writeMessage(socket, { kind: 'event', payload: event });
+    if (!writeMessage(socket, { kind: 'event', payload: event })) break;
   }
 
   const durationMs = Date.now() - replayStart;
@@ -43,4 +44,6 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
   if (!socket.destroyed) {
     writeMessage(socket, { kind: 'event', payload: completeEvent });
   }
+
+  return lastTs;
 }

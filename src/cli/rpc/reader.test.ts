@@ -6,7 +6,7 @@ import type { RpcCommand } from './types.js';
 const validCommands: RpcCommand[] = [
   { type: 'approve' },
   { type: 'reject' },
-  { type: 'reject', comment: 'needs changes' },
+  { type: 'regenerate', comment: 'needs changes' },
   { type: 'message', text: 'continue with the task' },
   { type: 'recovery', action: 'retry-same-worker' },
   { type: 'status' },

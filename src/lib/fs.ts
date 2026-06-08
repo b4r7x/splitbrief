@@ -8,10 +8,11 @@ import {
   chmodSync,
   lstatSync,
   renameSync,
+  realpathSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { readFile, lstat, writeFile, rename, chmod } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
 import { isENOENT } from './process/errors.js';
@@ -181,6 +182,19 @@ export function readFileSafe(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function readProjectFileConfined(projectDir: string, relativePath: string): string | null {
+  const fullPath = resolve(projectDir, relativePath);
+  try {
+    if (lstatSync(fullPath).isSymbolicLink()) return null;
+    const realProject = realpathSync(projectDir);
+    const realFile = realpathSync(fullPath);
+    if (!realFile.startsWith(realProject + sep) && realFile !== realProject) return null;
+  } catch {
+    return null;
+  }
+  return readFileSafe(fullPath);
 }
 
 export async function readFileSafeAsync(path: string): Promise<string | null> {

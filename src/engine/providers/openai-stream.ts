@@ -15,6 +15,7 @@ import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../constant
 import { attachImagesToLastUserMessage } from './image-attach.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { usesOpenAiMaxCompletionTokens } from './capability-inference.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -31,6 +32,7 @@ interface StreamChunk {
   usage?: {
     prompt_tokens?: number | null;
     completion_tokens?: number | null;
+    prompt_tokens_details?: { cached_tokens?: number | null } | null;
   } | null;
 }
 
@@ -49,13 +51,19 @@ type ChatMessage = {
   content: string | OpenAIContentPart[];
 };
 
+type OpenAIRequestMessage = {
+  role: 'developer' | 'system' | 'user' | 'assistant';
+  content: string | OpenAIContentPart[];
+};
+
 type StreamRequestBody = {
   model: string;
-  messages: ChatMessage[];
+  messages: OpenAIRequestMessage[];
   temperature: number;
   stream: true;
   stream_options: { include_usage: true };
   max_tokens?: number | undefined;
+  max_completion_tokens?: number | undefined;
   reasoning_effort?: EffortLevel | undefined;
 };
 
@@ -75,8 +83,37 @@ function textOnlyContent(content: string | OpenAIContentPart[]): string | OpenAI
   return content.filter((part) => part.type === 'text');
 }
 
-function toOpenAIMessage(message: ChatMessage): ChatCompletionMessageParam {
+function directOpenAIEndpoint(endpoint: StreamCompletionOptions['endpoint']): boolean {
+  if (endpoint?.provider !== 'openai') return false;
+  return endpoint.apiBase === undefined || endpoint.apiBase.includes('api.openai.com');
+}
+
+function reasoningModelRequiresDeveloperRole(
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+): boolean {
+  if (!directOpenAIEndpoint(endpoint)) return false;
+  const modelKey = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+  return /^(o[0-9]|gpt-[5-9])/i.test(modelKey);
+}
+
+function toProviderMessages(
+  messages: ChatMessage[],
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+): OpenAIRequestMessage[] {
+  const useDeveloperRole = reasoningModelRequiresDeveloperRole(endpoint, model);
+  return messages.map((message) =>
+    useDeveloperRole && message.role === 'system'
+      ? { role: 'developer', content: message.content }
+      : message,
+  );
+}
+
+function toOpenAIMessage(message: OpenAIRequestMessage): ChatCompletionMessageParam {
   switch (message.role) {
+    case 'developer':
+      return { role: 'developer', content: textOnlyContent(message.content) };
     case 'system':
       return { role: 'system', content: textOnlyContent(message.content) };
     case 'user':
@@ -95,9 +132,25 @@ function toOpenAIRequest(body: StreamRequestBody): ChatCompletionCreateParamsStr
     temperature: body.temperature,
     stream: true,
     stream_options: body.stream_options,
-    ...(body.max_tokens !== undefined ? { max_tokens: body.max_tokens } : {}),
+    ...(body.max_completion_tokens !== undefined
+      ? { max_completion_tokens: body.max_completion_tokens }
+      : body.max_tokens !== undefined
+        ? { max_tokens: body.max_tokens }
+        : {}),
     ...(body.reasoning_effort !== undefined ? { reasoning_effort: body.reasoning_effort } : {}),
   };
+}
+
+function tokenLimitFields(
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+  maxTokens: number | undefined,
+): Pick<StreamRequestBody, 'max_tokens' | 'max_completion_tokens'> {
+  if (maxTokens === undefined) return {};
+  if (endpoint && usesOpenAiMaxCompletionTokens(endpoint.provider, model, endpoint.apiBase)) {
+    return { max_completion_tokens: maxTokens };
+  }
+  return { max_tokens: maxTokens };
 }
 
 function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
@@ -109,6 +162,9 @@ function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
       ? {
           prompt_tokens: chunk.usage.prompt_tokens,
           completion_tokens: chunk.usage.completion_tokens,
+          ...(chunk.usage.prompt_tokens_details && {
+            prompt_tokens_details: chunk.usage.prompt_tokens_details,
+          }),
         }
       : null,
   };
@@ -151,11 +207,11 @@ export async function streamCompletion(
     stream = await client.chat.completions.create(
       {
         model,
-        messages: finalMessages,
+        messages: toProviderMessages(finalMessages, endpoint, model),
         temperature,
         stream: true,
         stream_options: { include_usage: true },
-        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+        ...tokenLimitFields(endpoint, model, maxTokens),
         ...(effort !== undefined ? { reasoning_effort: effort } : {}),
       },
       // Forwarded to fetch so an abort cancels the initial POST, not just the chunk loop.

@@ -85,6 +85,7 @@ describe('configStore.load', () => {
 
   it('applies implementer override to provider and model', () => {
     writeConfigYaml();
+    process.env.DEEPSEEK_API_KEY = 'test-key';
     configStore.load(tmpDir, { implementer: { tool: 'deepseek', model: 'deepseek-r1' } });
     const config = loadedConfig();
     expect(expectApi(config.implementer).provider).toBe('deepseek');

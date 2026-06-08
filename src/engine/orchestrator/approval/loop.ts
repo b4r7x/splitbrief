@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
@@ -21,11 +21,15 @@ type ApprovalLoopOptions = {
   state: WorkflowState;
   signal?: AbortSignal | undefined;
   persistTranscript: boolean;
+  specMetadata?: SpecMetadata | null | undefined;
 };
 
-export async function runApprovalLoop(
-  opts: ApprovalLoopOptions,
-): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
+export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
+  state: WorkflowState;
+  rejected: boolean;
+  regenerated: boolean;
+  aborted?: boolean | undefined;
+}> {
   const {
     type,
     filePath,
@@ -46,9 +50,9 @@ export async function runApprovalLoop(
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
 
   while (true) {
-    if (signal?.aborted) return { state, rejected: false, regenerated };
+    if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
     const result = await callbacks.onApprovalNeeded(type, filePath);
-    if (signal?.aborted) return { state, rejected: false, regenerated };
+    if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
     if (!result.approved && !result.comment) {
       state = transitionAndSave({ projectDir, sessionId }, state, { type: rejectType });
       publishPlannerStatus(bus, state, 'done');
@@ -83,10 +87,12 @@ export async function runApprovalLoop(
         },
       });
     } catch (err) {
-      if (signal?.aborted || isAbortError(err)) return { state, rejected: false, regenerated };
+      if (signal?.aborted || isAbortError(err))
+        return { state, rejected: false, regenerated, aborted: true };
       throw err;
     }
     state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
+    writeSpecFile({ projectDir, sessionId }, filename, regenResult.text, opts.specMetadata ?? null);
     regenerated = true;
     bus.publish({
       type: regeneratedEvent,

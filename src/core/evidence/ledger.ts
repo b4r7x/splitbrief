@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { closeSync, existsSync, openSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { Task } from '../schemas/task.js';
 import type { WorkflowMode } from '../schemas/enums.js';
 import type {
@@ -9,7 +10,7 @@ import type {
 } from '../schemas/evidence.js';
 import { EvidenceLedgerSchema } from '../schemas/evidence.js';
 import { EVIDENCE_FILE, sessionDir } from '../paths.js';
-import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
+import { ensureSecureDir, readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { nowIso } from '../../utils/format-time.js';
 
 function buildExpectedEvidence(task: Task): string[] {
@@ -149,15 +150,78 @@ export function evidenceLedgerPath(projectDir: string, sessionId: string): strin
   return join(sessionDir(projectDir, sessionId), EVIDENCE_FILE);
 }
 
+const LEDGER_LOCK_SUFFIX = '.lock';
+const LEDGER_LOCK_MAX_ATTEMPTS = 100;
+const LEDGER_LOCK_SPIN_MS = 5;
+
+function evidenceLedgerLockPath(ledgerPath: string): string {
+  return `${ledgerPath}${LEDGER_LOCK_SUFFIX}`;
+}
+
+function acquireEvidenceLedgerLock(lockPath: string): void {
+  ensureSecureDir(dirname(lockPath));
+  for (let attempt = 0; attempt < LEDGER_LOCK_MAX_ATTEMPTS; attempt++) {
+    try {
+      const fd = openSync(lockPath, 'wx');
+      closeSync(fd);
+      return;
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+      if (code !== 'EEXIST') throw err;
+      const deadline = Date.now() + LEDGER_LOCK_SPIN_MS;
+      while (Date.now() < deadline) {
+        // spin until retry or timeout slice elapses
+      }
+    }
+  }
+  throw new Error(`timed out acquiring evidence ledger lock: ${lockPath}`);
+}
+
+function releaseEvidenceLedgerLock(lockPath: string): void {
+  try {
+    if (existsSync(lockPath)) unlinkSync(lockPath);
+  } catch {
+    // best-effort unlock
+  }
+}
+
+function withEvidenceLedgerLock<T>(ledgerPath: string, fn: () => T): T {
+  const lockPath = evidenceLedgerLockPath(ledgerPath);
+  acquireEvidenceLedgerLock(lockPath);
+  try {
+    return fn();
+  } finally {
+    releaseEvidenceLedgerLock(lockPath);
+  }
+}
+
+function writeEvidenceLedgerUnlocked(ledgerPath: string, ledger: EvidenceLedger): void {
+  writeSecureFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+}
+
 export function writeEvidenceLedger(
   projectDir: string,
   sessionId: string,
   ledger: EvidenceLedger,
 ): void {
-  writeSecureFile(
-    evidenceLedgerPath(projectDir, sessionId),
-    `${JSON.stringify(ledger, null, 2)}\n`,
-  );
+  const ledgerPath = evidenceLedgerPath(projectDir, sessionId);
+  withEvidenceLedgerLock(ledgerPath, () => {
+    writeEvidenceLedgerUnlocked(ledgerPath, ledger);
+  });
+}
+
+export function mutateEvidenceLedger(
+  projectDir: string,
+  sessionId: string,
+  mutate: (ledger: EvidenceLedger | null) => EvidenceLedger,
+): EvidenceLedger {
+  const ledgerPath = evidenceLedgerPath(projectDir, sessionId);
+  return withEvidenceLedgerLock(ledgerPath, () => {
+    const current = readEvidenceLedger(projectDir, sessionId);
+    const updated = mutate(current);
+    writeEvidenceLedgerUnlocked(ledgerPath, updated);
+    return updated;
+  });
 }
 
 export function readEvidenceLedger(projectDir: string, sessionId: string): EvidenceLedger | null {

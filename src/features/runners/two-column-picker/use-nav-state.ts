@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
-import { filterByFields, type FilterableItem } from '../filtering.js';
+import { filterByFields, type FilterableItem } from '../../../components/pickers/filtering.js';
 import { clampIndex } from '../../../utils/indexing.js';
 import { handleKeyboardInput } from './keyboard.js';
 import { useColumnState } from './use-column-state.js';

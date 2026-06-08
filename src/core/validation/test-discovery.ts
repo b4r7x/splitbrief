@@ -1,5 +1,17 @@
 import { existsSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
+import { isPathConfined } from '../../lib/path-confinement.js';
+
+export function isTestPatternSafe(pattern: string): boolean {
+  if (!pattern || pattern.includes('..')) return false;
+  if (pattern.includes('/') || pattern.includes('\\')) return false;
+  return true;
+}
+
+function isCandidateConfined(candidate: string, projectDir: string): boolean {
+  const rel = relative(projectDir, candidate);
+  return isPathConfined(rel, projectDir);
+}
 
 function buildDefaultTsCandidates(name: string, dir: string, projectDir: string): string[] {
   return [
@@ -31,6 +43,8 @@ export function findAffectedTestFile(
   projectDir: string,
   testPattern?: string,
 ): string | null {
+  if (testPattern && !isTestPatternSafe(testPattern)) return null;
+
   const dir = dirname(taskFile);
   const name = basename(taskFile).replace(/\.\w+$/, '');
 
@@ -39,6 +53,7 @@ export function findAffectedTestFile(
     : buildDefaultTsCandidates(name, dir, projectDir);
 
   for (const candidate of candidates) {
+    if (!isCandidateConfined(candidate, projectDir)) continue;
     if (existsSync(candidate)) return candidate;
   }
 

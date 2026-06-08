@@ -8,6 +8,7 @@ import type { Screen } from '../../core/navigation/types.js';
 
 export type WorkflowAttach = {
   sockPath: string;
+  authToken: string;
 };
 
 type WorkflowPayload = {

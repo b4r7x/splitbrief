@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createCassetteRecorder } from '../testing/helpers/cassette/recorder.js';
-import { createCassetteReplayer, loadCassette } from '../testing/helpers/cassette/replayer.js';
-import type { Cassette } from '../testing/helpers/cassette/types.js';
+import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
+import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';
+import type { Cassette } from '#testing/helpers/cassette/types.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';
 import { generateReport } from './report.js';
 import { buildEvalConfig, copyScenarioFixture } from './runner.js';
