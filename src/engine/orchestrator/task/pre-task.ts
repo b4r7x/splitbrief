@@ -92,11 +92,13 @@ export async function runPreTaskHooksAndPublish(opts: {
 
   let taskStartSnapshot: ChangedFilesSnapshot;
   try {
-    taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    taskStartSnapshot = await getChangedFilesSnapshot(projectDir, (dir) =>
+      publishWarning({ bus: wctx.bus, phase: state.phase }, `embedded repository ${dir} ignored`),
+    );
   } catch (err) {
     publishError(
       { bus: wctx.bus, phase: state.phase },
-      `Task blocked by approval gate: ${toErrorMessage(err)}`,
+      `Failed to capture task baseline snapshot: ${toErrorMessage(err)}`,
     );
     return { proceed: false, state };
   }

@@ -1,4 +1,4 @@
-# Cost-Aware Implementer Direction
+# Cost-aware implementer direction
 
 > Status: product direction, implementation guidance.
 > Last updated: 2026-04-28.
@@ -7,7 +7,7 @@ This document is the source of truth for cost-aware implementer work. Other docs
 
 ## Purpose
 
-Diptych is not becoming a plan archive, kanban board, generic multi-agent platform, or same-checkout parallel write scheduler. The core product direction is narrower:
+Diptych's non-goals are the canonical NOT-list in [VISION.md](./VISION.md). The core product direction is narrower:
 
 ```text
 expensive planner thinks clearly
@@ -18,7 +18,7 @@ expensive planner thinks clearly
 
 The value is cost control without giving up planning quality. A user should pay the expensive model for the parts where it matters: research, planning, ambiguity reduction, task decomposition, review, and escalation. Mechanical implementation should be delegated to cheaper models or local tools whenever the task is small enough and sufficiently specified.
 
-## Product Identity
+## Product identity
 
 Diptych is a cost-aware planner-to-implementer orchestrator.
 
@@ -36,29 +36,21 @@ It owns:
 - evidence and drift reporting,
 - TUI visibility.
 
-It does not own:
-
-- a long-lived project-management database,
-- a separate plan archive or plan-management system,
-- kanban workflows,
-- cross-plan dependency management,
-- arbitrary agent swarms,
-- generalized MCP tool execution,
-- replacing the capabilities of Claude Code, Codex, OpenCode, Kilo, or Copilot.
+It does not own a long-lived project-management database or generalized MCP tool execution, and it does not replace the capabilities of Claude Code, Codex, OpenCode, Kilo, or Copilot. The full non-goals list lives in [VISION.md](./VISION.md).
 
 The core sentence is:
 
 > Diptych pays a strong planner to decide what should happen, then feeds cheap workers small safe chunks and stops before overwriting the user.
 
-## Sessions, Not Plan Archives
+## Sessions, not plan archives
 
 Durable workflow sessions are core product surface. Users should be able to resume work, inspect session history, browse/filter/search previous sessions, and review the artifacts a run produced.
 
 A session is an execution record for one workflow. It may contain `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, drift reports, checkpoints, and runner transcripts. These artifacts support resume, review, audit, handoff, and final validation.
 
-A session history is not a plan archive. Diptych should not add named saved-plan libraries, cross-plan dependency tracking, kanban boards, plan cloning, or a separate plan-management system. Plan Review is scoped to the current session's Task Briefs and execution readiness.
+A session history is not a plan archive (see the non-goals list in [VISION.md](./VISION.md)). Plan Review is scoped to the current session's Task Briefs and execution readiness.
 
-## Planner Role
+## Planner role
 
 The planner is the expensive, high-quality model or tool. It should be used when quality materially changes the result:
 
@@ -73,7 +65,7 @@ The planner is the expensive, high-quality model or tool. It should be used when
 
 The planner should not be used for routine mechanical edits when a cheaper implementer can do the work safely.
 
-## Implementer Role
+## Implementer role
 
 The implementer is the cheaper execution role. It may be:
 
@@ -83,11 +75,11 @@ The implementer is the cheaper execution role. It may be:
 - a shell or agent subprocess,
 - an optional configured pool of implementer profiles.
 
-The important point is that this is still one role: implementer. A pool does not mean diptych becomes a swarm manager. A pool means diptych can choose the cheapest capable executor for each Task Brief.
+The important point is that this is still one role: implementer. A pool means diptych can choose the cheapest capable executor for each Task Brief — it is profile selection, not the swarm/multi-agent behavior ruled out in [VISION.md](./VISION.md).
 
 The implementer should receive a fresh, bounded prompt per task. It should not receive the whole plan, whole transcript, or every previous task unless the current brief explicitly depends on that context.
 
-## Fresh Context Per Task
+## Fresh context per task
 
 Local models often have limited context windows. A 32k context model cannot safely execute a 20-task plan if every task is appended to one long chat.
 
@@ -117,7 +109,7 @@ If a task does not fit the selected worker's context window, diptych should not 
 
 Large prompts are a planning failure, not a reason to make every worker remember the whole session.
 
-## Implementer Pool
+## Implementer pool
 
 The implemented optional profile shape is:
 
@@ -185,7 +177,7 @@ Not allowed in the first implementation:
 
 If parallel execution is later considered, it should be a separate design using worktrees or equivalent isolated sandboxes, and only for tasks with non-overlapping file ownership. Do not frame parallel writes as near-term work.
 
-## User Edits
+## User edits
 
 The user can edit files manually while diptych is planning or implementing. Those edits are not noise. They are source-of-truth changes made by the owner of the repository.
 
@@ -229,7 +221,7 @@ Checkpoint restore must be hash-guarded so later user edits are not overwritten.
 
 In this repository, agents must never run `git add`, `git stage`, or `git commit`. Product support for commits may exist, but this codebase's working rule is manual commits only. Docs should keep this distinction explicit.
 
-## Tool Calls And MCP
+## Tool calls and MCP
 
 Tools belong to the underlying runner. Truth belongs to diptych.
 
@@ -242,7 +234,7 @@ That means:
 
 MCP is useful as a way for external tools to read diptych session artifacts. It should not become the main execution path.
 
-## TUI Direction
+## TUI direction
 
 The TUI should make the invisible orchestration understandable.
 
@@ -255,7 +247,7 @@ The important screens are:
 5. Cost and context posture.
 6. Final review and drift/evidence summary.
 
-The TUI should not become a kanban board. It should answer practical questions:
+The TUI stays within the product boundary in [VISION.md](./VISION.md). It should answer practical questions:
 
 - What is the planner doing?
 - What will the implementer receive?
@@ -266,7 +258,7 @@ The TUI should not become a kanban board. It should answer practical questions:
 - What test or validation proves this task is done?
 - What will happen if I approve, retry, skip, or rebase?
 
-## Cleanup Direction
+## Cleanup direction
 
 Existing implementation has valuable pieces, but docs and product surface should be tightened around the core loop.
 
@@ -287,7 +279,7 @@ Lower-confidence cleanup that should not happen blindly:
 - Do not delete handoff packs until the product decides whether external runner handoff remains a useful escape hatch.
 - Do not remove the plan editor just because it is complex; first simplify its purpose around "edit Task Briefs before cheap tokens are spent."
 
-## Implemented Build Order
+## Implemented build order
 
 The 2026-04-28 implementation followed this order:
 
@@ -300,7 +292,7 @@ The 2026-04-28 implementation followed this order:
 7. Improve Plan Review v2 to show cost/context/risk and edit operations.
 8. Cleanup docs and tests that no longer match the direction.
 
-## Success Criteria
+## Success criteria
 
 This direction is successful when:
 

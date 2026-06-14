@@ -3,7 +3,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { setClearQueueHandler, clearAllHandlers } from '../features/workflow/handlers.js';
+import type { RewindTarget } from '../core/state/build-rewind-action.js';
+import {
+  setClearQueueHandler,
+  setRewindHandler,
+  clearAllHandlers,
+} from '../features/workflow/handlers.js';
 import { configStore } from '../stores/project/config.js';
 import { buildCommandContext } from './command-context.js';
 
@@ -38,5 +43,23 @@ describe('buildCommandContext', () => {
     setClearQueueHandler(() => 2);
 
     expect(buildCommandContext({ exit: () => {} }).clearQueue()).toBe(2);
+  });
+
+  it('routes rewind requests to the live workflow handler', () => {
+    const requests: RewindTarget[] = [];
+    setRewindHandler((request) => requests.push(request));
+
+    buildCommandContext({ exit: () => {} }).requestRewind('spec', 'redo');
+
+    expect(requests).toEqual([{ target: 'spec', comment: 'redo' }]);
+  });
+
+  it('routes task redo through the live rewind handler', () => {
+    const requests: RewindTarget[] = [];
+    setRewindHandler((request) => requests.push(request));
+
+    buildCommandContext({ exit: () => {} }).requestTaskRedo('T-1');
+
+    expect(requests).toEqual([{ target: 'task', taskId: 'T-1' }]);
   });
 });

@@ -19,6 +19,7 @@ const PLANNER_COST_PHASES: ReadonlySet<Phase> = new Set([
   'constitution-check',
   'reviewing-plan',
   'reviewing-briefs',
+  'analyzing',
 ]);
 
 const IMPLEMENTER_COST_PHASES: ReadonlySet<Phase> = new Set([
@@ -81,7 +82,10 @@ export function canRedoTask(phase: Phase): boolean {
   return isImplementerPhase(phase);
 }
 
-// awaitingContinue overrides phase check: workflow paused mid-turn is always resumable.
+// awaitingContinue overrides the phase check for a workflow paused mid-turn, but
+// never for a terminal phase: a completed (or idle) session with a stale flag must
+// stay non-resumable so `continue` cannot re-run it and flip its summary status.
 export function isResumable(state: WorkflowState): boolean {
+  if (isTerminalPhase(state.phase)) return false;
   return state.awaitingContinue || RESUMABLE_PHASES.has(state.phase);
 }

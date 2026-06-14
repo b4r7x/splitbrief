@@ -179,4 +179,26 @@ describe('buildRepoMap', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('recovers from a corrupt cache db, warns via onWarn, and still builds the map', async () => {
+    const dir = createTempDir('repomap-corrupt-cache');
+    try {
+      writeFileSync(join(dir, 'entry.ts'), 'export function entry() { return "ok"; }');
+      mkdirSync(join(dir, '.diptych'), { recursive: true });
+      writeFileSync(join(dir, '.diptych', 'repomap.sqlite'), 'torn header garbage'.repeat(16));
+
+      const warnings: string[] = [];
+      const out = await buildRepoMap(dir, {
+        tokenBudget: 5000,
+        onWarn: (m) => warnings.push(m),
+      });
+
+      expect(out).toContain('entry.ts:');
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('corrupt');
+      expect(existsSync(join(dir, '.diptych', 'repomap.sqlite'))).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });

@@ -17,6 +17,7 @@ export type ValidateAndCommitOptions = {
 
 export async function validateAndCommit(opts: ValidateAndCommitOptions) {
   const { ctx, task, state, method, transitionType, retryCount, commitSuffix } = opts;
+  const { preApprovedChangedFiles } = opts;
   if (ctx.signal?.aborted) {
     return { state, completed: false, validationResults: [], blockedReason: 'aborted' };
   }
@@ -46,6 +47,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     retryCount,
     implementerProfile: ctx.implementerProfile,
     results: validationResults,
+    taskChangedFiles: preApprovedChangedFiles,
   });
   return { ...result, validationResults };
 }

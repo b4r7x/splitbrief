@@ -2,11 +2,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
-import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
+import type { WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
+import type { EngineEvent } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishCostPrediction, publishWarning } from '../events.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import { decideCostGate } from '../cost-gate.js';
 import { predictCost } from '../budget/cost-prediction.js';
 import { estimateDeterministicCost } from '../budget/estimate.js';
@@ -18,16 +20,6 @@ import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { transitionAndSave } from '../state-ops.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
-
-export function applyPostPlanDrain(opts: {
-  ctx: WorkflowPersistenceContext;
-  state: WorkflowState;
-  setTrackedState: (s: WorkflowState) => void;
-}): WorkflowState {
-  // Post-plan has no planner consumer; leave queued messages for final-review/task drains.
-  void opts;
-  return opts.state;
-}
 
 export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
@@ -48,7 +40,7 @@ function isInterruptedPlanningTurn(state: WorkflowState): boolean {
 
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
-): Promise<{ state: WorkflowState; cancelled: boolean }> {
+): Promise<{ state: WorkflowState; cancelled: boolean; failed: boolean }> {
   const { wctx, savedState, selectedSkills, phaseTimings, startTime, setTrackedState } = opts;
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, planner } = wctx;
@@ -62,6 +54,26 @@ export async function runPlanningPhases(
   }
 
   if (shouldRunPlanning) {
+    if (config.hooks) {
+      const prePlanPayload: EngineEvent = {
+        type: 'workflow_started',
+        ts: Date.now(),
+        phase: state.phase,
+        feature: state.feature,
+      };
+      const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, {
+        projectDir,
+        sessionId,
+      });
+      if (!pre.allow) {
+        publishWarning(
+          { bus: wctx.bus, phase: state.phase },
+          `pre_planning blocked: ${pre.reason ?? 'hook denied'}`,
+        );
+        return { state, cancelled: true, failed: false };
+      }
+    }
+
     const plannerFeature = wctx.plannerContext
       ? `${state.feature}\n\n<user-context>\n${wctx.plannerContext}\n</user-context>`
       : state.feature;
@@ -86,10 +98,10 @@ export async function runPlanningPhases(
     state = planning.state;
     setTrackedState(state);
     phaseTimings.planning = Date.now() - startTime;
-    if (planning.cancelled) return { state, cancelled: true };
+    if (planning.cancelled) return { state, cancelled: true, failed: planning.failed ?? false };
   }
 
-  return { state, cancelled: false };
+  return { state, cancelled: false, failed: false };
 }
 
 export type RunTasksAndReviewOptions = {
@@ -127,6 +139,9 @@ function predictTasksCost(opts: {
         opts.wctx.projectDir,
         opts.state.discoveredValidation?.language,
       ),
+      ...(opts.wctx.detectedContextLength !== undefined && {
+        detectedContextLength: opts.wctx.detectedContextLength,
+      }),
     }),
     ...(opts.plannerEstimateReview !== undefined && {
       plannerEstimateReview: opts.plannerEstimateReview,
@@ -142,34 +157,28 @@ export async function runTasksAndReview(
   let { state } = opts;
   const { callbacks } = wctx;
 
-  if (state.tasks.length > 0) {
+  // On resume the task loop continues from currentTaskIndex, so the pre-task cost
+  // gauntlet must predict over the remaining tasks only and must not re-gate, re-run
+  // the paid estimate review, or auto-split work that is already in flight.
+  const isResume = state.currentTaskIndex > 0;
+  const gateTasks = isResume ? state.tasks.slice(state.currentTaskIndex) : state.tasks;
+
+  if (gateTasks.length > 0) {
     let prediction: CostPrediction = predictTasksCost({
-      tasks: state.tasks,
+      tasks: gateTasks,
       summaryBase,
       wctx,
       state,
     });
-    if (wctx.config.plannerEstimateReview) {
+    if (wctx.config.plannerEstimateReview && !isResume) {
       prediction.plannerEstimateReview = runningPlannerEstimateReview();
     }
     publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
 
-    const gateDecision = decideCostGate({
-      mode: wctx.config.workflow?.mode,
-      prediction,
-      costGateEnabled: wctx.config.workflow.costGate !== false,
-    });
-    if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
-      const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
-      if (!approved) {
-        return {
-          summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-          completed: false,
-        };
-      }
-    }
-
-    if (wctx.config.plannerEstimateReview && prediction.deterministic) {
+    // The estimate review is an extra paid planner call whose output recommends a user
+    // decision, so it must finish before the cost gate it informs: its classification and
+    // recommendedUserDecision ride along in the prediction handed to onCostApprovalNeeded.
+    if (!isResume && wctx.config.plannerEstimateReview && prediction.deterministic) {
       const reviewed = await reviewPlannerEstimate({
         planner: wctx.planner,
         projectDir: wctx.projectDir,
@@ -188,7 +197,30 @@ export async function runTasksAndReview(
       publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
     }
 
-    if (prediction.deterministic) {
+    if (!isResume) {
+      const gateDecision = decideCostGate({
+        mode: state.mode ?? wctx.config.workflow?.mode,
+        prediction,
+        costGateEnabled: wctx.config.workflow.costGate !== false,
+      });
+      if (gateDecision === 'skip-unknown-cost') {
+        publishWarning(
+          { bus: wctx.bus, phase: state.phase },
+          'cost gate skipped: implementer pricing unknown',
+        );
+      }
+      if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
+        const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
+        if (!approved) {
+          return {
+            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+            completed: false,
+          };
+        }
+      }
+    }
+
+    if (!isResume && prediction.deterministic) {
       const split = autoSplitOverflowTasks({
         enabled: wctx.config.autoSplitOverflow,
         tasks: state.tasks,

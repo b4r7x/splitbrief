@@ -200,6 +200,82 @@ describe('createApiPlanner', () => {
     });
   });
 
+  it('sends a coordinated thinking + max_tokens body for an effort-capable Anthropic planner', async () => {
+    const cfg = makeApiPlannerConfig('anthropic');
+    cfg.planner.model = 'claude-sonnet-4-6';
+    cfg.planner.effort = 'high';
+    const planner = createApiPlanner(cfg);
+
+    await planner.regenerate({
+      prompt: 'the prompt',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(receivedBodies).toHaveLength(1);
+    const body = receivedBodies[0] as unknown as {
+      thinking?: { type: string; budget_tokens: number };
+      max_tokens?: number;
+    };
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 24000 });
+    expect(typeof body.max_tokens).toBe('number');
+    expect(body.max_tokens!).toBeGreaterThan(body.thinking!.budget_tokens);
+  });
+
+  it('derives max_tokens from contextLength instead of the 4096 default', async () => {
+    const cfg = makeApiPlannerConfig('anthropic');
+    cfg.planner.contextLength = 32000;
+    const planner = createApiPlanner(cfg);
+
+    await planner.regenerate({
+      prompt: 'the prompt',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(receivedBodies).toHaveLength(1);
+    const body = receivedBodies[0] as unknown as { max_tokens?: number };
+    expect(typeof body.max_tokens).toBe('number');
+    expect(body.max_tokens!).toBeGreaterThan(4096);
+  });
+
+  it.each([
+    ['anthropic'],
+    ['ollama'],
+  ] as const)('planner.contextLength drives the derived max_tokens for the %s api kind', async (provider) => {
+    const cfg = makeApiPlannerConfig(provider);
+    cfg.planner.contextLength = 5000;
+    const planner = createApiPlanner(cfg);
+
+    await planner.regenerate({
+      prompt: 'the prompt',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(receivedBodies).toHaveLength(1);
+    const body = receivedBodies[0] as unknown as { max_tokens?: number };
+    // contextLength 5000 minus the tiny prompt stays under the 8192 output cap,
+    // so the budget tracks the configured window rather than a hard-coded default.
+    expect(body.max_tokens).toBeLessThan(5000);
+    expect(body.max_tokens!).toBeGreaterThan(4096);
+  });
+
+  it('strips effort for an Anthropic model that does not support reasoning', async () => {
+    const cfg = makeApiPlannerConfig('anthropic');
+    cfg.planner.effort = 'high';
+    const planner = createApiPlanner(cfg);
+
+    await planner.regenerate({
+      prompt: 'the prompt',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(receivedBodies).toHaveLength(1);
+    expect(receivedBodies[0]).not.toHaveProperty('thinking');
+  });
+
   it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
 
@@ -268,5 +344,44 @@ describe('createApiPlanner', () => {
     const cfg = makeApiPlannerConfig('custom-unknown-provider');
     cfg.planner.model = 'auto';
     expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
+  });
+
+  it('unavailabilityReason reports a missing key for a remote provider with no key configured', async () => {
+    delete process.env['OPENROUTER_API_KEY'];
+    const cfg: Config = {
+      ...makeApiPlannerConfig('openrouter'),
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        model: 'test-model',
+        apiBase: 'https://openrouter.ai/api/v1',
+      },
+    };
+    const planner = createApiPlanner(cfg);
+
+    expect(await planner.isAvailable()).toBe(false);
+    expect(planner.unavailabilityReason?.()).toBe('no API key is configured');
+  });
+
+  it('unavailabilityReason surfaces the tracked HTTP status for an auth-rejected key', async () => {
+    server.removeAllListeners('request');
+    server.on('request', (_req, res) => {
+      res.writeHead(401);
+      res.end();
+    });
+    const cfg = makeApiPlannerConfig('openrouter');
+    const planner = createApiPlanner(cfg);
+
+    expect(await planner.isAvailable()).toBe(false);
+    expect(planner.unavailabilityReason?.()).toBe('HTTP 401');
+  });
+
+  it('unavailabilityReason surfaces a cause when the endpoint is unreachable', async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
+
+    expect(await planner.isAvailable()).toBe(false);
+    const reason = planner.unavailabilityReason?.();
+    expect(reason).toBeTruthy();
   });
 });

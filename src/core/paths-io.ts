@@ -1,5 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 import { readPackageJson } from './project-meta.js';
 import {
   DIPTYCH_DIR,
@@ -17,8 +16,9 @@ import {
   confinedReadFile,
   confinedWriteFile,
 } from '../lib/confined-fs.js';
-import { assertPathConfined, assertWritablePathConfined } from '../lib/path-confinement.js';
+import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
+import { nowIso } from '../utils/format-time.js';
 import { error, matches } from '../utils/error.js';
 import type { WorkflowMode } from './schemas/enums.js';
 
@@ -37,7 +37,7 @@ let cachedVersion: string | null = null;
 
 function readPackageVersion(): string {
   try {
-    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const root = join(import.meta.dirname, '..', '..');
     const parsed = readPackageJson(root);
     return typeof parsed?.version === 'string' ? parsed.version : '0.0.0';
   } catch {
@@ -61,6 +61,11 @@ export type SpecMetadata = {
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
 
+function hasFileFrontmatter(content: string): boolean {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  return match?.[1]?.includes('generated_by:') ?? false;
+}
+
 export function buildSpecFrontmatter(opts: SpecMetadata): string {
   const plannerLine = opts.plannerModel
     ? `planner: ${opts.plannerTool} (${opts.plannerModel})`
@@ -74,7 +79,7 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     plannerLine,
     implementerLine,
     `mode: ${opts.mode}`,
-    `created_at: ${new Date().toISOString()}`,
+    `created_at: ${nowIso()}`,
     '---',
     '',
   ];
@@ -111,7 +116,7 @@ export function writeSpecFile(
   validateFilename(filename);
   ensureSessionDir(ref.projectDir, ref.sessionId);
   let finalContent = content;
-  if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
+  if (metadata && FRONTMATTER_FILES.has(filename) && !hasFileFrontmatter(content)) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
   confinedWriteFile(ref.projectDir, specFileRelativePath(ref.sessionId, filename), finalContent);
@@ -136,7 +141,7 @@ export function readSpecFileOrEmpty(ref: SpecFileRef, filename: string): string 
 
 export function validateTaskPath(projectDir: string, filePath: string): string {
   try {
-    assertWritablePathConfined(filePath, projectDir);
+    assertModelWritablePathConfined(filePath, projectDir);
   } catch (err) {
     throw pathError.escapesProject(filePath, err);
   }

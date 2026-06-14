@@ -1,5 +1,5 @@
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { tokensStore, type PerTaskTokens } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -9,6 +9,8 @@ import type { ModelCacheAccessor } from '../../../engine/providers/model/resolut
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
+import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { PricingState } from '../layout/cost-chrome.js';
 
 interface CostStats {
@@ -64,7 +66,10 @@ export function formatSpentText(
   costBreakdown: CostBreakdown | null,
   pricingState: PricingState,
 ): string {
-  if (pricingState === 'priced') return formatCost(costBreakdown?.totalActualCost ?? 0);
+  if (pricingState === 'priced') {
+    const cost = formatCost(costBreakdown?.totalActualCost ?? 0);
+    return costBreakdown?.isTotalActualCostKnown === false ? `${cost} + unknown` : cost;
+  }
   if (pricingState === 'mixed')
     return `${formatCost(costBreakdown?.totalActualCost ?? 0)} + unpriced`;
   return pricingState;
@@ -87,9 +92,29 @@ export function formatCostDisplay(
   };
 }
 
+function reconstructTaskBreakdowns(perTask: Record<string, PerTaskTokens>): TaskTokenUsage[] {
+  const breakdowns: TaskTokenUsage[] = [];
+  for (const [id, record] of Object.entries(perTask)) {
+    for (const attempt of record.attempts ?? []) {
+      breakdowns.push({
+        taskId: taskId(id),
+        taskTitle: record.title,
+        method: attempt.method,
+        implementerTokens: attempt.implementerTokens,
+        escalationTokens: attempt.escalationTokens,
+        retryCount: attempt.retryCount,
+        ...(attempt.tool !== undefined && { tool: attempt.tool }),
+        ...(attempt.model !== undefined && { model: attempt.model }),
+      });
+    }
+  }
+  return breakdowns;
+}
+
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
   const pricingContext = tokensStore.use((state) => state.pricingContext);
+  const perTask = tokensStore.use((state) => state.perTask);
   const modelCache = asReactiveModelCache(
     modelCacheStore.use((s) => ({
       modelsDevCatalog: s.modelsDevCatalog,
@@ -108,6 +133,7 @@ export function useCostStats(): CostStats {
   const sessionIdentity = pricingContext ?? runPricingIdentity(config);
   const { plannerTool, implementerTool, plannerModel, implementerModel } = sessionIdentity;
 
+  const taskBreakdowns = reconstructTaskBreakdowns(perTask);
   const costBreakdown = tokenUsage
     ? calculateCostBreakdown(
         {
@@ -118,6 +144,7 @@ export function useCostStats(): CostStats {
           implementerTool,
           plannerModel,
           implementerModel,
+          ...(taskBreakdowns.length > 0 && { taskBreakdowns }),
         },
         modelCache,
       )

@@ -15,6 +15,8 @@ const OpenRouterModelSchema = z.object({
     .object({
       prompt: z.string().optional(),
       completion: z.string().optional(),
+      input_cache_read: z.string().optional(),
+      input_cache_write: z.string().optional(),
     })
     .optional(),
   architecture: z
@@ -64,6 +66,15 @@ export function toDetectedModel(m: OpenRouterModel): DetectedModel {
     id: m.id,
     ...pricingFieldsFromResolved(inputPrice, outputPrice, isFree),
   };
+
+  const cacheReadPrice = parsePrice(m.pricing?.input_cache_read);
+  if (cacheReadPrice !== undefined) {
+    result.pricingCacheRead = cacheReadPrice;
+  }
+  const cacheWritePrice = parsePrice(m.pricing?.input_cache_write);
+  if (cacheWritePrice !== undefined) {
+    result.pricingCacheWrite = cacheWritePrice;
+  }
 
   if (m.context_length !== undefined) {
     result.contextLength = m.context_length;

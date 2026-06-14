@@ -5,8 +5,6 @@ export function userEditActionToRecoveryAction(action: UserEditConflictAction): 
   switch (action) {
     case 'continue-unrelated':
       return 'continue';
-    case 'regenerate-rebase':
-      return 'pause-run';
     case 'pause':
       return 'pause-run';
     case 'skip-current-task':

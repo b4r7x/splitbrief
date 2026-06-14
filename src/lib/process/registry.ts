@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
+import { warnError } from '../warn.js';
 import { isNodeError } from './errors.js';
 
 const SIGKILL_DELAY = 2000;
@@ -50,7 +51,7 @@ export function killProcess(
       }
     } catch (err) {
       if (!(isNodeError(err) && err.code === 'ESRCH')) {
-        throw err;
+        warnError('killProcess: SIGKILL escalation failed', err);
       }
     }
   }, delay);

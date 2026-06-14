@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { wireMouseScroll } from './use-mouse-scroll.js';
 import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -39,6 +40,7 @@ function createMockFilteredStdin() {
 describe('wireMouseScroll', () => {
   beforeEach(() => {
     routerStore.reset();
+    overlayStore.reset();
     reviewStore.reset();
     terminalSizeStore.__testReset({ rows: 20, cols: 80, isSmall: false });
     conversationScrollStore.reset();
@@ -90,6 +92,25 @@ describe('wireMouseScroll', () => {
     const dispose = wireMouseScroll(mock.filtered);
     mock.emit('wheel-up', 2, 5);
     expect(conversationScrollStore.get().scrollOffset).toBe(1);
+    dispose();
+  });
+
+  it('ignores wheel input while an overlay is open', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    eventsStore.__testReset({
+      events: Array.from({ length: 20 }, (_, ts) => ({
+        type: 'planner_text' as const,
+        ts,
+        phase: 'specifying' as const,
+        text: `event-${ts}`,
+      })),
+    });
+    overlayStore.open('cost-drilldown');
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireMouseScroll(mock.filtered);
+    mock.emit('wheel-up', 2, 5);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
     dispose();
   });
 });

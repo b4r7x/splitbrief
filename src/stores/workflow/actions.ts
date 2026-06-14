@@ -3,6 +3,8 @@ import type { Section } from '../../core/sections/event-sections.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
+import { closeApprovalPrompt } from '../approval-prompt/prompt.js';
+import { closeCostApprovalPrompt } from '../cost-approval/prompt.js';
 import { _eventsInternal, eventsStore, mergeEvent } from './events.js';
 import {
   _tasksInternal,
@@ -12,7 +14,13 @@ import {
   type TasksState,
   type WorkflowTask,
 } from './tasks.js';
-import { _tokensInternal, tokensStore, updateTokens, type TokensState } from './tokens.js';
+import {
+  _tokensInternal,
+  tokensStore,
+  updateTokens,
+  type PerTaskTokens,
+  type TokensState,
+} from './tokens.js';
 import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth } from './lifecycle.js';
 import { streamingOutputStore } from './streaming-output.js';
 
@@ -79,6 +87,8 @@ export function markCancelled(): boolean {
 export function resetWorkflow(resume?: WorkflowState): void {
   // Must come first — preserves prior contract (current workflow.ts:98 behaviour).
   abortStore.clear();
+  closeApprovalPrompt();
+  closeCostApprovalPrompt({ approved: false });
   eventsStore.reset();
   tasksStore.reset();
   tokensStore.reset();
@@ -124,7 +134,12 @@ function tokensStateFromResume(
   resume: WorkflowState,
 ): Pick<
   TokensState,
-  'localCount' | 'escalatedCount' | 'completedTaskCount' | 'tokenUsage' | 'pricingContext'
+  | 'localCount'
+  | 'escalatedCount'
+  | 'completedTaskCount'
+  | 'tokenUsage'
+  | 'pricingContext'
+  | 'perTask'
 > {
   return {
     localCount: resume.tasks.filter((task) => task.status === 'done').length,
@@ -134,7 +149,36 @@ function tokensStateFromResume(
     ).length,
     tokenUsage: resume.tokenUsage,
     pricingContext: pricingContextFromResume(resume),
+    perTask: perTaskFromResume(resume),
   };
+}
+
+function perTaskFromResume(resume: WorkflowState): Record<string, PerTaskTokens> {
+  const perTask: Record<string, PerTaskTokens> = {};
+  for (const breakdown of resume.taskBreakdowns ?? []) {
+    const existing = perTask[breakdown.taskId] ?? {
+      totalTokens: 0,
+      title: breakdown.taskTitle,
+      attempts: [],
+    };
+    const attempts = [
+      ...(existing.attempts ?? []),
+      {
+        method: breakdown.method,
+        implementerTokens: breakdown.implementerTokens,
+        escalationTokens: breakdown.escalationTokens,
+        retryCount: breakdown.retryCount,
+        ...(breakdown.tool !== undefined && { tool: breakdown.tool }),
+        ...(breakdown.model !== undefined && { model: breakdown.model }),
+      },
+    ];
+    perTask[breakdown.taskId] = {
+      title: breakdown.taskTitle,
+      totalTokens: attempts.reduce((sum, a) => sum + a.implementerTokens + a.escalationTokens, 0),
+      attempts,
+    };
+  }
+  return perTask;
 }
 
 function pricingContextFromResume(resume: WorkflowState): TokensState['pricingContext'] {

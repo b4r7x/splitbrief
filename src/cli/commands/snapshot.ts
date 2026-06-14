@@ -6,7 +6,7 @@ import { listSnapshots } from '../../engine/snapshots/manifest.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
 import { cliError, withCliErrors } from '../errors.js';
-import { resolveSessionOrThrow } from '../sessions/resolve.js';
+import { resolveSessionOrThrow, assertSessionExists } from '../sessions/resolve.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 
 function printSnapshotResult(manifest: SnapshotManifest, snapshotDir: string, name?: string): void {
@@ -32,6 +32,7 @@ export function registerSnapshotCommand(program: Command): void {
     .action(async (opts: { name?: string; session?: string; project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
       const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+      assertSessionExists(projectDir, sessionId);
 
       await withCliErrors(async () => {
         const result = await createSnapshot({
@@ -130,6 +131,24 @@ export function registerSnapshotCommand(program: Command): void {
           console.log(
             `Warning: ${result.missingSnapshotFiles.length} file(s) missing from snapshot storage (skipped).`,
           );
+        }
+
+        if (result.deletedPaths.length > 0) {
+          console.log(`Deleted (${result.deletedPaths.length} file(s) created after snapshot):`);
+          for (const p of result.deletedPaths) {
+            console.log(`  ${p}`);
+          }
+        }
+
+        const skippedExtraneous = result.extraneousPaths.filter(
+          (p) => !result.deletedPaths.includes(p),
+        );
+        if (skippedExtraneous.length > 0) {
+          console.log('Extraneous (created after snapshot — not deleted):');
+          for (const p of skippedExtraneous) {
+            console.log(`  ${p}`);
+          }
+          console.log('Run with --force to delete them.');
         }
 
         if (result.conflictedPaths.length > 0) {

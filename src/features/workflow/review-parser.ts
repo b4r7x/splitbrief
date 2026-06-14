@@ -6,6 +6,10 @@ import { requestEnqueue } from './handlers.js';
 import { resolveEditorArgv } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import {
+  resumeTerminalAfterEditor,
+  suspendTerminalForEditor,
+} from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
@@ -35,7 +39,7 @@ export function parseReviewCommand(text: string): ReviewAction {
 function openInEditor(filePath: string): Promise<void> {
   const { command, args } = resolveEditorArgv();
   return (async () => {
-    process.stdin.pause();
+    suspendTerminalForEditor();
     try {
       await new Promise<void>((resolve, reject) => {
         const child = spawn(command, [...args, filePath], { stdio: 'inherit' });
@@ -50,7 +54,7 @@ function openInEditor(filePath: string): Promise<void> {
         });
       });
     } finally {
-      process.stdin.resume();
+      resumeTerminalAfterEditor();
     }
   })();
 }

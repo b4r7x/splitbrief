@@ -97,7 +97,7 @@ function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: s
     `const marker = ${JSON.stringify(opts.marker)};`,
     `const requiredPromptText = ${JSON.stringify(opts.requiredPromptText)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
-    'const prompt = process.argv[2] ?? "";',
+    'const prompt = process.argv[process.argv.length - 1] ?? "";',
     'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
     'if (!prompt.includes(requiredPromptText)) {',
     '  console.error("expected task prompt to include " + requiredPromptText);',
@@ -560,7 +560,8 @@ describe('full workflow validation retry loop', { timeout: 30_000 }, () => {
     expect(normalizeMacTmpPath(runLog.env.npm_config_cache)).toBe(
       normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'npm-cache')),
     );
-    expect(runLog.args[0]).toContain(requiredPromptText);
+    expect(runLog.args[0]).toBe('run');
+    expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);
     expect(runLog.args).toEqual(expect.arrayContaining(['--model', 'opencode/test-cheap-model']));
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
       'export const loop = "from-opencode-cli";',

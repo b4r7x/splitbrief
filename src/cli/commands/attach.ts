@@ -12,7 +12,7 @@ import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
-import { resolveRunningSession } from '../sessions/resolve.js';
+import { resolveRunningSession, assertSessionExists } from '../sessions/resolve.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 export interface AttachDeps {
@@ -59,6 +59,7 @@ export async function attachCommand(
   assertNotWindows();
 
   const resolvedId = sessionId ?? (await resolveRunningSession(opts.projectDir, deps));
+  assertSessionExists(opts.projectDir, resolvedId);
   const sessDir = sessionDir(opts.projectDir, resolvedId);
 
   const status = await deps.checkServerStatus(sessDir);

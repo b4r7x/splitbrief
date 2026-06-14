@@ -1,17 +1,10 @@
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { ALL_KNOWN_EXTENSIONS } from './languages.js';
-import { DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR } from '../../core/paths.js';
+import { INTERNAL_SKIP_DIRS } from '../../core/paths.js';
 import { escapeRegExp } from '../../utils/regexp.js';
 
-const DEFAULT_EXCLUDE_DIR_NAMES = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  DIPTYCH_DIR,
-  SANDBOX_DIR,
-  TREES_DIR,
-]);
+const DEFAULT_EXCLUDE_DIR_NAMES = new Set([...INTERNAL_SKIP_DIRS, 'dist']);
 
 const DEFAULT_EXCLUDE_FILE_PATTERNS = [/\.test\.tsx?$/];
 

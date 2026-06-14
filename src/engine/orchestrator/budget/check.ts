@@ -1,5 +1,4 @@
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { calculateCostBreakdown } from '../../providers/cost.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -90,11 +89,11 @@ export type EnforceBudgetOptions = {
   implementerModel?: string | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
-  callbacks: OrchestratorCallbacks;
   bus: EventBus;
   warningEmitted: boolean;
   pauseEmitted: boolean;
   pauseThreshold?: number | undefined;
+  acknowledgedAtCost?: number | undefined;
 };
 
 function fmtBudgetRange(currentCost: number, maxBudget: number): string {
@@ -107,7 +106,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
   pauseEmitted: boolean;
   recovery?: BudgetRecoveryBoundary | undefined;
 }> {
-  const { maxBudget, bus, pauseEmitted } = opts;
+  const { maxBudget, bus, pauseEmitted, acknowledgedAtCost } = opts;
   let { warningEmitted } = opts;
   const effectivePauseThreshold = opts.pauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
   const currentCost = getCurrentCost(opts);
@@ -131,7 +130,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
     }
   }
 
-  if (result.action === 'paused' && !pauseEmitted) {
+  if (result.action === 'paused' && !pauseEmitted && acknowledgedAtCost === undefined) {
     publishBudgetPaused({
       bus: bus,
       phase: 'implementing',

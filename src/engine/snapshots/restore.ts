@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
@@ -6,10 +6,14 @@ import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
 import { error } from '../../utils/error.js';
 import { isENOENT } from '../../lib/process/errors.js';
-import { assertPathConfined, assertWritablePathConfined } from '../../lib/path-confinement.js';
+import {
+  assertExistingPathConfined,
+  assertPathConfined,
+  assertWritablePathConfined,
+} from '../../lib/path-confinement.js';
 import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { acquireSnapshotLock } from './lock.js';
-import { hashFile } from './files.js';
+import { collectTrackedFiles, hashFile } from './files.js';
 import { listSnapshotIds, readManifest } from './manifest.js';
 
 export type RestoreResult = {
@@ -18,6 +22,8 @@ export type RestoreResult = {
   conflictedPaths: string[];
   forcedPaths: string[];
   missingSnapshotFiles: string[];
+  extraneousPaths: string[];
+  deletedPaths: string[];
 };
 
 export type RestoreOptions = {
@@ -105,6 +111,8 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
   const conflictedPaths: string[] = [];
   const forcedPaths: string[] = [];
   const missingSnapshotFiles: string[] = [];
+  const extraneousPaths: string[] = [];
+  const deletedPaths: string[] = [];
 
   try {
     let baselineManifest: SnapshotManifest;
@@ -122,8 +130,8 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
 
       const absPath = join(projectDir, path);
 
-      // Validate and resolve the backing blob (hex `encodedName`, decodes to
-      // `path`, hash matches the manifest) before any read. A delta entry takes
+      // Validate and resolve the backing blob (`encodedName` is sha256(path),
+      // hash matches the manifest) before any read. A delta entry takes
       // precedence; otherwise fall back to the baseline blob for this path.
       const snapshotEntry = snapshotEntryByPath.get(path);
       const sourceFilePath = snapshotEntry
@@ -167,6 +175,23 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
         conflictedPaths.push(path);
       }
     }
+
+    // Files tracked in the working tree but absent from the snapshot manifest
+    // were created after the snapshot. Leaving them means the tree is not truly
+    // restored to the snapshot state, so report them as extraneous and — under
+    // `force`, mirroring rejectRunSnapshot's conflict-safe deletion — remove
+    // them with realpath-aware confinement on the existing target.
+    const snapshotPaths = new Set(Object.keys(manifest.fileHashes));
+    const trackedPaths = await collectTrackedFiles(projectDir);
+    for (const path of trackedPaths) {
+      if (snapshotPaths.has(path)) continue;
+      assertPathConfined(path, projectDir);
+      extraneousPaths.push(path);
+      if (!force) continue;
+      assertExistingPathConfined(path, projectDir);
+      await unlink(join(projectDir, path));
+      deletedPaths.push(path);
+    }
   } finally {
     await release();
   }
@@ -197,5 +222,7 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
     conflictedPaths,
     forcedPaths,
     missingSnapshotFiles,
+    extraneousPaths,
+    deletedPaths,
   };
 }

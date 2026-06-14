@@ -4,15 +4,17 @@ import {
   type FilteredStdin,
 } from '../../../lib/terminal/filtered-stdin.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout.js';
+import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 
 const WHEEL_STEP = 1;
 
 export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
   return filteredStdin.onMouse((event) => {
     if (routerStore.get().screen !== 'workflow') return;
+    if (overlayStore.get().active !== 'none') return;
 
     const direction = event.type === 'wheel-up' ? -1 : 1;
 

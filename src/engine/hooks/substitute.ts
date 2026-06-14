@@ -1,6 +1,11 @@
 import type { EngineEvent } from '../events/types.js';
 
 const PLACEHOLDER_RE = /\$\{event\.([a-zA-Z_][\w.]*)\}/g;
+const LEADING_PLACEHOLDER_RE = /^\$\{event\.[a-zA-Z_][\w.]*\}/;
+
+export function startsWithEventPlaceholder(template: string): boolean {
+  return LEADING_PLACEHOLDER_RE.test(template);
+}
 
 export function substituteEventFields(template: string, event: EngineEvent): string {
   return template.replace(PLACEHOLDER_RE, (_match, path: string) => {

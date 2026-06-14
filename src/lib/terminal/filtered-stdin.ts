@@ -1,4 +1,5 @@
 import { PassThrough } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { setTerminalInputModes } from './control.js';
 
 export interface MouseEvent {
@@ -21,10 +22,24 @@ const COMPLETE_SGR_MOUSE_RE = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/;
 const PASTE_START = '\u001b[200~';
 const PASTE_END = '\u001b[201~';
 
-// How long a held lone trailing ESC waits for a continuation chunk before it is flushed as a
-// real Escape keypress. Short enough to stay below the consumer escape-debounce so the key
-// still registers promptly, long enough to let a split paste marker body arrive first.
-const LONE_ESC_FLUSH_MS = 4;
+// How long a held paste-marker prefix (a lone trailing ESC or any longer `\x1b[2…` remainder)
+// waits for a continuation chunk before it is flushed as the real keypress it heads. Short
+// enough to stay below the consumer escape-debounce so the key still registers promptly, long
+// enough to let a split paste marker body arrive first.
+const HELD_PREFIX_FLUSH_MS = 4;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI escape (U+001B) sequences from a paste body
+const PASTE_BODY_ESCAPE_RE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001bO[@-~]|\u001b/g;
+
+// Inside a bracketed paste the terminal forwards the raw body, so an embedded carriage return or
+// stray escape byte must not survive: Ink would explode the body into synthetic keypresses and a
+// lone `\r` between two escape sequences reaches the consumer as a bare Return, firing submit /
+// approval mid-paste. Convert CR(LF) to LF, drop CSI/SS3 sequences, and drop any remaining bare
+// ESC while keeping the following printable text. The held-back paste-marker tail is excluded
+// before this runs, so dropping a bare ESC here never eats a split end-marker prefix.
+function sanitizePasteBody(body: string): string {
+  return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(PASTE_BODY_ESCAPE_RE, '');
+}
 
 export function parseMouseEvents(chunk: string): { events: MouseEvent[]; clean: string } {
   const events: MouseEvent[] = [];
@@ -80,17 +95,17 @@ export function stripPasteMarkers(
   pasteActive: boolean,
 ): { clean: string; pasteActive: boolean; partial: string } {
   let active = pasteActive;
-  const segments: string[] = [];
+  const parts: { text: string; active: boolean }[] = [];
   let cursor = 0;
   while (cursor < text.length) {
     const startAt = text.indexOf(PASTE_START, cursor);
     const endAt = text.indexOf(PASTE_END, cursor);
     const next = startAt === -1 ? endAt : endAt === -1 ? startAt : Math.min(startAt, endAt);
     if (next === -1) {
-      segments.push(text.slice(cursor));
+      parts.push({ text: text.slice(cursor), active });
       break;
     }
-    segments.push(text.slice(cursor, next));
+    parts.push({ text: text.slice(cursor, next), active });
     if (next === startAt) {
       active = true;
       cursor = next + PASTE_START.length;
@@ -100,16 +115,29 @@ export function stripPasteMarkers(
     }
   }
 
-  const clean = segments.join('');
-  const held = prefixLengthHeldBack(clean);
-  if (held === 0) {
-    return { clean, pasteActive: active, partial: '' };
+  // The held-back tail (a paste-marker prefix split across chunks) is always a suffix of the last
+  // part. It must stay raw and unsanitized so a lone trailing ESC heading a split end-marker can
+  // reassemble next chunk; sanitizing only the body keeps the marker bytes out of the stream.
+  const rawClean = parts.map((part) => part.text).join('');
+  const held = prefixLengthHeldBack(rawClean);
+  const partial = held === 0 ? '' : rawClean.slice(rawClean.length - held);
+
+  const bodyLengths: number[] = [];
+  let remainingTail = held;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const trim = Math.min(remainingTail, parts[i]?.text.length ?? 0);
+    bodyLengths[i] = (parts[i]?.text.length ?? 0) - trim;
+    remainingTail -= trim;
   }
-  return {
-    clean: clean.slice(0, clean.length - held),
-    pasteActive: active,
-    partial: clean.slice(clean.length - held),
-  };
+
+  const clean = parts
+    .map((part, i) => {
+      const body = part.text.slice(0, bodyLengths[i]);
+      return part.active ? sanitizePasteBody(body) : body;
+    })
+    .join('');
+
+  return { clean, pasteActive: active, partial };
 }
 
 export interface FilteredStdin {
@@ -179,39 +207,42 @@ function splitMouseChunk(raw: string): { processable: string; partial: string } 
 
 export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
   const filtered = bridgeTty(new PassThrough(), stdin);
+  const decoder = new StringDecoder('utf8');
   let mouseListeners: MouseListener[] = [];
   let partial = '';
   let pastePartial = '';
   let pasteActive = false;
   let disabled = false;
-  let loneEscTimer: ReturnType<typeof setTimeout> | null = null;
+  let heldPrefixTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const clearLoneEscTimer = () => {
-    if (loneEscTimer) {
-      clearTimeout(loneEscTimer);
-      loneEscTimer = null;
+  const clearHeldPrefixTimer = () => {
+    if (heldPrefixTimer) {
+      clearTimeout(heldPrefixTimer);
+      heldPrefixTimer = null;
     }
   };
 
-  // A lone trailing ESC is held one chunk so a paste marker whose leading `\x1b` arrives
-  // alone can reassemble. But a real Escape keypress can also arrive as a lone ESC with no
-  // follow-up chunk, and holding it indefinitely would freeze the Escape key. So when an
-  // ESC is the only held byte and no paste is open, flush it after a short delay; the next
+  // A paste-marker prefix (`\x1b`, `\x1b[2`, `\x1b[20`, `\x1b[200`, `\x1b[201`) is held one
+  // chunk so a marker split across chunks can reassemble. But that same prefix can also be the
+  // start of a real keypress with no follow-up chunk; holding it indefinitely would freeze that
+  // key and then merge its bytes into the next chunk, re-parsing as a different key. So when a
+  // prefix is held and no paste is open, flush it as its own chunk after a short delay; the next
   // chunk (which would complete a marker) cancels the timer before it fires.
-  const scheduleLoneEscFlush = () => {
-    clearLoneEscTimer();
-    if (pasteActive || pastePartial !== '\x1b') return;
-    loneEscTimer = setTimeout(() => {
-      loneEscTimer = null;
-      if (disabled || pastePartial !== '\x1b') return;
+  const scheduleHeldPrefixFlush = () => {
+    clearHeldPrefixTimer();
+    if (pasteActive || pastePartial === '') return;
+    const held = pastePartial;
+    heldPrefixTimer = setTimeout(() => {
+      heldPrefixTimer = null;
+      if (disabled || pastePartial !== held) return;
       pastePartial = '';
-      filtered.write('\x1b', 'utf8');
-    }, LONE_ESC_FLUSH_MS);
+      filtered.write(held, 'utf8');
+    }, HELD_PREFIX_FLUSH_MS);
   };
 
   const dataHandler = (chunk: Buffer) => {
-    clearLoneEscTimer();
-    const raw = partial + chunk.toString('utf8');
+    clearHeldPrefixTimer();
+    const raw = partial + decoder.write(chunk);
     const next = splitMouseChunk(raw);
     partial = next.partial;
 
@@ -226,10 +257,10 @@ export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
     if (paste.clean.length > 0) {
       filtered.write(paste.clean, 'utf8');
     }
-    scheduleLoneEscFlush();
+    scheduleHeldPrefixFlush();
   };
 
-  setTerminalInputModes(true);
+  setTerminalInputModes('enable');
   stdin.on('data', dataHandler);
 
   return {
@@ -244,9 +275,9 @@ export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
     disable: () => {
       if (disabled) return;
       disabled = true;
-      clearLoneEscTimer();
+      clearHeldPrefixTimer();
       stdin.off('data', dataHandler);
-      setTerminalInputModes(false);
+      setTerminalInputModes('disable');
       // Flush any withheld bytes (e.g. a lone trailing ESC held for one chunk) so a final
       // keypress with no follow-up chunk still reaches the consumer instead of being dropped.
       const leftover = partial + pastePartial;

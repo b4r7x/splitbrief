@@ -8,7 +8,7 @@ import { idsMatch } from './parsing.js';
 
 export interface ModelCacheAccessor {
   getModelsDevCatalog(): ModelsDevCatalog | null;
-  getProviderModels(providerId: ProviderId): DetectedModel[] | null;
+  getProviderModels(providerId: ProviderId): readonly DetectedModel[] | null;
 }
 
 export const NULL_CACHE: ModelCacheAccessor = {

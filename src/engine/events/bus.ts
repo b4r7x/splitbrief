@@ -23,9 +23,5 @@ export function createEventBus(): EventBus {
     };
   }
 
-  function unsubscribeAll(): void {
-    sinks.clear();
-  }
-
-  return { publish, subscribe, unsubscribeAll };
+  return { publish, subscribe };
 }

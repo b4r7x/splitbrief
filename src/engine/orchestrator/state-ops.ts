@@ -2,6 +2,7 @@ import type { StateAction } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { matches } from '../../utils/error.js';
@@ -11,7 +12,7 @@ import { transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { addUsage, type UsageCategory } from './tokens.js';
-import { publishCostUpdate } from './events.js';
+import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
 
 export function mergePersistedMessageQueue(ref: SessionRef, state: WorkflowState): WorkflowState {
@@ -46,6 +47,18 @@ export function transitionAndSave(
   const base = mergePersistedMessageQueue(ref, state);
   const next = transition(base, action, { maxRetries });
   saveState(ref, next);
+  return next;
+}
+
+export function raisePendingRecovery(
+  scope: WorkflowPersistenceContext,
+  state: WorkflowState,
+  issue: RecoveryIssue,
+  setTrackedState?: (s: WorkflowState) => void,
+): WorkflowState {
+  const next = transitionAndSave(scope, state, { type: 'SET_PENDING_RECOVERY', issue });
+  publishRecoveryPrompted(scope.bus, issue);
+  setTrackedState?.(next);
   return next;
 }
 

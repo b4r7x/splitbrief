@@ -12,6 +12,7 @@ import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
 import { buildRepoChecks } from './repo.js';
 import { buildCostChecks } from './cost.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';
 import type { ConfigReadinessInput } from './config.js';
@@ -45,7 +46,7 @@ export function buildReadinessReport(input: BuildReadinessReportInput): Readines
       : undefined;
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowIso(),
     projectDir: input.projectDir,
     status,
     counts,

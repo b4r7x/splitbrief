@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmod, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { terminalSequences } from '../../../lib/terminal/control.js';
+import { setActiveTerminalHandover } from '../../../lib/terminal/editor-handover.js';
 import { openExternalEditor } from './external-editor.js';
 
 let sessionDir: string;
@@ -58,6 +61,11 @@ if (mode === 'invalid-parse') {
   writeFileSync(filePath, 'not a task brief\\n');
   process.exit(0);
 }
+if (mode === 'capture-input') {
+  const received = readFileSync(filePath, 'utf-8');
+  writeFileSync(process.env.FAKE_EDITOR_CAPTURE_PATH, received);
+  process.exit(0);
+}
 if (mode === 'two-tasks') {
   writeFileSync(filePath, process.env.FAKE_EDITOR_CONTENT + '\\n' + process.env.FAKE_EDITOR_CONTENT_2);
   process.exit(0);
@@ -83,6 +91,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   planEditorStore.__testReset();
+  setActiveTerminalHandover(undefined);
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   await rm(sessionDir, { recursive: true, force: true });
@@ -246,6 +255,51 @@ describe('openExternalEditor edit mode', () => {
 
     expect(planEditorStore.get().saveError).toContain('expects exactly 1 task');
   });
+
+  it('brackets the editor spawn with terminal handover and resumes stdin', () => {
+    const task = makeTask({
+      id: 'T001',
+      title: 'Original',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
+    planEditorStore.initEditor([task]);
+
+    const stdinCalls: string[] = [];
+    const sourceStdin = Object.assign(new PassThrough(), {
+      pause(): NodeJS.ReadStream {
+        stdinCalls.push('pause');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+      resume(): NodeJS.ReadStream {
+        stdinCalls.push('resume');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+    });
+    setActiveTerminalHandover({
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: sourceStdin as unknown as NodeJS.ReadStream,
+    });
+
+    const written: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      openExternalEditor({ task, mode: 'edit', sessionDirPath: sessionDir });
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+
+    const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
+    const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
+    expect(exitIndex).toBeGreaterThanOrEqual(0);
+    expect(enterIndex).toBeGreaterThan(exitIndex);
+    expect(stdinCalls).toEqual(['pause', 'resume']);
+  });
 });
 
 describe('openExternalEditor split mode', () => {
@@ -261,6 +315,20 @@ describe('openExternalEditor split mode', () => {
     expect(planEditorStore.get().saveError).toBeNull();
   });
 
+  it('instructs that each new split task needs its own frontmatter block', async () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    const capturePath = join(sessionDir, 'captured-input.md');
+    vi.stubEnv('FAKE_EDITOR_MODE', 'capture-input');
+    vi.stubEnv('FAKE_EDITOR_CAPTURE_PATH', capturePath);
+
+    openExternalEditor({ task, mode: 'split', sessionDirPath: sessionDir });
+
+    const received = await readFile(capturePath, 'utf-8');
+    expect(received).toContain('Each new task needs its own');
+    expect(received).toContain('--- id/title/action/file ---');
+  });
+
   it('surfaces split parse failures', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
@@ -269,5 +337,29 @@ describe('openExternalEditor split mode', () => {
     openExternalEditor({ task, mode: 'split', sessionDirPath: sessionDir });
 
     expect(planEditorStore.get().saveError).not.toBeNull();
+  });
+
+  it('replaces the edited task with the split tasks merged into the full plan', async () => {
+    const task = makeTask({
+      id: 'T001',
+      title: 'Original',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
+    planEditorStore.initEditor([task]);
+    vi.stubEnv('FAKE_EDITOR_MODE', 'two-tasks');
+    vi.stubEnv('FAKE_EDITOR_CONTENT', makeValidTaskMarkdown('T001', 'First half'));
+    vi.stubEnv('FAKE_EDITOR_CONTENT_2', makeValidTaskMarkdown('T002', 'Second half'));
+
+    openExternalEditor({ task, mode: 'split', sessionDirPath: sessionDir });
+
+    const tasks = planEditorStore.get().tasks;
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map((t) => t.title)).toEqual(['First half', 'Second half']);
+    expect(tasks.map((t) => t.id)).toEqual(['T001', 'T002']);
+    expect(tasks.every((t) => t.status === 'pending')).toBe(true);
+    expect(planEditorStore.get().saveError).toBeNull();
+    const leftovers = await readdir(sessionDir);
+    expect(leftovers).not.toContain(`split-${task.id}.md`);
   });
 });

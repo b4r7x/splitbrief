@@ -4,7 +4,6 @@ import {
   CommitStrategySchema,
   ApproveLevelSchema,
   ThemeModeSchema,
-  ShikiThemeSchema,
   SessionScopeSchema,
 } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
@@ -35,11 +34,21 @@ const SnapshotsConfigSchema = z.object({
   auto: SnapshotsAutoConfigSchema.optional(),
 });
 
-const EscalationConfigSchema = z.object({
-  intermediateProvider: z.string().optional(),
-  intermediateModel: z.string().optional(),
-  enabled: z.boolean().optional(),
-});
+const EscalationConfigSchema = z
+  .object({
+    intermediateProvider: z.string().optional(),
+    intermediateModel: z.string().optional(),
+    enabled: z.boolean().optional(),
+  })
+  .superRefine((escalation, ctx) => {
+    if (escalation.intermediateProvider && !escalation.intermediateModel) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'intermediateModel is required when intermediateProvider is set',
+        path: ['intermediateModel'],
+      });
+    }
+  });
 
 const GitWorkflowConfigSchema = z.object({
   commitStrategy: CommitStrategySchema.optional(),
@@ -80,10 +89,10 @@ export function defaultApprovalConfig(): z.infer<typeof ApprovalConfigSchema> {
 
 /**
  * v3 ConfigSchema. Accepts both `version: 2` and `version: 3` on input for
- * backward compatibility (see migration.md §2.3). Deprecated v2 fields
- * (`autoApproveSpec`, `autoApprovePlan`, top-level `commitStrategy`) remain
- * optional alongside their v3 replacements (`approve`, `git.commitStrategy`)
- * until briefs 04 and 07 retire the read sites.
+ * backward compatibility. Deprecated v2 fields (`autoApproveSpec`,
+ * `autoApprovePlan`, top-level `commitStrategy`) stay optional so existing
+ * configs still load, but are superseded by their v3 replacements (`approve`,
+ * `git.commitStrategy`) and are no longer written into new configs.
  */
 export const ConfigSchema = z.object({
   version: z.union([z.literal(2), z.literal(3)]),
@@ -98,6 +107,7 @@ export const ConfigSchema = z.object({
     typecheckCommand: z.string().min(1).optional(),
     lintCommand: z.string().min(1).optional(),
     testPattern: z.string().min(1).optional(),
+    timeoutMs: z.number().int().min(1000).optional(),
   }),
   workflow: z.object({
     autoApproveSpec: z.boolean().optional(),
@@ -119,7 +129,6 @@ export const ConfigSchema = z.object({
     compactionFormat: CompactionFormatSchema.default('auto'),
   }),
   theme: ThemeModeSchema.optional(),
-  shikiTheme: ShikiThemeSchema.optional(),
   sessions: z
     .object({
       scope: SessionScopeSchema.optional(),

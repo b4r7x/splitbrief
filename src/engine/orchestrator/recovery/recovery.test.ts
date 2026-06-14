@@ -498,11 +498,14 @@ describe('applyRecoveryAction', () => {
     expect(result).toMatchObject({ ok: true, status: 'aborted' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.tasks).toEqual([]);
+    // The pre-cancel task record is preserved so summary.json / lifetime stats are not
+    // gutted to zero tasks (F-483); the task keeps its status.
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T033']);
+    expect(result.state.tasks[0]?.status).toBe('in_progress');
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
-    expect(persisted?.tasks).toEqual([]);
+    expect(persisted?.tasks.map((task) => task.id)).toEqual(['T033']);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );

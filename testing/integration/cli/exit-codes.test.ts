@@ -17,10 +17,12 @@ beforeEach(() => {
   resetAllStores();
   tmp = createTempDir('cli-exit-codes');
   createTestGitRepo(tmp);
+  process.stdin.isTTY = true;
 });
 
 afterEach(() => {
   cleanupTempDir(tmp);
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
 });
 
 function writeValidConfig(projectDir: string): void {

@@ -53,6 +53,31 @@ describe('toDetectedModel', () => {
     expect(model.pricingOutput).toBe(15);
   });
 
+  it('maps input_cache_read/input_cache_write into cache pricing fields (per-1M units)', () => {
+    const model = toDetectedModel({
+      id: 'anthropic/claude-sonnet-4.6',
+      pricing: {
+        prompt: '0.000003',
+        completion: '0.000015',
+        input_cache_read: '0.0000003',
+        input_cache_write: '0.00000375',
+      },
+    });
+
+    expect(model.pricingCacheRead).toBe(0.3);
+    expect(model.pricingCacheWrite).toBe(3.75);
+  });
+
+  it('leaves cache pricing undefined when OpenRouter omits cache rates', () => {
+    const model = toDetectedModel({
+      id: 'openai/gpt-4o',
+      pricing: { prompt: '0.000005', completion: '0.000015' },
+    });
+
+    expect(model.pricingCacheRead).toBeUndefined();
+    expect(model.pricingCacheWrite).toBeUndefined();
+  });
+
   it('extracts context_length', () => {
     const model = toDetectedModel({
       id: 'anthropic/claude-3-opus',

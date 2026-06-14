@@ -192,6 +192,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     const state = makeImplState([task]);
     let validationCalls = 0;
     const validator = {
+      primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi.fn().mockImplementation(async () => {
         validationCalls += 1;
         return validationCalls === 1

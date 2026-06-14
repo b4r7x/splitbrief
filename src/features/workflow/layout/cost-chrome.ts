@@ -33,16 +33,25 @@ export type CostStatusLineLayout =
 export interface ProjectedCostInput {
   completedCount: number;
   totalActualCost: number;
+  actualImplementerCost: number;
   prediction: CostPrediction | null;
   totalTasks: number;
   pricingState: PricingState;
 }
 
 function formatProjected(input: ProjectedCostInput): string {
-  const { completedCount, totalActualCost, prediction, totalTasks, pricingState } = input;
+  const {
+    completedCount,
+    totalActualCost,
+    actualImplementerCost,
+    prediction,
+    totalTasks,
+    pricingState,
+  } = input;
   if (pricingState !== 'priced' && pricingState !== 'mixed') return 'proj n/a';
   if (completedCount > 0) {
-    const projected = (totalActualCost / completedCount) * totalTasks;
+    const remainingTasks = Math.max(0, totalTasks - completedCount);
+    const projected = totalActualCost + (actualImplementerCost / completedCount) * remainingTasks;
     return `proj ${formatCost(projected)}`;
   }
   if (prediction !== null) {
@@ -94,6 +103,7 @@ export function buildCostStatusLineLayout(input: CostStatusLineLayoutInput): Cos
   const projText = formatProjected({
     completedCount: input.completedCount,
     totalActualCost: input.totalActualCost,
+    actualImplementerCost: input.costBreakdown?.actualImplementerCost ?? 0,
     prediction: input.prediction,
     totalTasks: input.totalTasks,
     pricingState: input.pricingState,

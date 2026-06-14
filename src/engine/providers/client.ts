@@ -31,11 +31,19 @@ export function createProviderShell(base: {
   };
 }
 
-const OpenAIModelItemSchema = z
-  .object({
-    id: z.string(),
-  })
-  .passthrough();
+export function describeProviderUnavailability(state: {
+  isLocal: boolean;
+  hasKey: boolean;
+  lastError: string | undefined;
+}): string {
+  if (!state.isLocal && !state.hasKey) return 'no API key is configured';
+  if (state.lastError) return state.lastError;
+  return state.isLocal ? 'the endpoint is unreachable' : 'no models were returned';
+}
+
+const OpenAIModelItemSchema = z.looseObject({
+  id: z.string(),
+});
 
 const OpenAIModelListSchema = z.object({
   data: z.array(OpenAIModelItemSchema),
@@ -91,6 +99,8 @@ export function resolveApiKeyOverride(apiKey: string | undefined): string | unde
   return value;
 }
 
+const MODEL_LIST_TIMEOUT_MS = 5_000;
+
 export async function fetchModelList<T>(options: {
   endpoint: string;
   apiKey?: string | undefined;
@@ -101,7 +111,8 @@ export async function fetchModelList<T>(options: {
   const { endpoint, apiKey, onError, extractModels } = options;
   try {
     const headers = options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
-    const res = await fetch(endpoint, headers ? { headers } : undefined);
+    const signal = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
+    const res = await fetch(endpoint, headers ? { headers, signal } : { signal });
     if (!res.ok) {
       onError?.(`HTTP ${res.status}`);
       return [];

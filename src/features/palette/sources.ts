@@ -4,7 +4,7 @@ import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { routerStore } from '../../stores/navigation/router.js';
+import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
@@ -19,6 +19,7 @@ interface BuildPaletteSourcesOptions {
   phase: Phase;
   tasks: WorkflowTask[];
   sessions: Session[];
+  projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
   onWorkflowMode: (mode: WorkflowMode) => unknown;
 }
@@ -30,6 +31,7 @@ export function buildPaletteSources({
   phase,
   tasks,
   sessions,
+  projectDir,
   onRuntimeCommand,
   onWorkflowMode,
 }: BuildPaletteSourcesOptions): PaletteSources {
@@ -38,7 +40,7 @@ export function buildPaletteSources({
     modeItems: buildModeItems(onWorkflowMode),
     pickerItems: buildPickerItems(),
     taskItems: buildTaskItems(tasks, phase),
-    sessionItems: buildSessionItems(sessions),
+    sessionItems: buildSessionItems(sessions, projectDir),
     customItems: buildCustomItems(config, onRuntimeCommand),
   };
 }
@@ -121,21 +123,16 @@ function buildTaskItems(tasks: WorkflowTask[], phase: Phase): PaletteSources['ta
   }));
 }
 
-function buildSessionItems(sessions: Session[]): PaletteSources['sessionItems'] {
+function buildSessionItems(
+  sessions: Session[],
+  projectDir: string,
+): PaletteSources['sessionItems'] {
   return sessions.slice(0, 10).map((s) => ({
     id: s.id,
     feature: s.feature,
     status: s.status,
     action: () => {
-      if (s.status === 'interrupted') {
-        routerStore.navigate({ to: 'workflow', feature: s.feature });
-        return;
-      }
-      if (s.summary) {
-        routerStore.navigate({ to: 'summary', summary: s.summary, sessionId: s.id });
-        return;
-      }
-      feedbackStore.setMessage(`Session "${s.feature}" failed without a summary to display`);
+      handleSessionSelect(s, projectDir);
     },
   }));
 }

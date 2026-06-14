@@ -50,4 +50,23 @@ describe('getGutterRole', () => {
     expect(getGutterRole(validate)).toBe('implementer');
     expect(getGutterRole(warning)).toBeNull();
   });
+
+  it('renders implementer-role planner_text under the implementer gutter, not the planner gutter', () => {
+    const implementerText: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'implementing',
+      text: 'writing src/a.ts',
+      role: 'implementer',
+    };
+    const plannerText: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'planning',
+      text: 'drafting the plan',
+    };
+
+    expect(getGutterRole(implementerText)).toBe('implementer');
+    expect(getGutterRole(plannerText)).toBe('planner');
+  });
 });

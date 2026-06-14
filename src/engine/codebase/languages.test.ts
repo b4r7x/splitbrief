@@ -1,5 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
+import { Language } from 'web-tree-sitter';
 import { getLanguageForExtension } from './languages.js';
+import { initParser, parseFile } from './parse.js';
+
+const manifest = JSON.parse(
+  readFileSync(createRequire(import.meta.url).resolve('../../../package.json'), 'utf8'),
+) as {
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+};
 
 describe('language registry', () => {
   it('.ts returns TypeScript config', () => {
@@ -10,6 +23,66 @@ describe('language registry', () => {
   it('.tsx returns TypeScript with tsx grammar', () => {
     const lang = getLanguageForExtension('.tsx');
     expect(lang?.resolveGrammarWasm('.tsx')).toBe('tree-sitter-tsx.wasm');
+  });
+
+  it('every TS/JS grammar package is an optional, not a hard, dependency', () => {
+    const hard = new Set(Object.keys(manifest.dependencies ?? {}));
+    const optional = new Set(Object.keys(manifest.optionalDependencies ?? {}));
+    for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']) {
+      const pkg = getLanguageForExtension(ext)?.grammarPackage;
+      expect(pkg).not.toBeNull();
+      expect(hard).not.toContain(pkg);
+      expect(optional).toContain(pkg);
+    }
+  });
+
+  it.each([
+    ['.ts', 'typescript'],
+    ['.tsx', 'typescript'],
+    ['.js', 'javascript'],
+    ['.jsx', 'javascript'],
+    ['.mjs', 'javascript'],
+    ['.cjs', 'javascript'],
+  ])('%s grammar resolves to an installed, loadable wasm asset', async (ext, id) => {
+    const require = createRequire(import.meta.url);
+    const lang = getLanguageForExtension(ext)!;
+    expect(lang.id).toBe(id);
+    expect(lang.grammarPackage).not.toBeNull();
+
+    const wasmFile = lang.resolveGrammarWasm(ext)!;
+    const resolved = require.resolve(`${lang.grammarPackage}/${wasmFile}`);
+    expect(existsSync(resolved)).toBe(true);
+
+    await initParser();
+    const grammar = await Language.load(resolved);
+    expect(grammar).toBeDefined();
+  });
+
+  describe('configured TS/JS grammar parses every extension end-to-end', () => {
+    let dir: string;
+    beforeAll(async () => {
+      await initParser();
+      dir = mkdtempSync(join(tmpdir(), 'ts-grammar-'));
+    });
+
+    it.each([
+      '.ts',
+      '.tsx',
+      '.js',
+      '.jsx',
+      '.mjs',
+      '.cjs',
+    ])('parseFile extracts the exported symbol from a %s file', async (ext) => {
+      const file = join(dir, `widget${ext}`);
+      writeFileSync(file, "import './dep.js';\nexport function widget() {}\n");
+      const node = await parseFile(file);
+      expect(node).not.toBeNull();
+      const widget = node?.symbols.find((s) => s.name === 'widget');
+      expect(widget?.exported).toBe(true);
+      expect(widget?.kind).toBe('function');
+      expect(node?.imports).toContain('./dep.js');
+      rmSync(file);
+    });
   });
 
   it('.py returns Python config', () => {

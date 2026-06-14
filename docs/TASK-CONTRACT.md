@@ -1,6 +1,6 @@
 # Task Contract
 
-> **Status:** stable as of diptych v0.7 (config v3).
+> **Status:** stable (config v3).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
 ## Task Brief v1: the semantic contract
@@ -68,7 +68,7 @@ type TaskStatus =
   | 'done'           // validation passed
   | 'escalated'      // full escalation path succeeded
   | 'failed'         // all retry / escalation tiers exhausted
-  | 'skipped';       // user skipped via /skip-task or programmatic skip
+  | 'skipped';       // task denied by a pre_task hook or programmatic skip
 ```
 
 Transitions (simplified; full state-machine in `src/core/state/machine.ts`):
@@ -91,7 +91,7 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 
 ## Advanced read-only consumer examples
 
-These examples are side-channel integrations. They do not make diptych a project-management system, plan archive, or cross-plan dependency tracker, and they must not mutate the Task Brief contract while a run is active.
+These examples are side-channel integrations: read-only consumers of session state. They must not mutate the Task Brief contract while a run is active.
 
 ### Status board (read-only)
 

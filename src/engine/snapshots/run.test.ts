@@ -1,10 +1,19 @@
-import { mkdtemp, mkdir, readFile, rm, rmdir, symlink, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  rmdir,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { encodeSnapshotPath } from './path-codec.js';
-import { snapshotManifestPath } from '../../core/paths.js';
+import { snapshotManifestPath, snapshotsDir } from '../../core/paths.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { createSnapshot } from './create.js';
 import {
@@ -36,6 +45,33 @@ describe('rejectRunSnapshot', () => {
 
     expect(result).toEqual({ status: 'empty' });
     await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+  });
+
+  it('surfaces a session-mismatch error when a ledger belongs to a foreign session', async () => {
+    // Record a run under session A, producing a ledger whose sessionId is A.
+    await writeFile(join(tmp, 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-aaa', phase: 'manual' });
+    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-aaa',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-aaa', runSnapshot.manifest);
+
+    // Plant session A's ledger (sessionId: 'sess-aaa') under session B's storage.
+    const bSnapshotsDir = snapshotsDir(tmp, 'sess-bbb');
+    await mkdir(bSnapshotsDir, { recursive: true });
+    await copyFile(
+      join(snapshotsDir(tmp, 'sess-aaa'), 'run-ledger.json'),
+      join(bSnapshotsDir, 'run-ledger.json'),
+    );
+
+    // The mismatch must surface as a structured error, not collapse to
+    // { status: 'empty' } from a swallowed ledger read.
+    await expect(rejectRunSnapshot(tmp, 'sess-bbb')).rejects.toMatchObject({
+      kind: 'snapshot-run-ledger-session-mismatch',
+    });
   });
 
   it('restores modified files to the baseline when current hash matches the latest run snapshot', async () => {
@@ -336,6 +372,26 @@ describe('rejectRunSnapshot', () => {
     expect(ledger?.accepted).toBe(true);
     expect(ledger?.rejected).toBe(false);
     expect(ledger?.runSnapshotIds).toContain(accepted.snapshotId);
+  });
+
+  it('does not persist a taskIndex field in the run ledger', async () => {
+    await writeFile(join(tmp, 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'implementing',
+      taskIndex: 2,
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    const raw = JSON.parse(
+      await readFile(join(snapshotsDir(tmp, 'sess-01'), 'run-ledger.json'), 'utf-8'),
+    );
+    expect(raw).not.toHaveProperty('taskIndex');
+    // The per-snapshot taskIndex still lives on the manifest it was captured at.
+    expect(runSnapshot.manifest.taskIndex).toBe(2);
   });
 
   it('writes rejected state to the run ledger', async () => {

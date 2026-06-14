@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { readActive } from '../../core/sessions/lifecycle.js';
+import { sessionDir } from '../../core/paths.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { isResumable } from '../../core/phases.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -9,6 +11,12 @@ export function resolveSessionOrThrow(projectDir: string, sessionOpt: string | u
   const sessionId = sessionOpt ?? readActive(projectDir);
   if (!sessionId) throw cliError('No active session. Pass --session <id>.', 1);
   return sessionId;
+}
+
+export function assertSessionExists(projectDir: string, sessionId: string): void {
+  if (!existsSync(sessionDir(projectDir, sessionId))) {
+    throw cliError(`session '${sessionId}' not found — run \`diptych ps\` to list sessions.`, 1);
+  }
 }
 
 export async function resolveRunningSession(

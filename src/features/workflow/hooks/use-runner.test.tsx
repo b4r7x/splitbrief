@@ -7,6 +7,9 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
 import { resetWorkflow } from '../../../stores/workflow/actions.js';
@@ -17,7 +20,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { abortTurn, requestCancel, requestRewind, clearAllHandlers } from '../handlers.js';
 import { writeActive } from '../../../core/sessions/lifecycle.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { saveState, loadState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -30,7 +33,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 interface RunnerHandle {
   startedAt: string;
-  handleResume: () => void;
+  handleResume: (injectedText?: string) => void;
 }
 
 interface HarnessProps {
@@ -141,6 +144,76 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
+  it("clears stale store state and applies the resume phase from startWorkflow's authoritative reset (F-078)", async () => {
+    // Seed the lifecycle store with stale data. The start effect no longer resets
+    // the stores itself; startWorkflow's own reset is the single authoritative reset.
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    const resume: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        initialResumeState={resume}
+      />,
+    );
+    await flush();
+
+    // Stale fields were cleared (reset ran) and the resume phase was applied
+    // (reset received the resume state) — proving a single reset carries the
+    // resume state correctly without the removed effect-level reset.
+    const lifecycle = lifecycleStore.get();
+    expect(lifecycle.cancelled).toBe(false);
+    expect(lifecycle.queueDepth).toBe(0);
+    expect(lifecycle.phase).toBe('reviewing-spec');
+    inst.unmount();
+  });
+
+  it('stops at a paused recovery on resume without re-entering runWorkflow (F-510)', async () => {
+    const sessionId = '2024-01-01-paused';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T001' });
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const paused: WorkflowState = {
+      ...makeImplState([task]),
+      pendingRecovery: { ...issue, status: 'paused' },
+    };
+    saveState({ projectDir, sessionId }, paused);
+    writeActive({ projectDir, sessionId });
+
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        initialResumeState={paused}
+        sessionId={sessionId}
+      />,
+    );
+    await flush();
+
+    // The paused issue is carried, not resolved: the host never resumes the run,
+    // so the recovery stays on disk for an explicit `diptych resume` later.
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    expect(persisted.pendingRecovery?.status).toBe('paused');
+
+    // The host did not re-enter runWorkflow: no resume event was published, so the
+    // budget-pause answer cannot drive an infinite runWorkflow loop.
+    const resumedEvents = eventsStore.get().events.filter((e) => e.type === 'workflow_resumed');
+    expect(resumedEvents).toHaveLength(0);
+
+    inst.unmount();
+  });
+
   it('requestCancel marks the workflow cancelled and clears the review input mode', async () => {
     const inst = render(
       <Harness feature="add auth" projectDir={projectDir} onComplete={() => {}} />,
@@ -175,7 +248,6 @@ describe('useWorkflowRunner', () => {
       phase: 'reviewing-spec',
     };
     saveState({ projectDir, sessionId }, saved);
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(
       <Harness
@@ -186,10 +258,9 @@ describe('useWorkflowRunner', () => {
       />,
     );
     await flush();
-    // The bogus planner completes quickly and saveFinalSession clears the
-    // active marker; we restore it to simulate a mid-flight rewind request
-    // from the UI while the engine is still running.
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
+    // No `.diptych/active` pointer is hand-written. The rewind handler must use the
+    // in-scope sessionId prop (F-317), so the rewind still lands even though the bogus
+    // planner has finished and saveFinalSession cleared the active marker.
 
     const didRewind = requestRewind({ target: 'spec', comment: 'needs clarification' });
     expect(didRewind).toBe(true);
@@ -213,7 +284,6 @@ describe('useWorkflowRunner', () => {
       phase: 'implementing',
     };
     saveState({ projectDir, sessionId }, saved);
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const inst = render(
       <Harness
@@ -224,7 +294,6 @@ describe('useWorkflowRunner', () => {
       />,
     );
     await flush();
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
     expect(didRewind).toBe(true);
@@ -234,6 +303,55 @@ describe('useWorkflowRunner', () => {
     const log = readFileSync(logPath, 'utf-8');
     expect(log).toContain('task_reset');
     expect(log).toContain('T001');
+
+    inst.unmount();
+  });
+
+  it('rewinds the in-scope session even when .diptych/active names a different session', async () => {
+    // pointer=A (a foreign interrupted session) while the screen is scoped to sessionId=B.
+    // Per F-317/F-329 the rewind handler must use the in-scope id (B) and never touch A.
+    const foreignSessionId = '2024-01-01-foreign';
+    const scopedSessionId = '2024-01-01-scoped';
+    ensureSessionDir(projectDir, foreignSessionId);
+    ensureSessionDir(projectDir, scopedSessionId);
+    const foreignState: WorkflowState = {
+      ...createInitialState('foreign feature'),
+      phase: 'reviewing-spec',
+    };
+    const scopedState: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState({ projectDir, sessionId: foreignSessionId }, foreignState);
+    saveState({ projectDir, sessionId: scopedSessionId }, scopedState);
+
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        sessionId={scopedSessionId}
+      />,
+    );
+    await flush();
+    // The pointer now names a FOREIGN interrupted session while the screen stays scoped to B.
+    // A pointer-keyed rewind would corrupt the foreign session; the in-scope id (B) must win.
+    writeActive({ projectDir, sessionId: foreignSessionId });
+
+    const didRewind = requestRewind({ target: 'spec', comment: 'scope-correct rewind' });
+    expect(didRewind).toBe(true);
+    await flush();
+
+    // The scoped session received the rewind...
+    const scopedLog = readFileSync(
+      join(sessionDir(projectDir, scopedSessionId), 'session.jsonl'),
+      'utf-8',
+    );
+    expect(scopedLog).toContain('rewind_to_spec');
+    expect(scopedLog).toContain('scope-correct rewind');
+
+    // ...and the foreign session named by .diptych/active was never written to.
+    expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
 
     inst.unmount();
   });
@@ -260,6 +378,76 @@ describe('useWorkflowRunner', () => {
 
     expect(feedbackStore.get().message).toMatch(/no saved state/i);
     expect(feedbackStore.get().isError).toBe(true);
+
+    inst.unmount();
+  });
+
+  it('enqueues injected resume text into the saved state message queue so the resumed planner drains it', async () => {
+    const sessionId = '2024-01-01-inject';
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'planning',
+    };
+    saveState({ projectDir, sessionId }, saved);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        sessionId={sessionId}
+        captureRunner={captureRunner}
+      />,
+    );
+    await flush();
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume('what about edge case X?');
+    await flush();
+
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    const pending = persisted.messageQueue.filter((m) => !m.drainedAt);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.text).toBe('what about edge case X?');
+    expect(pending[0]?.phase).toBe('planning');
+    expect(pending[0]?.origin).toBe('user-input');
+
+    inst.unmount();
+  });
+
+  it('resumes without queuing when no injected text is provided', async () => {
+    const sessionId = '2024-01-01-empty-continue';
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'planning',
+    };
+    saveState({ projectDir, sessionId }, saved);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        sessionId={sessionId}
+        captureRunner={captureRunner}
+      />,
+    );
+    await flush();
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume();
+    await flush();
+
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    expect(persisted.messageQueue).toHaveLength(0);
 
     inst.unmount();
   });

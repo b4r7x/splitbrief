@@ -3,9 +3,15 @@ import type { PlannerToolId, ProviderId } from '../schemas/enums.js';
 export interface DetectedModel {
   id: string;
   contextLength?: number;
+  maxOutputTokens?: number;
   pricingInput?: number;
   pricingOutput?: number;
+  pricingCacheRead?: number;
+  pricingCacheWrite?: number;
   isFree?: boolean;
+  supportsTemperature?: boolean;
+  supportsReasoning?: boolean;
+  supportsImages?: boolean;
   capabilities?: string[];
   releaseDate?: string;
 }

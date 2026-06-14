@@ -13,7 +13,7 @@ Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [
 | `src/utils/` | Generic primitives — pure, stateless, zero domain | Node stdlib, npm, other `utils/` | anyone |
 | `src/lib/` | Infrastructure wrappers — single-purpose adapters for Node/terminal/external libs | Node stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
 | `src/core/` | Domain logic — knows diptych concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
-| `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/`, `features/runners/` |
+| `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only `app.tsx` |
 
@@ -46,7 +46,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 
 **Red flags that something does not belong in `utils/`:**
 - Contains a string literal that names a diptych tool, provider, or internal path
-- Imports `node:child_process`, `simple-git`, `shiki`, or wraps a specific binary — that's `lib/`
+- Imports `node:child_process`, `simple-git`, `better-sqlite3`, or wraps a specific binary — that's `lib/`
 - Has `process.exit` or hardcoded exit codes — that's feature-level
 - Depends on a specific file-system layout (`.diptych/sessions/` etc.) — that's `core/`
 
@@ -116,7 +116,8 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **Acceptance criteria:**
 - Knows diptych concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
-- No subprocess spawning or file-writing side effects (that's `engine/` or `lib/fs.ts`)
+- No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn.ts` to detect a pre-broken tree before any task starts); it spawns nothing else
+- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `ensureSecureDir`, confined writes) for whole-file payloads, but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `evidence/ledger.ts`, `sessions/compaction.ts`, `migration/executor.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
 - Typed data structures, pure transformations, and schema validation live here
 
 **What lives here:**
@@ -134,7 +135,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 
-**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns subprocesses, streams tokens, retries tasks). `core/` just describes it — the types, the transitions, the derived formatters. You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
+**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns agent subprocesses, streams tokens, retries tasks). `core/` describes it — the types, the transitions, the derived formatters — and persists its own domain state (sessions, stats, state machine, config, evidence ledger), preferring the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers but also writing directly via raw `node:fs` (with inline secure-mode and symlink guards) where it needs appends, lockfiles, or atomic renames. It never runs the workflow loop; its only subprocess is the read-only readiness baseline probe (`core/readiness/checks/validation.ts`) that runs the configured validation commands to flag a pre-broken tree. You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
 
 **Why `core/` is not `features/`:** `core/` is UI-agnostic domain logic. A feature uses it, but the same logic could drive a CLI-only mode, a JSON output mode, or a different TUI framework. Coupling domain to one UI is how codebases die.
 
@@ -162,13 +163,13 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/skill-discovery.ts` — planner skill source discovery
 - `engine/availability.ts` — command availability probing
 - `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
-- `engine/events/` — event bus subsystem: `types.ts` (`EngineEvent` discriminated union, `EventBus`/`EventSink` types), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
+- `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` discriminated union + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
   - `sinks/stdout-json.ts` — NDJSON emitter for `diptych start --json` / headless mode
   - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
-- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
+- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
 - `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).

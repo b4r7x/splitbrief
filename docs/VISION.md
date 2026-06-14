@@ -14,7 +14,11 @@ Core value: **same planning quality, lower execution cost** by offloading mechan
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
 - **NOT a multi-agent coordinator** — exactly 2 roles (planner + implementer), clear hierarchy
+- **NOT a swarm manager** — no dynamic agent count, agent racing, or same-checkout parallel writing
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
+- **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
+- **NOT a plan archive** — sessions are execution records scoped to one workflow each, not a long-lived store of past plans
+- **NOT a cross-plan dependency tracker** — diptych reasons about one workflow at a time, not dependencies across plans
 
 An implementer pool, when enabled, is profile selection inside the single implementer role. It chooses the cheapest capable worker for a Task Brief; it is not dynamic agent count, agent racing, or same-checkout parallel writing.
 
@@ -61,7 +65,7 @@ The TUI visual language uses opencode as a reference point. Key principles:
 - **Background color stepping** (3 levels: `#0a0a0a` → `#141414` → `#1e1e1e`) instead of box-drawing borders
 - **Left-colored accent lines** (`┃`) for message ownership — accent for planner, primary for user, warning for escalation, error for failures
 - **Compact tool calls** — one-line format (`. description  result`) in muted color, expandable
-- **Syntax-highlighted diffs** via Shiki 4.x — teal additions on dark teal bg, red removals on dark red bg
+- **Color-coded diffs** — teal additions on dark teal bg, red removals on dark red bg
 - **Braille spinners** (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` at 80ms) instead of text spinners
 - **Markdown rendering** in planner text — headings in accent, code blocks highlighted, bold in warning
 

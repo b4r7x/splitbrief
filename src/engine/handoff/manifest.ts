@@ -6,6 +6,7 @@ import type { HandoffTarget } from '../../core/handoff/targets.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
 import { hashTaskBrief } from '../brief-hash.js';
+import { nowIso } from '../../utils/format-time.js';
 
 export type BuildManifestOptions = {
   sessionId: string;
@@ -36,7 +37,7 @@ export function buildManifest(options: BuildManifestOptions): HandoffManifest {
   const manifest = {
     packVersion: '1' as const,
     diptychVersion: options.diptychVersion,
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowIso(),
     sessionId: options.sessionId,
     briefHash,
     ...(options.sourceCommit !== undefined && { sourceCommit: options.sourceCommit }),

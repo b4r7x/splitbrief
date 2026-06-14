@@ -5,17 +5,32 @@ import { configPath, loadConfig } from '../config/load/io.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
-import { isGitRepo, getGitStatus } from '../../lib/git.js';
+import {
+  isGitRepo,
+  getGitStatus,
+  hasCommits,
+  getInProgressGitOp,
+  getCurrentBranch,
+  hasCommitterIdentity,
+} from '../../lib/git.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
+import { probeValidationBaseline } from './checks/validation.js';
+import {
+  aggregateReadinessStatus,
+  countReadinessChecks,
+  flattenReadinessChecks,
+  selectNextAction,
+} from './status.js';
 import type { Config } from '../schemas/config.js';
+import type { CommitStrategy } from '../schemas/enums.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
 import type { ConfigReadinessInput } from './checks/config.js';
 import type { PackageScriptsReadinessInput } from './checks/validation.js';
 import type { RepoReadinessInput } from './checks/repo.js';
-import type { ReadinessReport } from './types.js';
+import type { ReadinessCheck, ReadinessReport } from './types.js';
 
 export interface CollectedReadiness {
   report: ReadinessReport;
@@ -29,7 +44,7 @@ export interface CollectReadinessOptions {
   config?: Config | undefined;
   configWarnings?: string[] | undefined;
   defaultAutoApprove?: boolean | undefined;
-  requiresCleanWorktree?: boolean | undefined;
+  probeValidation?: boolean | undefined;
 }
 
 export async function collectReadiness(
@@ -39,7 +54,10 @@ export async function collectReadiness(
   const configExists = existsSync(configFile);
   const loaded = loadReadinessConfig(options, configFile, configExists);
   const packageScripts = readPackageScripts(options.projectDir);
-  const repo = await readRepoPosture(options.projectDir, options.requiresCleanWorktree === true);
+  const repo = await readRepoPosture(
+    options.projectDir,
+    loaded.config?.workflow.git?.commitStrategy,
+  );
   const input: BuildReadinessReportInput = {
     projectDir: options.projectDir,
     configLoad: loaded.configLoad,
@@ -48,11 +66,32 @@ export async function collectReadiness(
     ...(loaded.config !== undefined && { config: loaded.config }),
   };
 
+  const report = buildReadinessReport(input);
+  if (options.probeValidation === true && loaded.config) {
+    const probeChecks = await probeValidationBaseline(loaded.config, options.projectDir);
+    if (probeChecks.length > 0) {
+      mergeProbeChecks(report, probeChecks);
+    }
+  }
+
   return {
-    report: buildReadinessReport(input),
+    report,
     config: loaded.config,
     warnings: loaded.warnings,
   };
+}
+
+function mergeProbeChecks(report: ReadinessReport, probeChecks: ReadinessCheck[]): void {
+  const validationSection = report.sections.find((section) => section.id === 'validation');
+  if (validationSection) {
+    validationSection.checks.push(...probeChecks);
+  } else {
+    report.sections.push({ id: 'validation', title: 'Validation', checks: probeChecks });
+  }
+  const checks = flattenReadinessChecks(report.sections);
+  report.counts = countReadinessChecks(checks);
+  report.status = aggregateReadinessStatus(report.counts);
+  report.nextAction = selectNextAction(checks, report.status);
 }
 
 function loadReadinessConfig(
@@ -152,28 +191,48 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
 
 async function readRepoPosture(
   projectDir: string,
-  requiresCleanWorktree: boolean,
+  commitStrategy?: CommitStrategy | undefined,
 ): Promise<RepoReadinessInput> {
   const repoExists = await isGitRepo(projectDir).catch(() => false);
   if (!repoExists) {
     return {
       isGitRepo: false,
+      hasCommits: false,
       dirtyFiles: [],
       untrackedFiles: [],
-      requiresCleanWorktree,
+    };
+  }
+
+  const repoHasCommits = await hasCommits(projectDir).catch(() => false);
+  if (!repoHasCommits) {
+    return {
+      isGitRepo: true,
+      hasCommits: false,
+      dirtyFiles: [],
+      untrackedFiles: [],
     };
   }
 
   const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
   const dirtyFiles = status.files.map((file) => file.path).filter((path) => !untracked.has(path));
+  const inProgressGitOp = await getInProgressGitOp(projectDir).catch(() => null);
+  const onDetachedHead = (await getCurrentBranch(projectDir).catch(() => '')) === 'HEAD';
   const activeSession = readActive(projectDir);
+  const commitsConfigured = commitStrategy !== undefined && commitStrategy !== 'none';
+  const committerIdentityConfigured = commitsConfigured
+    ? await hasCommitterIdentity(projectDir).catch(() => true)
+    : undefined;
 
   return {
     isGitRepo: true,
+    hasCommits: true,
     dirtyFiles,
     untrackedFiles: status.not_added,
-    requiresCleanWorktree,
+    onDetachedHead,
+    inProgressGitOp,
+    ...(commitStrategy !== undefined && { commitStrategy }),
+    ...(committerIdentityConfigured !== undefined && { committerIdentityConfigured }),
     ...(activeSession !== null && {
       activeSession,
       activeSessionLive: isSessionLive({ projectDir: projectDir, sessionId: activeSession }),

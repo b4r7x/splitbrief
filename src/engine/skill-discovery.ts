@@ -92,7 +92,7 @@ async function discoverFromDir(
           id: basename(entry.name, '.md'),
           path: fullPath,
           scope,
-          ...(scope === 'project' && projectDir !== undefined && { projectRoot: projectDir }),
+          ...(scope === 'project' && projectDir !== undefined && { projectDir }),
           ...fm,
         });
       }
@@ -113,7 +113,7 @@ async function discoverFromDir(
             id: entry.name,
             path: skillMd,
             scope,
-            ...(scope === 'project' && projectDir !== undefined && { projectRoot: projectDir }),
+            ...(scope === 'project' && projectDir !== undefined && { projectDir }),
             ...fm,
           });
         }
@@ -142,7 +142,7 @@ async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
       description: fm?.description ?? 'Root agent instructions',
       path: rootAgents,
       scope: 'project',
-      projectRoot: projectDir,
+      projectDir,
     });
   }
 
@@ -167,7 +167,7 @@ async function discoverConventions(projectDir: string): Promise<SkillMeta[]> {
       description: fm?.description ?? 'Project conventions',
       path: convPath,
       scope: 'project',
-      projectRoot: projectDir,
+      projectDir,
     },
   ];
 }
@@ -214,12 +214,14 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
   const sections: string[] = [];
   let totalChars = 0;
 
-  for (const skill of skills) {
+  for (let i = 0; i < skills.length; i++) {
+    const skill = skills[i];
+    if (skill === undefined) continue;
     let raw: string;
-    if (skill.scope === 'project' && skill.projectRoot !== undefined) {
+    if (skill.scope === 'project' && skill.projectDir !== undefined) {
       const confined = readProjectFileConfined(
-        skill.projectRoot,
-        relative(skill.projectRoot, skill.path),
+        skill.projectDir,
+        relative(skill.projectDir, skill.path),
       );
       if (confined === null) {
         warnError(`Failed to read confined skill ${skill.path}`);
@@ -238,8 +240,16 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
 
     if (totalChars + body.length > MAX_SKILL_CHARS) {
       const remaining = MAX_SKILL_CHARS - totalChars;
-      if (remaining > MIN_TRUNCATED_CHARS) {
+      const partial = remaining > MIN_TRUNCATED_CHARS;
+      if (partial) {
         sections.push(`### ${skill.name}\n${body.slice(0, remaining)}\n[... truncated]`);
+      }
+      const dropped = skills.slice(partial ? i + 1 : i);
+      if (dropped.length > 0) {
+        const names = dropped.map((s) => s.name).join(', ');
+        sections.push(
+          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names}]`,
+        );
       }
       break;
     }

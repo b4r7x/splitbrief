@@ -1,6 +1,13 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
+import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
+import { isProviderId } from '../../core/schemas/enums.js';
+import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+import { apiKeyEnvReference } from '../providers/client.js';
+
+type RunnerLike = PlannerConfig | ImplementerConfig;
 
 const AMBIENT_SECRET_KEYS = new Set([
   'NPM_TOKEN',
@@ -26,7 +33,48 @@ const AMBIENT_SECRET_KEYS = new Set([
   'TOGETHER_API_KEY',
 ]);
 
-export async function createSandboxEnv(projectDir: string): Promise<NodeJS.ProcessEnv> {
+const SECRET_ENV_KEY_PATTERN =
+  /_(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|URL|URI|DSN|CONNECTION)S?$/i;
+
+const CLI_TOOL_AUTH_ENV: Partial<Record<string, string>> = {
+  'claude-code': 'ANTHROPIC_API_KEY',
+};
+
+export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
+  const keys = new Set<string>();
+  if ('apiKey' in runner) {
+    const ref = apiKeyEnvReference(runner.apiKey);
+    if (ref) keys.add(ref);
+  }
+  switch (runner.kind) {
+    case 'api': {
+      if (isProviderId(runner.provider)) {
+        const envVar = PROVIDER_CATALOG[runner.provider].apiKeyEnv;
+        if (envVar) keys.add(envVar);
+      }
+      break;
+    }
+    case 'agent-sdk':
+      keys.add('ANTHROPIC_API_KEY');
+      break;
+    case 'cli': {
+      const envVar = CLI_TOOL_AUTH_ENV[runner.tool];
+      if (envVar) keys.add(envVar);
+      break;
+    }
+  }
+  return [...keys];
+}
+
+function isStrippedSecret(key: string, preserve: Set<string>): boolean {
+  if (preserve.has(key)) return false;
+  return AMBIENT_SECRET_KEYS.has(key) || SECRET_ENV_KEY_PATTERN.test(key);
+}
+
+export async function createSandboxEnv(
+  projectDir: string,
+  preserveEnvKeys: string[] = [],
+): Promise<NodeJS.ProcessEnv> {
   const root = join(projectDir, SANDBOX_DIR);
   const home = join(root, 'home');
   const tmp = join(root, 'tmp');
@@ -41,9 +89,10 @@ export async function createSandboxEnv(projectDir: string): Promise<NodeJS.Proce
       mkdir(dir, { recursive: true }),
     ),
   );
+  const preserve = new Set(preserveEnvKeys);
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !AMBIENT_SECRET_KEYS.has(key)) {
+    if (value !== undefined && !isStrippedSecret(key, preserve)) {
       env[key] = value;
     }
   }

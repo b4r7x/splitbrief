@@ -11,6 +11,7 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import { getLineParser } from '../streaming/output-parsers.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
@@ -23,6 +24,7 @@ import {
   findUnexpectedPlanningMutations,
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
+import { composeAbortSignal } from '../../utils/abort.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -86,6 +88,11 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   if (supportsSessionResume) session.capture(initialSessionId ?? null);
   const effort = plannerCfg.effort;
   const supportsEffort = planner.supportsEffort === true;
+  const timeout = plannerCfg.timeout;
+  const extraArgs = plannerCfg.args ?? [];
+  const parseLine = plannerCfg.outputFormat
+    ? getLineParser(plannerCfg.outputFormat)
+    : planner.parseLine;
 
   async function runOnce(opts: {
     prompt: string;
@@ -107,20 +114,22 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       ...(supportsEffort && effort !== undefined ? { effort } : {}),
     };
 
+    const effectiveSignal = composeAbortSignal(signal, timeout);
+
     const result = await spawnAndCollect({
       command: tool.command,
-      args: planner.buildArgs(buildOpts),
+      args: [...planner.buildArgs(buildOpts), ...extraArgs],
       cwd: projectDir,
       env: sandboxEnv,
       notFoundMessage: tool.notFoundMessage,
-      parseLine: planner.parseLine,
+      parseLine,
       onText: callbacks.onOutput,
       onStderr: planner.postProcess
         ? (chunk) => {
             stderrOutput += chunk;
           }
         : undefined,
-      signal,
+      signal: effectiveSignal,
       ...(supportsSessionResume && {
         onSessionId: (id: string) => {
           session.capture(id);

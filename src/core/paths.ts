@@ -66,7 +66,6 @@ export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
 export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
-export const BRIEF_HASH_FILE = 'brief-hash.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
@@ -74,7 +73,30 @@ export const LOCKFILE = 'lockfile.json';
 export const SERVER_LOG_FILE = 'server.log';
 export const IPC_SOCK_FILE = 'ipc.sock';
 
+export const MAX_IPC_SOCK_PATH_BYTES = 103;
+
+export function ipcSockPath(sessionDirPath: string): string {
+  const sockPath = join(sessionDirPath, IPC_SOCK_FILE);
+  const bytes = Buffer.byteLength(sockPath, 'utf8');
+  if (bytes > MAX_IPC_SOCK_PATH_BYTES) {
+    throw fsError.sockPathTooLong(sockPath, bytes, MAX_IPC_SOCK_PATH_BYTES);
+  }
+  return sockPath;
+}
+
 export const TREES_DIR = '.trees';
+
+export const INTERNAL_SKIP_DIRS = ['.git', DIPTYCH_DIR, SANDBOX_DIR, 'node_modules', TREES_DIR];
+
+const GIT_STATUS_INTERNAL_DIRS = [DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR];
+
+export function isInternalGitStatusPath(file: string): boolean {
+  const normalized = file.replaceAll('\\', '/');
+  return GIT_STATUS_INTERNAL_DIRS.some(
+    (dir) =>
+      normalized === dir || normalized.startsWith(`${dir}/`) || normalized.includes(`/${dir}/`),
+  );
+}
 
 export const worktreePath = (projectDir: string, slug: string): string =>
   join(projectDir, TREES_DIR, slug);

@@ -6,7 +6,7 @@ import { getConfigValue } from '../config/accessors/values.js';
 // Settings whose dot-path is structurally valid but intentionally has no default
 // value. They read as `undefined` on a fresh config, so a non-undefined assertion
 // would spuriously fail. A typo'd id would not be in this set and still fail below.
-const OPTIONAL_WITHOUT_DEFAULT = new Set(['implementer.timeout']);
+const OPTIONAL_WITHOUT_DEFAULT = new Set(['implementer.timeout', 'validation.testCommand']);
 
 describe('SETTINGS_DEFS id resolution', () => {
   const config = createDefaultConfig();
@@ -25,5 +25,11 @@ describe('SETTINGS_DEFS numeric bounds', () => {
     const timeout = SETTINGS_DEFS.find((def) => def.id === 'implementer.timeout');
 
     expect(timeout).toMatchObject({ kind: 'number', min: 1 });
+  });
+});
+
+describe('SETTINGS_DEFS dead settings', () => {
+  it('does not expose the no-op sessions.scope setting', () => {
+    expect(SETTINGS_DEFS.some((def) => def.id === 'sessions.scope')).toBe(false);
   });
 });

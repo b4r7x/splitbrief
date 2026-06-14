@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
@@ -143,5 +143,71 @@ describe('codebase context injection into planner', { timeout: 30_000 }, () => {
     });
 
     expect(capturedContext).toBeUndefined();
+  });
+
+  it('self-heals a corrupt repomap.sqlite and publishes a warning event instead of silently dropping it', async () => {
+    const projectDir = createTempDir('orch-int-codebase-corrupt');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    seedSourceFile(projectDir);
+    const sessionId = 'sess-codebase-corrupt';
+    ensureSessionDir(projectDir, sessionId);
+
+    mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+    writeFileSync(
+      join(projectDir, '.diptych', 'repomap.sqlite'),
+      'not a sqlite database — torn header garbage'.repeat(8),
+    );
+
+    let capturedContext: string | undefined;
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
+        capturedContext = codebaseContext;
+        return {
+          spec: '',
+          plan: '',
+          tasks: [makeTask()],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        };
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const bus = createEventBus();
+    const warnings: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'warning') warnings.push(event.message);
+    });
+    const config = makeConfig({
+      workflow: {
+        mode: 'quick',
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        persistTranscript: false,
+      },
+      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.diptych' },
+    });
+
+    let state = createInitialState('add corrupt-cache feature');
+    state = transition(state, { type: 'START' });
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        metadata: META,
+        sinks: TEST_WORKFLOW_SINKS,
+      },
+      planner,
+      state,
+      feature: state.feature,
+    });
+
+    expect(warnings.some((m) => m.includes('corrupt'))).toBe(true);
+    if (capturedContext === undefined)
+      throw new Error('expected planner to receive codebase context after self-heal');
+    expect(capturedContext).toContain('sample.ts');
   });
 });

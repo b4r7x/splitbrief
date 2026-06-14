@@ -2,6 +2,14 @@
   "name": "diptych",
   "version": "0.1.0",
   "description": "Cost-optimized AI coding orchestrator - uses expensive AI for planning, cheap/local AI for implementation",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b4r7x/tiny-spec.git"
+  },
+  "homepage": "https://github.com/b4r7x/tiny-spec#readme",
+  "bugs": {
+    "url": "https://github.com/b4r7x/tiny-spec/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -36,8 +44,7 @@
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
     "knip": "knip",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run check:invariants",
-    "prepublishOnly": "npm run build"
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run check:invariants"
   },
   "keywords": [
     "ai",
@@ -72,13 +79,13 @@
     "openai": "^6.0.0",
     "react": "^19.0.0",
     "simple-git": "^3.0.0",
-    "tree-sitter-typescript": "^0.23.2",
     "web-tree-sitter": "^0.26.8",
     "wrap-ansi": "^10.0.0",
     "yaml": "^2.0.0",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
+    "tree-sitter-typescript": "^0.23.2",
     "tree-sitter-wasms": "^0.1.13"
   },
   "devDependencies": {

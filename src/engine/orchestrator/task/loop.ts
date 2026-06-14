@@ -2,6 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { runSingleTask } from './step.js';
 import { refreshAndPersistCode } from '../state-ops.js';
 import {
@@ -9,7 +10,12 @@ import {
   getRunnerModelName,
 } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { captureChangedFilesBaseline } from '../changed-files-baseline.js';
+import {
+  captureChangedFilesBaseline,
+  deserializeChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+  type ChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
 import { maybeAutoSnapshot } from './auto-snapshot.js';
@@ -36,7 +42,21 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   const { projectDir, sessionId, config } = wctx;
   let state = opts.initialState;
   const totalTasks = state.tasks.length;
-  const taskBreakdowns: TaskTokenUsage[] = [];
+  // Seed from persisted breakdowns so re-entry (resume / rewind / detached retry)
+  // keeps per-task cost identity for already-completed tasks (F-454).
+  const taskBreakdowns: TaskTokenUsage[] = [...(state.taskBreakdowns ?? [])];
+
+  function syncBaselineIntoState(): void {
+    state = { ...state, changedFilesBaseline: serializeChangedFilesBaseline(changedFilesBaseline) };
+  }
+
+  function persistTaskBreakdowns(): void {
+    state = { ...state, taskBreakdowns: [...taskBreakdowns] };
+    syncBaselineIntoState();
+    setTrackedState(state);
+    saveState({ projectDir, sessionId }, state);
+  }
+
   const resolvedProfiles = resolveImplementerProfiles(config);
   const singleImplementerMode = config.implementerProfiles === undefined;
   let budgetWarningEmitted = false;
@@ -44,8 +64,20 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   if (state.pendingRecovery) {
     return { state, taskBreakdowns, status: 'stopped' };
   }
-  let changedFilesBaseline = await captureChangedFilesBaseline(projectDir);
+  let changedFilesBaseline: ChangedFilesBaseline =
+    state.changedFilesBaseline !== undefined
+      ? deserializeChangedFilesBaseline(state.changedFilesBaseline)
+      : await captureChangedFilesBaseline(projectDir);
   const acknowledgedUserEditFiles = new Set<string>();
+  const firstTask = state.tasks[state.currentTaskIndex];
+  if (firstTask) {
+    await wctx.validator.primeBaseline({
+      task: firstTask,
+      projectDir,
+      config,
+      discoveredValidation: state.discoveredValidation,
+    });
+  }
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
@@ -62,6 +94,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     state = depGate.state;
     if (depGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
 
+    syncBaselineIntoState();
     const preEditGate = await checkUserEditGate({
       wctx,
       reviewWctx: wctx,
@@ -150,6 +183,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskAcceptedFiles,
       acknowledgedUserEditFiles,
     });
+    syncBaselineIntoState();
 
     const reviewDecision = await reviewTaskIfNeeded({
       wctx: taskWorkflowContext,
@@ -168,6 +202,12 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       return { state, taskBreakdowns, status: 'stopped' };
     }
     if (reviewDecision.decision === 'redo-task') {
+      wctx.bus.publish({
+        type: 'task_reset',
+        ts: Date.now(),
+        phase: state.phase,
+        taskId: refreshedTask.id,
+      });
       i--;
       continue;
     }
@@ -200,9 +240,12 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     budgetWarningEmitted = reconcile.budgetWarningEmitted;
     budgetPauseEmitted = reconcile.budgetPauseEmitted;
     if (reconcile.stop) {
+      persistTaskBreakdowns();
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
     }
+
+    persistTaskBreakdowns();
   }
   setCurrentTask(undefined);
   return { state, taskBreakdowns, status: 'complete' };

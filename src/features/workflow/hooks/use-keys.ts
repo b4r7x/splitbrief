@@ -7,14 +7,14 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { findLatestRenderableDiffEventIndex } from '../../../core/sections/event-sections.js';
+import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
 import {
   handleWorkflowCtrlChords,
   handleReviewScroll,
   handleConversationScroll,
   type WorkflowKeyAction,
 } from '../keyboard.js';
-import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout.js';
+import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 
 function applyAction(action: WorkflowKeyAction) {
   switch (action.type) {
@@ -24,7 +24,7 @@ function applyAction(action: WorkflowKeyAction) {
       controlsStore.toggleSidebar();
       return;
     case 'toggle-diff':
-      conversationScrollStore.toggleDiff(action.index);
+      conversationScrollStore.toggleDiff(action.key);
       return;
     case 'review-scroll':
       reviewStore.setScrollOffset(action.offset);
@@ -48,24 +48,29 @@ function applyAction(action: WorkflowKeyAction) {
   }
 }
 
-function getWorkflowScrollAction(input: string, key: Key): WorkflowKeyAction {
-  const review = reviewStore.get();
+function isConversationScrollKey(key: Key): boolean {
+  if (key.shift && (key.upArrow || key.downArrow)) return true;
+  if (key.pageUp || key.pageDown) return true;
+  return key.home || key.end;
+}
 
-  if (review.filePath) {
-    const visibleHeight = readReviewContentHeight();
-    return handleReviewScroll({
-      input,
-      key,
-      reviewScrollOffset: review.scrollOffset,
-      reviewLineCount: review.lineCount,
-      visibleHeight,
-    });
-  }
+function getReviewScrollAction(key: Key): WorkflowKeyAction {
+  const review = reviewStore.get();
+  if (!review.filePath) return { type: 'none' };
+  return handleReviewScroll({
+    key,
+    reviewScrollOffset: review.scrollOffset,
+    reviewLineCount: review.lineCount,
+    visibleHeight: readReviewContentHeight(),
+  });
+}
+
+function getConversationScrollAction(key: Key): WorkflowKeyAction {
+  if (!isConversationScrollKey(key)) return { type: 'none' };
 
   const { maxOffset, renderableCount, totalHeight, viewportHeight } =
     readConversationScrollSnapshot();
   return handleConversationScroll({
-    input,
     key,
     renderableCount,
     maxOffset,
@@ -95,21 +100,27 @@ export function useWorkflowKeys(isActive: boolean) {
         key,
         isSmall,
         sections,
-        findLatestDiff: findLatestRenderableDiffEventIndex,
+        findLatestDiff: findLatestRenderableDiffKey,
       });
       if (chord.type !== 'none') {
         applyAction(chord);
         return;
       }
 
+      const reviewScroll = getReviewScrollAction(key);
+      if (reviewScroll.type !== 'none') {
+        applyAction(reviewScroll);
+        return;
+      }
+
       if (controlsStore.get().inputMode !== 'normal') return;
 
-      if (input === '$') {
+      if (key.ctrl && input === 'g') {
         overlayStore.open('cost-drilldown');
         return;
       }
 
-      const scroll = getWorkflowScrollAction(input, key);
+      const scroll = getConversationScrollAction(key);
       if (scroll.type !== 'none') {
         applyAction(scroll);
         return;

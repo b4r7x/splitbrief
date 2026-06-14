@@ -11,6 +11,10 @@ export function extractCode(response: string): ExtractionResult {
 
   const blocks = extractFencedBlocks(trimmed);
   if (blocks.length > 0) {
+    const markerBlocks = blocks.filter((b) => b.includes('<<<<<<< SEARCH'));
+    if (markerBlocks.length > 0) {
+      return { code: markerBlocks.join('\n') };
+    }
     const longest = blocks.reduce((a, b) => (a.length >= b.length ? a : b));
     return { code: longest };
   }

@@ -5,7 +5,7 @@ import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { providerError } from './errors.js';
 import { streamCompletion, type StreamClient } from './openai-stream.js';
 
-type StreamMessage = {
+export type StreamMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };

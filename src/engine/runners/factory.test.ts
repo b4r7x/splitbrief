@@ -58,6 +58,37 @@ describe('createPlanner', () => {
     expect(written).toContain('planner-effort');
   });
 
+  it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withPlanner({
+      kind: 'shell',
+      command: 'cat',
+      outputFormat: 'text',
+      temperature: 0.7,
+    });
+
+    await createPlanner(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).toContain('planner-temperature');
+  });
+
+  it('does not warn about temperature for the api planner kind', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withPlanner({
+      kind: 'api',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'test',
+      temperature: 0.7,
+    });
+
+    await createPlanner(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('planner-temperature');
+  });
+
   it('throws on invalid planner kind', async () => {
     const config = {
       ...makeConfig(),
@@ -94,6 +125,37 @@ describe('createImplementer', () => {
     expect(implementer).toBeDefined();
     expect(implementer.capabilities).toBeDefined();
     expect(implementer.capabilities?.writesFiles).toMatch(/^(direct|extracted-code)$/);
+  });
+
+  it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withImplementer({
+      kind: 'cli',
+      tool: 'codex',
+      model: 'test',
+      temperature: 0.3,
+    });
+
+    await createImplementer(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).toContain('implementer-temperature');
+  });
+
+  it('does not warn about temperature for the api implementer kind', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withImplementer({
+      kind: 'api',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'test',
+      temperature: 0.3,
+    });
+
+    await createImplementer(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('implementer-temperature');
   });
 
   it('throws on invalid implementer kind', async () => {

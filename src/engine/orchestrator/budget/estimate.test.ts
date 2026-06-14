@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { estimateDeterministicCost } from './estimate.js';
@@ -9,8 +11,6 @@ import { estimateDeterministicCost } from './estimate.js';
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'node',
-  testCommand: 'npm test',
 };
 
 const nullCache: ModelCacheAccessor = {
@@ -73,6 +73,52 @@ describe('estimateDeterministicCost', () => {
     });
   });
 
+  it('labels a boot-detected context length as detected rather than explicit', () => {
+    const config = withProfiles(
+      makeConfig({
+        planner: { kind: 'shell', command: 'missing-planner-command', model: 'planner-model' },
+        implementer: {
+          kind: 'agent',
+          command: 'missing-implementer-command',
+          model: 'worker-model',
+        },
+      }),
+      {
+        default: 'agent-worker',
+        profiles: {
+          'agent-worker': {
+            kind: 'agent',
+            command: 'missing-implementer-command',
+            model: 'worker-model',
+            contextLength: 20_000,
+            costTier: 'standard',
+          },
+        },
+      },
+    );
+    const task = makeTask();
+
+    const detected = estimateDeterministicCost({
+      tasks: [task],
+      context,
+      config,
+      pricingCache: nullCache,
+      detectedContextLength: 20_000,
+    });
+    const explicit = estimateDeterministicCost({
+      tasks: [task],
+      context,
+      config,
+      pricingCache: nullCache,
+      detectedContextLength: 8192,
+    });
+
+    expect(detected.tasks[0]).toMatchObject({ contextConfidence: 'context-detected' });
+    expect(detected.contextConfidenceCounts.contextDetected).toBe(1);
+    expect(detected.contextConfidenceCounts.contextExplicit).toBe(0);
+    expect(explicit.tasks[0]).toMatchObject({ contextConfidence: 'context-explicit' });
+  });
+
   it('computes prompt-only implementer, all-planner, and savings estimates when prices are known', () => {
     const config = withProfiles(
       makeConfig({
@@ -109,7 +155,7 @@ describe('estimateDeterministicCost', () => {
 
     expect(task?.priceConfidence).toBe('price-known');
     expect(task?.estimatedImplementerCost).toBeCloseTo(
-      ((task?.estimatedPromptTokens ?? 0) * 0.28) / 1_000_000,
+      ((task?.estimatedPromptTokens ?? 0) * 0.14) / 1_000_000,
       12,
     );
     expect(task?.hypotheticalPlannerCost).toBeCloseTo(
@@ -208,6 +254,59 @@ describe('estimateDeterministicCost', () => {
       contextConfidence: 'context-cached-provider',
       priceConfidence: 'price-known',
     });
+  });
+
+  it('routes the live task at the same cache-resolved context length the estimate assessed', () => {
+    const pricingCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) =>
+        providerId === 'deepseek'
+          ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
+          : null,
+    };
+    const config = withProfiles(
+      makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+      }),
+      {
+        default: 'runtime-worker',
+        profiles: {
+          'runtime-worker': {
+            kind: 'api',
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'runtime-only',
+            costTier: 'cheap',
+          },
+        },
+      },
+    );
+    const task = makeTask();
+
+    const estimate = estimateDeterministicCost({ tasks: [task], context, config, pricingCache });
+    expect(estimate.tasks[0]).toMatchObject({
+      selectedProfileId: 'runtime-worker',
+      contextConfidence: 'context-cached-provider',
+    });
+
+    const profiles = resolveImplementerProfiles(config).profiles;
+    const liveWithoutCache = routeTaskToImplementerProfile({ task, context, profiles });
+    expect(liveWithoutCache.contextLength).toBe(8192);
+
+    const live = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles,
+      contextCache: pricingCache,
+    });
+    expect(live.selectedProfile).toBe('runtime-worker');
+    expect(live.contextLength).toBe(12_000);
   });
 
   it('uses the conservative context fallback when no context length metadata is available', () => {

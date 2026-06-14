@@ -2,18 +2,26 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
-import { createSandboxEnv } from './sandbox-env.js';
+import { createSandboxEnv, runnerAuthEnvKeys } from './sandbox-env.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 let dirs: string[] = [];
 let originalHome: string | undefined;
+const touchedEnvKeys: string[] = [];
+
+function setEnv(key: string, value: string): void {
+  touchedEnvKeys.push(key);
+  process.env[key] = value;
+}
 
 afterEach(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   originalHome = undefined;
+  for (const key of touchedEnvKeys) delete process.env[key];
+  touchedEnvKeys.length = 0;
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -84,5 +92,78 @@ describe('createSandboxEnv', () => {
     const sandboxHome = env.HOME as string;
     expect(existsSync(sandboxHome)).toBe(true);
     expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
+  });
+
+  it('strips ambient and unenumerated provider secrets from the sandbox env', async () => {
+    const projectDir = createTempDir('sandbox-env-secrets');
+    dirs.push(projectDir);
+    setEnv('GITHUB_TOKEN', 'gh-secret');
+    setEnv('XAI_API_KEY', 'xai-secret');
+    setEnv('DATABASE_PASSWORD', 'db-secret');
+    setEnv('DATABASE_URL', 'postgres://user:pass@host/db');
+    setEnv('REDIS_URL', 'redis://:pass@host:6379');
+    setEnv('MONGODB_URI', 'mongodb://user:pass@host/db');
+    setEnv('AWS_SECRET_ACCESS_KEY', 'aws-secret');
+    setEnv('DIPTYCH_PUBLIC_FLAG', 'keep-me');
+
+    const env = await createSandboxEnv(projectDir);
+
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(env.XAI_API_KEY).toBeUndefined();
+    expect(env.DATABASE_PASSWORD).toBeUndefined();
+    expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.REDIS_URL).toBeUndefined();
+    expect(env.MONGODB_URI).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(env.DIPTYCH_PUBLIC_FLAG).toBe('keep-me');
+  });
+
+  it("preserves the configured runner's own auth key while stripping other secrets", async () => {
+    const projectDir = createTempDir('sandbox-env-preserve');
+    dirs.push(projectDir);
+    setEnv('OPENAI_API_KEY', 'sk-openai');
+    setEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
+    setEnv('XAI_API_KEY', 'sk-xai');
+
+    const env = await createSandboxEnv(projectDir, ['OPENAI_API_KEY']);
+
+    expect(env.OPENAI_API_KEY).toBe('sk-openai');
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.XAI_API_KEY).toBeUndefined();
+  });
+});
+
+describe('runnerAuthEnvKeys', () => {
+  it('maps the claude-code CLI runner to ANTHROPIC_API_KEY', () => {
+    expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'claude-code', model: 'auto' })).toEqual([
+      'ANTHROPIC_API_KEY',
+    ]);
+  });
+
+  it('maps the agent-sdk runner to ANTHROPIC_API_KEY', () => {
+    expect(runnerAuthEnvKeys({ kind: 'agent-sdk', model: 'auto' })).toEqual(['ANTHROPIC_API_KEY']);
+  });
+
+  it('maps a known api provider to its catalog auth env var', () => {
+    expect(
+      runnerAuthEnvKeys({
+        kind: 'api',
+        provider: 'openai',
+        apiBase: 'https://api.openai.com/v1',
+        model: 'gpt-4',
+      }),
+    ).toEqual(['OPENAI_API_KEY']);
+  });
+
+  it('includes an explicit env: apiKey reference', () => {
+    expect(
+      runnerAuthEnvKeys({
+        kind: 'api',
+        provider: 'custom-provider',
+        apiBase: 'https://example.com/v1',
+        apiKey: 'env:CUSTOM_PROVIDER_KEY',
+        model: 'm',
+      }),
+    ).toContain('CUSTOM_PROVIDER_KEY');
   });
 });

@@ -108,11 +108,11 @@ export function fauxPlanner(opts?: {
     },
 
     async summarize() {
-      return '';
+      return { text: '', usage: null };
     },
 
     async injectUserTurn(_text, _projectDir) {
-      return Promise.resolve();
+      return null;
     },
 
     async isAvailable() {

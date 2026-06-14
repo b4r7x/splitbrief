@@ -86,7 +86,7 @@ function extractName(declNode: Node): string | null {
   return nameNode?.text ?? null;
 }
 
-function extractSignature(declNode: Node, exported: boolean): string {
+function extractSignature(declNode: Node, opts: { exported: boolean }): string {
   const fullText = declNode.text;
   const braceIdx = fullText.indexOf('{');
   let sig: string;
@@ -95,7 +95,7 @@ function extractSignature(declNode: Node, exported: boolean): string {
   } else {
     sig = fullText.slice(0, braceIdx).trimEnd();
   }
-  const exportPrefix = exported ? 'export ' : '';
+  const exportPrefix = opts.exported ? 'export ' : '';
   const sigWithoutExport = sig.startsWith('export ') ? sig.slice(7) : sig;
   return (exportPrefix + sigWithoutExport).trim();
 }
@@ -126,7 +126,7 @@ function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
       if (!name) continue;
 
       const kind = kindForNodeType(declNode.type);
-      const signature = extractSignature(declNode, true);
+      const signature = extractSignature(declNode, { exported: true });
       const line = declNode.startPosition.row + 1;
 
       symbols.push({ name, kind, signature, exported: true, line });
@@ -136,7 +136,7 @@ function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
 
       const exported = lang.isExported ? lang.isExported(name, child.text) : false;
       const kind = kindForNodeType(child.type);
-      const signature = extractSignature(child, exported);
+      const signature = extractSignature(child, { exported });
       const line = child.startPosition.row + 1;
 
       symbols.push({ name, kind, signature, exported, line });

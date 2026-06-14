@@ -3,7 +3,7 @@ import type { InvokeResult, ParsedLine } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { getLineParser } from './output-parsers.js';
-import { accumulateUsage } from './token-utils.js';
+import { accumulateUsage } from './token-usage.js';
 
 interface SpawnAndCollectOptions {
   command: string;

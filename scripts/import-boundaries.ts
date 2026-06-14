@@ -82,14 +82,19 @@ function featureName(srcRelPath: string): string | null {
   return parts[1] ?? null;
 }
 
-const ENGINE_FORBIDDEN_TOPLEVEL = ['hooks', 'components', 'cli'] as const;
+const ENGINE_FORBIDDEN_TOPLEVEL = ['stores', 'hooks', 'components', 'cli'] as const;
 
 function topLevelDir(srcRelPath: string): string | null {
   const parts = srcRelPath.split('/');
   return parts.length > 1 ? (parts[0] ?? null) : null;
 }
 
-function classify(fromSrcRel: string, targetSrcRel: string, typeOnly: boolean): string | null {
+function classify(opts: {
+  fromSrcRel: string;
+  targetSrcRel: string;
+  typeOnly: boolean;
+}): string | null {
+  const { fromSrcRel, targetSrcRel, typeOnly } = opts;
   const inComponents = fromSrcRel.startsWith('components/');
   const targetFeature = featureName(targetSrcRel);
 
@@ -145,7 +150,7 @@ export function findImportBoundaryViolations(srcRoot: string): BoundaryViolation
       const targetAbs = resolve(dirname(file), specifier);
       if (!targetAbs.startsWith(root + sep)) continue;
       const targetSrcRel = srcRelative(root, targetAbs);
-      const reason = classify(fromSrcRel, targetSrcRel, typeOnly);
+      const reason = classify({ fromSrcRel, targetSrcRel, typeOnly });
       if (reason !== null) {
         violations.push({ file: fromSrcRel, specifier, reason });
       }

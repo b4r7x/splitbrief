@@ -198,16 +198,12 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     method,
     implementerTokens: delta.implementerTokens,
     escalationTokens: delta.escalationTokens,
-    ...(delta.implementerCacheReadTokens > 0 && {
+    ...(delta.implementerTokens > 0 && {
       implementerCacheReadTokens: delta.implementerCacheReadTokens,
-    }),
-    ...(delta.implementerCacheCreateTokens > 0 && {
       implementerCacheCreateTokens: delta.implementerCacheCreateTokens,
     }),
-    ...(delta.escalationCacheReadTokens > 0 && {
+    ...(delta.escalationTokens > 0 && {
       escalationCacheReadTokens: delta.escalationCacheReadTokens,
-    }),
-    ...(delta.escalationCacheCreateTokens > 0 && {
       escalationCacheCreateTokens: delta.escalationCacheCreateTokens,
     }),
     retryCount: retryCount ?? 0,

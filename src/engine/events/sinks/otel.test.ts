@@ -29,6 +29,23 @@ describe('createOtelSink', () => {
     expect(workflow?.status.code).toBe(SpanStatusCode.OK);
   });
 
+  it('redacts secrets from the feature span attribute', () => {
+    const sink = createOtelSink({ provider });
+    sink({
+      type: 'workflow_started',
+      ts: 1,
+      phase: 'researching',
+      feature: 'use sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa for auth',
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
+    expect(workflow?.attributes['diptych.feature']).not.toContain(
+      'sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    expect(workflow?.attributes['diptych.feature']).toContain('***REDACTED***');
+  });
+
   it('sets workflow_config attributes on the workflow span', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
@@ -67,6 +84,29 @@ describe('createOtelSink', () => {
     expect(phase?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
   });
 
+  it('opens the researching phase span on a fresh run when workflow_started precedes the first planner_status running', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'x' });
+    sink({ type: 'planner_status', ts: 2, phase: 'researching', status: 'running' });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const researching = spans.find((s) => s.name === 'diptych.phase.researching');
+    const workflow = spans.find((s) => s.name === 'diptych.workflow');
+    expect(researching).toBeDefined();
+    expect(researching?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
+  });
+
+  it('drops the researching phase span when the first planner_status running precedes workflow_started', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'planner_status', ts: 1, phase: 'researching', status: 'running' });
+    sink({ type: 'workflow_started', ts: 2, phase: 'researching', feature: 'x' });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans.find((s) => s.name === 'diptych.phase.researching')).toBeUndefined();
+  });
+
   it('transitions phase spans when a new phase begins', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
@@ -77,6 +117,43 @@ describe('createOtelSink', () => {
     const spans = exporter.getFinishedSpans();
     expect(spans.find((s) => s.name === 'diptych.phase.researching')).toBeDefined();
     expect(spans.find((s) => s.name === 'diptych.phase.specifying')).toBeDefined();
+  });
+
+  it('opens the implementing phase span in instant mode so the task parents under it, not researching', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'x' });
+    sink({ type: 'planner_status', ts: 2, phase: 'researching', status: 'running' });
+    sink({ type: 'planner_status', ts: 3, phase: 'implementing', status: 'running' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'instant task',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
+    });
+    sink({
+      type: 'task_completed',
+      ts: 20,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'instant task',
+      method: 'local',
+      retries: 0,
+      duration: 10,
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const researching = spans.find((s) => s.name === 'diptych.phase.researching');
+    const task = spans.find((s) => s.name === 'diptych.task');
+    expect(implementing).toBeDefined();
+    expect(task?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
+    expect(task?.parentSpanContext?.spanId).not.toBe(researching?.spanContext().spanId);
   });
 
   it('emits a task span nested under phase on task_started → task_completed', () => {
@@ -238,14 +315,43 @@ describe('createOtelSink', () => {
     expect(validateEvent?.attributes?.['diptych.validate.passed']).toBe(true);
   });
 
-  it('records error events as exceptions on workflow span', () => {
+  it('force-closes the workflow span and open children with ERROR on an error event without a trailing workflow_complete', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
-    sink({ type: 'error', ts: 10, phase: 'idle', message: 'something broke' });
+    sink({ type: 'planner_status', ts: 2, phase: 'implementing', status: 'running' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T300'),
+      title: 'A',
+      index: 0,
+      total: 1,
+      file: 'd.ts',
+      action: 'create',
+    });
+    sink({ type: 'error', ts: 20, phase: 'implementing', message: 'something broke' });
+
+    const spans = exporter.getFinishedSpans();
+    const workflow = spans.find((s) => s.name === 'diptych.workflow');
+    const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const task = spans.find((s) => s.name === 'diptych.task');
+    expect(workflow).toBeDefined();
+    expect(workflow?.events.some((e) => e.name === 'exception')).toBe(true);
+    expect(workflow?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(phase?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(task?.status.code).toBe(SpanStatusCode.ERROR);
+  });
+
+  it('does not reopen or re-end the workflow span when a workflow_complete trails an error', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
+    sink({ type: 'error', ts: 10, phase: 'idle', message: 'boom' });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.events.some((e) => e.name === 'exception')).toBe(true);
+    const workflows = exporter.getFinishedSpans().filter((s) => s.name === 'diptych.workflow');
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0]?.status.code).toBe(SpanStatusCode.ERROR);
   });
 
   it('records warning events as span events on workflow span', () => {
@@ -274,5 +380,155 @@ describe('createOtelSink', () => {
       },
     });
     expect(exporter.getFinishedSpans()).toHaveLength(0);
+  });
+
+  it('opens a workflow span on workflow_resumed so a resumed run emits a non-empty trace', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_resumed', ts: 1, phase: 'implementing' });
+    sink({ type: 'planner_status', ts: 2, phase: 'implementing', status: 'running' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T100'),
+      title: 'resumed task',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'modify',
+    });
+    sink({
+      type: 'task_completed',
+      ts: 20,
+      phase: 'implementing',
+      taskId: taskId('T100'),
+      title: 'resumed task',
+      method: 'local',
+      retries: 0,
+      duration: 10,
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const workflow = spans.find((s) => s.name === 'diptych.workflow');
+    const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const task = spans.find((s) => s.name === 'diptych.task');
+    expect(workflow).toBeDefined();
+    expect(phase?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
+    expect(task?.parentSpanContext?.spanId).toBe(phase?.spanContext().spanId);
+  });
+
+  it('emits a workflow root span for the resume sequence (planner_status running then workflow_resumed, no workflow_started)', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'planner_status', ts: 1, phase: 'implementing', status: 'running' });
+    sink({ type: 'workflow_resumed', ts: 2, phase: 'implementing' });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans.find((s) => s.name === 'diptych.workflow')).toBeDefined();
+  });
+
+  it('is a no-op when planner_status running fires before any workflow_started or workflow_resumed', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'planner_status', ts: 1, phase: 'implementing', status: 'running' });
+
+    expect(exporter.getFinishedSpans()).toHaveLength(0);
+  });
+
+  it('does not open a phase span for escalating and keeps post-escalation tasks under implementing', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
+    sink({ type: 'planner_status', ts: 2, phase: 'implementing', status: 'running' });
+    sink({ type: 'planner_status', ts: 3, phase: 'escalating', status: 'running' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T200'),
+      title: 'next task',
+      index: 1,
+      total: 2,
+      file: 'b.ts',
+      action: 'create',
+    });
+    sink({
+      type: 'task_completed',
+      ts: 20,
+      phase: 'implementing',
+      taskId: taskId('T200'),
+      title: 'next task',
+      method: 'local',
+      retries: 0,
+      duration: 10,
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const task = spans.find((s) => s.name === 'diptych.task');
+    expect(spans.find((s) => s.name === 'diptych.phase.escalating')).toBeUndefined();
+    expect(task?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
+  });
+
+  it('keeps the implementing phase span open across an escalation while a task span is live and parents later tasks under implementing', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
+    sink({ type: 'planner_status', ts: 2, phase: 'implementing', status: 'running' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'first task',
+      index: 0,
+      total: 2,
+      file: 'a.ts',
+      action: 'create',
+    });
+    sink({ type: 'planner_status', ts: 12, phase: 'escalating', status: 'running' });
+
+    expect(
+      exporter.getFinishedSpans().find((s) => s.name === 'diptych.phase.implementing'),
+    ).toBeUndefined();
+
+    sink({
+      type: 'task_completed',
+      ts: 20,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'first task',
+      method: 'local',
+      retries: 0,
+      duration: 10,
+    });
+    sink({
+      type: 'task_started',
+      ts: 22,
+      phase: 'implementing',
+      taskId: taskId('T002'),
+      title: 'second task',
+      index: 1,
+      total: 2,
+      file: 'b.ts',
+      action: 'modify',
+    });
+    sink({
+      type: 'task_completed',
+      ts: 30,
+      phase: 'implementing',
+      taskId: taskId('T002'),
+      title: 'second task',
+      method: 'local',
+      retries: 0,
+      duration: 8,
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const tasks = spans.filter((s) => s.name === 'diptych.task');
+    const second = tasks.find((s) => s.attributes['diptych.task.id'] === 'T002');
+    expect(spans.find((s) => s.name === 'diptych.phase.escalating')).toBeUndefined();
+    expect(second?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
   });
 });

@@ -18,6 +18,24 @@ describe('ImplementerConfigSchema', () => {
     });
     expect(withModel.success).toBe(true);
   });
+
+  it('rejects the planner-only capabilities field on shell and agent implementers', () => {
+    const shell = ImplementerConfigSchema.safeParse({
+      kind: 'shell',
+      command: './run',
+      model: 'local-shell',
+      capabilities: { supportsSessionResume: true },
+    });
+    expect(shell.success).toBe(false);
+
+    const agent = ImplementerConfigSchema.safeParse({
+      kind: 'agent',
+      command: 'my-agent',
+      model: 'agent-default',
+      capabilities: { supportsEffort: true },
+    });
+    expect(agent.success).toBe(false);
+  });
 });
 
 describe('ImplementerProfilesConfigSchema', () => {

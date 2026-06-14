@@ -2,9 +2,10 @@ import { rmSync } from 'node:fs';
 import { cp, lstat, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR } from '../../../core/paths.js';
+import type { Config } from '../../../core/schemas/config.js';
+import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
-import { createSandboxEnv } from '../../runners/sandbox-env.js';
+import { createSandboxEnv, runnerAuthEnvKeys } from '../../runners/sandbox-env.js';
 import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots.js';
 import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots.js';
@@ -22,11 +23,7 @@ export type PromoteStagedChangesResult = {
 };
 
 const STAGED_COPY_EXCLUDE = new Set([
-  'node_modules',
-  DIPTYCH_DIR,
-  SANDBOX_DIR,
-  TREES_DIR,
-  '.git',
+  ...INTERNAL_SKIP_DIRS,
   '.env',
   '.npmrc',
   '.netrc',
@@ -44,7 +41,10 @@ async function shouldCopyToStagedProject(source: string): Promise<boolean> {
   return !(await lstat(source)).isSymbolicLink();
 }
 
-export async function createStagedProject(projectDir: string): Promise<StagedProject> {
+export async function createStagedProject(
+  projectDir: string,
+  config?: Config,
+): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
   const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
   try {
@@ -57,7 +57,10 @@ export async function createStagedProject(projectDir: string): Promise<StagedPro
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
     });
-    const sandboxEnv = await createSandboxEnv(stagedProjectDir);
+    const preserveEnvKeys = config
+      ? [...runnerAuthEnvKeys(config.implementer), ...runnerAuthEnvKeys(config.planner)]
+      : [];
+    const sandboxEnv = await createSandboxEnv(stagedProjectDir, preserveEnvKeys);
     return {
       projectDir: stagedProjectDir,
       sandboxEnv,

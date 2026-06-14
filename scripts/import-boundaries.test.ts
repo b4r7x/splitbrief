@@ -66,6 +66,21 @@ describe('findImportBoundaryViolations', () => {
     expect(violation?.reason).toContain('src/engine/** must not import from src/hooks/**');
   });
 
+  it('flags engine importing from stores (stores sit above engine)', () => {
+    write('stores/workflow/workflow.ts', 'export const workflowStore = {};');
+    write(
+      'engine/orchestrator/loop.ts',
+      "import { workflowStore } from '../../stores/workflow/workflow.js';\nexport const o = workflowStore;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+
+    expect(violations).toHaveLength(1);
+    const [violation] = violations;
+    expect(violation?.file).toBe('engine/orchestrator/loop.ts');
+    expect(violation?.reason).toContain('src/engine/** must not import from src/stores/**');
+  });
+
   it('allows engine importing from shared utils/core', () => {
     write('utils/format.ts', 'export const f = 1;');
     write(

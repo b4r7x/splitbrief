@@ -7,12 +7,12 @@ type PlanPromptSpec = {
   hasClarifications: boolean;
 };
 
-function outputInstruction(hasClarifications: boolean, ctx: LanguageContext): string {
+function outputInstruction(ctx: LanguageContext, opts: { hasClarifications: boolean }): string {
   const base =
     ctx.language === 'TypeScript'
       ? 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type definitions from the project.'
       : 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type or data-shape definitions from the project.';
-  if (!hasClarifications) return base;
+  if (!opts.hasClarifications) return base;
 
   return `${base}
 
@@ -88,7 +88,7 @@ export function buildPlanPrompt(
       ...buildLanguageContextSections(ctx),
       requiredSectionsSection(requiredSections(ctx)),
     ],
-    output: outputInstruction(spec.hasClarifications, ctx),
+    output: outputInstruction(ctx, { hasClarifications: spec.hasClarifications }),
   });
 }
 

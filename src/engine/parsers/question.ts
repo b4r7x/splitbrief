@@ -39,9 +39,15 @@ function findBalancedBrace(text: string, start: number): number {
   return -1;
 }
 
-export function extractQuestionsFromStream(text: string): ClarificationQuestion[] {
+interface ScanResult {
+  questions: ClarificationQuestion[];
+  consumed: number;
+}
+
+function scanQuestions(text: string): ScanResult {
   const questions: ClarificationQuestion[] = [];
   let searchFrom = 0;
+  let consumed = 0;
 
   while (searchFrom < text.length) {
     const start = text.indexOf(MARKER_PREFIX, searchFrom);
@@ -74,9 +80,14 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
     }
 
     searchFrom = afterJson + MARKER_SUFFIX.length;
+    consumed = searchFrom;
   }
 
-  return questions;
+  return { questions, consumed };
+}
+
+export function extractQuestionsFromStream(text: string): ClarificationQuestion[] {
+  return scanQuestions(text).questions;
 }
 
 export function createQuestionAccumulator() {
@@ -87,17 +98,16 @@ export function createQuestionAccumulator() {
   return {
     addChunk(chunk: string): ClarificationQuestion[] {
       buffer += chunk;
-      const extracted = extractQuestionsFromStream(buffer);
-      const newOnes = extracted.filter((q) => !seenIds.has(q.id));
+      const { questions, consumed } = scanQuestions(buffer);
+      const newOnes = questions.filter((q) => !seenIds.has(q.id));
       for (const q of newOnes) {
         seenIds.add(q.id);
         allQuestions.push(q);
       }
 
-      const lastSuffix = buffer.lastIndexOf(MARKER_SUFFIX);
-      if (lastSuffix !== -1) {
-        buffer = buffer.substring(lastSuffix + MARKER_SUFFIX.length);
-      }
+      const tail = buffer.substring(consumed);
+      const pendingPrefix = tail.lastIndexOf(MARKER_PREFIX);
+      buffer = pendingPrefix === -1 ? '' : tail.substring(pendingPrefix);
 
       return newOnes;
     },

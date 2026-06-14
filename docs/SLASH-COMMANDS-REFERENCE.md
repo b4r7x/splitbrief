@@ -104,7 +104,7 @@ Configuration mutators that persist immediately to the project config (`.diptych
 - **Screens**: all (`home`, `workflow`, `summary`, `setup`).
 - **Args**: optional. Valid values: `instant`, `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The legacy alias `full` is still parsed by the config schema but is not advertised here. Invalid values print `"Invalid mode: <x>. Valid modes: instant, quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode instant`
-- **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`. Failure to save (typically a malformed config file) prints `"Failed to save config: <error>"` from `setFeedbackError`. Mode semantics live in `docs/WORKFLOW.md` §1.2.
+- **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`. Failure to save (typically a malformed config file) prints `"Failed to save config: <error>"` from `setFeedbackError`. Mode semantics live in `docs/WORKFLOW.md` §3.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; persistence in `src/app/command-context.ts`.
 - **See also**: `/settings`, `/effort`.
 
@@ -380,26 +380,26 @@ These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed t
 
 | Key | Action | Source |
 |---|---|---|
-| `$` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:107` |
+| `Ctrl+G` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:118` |
 | `Ctrl+E` | Toggle the sidebar (only when terminal is wide enough) | `keyboard.ts:33` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts:37` |
 | `Esc` | Navigate home (only when the workflow has been cancelled) | `src/app/keys.ts` |
-| `Shift+↑` | Scroll conversation up by one line | `keyboard.ts:69` |
-| `Shift+↓` | Scroll conversation down by one line | `keyboard.ts:72` |
-| `PageUp` | Scroll conversation up by one page | `keyboard.ts:76` |
-| `PageDown` | Scroll conversation down by one page | `keyboard.ts:79` |
-| `g` | Jump to top of conversation | `keyboard.ts:83` |
-| `G` | Jump to bottom of conversation | `keyboard.ts:86` |
+| `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
+| `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
+| `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
+| `PageDown` | Scroll conversation down by one page | `keyboard.ts` `handleConversationScroll` |
+| `Home` | Jump to top of conversation | `keyboard.ts` `handleConversationScroll` |
+| `End` | Jump to bottom of conversation | `keyboard.ts` `handleConversationScroll` |
 
 ### Review pane (workflow screen, when a file is open)
 
-When the review pane has a `filePath` set (e.g. inspecting a spec or plan), arrow keys scroll the review content instead of the conversation:
+When the review pane has a `filePath` set (e.g. inspecting a spec or plan), these keys scroll the review content instead of the conversation. They are handled before the input-mode guard, so they work even while a prompt field has focus:
 
 | Key | Action | Source |
 |---|---|---|
-| `↑` | Scroll review pane up one line | `keyboard.ts:53` |
-| `↓` | Scroll review pane down one line | `keyboard.ts:54` |
-| `G` | Jump to bottom of review pane | `keyboard.ts:55` |
+| `↑` | Scroll review pane up one line | `keyboard.ts` `handleReviewScroll` |
+| `↓` | Scroll review pane down one line | `keyboard.ts` `handleReviewScroll` |
+| `End` | Jump to bottom of review pane | `keyboard.ts` `handleReviewScroll` |
 
 ### Summary screen
 
@@ -428,7 +428,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `close-overlay` | `Esc` | Close overlay | all |
 | `toggle-sidebar` | `Ctrl+E` | Toggle sidebar | workflow |
 | `toggle-diff` | `Ctrl+D` | Toggle diff | workflow |
-| `scroll` | `↑/↓` | Scroll | workflow |
+| `scroll` | `Shift+↑/↓, PgUp/PgDn` | Scroll | workflow |
 | `continue` | `Enter` | Continue | summary |
 
 ---

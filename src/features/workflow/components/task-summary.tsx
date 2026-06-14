@@ -3,6 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
 import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
+import { formatDuration } from '../../../utils/format-time.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -50,7 +51,7 @@ export function TaskSummary({
   const label = getMethodDisplay(method, t).text;
   const meta: string[] = [label];
   if (retries && retries > 0) meta.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`);
-  if (duration != null) meta.push(`${duration}s`);
+  if (duration != null) meta.push(formatDuration(duration));
 
   return (
     <Box>

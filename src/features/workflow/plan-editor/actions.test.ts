@@ -8,62 +8,10 @@ import {
   mergeWithPrevious,
   moveTaskDown,
   moveTaskUp,
-  parseSplitResult,
 } from './actions.js';
+import { formatTasks } from '../../../engine/spec/formatter.js';
+import { parseTasksStrict } from '../../../engine/spec/parser.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-
-const singleTaskMarkdown = `---
-id: T001
-title: "Single task"
-action: create
-file: src/single.ts
-depends_on: []
----
-
-### Description
-A single task.
-
-### Tests
-- Should work
-
-### Constraints
-- None
-`;
-
-const multiTaskMarkdown = `---
-id: T001
-title: "First task"
-action: create
-file: src/first.ts
-depends_on: []
----
-
-### Description
-First task description.
-
-### Tests
-- First test
-
-### Constraints
-- None
-
----
-id: T002
-title: "Second task"
-action: create
-file: src/second.ts
-depends_on: [T001]
----
-
-### Description
-Second task description.
-
-### Tests
-- Second test
-
-### Constraints
-- None
-`;
 
 describe('renumberTasks', () => {
   it('assigns T001, T002, T003 in array order', () => {
@@ -269,11 +217,12 @@ describe('mergeWithPrevious', () => {
     expect(tasks[0]?.status).toBe('pending');
   });
 
-  it('concatenates descriptions with separator', () => {
+  it('concatenates descriptions with a non-separator seam', () => {
     const prev = makeTask({ id: 'T001', description: 'Prev desc' });
     const curr = makeTask({ id: 'T002', description: 'Curr desc' });
     const { tasks } = mergeWithPrevious([prev, curr], 1);
-    expect(tasks[0]?.description).toBe('Prev desc\n\n---\n\nCurr desc');
+    expect(tasks[0]?.description).toBe('Prev desc\n\n***\n\nCurr desc');
+    expect(tasks[0]?.description).not.toContain('\n---\n');
   });
 
   it('uses prev typeDefs if curr is empty', () => {
@@ -312,6 +261,39 @@ describe('mergeWithPrevious', () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[1]?.dependsOn).toEqual(['T001']);
   });
+
+  it('final-task merge survives format → parseTasksStrict round-trip', () => {
+    const prev = makeTask({
+      id: 'T001',
+      description: 'Prev desc',
+      tests: ['prev test'],
+      implementationSteps: ['prev step'],
+    });
+    const curr = makeTask({
+      id: 'T002',
+      description: 'Curr desc',
+      tests: ['curr test'],
+      implementationSteps: ['curr step'],
+    });
+    const { tasks } = mergeWithPrevious([prev, curr], 1);
+    const parsed = parseTasksStrict(formatTasks(tasks));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.description).toBe(tasks[0]?.description);
+    expect(parsed[0]?.tests).toEqual(['prev test', 'curr test']);
+  });
+
+  it('mid-plan merge survives format → parseTasksStrict round-trip', () => {
+    const prev = makeTask({ id: 'T001', description: 'Prev desc' });
+    const curr = makeTask({ id: 'T002', description: 'Curr desc' });
+    const tail = makeTask({ id: 'T003', description: 'Tail desc' });
+    const { tasks } = mergeWithPrevious([prev, curr, tail], 1);
+    const parsed = parseTasksStrict(formatTasks(tasks));
+
+    expect(parsed.map((t) => t.id)).toEqual(tasks.map((t) => t.id));
+    expect(parsed[0]?.description).toBe(tasks[0]?.description);
+    expect(parsed[1]?.description).toBe(tasks[1]?.description);
+  });
 });
 
 describe('moveTaskDown', () => {
@@ -343,6 +325,17 @@ describe('moveTaskDown', () => {
     const { tasks: result } = moveTaskDown(tasks, 0);
     expect(result.map((t) => t.title)).toEqual(['Second', 'First', 'Third']);
     expect(result[2]?.dependsOn).toEqual(['T001']);
+  });
+
+  it('is a no-op when the move would push a task below its dependent', () => {
+    const tasks = [
+      makeTask({ id: 'T001', title: 'First' }),
+      makeTask({ id: 'T002', title: 'Second', dependsOn: ['T001'] }),
+    ];
+    const { tasks: result, cursor } = moveTaskDown(tasks, 0);
+    expect(result).toBe(tasks);
+    expect(result.map((t) => t.title)).toEqual(['First', 'Second']);
+    expect(cursor).toBe(0);
   });
 });
 
@@ -376,70 +369,15 @@ describe('moveTaskUp', () => {
     expect(result.map((t) => t.title)).toEqual(['First', 'Third', 'Second']);
     expect(result[1]?.dependsOn).toEqual(['T001']);
   });
-});
 
-describe('parseSplitResult', () => {
-  const baseTasks = [makeTask({ id: 'T001', title: 'Original' })];
-
-  it('returns merged tasks for valid single-task markdown', () => {
-    const result = parseSplitResult(singleTaskMarkdown, baseTasks, 0);
-    expect(Array.isArray(result)).toBe(true);
-    if (!Array.isArray(result)) throw new Error('expected array');
-    expect(result).toHaveLength(1);
-    expect(result[0]?.status).toBe('pending');
-    expect(result[0]?.title).toBe('Single task');
-  });
-
-  it('returns error object for zero-task markdown', () => {
-    const result = parseSplitResult('no tasks here', baseTasks, 0);
-    expect(Array.isArray(result)).toBe(false);
-    if (Array.isArray(result)) throw new Error('expected error');
-    expect(result.error).toBe('split produced no tasks');
-  });
-
-  it('returns multiple tasks merged into the full plan', () => {
-    const result = parseSplitResult(multiTaskMarkdown, baseTasks, 0);
-    expect(Array.isArray(result)).toBe(true);
-    if (!Array.isArray(result)) throw new Error('expected array');
-    expect(result).toHaveLength(2);
-    expect(result[0]?.status).toBe('pending');
-    expect(result[1]?.status).toBe('pending');
-  });
-
-  it('overrides status to pending on all returned tasks', () => {
-    const result = parseSplitResult(singleTaskMarkdown, baseTasks, 0);
-    if (!Array.isArray(result)) throw new Error('expected array');
-    for (const task of result) {
-      expect(task.status).toBe('pending');
-    }
-  });
-
-  it('allows split tasks to depend on earlier tasks outside the edited block', () => {
-    const fullTasks = [
+  it('is a no-op when the move would push a task above its dependency', () => {
+    const tasks = [
       makeTask({ id: 'T001', title: 'First' }),
-      makeTask({ id: 'T002', title: 'Second', dependsOn: [taskId('T001')] }),
+      makeTask({ id: 'T002', title: 'Second', dependsOn: ['T001'] }),
     ];
-    const splitMarkdown = `---
-id: T002
-title: "Split second"
-action: create
-file: src/second.ts
-depends_on: [T001]
----
-
-### Description
-Depends on the earlier task.
-
-### Tests
-- Should validate against full plan
-
-### Constraints
-- None
-`;
-    const result = parseSplitResult(splitMarkdown, fullTasks, 1);
-    expect(Array.isArray(result)).toBe(true);
-    if (!Array.isArray(result)) throw new Error('expected array');
-    expect(result).toHaveLength(2);
-    expect(result[1]?.dependsOn).toEqual([taskId('T001')]);
+    const { tasks: result, cursor } = moveTaskUp(tasks, 1);
+    expect(result).toBe(tasks);
+    expect(result.map((t) => t.title)).toEqual(['First', 'Second']);
+    expect(cursor).toBe(1);
   });
 });

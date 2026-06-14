@@ -21,7 +21,7 @@ import {
   reconstructTree,
   persistAppend,
 } from './io.js';
-import { entryId } from './schemas.js';
+import { entryId, nextEntryId } from './schemas.js';
 import { createEmptyTree, appendEntry, branchFrom } from './store.js';
 
 describe('treeJsonlPath', () => {
@@ -342,6 +342,33 @@ describe('reconstructTree', () => {
       expect(reconstructed).not.toBeNull();
       expect(reconstructed!.meta.entryCount).toBe(3);
       expect(reconstructed!.meta.leafId).toBe(entryId('E0003'));
+    });
+  });
+
+  it('reconciles a stale meta written before the last entry reached disk', async () => {
+    await withTempDir('tree-io-test', async (dir) => {
+      mkdirSync(dir, { recursive: true });
+      // Simulates a crash after appending E0003 but before tree-meta.json was
+      // rewritten: the jsonl is ahead of the meta the recorder last persisted.
+      writeFileSync(
+        treeJsonlPath(dir),
+        '{"id":"E0001","parentId":null,"type":"start","timestamp":1000,"payload":null}\n{"id":"E0002","parentId":"E0001","type":"msg","timestamp":2000,"payload":null}\n{"id":"E0003","parentId":"E0002","type":"msg","timestamp":3000,"payload":null}\n',
+      );
+      writeTreeMeta(dir, {
+        leafId: entryId('E0002'),
+        entryCount: 2,
+        branchCount: 0,
+        createdAt: 1000,
+        updatedAt: 2000,
+      });
+
+      const reconstructed = reconstructTree(dir);
+      expect(reconstructed).not.toBeNull();
+      // entryCount must advance past the on-disk max so the next minted id is
+      // E0004, not a duplicate E0003.
+      expect(reconstructed!.meta.entryCount).toBe(3);
+      expect(reconstructed!.meta.leafId).toBe(entryId('E0003'));
+      expect(nextEntryId(reconstructed!.meta.entryCount)).toBe(entryId('E0004'));
     });
   });
 });

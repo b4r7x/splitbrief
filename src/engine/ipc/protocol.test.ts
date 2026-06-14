@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { parseIpcPromptResponse, parseServerMessage } from './protocol.js';
+import { parseClientMessage, parseIpcPromptResponse, parseServerMessage } from './protocol.js';
+
+describe('parseClientMessage', () => {
+  it('parses detach', () => {
+    expect(parseClientMessage({ kind: 'detach' })).toEqual({ kind: 'detach' });
+  });
+
+  it('parses user_input', () => {
+    expect(parseClientMessage({ kind: 'user_input', text: 'hello' })).toEqual({
+      kind: 'user_input',
+      text: 'hello',
+    });
+  });
+
+  it('rejects the removed recovery_response command', () => {
+    expect(
+      parseClientMessage({ kind: 'recovery_response', issueId: 'i1', action: 'pause' }),
+    ).toBeNull();
+  });
+});
 
 describe('parseIpcPromptResponse — cost_approval', () => {
   it('parses valid cost_approval response', () => {
@@ -69,6 +88,20 @@ describe('parseIpcPromptResponse — task_review', () => {
   });
 });
 
+describe('parseIpcPromptResponse — user_edit_conflict', () => {
+  it('parses a valid conflict action', () => {
+    expect(
+      parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: 'continue-unrelated' }),
+    ).toEqual({ kind: 'user_edit_conflict', selectedAction: 'continue-unrelated' });
+  });
+
+  it('rejects the removed regenerate-rebase action', () => {
+    expect(
+      parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: 'regenerate-rebase' }),
+    ).toBeNull();
+  });
+});
+
 describe('parseServerMessage', () => {
   it('returns null for non-object values', () => {
     expect(parseServerMessage(null)).toBeNull();
@@ -92,7 +125,6 @@ describe('parseServerMessage', () => {
       startedAt: 1000,
       mode: 'standard',
       feature: 'test',
-      readonly: false,
     };
     expect(parseServerMessage(msg)).toEqual(msg);
   });
@@ -142,24 +174,34 @@ describe('parseServerMessage', () => {
   it('parses valid prompt_request message', () => {
     const msg = {
       kind: 'prompt_request',
-      request: { requestId: 'req-1', kind: 'external_changes' },
+      request: { requestId: 'req-1', kind: 'approval_needed', approvalType: 'spec', filePath: 's' },
     };
     expect(parseServerMessage(msg)).toEqual(msg);
   });
 
   it('rejects prompt_request with missing requestId', () => {
     expect(
-      parseServerMessage({ kind: 'prompt_request', request: { kind: 'external_changes' } }),
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: { kind: 'approval_needed', approvalType: 'spec', filePath: 's' },
+      }),
     ).toBeNull();
   });
 
-  it('parses valid replay_meta message', () => {
-    const msg = { kind: 'replay_meta', totalEvents: 5, firstTs: 100, lastTs: 200 };
-    expect(parseServerMessage(msg)).toEqual(msg);
+  it('rejects the removed external_changes prompt kind', () => {
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: { requestId: 'req-1', kind: 'external_changes' },
+      }),
+    ).toBeNull();
+    expect(parseIpcPromptResponse({ kind: 'external_changes', proceed: true })).toBeNull();
   });
 
-  it('rejects replay_meta with non-number totalEvents', () => {
-    expect(parseServerMessage({ kind: 'replay_meta', totalEvents: 'five' })).toBeNull();
+  it('rejects the removed replay_meta message kind', () => {
+    expect(
+      parseServerMessage({ kind: 'replay_meta', totalEvents: 5, firstTs: 100, lastTs: 200 }),
+    ).toBeNull();
   });
 
   it('parses valid error message', () => {

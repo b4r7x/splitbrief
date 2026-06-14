@@ -8,6 +8,7 @@ describe('normalizeLegacyMode', () => {
     ['standard', 'standard'],
     ['speckit', 'speckit'],
     ['full', 'speckit'],
+    ['spec-kit', 'speckit'],
   ])('normalizes "%s" → "%s"', (input, expected) => {
     expect(normalizeLegacyMode(input)).toBe(expected);
   });

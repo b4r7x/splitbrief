@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import YAML from 'yaml';
 import { createValidator, formatValidationError } from './validation.js';
 import type { ValidationCommandRunner } from './validation.js';
 import { createEventBus } from '../events/bus.js';
@@ -12,7 +13,8 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 import { processError } from '../../lib/process/errors.js';
 
 function makeConfig(overrides: Partial<Config['validation']>): Config {
@@ -106,6 +108,36 @@ describe('formatValidationError', () => {
     expect(error).not.toContain('Error line 21');
     expect(error).toContain('Error line 20');
   });
+
+  it('keeps the tail of a long test failure so vitest FAIL summary survives', () => {
+    const longError = [
+      ...Array.from({ length: 30 }, (_, i) => `Noise line ${i + 1}`),
+      'Tests  1 failed | 2 passed',
+      'FAIL  src/foo.test.ts > does the thing',
+    ].join('\n');
+    const results: ValidationResult[] = [{ passed: false, stage: 'test', error: longError }];
+    const error = formatValidationError(results);
+    expect(error).toContain('FAIL  src/foo.test.ts > does the thing');
+    expect(error).toContain('Tests  1 failed | 2 passed');
+    expect(error.split('\n')).not.toContain('Noise line 1');
+  });
+
+  it('attributes a pre-existing failing stage to the baseline, not the implementer', () => {
+    const results: ValidationResult[] = [
+      { passed: false, stage: 'typecheck', error: 'type error' },
+    ];
+    const error = formatValidationError(results, new Set(['typecheck']));
+    expect(error).toContain('pre-existing failure');
+    expect(error).toContain('not caused by this task');
+    expect(error).not.toContain('Your previous code had an error');
+  });
+
+  it('keeps the implementer-attribution message when the failing stage is not in the baseline', () => {
+    const results: ValidationResult[] = [{ passed: false, stage: 'lint', error: 'lint error' }];
+    const error = formatValidationError(results, new Set(['typecheck']));
+    expect(error).toContain('Your previous code had an error');
+    expect(error).not.toContain('pre-existing');
+  });
 });
 
 describe('validation pipeline', () => {
@@ -125,7 +157,7 @@ describe('validation pipeline', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
 
   it('skips typecheck when master switch is off', async () => {
     const config = makeConfig({
@@ -188,7 +220,7 @@ describe('layer priority', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
 
   it('config wins over discovered', async () => {
     const runner = makeCommandRunner();
@@ -247,7 +279,37 @@ describe('layer priority', () => {
     expectCommandRanInProject(runner, tempDir);
   });
 
-  it('lint stage skipped when no layer provides a command', async () => {
+  it('runs the heuristic cargo test when the loaded config sets no test_command', async () => {
+    const configDir = join(tempDir, DIPTYCH_DIR);
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'config.yaml'),
+      YAML.stringify({ validation: { typecheck: false, lint: false, test: true } }),
+      'utf-8',
+    );
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    const { config } = loadConfig(tempDir);
+    expect(config.validation.testCommand).toBeUndefined();
+
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(results.find((r) => r.stage === 'test')?.output).toBe('cargo test');
+    expect(runner.calls.at(-1)?.cmd).toBe('cargo');
+    expect(runner.calls.at(-1)?.args).toEqual(['test']);
+    expectCommandRanInProject(runner, tempDir);
+  });
+
+  it('lint stage records a skipped result when no layer provides a command', async () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
     const config = makeConfig({ typecheck: false, lint: true, test: false });
 
@@ -260,7 +322,7 @@ describe('layer priority', () => {
     });
 
     const lintResult = results.find((r) => r.stage === 'lint');
-    expect(lintResult).toBeUndefined();
+    expect(lintResult).toMatchObject({ stage: 'lint', passed: true, skipped: true });
   });
 
   it('ENOENT skips gracefully', async () => {
@@ -279,8 +341,62 @@ describe('layer priority', () => {
     });
 
     const tc = results.find((r) => r.stage === 'typecheck');
-    expect(tc?.passed).toBe(true);
+    expect(tc).toMatchObject({ stage: 'typecheck', passed: true, skipped: true });
     expect(tc?.output).toContain('not found');
+  });
+
+  it('skips a heuristic lint command when the cargo subcommand is missing (rustup minimal)', async () => {
+    const missingClippy = processError.exitCode({
+      command: 'cargo',
+      label: 'lint validation',
+      code: 101,
+      stderr: 'error: no such command: `clippy`',
+      output: '',
+    });
+    const validator = createValidator({ runCommand: makeCommandRunner(missingClippy) });
+    const config = makeConfig({ typecheck: false, lint: true, test: false });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const lint = results.find((r) => r.stage === 'lint');
+    expect(lint).toMatchObject({ stage: 'lint', passed: true, skipped: true });
+  });
+
+  it('still fails a configured command that exits 101 with a missing-subcommand signature', async () => {
+    const missingSubcommand = processError.exitCode({
+      command: 'cargo',
+      label: 'lint validation',
+      code: 101,
+      stderr: 'error: no such command: `clippy`',
+      output: '',
+    });
+    const validator = createValidator({ runCommand: makeCommandRunner(missingSubcommand) });
+    const config = makeConfig({
+      typecheck: false,
+      lint: true,
+      lintCommand: 'cargo clippy --no-deps',
+      test: false,
+    });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/main.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const lint = results.find((r) => r.stage === 'lint');
+    expect(lint?.passed).toBe(false);
+    expect(lint?.skipped).toBeUndefined();
   });
 
   it('fails when a configured validation command is not found', async () => {
@@ -307,6 +423,67 @@ describe('layer priority', () => {
       stage: 'typecheck',
     });
     expect(tc?.error).toContain('Configured typecheck command not found: missing-typecheck');
+  });
+
+  it('records a skipped typecheck on a non-TS project instead of running tsc', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'package.json'), '{"name":"plain"}');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.js'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(results.find((r) => r.stage === 'typecheck')).toMatchObject({
+      stage: 'typecheck',
+      passed: true,
+      skipped: true,
+    });
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('skips typecheck on a Python project instead of falling back to tsc', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'pyproject.toml'), '[tool.pytest]');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.py'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(results.find((r) => r.stage === 'typecheck')).toMatchObject({
+      stage: 'typecheck',
+      passed: true,
+      skipped: true,
+    });
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('uses default npx tsc --noEmit when tsconfig.json exists but no language deps', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('npx tsc --noEmit');
   });
 
   it('TS project uses default npx tsc --noEmit when heuristic returns null', async () => {
@@ -352,7 +529,49 @@ describe('layer priority', () => {
     expect(results.map((r) => r.stage)).toEqual(['typecheck']);
   });
 
-  it('skips test stage when default source but no test file found', async () => {
+  it('reports a timed-out stage as a timeout failure, not an exit-code error', async () => {
+    const timeout = processError.timeout({
+      command: 'tsc',
+      label: 'typecheck validation',
+      timeoutMs: 600_000,
+      output: '',
+    });
+    const validator = createValidator({ runCommand: makeCommandRunner(timeout) });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const tc = results.find((r) => r.stage === 'typecheck');
+    expect(tc?.passed).toBe(false);
+    expect(tc?.error).toContain('timed out');
+    expect(tc?.error).not.toContain('exited with code');
+  });
+
+  it('passes the configured validation.timeoutMs through to the command runner', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false, timeoutMs: 900_000 });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls.at(-1)?.options?.timeout).toBe(900_000);
+  });
+
+  it('records a skipped test result when default source but no test file found', async () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
     const config = makeConfig({
       typecheck: false,
@@ -370,7 +589,196 @@ describe('layer priority', () => {
       phase: 'implementing',
     });
 
-    expect(results.find((r) => r.stage === 'test')).toBeUndefined();
+    expect(results.find((r) => r.stage === 'test')).toMatchObject({
+      stage: 'test',
+      passed: true,
+      skipped: true,
+    });
+  });
+});
+
+describe('run-start baseline of pre-existing failures', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-baseline');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  function mkTask(file: string): Task {
+    return makeTask({ file, action: 'modify' });
+  }
+
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+
+  it('relabels a first-task failure that was already failing before any task', async () => {
+    const typeError = () =>
+      processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
+    const validator = createValidator({
+      runCommand: makeCommandRunner(typeError(), typeError()),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.primeBaseline({ task: mkTask('src/app.ts'), projectDir: tempDir, config });
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(validator.getBaselineFailingStages?.()?.has('typecheck')).toBe(true);
+    const error = formatValidationError(results, validator.getBaselineFailingStages?.());
+    expect(error).toContain('pre-existing failure');
+    expect(error).toContain('not caused by this task');
+  });
+
+  it('probes the default test baseline against the affected test file, not the whole suite', async () => {
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+
+    await validator.primeBaseline({ task: mkTask('src/foo.ts'), projectDir: tempDir, config });
+
+    const baselineProbe = runner.calls[0];
+    expect(baselineProbe?.cmd).toBe('npm');
+    expect(baselineProbe?.args).toEqual(['test', '--', join(tempDir, 'src', 'foo.test.ts')]);
+  });
+
+  it('attributes a fresh test failure to the task when the affected file passed at baseline', async () => {
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    const validator = createValidator({
+      runCommand: makeCommandRunner(
+        { stdout: 'ok', stderr: '', code: 0 },
+        processError.exitCode({ command: 'npm', code: 1, stderr: 'test failed', output: '' }),
+      ),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+
+    await validator.primeBaseline({ task: mkTask('src/foo.ts'), projectDir: tempDir, config });
+    const results = await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(validator.getBaselineFailingStages?.()?.has('test')).toBe(false);
+    const error = formatValidationError(results, validator.getBaselineFailingStages?.());
+    expect(error).toContain('Your previous code had an error');
+    expect(error).not.toContain('pre-existing');
+  });
+
+  it('does not record a baseline failure when a heuristic command is missing its subcommand', async () => {
+    const missingClippy = () =>
+      processError.exitCode({
+        command: 'cargo',
+        label: 'lint validation',
+        code: 101,
+        stderr: 'error: no such command: `clippy`',
+        output: '',
+      });
+    const validator = createValidator({
+      runCommand: makeCommandRunner(missingClippy(), missingClippy()),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: false, lint: true, test: false });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    await validator.primeBaseline({ task: mkTask('src/main.rs'), projectDir: tempDir, config });
+
+    expect(validator.getBaselineFailingStages?.()?.has('lint')).toBe(false);
+  });
+
+  it('does not relabel when the project was green at run start', async () => {
+    const validator = createValidator({
+      runCommand: makeCommandRunner(
+        { stdout: 'ok', stderr: '', code: 0 },
+        processError.exitCode({ command: 'tsc', code: 1, stderr: 'new error', output: '' }),
+      ),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.primeBaseline({ task: mkTask('src/app.ts'), projectDir: tempDir, config });
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(validator.getBaselineFailingStages?.()?.has('typecheck')).toBe(false);
+    const error = formatValidationError(results, validator.getBaselineFailingStages?.());
+    expect(error).toContain('Your previous code had an error');
+    expect(error).not.toContain('pre-existing');
+  });
+});
+
+describe('all-stages-skipped warning', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-allskip');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  function mkTask(file: string): Task {
+    return makeTask({ file, action: 'modify' });
+  }
+
+  it('publishes a warning when every enabled stage resolves to a skip', async () => {
+    const validator = createValidator({ runCommand: makeCommandRunner() });
+    const config = makeConfig({ typecheck: true, lint: true, test: true, testCommand: undefined });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+
+    await validator.runValidation({
+      task: mkTask('src/app.js'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'implementing',
+    });
+
+    const warning = events.find((e): e is EngineEventOf<'warning'> => e.type === 'warning');
+    expect(warning?.message).toContain('was not validated');
+  });
+
+  it('does NOT publish the warning when a stage actually ran', async () => {
+    const validator = createValidator({ runCommand: makeCommandRunner() });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'implementing',
+    });
+
+    expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 });
 
@@ -389,7 +797,7 @@ describe('discovered validation sanitization', () => {
     return makeTask({ file, action: 'modify' });
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {}, unsubscribeAll: () => {} };
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
 
   it('does NOT execute planner-discovered ./evil-script', async () => {
     const runner = makeCommandRunner();
@@ -510,6 +918,7 @@ describe('validation output redaction', () => {
     );
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
     const events: EngineEvent[] = [];
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
@@ -530,11 +939,50 @@ describe('validation output redaction', () => {
     expect(String(validateEvent?.error ?? '')).toContain('REDACTED');
   });
 
+  it('keeps stdout test-failure detail when stderr carries only an unrelated warning', async () => {
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'vitest',
+        code: 1,
+        stderr: '(node:123) DeprecationWarning: punycode is deprecated',
+        output: 'FAIL  src/a.test.ts > computes the total\nexpected 3 to equal 4',
+      }),
+    );
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: 'vitest run',
+    });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+
+    await validator.runValidation({
+      task: makeTask({ file: 'src/a.ts' }),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'implementing',
+    });
+
+    const validateEvent = events.find(
+      (e): e is EngineEventOf<'validate'> => e.type === 'validate' && e.status === 'done',
+    );
+    expect(validateEvent).toBeDefined();
+    expect(String(validateEvent?.error ?? '')).toContain(
+      'FAIL  src/a.test.ts > computes the total',
+    );
+    expect(String(validateEvent?.error ?? '')).toContain('expected 3 to equal 4');
+  });
+
   it('caps validation output to 4096 characters', async () => {
     const longOutput = 'x'.repeat(5000);
     const runner = makeCommandRunner({ stdout: longOutput, stderr: '', code: 0 });
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
     const bus = { publish: () => {}, subscribe: () => () => {} };
 
     const results = await validator.runValidation({

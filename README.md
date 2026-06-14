@@ -103,7 +103,7 @@ After `diptych init` and the first `diptych start`, diptych creates a `.diptych/
 
 Needs **Node.js 22+** and **git** in the project.
 
-Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are not a separate plan archive, kanban board, or cross-plan management system.
+Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
 If using Ollama, bump the context window — the default 2048 tokens is too small:
 
@@ -178,7 +178,7 @@ workflow:
 
 `contextLength` should match your model's effective window. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: diptych selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
 
-This repository forbids agents from staging or committing. Product-level git commit strategies may exist for users who opt in, but agents working on diptych leave changes unstaged for manual review.
+Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want diptych to create git history.
 
 ### Planner backends
 
@@ -263,11 +263,11 @@ implementer:
 
 ## Models
 
-diptych now loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
+diptych loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
 
 ### Catalog notes
 
-- Claude Code uses `default`, `sonnet`, `opus`, and `opusplan` in the picker. Legacy stored `auto` still resolves safely to `default`.
+- Claude Code uses `auto`, `sonnet`, `opus`, and `opusplan` in the picker. A stored `default` resolves to `auto` for compatibility.
 - For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching diptych.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 

@@ -121,7 +121,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
         return;
       }
       ctx.setSelectedLeftKey(ctx.leftGetKey(ctx.leftCurrentItem));
-      if (ctx.rightItems.length > 0 || ctx.rightPlaceholder) ctx.setActiveColumn('right');
+      if (ctx.rightItems.length > 0 || Boolean(ctx.rightPlaceholder)) ctx.setActiveColumn('right');
       return;
     }
     if (ctx.isOnVirtual) {

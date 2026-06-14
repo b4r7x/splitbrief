@@ -9,8 +9,15 @@ export const HANDOFF_TARGETS: readonly HandoffTarget[] = [
   'copilot-issue',
 ];
 
+const HANDOFF_TARGET_ALIASES: Record<string, HandoffTarget> = { speckit: 'spec-kit' };
+
+export function normalizeHandoffTarget(value: string): string {
+  return HANDOFF_TARGET_ALIASES[value] ?? value;
+}
+
 export function parseHandoffTarget(value: string): HandoffTarget | null {
-  return HANDOFF_TARGETS.find((target) => target === value) ?? null;
+  const normalized = normalizeHandoffTarget(value);
+  return HANDOFF_TARGETS.find((target) => target === normalized) ?? null;
 }
 
 export function validateHandoffTargetName(

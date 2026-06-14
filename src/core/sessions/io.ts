@@ -2,10 +2,12 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
+import type { WorkflowState } from '../schemas/workflow.js';
 import { SessionSchema } from '../schemas/session.js';
 import { sessionDir, sessionsRoot } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { loadState } from '../state/persistence.js';
 import { sessionError } from './errors.js';
 import { writeSecureFile } from '../../lib/fs.js';
 
@@ -42,6 +44,25 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   );
 }
 
+function stateToSession(sessionId: string, state: WorkflowState): Session {
+  const startedAt = Date.parse(state.startedAt);
+  return {
+    id: sessionId,
+    feature: state.feature,
+    startedAt: Number.isNaN(startedAt) ? 0 : startedAt,
+    completedAt: null,
+    stateVersion: state.stateVersion,
+    status: 'interrupted',
+    summary: null,
+  };
+}
+
+function recoverSession(projectDir: string, sessionId: string): Session | null {
+  const state = loadState({ projectDir, sessionId });
+  if (!state) return null;
+  return stateToSession(sessionId, state);
+}
+
 // Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.
 const MAX_RECENT_SESSIONS = 30;
 
@@ -55,7 +76,7 @@ function readSessions(projectDir: string): Session[] {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const summaryPath = join(root, entry.name, 'summary.json');
-    const session = readSummaryFile(summaryPath);
+    const session = readSummaryFile(summaryPath) ?? recoverSession(projectDir, entry.name);
     if (session) sessions.push(session);
   }
 

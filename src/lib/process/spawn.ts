@@ -1,9 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { error } from '../../utils/error.js';
 import { isENOENT, processError } from './errors.js';
 import { createLineBuffer } from './line-buffer.js';
 import { registerProcess, unregisterProcess, killProcess, abortProcess } from './registry.js';
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+
+export const spawnError = {
+  streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
+} as const;
 
 interface SpawnPipeOptions<T> {
   command: string;
@@ -65,12 +70,14 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     const { stdout, stderr, stdin } = proc;
     if (!stdout || !stderr || !stdin) {
       unregisterProcess(proc);
-      fail(new Error('Process streams not available'));
+      fail(spawnError.streamsUnavailable());
       return;
     }
 
-    stdout.on('data', (chunk: Buffer) => opts.onStdout(chunk.toString()));
-    stderr.on('data', (chunk: Buffer) => opts.onStderr(chunk.toString()));
+    stdout.setEncoding('utf8');
+    stderr.setEncoding('utf8');
+    stdout.on('data', (chunk: string) => opts.onStdout(chunk));
+    stderr.on('data', (chunk: string) => opts.onStderr(chunk));
 
     proc.on('error', (err: NodeJS.ErrnoException) => {
       unregisterProcess(proc);
@@ -107,7 +114,7 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 export function runCommand(
   command: string,
   args: string[],
-  options?: { cwd?: string | undefined; timeout?: number | undefined },
+  options?: { cwd?: string | undefined; timeout?: number | undefined; label?: string | undefined },
 ): Promise<{ stdout: string; stderr: string; code: 0 }> {
   const timeout = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
   let stdout = '';
@@ -132,11 +139,25 @@ export function runCommand(
       stderr += chunk;
     },
     onClose: (code) => {
+      if (timeoutSignal.aborted) {
+        throw processError.timeout({
+          command,
+          label: options?.label,
+          timeoutMs: timeout,
+          output: stderr || stdout,
+        });
+      }
       if (code === 127) {
         throw processError.notFound(command);
       }
       if (code !== 0) {
-        throw processError.exitCode({ command, code, stderr, output: stdout });
+        throw processError.exitCode({
+          command,
+          label: options?.label,
+          code,
+          stderr,
+          output: stdout,
+        });
       }
       return { stdout, stderr, code: 0 };
     },
@@ -229,7 +250,7 @@ export async function spawnWithShellFallback(opts: SpawnOptions): Promise<SpawnR
     const fullCommand = [opts.command, ...opts.args]
       .map((a) => `'${a.replace(/'/g, "'\\''")}'`)
       .join(' ');
-    return spawnWithTimeout({ ...opts, command: userShell, args: ['-lc', fullCommand] });
+    return spawnWithTimeout({ ...opts, command: userShell, args: ['-c', fullCommand] });
   }
 }
 
@@ -241,6 +262,7 @@ export async function spawnWithStdin(opts: {
   stdin?: string | undefined;
   onLine: (line: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
+  errorDetail?: (() => string | undefined) | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
 }): Promise<{ text: string; stderrOutput: string; code: number }> {
@@ -253,6 +275,7 @@ export async function spawnWithStdin(opts: {
     args: opts.args,
     cwd: opts.cwd,
     env: opts.env,
+    detached: true,
     stdin: opts.stdin,
     signal: opts.signal,
     onStdout: (chunk) => {
@@ -278,6 +301,7 @@ export async function spawnWithStdin(opts: {
           code,
           stderr: stderrOutput,
           output: rawText,
+          detail: stderrOutput.trim() ? undefined : opts.errorDetail?.(),
         });
       }
 

@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
-import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { readJsonSafeAsync, writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { confinedUnlinkSync } from '../../lib/confined-fs.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import type {
@@ -101,15 +100,10 @@ export async function loadDetectionCache(
   projectDir: string,
   ttlMs = DEFAULT_TTL_MS,
 ): Promise<{ planners: PlannerDetection[]; implementers: ProviderDetection[] } | null> {
-  try {
-    const raw = await readFile(cachePath(projectDir), 'utf-8');
-    const parsed = parseCache(JSON.parse(raw));
-    if (!parsed) return null;
-    if (Date.now() - parsed.timestamp >= ttlMs) return null;
-    return { planners: parsed.planners, implementers: parsed.implementers };
-  } catch {
-    return null;
-  }
+  const parsed = parseCache(await readJsonSafeAsync(cachePath(projectDir)));
+  if (!parsed) return null;
+  if (Date.now() - parsed.timestamp >= ttlMs) return null;
+  return { planners: parsed.planners, implementers: parsed.implementers };
 }
 
 export async function saveDetectionCache(

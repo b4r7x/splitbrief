@@ -2,6 +2,26 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tokensStore } from './tokens.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events.js';
+import { taskId } from '../../core/schemas/task.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+
+function makeTaskTokens(overrides?: Partial<EngineEvent & { type: 'task_tokens' }>): EngineEvent {
+  return {
+    type: 'task_tokens',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    method: 'local',
+    implementerTokens: 100,
+    escalationTokens: 0,
+    retryCount: 0,
+    ...overrides,
+  };
+}
+
+function makeTaskReset(id = 'T001'): EngineEvent {
+  return { type: 'task_reset', ts: Date.now(), phase: 'implementing', taskId: taskId(id) };
+}
 
 describe('tokensStore — cost-update', () => {
   beforeEach(() => resetWorkflow());
@@ -54,5 +74,73 @@ describe('tokensStore — task-complete counters', () => {
     addEvent(makeTaskSkipped());
 
     expect(tokensStore.get().completedTaskCount).toBe(1);
+  });
+});
+
+describe('tokensStore — per-task attempt accumulation', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('keeps one attempt record per task_tokens event and sums tokens for display', () => {
+    addEvent(makeTaskTokens({ implementerTokens: 100, tool: 'deepseek', model: 'deepseek-chat' }));
+    addEvent(
+      makeTaskTokens({
+        implementerTokens: 250,
+        retryCount: 1,
+        tool: 'claude-code',
+        model: 'claude-opus-4-6',
+      }),
+    );
+
+    const record = tokensStore.get().perTask['T001'];
+    expect(record?.totalTokens).toBe(350);
+    expect(record?.attempts).toHaveLength(2);
+    expect(record?.attempts?.map((a) => a.tool)).toEqual(['deepseek', 'claude-code']);
+    expect(record?.attempts?.map((a) => a.model)).toEqual(['deepseek-chat', 'claude-opus-4-6']);
+  });
+
+  it('task_reset undoes the prior completion counters so a redo does not double-count', () => {
+    addEvent(makeTaskComplete({ method: 'local' }));
+    addEvent(makeTaskTokens({ method: 'local', implementerTokens: 100 }));
+    expect(tokensStore.get().localCount).toBe(1);
+    expect(tokensStore.get().completedTaskCount).toBe(1);
+
+    addEvent(makeTaskReset());
+    expect(tokensStore.get().localCount).toBe(0);
+    expect(tokensStore.get().completedTaskCount).toBe(0);
+
+    addEvent(makeTaskComplete({ method: 'local' }));
+    addEvent(makeTaskTokens({ method: 'local', implementerTokens: 200, retryCount: 0 }));
+    expect(tokensStore.get().localCount).toBe(1);
+    expect(tokensStore.get().completedTaskCount).toBe(1);
+
+    const record = tokensStore.get().perTask['T001'];
+    expect(record?.attempts).toHaveLength(2);
+    expect(record?.totalTokens).toBe(300);
+  });
+
+  it('task_reset undoes an escalated completion when the last attempt escalated', () => {
+    addEvent(makeTaskComplete({ method: 'escalated-full' }));
+    addEvent(
+      makeTaskTokens({ method: 'escalated-full', implementerTokens: 0, escalationTokens: 80 }),
+    );
+    expect(tokensStore.get().escalatedCount).toBe(1);
+
+    addEvent(makeTaskReset());
+    expect(tokensStore.get().escalatedCount).toBe(0);
+    expect(tokensStore.get().completedTaskCount).toBe(0);
+  });
+
+  it('task_reset for a never-completed task leaves earlier tasks counted (recovery retry path)', () => {
+    addEvent(makeTaskComplete({ method: 'local', taskId: taskId('T001') }));
+    addEvent(makeTaskTokens({ taskId: taskId('T001'), method: 'local', implementerTokens: 100 }));
+    expect(tokensStore.get().localCount).toBe(1);
+    expect(tokensStore.get().completedTaskCount).toBe(1);
+
+    addEvent(makeTaskReset('T002'));
+
+    const s = tokensStore.get();
+    expect(s.completedTaskCount).toBe(1);
+    expect(s.localCount).toBe(1);
+    expect(s.escalatedCount).toBe(0);
   });
 });

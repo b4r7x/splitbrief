@@ -8,7 +8,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
-import { runRpc } from './run.js';
+import { runRpc, rpcShutdownError } from './run.js';
 
 let dirs: string[] = [];
 
@@ -84,6 +84,15 @@ async function waitForLine(
     expect(parseLines(chunks).some(predicate)).toBe(true);
   });
 }
+
+describe('rpcShutdownError', () => {
+  it('tags the shutdown reason with a domain kind', () => {
+    const err = rpcShutdownError.shuttingDown('stdin closed unexpectedly');
+    expect(err.kind).toBe('rpc-shutting-down');
+    expect(err.message).toBe('stdin closed unexpectedly');
+    expect(err.data).toEqual({ reason: 'stdin closed unexpectedly' });
+  });
+});
 
 describe('runRpc', () => {
   afterEach(() => {
@@ -508,7 +517,7 @@ describe('runRpc', () => {
     );
   });
 
-  it('executes fuzzy slash command matches', async () => {
+  it('reports a typo without executing the nearest fuzzy slash command', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -527,13 +536,20 @@ describe('runRpc', () => {
     });
 
     input.write('{"type":"slash","command":"/mde"}\n');
-    await waitForLine(chunks, (line) => line.type === 'ack' && line.command === 'slash');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' &&
+        typeof line.error === 'string' &&
+        line.error.includes('Unknown command') &&
+        line.error.includes('Did you mean /mode?'),
+    );
 
     finishWorkflow?.();
     await run;
 
     expect(parseLines(chunks)).not.toContainEqual(
-      expect.objectContaining({ type: 'error', error: expect.stringContaining('Unknown command') }),
+      expect.objectContaining({ type: 'ack', command: 'slash' }),
     );
   });
 

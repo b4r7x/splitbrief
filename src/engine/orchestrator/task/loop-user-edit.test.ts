@@ -245,6 +245,76 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     });
   }, 20_000);
 
+  it('detects an edit made while the session was interrupted by seeding the persisted baseline on resume', async () => {
+    const { projectDir, sessionId } = setupProject();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/shared.ts'), 'original\n');
+
+    const firstTask = makeTask({ id: 'T001', file: 'src/shared.ts' });
+    const firstImplementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'src/shared.ts'), 'implementation\n');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const { callbacks: firstCallbacks } = makeCallbacks();
+    const { bus: firstBus } = makeBusRecorder();
+
+    const firstResult = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: firstCallbacks,
+        implementer: firstImplementer,
+        bus: firstBus,
+      }),
+      initialState: makeImplState([firstTask]),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    expect(firstResult.state.currentTaskIndex).toBe(1);
+
+    const persistedBaseline = loadState({ projectDir, sessionId })?.changedFilesBaseline;
+    expect(persistedBaseline?.fingerprints['src/shared.ts']).toBeDefined();
+
+    // The session is interrupted; the user edits the file the next task will modify.
+    writeFileSync(join(projectDir, 'src/shared.ts'), 'user edit during downtime\n');
+
+    const resumeTask = makeTask({ id: 'T002', action: 'modify', file: 'src/shared.ts' });
+    const resumeState = makeImplState([resumeTask], { changedFilesBaseline: persistedBaseline });
+
+    const { callbacks: resumeCallbacks } = makeCallbacks();
+    const { bus: resumeBus, events } = makeBusRecorder();
+
+    const resumeResult = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: resumeCallbacks,
+        implementer: makeImplementer(),
+        bus: resumeBus,
+      }),
+      initialState: resumeState,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(resumeResult.state.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      taskId: 'T002',
+    });
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'current-task-conflict',
+        files: ['src/shared.ts'],
+      },
+    });
+  });
+
   it('pauses explicitly when a future stale edit cannot continue automatically', async () => {
     const { projectDir, sessionId } = setupProject();
     const first = makeTask({ id: 'T001', file: 'src/current.ts' });

@@ -1,5 +1,11 @@
+import YAML from 'yaml';
 import type { Task } from '../../core/schemas/task.js';
 import { TASK_BRIEF_HEADINGS } from './headings.js';
+
+function yamlScalar(value: string): string {
+  if (/[\r\n]/.test(value)) return JSON.stringify(value);
+  return YAML.stringify(value, { lineWidth: 0 }).replace(/\r?\n$/, '');
+}
 
 export function buildScopeLines(scope: Task['scope']): string[] {
   const inBounds = scope?.inBounds ?? [];
@@ -24,16 +30,25 @@ export function buildScopeLines(scope: Task['scope']): string[] {
   return lines;
 }
 
+function fenceBlock(content: string): string {
+  let longestRun = 0;
+  for (const match of content.matchAll(/`+/g)) {
+    if (match[0].length > longestRun) longestRun = match[0].length;
+  }
+  const fence = '`'.repeat(Math.max(3, longestRun + 1));
+  return `${fence}\n${content}\n${fence}`;
+}
+
 function formatSingleTask(task: Task): string {
   const lines: string[] = [];
 
   const dependsOnYaml = task.dependsOn.map((id) => `  - ${id}`).join('\n');
 
   lines.push('---');
-  lines.push(`id: ${task.id}`);
-  lines.push(`title: ${task.title}`);
-  lines.push(`action: ${task.action}`);
-  lines.push(`file: ${task.file}`);
+  lines.push(`id: ${yamlScalar(task.id)}`);
+  lines.push(`title: ${yamlScalar(task.title)}`);
+  lines.push(`action: ${yamlScalar(task.action)}`);
+  lines.push(`file: ${yamlScalar(task.file)}`);
   if (task.dependsOn.length > 0) {
     lines.push('depends_on:');
     lines.push(dependsOnYaml);
@@ -73,19 +88,19 @@ function formatSingleTask(task: Task): string {
   if (task.signature) {
     lines.push('');
     lines.push(TASK_BRIEF_HEADINGS.signature.heading);
-    lines.push(task.signature);
+    lines.push(fenceBlock(task.signature));
   }
 
   if (task.currentCode) {
     lines.push('');
     lines.push(TASK_BRIEF_HEADINGS.currentCode.heading);
-    lines.push(task.currentCode);
+    lines.push(fenceBlock(task.currentCode));
   }
 
   if (task.typeDefs) {
     lines.push('');
     lines.push(TASK_BRIEF_HEADINGS.typeDefs.heading);
-    lines.push(task.typeDefs);
+    lines.push(fenceBlock(task.typeDefs));
   }
 
   if (task.pattern) {

@@ -92,7 +92,7 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
   });
 
-  it('clones provider models on write and read', () => {
+  it('clones provider models on write so later input mutation does not leak', () => {
     const models: DetectedModel[] = [{ id: 'mutable', capabilities: ['tools'] }];
     modelCacheStore.setProviderModels('ollama', models);
 
@@ -100,16 +100,29 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('ollama')).toEqual([
       { id: 'mutable', capabilities: ['tools'] },
     ]);
+  });
 
-    const cached = modelCacheStore.getProviderModels('ollama');
-    cached?.[0]?.capabilities?.push('mutated output');
+  it('returns a frozen, identical provider-models reference on every read', () => {
+    const models: DetectedModel[] = [{ id: 'mutable', capabilities: ['tools'] }];
+    modelCacheStore.setProviderModels('ollama', models);
 
+    const first = modelCacheStore.getProviderModels('ollama');
+    const second = modelCacheStore.getProviderModels('ollama');
+
+    // No per-read clone: reads share the same cached reference.
+    expect(first).toBe(second);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first?.[0])).toBe(true);
+    expect(Object.isFrozen(first?.[0]?.capabilities)).toBe(true);
+
+    // Frozen reads cannot corrupt the cache (strict-mode mutation throws).
+    expect(() => first?.[0]?.capabilities?.push('mutated output')).toThrow(TypeError);
     expect(modelCacheStore.getProviderModels('ollama')).toEqual([
       { id: 'mutable', capabilities: ['tools'] },
     ]);
   });
 
-  it('clones Models.dev catalogs on write and read', () => {
+  it('clones Models.dev catalogs on write so later input mutation does not leak', () => {
     const mutableCatalog: ModelsDevCatalog = {
       openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o', limit: { context: 128000 } } } },
     };
@@ -120,10 +133,27 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getModelsDevCatalog()?.openai?.models['gpt-4o']?.limit?.context).toBe(
       128000,
     );
+  });
 
-    const cached = modelCacheStore.getModelsDevCatalog();
-    if (cached) cached.openai!.models['gpt-4o']!.limit = { context: 2 };
+  it('returns a frozen, identical Models.dev catalog reference on every read', () => {
+    const mutableCatalog: ModelsDevCatalog = {
+      openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o', limit: { context: 128000 } } } },
+    };
+    modelCacheStore.setModelsDevCatalog(mutableCatalog);
 
+    const first = modelCacheStore.getModelsDevCatalog();
+    const second = modelCacheStore.getModelsDevCatalog();
+
+    // No per-read clone: reads share the same cached reference.
+    expect(first).toBe(second);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first?.openai)).toBe(true);
+    expect(Object.isFrozen(first?.openai?.models['gpt-4o']?.limit)).toBe(true);
+
+    // Frozen reads cannot corrupt the cache (strict-mode mutation throws).
+    expect(() => {
+      if (first) first.openai!.models['gpt-4o']!.limit = { context: 2 };
+    }).toThrow(TypeError);
     expect(modelCacheStore.getModelsDevCatalog()?.openai?.models['gpt-4o']?.limit?.context).toBe(
       128000,
     );

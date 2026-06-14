@@ -148,16 +148,20 @@ function calculateTaskAwareImplementerCost(
         }),
         inputTokens,
         outputTokens,
-        cacheReadTokens: allocatedCacheTokens({
-          cacheTokens: tokenUsage.implementerCacheRead,
-          tokens: task.implementerTokens,
-          totalTokens: totalImplementerTokens,
-        }),
-        cacheCreateTokens: allocatedCacheTokens({
-          cacheTokens: tokenUsage.implementerCacheCreate,
-          tokens: task.implementerTokens,
-          totalTokens: totalImplementerTokens,
-        }),
+        cacheReadTokens:
+          task.implementerCacheReadTokens ??
+          allocatedCacheTokens({
+            cacheTokens: tokenUsage.implementerCacheRead,
+            tokens: task.implementerTokens,
+            totalTokens: totalImplementerTokens,
+          }),
+        cacheCreateTokens:
+          task.implementerCacheCreateTokens ??
+          allocatedCacheTokens({
+            cacheTokens: tokenUsage.implementerCacheCreate,
+            tokens: task.implementerTokens,
+            totalTokens: totalImplementerTokens,
+          }),
       },
       cache,
     );
@@ -241,16 +245,20 @@ export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): 
   const implementerCost = calculateUsageCost({
     inputTokens: implementerSplit.inputTokens,
     outputTokens: implementerSplit.outputTokens,
-    cacheReadTokens: allocatedCacheTokens({
-      cacheTokens: tokenUsage.implementerCacheRead,
-      tokens: task.implementerTokens,
-      totalTokens: totalImplementerTokens,
-    }),
-    cacheCreateTokens: allocatedCacheTokens({
-      cacheTokens: tokenUsage.implementerCacheCreate,
-      tokens: task.implementerTokens,
-      totalTokens: totalImplementerTokens,
-    }),
+    cacheReadTokens:
+      task.implementerCacheReadTokens ??
+      allocatedCacheTokens({
+        cacheTokens: tokenUsage.implementerCacheRead,
+        tokens: task.implementerTokens,
+        totalTokens: totalImplementerTokens,
+      }),
+    cacheCreateTokens:
+      task.implementerCacheCreateTokens ??
+      allocatedCacheTokens({
+        cacheTokens: tokenUsage.implementerCacheCreate,
+        tokens: task.implementerTokens,
+        totalTokens: totalImplementerTokens,
+      }),
     pricing: implementerPricing,
   });
 
@@ -286,26 +294,60 @@ export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): 
   return implementerCost + escalationCost;
 }
 
-export function isTaskUsageCostKnown(
-  options: Omit<CalculateTaskUsageCostOptions, 'tokenUsage'>,
-): boolean {
-  const { task, implementerTool, plannerTool, implementerModel, plannerModel, cache } = options;
+export function isTaskUsageCostKnown(options: CalculateTaskUsageCostOptions): boolean {
+  const { task, tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel, cache } =
+    options;
+  const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
   const taskTool = task.tool ?? implementerTool;
+  const implementerPricing = resolvePricing(
+    taskTool,
+    cache,
+    resolveTaskPricingModel({
+      taskTool,
+      fallbackTool: implementerTool,
+      taskModel: task.model,
+      fallbackModel: implementerModel,
+    }),
+  );
+  const implementerCacheRead =
+    task.implementerCacheReadTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheRead,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    });
+  const implementerCacheCreate =
+    task.implementerCacheCreateTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheCreate,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    });
   const implementerKnown =
     task.implementerTokens <= 0 ||
-    resolvePricing(
-      taskTool,
-      cache,
-      resolveTaskPricingModel({
-        taskTool,
-        fallbackTool: implementerTool,
-        taskModel: task.model,
-        fallbackModel: implementerModel,
-      }),
-    ).isPriced;
+    usageCostIsFullyKnown({
+      inputTokens: task.implementerTokens,
+      outputTokens: 0,
+      cacheReadTokens: implementerCacheRead,
+      cacheCreateTokens: implementerCacheCreate,
+      pricing: implementerPricing,
+    });
+  const totalEscalationTokens = tokenUsage.escalationInput + tokenUsage.escalationOutput;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
-  const escalationCacheRead = task.escalationCacheReadTokens ?? 0;
-  const escalationCacheCreate = task.escalationCacheCreateTokens ?? 0;
+  const escalationCacheRead =
+    task.escalationCacheReadTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheRead,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
+  const escalationCacheCreate =
+    task.escalationCacheCreateTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheCreate,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
   const plannerKnown =
     task.escalationTokens <= 0 ||
     usageCostIsFullyKnown({

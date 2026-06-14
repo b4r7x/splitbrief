@@ -20,11 +20,9 @@ export const ImplementerProfileNameSchema = z
 
 export const ImplementerWriteModeSchema = z.enum(['extracted-code', 'direct']);
 
-export const ImplementerCapabilitiesSchema = z
-  .object({
-    writesFiles: ImplementerWriteModeSchema.optional(),
-  })
-  .strict();
+export const ImplementerCapabilitiesSchema = z.strictObject({
+  writesFiles: ImplementerWriteModeSchema.optional(),
+});
 
 export function defaultImplementerWriteMode(kind: RunnerKind): ImplementerWriteMode {
   return kind === 'api' || kind === 'shell' ? 'extracted-code' : 'direct';

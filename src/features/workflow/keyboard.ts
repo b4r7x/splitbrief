@@ -4,7 +4,7 @@ import type { Section } from '../../core/sections/event-sections.js';
 export type WorkflowKeyAction =
   | { type: 'none' }
   | { type: 'toggle-sidebar' }
-  | { type: 'toggle-diff'; index: number }
+  | { type: 'toggle-diff'; key: string }
   | { type: 'review-scroll'; offset: number }
   | {
       type: 'conversation-scroll-up';
@@ -23,7 +23,7 @@ export interface WorkflowCtrlChordsInput {
   key: Key;
   isSmall: boolean;
   sections: Section[];
-  findLatestDiff: (sections: Section[]) => number | null;
+  findLatestDiff: (sections: Section[]) => string | null;
 }
 
 export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
@@ -34,15 +34,14 @@ export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): Work
     return NONE;
   }
   if (input === 'd') {
-    const idx = findLatestDiff(sections);
-    if (idx != null) return { type: 'toggle-diff', index: idx };
+    const key = findLatestDiff(sections);
+    if (key != null) return { type: 'toggle-diff', key };
     return NONE;
   }
   return NONE;
 }
 
 export interface ReviewScrollInput {
-  input: string;
   key: Key;
   reviewScrollOffset: number;
   reviewLineCount: number;
@@ -50,17 +49,16 @@ export interface ReviewScrollInput {
 }
 
 export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyAction {
-  const { input, key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
+  const { key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
   const maxOffset = Math.max(0, reviewLineCount - visibleHeight);
   if (key.upArrow) return { type: 'review-scroll', offset: Math.max(0, reviewScrollOffset - 1) };
   if (key.downArrow)
     return { type: 'review-scroll', offset: Math.min(maxOffset, reviewScrollOffset + 1) };
-  if (input === 'G') return { type: 'review-scroll', offset: maxOffset };
+  if (key.end) return { type: 'review-scroll', offset: maxOffset };
   return NONE;
 }
 
 export interface ConversationScrollInput {
-  input: string;
   key: Key;
   renderableCount: number;
   maxOffset: number;
@@ -69,7 +67,7 @@ export interface ConversationScrollInput {
 }
 
 export function handleConversationScroll(options: ConversationScrollInput): WorkflowKeyAction {
-  const { input, key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
+  const { key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
   const pageStep = Math.max(1, viewportHeight - 2);
 
   if (key.shift && key.upArrow) {
@@ -92,7 +90,7 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
     return { type: 'conversation-scroll-down', step: pageStep };
   }
 
-  if (input === 'g') {
+  if (key.home) {
     return {
       type: 'conversation-scroll-up',
       renderableCount,
@@ -101,7 +99,7 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
       maxOffset,
     };
   }
-  if (input === 'G') {
+  if (key.end) {
     return { type: 'conversation-scroll-bottom', renderableCount };
   }
 

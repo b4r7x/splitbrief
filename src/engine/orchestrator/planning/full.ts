@@ -1,10 +1,14 @@
 import { join } from 'node:path';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlanResult } from '../../planners/types.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
+import { getPlannerToolId } from '../../../core/config/accessors/runner-config.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
-import { buildSkillsSection } from '../../skill-discovery.js';
+import { buildSkillsSection, discoverSkills } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
@@ -25,6 +29,20 @@ import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningRunContext } from './types.js';
+
+async function resolvePlanningSkills(
+  selectedSkills: SkillMeta[] | undefined,
+  state: WorkflowState,
+  projectDir: string,
+  config: Config,
+): Promise<SkillMeta[]> {
+  if (selectedSkills && selectedSkills.length > 0) return selectedSkills;
+  const persisted = state.selectedSkills;
+  if (!persisted || persisted.length === 0) return [];
+  const ids = new Set(persisted);
+  const available = await discoverSkills(getPlannerToolId(config.planner), projectDir);
+  return available.filter((s) => ids.has(s.id));
+}
 
 async function runNewPlanning(
   opts: PlanningPhaseOptions,
@@ -83,6 +101,7 @@ async function runNewPlanning(
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'RESEARCH_DONE' });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
     state = await collectAndPersistClarifications({
@@ -214,16 +233,18 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   const { wctx, selectedSkills } = opts;
   const { projectDir, sessionId, metadata, config } = wctx;
   let { state } = opts;
-  const skillsContext = selectedSkills?.length
-    ? await buildSkillsSection(selectedSkills)
-    : undefined;
+  const skills = await resolvePlanningSkills(selectedSkills, state, projectDir, config);
+  const skillsContext = skills.length > 0 ? await buildSkillsSection(skills) : undefined;
 
   const approveLevel =
     opts.approveLevel ??
     resolveApproveLevel({
       mode: getWorkflowMode(config),
       configApprove: config.workflow.approve,
+      legacyAutoFlag:
+        config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
     });
+  const skipSpecApproval = !blocksSpecGate(approveLevel);
   const skipPlanApproval = !blocksPlanGate(approveLevel);
 
   const rewindPending = opts.rewindPending;
@@ -238,6 +259,7 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
       return handleRewindSpec({
         opts,
         rewindPending,
+        skipSpecApproval,
         skipPlanApproval,
         metadata,
         skillsContext,

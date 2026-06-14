@@ -46,6 +46,26 @@ describe('checkRunnerTrust', () => {
     expect(result.untrustedCommands).toContain('node scripts/malicious.js');
   });
 
+  it('flags repo-local paths embedded in --flag=path tokens as untrusted', () => {
+    for (const flag of ['--import=./scripts/evil.js', '--require=./x.js']) {
+      const config = makeConfig(shellConfig(`node ${flag}`));
+      const result = checkRunnerTrust(config, '/tmp/project');
+      expect(result.untrustedCommands).toContain(`node ${flag}`);
+    }
+  });
+
+  it('does not flag --flag=path tokens pointing outside the project dir', () => {
+    const config = makeConfig(shellConfig('node --import=/usr/local/lib/safe.js'));
+    const result = checkRunnerTrust(config, '/tmp/project');
+    expect(result.untrustedCommands).toEqual([]);
+  });
+
+  it('does not flag value-less flags', () => {
+    const config = makeConfig(shellConfig('node --enable-source-maps'));
+    const result = checkRunnerTrust(config, '/tmp/project');
+    expect(result.untrustedCommands).toEqual([]);
+  });
+
   it('flags parent-relative commands as untrusted', () => {
     const config = makeConfig(shellConfig('../other/runner'));
     const result = checkRunnerTrust(config, '/tmp/project');

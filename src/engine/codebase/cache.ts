@@ -1,8 +1,10 @@
-import { lstatSync, mkdirSync, realpathSync, type Stats } from 'node:fs';
+import { lstatSync, mkdirSync, realpathSync, rmSync, type Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import type { Database } from 'better-sqlite3';
 import type { FileNode } from './types.js';
 import { error, matches } from '../../utils/error.js';
+import { isNodeError } from '../../lib/process/errors.js';
 
 const repomapCacheError = {
   dbPathEscapes: (dbPath: string) =>
@@ -13,6 +15,12 @@ const repomapCacheError = {
 } as const;
 
 const PARSE_VERSION = 2;
+
+const CORRUPTION_CODES = new Set(['SQLITE_CORRUPT', 'SQLITE_NOTADB']);
+
+function isCorruptionError(err: unknown): boolean {
+  return isNodeError(err) && err.code !== undefined && CORRUPTION_CODES.has(err.code);
+}
 
 export type Metrics = { hits: number; misses: number };
 
@@ -33,7 +41,14 @@ type CacheRow = {
   parse_version: number;
 };
 
-export async function createParseCache(dbPath: string): Promise<ParseCache> {
+export interface ParseCacheOptions {
+  onWarn?: (message: string) => void;
+}
+
+export async function createParseCache(
+  dbPath: string,
+  opts: ParseCacheOptions = {},
+): Promise<ParseCache> {
   const { default: Database } = await import('better-sqlite3');
 
   const resolvedDbPath = resolve(dbPath);
@@ -57,18 +72,42 @@ export async function createParseCache(dbPath: string): Promise<ParseCache> {
     // File doesn't exist yet — check the parent is real
   }
 
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS files (
-      path TEXT PRIMARY KEY,
-      mtime_ms INTEGER NOT NULL,
-      size_bytes INTEGER NOT NULL,
-      symbols_json TEXT NOT NULL,
-      imports_json TEXT NOT NULL,
-      parse_version INTEGER NOT NULL
-    );
-  `);
+  function openDb(): Database {
+    const handle = new Database(dbPath);
+    try {
+      handle.pragma('journal_mode = WAL');
+      handle.exec(`
+        CREATE TABLE IF NOT EXISTS files (
+          path TEXT PRIMARY KEY,
+          mtime_ms INTEGER NOT NULL,
+          size_bytes INTEGER NOT NULL,
+          symbols_json TEXT NOT NULL,
+          imports_json TEXT NOT NULL,
+          parse_version INTEGER NOT NULL
+        );
+      `);
+    } catch (err) {
+      if (handle.open) handle.close();
+      throw err;
+    }
+    return handle;
+  }
+
+  function discardCorruptDb(): void {
+    for (const path of [dbPath, `${dbPath}-shm`, `${dbPath}-wal`]) {
+      rmSync(path, { force: true });
+    }
+  }
+
+  let db: Database;
+  try {
+    db = openDb();
+  } catch (err) {
+    if (!isCorruptionError(err)) throw err;
+    discardCorruptDb();
+    db = openDb();
+    opts.onWarn?.(`repo-map cache was corrupt and has been reset: ${dbPath}`);
+  }
 
   const select = db.prepare<[string], CacheRow>(
     'SELECT mtime_ms, size_bytes, symbols_json, imports_json, parse_version FROM files WHERE path = ?',

@@ -1,7 +1,11 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
-import type { EngineEvent, ValidationStages } from '../../../engine/events/types.js';
+import type {
+  EngineEvent,
+  ValidationStages,
+  ValidationStageSkips,
+} from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatTruncatedList } from '../../../core/formatting.js';
 
@@ -45,7 +49,7 @@ export function formatExternalChangesValue(
 
 export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>): string {
   const stageText = ValidationStageSchema.options
-    .map((stage) => `${stage} ${validationStageSymbol(event.stages, stage)}`)
+    .map((stage) => `${stage} ${validationStageSymbol(event.stages, stage, event.skipped)}`)
     .join(' ');
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
   return `validate ${stageText}${dur}`;
@@ -63,6 +67,11 @@ function formatEventContextFit(
   return `${contextFit} ${tokenLabel}`;
 }
 
-function validationStageSymbol(stages: ValidationStages, stage: ValidationStage): string {
+function validationStageSymbol(
+  stages: ValidationStages,
+  stage: ValidationStage,
+  skipped: ValidationStageSkips | undefined,
+): string {
+  if (skipped?.[stage]) return '–';
   return stages[stage] ? '✓' : '○';
 }

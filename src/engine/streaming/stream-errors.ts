@@ -53,14 +53,24 @@ export const streamError = {
   },
 } as const;
 
+function hasConnectionRefusedInChain(err: Record<string, unknown>): boolean {
+  const seen = new Set<unknown>();
+  let node: unknown = err;
+  while (isRecord(node) && !seen.has(node)) {
+    if (node.code === 'ECONNREFUSED' || node.name === 'APIConnectionError') return true;
+    seen.add(node);
+    node = node.cause;
+  }
+  return false;
+}
+
 export function throwMappedError(
   err: unknown,
   endpoint?: { provider: string; apiBase?: string | undefined },
 ): never {
   if (!isRecord(err)) throw err;
-  const cause = isRecord(err.cause) ? err.cause : {};
   const provider = endpoint?.provider ?? 'provider';
-  if (err.code === 'ECONNREFUSED' || cause.code === 'ECONNREFUSED') {
+  if (hasConnectionRefusedInChain(err)) {
     throw streamError.connectionRefused(provider, endpoint?.apiBase, err);
   }
   if (typeof err.status === 'number' && err.status >= 400) {

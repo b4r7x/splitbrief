@@ -15,6 +15,7 @@ import {
   assertWritablePathConfined,
 } from '../../lib/path-confinement.js';
 import { error } from '../../utils/error.js';
+import { nowIso } from '../../utils/format-time.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { createSnapshot } from './create.js';
@@ -73,7 +74,7 @@ async function readRunLedger(
     }
     return ledger;
   } catch (cause) {
-    if (cause !== null && typeof cause === 'object' && 'domain' in cause) throw cause;
+    if (cause !== null && typeof cause === 'object' && 'kind' in cause) throw cause;
     return null;
   }
 }
@@ -107,7 +108,7 @@ async function createRunLedger(opts: {
     ...(previous?.runSnapshotKinds ?? {}),
     ...(opts.runSnapshotKind !== undefined && { [opts.runSnapshot.id]: opts.runSnapshotKind }),
   };
-  const now = new Date().toISOString();
+  const now = nowIso();
 
   return {
     version: 1,
@@ -118,7 +119,6 @@ async function createRunLedger(opts: {
     rejected: opts.rejected,
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
-    ...(opts.runSnapshot.taskIndex !== undefined && { taskIndex: opts.runSnapshot.taskIndex }),
   };
 }
 

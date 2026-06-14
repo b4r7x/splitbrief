@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -79,6 +79,21 @@ describe('buildRewindAction', () => {
       phase: state.phase,
       taskId: 'T001',
     });
+  });
+
+  it('returns the event without persisting it when persistEvent is false', () => {
+    const { projectDir, sessionId } = setupSession();
+    const state = makeImplState([makeTask()]);
+
+    const outcome = buildRewindAction(
+      { target: 'spec', comment: 'redo the spec' },
+      { projectDir, sessionId },
+      state,
+      { persistEvent: false },
+    );
+
+    expect(outcome.event).toMatchObject({ type: 'rewind_to_spec', comment: 'redo the spec' });
+    expect(existsSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE))).toBe(false);
   });
 });
 

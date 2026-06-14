@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -48,6 +48,8 @@ const alwaysGrant = {
 };
 
 const filledStore: ApprovalsStore = { version: 1, grants: [sessionGrant, alwaysGrant] };
+
+const DEAD_PID = 2_147_483_647;
 
 beforeEach(() => {
   tmp = createTempDir('approval-cmd-test');
@@ -141,5 +143,20 @@ describe('approval clear', () => {
     const logs = await runApproval(['clear', '--project', tmp]);
 
     expect(logs.some((l) => l.includes('Cleared 0 approval grant(s)'))).toBe(true);
+  });
+
+  it('reclaims a stale lock left by a dead process and clears anyway', async () => {
+    seedApprovals(tmp, filledStore);
+    writeFileSync(
+      join(tmp, DIPTYCH_DIR, 'approvals.json.lock'),
+      JSON.stringify({ pid: DEAD_PID, acquiredAt: Date.now() }),
+    );
+
+    const logs = await runApproval(['clear', '--project', tmp]);
+
+    expect(logs.some((l) => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
+    expect(readApprovals(tmp).grants).toHaveLength(0);
+    const files = readdirSync(join(tmp, DIPTYCH_DIR));
+    expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
   });
 });

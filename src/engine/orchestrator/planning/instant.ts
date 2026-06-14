@@ -1,5 +1,5 @@
 import type { PlannerCallbacks, PlanResult } from '../../planners/types.js';
-import { createBusTextHandler, publishPlannerStatus } from '../events.js';
+import { createBusTextHandler, publishPlannerStatus, publishWarning } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
@@ -9,21 +9,13 @@ import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
+import { planningError } from './errors.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, metadata, resumeHolder } = wctx;
   let { state } = opts;
   let feature = opts.feature;
-
-  if (opts.approveLevel && opts.approveLevel !== 'none' && opts.approveLevel !== 'default') {
-    wctx.bus.publish({
-      type: 'warning',
-      ts: Date.now(),
-      phase: state.phase,
-      message: `approve level "${opts.approveLevel}" has no effect in instant mode`,
-    });
-  }
 
   {
     const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
@@ -48,6 +40,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       textHandler(text);
       buffer.append(text);
     },
+    onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase }, message),
     onSessionId: (id) => {
       state = transitionAndSave({ projectDir, sessionId }, state, {
         type: 'SET_PLANNER_SESSION_ID',
@@ -92,7 +85,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
 
   if (planResult.tasks.length === 0) {
     return handlePlanningFailure({
-      err: new Error('instant planner returned zero tasks; cannot proceed'),
+      err: planningError.zeroTasks('instant'),
       projectDir,
       sessionId,
       state,
@@ -117,8 +110,9 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   if (!qualityOk) {
     const firstError = firstBriefError(qualityReport);
     return handlePlanningFailure({
-      err: new Error(
-        `brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`,
+      err: planningError.briefQualityGateFailed(
+        firstError?.code ?? 'unknown',
+        String(firstError?.taskId ?? 'unknown'),
       ),
       projectDir,
       sessionId,
@@ -131,7 +125,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     type: 'START_INSTANT',
     tasks: planResult.tasks,
   });
-  publishPlannerStatus(wctx.bus, state, 'done');
+  publishPlannerStatus(wctx.bus, state, 'running');
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };

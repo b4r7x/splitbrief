@@ -33,9 +33,9 @@ Existing example to follow: `src/cli/commands/start.ts`.
 
 ## 3. New EngineEvent type
 
-1. Add a variant to the `EngineEvent` discriminated union in `src/engine/events/types.ts`
-   - Every variant needs: `type` (snake_case string literal) and `ts: number`
-   - Add `phase: Phase` unless the event is intentionally global or snapshot-resolution metadata; current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
+1. Add a Zod member to the `EngineEventSchema` discriminated union in `src/engine/events/schema.ts`
+   - Use the `phaseEvent('my_event')` helper (it supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … }).passthrough()` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
+   - The `EngineEvent` TS alias in `src/engine/events/types.ts` is `z.infer<typeof EngineEventSchema>`, so the new variant flows into every consumer automatically — no separate type edit
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
 3. If the event should update UI state: handle it in `src/stores/workflow/actions.ts` inside `addEvent()`

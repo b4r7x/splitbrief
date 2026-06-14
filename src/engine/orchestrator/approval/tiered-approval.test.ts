@@ -313,12 +313,12 @@ describe('gateAction', () => {
     const config = makeApprovalConfig({
       enabled: true,
       headless: true,
-      tiers: { destructive: 'confirm' },
+      tiers: { write_out_of_scope: 'confirm' },
     });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
@@ -327,11 +327,14 @@ describe('gateAction', () => {
 
   it('confirm tier, valid phrase + reason → allow, approval_granted emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({
+      enabled: true,
+      tiers: { write_out_of_scope: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
 
@@ -354,11 +357,14 @@ describe('gateAction', () => {
 
   it('confirm tier, wrong phrase → deny invalid_confirm_phrase', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({
+      enabled: true,
+      tiers: { write_out_of_scope: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
 
@@ -381,11 +387,14 @@ describe('gateAction', () => {
 
   it('confirm tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({
+      enabled: true,
+      tiers: { write_out_of_scope: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
 
@@ -433,11 +442,14 @@ describe('gateAction', () => {
 
   it('confirm tier, callback returns decision:allow → reject invalid_confirm_response', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({
+      enabled: true,
+      tiers: { write_out_of_scope: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
 
@@ -461,11 +473,14 @@ describe('gateAction', () => {
 
   it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({
+      enabled: true,
+      tiers: { write_out_of_scope: 'confirm' },
+    });
     const input = makeInput({
       bus,
       config,
-      actionDescription: 'rm -rf /tmp/foo',
+      actionDescription: 'write /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
 

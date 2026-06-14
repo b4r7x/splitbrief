@@ -1,3 +1,16 @@
+import { countNoun } from '../utils/pluralize.js';
+
+export function formatScoreSummary(
+  score: number,
+  counts: { errorCount: number; warningCount: number },
+  label = 'score',
+): string {
+  const parts = [`${label} ${score.toFixed(2)}`];
+  if (counts.errorCount > 0) parts.push(countNoun(counts.errorCount, 'error'));
+  if (counts.warningCount > 0) parts.push(countNoun(counts.warningCount, 'warning'));
+  return parts.join(' · ');
+}
+
 export function formatContextLength(tokens: number | undefined): string {
   if (tokens == null || tokens === 0) return '';
   if (tokens >= 1_000_000)
@@ -25,8 +38,8 @@ export function budgetPercentOf(currentCost: number, maxBudget: number): number 
   return Math.round((currentCost / maxBudget) * 10_000) / 100;
 }
 
-export function formatKnownCost(amount: number, isKnown: boolean): string {
-  if (isKnown) return formatCost(amount);
+export function formatKnownCost(amount: number, priceState: 'known' | 'partial'): string {
+  if (priceState === 'known') return formatCost(amount);
   return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
 }
 

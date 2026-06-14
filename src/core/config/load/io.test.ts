@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 import YAML from 'yaml';
 import { createDefaultConfig, initConfig, loadConfig, writeConfig } from './io.js';
 import { toYaml } from './transform.js';
-import { DIPTYCH_DIR } from '../../paths.js';
+import { DIPTYCH_DIR, TREES_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-loading-test');
@@ -86,6 +86,97 @@ describe('config loading', () => {
       expect(config.workflow.taskReview).toBe('none');
     });
 
+    it('leaves validation.testCommand undefined when the user did not set it', () => {
+      const dir = join(TMP, 'no-test-command');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        validation: { test: true },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.validation.testCommand).toBeUndefined();
+    });
+
+    it('drops the legacy npm test default so it is not treated as user-set', () => {
+      const dir = join(TMP, 'legacy-npm-test');
+      writeConfigYaml(dir, {
+        validation: { test: true, test_command: 'npm test' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.validation.testCommand).toBeUndefined();
+    });
+
+    it('accepts and ignores a stale shikiTheme field from an old config', () => {
+      const dir = join(TMP, 'stale-shiki-theme');
+      writeConfigYaml(dir, {
+        shiki_theme: 'github-light',
+        theme: 'mono',
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.theme).toBe('mono');
+      expect(config).not.toHaveProperty('shikiTheme');
+    });
+
+    it('does not write a shikiTheme field into the default config', () => {
+      expect(createDefaultConfig()).not.toHaveProperty('shikiTheme');
+    });
+
+    it('does not emit a sessions block in the default config', () => {
+      expect(createDefaultConfig()).not.toHaveProperty('sessions');
+    });
+
+    it('does not write deprecated v2 workflow fields into a new default config', () => {
+      const workflow = createDefaultConfig().workflow;
+      expect(workflow).not.toHaveProperty('autoApproveSpec');
+      expect(workflow).not.toHaveProperty('autoApprovePlan');
+      expect(workflow).not.toHaveProperty('commitStrategy');
+    });
+
+    it('writes only the v3 replacements (approve, git.commitStrategy) in the default config', () => {
+      const workflow = createDefaultConfig().workflow;
+      expect(workflow.approve).toBe('default');
+      expect(workflow.git?.commitStrategy).toBe('none');
+    });
+
+    it('does not serialize deprecated v2 workflow fields when writing a new config', () => {
+      const dir = join(TMP, 'default-no-deprecated-v2');
+      mkdirSync(dir, { recursive: true });
+      initConfig(dir);
+
+      const written = YAML.parse(
+        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
+      const workflow = written.workflow as Record<string, unknown>;
+      expect(workflow.auto_approve_spec).toBeUndefined();
+      expect(workflow.auto_approve_plan).toBeUndefined();
+      expect(workflow.commit_strategy).toBeUndefined();
+      expect(workflow.approve).toBe('default');
+      expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('none');
+    });
+
+    it('accepts and preserves a user-supplied sessions.scope for forward-compat', () => {
+      const dir = join(TMP, 'sessions-scope-forward-compat');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        sessions: { scope: 'global' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.sessions?.scope).toBe('global');
+    });
+
+    it('does not synthesize a sessions block when the user omits one', () => {
+      const dir = join(TMP, 'sessions-scope-omitted');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config).not.toHaveProperty('sessions');
+    });
+
     itUnix('rejects initConfig when .diptych is a symlink', () => {
       const dir = createTempDir('config-symlink-init');
       const outside = createTempDir('config-symlink-init-outside');
@@ -96,6 +187,21 @@ describe('config loading', () => {
         expect(() => initConfig(dir)).toThrow(/unsafe path|symlink/);
       } finally {
         cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
+    });
+
+    it('gitignores both the diptych dir and the worktree dir so neither leaks into git-status change detection', () => {
+      const dir = createTempDir('config-init-gitignore');
+      try {
+        initConfig(dir);
+
+        const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8')
+          .split('\n')
+          .map((line) => line.trim());
+        expect(ignored).toContain(`${DIPTYCH_DIR}/`);
+        expect(ignored).toContain(`${TREES_DIR}/`);
+      } finally {
         cleanupTempDir(dir);
       }
     });
@@ -128,6 +234,34 @@ describe('config loading', () => {
         cleanupTempDir(dir);
       }
     });
+
+    itUnix(
+      'throws instead of silently using defaults when an existing config cannot be read',
+      () => {
+        const dir = createTempDir('config-unreadable');
+        try {
+          const configDir = join(dir, DIPTYCH_DIR);
+          mkdirSync(configDir, { recursive: true });
+          const filePath = join(configDir, 'config.yaml');
+          writeFileSync(filePath, 'implementer:\n  model: deepseek-coder:6.7b\n', 'utf-8');
+          chmodSync(filePath, 0o000);
+
+          let readDenied = true;
+          try {
+            readFileSync(filePath, 'utf-8');
+            readDenied = false;
+          } catch {
+            readDenied = true;
+          }
+          if (!readDenied) return;
+
+          expect(() => loadConfig(dir)).toThrow(/could not be read/);
+        } finally {
+          chmodSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 0o600);
+          cleanupTempDir(dir);
+        }
+      },
+    );
 
     it('loads YAML config and merges with defaults', () => {
       const dir = join(TMP, 'with-config');
@@ -353,6 +487,19 @@ describe('config loading', () => {
       expect(written.auto_split_overflow).toBe(true);
     });
 
+    it('reconciles a legacy v3 workflow.commitStrategy into git.commitStrategy at load time', () => {
+      const dir = join(TMP, 'v3-legacy-commit-strategy');
+      writeConfigYaml(dir, {
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'api', provider: 'ollama', api_base: 'http://localhost:11434/v1' },
+        workflow: { max_retries: 3, commit_strategy: 'per-task' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.git?.commitStrategy).toBe('per-task');
+    });
+
     it('deep merges nested objects', () => {
       const dir = join(TMP, 'deep-merge');
       writeConfigYaml(dir, {
@@ -411,6 +558,7 @@ describe('config loading', () => {
     it('returns no warnings when no api keys in config', () => {
       const dir = join(TMP, 'no-warn');
       writeConfigYaml(dir, {
+        version: 3,
         implementer: { model: 'codellama:13b' },
       });
 
@@ -467,6 +615,16 @@ describe('config loading', () => {
       expect(config.implementer.model).toBe('llama3');
       expect((config.implementer as Record<string, unknown>).contextLength).toBe(32768);
       expect((config.implementer as Record<string, unknown>).temperature).toBe(0.3);
+    });
+
+    it('does not leak ollama defaults into a different-provider implementer (model omitted)', () => {
+      const dir = join(TMP, 'provider-mismatch');
+      writeConfigYaml(dir, {
+        version: 3,
+        implementer: { kind: 'api', provider: 'openai' },
+      });
+
+      expect(() => loadConfig(dir)).toThrow(/implementer\.model/);
     });
 
     it('migrates commitPerTask true to commitStrategy per-task', () => {

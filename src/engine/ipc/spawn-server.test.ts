@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { mkdirSync, rmSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 import { writeLockfile } from './lockfile.js';
-import { waitForServerReady } from './spawn-server.js';
+import { resolveEntryPoint, spawnServer, waitForServerReady } from './spawn-server.js';
 import {
   parseIpcServerArgs,
   readIpcServerArgsFile,
@@ -108,6 +108,174 @@ describe('waitForServerReady', () => {
     if (!result.ok) {
       expect(result.reason).toContain('timeout');
     }
+  });
+
+  it('fails fast with the recorded cause and log path when the server exits during startup', async () => {
+    await writeServerLockfile({
+      exitedAt: Date.now(),
+      signal: 'uncaught',
+      cause: 'config validation failed',
+    });
+
+    const start = Date.now();
+    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 5000);
+    const elapsed = Date.now() - start;
+
+    expect(result.ok).toBe(false);
+    expect(elapsed).toBeLessThan(2000);
+    if (!result.ok) {
+      expect(result.reason).toContain('config validation failed');
+      expect(result.reason).toContain(join(testDir, 'server.log'));
+      expect(result.reason).not.toContain('timeout');
+    }
+  });
+
+  it('falls back to the recorded signal when no cause is present on a startup exit', async () => {
+    await writeServerLockfile({
+      exitedAt: Date.now(),
+      signal: 'SIGTERM',
+    });
+
+    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 5000);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain('SIGTERM');
+    }
+  });
+
+  it('returns { ok: false } when the socket path exceeds the unix-domain byte limit', async () => {
+    const longSessionDir = join(tmpdir(), 'd'.repeat(120));
+    const candidate = join(longSessionDir, IPC_SOCK_FILE);
+    expect(Buffer.byteLength(candidate, 'utf8')).toBeGreaterThan(104);
+
+    const result = await waitForServerReady(longSessionDir, sessionIdFor(longSessionDir), 5000);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain('unix-domain limit');
+      expect(result.reason).toContain(candidate);
+    }
+  });
+});
+
+describe('spawnServer', () => {
+  it('resolves { ok: false } when the child process emits a spawn error instead of crashing', async () => {
+    const savedPath = process.env['PATH'];
+    process.env['PATH'] = '';
+    try {
+      const result = await spawnServer({
+        sessionDir: testDir,
+        sessionId: sessionIdFor(testDir),
+        projectDir: testDir,
+        feature: 'test feature',
+        mode: 'standard',
+        configPath: join(testDir, 'config.yaml'),
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toContain('failed to spawn server');
+      }
+    } finally {
+      process.env['PATH'] = savedPath;
+    }
+  });
+});
+
+// The parent's `--otel-exporter` flag lives only in its argv, so the detached host sees it only
+// because spawnServer passes `env: buildServerEnv()` to spawn(), and buildServerEnv translates
+// readOtelExporterFromArgv(process.argv) into the child's DIPTYCH_OTEL_EXPORTER. This probe drives
+// the real buildServerEnv() with the flag in argv, boots OTel from the env it produces (the exact
+// channel the spawned child inherits), and reports whether that forwarded exporter recorded a span.
+function runArgvForwardingProbe(parentExporterFlag: string[]): string {
+  const env = { ...process.env };
+  delete env['OTEL_TRACES_EXPORTER'];
+  delete env['DIPTYCH_OTEL_EXPORTER'];
+
+  const script = `
+    import { trace } from '@opentelemetry/api';
+    import { bootstrapOtel } from './src/lib/otel.ts';
+    import { buildServerEnv } from './src/engine/ipc/spawn-server.ts';
+
+    const childEnv = buildServerEnv();
+
+    // The spawned child never inherits the parent's --otel-exporter argv; it sees the exporter only
+    // through the env buildServerEnv() forwards. Drop the flag so the env channel is the sole input.
+    process.argv = [process.argv[0], process.argv[1]];
+    delete process.env.OTEL_TRACES_EXPORTER;
+    delete process.env.DIPTYCH_OTEL_EXPORTER;
+    if (childEnv.DIPTYCH_OTEL_EXPORTER !== undefined) {
+      process.env.DIPTYCH_OTEL_EXPORTER = childEnv.DIPTYCH_OTEL_EXPORTER;
+    }
+
+    console.dir = (value) => {
+      if (value && typeof value === 'object' && value.name === 'forwarded-span') {
+        process.stdout.write('exported:forwarded-span');
+      }
+    };
+
+    bootstrapOtel();
+    trace.getTracer('forwarding').startSpan('forwarded-span').end();
+  `;
+
+  return execFileSync(
+    process.execPath,
+    ['--import', 'tsx', '--eval', script, '--', ...parentExporterFlag],
+    { cwd: process.cwd(), env, encoding: 'utf-8' },
+  );
+}
+
+describe('spawn-server otel forwarding', () => {
+  it('does not forward an exporter when the parent argv carries no --otel-exporter flag', () => {
+    expect(runArgvForwardingProbe([])).toBe('');
+  });
+
+  it('forwards the parent --otel-exporter flag so the detached host exports spans', () => {
+    expect(runArgvForwardingProbe(['--otel-exporter=console'])).toBe('exported:forwarded-span');
+    expect(runArgvForwardingProbe(['--otel-exporter', 'console'])).toBe('exported:forwarded-span');
+  });
+});
+
+describe('resolveEntryPoint', () => {
+  it('runs the tsx src entry under tsx even when a stale dist build exists', () => {
+    const root = join(testDir, 'dev-tree');
+    const distEntry = join(root, 'dist', 'engine', 'ipc', 'server-entry.js');
+    mkdirSync(join(root, 'dist', 'engine', 'ipc'), { recursive: true });
+    writeFileSync(distEntry, '// stale compiled build');
+    const moduleDir = join(root, 'src', 'engine', 'ipc');
+    const moduleFile = join(moduleDir, 'spawn-server.ts');
+
+    const entry = resolveEntryPoint(moduleDir, moduleFile);
+
+    expect(entry.tsx).toBe(true);
+    expect(entry.command).toBe('npx');
+    expect(entry.args).toEqual(['tsx', join(root, 'src', 'engine', 'ipc', 'server-entry.ts')]);
+  });
+
+  it('runs the compiled dist entry for an installed build when dist exists', () => {
+    const root = join(testDir, 'installed');
+    const distEntry = join(root, 'dist', 'engine', 'ipc', 'server-entry.js');
+    mkdirSync(join(root, 'dist', 'engine', 'ipc'), { recursive: true });
+    writeFileSync(distEntry, '// compiled build');
+    const moduleDir = join(root, 'dist', 'engine', 'ipc');
+    const moduleFile = join(moduleDir, 'spawn-server.js');
+
+    const entry = resolveEntryPoint(moduleDir, moduleFile);
+
+    expect(entry.tsx).toBe(false);
+    expect(entry.command).toBe(process.execPath);
+    expect(entry.args).toEqual([distEntry]);
+  });
+
+  it('resolves the real server-entry under tsx when called with no arguments', () => {
+    const expectedEntry = join(process.cwd(), 'src', 'engine', 'ipc', 'server-entry.ts');
+    const entry = resolveEntryPoint();
+
+    expect(entry.tsx).toBe(true);
+    expect(entry.command).toBe('npx');
+    expect(entry.args).toEqual(['tsx', expectedEntry]);
+    expect(existsSync(expectedEntry)).toBe(true);
   });
 });
 

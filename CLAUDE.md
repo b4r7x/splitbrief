@@ -6,13 +6,13 @@ Open-source cost-aware task compiler for AI coding agents. An expensive planner 
 
 Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates a commit or stages files — ever. Not even when the task is done, not even after tests pass. The user reviews and commits all changes manually. Leave every change as an unstaged modification in the working tree. This rule overrides any other instruction or workflow.
 
-**Enforcement:** `.claude/hooks/block-git-commits.sh` is a `PreToolUse` hook that blocks `git add` / `git stage` / `git commit` (including `git -c …` and chained variants) with exit code 2. A `BLOCKED:` message in stderr means the guardrail fired — stop and report to the user.
+**Enforcement (best-effort):** `.claude/hooks/block-git-commits.sh` is a `PreToolUse` hook that blocks `git add` / `git stage` / `git commit` (including `git -c …`, `git -C …`, and simple quoted/backslashed variants) with exit code 2. It is a guardrail, not a sandbox — sufficiently obfuscated invocations may still slip past, so the never-commit rule above is what binds you, not the hook. A `BLOCKED:` message in stderr means the guardrail fired — stop and report to the user.
 
 ## Stack
 
 - **Runtime:** Node.js 22+, TypeScript 6.x, ESM only (`.js` extension in imports)
 - **Runner:** `tsx` (dev) / `tsc` → `dist/` (build)
-- **TUI:** Ink 6.x (React 19) + `fullscreen-ink`, Shiki 4.x (WASM) for highlighting
+- **TUI:** Ink 6.x (React 19) + `fullscreen-ink`
 - **Testing:** Vitest 4.x, colocated (`foo.test.ts` next to `foo.ts`)
 - **Lint/format:** Biome 2.x
 - **Validation:** Zod 4.x. **Config:** `yaml`. **Git:** `simple-git`. **CLI:** `commander`. **Agent SDK:** `@anthropic-ai/claude-agent-sdk` (optional peer dep)
@@ -85,7 +85,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **kebab-case** file and folder names (`models-dev.ts`, `lm-studio.ts`). Single-word where natural (`pricing.ts`).
 - **No decorative comments.** No section banners. Ordering is the documentation.
 - **Error at boundaries.** Internal functions propagate; callers decide. See [ERRORS.md](./docs/ERRORS.md).
-- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create-store.ts`, `src/stores/use-stores.ts`, branded ID constructors in `src/core/schemas/task.ts`, `Map.get(...)!` in `src/engine/codebase/graph.ts` and `src/engine/codebase/pagerank.ts` (Map.get after pre-population — invariant documented inline), `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal) and `src/engine/hooks/dispatch.ts` (parsing untyped hook stdout JSON), and `src/lib/terminal/filtered-stdin.ts` (bridged `PassThrough` stdin that satisfies the TTY members Ink reads).
+- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create-store.ts`, `src/stores/use-stores.ts`, the `as AppError` factory cast in `src/utils/error.ts`, `Map.get(...)!` in `src/engine/codebase/graph.ts` and `src/engine/codebase/pagerank.ts` (Map.get after pre-population — invariant documented inline), `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal) and `src/engine/hooks/dispatch.ts` (parsing untyped hook stdout JSON), and `src/lib/terminal/filtered-stdin.ts` (bridged `PassThrough` stdin that satisfies the TTY members Ink reads).
 - **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`. `find src -name 'index.ts'` must return nothing. See [NO-BARRELS.md](./docs/NO-BARRELS.md).
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.

@@ -12,6 +12,11 @@ import { parseServerMessage } from '../../engine/ipc/protocol.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
 import { resolveRunningSession } from '../sessions/resolve.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
+import { error } from '../../utils/error.js';
+
+export const detachError = {
+  serverRejected: (message: string) => error('detach-server-rejected', message, { message }),
+} as const;
 
 export type DetachDeps = {
   checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
@@ -31,7 +36,7 @@ function sendDetach(sockPath: string, authToken: string): Promise<void> {
       if (parsed === undefined) return;
       const msg = parseServerMessage(parsed);
       if (msg !== null && msg.kind === 'error') {
-        finish(new Error(msg.message));
+        finish(detachError.serverRejected(msg.message));
       }
     });
 
@@ -50,8 +55,9 @@ function sendDetach(sockPath: string, authToken: string): Promise<void> {
       socket.write(`${JSON.stringify(auth)}\n${JSON.stringify(detach)}\n`);
     });
 
-    socket.on('data', (chunk: Buffer) => {
-      lineBuffer.push(chunk.toString('utf8'));
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk: string) => {
+      lineBuffer.push(chunk);
     });
 
     socket.on('error', (err) => finish(err));

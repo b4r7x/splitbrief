@@ -7,7 +7,7 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
-import { pluralize } from '../../../../utils/pluralize.js';
+import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import type { Section } from '../../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { ConversationRowView } from './row-view.js';
@@ -23,8 +23,8 @@ function computeScrollBannerText(
   linesBelow: number,
 ): { above: string; below: string } {
   return {
-    above: linesAbove > 0 ? `─── ${linesAbove} ${pluralize(linesAbove, 'line')} above ───` : '',
-    below: linesBelow > 0 ? `─── ${linesBelow} ${pluralize(linesBelow, 'line')} below ───` : '',
+    above: linesAbove > 0 ? `─── ${countNoun(linesAbove, 'line')} above ───` : '',
+    below: linesBelow > 0 ? `─── ${countNoun(linesBelow, 'line')} below ───` : '',
   };
 }
 

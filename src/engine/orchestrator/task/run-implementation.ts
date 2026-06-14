@@ -37,11 +37,11 @@ export async function runImplementation(opts: {
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
+  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase }, 'implementer');
   const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
   const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
-  const staged = usesStaging ? await createStagedProject(projectDir) : undefined;
+  const staged = usesStaging ? await createStagedProject(projectDir, config) : undefined;
   let preApplyApprovalDenied = false;
   let preApplyApprovedFiles: string[] = [];
 

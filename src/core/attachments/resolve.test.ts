@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { resolveAttachment } from './resolve.js';
+import { attachmentShortName, resolveAttachment } from './resolve.js';
 
 let projectDir: string;
 let externalDir: string;
@@ -85,5 +85,39 @@ describe('resolveAttachment', () => {
     const result = resolveAttachment({ input: p, projectDir });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('too-large');
+  });
+
+  it('assigns a crypto-random UUID id, unique per resolution', () => {
+    const p = join(projectDir, 'pic.png');
+    writeFileSync(p, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+    const first = resolveAttachment({ input: p, projectDir });
+    const second = resolveAttachment({ input: p, projectDir });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    expect(first.attachment.id).toMatch(
+      /^att-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(second.attachment.id).not.toBe(first.attachment.id);
+  });
+});
+
+describe('attachmentShortName', () => {
+  it('returns the basename unchanged when within budget', () => {
+    expect(attachmentShortName('/some/dir/photo.png')).toBe('photo.png');
+  });
+
+  it('truncates long basenames with the single ellipsis glyph within the 24-char budget', () => {
+    const long = 'a-really-long-attachment-filename.png';
+    const result = attachmentShortName(long);
+    expect(result.length).toBe(24);
+    expect(result.endsWith('…')).toBe(true);
+    expect(result).toBe(`${long.slice(0, 23)}…`);
+  });
+
+  it('handles backslash-separated paths', () => {
+    expect(attachmentShortName('C:\\dir\\image.jpg')).toBe('image.jpg');
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -346,7 +347,12 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
-    const tasks = [makeTask({ id: 'T001', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
+
+    // The completed task's target file is present in the working tree, so the
+    // run's changed-file universe covers it and no missing_expected_file fires.
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = () => "hi";\n');
 
     await runFinalReviewPhase(
       {
@@ -366,6 +372,102 @@ describe('runFinalReviewPhase', () => {
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
     );
     expect(drift.briefHash).toBe(hashTaskBrief(tasks));
+    expect(drift.changedFiles).toContain('src/hello.ts');
+    expect(drift.findings).toEqual([]);
+  });
+
+  it('includes untracked created-file content in the review prompt diff', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const marker = 'UNTRACKED_REVIEW_MARKER_42';
+    writeFileSync(join(projectDir, 'src/hello.ts'), `export const x = "${marker}";\n`);
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState(tasks),
+        planner,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain(marker);
+  });
+
+  it('derives the review diff and drift universe from per-task commits when the tree is clean', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+
+    // Per-task commit strategy: the implemented file is committed (with the
+    // run-authored message prefix) and the working tree is left clean — so a
+    // raw `git status` / `git diff` universe is empty and would (incorrectly)
+    // produce an empty review diff plus a false missing_expected_file warning.
+    const committedMarker = 'COMMITTED_REVIEW_MARKER_77';
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/feature.ts'), `export const y = "${committedMarker}";\n`);
+    execSync('git add src/feature.ts', { cwd: projectDir, stdio: 'pipe' });
+    execSync('git commit -m "feat(diptych): T001 - add feature"', {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const tasks = [makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' })];
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState(tasks),
+        planner,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    // The committed change reaches the paid review prompt diff.
+    expect(reviewPrompts[0]).toContain(committedMarker);
+
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(drift.changedFiles).toContain('src/feature.ts');
+    // No false missing_expected_file: the committed file IS in the run universe.
+    expect(drift.findings.some((f: { code: string }) => f.code === 'missing_expected_file')).toBe(
+      false,
+    );
+    expect(drift.findings).toEqual([]);
   });
 
   it('records the real pre-final-review auto snapshot in the run ledger', async () => {

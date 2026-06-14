@@ -1,5 +1,5 @@
 import type { Task } from '../../core/schemas/task.js';
-import { buildRoutingPreviewMetadata } from '../../engine/facades/routing-preview.js';
+import { buildRoutingPreviewMetadata } from '../../engine/routing-preview.js';
 import { configStore } from '../../stores/project/config.js';
 import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 

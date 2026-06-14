@@ -5,6 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
+import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
 import {
   applyRebuiltContext,
@@ -177,11 +178,12 @@ describe('autoCompactResumeContext', () => {
     const { bus, events } = makeBusRecorder();
     const summarizedBatches: Array<Array<{ role: string; text: string }>> = [];
 
-    await autoCompactResumeContext({
+    const nextState = await autoCompactResumeContext({
       projectDir,
       sessionId,
       bus,
       config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      state: createInitialState('resume'),
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,
@@ -193,7 +195,10 @@ describe('autoCompactResumeContext', () => {
         },
         summarize: async (messages) => {
           summarizedBatches.push(messages);
-          return '## Summary\nCompacted older work';
+          return {
+            text: '## Summary\nCompacted older work',
+            usage: { inputTokens: 800, outputTokens: 120 },
+          };
         },
       },
     });
@@ -213,6 +218,9 @@ describe('autoCompactResumeContext', () => {
       summarizedUpTo: '1002',
     });
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+    expect(nextState.tokenUsage.plannerInput).toBe(800);
+    expect(nextState.tokenUsage.plannerOutput).toBe(120);
+    expect(events.some((event) => event.type === 'cost_update')).toBe(true);
   });
 
   it('uses structured compaction for api planners in auto mode', async () => {
@@ -228,11 +236,12 @@ describe('autoCompactResumeContext', () => {
       remainingWork: ['continue'],
     };
 
-    await autoCompactResumeContext({
+    const nextState = await autoCompactResumeContext({
       projectDir,
       sessionId,
       bus,
       config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      state: createInitialState('resume'),
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,
@@ -245,7 +254,11 @@ describe('autoCompactResumeContext', () => {
         summarize: async () => {
           throw new Error('freeform summarization should not be used');
         },
-        summarizeStructured: async () => ({ text: JSON.stringify(structured), structured }),
+        summarizeStructured: async () => ({
+          text: JSON.stringify(structured),
+          structured,
+          usage: { inputTokens: 500, outputTokens: 60 },
+        }),
       },
     });
 
@@ -261,6 +274,8 @@ describe('autoCompactResumeContext', () => {
       structured,
     });
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+    expect(nextState.tokenUsage.plannerInput).toBe(500);
+    expect(nextState.tokenUsage.plannerOutput).toBe(60);
   });
 
   it('emits a warning when structured compaction falls back to freeform text', async () => {
@@ -273,6 +288,7 @@ describe('autoCompactResumeContext', () => {
       sessionId,
       bus,
       config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      state: createInitialState('resume'),
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,
@@ -285,7 +301,7 @@ describe('autoCompactResumeContext', () => {
         summarize: async () => {
           throw new Error('freeform summarization should not be used');
         },
-        summarizeStructured: async () => ({ text: 'not json', structured: null }),
+        summarizeStructured: async () => ({ text: 'not json', structured: null, usage: null }),
       },
     });
 
@@ -303,6 +319,7 @@ describe('autoCompactResumeContext', () => {
       sessionId,
       bus,
       config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      state: createInitialState('resume'),
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,

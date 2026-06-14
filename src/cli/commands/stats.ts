@@ -7,7 +7,7 @@ import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { withCliErrors } from '../errors.js';
 import { writeJsonLine } from '../json-line.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun } from '../../utils/pluralize.js';
 import type { StatsUpdateInput } from '../../core/stats/persistence.js';
 
 export function registerStatsCommand(program: Command): void {
@@ -54,7 +54,7 @@ export function registerStatsCommand(program: Command): void {
 
         console.log(
           ansis.bold.green(
-            `\n  diptych savings: ${formatCost(stats.totalSavings)} saved across ${stats.totalSessions} ${pluralize(stats.totalSessions, 'session')}\n`,
+            `\n  diptych savings: ${formatCost(stats.totalSavings)} saved across ${countNoun(stats.totalSessions, 'session')}\n`,
           ),
         );
         console.log(`  ${ansis.dim('Total spent:')}          ${formatCost(stats.totalCost)}`);
@@ -74,7 +74,7 @@ export function registerStatsCommand(program: Command): void {
           for (const [id, data] of providers) {
             const name = getProviderDisplayName(id);
             console.log(
-              `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} ${pluralize(data.sessions, 'session')})`,
+              `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${countNoun(data.sessions, 'session')})`,
             );
           }
         }

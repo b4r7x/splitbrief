@@ -5,11 +5,12 @@ import type { Implementer } from '../engine/implementers/types.js';
 import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
-import { BUDGET_PAUSE_THRESHOLD } from '../engine/orchestrator/budget/check.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { cliError } from './errors.js';
 import { resolveRunConfig } from './build-overrides.js';
+import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
+import { flushOtel } from '../lib/otel.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 
 function buildNoopSinks() {
@@ -80,6 +81,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     _implementer,
     plannerContext,
   } = options;
+  installTerminalOutputErrorGuard();
   const config = resolveRunConfig({
     projectDir,
     opts,
@@ -93,40 +95,41 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     );
   }
 
-  await runWorkflow({
-    feature,
-    plannerContext,
-    projectDir,
-    config,
-    headless: true,
-    allowHooks: opts.allowHooks ?? false,
-    sinks: buildNoopSinks(),
-    modelCache: modelCacheStore,
-    drainPendingAttachments: () => attachmentsStore.drain(),
-    savedState,
-    sessionId,
-    _planner,
-    _implementer,
-    callbacks: {
-      onApprovalNeeded: async () => ({ approved: true }),
-      onQuestionAsked: async () => '',
-      onBudgetExceeded: async () => true,
-      onBudgetPaused: async (currentCost, maxBudget) => {
-        const pauseThreshold = config.workflow.budgetPauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
-        process.stdout.write(
-          JSON.stringify({
-            type: 'budget_paused',
-            currentCost,
-            maxBudget,
-            threshold: pauseThreshold,
-          }) + '\n',
-        );
-        process.exit(1);
+  const abortController = new AbortController();
+  const onSignal = () => abortController.abort();
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+
+  try {
+    await runWorkflow({
+      feature,
+      plannerContext,
+      projectDir,
+      config,
+      headless: true,
+      allowHooks: opts.allowHooks ?? false,
+      sinks: buildNoopSinks(),
+      modelCache: modelCacheStore,
+      drainPendingAttachments: () => attachmentsStore.drain(),
+      savedState,
+      sessionId,
+      signal: abortController.signal,
+      _planner,
+      _implementer,
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onQuestionAsked: async () => '',
+        onContinuationNeeded: async () => '',
+        onComplete: () => undefined,
       },
-      onContinuationNeeded: async () => '',
-      onComplete: () => undefined,
-    },
-  });
+    });
+  } finally {
+    process.removeListener('SIGINT', onSignal);
+    process.removeListener('SIGTERM', onSignal);
+    await flushOtel();
+  }
+
+  if (abortController.signal.aborted) return;
 
   emitRecoveryAndFailIfPending(projectDir, sessionId);
   failIfFinalReviewIncomplete(projectDir, sessionId);

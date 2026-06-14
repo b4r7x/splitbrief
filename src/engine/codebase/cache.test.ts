@@ -110,4 +110,52 @@ describe('parseCache', () => {
     expect(parseCount).toBe(1); // second instance hit cache
     expect(cache2.metrics.hits).toBe(1);
   });
+
+  it('self-heals a corrupt database, warns, and serves a working cache', async () => {
+    const f = join(dir, 'a.ts');
+    writeFileSync(f, 'export function x() {}');
+    const dbPath = join(dir, 'cache.sqlite');
+    writeFileSync(dbPath, 'not a sqlite database — torn header garbage'.repeat(8));
+
+    const warnings: string[] = [];
+    const parseSpy = (p: string) => Promise.resolve(makeFileNode(p));
+
+    const cache = await createParseCache(dbPath, { onWarn: (m) => warnings.push(m) });
+    try {
+      await cache.getOrParse(f, parseSpy);
+      await cache.getOrParse(f, parseSpy);
+    } finally {
+      cache.close();
+    }
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('corrupt');
+    expect(cache.metrics.misses).toBe(1);
+    expect(cache.metrics.hits).toBe(1);
+  });
+
+  it('persists across reopen after self-healing a corrupt database', async () => {
+    const f = join(dir, 'a.ts');
+    writeFileSync(f, 'export function x() {}');
+    const dbPath = join(dir, 'cache.sqlite');
+    writeFileSync(dbPath, 'corrupt'.repeat(64));
+
+    const parseSpy = (p: string) => Promise.resolve(makeFileNode(p));
+
+    const healed = await createParseCache(dbPath);
+    try {
+      await healed.getOrParse(f, parseSpy);
+    } finally {
+      healed.close();
+    }
+
+    const reopened = await createParseCache(dbPath);
+    try {
+      await reopened.getOrParse(f, parseSpy);
+    } finally {
+      reopened.close();
+    }
+
+    expect(reopened.metrics.hits).toBe(1); // healed db is a real, durable sqlite file
+  });
 });

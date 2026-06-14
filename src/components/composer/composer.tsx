@@ -10,6 +10,7 @@ import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
+import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { projectFilesStore } from '../../stores/ui/project-files.js';
 import { configStore } from '../../stores/project/config.js';
@@ -44,10 +45,10 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
 const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
 const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
 
-function readProjectFiles(projectDir: string): string[] {
+async function readProjectFiles(projectDir: string): Promise<string[]> {
   if (!projectDir) return [];
   try {
-    return listProjectFiles(projectDir, {
+    return await listProjectFiles(projectDir, {
       excludePatterns: [SESSIONS_EXCLUDE],
       skipRelativeDirs: [SESSIONS_REL_DIR],
     });
@@ -66,6 +67,7 @@ interface ComposerProps {
   width?: number;
   disabled?: boolean;
   homeHint?: string | undefined;
+  onEmptySubmit?: (() => void) | undefined;
 }
 
 export function Composer({
@@ -78,6 +80,7 @@ export function Composer({
   width,
   disabled,
   homeHint,
+  onEmptySubmit,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -127,7 +130,10 @@ export function Composer({
   const handleSubmit = (text: string) => {
     if (showCommandSuggestions || showReferenceSuggestions) return;
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      onEmptySubmit?.();
+      return;
+    }
 
     if (currentScreen === 'home') {
       inputHistoryStore.push(trimmed);
@@ -173,12 +179,24 @@ export function Composer({
     !showReferenceSuggestions;
 
   useEffect(() => {
-    setProjectFiles(readProjectFiles(projectDir));
+    let active = true;
+    void readProjectFiles(projectDir).then((files) => {
+      if (active) setProjectFiles(files);
+    });
+    return () => {
+      active = false;
+    };
   }, [projectDir, refreshEpoch]);
 
   useEffect(() => {
     inputHeightStore.setRows(visibleRows + 2);
   }, [visibleRows]);
+
+  const completionOpen = showCommandSuggestions || showReferenceSuggestions;
+  useEffect(() => {
+    completionStore.setOpen(completionOpen);
+    return () => completionStore.setOpen(false);
+  }, [completionOpen]);
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
@@ -212,7 +230,7 @@ export function Composer({
               maxRows={6}
               onVisibleRowsChange={setVisibleRows}
               keyBindings={{
-                submit: (key: { return: boolean }) => key.return,
+                submit: (key: { return: boolean; shift: boolean }) => key.return && !key.shift,
                 newline: (key: { return: boolean; shift: boolean }) => key.return && key.shift,
               }}
               onBoundaryNavigate={handleInputBoundaryNavigate}

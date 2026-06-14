@@ -28,6 +28,7 @@ export interface RouteTaskOptions extends ContextFitOptions {
   conservativeContextLength?: number | undefined;
   contextCache?: ModelCacheAccessor | undefined;
   languageContext?: LanguageContext | undefined;
+  detectedContextLength?: number | undefined;
 }
 
 export interface RejectedImplementerProfile {
@@ -77,6 +78,7 @@ export interface ProfileFit {
 
 export type ContextLengthSource =
   | 'explicit'
+  | 'detected'
   | 'models-dev'
   | 'runtime'
   | 'known-catalog'

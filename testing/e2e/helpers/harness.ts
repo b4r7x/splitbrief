@@ -114,10 +114,6 @@ export async function runE2eWorkflow(
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
       onQuestionAsked: async () => '',
-      onBudgetExceeded: async () => true,
-      onBudgetPaused: async () => {
-        throw new Error('Budget paused unexpectedly in e2e test');
-      },
       onContinuationNeeded: async () => '',
       onComplete: () => undefined,
     },

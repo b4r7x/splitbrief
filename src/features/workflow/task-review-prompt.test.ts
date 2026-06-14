@@ -88,4 +88,14 @@ describe('task review prompt', () => {
     });
     expect(parseTaskReviewAnswer('abort')).toEqual({ action: 'abort' });
   });
+
+  it('returns null for unrecognized non-empty input instead of accepting', () => {
+    expect(parseTaskReviewAnswer('rdo')).toBeNull();
+    expect(parseTaskReviewAnswer('redo it please')).toBeNull();
+    expect(parseTaskReviewAnswer('!!!')).toBeNull();
+  });
+
+  it('treats bare Enter as the only implicit accept', () => {
+    expect(parseTaskReviewAnswer('   ')).toEqual({ action: 'continue' });
+  });
 });

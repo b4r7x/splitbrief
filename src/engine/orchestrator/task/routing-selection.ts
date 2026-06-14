@@ -5,8 +5,8 @@ import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { transitionAndSave } from '../state-ops.js';
-import { publishError, publishRecoveryPrompted } from '../events.js';
+import { raisePendingRecovery } from '../state-ops.js';
+import { publishError } from '../events.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
@@ -38,7 +38,7 @@ export async function selectRoutingProfile(opts: {
   getRunnerModelName: (config: ResolvedImplementerProfile['config']) => string | undefined;
 }): Promise<RoutingSelectionResult> {
   const { wctx, task, taskIndex, taskBreakdowns, setTrackedState, resolvedProfiles } = opts;
-  const { projectDir, sessionId } = wctx;
+  const { projectDir } = wctx;
   let state = opts.state;
 
   const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
@@ -57,12 +57,7 @@ export async function selectRoutingProfile(opts: {
       routingReason: message,
       createdAt: nowIso(),
     });
-    state = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'SET_PENDING_RECOVERY',
-      issue,
-    });
-    publishRecoveryPrompted(wctx.bus, issue);
-    setTrackedState(state);
+    state = raisePendingRecovery(wctx, state, issue, setTrackedState);
     return { ok: false, state };
   }
 
@@ -70,6 +65,7 @@ export async function selectRoutingProfile(opts: {
     task,
     context: wctx.context,
     profiles: routingProfiles,
+    ...(wctx.modelCache !== undefined && { contextCache: wctx.modelCache }),
     languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
   });
   const selectedProfile = selectedProfileFromDecision(resolvedProfiles, routingDecision);
@@ -85,12 +81,7 @@ export async function selectRoutingProfile(opts: {
       routingDecision,
       createdAt: nowIso(),
     });
-    state = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'SET_PENDING_RECOVERY',
-      issue,
-    });
-    publishRecoveryPrompted(wctx.bus, issue);
-    setTrackedState(state);
+    state = raisePendingRecovery(wctx, state, issue, setTrackedState);
     state = await stopWithReview({
       wctx,
       state,

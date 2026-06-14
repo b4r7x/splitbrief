@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server, type Socket } from 'node:net';
-import { detachCommand, type DetachDeps } from './detach.js';
+import { detachCommand, detachError, type DetachDeps } from './detach.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 let testDir: string;
@@ -61,6 +61,26 @@ function listen(sockPath: string): Promise<void> {
         if (line.trim()) received.push(line.trim());
       }
       socket.destroy();
+    });
+  });
+
+  return new Promise((resolve, reject) => {
+    server?.once('error', reject);
+    server?.listen(sockPath, resolve);
+  });
+}
+
+function listenSplitError(sockPath: string, message: string): Promise<void> {
+  server = createServer((socket: Socket) => {
+    socket.once('data', () => {
+      const frame = Buffer.from(
+        `${JSON.stringify({ kind: 'error', code: 'unauthorized', message })}\n`,
+        'utf8',
+      );
+      // Split inside the first multibyte character of the message body.
+      const at = frame.indexOf(Buffer.from(message, 'utf8')[0]!) + 1;
+      socket.write(frame.subarray(0, at));
+      setTimeout(() => socket.write(frame.subarray(at)), 10);
     });
   });
 
@@ -159,6 +179,30 @@ describe('detachCommand', () => {
       { kind: 'detach' },
     ]);
     expect(logs).toContain('Session newer-session detached.');
+  });
+
+  it('reassembles a multibyte server error message split across socket frames', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    const sessDir = join(testDir, '.diptych', 'sessions', 'alive-session');
+    mkdirSync(sessDir, { recursive: true });
+    const message = 'セッションはすでに接続されています';
+    await listenSplitError(join(sessDir, 'ipc.sock'), message);
+
+    await expect(
+      detachCommand(
+        'alive-session',
+        { projectDir: testDir },
+        createDeps(runningStatus('alive-session')),
+      ),
+    ).rejects.toMatchObject({ message });
+  });
+
+  it('tags a server rejection with a domain kind', () => {
+    const err = detachError.serverRejected('already attached');
+    expect(err.kind).toBe('detach-server-rejected');
+    expect(err.message).toBe('already attached');
+    expect(err.data).toEqual({ message: 'already attached' });
   });
 
   it('fails when a running session has no auth token', async () => {

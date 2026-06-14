@@ -1,6 +1,6 @@
 # diptych — Future Work
 
-Scope that is **deliberately deferred** from v1. These ideas have been discussed, have concrete shape, and will likely be built — but not yet. Keeping them here avoids cluttering `docs/WORKFLOW.md` Part 2 ("still open") with things that are just "not now" rather than "not decided".
+Scope that is **deliberately deferred** from the current release. These ideas have been discussed, have concrete shape, and will likely be built — but not yet. Keeping them here keeps [docs/WORKFLOW.md](./WORKFLOW.md) focused on the shipped state machine instead of things that are just "not now" rather than "not decided".
 
 Each entry has:
 - Why we want it
@@ -14,10 +14,10 @@ Each entry has:
 
 Items below are labeled using MoSCoW:
 
-- **Must** — core gap; v1 is incomplete without this.
+- **Must** — core gap; the current release is incomplete without this.
 - **Should** — high value; next major cycle.
 - **Could** — nice-to-have; low priority.
-- **Won't-v1** — deferred to v2 or beyond; consciously out-of-scope.
+- **Won't** — deferred to a later cycle; consciously out-of-scope for now.
 
 Labels are opinions, not contracts. Contributors can argue for re-labeling via PR.
 
@@ -38,7 +38,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Why deferred.**
 
-- Our phase-based workflow already provides coarse rewind via approval-gate rejection (`REJECT_SPEC` / `REJECT_PLAN`) and the v1 soft rewind commands (`/revise-spec`, `/revise-plan`, `/redo-task`). That covers 90% of cases.
+- Our phase-based workflow already provides coarse rewind via approval-gate rejection (`REJECT_SPEC` / `REJECT_PLAN`) and the shipped soft rewind commands (`/revise-spec`, `/revise-plan`, `/redo-task`). That covers 90% of cases.
 - Full rewind requires versioning every artifact at every rewind-able point, which roughly doubles disk footprint for a session.
 - UI complexity is non-trivial: picker, preview of which artifacts will change, confirmation.
 - Git commits complicate things: if tasks were already committed (and maybe pushed), rewind can't silently un-commit.
@@ -74,24 +74,18 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ---
 
-## **[Could]** Parallel sessions in the same project
+## ~~**[Could]** Parallel sessions in the same project~~ ✅ Done
 
-**Why we want it.** Users sometimes want to run multiple diptych workflows against the same codebase at once — e.g., plan one feature while implementing another. Today this is blocked by the `.diptych/active` lock.
+**Why we wanted it.** Users sometimes want to run multiple diptych workflows against the same codebase at once — e.g., plan one feature while implementing another. The `.diptych/active` lock blocks concurrent runs in a single working tree.
 
-**What it would look like.**
+**What was built.**
 
-The canonical solution is git worktrees: each worktree is an isolated checkout and has its own `.diptych/`. Users should use `git worktree add` to create a new branch and working directory, then run `diptych` inside the worktree. Claude Code v2.1.50+ has first-class `-w` support for this.
+- `diptych start --worktree <name>` creates `.trees/<name>` on branch `diptych/<name>`, selects it as the run's project root, and starts the workflow there (`--worktree [name]` flag in `src/cli/options.ts`).
+- `diptych worktree list` shows every diptych-managed worktree with its branch, status, session, and phase; `diptych worktree switch <name>` prints the shell instructions to enter it, and `diptych worktree remove <name>` tears one down with live-session and dirty-tree guards (`src/cli/commands/worktree.ts`).
+- Each worktree gets its own isolated `.diptych/` (sessions, active pointer, snapshots, ledger), with config and hooks copied from the base checkout.
+- Full workflow and isolation caveats are documented in [WORKTREES.md](./WORKTREES.md).
 
-**Why deferred.**
-
-- We don't need new diptych code to support this — git worktrees are the answer. What *would* be new is tooling to make worktree setup seamless (`diptych start --worktree <branch>` that creates the worktree, switches into it, and starts the workflow). That's convenience, not a capability.
-- Without worktrees, truly concurrent workflows in the same directory share working-tree files and git index, which always leads to conflicts. The experience is so bad that we'd rather not offer the option.
-
-**Where to start when we do it.**
-
-- Add `--worktree <branch-name>` flag to `diptych start`.
-- Add a `diptych worktree list` command that shows all worktrees with active diptych sessions.
-- Document the workflow in `docs/CONCEPTS.md` as a "Concurrent workflows" section.
+**Remaining.** Per-worktree environment isolation (ports, databases) is still the user's responsibility — see the mitigation recipes in WORKTREES.md.
 
 ---
 
@@ -123,24 +117,23 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ## **[Could]** Session browser UI
 
-**Why we want it.** Today there is no UI for browsing past sessions. `.diptych/sessions/` is visible in the filesystem, but discoverability is bad — summary is buried in `summary.json`, transcripts require manual file opening.
+**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/features/sessions/picker.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.diptych/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
 
-**What it would look like.**
+**What remains.**
 
-- `diptych sessions` command opens a picker of historical sessions sorted by date.
-- Selecting one shows summary + artifact preview + "replay" option.
-- Replay mode scrolls through `session.jsonl` rendered the same way the live TUI renders events — read-only.
-- `diptych sessions delete <id>` removes a session folder.
+- A standalone `diptych sessions` CLI command (the picker only exists inside the running TUI today).
+- Read-only replay mode that scrolls through `session.jsonl` rendered the way the live TUI renders events.
+- `diptych sessions delete <id>` to remove a session folder with confirmation.
 
 **Why deferred.**
 
-- The new sessions-folder layout already gives users enough to inspect sessions by hand (each folder is self-contained, summary.json at a glance).
-- UI work is not small: picker, replay renderer (we already have one, but needs to work in read-only mode), delete confirmation.
+- The in-TUI picker plus the self-contained folder layout already cover inspecting and resuming sessions.
+- Replay needs the event-cards renderer to work in a read-only mode, and delete needs confirmation UX.
 
 **Where to start when we do it.**
 
 - New command at `src/cli/commands/sessions.ts`.
-- Reuse `ConversationFlow` and event-cards renderer in read-only mode.
+- Reuse `ConversationFlow` and the event-cards renderer in read-only mode.
 
 ---
 
@@ -189,7 +182,7 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 **Where to start when we do it.**
 
-- Extend the `EngineEvent` union with an `injection_separator` variant (`src/engine/events/types.ts`).
+- Extend the `EngineEventSchema` union with an `injection_separator` variant (`src/engine/events/schema.ts`).
 - Publish it from the mid-stream dispatch path in `src/engine/orchestrator/` when a queued message is folded into a live session.
 - Add a renderer in `src/features/workflow/components/event-cards/`.
 
@@ -197,20 +190,20 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 ## EventBus & OTel evolution (mixed)
 
-Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) and [OTEL.md §Design decisions](./OTEL.md#design-decisions). The bus is in; these are the rough edges that did not make v1.
+Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) and [OTEL.md §Design decisions](./OTEL.md#design-decisions). The bus is in; these are the rough edges that did not make the current release.
 
 - **[Should] Subprocess context propagation.** Planner and implementer spawns do not receive a `traceparent` today, so calls into Claude Code / Ollama / LM Studio appear as opaque windows inside the parent phase span. Fix: thread a W3C trace-context propagator through every runner adapter — as an environment variable for `cli` / `shell` / `agent` kinds, and as a request header for `api` kinds.
 - **[Should] CLI bootstrap UX.** Pre-registering a `NodeTracerProvider` from an external wrapper is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs. bare specifier → distinct module-cache entries). Fix approach: a `--otel-exporter <console|otlp-http>` CLI flag, or a `DIPTYCH_OTEL_EXPORTER` env variable read inside `src/engine/orchestrator/run/init.ts` so the provider is registered in the same resolution context the sink imports from.
 - **[Could] Retry span semantics.** Today a task with two retries produces one span covering all attempts. Open question: model retries as sibling spans under a shared parent, or keep a single task span with a `diptych.task.retries` attribute. Ambiguous which users actually want — deferred until we see real trace consumption.
 - **[Could] Error status propagation.** `task_full_fail` marks only the task span `ERROR`; parent phase and workflow stay `OK`. OTel convention varies across backends (Honeycomb vs. Tempo bubble-up behavior differs). Needs a calibration pass before codifying.
-- **[Won't-v1] Logs via `@opentelemetry/api-logs`.** Structured log records with trace correlation, replacing `console.*` inside the engine. Out of scope for v1. Would land alongside a `/log` channel that exposes planner/implementer stdout as log records.
+- **[Won't] Logs via `@opentelemetry/api-logs`.** Structured log records with trace correlation, replacing `console.*` inside the engine. Out of scope for now. Would land alongside a `/log` channel that exposes planner/implementer stdout as log records.
 - **[Could] Metric emission.** Counters (`task_completed{method=local|escalated|escalated-full}`), histograms (phase durations), gauges (tokens remaining against budget). Derivable from spans by most backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
 
 ---
 
 ## Hook system v2 (mixed)
 
-Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). v1 ships command-kind hooks, JS/TS module hooks, and `.diptych/hooks/` discovery.
+Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks, JS/TS module hooks, and `.diptych/hooks/` discovery.
 
 - **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
 
@@ -218,8 +211,8 @@ Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decis
 
 ## Repo-map v2 (mixed)
 
-Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). v1 now supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
+Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). It supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
 
-- **[Won't-v1] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
+- **[Won't] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
 - ~~**[Should] Non-TypeScript language support.** Python, Go, Rust via their respective tree-sitter grammars. Each language needs its own `tags.scm`-equivalent extractor and a validator pipeline fit for the language.~~ ✅ Done
 - **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.diptych/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today `/repomap rebuild` handles it per-project, but a migration note in release notes and an automatic bump on install is cleaner.

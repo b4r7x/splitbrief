@@ -28,6 +28,9 @@ export async function runPreHooks(
     if ((outcome.kind === 'warn' || outcome.kind === 'allow') && outcome.stderr) {
       warnings.push(`[builtin ${builtin.name}] stderr: ${outcome.stderr}`);
     }
+    if (outcome.kind === 'warn' && outcome.message) {
+      warnings.push(`[builtin ${builtin.name}] ${outcome.message}`);
+    }
   }
   const entries = hooks?.[event] ?? [];
   for (const entry of entries) {

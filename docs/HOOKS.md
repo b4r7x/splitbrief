@@ -20,7 +20,7 @@ This is the same rule [bulletproof-react](https://github.com/alan2207/bulletproo
 | Module named `use-*` that has no React dependency (pure function disguised as a hook) | Not a hook. Move to `src/utils/`, `src/core/`, or the feature that owns it. |
 | State that needs to cross multiple components or survive unmounts | Not a hook. Use a store (`src/stores/`). See [`STORES.md`](./STORES.md). |
 
-**Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. `src/components/pickers/two-column-picker/use-nav-state.ts`). They are private implementation details of the component, not part of any public surface.
+**Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. `src/features/runners/two-column-picker/use-nav-state.ts`). They are private implementation details of the component, not part of any public surface.
 
 ## Shallow-hook policy
 

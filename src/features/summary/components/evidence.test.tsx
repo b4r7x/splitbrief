@@ -126,4 +126,37 @@ describe('SummaryEvidence', () => {
     expect(frame).toContain('final review: written');
     ui.unmount();
   });
+
+  it('surfaces the retry-vs-escalated validation state in the rendered evidence', () => {
+    const task = makeTask({ id: 'T001', title: 'Flaky thing', file: 'src/flaky.ts' });
+    let ledger = createEvidenceLedger({
+      sessionId: 's1',
+      feature: 'demo',
+      mode: 'standard',
+      tasks: [task],
+    });
+    ledger = recordRetryOrEscalationEvidence({
+      ledger,
+      task,
+      status: 'escalated',
+      escalated: true,
+      validation: [{ passed: false, stage: 'test', error: 'still red' }],
+    });
+
+    const summary: Summary = {
+      ...baseSummary,
+      evidenceSummary: {
+        path: 'evidence.json',
+        totalTasks: 1,
+        tasksWithValidationEvidence: 1,
+        escalatedTasks: 1,
+        failedTasks: 0,
+      },
+    };
+    const ui = renderFeature(<SummaryEvidence summary={summary} ledger={ledger} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('retries: test:escalated');
+    ui.unmount();
+  });
 });

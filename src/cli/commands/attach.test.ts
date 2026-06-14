@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { routerStore } from '../../stores/navigation/router.js';
 import { attachCommand } from './attach.js';
 import type { AttachDeps } from './attach.js';
+import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 const mockCheckServerStatus = vi.fn<(dir: string) => Promise<ServerStatus>>();
@@ -52,6 +53,18 @@ describe('attachCommand', () => {
     });
   });
 
+  it('throws a curated not-found error for an explicit session id with no session dir', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    await expect(
+      attachCommand('typo-session', { projectDir: testDir }, fakeDeps),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining("session 'typo-session' not found"),
+    });
+    expect(mockCheckServerStatus).not.toHaveBeenCalled();
+  });
+
   it('exits non-zero when the requested session is not alive', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
@@ -78,6 +91,60 @@ describe('attachCommand', () => {
     await expect(
       attachCommand('my-session', { projectDir: testDir }, fakeDeps),
     ).rejects.toMatchObject({ exitCode: 1 });
+  });
+
+  it('throws exit-1 for a dead session using the real crash diagnostic without exiting the process', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    const sessDir = join(testDir, '.diptych', 'sessions', 'dead-session');
+    mkdirSync(sessDir, { recursive: true });
+
+    const status: ServerStatus = {
+      alive: false,
+      crashed: true,
+      data: {
+        version: 1,
+        pid: 4242,
+        startTimeMs: 1000,
+        lastAliveMs: 1000,
+        sessionId: 'dead-session',
+        mode: 'standard',
+        feature: 'test feature',
+        signal: 'SIGKILL',
+        cause: 'out of memory',
+      },
+    };
+    mockCheckServerStatus.mockResolvedValue(status);
+
+    const written: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (data: unknown) => {
+      written.push(String(data));
+      return true;
+    };
+    let exitCode: number | undefined;
+    const origExit = process.exit.bind(process);
+    process.exit = ((code?: number) => {
+      exitCode = code;
+    }) as typeof process.exit;
+
+    try {
+      await expect(
+        attachCommand(
+          'dead-session',
+          { projectDir: testDir },
+          {
+            ...fakeDeps,
+            showCrashDiagnostic: (dir, st) => showCrashDiagnostic(dir, st, async () => '2'),
+          },
+        ),
+      ).rejects.toMatchObject({ exitCode: 1 });
+      expect(written.join('')).toContain('CRASHED');
+      expect(exitCode).toBeUndefined();
+    } finally {
+      process.stdout.write = origWrite;
+      process.exit = origExit;
+    }
   });
 
   it('renders the workflow app in attached-client mode when server is alive', async () => {

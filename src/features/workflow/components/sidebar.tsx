@@ -37,11 +37,11 @@ export function Sidebar({ width }: SidebarProps) {
   const tasks = tasksStore.use((s) => s.tasks);
   const mode = configStore.use((s) => s.config?.workflow?.mode);
   const advisory = useAdvisory();
-  const doneCount = tasks.filter((tk) => tk.status === 'done').length;
+  const localCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
-  const localCount = doneCount;
+  const completedCount = localCount + escalatedCount;
 
   return (
     <Box
@@ -60,7 +60,7 @@ export function Sidebar({ width }: SidebarProps) {
         </Text>
         <Text color={t.textDim}>
           {' '}
-          {doneCount}/{tasks.length}
+          {completedCount}/{tasks.length}
         </Text>
       </Box>
 

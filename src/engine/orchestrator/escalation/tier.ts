@@ -4,6 +4,13 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
+import { isProviderId } from '../../../core/schemas/enums.js';
+import {
+  findKnownModel,
+  getEffectiveModelId,
+  lookupModelsDevModel,
+  lookupRuntimeModel,
+} from '../../providers/model/resolution.js';
 import type { Implementer } from '../../implementers/types.js';
 import { createImplementer } from '../../runners/factory.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -21,6 +28,7 @@ import { truncateByChars } from '../../../utils/truncate.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
+import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { runRetryStep } from './step.js';
 import {
@@ -71,20 +79,16 @@ export async function runEscalationTier(
 async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutcome> {
   const { ctx, task: initialTask, state, lastError, priorAttempts } = input;
   const escalation = ctx.config.escalation;
-  if (!escalation?.intermediateProvider || escalation.enabled === false) {
+  if (
+    !escalation?.intermediateProvider ||
+    !escalation.intermediateModel ||
+    escalation.enabled === false
+  ) {
     return { state, task: initialTask, lastError, attempts: priorAttempts };
   }
 
   const attempts = priorAttempts + 1;
-  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
-  publishEscalate({
-    bus: ctx.bus,
-    phase: state.phase,
-    taskId: initialTask.id,
-    tier: 0,
-    tool: escalation.intermediateProvider,
-    model: escalation.intermediateModel ?? ctx.config.implementer.model,
-  });
+  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
 
   const intermediateConfig = resolveIntermediateConfig(ctx, state);
   if (!intermediateConfig) return { state, task: initialTask, lastError, attempts: priorAttempts };
@@ -103,6 +107,15 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
     return { state, task: initialTask, lastError, attempts: priorAttempts };
   }
 
+  publishEscalate({
+    bus: ctx.bus,
+    phase: state.phase,
+    taskId: initialTask.id,
+    tier: 0,
+    tool: escalation.intermediateProvider,
+    model: escalation.intermediateModel,
+  });
+
   return runRetryStep({
     ctx,
     task: initialTask,
@@ -114,39 +127,50 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
     commitSuffix: 'intermediate',
     usageCategory: 'implementer',
     retryFailureFallback: 'Intermediate escalation failed',
-    invokeRetry: async ({
-      task: t,
-      lastError: err,
-      attempts: a,
-      projectDir,
-      signal,
-      sandboxEnv,
-      fileIgnoreProjectDir,
-    }) =>
-      intermediateImplementer.retry({
-        task: t,
-        projectDir,
-        config: intermediateConfig,
-        context: ctx.context,
-        languageContext: buildProjectLanguageContext(
-          ctx.projectDir,
-          state.discoveredValidation?.language,
-        ),
-        error: err,
-        attempt: a,
-        kind: 'local',
-        onOutput: textHandler,
-        phase: state.phase,
-        signal,
-        sandboxEnv,
-        fileIgnoreProjectDir,
-      }),
+    resultTool: escalation.intermediateProvider,
+    resultModel: escalation.intermediateModel,
+    invokeRetry: makeImplementerRetryInvoker({
+      context: ctx.context,
+      kind: 'local',
+      languageContext: buildProjectLanguageContext(
+        ctx.projectDir,
+        state.discoveredValidation?.language,
+      ),
+      phase: state.phase,
+      onOutput: textHandler,
+      implementer: intermediateImplementer,
+      config: intermediateConfig,
+    }),
   });
 }
 
-function resolveIntermediateConfig(ctx: EscalationContext, state: WorkflowState): Config | null {
+function resolveIntermediateContextLength(
+  ctx: EscalationContext,
+  provider: string,
+  model: string,
+): number | undefined {
+  if (!isProviderId(provider)) return undefined;
+  const modelId = getEffectiveModelId(provider, model);
+  if (!modelId) return undefined;
+
+  const cache = ctx.modelCache;
+  if (cache) {
+    const modelsDev = lookupModelsDevModel(provider, modelId, cache);
+    if (modelsDev?.contextLength !== undefined) return modelsDev.contextLength;
+    const runtime = lookupRuntimeModel(provider, modelId, cache);
+    if (runtime?.contextLength !== undefined) return runtime.contextLength;
+  }
+
+  return findKnownModel(provider, modelId)?.contextLength;
+}
+
+export function resolveIntermediateConfig(
+  ctx: EscalationContext,
+  state: WorkflowState,
+): Config | null {
   const escalation = ctx.config.escalation;
-  if (!escalation?.intermediateProvider) return null;
+  if (!escalation?.intermediateProvider || !escalation.intermediateModel) return null;
+  const intermediateModel = escalation.intermediateModel;
   const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
   if (!resolvedApiBase) {
     publishWarning(
@@ -167,15 +191,19 @@ function resolveIntermediateConfig(ctx: EscalationContext, state: WorkflowState)
     return null;
   }
 
+  const contextLength = resolveIntermediateContextLength(
+    ctx,
+    escalation.intermediateProvider,
+    intermediateModel,
+  );
+
   const intermediateImplConfig: ApiImplementerConfig = {
     kind: 'api',
     provider: escalation.intermediateProvider,
-    model: escalation.intermediateModel ?? ctx.config.implementer.model,
+    model: intermediateModel,
     apiBase: effectiveApiBase,
-    contextLength: ctx.config.implementer.contextLength,
-    temperature: ctx.config.implementer.temperature,
+    ...(contextLength !== undefined && { contextLength }),
     timeout: ctx.config.implementer.timeout,
-    customModels: ctx.config.implementer.customModels,
   };
 
   return {
@@ -188,7 +216,8 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
   const { ctx, task: initialTask, lastError, priorAttempts } = input;
   let state = input.state;
   const attempts = priorAttempts + 1;
-  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
+  const reviewerHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'planner');
+  const retryHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
   if (state.phase === 'implementing') {
     state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
   }
@@ -206,7 +235,7 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
     ctx.projectDir,
     state.discoveredValidation?.language,
   );
-  const staged = await createStagedProject(ctx.projectDir);
+  const staged = await createStagedProject(ctx.projectDir, ctx.config);
   let tier1Result: Awaited<ReturnType<typeof ctx.planner.escalateHint>>;
   try {
     tier1Result = await ctx.planner.escalateHint({
@@ -214,11 +243,10 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
       error: lastError,
       projectDir: staged.projectDir,
       callbacks: {
-        onOutput: textHandler,
+        onOutput: reviewerHandler,
         signal: ctx.signal,
       },
       languageContext,
-      sandboxEnv: staged.sandboxEnv,
       fileIgnoreProjectDir: ctx.projectDir,
     });
   } catch (err) {
@@ -258,7 +286,7 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
   state = gateResult.state;
 
   if (tier1Result.output) {
-    textHandler(tier1Result.output);
+    reviewerHandler(tier1Result.output);
   }
 
   const hintError = truncateByChars(
@@ -278,32 +306,13 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
     usageCategory: 'implementer',
     retryFailureFallback: 'Tier-1 hint retry failed to produce valid code',
     profileOverride: ctx.retryProfileOverride,
-    invokeRetry: async ({
-      task: t,
-      lastError: err,
-      attempts: a,
-      projectDir,
-      implementer,
-      config,
-      signal,
-      sandboxEnv,
-      fileIgnoreProjectDir,
-    }) =>
-      implementer.retry({
-        task: t,
-        projectDir,
-        config,
-        context: ctx.context,
-        languageContext,
-        error: err,
-        attempt: a,
-        kind: 'hint',
-        onOutput: textHandler,
-        phase: state.phase,
-        signal,
-        sandboxEnv,
-        fileIgnoreProjectDir,
-      }),
+    invokeRetry: makeImplementerRetryInvoker({
+      context: ctx.context,
+      kind: 'hint',
+      languageContext,
+      phase: state.phase,
+      onOutput: retryHandler,
+    }),
   });
 }
 
@@ -385,21 +394,13 @@ async function runFullTier(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    invokeRetry: async ({
-      task: t,
-      lastError: err,
-      projectDir,
-      signal,
-      sandboxEnv,
-      fileIgnoreProjectDir,
-    }) =>
+    invokeRetry: async ({ task: t, lastError: err, projectDir, signal, fileIgnoreProjectDir }) =>
       ctx.planner.escalateFull({
         task: t,
         error: err,
         projectDir,
         callbacks: { onOutput: textHandler, signal },
         languageContext,
-        sandboxEnv,
         fileIgnoreProjectDir,
       }),
     onValidationAfterRetryFail: (validationError) => {

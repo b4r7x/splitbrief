@@ -48,6 +48,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
   const rejectedEvent = isSpec ? ('spec_rejected' as const) : ('plan_rejected' as const);
   const regeneratedEvent = isSpec ? ('spec_regenerated' as const) : ('plan_regenerated' as const);
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
+  let snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
 
   while (true) {
     if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
@@ -59,7 +60,19 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       bus.publish({ type: rejectedEvent, ts: Date.now(), phase: state.phase });
       return { state, rejected: true, regenerated };
     }
-    if (!result.comment) return { state, rejected: false, regenerated };
+    if (!result.comment) {
+      const edited = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+      if (edited !== snapshot) {
+        regenerated = true;
+        bus.publish({
+          type: regeneratedEvent,
+          ts: Date.now(),
+          phase: state.phase,
+          comment: `(edited ${filename})`,
+        });
+      }
+      return { state, rejected: false, regenerated };
+    }
 
     appendMessage(
       { projectDir, sessionId },
@@ -93,6 +106,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
     }
     state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
     writeSpecFile({ projectDir, sessionId }, filename, regenResult.text, opts.specMetadata ?? null);
+    snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
     regenerated = true;
     bus.publish({
       type: regeneratedEvent,

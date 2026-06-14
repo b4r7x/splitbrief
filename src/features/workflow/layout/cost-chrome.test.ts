@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CostBreakdown } from '../../../core/schemas/summary.js';
 import {
   buildCostStatusLineLayout,
   formatBudget,
@@ -6,10 +7,22 @@ import {
   type CostStatusLineLayoutInput,
 } from './cost-chrome.js';
 
+function breakdownWith(actualPlannerCost: number, actualImplementerCost: number): CostBreakdown {
+  return {
+    hypotheticalCost: 0,
+    actualPlannerCost,
+    actualImplementerCost,
+    totalActualCost: actualPlannerCost + actualImplementerCost,
+    savingsAmount: 0,
+    savingsPercentage: 0,
+    localCompletionRate: 0,
+  };
+}
+
 function projectedText(
   overrides: Pick<
     CostStatusLineLayoutInput,
-    'completedCount' | 'totalActualCost' | 'prediction' | 'totalTasks'
+    'completedCount' | 'totalActualCost' | 'prediction' | 'totalTasks' | 'costBreakdown'
   >,
 ): string {
   const layout = buildCostStatusLineLayout({
@@ -23,17 +36,46 @@ function projectedText(
     totalCacheRead: 0,
     localRate: 0,
     routedTasks: 0,
-    costBreakdown: null,
     ...overrides,
   });
   return layout.kind === 'single' ? layout.line : layout.left;
 }
 
 describe('projected cost via buildCostStatusLineLayout', () => {
-  it('uses completed-task cost when available', () => {
+  it('projects only the recurring implementer cost, not the one-time planner cost', () => {
     expect(
-      projectedText({ completedCount: 2, totalActualCost: 2.0, prediction: null, totalTasks: 4 }),
-    ).toBe('proj $4.00');
+      projectedText({
+        completedCount: 1,
+        totalActualCost: 2.05,
+        costBreakdown: breakdownWith(2.0, 0.05),
+        prediction: null,
+        totalTasks: 10,
+      }),
+    ).toBe('proj $2.50');
+  });
+
+  it('projects remaining implementer cost from a completed task', () => {
+    expect(
+      projectedText({
+        completedCount: 2,
+        totalActualCost: 2.0,
+        costBreakdown: breakdownWith(1.0, 1.0),
+        prediction: null,
+        totalTasks: 4,
+      }),
+    ).toBe('proj $3.00');
+  });
+
+  it('falls back to total actual cost when no implementer cost breakdown exists', () => {
+    expect(
+      projectedText({
+        completedCount: 2,
+        totalActualCost: 2.0,
+        costBreakdown: null,
+        prediction: null,
+        totalTasks: 4,
+      }),
+    ).toBe('proj $2.00');
   });
 
   it('falls back to the prediction when no task cost is available', () => {
@@ -46,13 +88,25 @@ describe('projected cost via buildCostStatusLineLayout', () => {
       implementerTool: 'y',
     };
     expect(
-      projectedText({ completedCount: 0, totalActualCost: 0, prediction, totalTasks: 4 }),
+      projectedText({
+        completedCount: 0,
+        totalActualCost: 0,
+        costBreakdown: null,
+        prediction,
+        totalTasks: 4,
+      }),
     ).toBe('proj $3.50');
   });
 
   it('reports unavailable projection when neither source exists', () => {
     expect(
-      projectedText({ completedCount: 0, totalActualCost: 0, prediction: null, totalTasks: 4 }),
+      projectedText({
+        completedCount: 0,
+        totalActualCost: 0,
+        costBreakdown: null,
+        prediction: null,
+        totalTasks: 4,
+      }),
     ).toBe('proj n/a');
   });
 });

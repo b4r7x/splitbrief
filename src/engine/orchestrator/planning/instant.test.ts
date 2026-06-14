@@ -22,6 +22,7 @@ import {
   RESEARCH_FILE,
 } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
+import { planningError } from './errors.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 
 const TEST_METADATA = {
@@ -151,6 +152,14 @@ describe('runInstantPlanning', () => {
     expect(result.tasks[0]?.id).toBe('T099');
   });
 
+  it('publishes a running planner_status at the implementing phase so its OTel span opens', async () => {
+    const { events } = await runInstant();
+    const implementingRunning = events.find(
+      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'implementing',
+    );
+    expect(implementingRunning).toBeDefined();
+  });
+
   it('publishes mode_resolved and instant_plan_received events', async () => {
     const { events } = await runInstant();
     const modeResolved = events.find((e) => e.type === 'mode_resolved');
@@ -219,7 +228,7 @@ describe('runInstantPlanning', () => {
   });
 
   it('cancels when planner returns zero tasks', async () => {
-    const { result } = await runInstant({
+    const { result, events } = await runInstant({
       instantPlan: vi
         .fn()
         .mockResolvedValue(
@@ -229,6 +238,17 @@ describe('runInstantPlanning', () => {
     expect(result.cancelled).toBe(true);
     expect(result.state.phase).toBe('idle');
     expect(result.tasks).toHaveLength(0);
+    const errorEvent = events.find((e) => e.type === 'error');
+    expect(errorEvent && 'message' in errorEvent ? errorEvent.message : null).toBe(
+      'Planning failed: instant planner returned zero tasks; cannot proceed',
+    );
+  });
+
+  it('surfaces a kind-tagged error when the planner returns zero tasks', () => {
+    const err = planningError.zeroTasks('instant');
+    expect(err.kind).toBe('planning-zero-tasks');
+    expect(err.message).toBe('instant planner returned zero tasks; cannot proceed');
+    expect(err.data).toEqual({ planner: 'instant' });
   });
 
   it('emits a warning when approve level overrides instant default', async () => {

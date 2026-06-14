@@ -70,7 +70,6 @@ export async function collectAndPersistClarifications(
       deliveredViaNative: false,
       origin: 'clarification',
       question: question.text,
-      questionId: question.id ?? undefined,
     };
 
     state = transitionAndSave({ projectDir, sessionId }, state, {
@@ -82,7 +81,6 @@ export async function collectAndPersistClarifications(
       type: 'clarification_answered',
       ts: Date.now(),
       phase: state.phase,
-      questionId: question.id,
       answer,
     });
     if (planner) {
@@ -104,7 +102,7 @@ export async function collectAndPersistClarifications(
   if (clarifications.length === 0) return state;
 
   let content = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-  const sessionHeader = `### Session ${new Date().toISOString().slice(0, 10)}`;
+  const sessionHeader = `### Session ${nowIso().slice(0, 10)}`;
   const entries = clarifications.map((c) => `- Q: ${c.question} \u2192 A: ${c.answer}`).join('\n');
 
   if (!content.includes('## Clarifications')) {

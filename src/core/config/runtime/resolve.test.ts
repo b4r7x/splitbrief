@@ -30,6 +30,14 @@ describe('resolveMode', () => {
   it('falls back to DEFAULT_WORKFLOW_MODE when config has no mode', () => {
     expect(resolveMode({ config: baseConfig() })).toBe('standard');
   });
+  it('prefers a saved mode over the config default', () => {
+    expect(resolveMode({ config: baseConfig('standard'), savedMode: 'speckit' })).toBe('speckit');
+  });
+  it('CLI override beats a saved mode', () => {
+    expect(
+      resolveMode({ config: baseConfig('standard'), savedMode: 'speckit', cliOverride: 'instant' }),
+    ).toBe('instant');
+  });
 });
 
 describe('resolveApproveLevel', () => {
@@ -67,6 +75,14 @@ describe('resolveApproveLevel', () => {
     expect(resolveApproveLevel({ mode: 'speckit', cliOverride: 'default' })).toBe('all');
     expect(
       resolveApproveLevel({ mode: 'speckit', configApprove: 'plan', cliOverride: 'default' }),
+    ).toBe('plan');
+  });
+  it('saved approve beats mode default when CLI and config omitted', () => {
+    expect(resolveApproveLevel({ mode: 'speckit', savedApprove: 'spec' })).toBe('spec');
+  });
+  it('config approve beats saved approve', () => {
+    expect(
+      resolveApproveLevel({ mode: 'speckit', configApprove: 'plan', savedApprove: 'spec' }),
     ).toBe('plan');
   });
 });

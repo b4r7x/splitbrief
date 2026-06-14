@@ -5,6 +5,7 @@ import { TaskIdSchema } from './task.js';
 
 export const ESTIMATE_CONTEXT_CONFIDENCES = [
   'context-explicit',
+  'context-detected',
   'context-known-catalog',
   'context-cached-provider',
   'context-conservative-fallback',
@@ -110,6 +111,7 @@ export const CostPredictionSchema = z.object({
       }),
       contextConfidenceCounts: z.object({
         contextExplicit: z.number().int().nonnegative(),
+        contextDetected: z.number().int().nonnegative(),
         contextKnownCatalog: z.number().int().nonnegative(),
         contextCachedProvider: z.number().int().nonnegative(),
         contextConservativeFallback: z.number().int().nonnegative(),

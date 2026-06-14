@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -33,6 +33,15 @@ function makeSessionWithLockfile(
     ...extra,
   };
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
+}
+
+function makeInteractiveSession(projectDir: string, sessionId: string, mtimeMs: number): void {
+  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  mkdirSync(sessDir, { recursive: true });
+  const statePath = join(sessDir, 'state.json');
+  writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
+  const seconds = mtimeMs / 1000;
+  utimesSync(statePath, seconds, seconds);
 }
 
 const tmpProjects: string[] = [];
@@ -70,7 +79,7 @@ describe('lastCommand', () => {
       },
     },
     {
-      name: 'no session has a valid lockfile',
+      name: 'a session directory has neither lockfile nor state',
       arrange: (projectDir: string) => {
         mkdirSync(join(projectDir, '.diptych', 'sessions', 'orphan-session'), { recursive: true });
       },
@@ -96,6 +105,18 @@ describe('lastCommand', () => {
     expect(sessionIds).toEqual(['2025-04-02-newer']);
   });
 
+  it('rejects --worktree as a start-only flag before resolving any session', async () => {
+    const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
+
+    makeSessionWithLockfile(projectDir, '2025-04-01-only', 5000);
+
+    await expect(lastCommand({ projectDir, worktree: 'feature-x' } as never, deps)).rejects.toThrow(
+      /--worktree is only supported by `diptych start`/,
+    );
+    expect(sessionIds).toEqual([]);
+  });
+
   it('works with a single session', async () => {
     const projectDir = makeTmpProject();
     const { deps, sessionIds } = captureContinuation();
@@ -105,5 +126,28 @@ describe('lastCommand', () => {
     await lastCommand({ projectDir } as never, deps);
 
     expect(sessionIds).toEqual(['2025-04-01-only']);
+  });
+
+  it('continues a lockfile-less interactive session', async () => {
+    const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
+
+    makeInteractiveSession(projectDir, '2025-04-03-interactive', 8_000_000);
+
+    await lastCommand({ projectDir } as never, deps);
+
+    expect(sessionIds).toEqual(['2025-04-03-interactive']);
+  });
+
+  it('prefers a newer interactive session over an older detached one', async () => {
+    const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
+
+    makeSessionWithLockfile(projectDir, '2025-04-01-detached', 1_000_000);
+    makeInteractiveSession(projectDir, '2025-04-05-interactive', 5_000_000);
+
+    await lastCommand({ projectDir } as never, deps);
+
+    expect(sessionIds).toEqual(['2025-04-05-interactive']);
   });
 });

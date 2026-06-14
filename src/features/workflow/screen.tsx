@@ -1,6 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { ReadinessReport } from '../../core/readiness/types.js';
+import { readActive } from '../../core/sessions/lifecycle.js';
+import { createStartReadinessRecord } from '../../core/readiness/format.js';
+import { READINESS_FILE, sessionDir } from '../../core/paths.js';
+import { writeSecureFile } from '../../lib/fs.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
@@ -45,6 +52,14 @@ import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
+}
+
+function persistTuiReadiness(projectDir: string, report: ReadinessReport): void {
+  const sessionId = readActive(projectDir);
+  if (!sessionId) return;
+  const target = join(sessionDir(projectDir, sessionId), READINESS_FILE);
+  if (existsSync(target)) return;
+  writeSecureFile(target, JSON.stringify(createStartReadinessRecord(report), null, 2) + '\n');
 }
 
 export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenProps) {
@@ -107,6 +122,8 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const costApprovalState = costApprovalStore.use((s) => s);
+  const promptPending =
+    approvalPromptState.status === 'pending' || costApprovalState.status === 'pending';
 
   const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
   const showSidebar = sidebarWidth > 0;
@@ -119,9 +136,8 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     approvalRows + costRows,
     cols,
   );
-  const approvalPromptRows = Math.min(approvalRows, promptRows);
-  const costPromptRows = Math.min(costRows, Math.max(0, promptRows - approvalPromptRows));
-  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows, cols);
+  const promptBoxRows = promptPending ? Math.max(1, promptRows) : promptRows;
+  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptBoxRows, cols);
   const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
 
   const briefReview = config.workflow.briefReview ?? 'simple';
@@ -136,6 +152,17 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     resetWorkflow();
     conversationScrollStore.reset();
   }, [isAttachedClient, attach?.sockPath]);
+
+  // TUI-started workflows (home composer, setup completion) compute readiness client-side and
+  // create the session id lazily inside runWorkflow. Persist the report once the session exists
+  // (phase has advanced off idle) so review packets find the readiness artifact CLI starts write.
+  const readinessPersistedRef = useRef(false);
+  useEffect(() => {
+    if (isAttachedClient || routeReadiness || readinessPersistedRef.current) return;
+    if (phase === 'idle' || !readiness || readiness.status === 'blocked') return;
+    readinessPersistedRef.current = true;
+    persistTuiReadiness(projectDir, readiness);
+  }, [isAttachedClient, routeReadiness, phase, readiness, projectDir]);
 
   useInput(
     (input, key) => {
@@ -153,7 +180,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
           return;
         }
         if (inputMode.mode !== 'normal') {
-          review.handleInput(text);
+          void review.handleInput(text);
           return;
         }
         ipcActions.sendUserInput(text);
@@ -189,11 +216,17 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
       footer={
         <WorkflowFooter
           handleInput={handleInput}
+          onEmptySubmit={!isAttachedClient && cancelled ? runner.handleResume : undefined}
           onRuntimeCommand={onRuntimeCommand}
           commands={commands}
           mode={inputMode.mode}
           inputHint={inputHint}
-          disabled={hasOverlay || (isAttachedClient && ipcState.status !== 'connected')}
+          disabled={
+            hasOverlay ||
+            promptPending ||
+            useRichEditorActive ||
+            (isAttachedClient && ipcState.status !== 'connected')
+          }
         />
       }
     >
@@ -208,9 +241,9 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         contentWidth={contentWidth}
         sections={sections}
       />
-      <Box height={promptRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {approvalPromptRows > 0 && <ApprovalPrompt />}
-        {costPromptRows > 0 && <CostApprovalPromptConnected />}
+      <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
+        {approvalPromptState.status === 'pending' && <ApprovalPrompt />}
+        {costApprovalState.status === 'pending' && <CostApprovalPromptConnected />}
       </Box>
     </ScreenShell>
   );

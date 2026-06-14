@@ -144,7 +144,7 @@ describe('createAgentSdkBackend — session resume', () => {
     expect(call.options.cwd).toBe('/tmp/proj');
   });
 
-  it('passes planner effort using the Agent SDK budgetTokens option', async () => {
+  it('passes planner effort as the Agent SDK first-class effort option', async () => {
     const sdk = await import('@anthropic-ai/claude-agent-sdk');
     const query = vi.mocked(sdk.query);
     query.mockReset();
@@ -163,9 +163,10 @@ describe('createAgentSdkBackend — session resume', () => {
     });
 
     const call = query.mock.calls[0]?.[0] as {
-      options: { thinking?: { type: string; budgetTokens: number } };
+      options: { effort?: string; thinking?: unknown };
     };
-    expect(call.options.thinking).toEqual({ type: 'enabled', budgetTokens: 24_000 });
+    expect(call.options.effort).toBe('high');
+    expect(call.options.thinking).toBeUndefined();
   });
 
   it('does not start a query when invoked with an already-aborted signal', async () => {

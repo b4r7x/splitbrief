@@ -9,6 +9,7 @@ import { resolveSessionAlias } from '../sessions/aliases.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { skillsStore } from '../../stores/project/skills.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 
@@ -147,13 +148,21 @@ describe('continueCommand', () => {
     );
   });
 
+  it('throws a curated not-found error for an explicit session id with no session dir', async () => {
+    const projectDir = makeTmpProject();
+
+    await expect(continueCommand('typo-session', { projectDir }, deps)).rejects.toThrow(
+      /session 'typo-session' not found/,
+    );
+  });
+
   it('throws when explicit session ID has no state and is not running', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-my-feature');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-my-feature' });
 
     await expect(continueCommand('2025-04-01-my-feature', { projectDir }, deps)).rejects.toThrow(
-      /no saved state and is not running/,
+      /no usable saved state and is not running/,
     );
   });
 
@@ -188,6 +197,7 @@ describe('continueCommand', () => {
 
   it('attaches the workflow screen when the target session is still running', async () => {
     const projectDir = makeTmpProject();
+    makeSessionDir(projectDir, '2025-04-01-live');
     deps = createDeps({
       checkServerStatus: async (): Promise<ServerStatus> => ({
         alive: true,
@@ -217,12 +227,54 @@ describe('continueCommand', () => {
     });
   });
 
+  it('refuses to double-execute when a live interactive session record exists (no auth token)', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-interactive-live';
+    makeSessionDir(projectDir, sessionId);
+    // An interactive (TUI/headless) run writes a liveness record WITHOUT an authToken — there
+    // is no IPC socket to attach to. A `continue` from a second terminal must see it live and
+    // refuse, rather than silently double-executing the session (F-261 regression seam).
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> => ({
+        alive: true,
+        data: {
+          version: 1,
+          pid: process.pid,
+          startTimeMs: Date.now(),
+          lastAliveMs: Date.now(),
+          sessionId,
+          mode: 'standard',
+          feature: 'interactive feature',
+        },
+      }),
+    });
+
+    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
+      /does not support authenticated attach/,
+    );
+    expect(renderRuns).toHaveLength(0);
+    expect(rpcRuns).toHaveLength(0);
+  });
+
   it('rejects --json and --rpc together', async () => {
     const projectDir = makeTmpProject();
 
     await expect(
       continueCommand(undefined, { projectDir, json: true, rpc: true }, deps),
     ).rejects.toThrow(/--json and --rpc cannot be combined/);
+  });
+
+  it('rejects --worktree as a start-only flag instead of silently ignoring it', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-wt');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-wt' });
+    writeState(sessDir, 'implementing');
+
+    await expect(
+      continueCommand('2025-04-01-wt', { projectDir, worktree: 'feature-x' }, deps),
+    ).rejects.toThrow(/--worktree is only supported by `diptych start`/);
+    expect(renderRuns).toHaveLength(0);
+    expect(rpcRuns).toHaveLength(0);
   });
 
   it('resolves explicit and missing session input', async () => {
@@ -237,7 +289,7 @@ describe('continueCommand', () => {
     writeState(sessDir, 'implementing', { stateVersion: 1 });
 
     await expect(continueCommand('2025-04-01-old', { projectDir }, deps)).rejects.toThrow(
-      /no saved state/,
+      /no usable saved state/,
     );
   });
 
@@ -253,6 +305,7 @@ describe('continueCommand', () => {
       checkServerStatus: async (): Promise<ServerStatus> => ({
         alive: false,
         crashed: true,
+        processAlive: false,
         data: null,
       }),
       printCrashDiagnostic: async (dir) => {
@@ -278,6 +331,54 @@ describe('continueCommand', () => {
     expect(renderRuns).toHaveLength(1);
   });
 
+  it('refuses to resume when the server process is alive but unresponsive (stale heartbeat)', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-unresponsive';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { sessionId });
+    writeState(sessDir, 'implementing');
+
+    const diagnosticCalls: string[] = [];
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> => ({
+        alive: false,
+        crashed: true,
+        processAlive: true,
+        data: {
+          version: 1,
+          pid: 4242,
+          startTimeMs: Date.now(),
+          lastAliveMs: Date.now() - 999_999,
+          sessionId,
+          mode: 'standard',
+          feature: 'unresponsive feature',
+        },
+      }),
+      printCrashDiagnostic: async (dir) => {
+        diagnosticCalls.push(dir);
+        return {
+          sessionId,
+          status: 'crashed',
+          pid: 4242,
+          startedAt: null,
+          lastAliveAt: null,
+          exitedAt: null,
+          signal: null,
+          exitCode: null,
+          cause: null,
+          logTail: null,
+        };
+      },
+    });
+
+    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
+      /server process 4242 exists but is unresponsive — kill it first/,
+    );
+    expect(renderRuns).toHaveLength(0);
+    expect(rpcRuns).toHaveLength(0);
+    expect(diagnosticCalls).toHaveLength(0);
+  });
+
   it('accepts a session with the current stateVersion', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-current');
@@ -287,5 +388,45 @@ describe('continueCommand', () => {
     await continueCommand('2025-04-01-current', { projectDir }, deps);
 
     expect(renderRuns).toHaveLength(1);
+  });
+
+  it('preserves the saved workflow mode on resume when --mode is not passed', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-saved-mode');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-saved-mode' });
+    writeState(sessDir, 'implementing', { mode: 'speckit', approve: 'all' });
+
+    await continueCommand('2025-04-01-saved-mode', { projectDir, rpc: true }, deps);
+
+    expect(rpcRuns).toHaveLength(1);
+    expect(rpcRuns[0]?.state).toMatchObject({ mode: 'speckit', approve: 'all' });
+  });
+
+  it('rehydrates the skills selection from persisted state on resume', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-skills');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-skills' });
+    writeState(sessDir, 'implementing', { selectedSkills: ['typescript', 'react'] });
+
+    await continueCommand('2025-04-01-skills', { projectDir }, deps);
+
+    expect(renderRuns).toHaveLength(1);
+    expect([...skillsStore.get().selected].sort()).toEqual(['react', 'typescript']);
+  });
+
+  it('overrides the saved workflow mode when --mode is passed explicitly', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-override-mode');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-override-mode' });
+    writeState(sessDir, 'implementing', { mode: 'speckit', approve: 'all' });
+
+    await continueCommand(
+      '2025-04-01-override-mode',
+      { projectDir, rpc: true, mode: 'quick' },
+      deps,
+    );
+
+    expect(rpcRuns).toHaveLength(1);
+    expect(rpcRuns[0]?.state).toMatchObject({ mode: 'quick' });
   });
 });

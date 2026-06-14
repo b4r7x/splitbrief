@@ -12,9 +12,18 @@ import {
   passingResults,
   failingResults,
 } from '#testing/helpers/orchestrator-factories.js';
+import { simpleGit } from 'simple-git';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { createTestGitRepo, startConflictingMerge } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import {
+  getStagedFiles,
+  stageFiles,
+  resetIndexPreservingStaged,
+  getInProgressGitOp,
+  commitChanges,
+  type InProgressGitOp,
+} from '../../../lib/git.js';
 import { validateCommitAndAdvance } from './commit.js';
 
 let dirs: string[] = [];
@@ -39,15 +48,21 @@ function makeDirty(projectDir: string, relativePath = 'task-file.txt'): void {
 
 function makeGitOps(
   overrides: Partial<{
-    stageAll: (dir: string) => Promise<void>;
+    stageFiles: (dir: string, files: string[]) => Promise<void>;
+    getStagedFiles: (dir: string) => Promise<string[]>;
+    getInProgressGitOp: (dir: string) => Promise<InProgressGitOp | null>;
     commitChanges: (dir: string, message: string) => Promise<string>;
     createTaggedStash: (dir: string, message: string, tagName: string) => Promise<string>;
+    resetIndexPreservingStaged: (dir: string, stagedBefore: string[]) => Promise<void>;
   }> = {},
 ) {
   return {
-    stageAll: async () => {},
+    stageFiles: async () => {},
+    getStagedFiles: async () => [],
+    getInProgressGitOp: async () => null,
     commitChanges: async () => 'commit-sha',
     createTaggedStash: async (_dir: string, _message: string, tagName: string) => tagName,
+    resetIndexPreservingStaged: async () => {},
     ...overrides,
   };
 }
@@ -119,7 +134,8 @@ describe('validateCommitAndAdvance', () => {
     const state = makeState();
     makeDirty(projectDir);
     const { bus, events } = makeBusRecorder();
-    const gitOpsCalls: string[] = [];
+    const stagedSets: string[][] = [];
+    const commitMessages: string[] = [];
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -131,12 +147,13 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [firstTask(state).file],
       gitOps: makeGitOps({
-        stageAll: async (dir) => {
-          gitOpsCalls.push(`stage:${dir}`);
+        stageFiles: async (_dir, files) => {
+          stagedSets.push(files);
         },
         commitChanges: async (_dir, message) => {
-          gitOpsCalls.push(`commit:${message}`);
+          commitMessages.push(message);
           return 'commit-sha';
         },
       }),
@@ -149,10 +166,98 @@ describe('validateCommitAndAdvance', () => {
     expect(gitEvent && 'message' in gitEvent ? gitEvent.message : '').toContain(
       firstTask(state).id,
     );
-    expect(gitOpsCalls).toEqual([
-      `stage:${projectDir}`,
-      expect.stringContaining(`commit:feat(diptych): ${firstTask(state).id}`),
+    expect(stagedSets).toEqual([[firstTask(state).file]]);
+    expect(commitMessages).toEqual([
+      expect.stringContaining(`feat(diptych): ${firstTask(state).id}`),
     ]);
+  });
+
+  it('per-task: refuses to commit while a git merge is in progress', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    makeDirty(projectDir);
+    const { bus, events } = makeBusRecorder();
+    const stagedSets: string[][] = [];
+    const commitMessages: string[] = [];
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [firstTask(state).file],
+      gitOps: makeGitOps({
+        getInProgressGitOp: async () => 'merge',
+        stageFiles: async (_dir, files) => {
+          stagedSets.push(files);
+        },
+        commitChanges: async (_dir, message) => {
+          commitMessages.push(message);
+          return 'commit-sha';
+        },
+      }),
+    });
+
+    expect(result.completed).toBe(true);
+    // Nothing was staged or committed while the merge is in progress.
+    expect(stagedSets).toEqual([]);
+    expect(commitMessages).toEqual([]);
+    expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
+    // A warning explains why the per-task commit was skipped.
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning && warning.type === 'warning' ? warning.message : '').toContain('merge');
+    // The task still advances to completion.
+    expect(events.find((e) => e.type === 'task_completed')).toBeDefined();
+  });
+
+  it('per-task: real in-progress merge fixture is never concluded by a task commit', async () => {
+    const projectDir = createTempDir('task-commit-merge-fixture');
+    dirs.push(projectDir);
+    startConflictingMerge(projectDir);
+    const sessionId = 'sess-merge';
+    ensureSessionDir(projectDir, sessionId);
+    const headBefore = execSync('git rev-parse HEAD', {
+      cwd: projectDir,
+      encoding: 'utf-8',
+    }).trim();
+    const state = makeState();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [firstTask(state).file],
+      gitOps: {
+        getInProgressGitOp,
+        commitChanges,
+        getStagedFiles,
+        stageFiles,
+        resetIndexPreservingStaged,
+        createTaggedStash: async (_dir, _message, tagName) => tagName,
+      },
+    });
+
+    expect(result.completed).toBe(true);
+    // MERGE_HEAD survives: the user's merge was not silently concluded.
+    expect(existsSync(join(projectDir, '.git', 'MERGE_HEAD'))).toBe(true);
+    // HEAD is unchanged — no merge commit was authored.
+    const headAfter = execSync('git rev-parse HEAD', { cwd: projectDir, encoding: 'utf-8' }).trim();
+    expect(headAfter).toBe(headBefore);
+    expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning && warning.type === 'warning' ? warning.message : '').toContain('merge');
   });
 
   it('commit strategy none: does not emit git events and leaves HEAD unchanged', async () => {
@@ -212,16 +317,47 @@ describe('validateCommitAndAdvance', () => {
     expect(cpEvent).toBeDefined();
     expect(cpEvent).toMatchObject({
       type: 'git_checkpoint',
-      tag: 'diptych/T001',
+      tag: `diptych/${sessionId}/T001`,
       taskId: 'T001',
     });
     expect(checkpointCalls).toEqual([
       {
         dir: projectDir,
         message: `diptych checkpoint: ${firstTask(state).id}`,
-        tagName: `diptych/${firstTask(state).id}`,
+        tagName: `diptych/${sessionId}/${firstTask(state).id}`,
       },
     ]);
+  });
+
+  it('commit strategy checkpoint: a pre-existing tag degrades to no checkpoint with a warning', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    makeDirty(projectDir);
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'checkpoint' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        createTaggedStash: async (_dir, _message, tagName) => {
+          throw new Error(`tag ${tagName} already exists`);
+        },
+      }),
+    });
+
+    expect(events.find((e) => e.type === 'git_checkpoint')).toBeUndefined();
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning && warning.type === 'warning' ? warning.message : '').toContain(
+      'Failed to create checkpoint',
+    );
+    expect(events.find((e) => e.type === 'task_completed')).toBeDefined();
   });
 
   it('emits task_completed event with method and taskId', async () => {
@@ -326,6 +462,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [firstTask(state).file],
       gitOps: makeGitOps({
         commitChanges: async (_dir, message) => {
           commitAttempts.push(message);
@@ -388,10 +525,13 @@ describe('validateCommitAndAdvance', () => {
     expect(commitAttempts).toEqual([expect.stringContaining(firstTask(state).id)]);
   });
 
-  it('stages the full changed set before the pre_commit hook and passes it as ctx.files', async () => {
+  it('stages only the attributed set before the pre_commit hook, leaving unrelated dirty files unstaged', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeState();
-    // Two distinct dirty files, neither of which is task.file.
+    const taskFile = firstTask(state).file;
+    // The attributed file plus two unrelated dirty files the user already had.
+    mkdirSync(dirname(join(projectDir, taskFile)), { recursive: true });
+    writeFileSync(join(projectDir, taskFile), 'task output');
     writeFileSync(join(projectDir, 'extra-a.txt'), 'a');
     writeFileSync(join(projectDir, 'extra-b.txt'), 'b');
     // A pre_commit module hook that records the ctx.files it received and the
@@ -429,6 +569,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [taskFile],
     });
 
     expect(result.completed).toBe(true);
@@ -437,12 +578,116 @@ describe('validateCommitAndAdvance', () => {
       files: string[];
       staged: string[];
     };
-    // ctx.files carries the full changed set, not just task.file.
-    expect(seen.files).toContain('extra-a.txt');
-    expect(seen.files).toContain('extra-b.txt');
-    expect(seen.files.length).toBeGreaterThan(1);
-    // The index was staged before the hook ran.
-    expect(seen.staged).toContain('extra-a.txt');
-    expect(seen.staged).toContain('extra-b.txt');
+    // ctx.files carries the attributed set only.
+    expect(seen.files).toEqual([taskFile]);
+    // Only the attributed file was staged; the user's unrelated dirty files
+    // stay out of the index (and therefore out of authored history).
+    expect(seen.staged).toEqual([taskFile]);
+    expect(seen.staged).not.toContain('extra-a.txt');
+    expect(seen.staged).not.toContain('extra-b.txt');
+  });
+
+  it('per-task: warns when no attributed file set is supplied and falls back to task.file', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    makeDirty(projectDir);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps(),
+    });
+
+    expect(result.completed).toBe(true);
+    const warning = events.find(
+      (e) => e.type === 'warning' && e.message.includes('No attributed file set'),
+    );
+    expect(warning && warning.type === 'warning' ? warning.message : '').toContain(
+      firstTask(state).file,
+    );
+  });
+
+  it('per-task: does not warn about a fallback set when the attributed set is supplied', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    makeDirty(projectDir);
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [firstTask(state).file],
+      gitOps: makeGitOps(),
+    });
+
+    expect(
+      events.find((e) => e.type === 'warning' && e.message.includes('No attributed file set')),
+    ).toBeUndefined();
+  });
+
+  it('per-task: a pre-staged user split survives a commit failure', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    const taskFile = firstTask(state).file;
+    const git = simpleGit(projectDir);
+    // The user pre-staged one unrelated file before the task ran.
+    writeFileSync(join(projectDir, 'user-staged.txt'), 'staged by user');
+    writeFileSync(join(projectDir, 'user-unstaged.txt'), 'left unstaged');
+    await git.add(['--', 'user-staged.txt']);
+    // The task produced its own attributed file.
+    mkdirSync(dirname(join(projectDir, taskFile)), { recursive: true });
+    writeFileSync(join(projectDir, taskFile), 'task output');
+    const { bus, events } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [taskFile],
+      gitOps: {
+        getStagedFiles,
+        stageFiles,
+        resetIndexPreservingStaged,
+        commitChanges: async () => {
+          throw new Error('commit boom');
+        },
+      },
+    });
+
+    expect(result.completed).toBe(true);
+    // The failure was surfaced as a warning, not thrown.
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning && warning.type === 'warning' ? warning.message : '').toContain(
+      'Failed to commit',
+    );
+    // After the reset, the user's original staged/unstaged split is intact:
+    // only user-staged.txt is in the index; the attributed file and the other
+    // user file are unstaged again.
+    const stagedAfter = (await git.diff(['--cached', '--name-only']))
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+    expect(stagedAfter).toEqual(['user-staged.txt']);
   });
 });

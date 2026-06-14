@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishRetry } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import type { EscalationContext, RetryStepOutcome } from './types.js';
 
@@ -18,9 +19,10 @@ export async function runLocalRetries(
   let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
+  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (ctx.signal?.aborted) break;
     attempts = attempt;
     if (state.phase === 'implementing') {
       state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
@@ -49,35 +51,16 @@ export async function runLocalRetries(
       usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
       profileOverride: ctx.retryProfileOverride,
-      invokeRetry: async ({
-        task: t,
-        lastError: err,
-        attempts: a,
-        projectDir,
-        implementer,
-        config,
-        signal,
-        sandboxEnv,
-        fileIgnoreProjectDir,
-      }) =>
-        implementer.retry({
-          task: t,
-          projectDir,
-          config,
-          context: ctx.context,
-          languageContext: buildProjectLanguageContext(
-            ctx.projectDir,
-            state.discoveredValidation?.language,
-          ),
-          error: err,
-          attempt: a,
-          kind: 'local',
-          onOutput: textHandler,
-          phase: state.phase,
-          signal,
-          sandboxEnv,
-          fileIgnoreProjectDir,
-        }),
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'local',
+        languageContext: buildProjectLanguageContext(
+          ctx.projectDir,
+          state.discoveredValidation?.language,
+        ),
+        phase: state.phase,
+        onOutput: textHandler,
+      }),
     });
 
     state = outcome.state;

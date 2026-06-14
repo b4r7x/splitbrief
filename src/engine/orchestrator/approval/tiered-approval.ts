@@ -10,7 +10,7 @@ import type { TierMap } from './action-classifier.js';
 import { classifyAction, extractActionPattern, matchesActionPattern } from './action-classifier.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
-import { readApprovalsStore, writeApprovalsStore } from '../../../core/approval/store.js';
+import { readApprovalsStore, mutateApprovalsStore } from '../../../core/approval/store.js';
 import { error } from '../../../utils/error.js';
 import { ActionClassSchema } from '../../../core/schemas/enums.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -67,10 +67,11 @@ function mergeGrant(grants: ApprovalGrant[], grant: ApprovalGrant): ApprovalGran
 }
 
 export function upsertApprovalGrant(projectDir: string, grant: ApprovalGrant): void {
-  const store = readApprovalsStore(projectDir);
-  const merged = mergeGrant(store.grants, grant);
-  if (merged === null) return;
-  writeApprovalsStore(projectDir, { version: 1, grants: merged });
+  mutateApprovalsStore(projectDir, (store) => {
+    const merged = mergeGrant(store.grants, grant);
+    if (merged === null) return null;
+    return { version: 1, grants: merged };
+  });
 }
 
 function compactTierOverrides(rawTiers: ApprovalTierOverrides | undefined): TierMap | undefined {

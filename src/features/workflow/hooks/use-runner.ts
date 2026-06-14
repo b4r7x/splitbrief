@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
@@ -10,6 +11,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { configStore } from '../../../stores/project/config.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import {
   runWorkflow,
@@ -28,10 +30,13 @@ import {
   clearAllHandlers,
 } from '../handlers.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
+import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
@@ -56,7 +61,7 @@ interface UseWorkflowRunnerOptions {
 
 interface UseWorkflowRunnerResult {
   startedAt: string;
-  handleResume: () => void;
+  handleResume: (injectedText?: string) => void;
 }
 
 export function useWorkflowRunner({
@@ -73,7 +78,7 @@ export function useWorkflowRunner({
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindEventRef = useRef<EngineEvent | null>(null);
-  const [startedAt] = useState(() => new Date().toISOString());
+  const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<WorkflowState | undefined>(undefined);
 
@@ -105,9 +110,9 @@ export function useWorkflowRunner({
     });
     setRewindHandler((request) => {
       inputMode.resetMode();
-      const activeSessionId = readActive(projectDir);
-      if (!activeSessionId) return;
-      const ref = { projectDir, sessionId: activeSessionId };
+      const rewindSessionId = activeSessionId ?? readActive(projectDir);
+      if (!rewindSessionId) return;
+      const ref = { projectDir, sessionId: rewindSessionId };
       const current = loadState(ref);
       if (!current) return;
 
@@ -160,6 +165,7 @@ export function useWorkflowRunner({
           stop: () => streamingOutputStore.stopStreaming(),
         };
 
+        const detectedContextLength = configStore.getDetectedContextLength();
         const summary = await runWorkflow({
           feature,
           plannerContext,
@@ -180,6 +186,7 @@ export function useWorkflowRunner({
           savedState: stateForRun,
           selectedSkills,
           sessionId: activeSessionId,
+          ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
           ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
         });
@@ -188,7 +195,7 @@ export function useWorkflowRunner({
 
         if (isWorkflowAborted(controller, abortedRef)) return;
 
-        const savedSessionId = readActive(projectDir) ?? activeSessionId;
+        const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
         const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
 
         // A failed final-review gate returns without onComplete and leaves the phase at
@@ -221,7 +228,6 @@ export function useWorkflowRunner({
     if (!enabled) return undefined;
 
     abortedRef.current = false;
-    if (resumeState) resetWorkflow(resumeState);
     const controller = new AbortController();
     void startWorkflow(controller);
     return () => {
@@ -230,20 +236,36 @@ export function useWorkflowRunner({
       controller.abort();
       clearAllHandlers();
       killAllProcesses();
+      closeApprovalPrompt();
+      closeCostApprovalPrompt({ approved: false });
     };
     // config is intentionally excluded from the dep array: config changes mid-workflow
     // should NOT restart the workflow. The latest config is captured via useEffectEvent
     // when startWorkflow fires.
   }, [enabled, feature, projectDir, runId]);
 
-  const handleResume = () => {
-    const sessionId = readActive(projectDir);
+  const handleResume = (injectedText?: string) => {
+    const sessionId = initialSessionId ?? readActive(projectDir);
     const saved = sessionId ? loadState({ projectDir, sessionId }) : null;
-    if (!saved) {
+    if (!saved || !sessionId) {
       feedbackStore.setError('No saved state to resume. Press ESC to return home.');
       return;
     }
-    setInlineResume(saved);
+    const text = injectedText?.trim();
+    let next = saved;
+    if (text) {
+      const message: QueuedMessage = {
+        id: randomUUID(),
+        text,
+        queuedAt: nowIso(),
+        phase: saved.phase,
+        deliveredViaNative: false,
+        origin: 'user-input',
+      };
+      next = transition(saved, { type: 'ENQUEUE_USER_MSG', message });
+      saveState({ projectDir, sessionId }, next);
+    }
+    setInlineResume(next);
     setRunId((id) => id + 1);
   };
 

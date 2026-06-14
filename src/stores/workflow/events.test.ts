@@ -115,6 +115,17 @@ describe('eventsStore — append via addEvent', () => {
     expect(text.endsWith('RECENT')).toBe(true);
   });
 
+  it('does not merge planner_text across differing roles so implementer output stays separate', () => {
+    const base = [makePlannerText({ text: 'planner thinking' })];
+    const result = mergeEvent(
+      base,
+      makePlannerText({ text: 'implementer writing', role: 'implementer' }),
+    );
+    expect(result).toHaveLength(2);
+    expect((result[0] as { text: string }).text).toBe('planner thinking');
+    expect(result[1]).toMatchObject({ text: 'implementer writing', role: 'implementer' });
+  });
+
   describe('planner_heartbeat coalescing', () => {
     it('replaces consecutive heartbeat with the latest', () => {
       addEvent({

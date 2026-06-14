@@ -12,7 +12,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { saveState, loadState, appendEngineEvent, appendMessage } from './persistence.js';
+import {
+  saveState,
+  loadState,
+  appendEngineEvent,
+  appendMessage,
+  createSessionLogAppender,
+} from './persistence.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
@@ -20,11 +26,30 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 
+const fsControl = vi.hoisted(() => ({ throwEnoentOnStatOnce: false }));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    statSync: (...args: Parameters<typeof actual.statSync>) => {
+      if (fsControl.throwEnoentOnStatOnce) {
+        fsControl.throwEnoentOnStatOnce = false;
+        const err = new Error('ENOENT: no such file or directory') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return actual.statSync(...args);
+    },
+  };
+});
+
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
+  fsControl.throwEnoentOnStatOnce = false;
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -123,6 +148,36 @@ describe('saveState / loadState roundtrip', () => {
   });
 });
 
+describe('loadState mtime cache', () => {
+  it('returns the cached state object on an unchanged file without re-parsing', () => {
+    const dir = makeTmp();
+    const state = createInitialState('cache-feature');
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+
+    const first = loadState({ projectDir: dir, sessionId: SESSION_ID });
+    const second = loadState({ projectDir: dir, sessionId: SESSION_ID });
+
+    expect(first).toEqual(state);
+    // Same object reference proves the second call hit the cache rather than
+    // re-reading and re-parsing the file from disk.
+    expect(second).toBe(first);
+  });
+
+  it('re-reads from disk when the file changes out of band', () => {
+    const dir = makeTmp();
+    const original = createInitialState('cache-feature');
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, original);
+    loadState({ projectDir: dir, sessionId: SESSION_ID });
+
+    const updated = { ...original, feature: 'cache-feature-renamed' };
+    const statePath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
+    writeFileSync(statePath, JSON.stringify(updated));
+
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+    expect(loaded?.feature).toBe('cache-feature-renamed');
+  });
+});
+
 describe('loadState', () => {
   it('returns null when file does not exist', () => {
     const dir = makeTmp();
@@ -154,6 +209,56 @@ describe('loadState', () => {
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), '{not valid json!!!');
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+  });
+
+  it('warns about the incompatible version when state is from an older version', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const older = { ...createInitialState('legacy'), stateVersion: 2 };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(older));
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('version 2 is incompatible');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('warns that schema validation failed for a current-version but malformed state', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const malformed = { ...createInitialState('broken'), phase: 'not-a-real-phase' };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('failed schema validation');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('returns null without throwing when the file disappears after the existence check', () => {
+    const dir = makeTmp();
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, createInitialState('vanishing'));
+
+    // Simulate the TOCTOU window: the file passes existsSync, then statSync
+    // raises ENOENT because the file was removed before loadState stats it.
+    // loadState must swallow that into null rather than propagating the throw.
+    fsControl.throwEnoentOnStatOnce = true;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });
 
@@ -282,6 +387,58 @@ describe('appendEngineEvent', () => {
       // Restore perms so cleanupTempDir can remove the directory.
       chmodSync(sessionPath, 0o700);
     }
+  });
+});
+
+describe('createSessionLogAppender', () => {
+  it('appends each entry as a single JSONL line on disk from one resolved appender', () => {
+    const dir = makeTmp();
+    const append = createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID });
+
+    append({ kind: 'event', ts: '1', type: 'workflow_started', data: { feature: 'a' } });
+    append({ kind: 'event', ts: '2', type: 'instant_plan_received', data: { taskCount: 3 } });
+    append({ kind: 'message', ts: '3', role: 'user', text: 'hi' });
+
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
+    const lines = raw.split('\n').filter(Boolean);
+    expect(lines).toHaveLength(3);
+    expect(JSON.parse(lines[0] ?? '').type).toBe('workflow_started');
+    expect(JSON.parse(lines[1] ?? '').type).toBe('instant_plan_received');
+    expect(JSON.parse(lines[2] ?? '').role).toBe('user');
+  });
+
+  it('reuses a single appender across many appends without losing earlier lines', () => {
+    const dir = makeTmp();
+    const append = createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID });
+    for (let i = 0; i < 50; i++) {
+      append({ kind: 'event', ts: String(i), type: 'planner_text', data: { text: `chunk ${i}` } });
+    }
+    const raw = readFileSync(
+      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      'utf-8',
+    );
+    expect(raw.split('\n').filter(Boolean)).toHaveLength(50);
+  });
+
+  itUnix('refuses to append through a symlinked session log', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const dir = makeTmp();
+    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(sessionPath, { recursive: true });
+    const outsideLog = join(outside, 'session.jsonl');
+    writeFileSync(outsideLog, '');
+    symlinkSync(outsideLog, join(sessionPath, 'session.jsonl'));
+
+    const append = createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID });
+    expect(() => append({ kind: 'event', ts: '1', type: 'workflow_started', data: {} })).toThrow(
+      /refusing to write through symlink/,
+    );
+    expect(readFileSync(outsideLog, 'utf-8')).toBe('');
+
+    rmSync(outside, { recursive: true, force: true });
   });
 });
 

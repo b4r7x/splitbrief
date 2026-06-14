@@ -18,8 +18,11 @@ import {
   writeConfinedSecureFileAsync,
   readValidatedJson,
   readJsonl,
+  parseJsonlLine,
   ensureSecureDir,
   ensureGitignore,
+  rejectSymlinkTarget,
+  rejectSymlinkTargetAsync,
   fsError,
 } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -192,6 +195,17 @@ describe('writeSecureFile', () => {
     expect(readFileSync(realFile, 'utf-8')).toBe('original');
   });
 
+  it('removes the temp file when the rename fails (target is a non-empty directory)', () => {
+    const dir = makeTmp();
+    const target = join(dir, 'target');
+    mkdirSync(target);
+    writeFileSync(join(target, 'child.txt'), 'occupied');
+
+    expect(() => writeSecureFile(target, 'payload')).toThrow();
+    const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
+    expect(stray).toEqual([]);
+  });
+
   it('concurrent writes to distinct files in the same new directory both succeed', async () => {
     const dir = makeTmp();
     const base = join(dir, 'concurrent');
@@ -247,6 +261,69 @@ describe('writeSecureFileAsync', () => {
       /refusing to write through symlink/,
     );
     expect(readFileSync(target, 'utf-8')).toBe('original');
+  });
+
+  it('removes the temp file when the rename fails (target is a non-empty directory)', async () => {
+    const dir = makeTmp();
+    const target = join(dir, 'target');
+    mkdirSync(target);
+    writeFileSync(join(target, 'child.txt'), 'occupied');
+
+    await expect(writeSecureFileAsync(target, 'payload')).rejects.toThrow();
+    const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
+    expect(stray).toEqual([]);
+  });
+});
+
+describe('rejectSymlinkTarget', () => {
+  const itUnix = process.platform === 'win32' ? it.skip : it;
+
+  it('does nothing for a missing path', () => {
+    const dir = makeTmp();
+    expect(() => rejectSymlinkTarget(join(dir, 'absent.txt'))).not.toThrow();
+  });
+
+  it('does nothing for a regular file', () => {
+    const dir = makeTmp();
+    const file = join(dir, 'regular.txt');
+    writeFileSync(file, 'content');
+    expect(() => rejectSymlinkTarget(file)).not.toThrow();
+  });
+
+  itUnix('throws fs-symlink-write for a symlink target', () => {
+    const dir = makeTmp();
+    const target = join(dir, 'target.txt');
+    writeFileSync(target, 'data');
+    const link = join(dir, 'link.txt');
+    symlinkSync(target, link);
+    expect(() => rejectSymlinkTarget(link)).toThrow(/refusing to write through symlink/);
+    let thrown: unknown;
+    try {
+      rejectSymlinkTarget(link);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(fsError.isSymlinkWrite(thrown)).toBe(true);
+  });
+});
+
+describe('rejectSymlinkTargetAsync', () => {
+  const itUnix = process.platform === 'win32' ? it.skip : it;
+
+  it('does nothing for a missing path', async () => {
+    const dir = makeTmp();
+    await expect(rejectSymlinkTargetAsync(join(dir, 'absent.txt'))).resolves.toBeUndefined();
+  });
+
+  itUnix('throws fs-symlink-write for a symlink target', async () => {
+    const dir = makeTmp();
+    const target = join(dir, 'target.txt');
+    writeFileSync(target, 'data');
+    const link = join(dir, 'link.txt');
+    symlinkSync(target, link);
+    await expect(rejectSymlinkTargetAsync(link)).rejects.toMatchObject({
+      kind: 'fs-symlink-write',
+    });
   });
 });
 
@@ -358,6 +435,28 @@ describe('readJsonl', () => {
     expect(readJsonl(file, parseLine, 'jsonl-label')).toEqual([1, 3]);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+});
+
+describe('parseJsonlLine', () => {
+  it('classifies a blank or whitespace-only line as blank', () => {
+    expect(parseJsonlLine('')).toEqual({ kind: 'blank' });
+    expect(parseJsonlLine('   \t ')).toEqual({ kind: 'blank' });
+  });
+
+  it('parses a valid JSON line and exposes the value', () => {
+    expect(parseJsonlLine('{"a":1}')).toEqual({ kind: 'value', value: { a: 1 } });
+    expect(parseJsonlLine('42')).toEqual({ kind: 'value', value: 42 });
+  });
+
+  it('preserves a literal null line as a parsed value, not blank or corrupt', () => {
+    expect(parseJsonlLine('null')).toEqual({ kind: 'value', value: null });
+  });
+
+  it('classifies an unparseable line as corrupt and carries the cause', () => {
+    const result = parseJsonlLine('{bad');
+    expect(result.kind).toBe('corrupt');
+    if (result.kind === 'corrupt') expect(result.cause).toBeInstanceOf(SyntaxError);
   });
 });
 

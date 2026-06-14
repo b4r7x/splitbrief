@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { formatScoreSummary } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
@@ -19,6 +19,7 @@ import { SummaryCheckpoints } from './components/checkpoints.js';
 import { SummaryReviewPacket } from './components/review-packet.js';
 import { HeroSavings } from './components/hero-savings.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger.js';
@@ -93,6 +94,7 @@ function useSummaryEvidenceLedger(
 export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps) {
   const theme = useTheme();
   const isSmall = terminalSizeStore.use((s) => s.isSmall);
+  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
   const summary = routerStore.use((s) => (s.screen === 'summary' ? s.summary : null));
   const sessionId = routerStore.use((s) => (s.screen === 'summary' ? s.sessionId : undefined));
@@ -112,12 +114,8 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
   const bq = summary.briefQuality;
   const drift = summary.driftSummary;
-  const briefQualityText = bq
-    ? `quality ${bq.score.toFixed(2)}${bq.errorCount > 0 ? ` · ${bq.errorCount} ${pluralize(bq.errorCount, 'error')}` : ''}${bq.warningCount > 0 ? ` · ${bq.warningCount} ${pluralize(bq.warningCount, 'warning')}` : ''}`
-    : 'quality n/a';
-  const driftText = drift
-    ? `score ${drift.score.toFixed(2)}${drift.warningCount > 0 ? ` · ${drift.warningCount} ${pluralize(drift.warningCount, 'warning')}` : ''}${drift.errorCount > 0 ? ` · ${drift.errorCount} ${pluralize(drift.errorCount, 'error')}` : ''}`
-    : null;
+  const briefQualityText = bq ? formatScoreSummary(bq.score, bq, 'quality') : 'quality n/a';
+  const driftText = drift ? formatScoreSummary(drift.score, drift) : null;
   const implementerSummary = formatImplementerSummary(summary);
 
   return (
@@ -225,7 +223,9 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
       <Box marginTop={1}>
         <Composer
+          disabled={hasOverlay}
           onSubmit={onDone}
+          onEmptySubmit={onDone}
           onRuntimeCommand={onRuntimeCommand}
           commands={commands}
           mode="normal"

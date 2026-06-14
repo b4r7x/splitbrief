@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { loadConfigOrExit, setupWorkflow } from './setup.js';
+import {
+  assertInteractiveTty,
+  canonicalizeProjectDir,
+  loadConfigOrExit,
+  setupWorkflow,
+} from './setup.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { isCliError } from './errors.js';
 
@@ -35,14 +40,15 @@ describe('setupWorkflow', () => {
     expect((captured as Error).message.length).toBeGreaterThan(0);
   });
 
-  it('creates a default config and signals needsSetup when no config exists and no runner overrides are passed', async () => {
+  it('signals needsSetup WITHOUT writing config when no config exists and no runner overrides are passed', async () => {
     createTestGitRepo(tmp);
 
     const result = await setupWorkflow({ project: tmp, fullscreen: false });
 
     expect(result.needsSetup).toBe(true);
-    // Real side effect: the default config file now exists on disk.
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    // The default config write is deferred to wizard completion; an abandoned
+    // wizard must leave no config on disk so setup is re-requested next time.
+    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
   });
 
   it.each([
@@ -66,15 +72,120 @@ describe('setupWorkflow', () => {
     expect(mode.needsSetup).toBe(true);
   });
 
-  it('does NOT request setup when a config already exists on disk', async () => {
+  it('re-requests setup on a second call when the first wizard was abandoned (no config written)', async () => {
     createTestGitRepo(tmp);
-    // Seed the default config.
+
+    // First call signals setup but writes nothing (wizard never completes).
     const first = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(first.needsSetup).toBe(true);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+
+    // Abandoned wizard -> next start still requests setup, not skips it.
+    const second = await setupWorkflow({ project: tmp, fullscreen: false });
+    expect(second.needsSetup).toBe(true);
+  });
+
+  it('does NOT request setup when a config already exists on disk', async () => {
+    createTestGitRepo(tmp);
+    // Simulate a completed wizard by passing a runner override (eager write).
+    const first = await setupWorkflow({ project: tmp, fullscreen: false, planner: 'claude-code' });
+    expect(first.needsSetup).toBeUndefined();
+    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
 
     // Second invocation: config exists -> no setup prompt.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(second.needsSetup).toBeUndefined();
+  });
+
+  it('canonicalizes a repo SUBDIRECTORY to the git toplevel so state is not split per-cwd', async () => {
+    createTestGitRepo(tmp);
+    const subdir = join(tmp, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // A runner override takes the eager-write branch, so we can observe where
+    // the config lands relative to the invocation subdir.
+    const result = await setupWorkflow({
+      project: subdir,
+      fullscreen: false,
+      planner: 'claude-code',
+    });
+
+    // The resolved project root is the repository toplevel, never the subdir.
+    expect(result.projectDir).not.toBe(subdir);
+    expect(result.projectDir).toBe(realpathSync(tmp));
+    // The config landed at the toplevel, not under the invocation subdir.
+    expect(existsSync(join(result.projectDir, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(subdir, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+    errorSpy.mockRestore();
+  });
+});
+
+describe('canonicalizeProjectDir', () => {
+  it('does NOT warn when --project points at the repo root through a symlinked path component', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const link = join(dirname(real), `${tmp.split('/').pop()}-link`);
+    symlinkSync(real, link, 'dir');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      // The symlink resolves to the repo root, so this is an exact-root
+      // invocation, not a subdirectory — no relocation warning must print.
+      const result = await canonicalizeProjectDir({ project: link });
+
+      expect(result).toBe(real);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      cleanupTempDir(link);
+    }
+  });
+
+  it('warns and relocates to the toplevel when --project is a real subdirectory', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const subdir = join(real, 'pkg');
+    mkdirSync(subdir, { recursive: true });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await canonicalizeProjectDir({ project: subdir });
+
+      expect(result).toBe(real);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe('assertInteractiveTty', () => {
+  afterEach(() => {
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+  });
+
+  it('throws a CLI error directing to --json or --detach when stdin is not a TTY', () => {
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+
+    let captured: unknown;
+    try {
+      assertInteractiveTty();
+      throw new Error('expected assertInteractiveTty to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode?: number }).exitCode).toBe(1);
+    expect((captured as Error).message).toBe(
+      'interactive mode needs a TTY — use --json or --detach',
+    );
+  });
+
+  it('returns without throwing when stdin is a TTY', () => {
+    process.stdin.isTTY = true;
+    expect(() => assertInteractiveTty()).not.toThrow();
   });
 });
 

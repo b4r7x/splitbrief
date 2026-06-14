@@ -13,6 +13,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
 import { readRunSnapshotLedger } from '../../snapshots/run.js';
 
@@ -106,6 +107,57 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
 
     expect(result.state.tokenUsage.implementerInput).toBe(500);
     expect(result.state.tokenUsage.implementerOutput).toBe(200);
+  });
+
+  it('persists per-task breakdowns and re-seeds them on re-entry (F-454)', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', file: 'src/first.ts' });
+    const second = makeTask({ id: 'T002', file: 'src/second.ts' });
+    const state = makeImplState([first, second]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 300, outputTokens: 120 },
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.taskBreakdowns.map((b) => b.taskId)).toEqual(['T001', 'T002']);
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.taskBreakdowns?.map((b) => b.taskId)).toEqual(['T001', 'T002']);
+
+    // Re-entry: a fresh loop seeded from the persisted state keeps prior attribution
+    // rather than erasing it and re-pricing under the primary identity.
+    const reentry = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        implementer: makeImplementer({ implement: vi.fn() }),
+        bus: makeBusRecorder().bus,
+      }),
+      initialState: persisted ?? state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(reentry.taskBreakdowns.map((b) => b.taskId)).toEqual(['T001', 'T002']);
   });
 
   it('auto.postTask=true causes snapshot_created event after successful task', async () => {

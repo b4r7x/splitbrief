@@ -9,9 +9,10 @@ import {
   lstatSync,
   renameSync,
   realpathSync,
+  rmSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { readFile, lstat, writeFile, rename, chmod } from 'node:fs/promises';
+import { readFile, lstat, writeFile, rename, chmod, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
@@ -50,7 +51,34 @@ export const fsError = {
   symlinkWrite: (filePath: string) =>
     error('fs-symlink-write', `refusing to write through symlink: ${filePath}`, { filePath }),
   isSymlinkWrite: matches('fs-symlink-write'),
+  sockPathTooLong: (sockPath: string, bytes: number, maxBytes: number) =>
+    error(
+      'fs-sock-path-too-long',
+      `IPC socket path is ${bytes} bytes, exceeding the ${maxBytes}-byte unix-domain limit: ${sockPath}. Use a shorter project directory or worktree name.`,
+      { sockPath, bytes, maxBytes },
+    ),
+  isSockPathTooLong: matches('fs-sock-path-too-long'),
 } as const;
+
+export function rejectSymlinkTarget(filePath: string): void {
+  try {
+    if (lstatSync(filePath).isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+}
+
+export async function rejectSymlinkTargetAsync(filePath: string): Promise<void> {
+  try {
+    if ((await lstat(filePath)).isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+}
 
 export function ensureSecureDir(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
@@ -58,42 +86,37 @@ export function ensureSecureDir(dir: string): void {
 
 export function writeSecureFile(filePath: string, content: string): void {
   ensureSecureDir(dirname(filePath));
-
-  try {
-    const st = lstatSync(filePath);
-    if (st.isSymbolicLink()) {
-      throw fsError.symlinkWrite(filePath);
-    }
-  } catch (err: unknown) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
+  rejectSymlinkTarget(filePath);
 
   const dir = dirname(filePath);
   const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
   const tmpPath = join(dir, tmpName);
 
-  writeFileSync(tmpPath, content, { mode: SECURE_FILE_MODE });
-  renameSync(tmpPath, filePath);
-  chmodSync(filePath, SECURE_FILE_MODE);
+  try {
+    writeFileSync(tmpPath, content, { mode: SECURE_FILE_MODE });
+    renameSync(tmpPath, filePath);
+    chmodSync(filePath, SECURE_FILE_MODE);
+  } catch (err) {
+    rmSync(tmpPath, { force: true });
+    throw err;
+  }
 }
 
 async function atomicSecureWriteAsync(filePath: string, content: string): Promise<void> {
-  try {
-    const st = await lstat(filePath);
-    if (st.isSymbolicLink()) {
-      throw fsError.symlinkWrite(filePath);
-    }
-  } catch (err: unknown) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
+  await rejectSymlinkTargetAsync(filePath);
 
   const dir = dirname(filePath);
   const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
   const tmpPath = join(dir, tmpName);
 
-  await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
-  await rename(tmpPath, filePath);
-  await chmod(filePath, SECURE_FILE_MODE);
+  try {
+    await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
+    await rename(tmpPath, filePath);
+    await chmod(filePath, SECURE_FILE_MODE);
+  } catch (err) {
+    await rm(tmpPath, { force: true });
+    throw err;
+  }
 }
 
 export async function writeSecureFileAsync(filePath: string, content: string): Promise<void> {
@@ -122,26 +145,40 @@ export async function writeConfinedSecureFileAsync(
   await atomicSecureWriteAsync(filePath, content);
 }
 
+export type ValidatedJsonResult<T> =
+  | { kind: 'missing' }
+  | { kind: 'unreadable'; cause: unknown }
+  | { kind: 'value'; value: T };
+
+export function readValidatedJsonResult<T>(
+  filePath: string,
+  parse: (value: unknown) => T | null,
+): ValidatedJsonResult<T> {
+  if (!existsSync(filePath)) return { kind: 'missing' };
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (cause) {
+    return { kind: 'unreadable', cause };
+  }
+  const parsed = parse(value);
+  if (parsed === null) return { kind: 'unreadable', cause: undefined };
+  return { kind: 'value', value: parsed };
+}
+
 export function readValidatedJson<T>(
   filePath: string,
   parse: (value: unknown) => T | null,
   fallback: T,
   label: string,
 ): T {
-  if (!existsSync(filePath)) return fallback;
-  let value: unknown;
-  try {
-    value = JSON.parse(readFileSync(filePath, 'utf-8'));
-  } catch (err) {
-    warnError(label, err);
+  const result = readValidatedJsonResult(filePath, parse);
+  if (result.kind === 'missing') return fallback;
+  if (result.kind === 'unreadable') {
+    warnError(label, result.cause);
     return fallback;
   }
-  const parsed = parse(value);
-  if (parsed === null) {
-    warnError(label, undefined);
-    return fallback;
-  }
-  return parsed;
+  return result.value;
 }
 
 export function readJsonl<T>(
@@ -152,18 +189,30 @@ export function readJsonl<T>(
   if (!existsSync(filePath)) return [];
   const results: T[] = [];
   for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
-    if (line.trim().length === 0) continue;
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch (err) {
-      warnError(label, err);
+    const result = parseJsonlLine(line);
+    if (result.kind === 'blank') continue;
+    if (result.kind === 'corrupt') {
+      warnError(label, result.cause);
       continue;
     }
-    const parsed = parseLine(value);
+    const parsed = parseLine(result.value);
     if (parsed !== null) results.push(parsed);
   }
   return results;
+}
+
+export type JsonlLine =
+  | { kind: 'blank' }
+  | { kind: 'corrupt'; cause: unknown }
+  | { kind: 'value'; value: unknown };
+
+export function parseJsonlLine(line: string): JsonlLine {
+  if (line.trim().length === 0) return { kind: 'blank' };
+  try {
+    return { kind: 'value', value: JSON.parse(line) };
+  } catch (cause) {
+    return { kind: 'corrupt', cause };
+  }
 }
 
 export function checkConfigPermissions(filePath: string): boolean {

@@ -2,13 +2,14 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { publishWarning, publishWarningFromError } from './events.js';
 import {
-  bindPlannerToProjectDir,
   buildResumeContext,
   compactResumeTranscript,
   keepRecentCountForThreshold,
 } from './transcript-rebuild.js';
+import { addUsageAndSave } from './state-ops.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 
 export type ApplyRebuiltContextOpts = {
@@ -26,26 +27,30 @@ export type AutoCompactResumeOpts = {
   bus: EventBus;
   config: Pick<Config, 'workflow' | 'planner'>;
   planner: Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
+  state: WorkflowState;
 };
 
-export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Promise<void> {
+export async function autoCompactResumeContext(
+  opts: AutoCompactResumeOpts,
+): Promise<WorkflowState> {
   const threshold = opts.config.workflow.compactionThreshold;
-  if (threshold === undefined || opts.config.workflow.persistTranscript === false) return;
+  if (threshold === undefined || opts.config.workflow.persistTranscript === false)
+    return opts.state;
   const summarize = opts.planner.summarize;
-  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return;
+  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return opts.state;
 
   const rebuilt = await buildResumeContext(opts.projectDir, opts.sessionId, true);
-  if (rebuilt.messages.length <= threshold) return;
+  if (rebuilt.messages.length <= threshold) return opts.state;
 
   try {
     const format = resolveCompactionFormat(
       opts.config.workflow.compactionFormat,
       opts.config.planner.kind,
     );
-    await compactResumeTranscript({
+    const result = await compactResumeTranscript({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
-      planner: bindPlannerToProjectDir(opts.planner, opts.projectDir),
+      planner: opts.planner,
       keepRecentCount: keepRecentCountForThreshold(threshold),
       format,
       onFallback: () =>
@@ -54,12 +59,19 @@ export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Pro
           'Structured compaction returned invalid JSON; saved freeform summary instead.',
         ),
     });
+    return addUsageAndSave(
+      { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
+      opts.state,
+      'planner',
+      result.usage,
+    );
   } catch (err) {
     publishWarningFromError(
       { bus: opts.bus, phase: 'researching' },
       'Transcript auto-compaction failed',
       err,
     );
+    return opts.state;
   }
 }
 

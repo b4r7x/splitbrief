@@ -24,7 +24,10 @@ export type PersistedTasksResult =
   | { ok: true; tasks: Task[] }
   | { ok: false; reason: 'missing' | 'unreadable' | 'parse' | 'empty'; message: string };
 
-export async function readPersistedTasks(tasksFilePath: string): Promise<PersistedTasksResult> {
+export async function readPersistedTasks(
+  tasksFilePath: string,
+  onWarning?: (message: string) => void,
+): Promise<PersistedTasksResult> {
   let text: string;
   try {
     text = await readFile(tasksFilePath, 'utf8');
@@ -48,7 +51,7 @@ export async function readPersistedTasks(tasksFilePath: string): Promise<Persist
   }
 
   try {
-    const parsed = parseTasksStrict(text);
+    const parsed = parseTasksStrict(text, onWarning);
     if (parsed.length === 0) {
       return {
         ok: false,
@@ -72,11 +75,12 @@ export async function readTasksForApproval(opts: {
   projectDir: string;
   sessionId: string;
   metadata: SpecMetadata;
+  onWarning?: (message: string) => void;
 }): Promise<PersistedTasksResult> {
-  const { tasksFilePath, currentTasks, projectDir, sessionId, metadata } = opts;
-  const first = await readPersistedTasks(tasksFilePath);
+  const { tasksFilePath, currentTasks, projectDir, sessionId, metadata, onWarning } = opts;
+  const first = await readPersistedTasks(tasksFilePath, onWarning);
   if (first.ok || first.reason !== 'missing') return first;
   if (currentTasks.length === 0) return first;
   writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks(currentTasks), metadata);
-  return readPersistedTasks(tasksFilePath);
+  return readPersistedTasks(tasksFilePath, onWarning);
 }

@@ -9,7 +9,7 @@ export const CLI_TOOL_IDS = [
   'copilot',
   'kilo-code',
 ] as const;
-// agent-sdk is NOT here — it is unpriced (subscription, no per-token billing).
+// agent-sdk is NOT here — it is a meta runner (unpriced-meta); diptych does not serve its pricing.
 export const API_PROVIDER_IDS = [
   'anthropic',
   'openrouter',
@@ -139,7 +139,6 @@ export type UserEditConflictKind = z.infer<typeof UserEditConflictKindSchema>;
 
 export const USER_EDIT_CONFLICT_ACTIONS = [
   'continue-unrelated',
-  'regenerate-rebase',
   'pause',
   'skip-current-task',
   'abort-workflow',
@@ -164,7 +163,7 @@ export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as con
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 
-const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit' } as const;
+const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit', 'spec-kit': 'speckit' } as const;
 type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
 
 function isLegacyMode(input: string): input is LegacyWorkflowMode {
@@ -197,12 +196,10 @@ export type ActionClass = z.infer<typeof ActionClassSchema>;
 
 export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
+export type CommitStrategy = z.infer<typeof CommitStrategySchema>;
 
 export const THEME_MODES = ['terminal', 'mono'] as const;
 export const ThemeModeSchema = z.enum(THEME_MODES);
-
-export const SHIKI_THEMES = ['github-dark', 'github-light'] as const;
-export const ShikiThemeSchema = z.enum(SHIKI_THEMES);
 
 export const SESSION_SCOPES = ['project', 'global'] as const;
 export const SessionScopeSchema = z.enum(SESSION_SCOPES);

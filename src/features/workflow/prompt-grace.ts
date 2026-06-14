@@ -1,0 +1,1 @@
+export const PROMPT_TYPEAHEAD_GRACE_MS = 150;

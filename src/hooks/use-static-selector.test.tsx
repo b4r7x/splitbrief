@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
 import { useStaticSelector } from './use-static-selector.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -31,19 +31,27 @@ describe('useStaticSelector', () => {
 
     ui.stdin.write(UP);
     await tick(20);
-    expect(ui.lastFrame()).toContain('current:gamma');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:gamma');
+    });
 
     ui.stdin.write(ENTER);
     await tick(20);
-    expect(ui.lastFrame()).toContain('chosen:gamma@2');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('chosen:gamma@2');
+    });
 
     ui.stdin.write(DOWN);
     await tick(20);
-    expect(ui.lastFrame()).toContain('current:alpha');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:alpha');
+    });
 
     ui.stdin.write(ESC);
     await tick(20);
-    expect(ui.lastFrame()).toContain('cancelled:yes');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('cancelled:yes');
+    });
 
     ui.unmount();
   });

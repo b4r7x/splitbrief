@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   activeFile,
@@ -11,7 +11,7 @@ import {
 } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
-import { writeSecureFile, fsError } from '../../lib/fs.js';
+import { writeSecureFile, rejectSymlinkTarget } from '../../lib/fs.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
@@ -20,16 +20,6 @@ import { slugify } from '../../utils/slugify.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
 import { findUnusedId } from './find-unused-id.js';
-
-function rejectSymlinkTarget(filePath: string): void {
-  try {
-    if (lstatSync(filePath).isSymbolicLink()) {
-      throw fsError.symlinkWrite(filePath);
-    }
-  } catch (err) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
-}
 
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);
@@ -50,14 +40,10 @@ export function writeActive(ref: SessionRef): void {
   writeSecureFile(activeFile(projectDir), sessionId + '\n');
 }
 
-export function clearActive(projectDir: string): void {
+export function clearActive(ref: SessionRef): void {
+  const { projectDir, sessionId } = ref;
+  if (readActive(projectDir) !== sessionId) return;
   const p = activeFile(projectDir);
-  if (!existsSync(p)) return;
-  try {
-    rejectSymlinkTarget(p);
-  } catch {
-    return;
-  }
   assertExistingPathConfined(`${DIPTYCH_DIR}/active`, projectDir);
   unlinkSync(p);
 }
@@ -100,8 +86,11 @@ export function generateSessionId(
   feature: string,
   now: Date = new Date(),
 ): string {
-  const date = now.toLocaleDateString('sv-SE');
-  const slug = slugify(feature, MAX_SLUG_LENGTH);
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  const date = `${year}-${month}-${day}`;
+  const slug = slugify(feature, MAX_SLUG_LENGTH) || 'unknown';
   const base = `${date}-${slug}`;
   return findUniqueId(projectDir, base);
 }

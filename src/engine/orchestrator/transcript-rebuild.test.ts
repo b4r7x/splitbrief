@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
-import { buildResumeContext, keepRecentCountForThreshold } from './transcript-rebuild.js';
+import {
+  buildResumeContext,
+  compactResumeTranscript,
+  keepRecentCountForThreshold,
+} from './transcript-rebuild.js';
 
 let dirs: string[] = [];
 
@@ -89,5 +93,101 @@ describe('buildResumeContext', () => {
     const result = await buildResumeContext(projectDir, sessionId, true);
     expect(result.messages).toEqual([]);
     expect(result.warning).toBeUndefined();
+  });
+
+  it('annotates a cut-off assistant turn so the planner is not re-fed a partial turn as complete', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const now = new Date().toISOString();
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: now, role: 'user', phase: 'planning', text: 'do the thing' },
+      {
+        kind: 'message',
+        ts: now,
+        role: 'assistant',
+        phase: 'planning',
+        text: 'I will start by',
+        interrupted: true,
+      },
+    ]);
+
+    const result = await buildResumeContext(projectDir, sessionId, true);
+
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'do the thing' },
+      { role: 'assistant', content: 'I will start by\n\n[turn interrupted]' },
+    ]);
+  });
+
+  it('annotates a cut-off assistant turn that survives compaction as a kept recent message', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: 1000, role: 'user', phase: 'planning', text: 'old request' },
+      { kind: 'message', ts: 1001, role: 'assistant', phase: 'planning', text: 'old answer' },
+      { kind: 'summary', ts: 2000, text: '## Summary\nOld work preserved', summarizedUpTo: 1001 },
+      { kind: 'message', ts: 2001, role: 'user', phase: 'planning', text: 'new request' },
+      {
+        kind: 'message',
+        ts: 2002,
+        role: 'assistant',
+        phase: 'planning',
+        text: 'partial new answer',
+        interrupted: true,
+      },
+    ]);
+
+    const result = await buildResumeContext(projectDir, sessionId, true);
+
+    expect(result.messages).toEqual([
+      { role: 'user', content: '## Summary\nOld work preserved' },
+      { role: 'user', content: 'new request' },
+      { role: 'assistant', content: 'partial new answer\n\n[turn interrupted]' },
+    ]);
+  });
+});
+
+describe('compactResumeTranscript', () => {
+  it('surfaces the planner usage from the summarization call', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: 1000, role: 'user', phase: 'planning', text: 'first' },
+      { kind: 'message', ts: 1001, role: 'assistant', phase: 'planning', text: 'second' },
+      { kind: 'message', ts: 1002, role: 'user', phase: 'planning', text: 'third' },
+    ]);
+
+    const result = await compactResumeTranscript({
+      projectDir,
+      sessionId,
+      keepRecentCount: 1,
+      planner: {
+        summarize: async () => ({
+          text: '## Summary',
+          usage: { inputTokens: 1200, outputTokens: 90 },
+        }),
+      },
+    });
+
+    expect(result.summary).toBe('## Summary');
+    expect(result.usage).toEqual({ inputTokens: 1200, outputTokens: 90 });
+  });
+
+  it('returns null usage when nothing needs summarizing', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: 1000, role: 'user', phase: 'planning', text: 'only message' },
+    ]);
+
+    const result = await compactResumeTranscript({
+      projectDir,
+      sessionId,
+      keepRecentCount: 10,
+      planner: {
+        summarize: async () => {
+          throw new Error('should not summarize');
+        },
+      },
+    });
+
+    expect(result.entriesRemoved).toBe(0);
+    expect(result.usage).toBeNull();
   });
 });

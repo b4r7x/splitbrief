@@ -298,6 +298,27 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     harness.unmount();
   });
 
+  it('does not deliver a bare carriage return to the app for a CR inside a bracketed paste', async () => {
+    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const delivered: string[] = [];
+    harness.filtered.stdin.on('data', (chunk: Buffer) => delivered.push(chunk.toString('utf8')));
+    await tick(30);
+
+    // A multi-line paste whose body contains a raw CR. Were the CR forwarded, Ink would parse it
+    // as a Return keypress and fire the composer's submit mid-paste; the filter must rewrite it to
+    // a newline so the app only ever sees a line break, never a bare carriage return.
+    harness.pressBytes('\x1b[200~first\rsecond\x1b[201~');
+    await tick(AFTER_PRESS_MS);
+
+    const seen = delivered.join('');
+    expect(seen).not.toContain('\r');
+    expect(seen).toContain('first\nsecond');
+    expect(seen).not.toContain('[200~');
+    expect(seen).not.toContain('[201~');
+
+    harness.unmount();
+  });
+
   it('closes an open overlay on ESC and does not arm the interrupt', async () => {
     overlayStore.open('settings');
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);

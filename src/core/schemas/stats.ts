@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nowIso } from '../../utils/format-time.js';
 
 export const StatsSchema = z.object({
   version: z.literal(1),
@@ -25,7 +26,7 @@ export type Stats = z.infer<typeof StatsSchema>;
 export function emptyStats(): Stats {
   return {
     version: 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso(),
     totalSessions: 0,
     totalCost: 0,
     totalSavings: 0,

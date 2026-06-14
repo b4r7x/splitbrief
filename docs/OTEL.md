@@ -28,9 +28,9 @@ node dist/cli.js start --otel-exporter=console --json --mode quick "otel smoke"
 
 You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output.
 
-The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script can miss diptych's `@opentelemetry/api` instance when ESM resolves duplicate module paths. The bootstrap (`src/cli/otel-bootstrap.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache.
+The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script can miss diptych's `@opentelemetry/api` instance when ESM resolves duplicate module paths. The bootstrap (`src/lib/otel.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache. The detached host (`diptych start --detach`) runs the workflow in a separate process and calls the same bootstrap at the top of `src/engine/ipc/server-entry.ts`; the parent forwards its `--otel-exporter` flag to the child as `DIPTYCH_OTEL_EXPORTER` so console traces work under `--detach` too.
 
-diptych only bootstraps the console exporter. For OTLP HTTP/gRPC or other exporters, register a provider in the same `@opentelemetry/api` resolution context as diptych or extend `src/cli/otel-bootstrap.ts`; standard `OTEL_*` vars alone do not install a provider.
+diptych only bootstraps the console exporter. For OTLP HTTP/gRPC or other exporters, register a provider in the same `@opentelemetry/api` resolution context as diptych or extend `src/lib/otel.ts`; standard `OTEL_*` vars alone do not install a provider.
 
 ## Provider Setup For Non-Console Exporters
 
@@ -50,6 +50,20 @@ trace.setGlobalTracerProvider(provider);
 ```
 
 See https://opentelemetry.io/docs/languages/js/getting-started/nodejs/ for full setup.
+
+### Flushing on exit
+
+diptych exits via `process.exit()` on signal, budget, and crash paths — and on normal shutdown — which abandons any spans still buffered inside a `BatchSpanProcessor`. The built-in hosts (TUI, headless, detached server, top-level CLI) call `flushOtel()` (`src/lib/otel.ts`) before they exit, which runs `forceFlush()` then `shutdown()` on the registered provider, so a diptych-bootstrapped provider drains its final batch.
+
+If you register **your own** provider, do the same: register a flush-on-exit handler so short or abnormal runs do not drop their final span batch. Either use `@opentelemetry/sdk-node`'s `NodeSDK` (which installs a SIGTERM shutdown automatically), or wire it yourself:
+
+```ts
+for (const sig of ['SIGTERM', 'SIGINT', 'beforeExit'] as const) {
+  process.on(sig, () => void provider.shutdown());
+}
+```
+
+Without this, a `BatchSpanProcessor` user loses the trailing batch on every `process.exit()` — the exact "silent data loss" the section below warns against.
 
 ### Rationale — bring-your-own exporter
 
@@ -74,7 +88,7 @@ diptych.workflow                           (root, SpanKind.INTERNAL)
 └── diptych.phase.final-review
 ```
 
-Phase spans are opened on the first `planner_status { status: 'running' }` for a new `phase`; the previous phase span ends when the next starts. Task spans are opened on `task_started` and closed on `task_completed` / `task_full_fail` / `task_skipped`. `workflow_complete` and `workflow_cancelled` force-close any still-open children. Span names (`diptych.workflow`, `diptych.phase.<name>`, `diptych.task`) and the `diptych.*` attribute namespace are stable.
+Phase spans are opened on the first `planner_status { status: 'running' }` for a new `phase`; the previous phase span ends when the next starts. Task spans are opened on `task_started` and closed on `task_completed` / `task_full_fail` / `task_skipped`. `workflow_complete`, `workflow_cancelled`, and `error` force-close any still-open children so the root span always ends. Span names (`diptych.workflow`, `diptych.phase.<name>`, `diptych.task`) and the `diptych.*` attribute namespace are stable.
 
 ## Event → span mapping
 
@@ -94,7 +108,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 | `task_skipped` | Set `diptych.task.skip_reason`; close |
 | `cost_update` | Accumulate `diptych.cost.input_tokens` / `diptych.cost.output_tokens` on workflow span |
 | `validate { status: 'done' }` | Span event `diptych.validate` on active phase |
-| `error` | `span.recordException` on workflow span |
+| `error` | `span.recordException` on workflow span, then force-close workflow and any open children with status ERROR |
 | `warning` | Span event `diptych.warning` on workflow span |
 | (any other event before `workflow_started`) | No-op |
 
@@ -129,12 +143,12 @@ One span per implementation task. Attributes: `diptych.task.id`, `diptych.task.t
 
 The sink carries its own `Context` chain (workflow → phase → task) via `trace.setSpan(ctx, span)` and passes the parent `Context` explicitly to `tracer.startSpan(name, opts, parentCtx)`. This is the SDK v2 pattern — no global `context.active()` mutation, no `AsyncLocalStorage` coupling. The sink is therefore safe to install alongside user-registered instrumentation without cross-interference.
 
-### Limitations (v1)
+### Current limitations
 
-- **No runner propagation.** Subprocess runners (`cli`, `shell`, `agent`) do not receive `traceparent` environment variables in v1. In-process/network runners (`api`, `agent-sdk`) also do not receive propagated OTel context from the sink.
+- **No runner propagation.** Subprocess runners (`cli`, `shell`, `agent`) do not currently receive `traceparent` environment variables. In-process/network runners (`api`, `agent-sdk`) also do not receive propagated OTel context from the sink.
 - **Runner spans are not children of the workflow span.** Calls into Claude Code, local CLIs, provider HTTP APIs, or the Agent SDK appear as opaque windows inside the phase span. If a runner emits its own spans, they land in a separate trace with no parent link.
 - **Workaround.** Users who want end-to-end traces can configure their own tracer inside the subprocess (e.g. wrap a planner CLI in a script that registers a provider and honors `TRACEPARENT` manually). The `diptych.task.duration_ms` attribute remains accurate regardless.
-- **Planned for v2.** Threading a `TraceContextPropagator` through the runner adapters — env var for `cli` / `shell` / `agent` kinds, request headers for `api` kinds, SDK context for `agent-sdk` — is on the roadmap.
+- **Planned.** Threading a `TraceContextPropagator` through the runner adapters — env var for `cli` / `shell` / `agent` kinds, request headers for `api` kinds, SDK context for `agent-sdk` — is on the roadmap.
 
 ## Design decisions
 
@@ -156,7 +170,7 @@ Today, a task with 2 retries produces one span covering all attempts. Whether to
 
 Currently `task_full_fail` marks only the task span `ERROR`; the parent phase and workflow stay `OK`. OTel convention varies across backends — some bubble the worst-status-child up, some don't. Left as-is pending observed backend behavior.
 
-### Out of scope for v1
+### Out of scope
 
 - **Logs via `@opentelemetry/api-logs`.** If a `/log` channel emerges (structured planner/implementer stdout as log records with trace correlation), this is where it would land.
 - **Metric emission.** Counters for `task_completed` by completion method, histograms for phase durations. Derivable from spans by backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
@@ -166,6 +180,6 @@ Currently `task_full_fail` marks only the task span `ERROR`; the parent phase an
 - [OpenTelemetry JS — Getting started (Node.js)](https://opentelemetry.io/docs/languages/js/getting-started/nodejs/) — provider + exporter setup.
 - [OpenTelemetry — Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/) — attribute naming; diptych uses the `diptych.*` namespace for domain-specific attributes.
 - `src/engine/events/sinks/otel.ts` — sink implementation.
-- `src/cli/otel-bootstrap.ts` — console-exporter shortcut.
+- `src/lib/otel.ts` — console-exporter shortcut + `flushOtel()` exit drain.
 - `src/core/schemas/otel.ts` — config schema.
 - `src/engine/orchestrator/run/init.ts` — integration point.

@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, statSync } from 'node:fs';
+import { mkdtempSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from './store.js';
+import {
+  readApprovalsStore,
+  writeApprovalsStore,
+  clearGrantsByScope,
+  mutateApprovalsStore,
+} from './store.js';
 import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js';
 import { DIPTYCH_DIR } from '../paths.js';
 
@@ -66,6 +71,49 @@ describe('writeApprovalsStore', () => {
     writeApprovalsStore(tmpDir, store);
     const result = readApprovalsStore(tmpDir);
     expect(result).toEqual(store);
+  });
+});
+
+describe('mutateApprovalsStore', () => {
+  it('reads the current store, applies the transform, and persists the result', () => {
+    writeApprovalsStore(tmpDir, { version: 1, grants: [makeGrant({ pattern: 'a' })] });
+
+    const result = mutateApprovalsStore(tmpDir, (store) => ({
+      version: 1,
+      grants: [...store.grants, makeGrant({ pattern: 'b' })],
+    }));
+
+    expect(result.grants.map((g) => g.pattern)).toEqual(['a', 'b']);
+    expect(readApprovalsStore(tmpDir).grants.map((g) => g.pattern)).toEqual(['a', 'b']);
+  });
+
+  it('leaves the store untouched when the transform returns null', () => {
+    writeApprovalsStore(tmpDir, { version: 1, grants: [makeGrant({ pattern: 'a' })] });
+
+    const result = mutateApprovalsStore(tmpDir, () => null);
+
+    expect(result.grants.map((g) => g.pattern)).toEqual(['a']);
+    expect(readApprovalsStore(tmpDir).grants.map((g) => g.pattern)).toEqual(['a']);
+  });
+
+  it('does not leave a lock file behind after a successful mutation', () => {
+    mutateApprovalsStore(tmpDir, () => ({ version: 1, grants: [makeGrant()] }));
+
+    const files = readdirSync(join(tmpDir, DIPTYCH_DIR));
+    expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
+  });
+
+  it('serializes read-modify-write so interleaved appends never lose a grant', () => {
+    for (let i = 0; i < 25; i++) {
+      mutateApprovalsStore(tmpDir, (store) => ({
+        version: 1,
+        grants: [...store.grants, makeGrant({ pattern: `cmd-${i}` })],
+      }));
+    }
+
+    const patterns = readApprovalsStore(tmpDir).grants.map((g) => g.pattern);
+    expect(patterns).toHaveLength(25);
+    expect(new Set(patterns).size).toBe(25);
   });
 });
 

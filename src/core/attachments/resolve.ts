@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
 import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
 import { includes } from '../../utils/type-guards.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 import type { Attachment } from '../schemas/attachment.js';
 
 export type ResolveAttachmentReason =
@@ -87,7 +89,7 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
   }
 
   const mimeType = EXT_TO_MIME[ext];
-  const id = `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `att-${randomUUID()}`;
 
   return {
     ok: true,
@@ -97,7 +99,6 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
       path: realPath,
       mimeType,
       sizeBytes: stat.size,
-      addedAt: Date.now(),
     },
   };
 }
@@ -106,7 +107,5 @@ const ATTACHMENT_SHORT_NAME_MAX = 24;
 
 export function attachmentShortName(p: string): string {
   const base = p.split(/[\\/]/).pop() ?? p;
-  return base.length > ATTACHMENT_SHORT_NAME_MAX
-    ? base.slice(0, ATTACHMENT_SHORT_NAME_MAX - 3) + '...'
-    : base;
+  return truncateWithEllipsis(base, ATTACHMENT_SHORT_NAME_MAX);
 }

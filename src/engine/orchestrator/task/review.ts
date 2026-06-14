@@ -56,7 +56,7 @@ export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): Tas
     ...(recovery?.files ?? []),
     opts.task.file,
   ]);
-  const taskTokens = opts.taskBreakdowns.find((breakdown) => breakdown.taskId === opts.task.id);
+  const taskTokens = opts.taskBreakdowns.findLast((breakdown) => breakdown.taskId === opts.task.id);
 
   return {
     taskId: opts.task.id,

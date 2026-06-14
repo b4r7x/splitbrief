@@ -3,6 +3,7 @@ import { computePerTaskOutOfBounds, analyzeDriftChain } from './chain.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
+import { DriftChainStateSchema } from '../../../core/schemas/drift-chain.js';
 
 function makeState(overrides?: Partial<DriftChainState>): DriftChainState {
   return {
@@ -45,6 +46,28 @@ describe('computePerTaskOutOfBounds', () => {
     ]);
     expect(result.has('src/secrets/safe.ts')).toBe(false);
     expect(result.has('src/secrets/leak.ts')).toBe(true);
+  });
+
+  it('file matching an inBounds glob → excluded from result', () => {
+    const task = makeTask({ file: 'src/a.ts', scope: { inBounds: ['src/feature/**'] } });
+    const result = computePerTaskOutOfBounds(task, [
+      'src/a.ts',
+      'src/feature/widget.ts',
+      'src/other/leak.ts',
+    ]);
+    expect(result.has('src/feature/widget.ts')).toBe(false);
+    expect(result.has('src/other/leak.ts')).toBe(true);
+  });
+
+  it('file listed in dependsOnFiles → excluded from result', () => {
+    const task = makeTask({ file: 'src/a.ts' });
+    const result = computePerTaskOutOfBounds(
+      task,
+      ['src/a.ts', 'src/dep.ts', 'src/leak.ts'],
+      ['src/dep.ts'],
+    );
+    expect(result.has('src/dep.ts')).toBe(false);
+    expect(result.has('src/leak.ts')).toBe(true);
   });
 
   it('empty taskChangedFiles → empty set', () => {
@@ -90,6 +113,28 @@ describe('analyzeDriftChain — reset semantics', () => {
     const update = analyzeDriftChain(state, taskId('T003'), new Set(), 0.6);
     expect(update.state.activeChain.entries).toHaveLength(0);
     expect(update.emitted).toBeUndefined();
+  });
+});
+
+describe('analyzeDriftChain — shared declared dependency does not chain', () => {
+  it('consecutive tasks touching only a shared dependsOn file → no out-of-bounds, no emit', () => {
+    const shared = 'src/shared-dep.ts';
+    const t1 = makeTask({ file: 'src/a.ts', dependsOn: ['T000'] });
+    const t2 = makeTask({ file: 'src/b.ts', dependsOn: ['T000'] });
+
+    const oob1 = computePerTaskOutOfBounds(t1, ['src/a.ts', shared], [shared]);
+    const oob2 = computePerTaskOutOfBounds(t2, ['src/b.ts', shared], [shared]);
+    expect(oob1.size).toBe(0);
+    expect(oob2.size).toBe(0);
+
+    let state = makeState();
+    const r1 = analyzeDriftChain(state, taskId('T001'), oob1, 0.6);
+    state = r1.state;
+    const r2 = analyzeDriftChain(state, taskId('T002'), oob2, 0.6);
+
+    expect(r2.state.activeChain.entries).toHaveLength(0);
+    expect(r1.emitted).toBeUndefined();
+    expect(r2.emitted).toBeUndefined();
   });
 });
 
@@ -244,5 +289,21 @@ describe('analyzeDriftChain — threshold', () => {
     const update = analyzeDriftChain(state, taskId('T002'), files, 0.6);
     expect(update.emitted).toBeDefined();
     expect(update.state.activeChain.score).toBeGreaterThanOrEqual(0.6);
+  });
+});
+
+describe('analyzeDriftChain — emitted chain contract', () => {
+  it('emitted chain carries no timestamp field and round-trips through the persisted schema', () => {
+    let state = makeState();
+    const files = new Set(['src/x.ts', 'src/y.ts']);
+    state = analyzeDriftChain(state, taskId('T001'), files, 0.6).state;
+    const update = analyzeDriftChain(state, taskId('T002'), files, 0.6);
+
+    expect(update.emitted).toBeDefined();
+    expect(Object.keys(update.emitted ?? {})).not.toContain('ts');
+
+    const roundTripped = DriftChainStateSchema.parse(JSON.parse(JSON.stringify(update.state)));
+    expect(roundTripped.emittedChains[0]).toEqual(update.emitted);
+    expect(roundTripped.emittedChains[0]).not.toHaveProperty('ts');
   });
 });

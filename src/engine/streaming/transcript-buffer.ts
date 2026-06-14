@@ -18,7 +18,7 @@ export function createTranscriptBuffer(opts: {
     append(text: string): void {
       if (!shouldPersist) return;
       buffer += text;
-      if (buffer.length > MAX_BUFFER_BYTES) {
+      if (Buffer.byteLength(buffer, 'utf8') > MAX_BUFFER_BYTES) {
         appendMessage(
           ref,
           { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },

@@ -213,7 +213,7 @@ In the TUI, `onComplete` causes the router to navigate to the summary screen, wh
 The CLI reads `.diptych/active` to find the session ID, loads `state.json` via `loadState()` (`src/core/state/persistence.ts`), and runs three guards:
 
 1. **Version check** -- `stateVersion` must equal `CURRENT_STATE_VERSION` (currently 3). Older versions refuse with an error.
-2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for review/gate phases, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`, and any phase with `awaitingContinue: true`. Generative phases (`researching`, `specifying`, `planning`) are not resumable -- the stream is lost.
+2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for the `RESUMABLE_PHASES` set (`planning`, `implementing`, `final-review`) and for any phase with `awaitingContinue: true`. Every other phase -- including the review/gate phases, `analyzing`, `validating-task`, and `escalating` -- is resumable only through that override; terminal phases (`idle`, `complete`) never are.
 3. **Recovery check** -- if `pendingRecovery` is set, the orchestrator shows the recovery prompt before dispatching work.
 
 After validation, the CLI routes to headless (`--json`), RPC (`--rpc`), or interactive (TUI) mode, passing the loaded state as `resumeState`.

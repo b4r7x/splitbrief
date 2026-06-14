@@ -3,13 +3,17 @@ import {
   deleteWordBackward,
   deleteLineBackward,
   moveToLineStart,
-  moveToLineEnd,
   findVisualLineStart,
-  findVisualLineEnd,
   resolveEditAction,
   applyEditAction,
   navigateVertically,
+  prevCodePointIndex,
+  nextCodePointIndex,
+  dropLastCodePoint,
 } from './text-editing.js';
+
+// '😀' is one code point spanning two UTF-16 code units.
+const EMOJI = '😀';
 
 describe('deleteWordBackward', () => {
   it('deletes word at end of string', () => {
@@ -78,39 +82,6 @@ describe('moveToLineStart', () => {
 
   it('stays at 0 when already at start', () => {
     expect(moveToLineStart('hello', 0)).toEqual({ value: 'hello', cursor: 0 });
-  });
-});
-
-describe('moveToLineEnd', () => {
-  it('moves to end of single line', () => {
-    expect(moveToLineEnd('hello', 2)).toEqual({ value: 'hello', cursor: 5 });
-  });
-
-  it('moves to newline in multiline', () => {
-    expect(moveToLineEnd('line1\nline2', 2)).toEqual({ value: 'line1\nline2', cursor: 5 });
-  });
-
-  it('stays at end when already there', () => {
-    expect(moveToLineEnd('hello', 5)).toEqual({ value: 'hello', cursor: 5 });
-  });
-
-  it('lands at the visual-row end (not logical end) on a wrapped line', () => {
-    // "abcdefghijklmno" at width 10 wraps as "abcdefghij" | "klmno".
-    // Cursor on the first visual row → Ctrl+E must stop within that row, not jump to 15.
-    const result = moveToLineEnd('abcdefghijklmno', 2, 10);
-    expect(result.cursor).toBeLessThan(15);
-    expect(result.cursor).toBe(findVisualLineEnd('abcdefghijklmno', 2, 10));
-  });
-
-  it('is symmetric with moveToLineStart on a wrapped line', () => {
-    // Ctrl+A and Ctrl+E agree on the bounds of the same visual row.
-    const value = 'abcdefghijklmno';
-    const cursor = 2;
-    const start = moveToLineStart(value, cursor, 10).cursor;
-    const end = moveToLineEnd(value, cursor, 10).cursor;
-    expect(start).toBeLessThanOrEqual(cursor);
-    expect(end).toBeGreaterThanOrEqual(cursor);
-    expect(end).toBeLessThan(value.length);
   });
 });
 
@@ -203,6 +174,10 @@ describe('resolveEditAction', () => {
     expect(resolveEditAction('a', { ...noMods, ctrl: true })).toBe('move-line-start');
   });
 
+  it('leaves Ctrl+E unbound so the workflow screen owns the toggle-sidebar chord', () => {
+    expect(resolveEditAction('e', { ...noMods, ctrl: true })).toBeNull();
+  });
+
   it('returns null for no special combo', () => {
     expect(resolveEditAction('a', noMods)).toBeNull();
   });
@@ -211,6 +186,61 @@ describe('resolveEditAction', () => {
 describe('applyEditAction', () => {
   it('returns null for null action', () => {
     expect(applyEditAction(null, 'hello', 5)).toBeNull();
+  });
+});
+
+describe('code-point stepping', () => {
+  it('prevCodePointIndex steps over a full surrogate pair', () => {
+    // 'a😀' is 'a' (1 unit) + emoji (2 units) = length 3. Backspace from end → index 1.
+    const value = `a${EMOJI}`;
+    expect(value.length).toBe(3);
+    expect(prevCodePointIndex(value, value.length)).toBe(1);
+  });
+
+  it('prevCodePointIndex steps one unit for a BMP char', () => {
+    expect(prevCodePointIndex('ab', 2)).toBe(1);
+  });
+
+  it('prevCodePointIndex clamps at 0', () => {
+    expect(prevCodePointIndex(EMOJI, 0)).toBe(0);
+  });
+
+  it('nextCodePointIndex steps over a full surrogate pair', () => {
+    expect(nextCodePointIndex(EMOJI, 0)).toBe(2);
+  });
+
+  it('nextCodePointIndex steps one unit for a BMP char', () => {
+    expect(nextCodePointIndex('ab', 0)).toBe(1);
+  });
+
+  it('nextCodePointIndex clamps at length', () => {
+    expect(nextCodePointIndex(EMOJI, 2)).toBe(2);
+  });
+
+  it('dropLastCodePoint removes a whole emoji, not a lone surrogate', () => {
+    const result = dropLastCodePoint(`hi${EMOJI}`);
+    expect(result).toBe('hi');
+    // No lone surrogate left behind.
+    expect(result.normalize('NFC')).toBe(result);
+  });
+});
+
+describe('deleteLineBackward with astral characters', () => {
+  it('deletes a whole emoji at line start without leaving a lone surrogate', () => {
+    // 'line1\n😀' — cursor at line start of the emoji line deletes the newline,
+    // but a cursor right after the emoji at logical line start deletes the full pair.
+    const value = `${EMOJI}`;
+    const result = deleteLineBackward(value, value.length);
+    expect(result.value).toBe('');
+    expect(result.cursor).toBe(0);
+  });
+
+  it('does not split a surrogate pair when joining lines at a visual boundary', () => {
+    // Width 2: 'a😀' wraps with the emoji on its own visual row; deleting at the
+    // visual line start must remove the full emoji code point, not half of it.
+    const result = deleteLineBackward(`a${EMOJI}`, 3, 2);
+    expect(result.value.normalize('NFC')).toBe(result.value);
+    expect(result.value).not.toContain('\udc00');
   });
 });
 

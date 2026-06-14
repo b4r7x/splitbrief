@@ -28,7 +28,12 @@ export type PlanningRunContext = {
   state: WorkflowState;
 };
 
-export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };
+export type PlanningPhaseResult = {
+  state: WorkflowState;
+  tasks: Task[];
+  cancelled: boolean;
+  failed?: boolean | undefined;
+};
 
 export type PlannerCallRunResult = {
   state: WorkflowState;

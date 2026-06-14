@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, mkdtempSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  mkdtempSync,
+  statSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -27,8 +35,19 @@ function copyProjectForSmoke(src: string, dest: string): void {
   });
 }
 
+function listFilesRecursive(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...listFilesRecursive(full));
+    else out.push(full);
+  }
+  return out;
+}
+
 let workDir: string;
 let installDir: string;
+let installedPkgDir: string;
 let binPath: string;
 let pkgVersion: string;
 
@@ -67,6 +86,7 @@ beforeAll(() => {
     { cwd: installDir, stdio: 'pipe' },
   );
 
+  installedPkgDir = join(installDir, 'node_modules', 'diptych');
   binPath = join(installDir, 'node_modules', '.bin', 'diptych');
 }, 300_000);
 
@@ -113,4 +133,12 @@ describe('package smoke test', () => {
     expect(parsed.type).toBe('readiness_report');
     expect(parsed.report).toBeDefined();
   }, 60_000);
+
+  it('ships no .d.ts declaration files in the published package', () => {
+    const declarationFiles = listFilesRecursive(installedPkgDir)
+      .filter((f) => f.endsWith('.d.ts'))
+      .map((f) => relative(installedPkgDir, f));
+
+    expect(declarationFiles).toEqual([]);
+  });
 });

@@ -39,6 +39,7 @@ export function assessProfile(
     profile,
     conservativeContextLength,
     opts.contextCache,
+    opts.detectedContextLength,
   );
   const providerId = profileProviderId(profile);
   const modelId = isProviderId(providerId)

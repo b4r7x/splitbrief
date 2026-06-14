@@ -53,6 +53,9 @@ export function costPredictionRows(
           prediction.plannerEstimateReview?.status === 'unavailable' ? 'warning' : 'planner',
         ),
       );
+    const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
+    if (recommendation)
+      rows.push(row(`${keyPrefix}-recommendation`, `Recommended: ${recommendation}`, 'planner'));
     return wrapRows(rows, width);
   }
 
@@ -81,7 +84,7 @@ export function costPredictionRows(
   rows.push(
     row(
       `${keyPrefix}-context`,
-      `   Context explicit ${deterministic.contextConfidenceCounts.contextExplicit} · catalog ${deterministic.contextConfidenceCounts.contextKnownCatalog} · cached ${deterministic.contextConfidenceCounts.contextCachedProvider} · fallback ${deterministic.contextConfidenceCounts.contextConservativeFallback}`,
+      `   Context explicit ${deterministic.contextConfidenceCounts.contextExplicit} · detected ${deterministic.contextConfidenceCounts.contextDetected} · catalog ${deterministic.contextConfidenceCounts.contextKnownCatalog} · cached ${deterministic.contextConfidenceCounts.contextCachedProvider} · fallback ${deterministic.contextConfidenceCounts.contextConservativeFallback}`,
       'textDim',
     ),
   );
@@ -108,6 +111,9 @@ export function costPredictionRows(
         prediction.plannerEstimateReview?.status === 'unavailable' ? 'warning' : 'planner',
       ),
     );
+  const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
+  if (recommendation)
+    rows.push(row(`${keyPrefix}-recommendation`, `   Recommended: ${recommendation}`, 'planner'));
   return wrapRows(rows, width);
 }
 

@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import type { ToolUseInfo } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { toTokenDelta } from './token-utils.js';
+import { toTokenDelta } from './token-usage.js';
 import { warnError } from '../../lib/warn.js';
 
 export interface StreamParseResult {
   text?: string | undefined;
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
+  isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
   toolUse?: ToolUseInfo[] | undefined;
 }
@@ -30,6 +31,7 @@ const AssistantEvent = z.object({
 const ResultEvent = z.object({
   type: z.literal('result'),
   result: z.string().optional(),
+  is_error: z.boolean().optional(),
   session_id: z.string().optional(),
   usage: z.unknown(),
 });
@@ -72,6 +74,7 @@ export function parseStreamLine(line: string): StreamParseResult {
         text: result.data.result ?? undefined,
         sessionId: result.data.session_id ?? undefined,
         isResult: true,
+        isError: result.data.is_error ?? undefined,
         usage: toTokenDelta(result.data.usage ?? undefined) ?? undefined,
       };
     }

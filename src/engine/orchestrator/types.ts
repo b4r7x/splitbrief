@@ -32,10 +32,6 @@ export interface OrchestratorCallbacks {
   onQuestionAsked?:
     | ((question: ClarificationQuestion, num: number, total: number) => Promise<string>)
     | undefined;
-  onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;
-  onBudgetPaused?:
-    | ((currentCost: number, maxBudget: number) => Promise<'continue' | 'abort' | 'raise'>)
-    | undefined;
   onCostApprovalNeeded?: ((prediction: CostPrediction) => Promise<boolean>) | undefined;
   onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
   onTieredApproval?:
@@ -83,6 +79,7 @@ export interface WorkflowContext {
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
   plannerContext?: string | undefined;
+  detectedContextLength?: number | undefined;
 }
 
 export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };

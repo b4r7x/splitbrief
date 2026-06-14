@@ -10,8 +10,6 @@ import { estimateTokens } from '../../../core/tokens/estimate.js';
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'node',
-  testCommand: 'npm test',
 };
 
 describe('classifyContextFit', () => {

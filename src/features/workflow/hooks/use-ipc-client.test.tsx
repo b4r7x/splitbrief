@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { Text } from 'ink';
 import { tick } from '#testing/helpers/ink.js';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
+import { MAX_ATTEMPTS } from '../../../engine/ipc/client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type {
   IpcPromptRequest,
@@ -27,7 +28,7 @@ function send(socket: Socket, msg: ServerMessage): void {
   socket.write(JSON.stringify(msg) + '\n');
 }
 
-function makeServer(sockPath: string, opts?: { readonly?: boolean }): Promise<Server> {
+function makeServer(sockPath: string): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.on('connection', (socket: Socket) => {
@@ -37,7 +38,6 @@ function makeServer(sockPath: string, opts?: { readonly?: boolean }): Promise<Se
         startedAt: 1000,
         mode: 'standard',
         feature: 'test feature',
-        readonly: opts?.readonly ?? false,
       };
       send(socket, meta);
     });
@@ -67,7 +67,6 @@ function closeServer(server: Server): Promise<void> {
 interface CapturedState {
   status: IpcClientStatus;
   sessionId: string | null;
-  readonly: boolean;
   events: EngineEvent[];
   sendUserInput: (text: string) => void;
   detach: () => void;
@@ -130,7 +129,7 @@ describe('useIpcClient', () => {
     await tick(20);
   });
 
-  it('status becomes connected after session_meta (readonly: false)', async () => {
+  it('status becomes connected after session_meta', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
@@ -143,24 +142,6 @@ describe('useIpcClient', () => {
 
     expect(capture.current?.status).toBe('connected');
     expect(capture.current?.sessionId).toBe('test-session-id');
-    expect(capture.current?.readonly).toBe(false);
-    ui.unmount();
-    await tick(20);
-  });
-
-  it('status becomes readonly after session_meta (readonly: true)', async () => {
-    const dir = makeTmpDir();
-    tmpDirs.push(dir);
-    const sockPath = join(dir, 'test.sock');
-    const server = await makeServer(sockPath, { readonly: true });
-    servers.push(server);
-
-    const capture: { current: CapturedState | null } = { current: null };
-    const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('readonly');
-    expect(capture.current?.readonly).toBe(true);
     ui.unmount();
     await tick(20);
   });
@@ -182,7 +163,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
       let buf = '';
       socket.on('data', (chunk: Buffer) => {
@@ -201,7 +181,7 @@ describe('useIpcClient', () => {
       <Harness
         sockPath={sockPath}
         capture={capture}
-        onPromptRequest={async () => ({ kind: 'external_changes', proceed: true })}
+        onPromptRequest={async () => ({ kind: 'approval_needed', approved: true })}
       />,
     );
     await tick(100);
@@ -209,7 +189,12 @@ describe('useIpcClient', () => {
     if (connectedSocket) {
       const msg: ServerMessage = {
         kind: 'prompt_request',
-        request: { requestId: 'prompt-1', kind: 'external_changes' },
+        request: {
+          requestId: 'prompt-1',
+          kind: 'approval_needed',
+          approvalType: 'spec',
+          filePath: '/tmp/spec.md',
+        },
       };
       send(connectedSocket, msg);
     }
@@ -221,7 +206,7 @@ describe('useIpcClient', () => {
     expect(response).toMatchObject({
       kind: 'prompt_response',
       requestId: 'prompt-1',
-      response: { kind: 'external_changes', proceed: true },
+      response: { kind: 'approval_needed', approved: true },
     });
 
     ui.unmount();
@@ -245,7 +230,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
       let buf = '';
       socket.on('data', (chunk: Buffer) => {
@@ -311,7 +295,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
       let buf = '';
       socket.on('data', (chunk: Buffer) => {
@@ -363,7 +346,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
       let buf = '';
       socket.on('data', (chunk: Buffer) => {
@@ -401,56 +383,6 @@ describe('useIpcClient', () => {
     await tick(20);
   });
 
-  it('sendUserInput is silently dropped when status is readonly', async () => {
-    const dir = makeTmpDir();
-    tmpDirs.push(dir);
-    const sockPath = join(dir, 'test.sock');
-
-    const received: string[] = [];
-    const server = createServer();
-    servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-        readonly: true,
-      });
-      let buf = '';
-      socket.on('data', (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed) received.push(trimmed);
-        }
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
-
-    const capture: { current: CapturedState | null } = { current: null };
-    const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('readonly');
-    capture.current?.sendUserInput('should be dropped');
-    await tick(50);
-
-    const userInputMsg = received.find((line) => {
-      try {
-        return (JSON.parse(line) as { kind: string }).kind === 'user_input';
-      } catch {
-        return false;
-      }
-    });
-    expect(userInputMsg).toBeUndefined();
-    ui.unmount();
-    await tick(20);
-  });
-
   it('unexpected server close sets status to reconnecting', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
@@ -467,7 +399,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
     });
     await new Promise<void>((resolve) => server.listen(sockPath, resolve));
@@ -510,7 +441,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
     });
     await new Promise<void>((resolve) => newServer.listen(newSockPath, resolve));
@@ -556,6 +486,92 @@ describe('useIpcClient', () => {
     await tick(20);
   });
 
+  it('repeating post-meta failure reaches failed instead of looping forever', async () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const sockPath = join(dir, 'test.sock');
+
+    let connections = 0;
+    const server = createServer();
+    servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connections += 1;
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'sess',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+      });
+      // Fail immediately after session_meta, before any replay_complete arrives.
+      setTimeout(() => socket.destroy(), 5);
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
+
+    await waitMs(150);
+
+    // Without resetAttempts() being gated on replay_complete, each fresh session_meta
+    // would reset the counter and this would reconnect forever.
+    expect(capture.current?.status).toBe('failed');
+    const failedEvents =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
+    expect(failedEvents.length).toBeGreaterThan(0);
+    expect(connections).toBeLessThanOrEqual(MAX_ATTEMPTS + 1);
+    ui.unmount();
+    await tick(20);
+  });
+
+  it('replay_complete after a reconnect resets the attempt counter', async () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const sockPath = join(dir, 'test.sock');
+
+    let connections = 0;
+    const server = createServer();
+    servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connections += 1;
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'sess',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+      });
+      // First connection drops post-meta; later connections complete replay and stay up.
+      if (connections === 1) {
+        setTimeout(() => socket.destroy(), 5);
+      } else {
+        send(socket, {
+          kind: 'event',
+          payload: {
+            type: 'replay_complete',
+            ts: 2,
+            phase: 'idle',
+            totalEvents: 0,
+            durationMs: 0,
+          },
+        });
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
+
+    await waitMs(150);
+
+    expect(capture.current?.status).toBe('connected');
+    const failedEvents =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
+    expect(failedEvents.length).toBe(0);
+    ui.unmount();
+    await tick(20);
+  });
+
   it('malformed server message emits a warning event', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
@@ -570,7 +586,6 @@ describe('useIpcClient', () => {
         startedAt: 1,
         mode: 'standard',
         feature: 'f',
-        readonly: false,
       });
       // Send malformed JSON after meta
       setTimeout(() => {
@@ -639,6 +654,51 @@ describe('useIpcClient', () => {
     const reconnectAttempts =
       capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
     expect(reconnectAttempts.length).toBe(0);
+  });
+
+  it('stolen-victim terminal frame ends the client without reconnecting', async () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const sockPath = join(dir, 'test.sock');
+
+    const connectedSockets: Socket[] = [];
+    const server = createServer();
+    servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connectedSockets.push(socket);
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'sess',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
+    await tick(100);
+
+    expect(capture.current?.status).toBe('connected');
+
+    // Server steals the session: terminal error frame, then destroy the victim socket.
+    for (const s of connectedSockets) {
+      send(s, {
+        kind: 'error',
+        code: 'already_attached',
+        message: 'session detached: another client took over this session',
+      });
+      s.destroy();
+    }
+    await tick(200);
+
+    expect(capture.current?.status).toBe('failed');
+    const reconnectAttempts =
+      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
+    expect(reconnectAttempts.length).toBe(0);
+    ui.unmount();
+    await tick(20);
   });
 
   it('detach() does not trigger reconnect after socket closes', async () => {

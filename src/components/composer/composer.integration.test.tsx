@@ -120,13 +120,17 @@ describe('composer integration: completions', () => {
     ui.stdin.write(TAB);
     await tick(20);
 
-    expect(ui.lastFrame()).toContain('/mode');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/mode');
+    });
     expect(ui.lastFrame()).not.toContain('/help');
     expect(commandCalls).toEqual([]);
 
     ui.stdin.write(ENTER);
     await tick(20);
-    expect(commandCalls).toEqual(['/mode']);
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/mode']);
+    });
     ui.unmount();
   });
 
@@ -146,7 +150,9 @@ describe('composer integration: completions', () => {
       ui.stdin.write('@src/');
       await tick(20);
 
-      expect(ui.lastFrame()).toContain('src/app.ts');
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain('src/app.ts');
+      });
 
       ui.stdin.write(TAB);
       await tick(20);
@@ -180,7 +186,9 @@ describe('composer integration: completions', () => {
 
       ui.stdin.write('@src');
       await tick(20);
-      expect(ui.lastFrame()).toContain('src/app.ts');
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain('src/app.ts');
+      });
 
       ui.stdin.write(DOWN);
       await tick(20);
@@ -216,7 +224,9 @@ describe('composer integration: completions', () => {
       ui.stdin.write('@src');
       await tick(20);
 
-      expect(ui.lastFrame()).toContain('src/app.ts');
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain('src/app.ts');
+      });
 
       ui.stdin.write('\u001b');
       await tick(20);

@@ -223,7 +223,7 @@ describe('transition', () => {
     expect(state.plannerSessionId).toBe('second');
   });
 
-  it('START_TASK resets attempt to 0 (resume retry-budget fix)', () => {
+  it('START_TASK preserves the persisted attempt so the retry budget survives re-entry', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -233,8 +233,30 @@ describe('transition', () => {
       attempt: 2,
     };
     const next = transition(state, { type: 'START_TASK', taskId: tasks[0]!.id });
-    expect(next.attempt).toBe(0);
+    expect(next.attempt).toBe(2);
     expect(next.tasks[0]?.status).toBe('in_progress');
+  });
+
+  it('a re-entered task at attempt 2 of maxRetries 3 escalates after one local VALIDATION_FAIL', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const resumed: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 2,
+    };
+    const started = transition(resumed, { type: 'START_TASK', taskId: tasks[0]!.id });
+    expect(started.attempt).toBe(2);
+
+    const sent = transition(started, { type: 'TASK_SENT' });
+    const failed = transition(sent, { type: 'VALIDATION_FAIL' });
+    expect(failed.phase).toBe('implementing');
+    expect(failed.attempt).toBe(3);
+
+    const sentAgain = transition(failed, { type: 'TASK_SENT' });
+    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' });
+    expect(exhausted.phase).toBe('escalating');
   });
 
   it('CLEAR_TASK_CODE removes stale currentCode from the selected task only', () => {
@@ -374,8 +396,6 @@ describe('transition', () => {
       attempt: 2,
       awaitingContinue: true,
       plannerSessionId: 'old-session',
-      clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
-      analysisResult: { decisions: [] } as any,
       discoveredValidation: { testCommand: 'npm test' },
     };
     const next = transition(state, { type: 'REWIND_TO_SPEC' });
@@ -385,8 +405,6 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
     expect(next.awaitingContinue).toBe(false);
     expect(next.plannerSessionId).toBeUndefined();
-    expect(next.clarifications).toEqual([]);
-    expect(next.analysisResult).toBeUndefined();
     expect(next.discoveredValidation).toBeUndefined();
   });
 
@@ -400,8 +418,6 @@ describe('transition', () => {
       attempt: 2,
       awaitingContinue: true,
       plannerSessionId: 'old-session',
-      clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
-      analysisResult: { decisions: [] } as any,
       discoveredValidation: { testCommand: 'npm test' },
     };
     const next = transition(state, { type: 'REWIND_TO_PLAN' });
@@ -411,8 +427,6 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
     expect(next.awaitingContinue).toBe(false);
     expect(next.plannerSessionId).toBeUndefined();
-    expect(next.clarifications).toEqual([]);
-    expect(next.analysisResult).toBeUndefined();
     expect(next.discoveredValidation).toBeUndefined();
   });
 

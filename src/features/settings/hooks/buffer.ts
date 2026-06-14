@@ -1,11 +1,22 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
+import { dropLastCodePoint } from '../../../components/input/text-editing.js';
 import { validateNumber } from '../presentation.js';
 
 interface UseEditBufferParams {
   onCommit: (def: SettingDef, value: unknown) => void;
+}
+
+function numberConstraintHint(def: SettingDef): string {
+  const parts: string[] = [];
+  if (def.min !== undefined && def.max !== undefined) parts.push(`${def.min}–${def.max}`);
+  else if (def.min !== undefined) parts.push(`≥ ${def.min}`);
+  else if (def.max !== undefined) parts.push(`≤ ${def.max}`);
+  if (def.integer) parts.push('integer');
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
 
 interface EditBufferState {
@@ -32,10 +43,20 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
       if (def) {
         if (def.kind === 'number') {
           const num = validateNumber(editBuffer, def);
-          if (num !== null) onCommit(def, num);
+          if (num === null) {
+            feedbackStore.setError(
+              `Invalid ${def.label}: enter a number${numberConstraintHint(def)}`,
+            );
+            return;
+          }
+          onCommit(def, num);
         } else {
           const trimmed = editBuffer.trim();
-          if (trimmed) onCommit(def, trimmed);
+          if (!trimmed) {
+            feedbackStore.setError(`Invalid ${def.label}: value cannot be empty`);
+            return;
+          }
+          onCommit(def, trimmed);
         }
       }
     }
@@ -55,7 +76,7 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
         return;
       }
       if (key.backspace || key.delete) {
-        setEditBuffer((prev) => prev.slice(0, -1));
+        setEditBuffer((prev) => dropLastCodePoint(prev));
         return;
       }
       if (input && !key.ctrl && !key.meta) setEditBuffer((prev) => prev + input);

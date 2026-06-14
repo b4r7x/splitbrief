@@ -25,3 +25,31 @@ export const CONCRETE_FILE_PATH_PATTERN =
 export function resolveFromProject(projectDir: string, p: string): string {
   return isAbsolute(p) ? p : resolve(projectDir, p);
 }
+
+export function matchesGlob(filePath: string, pattern: string): boolean {
+  if (pattern === filePath) return true;
+
+  if (pattern.endsWith('/**')) {
+    const prefix = pattern.slice(0, -3);
+    return filePath.startsWith(`${prefix}/`) || filePath === prefix;
+  }
+
+  if (pattern.endsWith('/*')) {
+    const prefix = pattern.slice(0, -2);
+    const rest = filePath.slice(prefix.length + 1);
+    return filePath.startsWith(`${prefix}/`) && !rest.includes('/');
+  }
+
+  if (pattern.startsWith('*.')) {
+    return filePath.endsWith(pattern.slice(1));
+  }
+
+  if (pattern.includes('*')) {
+    const starIdx = pattern.indexOf('*');
+    const beforeStar = pattern.slice(0, starIdx);
+    const afterStar = pattern.slice(starIdx + 1);
+    return filePath.startsWith(beforeStar) && (afterStar === '' || filePath.endsWith(afterStar));
+  }
+
+  return false;
+}

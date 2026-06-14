@@ -66,13 +66,15 @@ diptych init                                    # one-time interactive setup
 diptych start "fix the typo in src/auth.ts"     # your first task
 ```
 
+diptych operates on the git repository root. If you run it from a subdirectory, it canonicalizes the project to the repository toplevel (via `git rev-parse --show-toplevel`); pass `--project <dir>` to target an explicit directory.
+
 Here is what happens, step by step:
 
 1. `diptych init` walks you through picking a planner (default: Claude Code via your existing subscription) and an implementer (default: a local Ollama model). It writes `.diptych/config.yaml`.
 2. `diptych start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.diptych/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
 4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries up to 3 times, then escalates back to the planner.
-5. Each successful task records evidence and can create a checkpoint. Product-level git commits are optional when `workflow.git.commitStrategy` is explicitly configured; in this repository, agents must never stage or commit.
+5. Each successful task records evidence and can create a checkpoint. Git commits are optional and only happen when `workflow.git.commitStrategy` is explicitly configured; the default leaves changes unstaged for manual review.
 6. After all tasks complete, the planner does a final review: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
 Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
@@ -224,7 +226,7 @@ Local/subscription runners that don't expose pricing data show `local` instead o
 
 **Checkpoints protect your work; commits are optional.**
 
-The orchestrator records evidence and can create hash-guarded snapshots around risky boundaries. Product-level git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety. In the diptych repository itself, implementation agents must never run `git add`, `git stage`, or `git commit`; the user reviews and commits manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
+The orchestrator records evidence and can create hash-guarded snapshots around risky boundaries. Git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety, and the default leaves changes unstaged for you to review and commit manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
 
 Three additional safety nets:
 
@@ -251,16 +253,16 @@ Same-directory parallel writes are out of scope. A future implementer pool may c
 Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
-- **Not Windows-supported in v1.** macOS and Linux only. The IPC server (`diptych attach` / `diptych ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not v1.
+- **Not Windows-supported.** macOS and Linux only. The IPC server (`diptych attach` / `diptych ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not yet available.
 - **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
 - **No tool-call format for implementers.** Small models (7B–27B) cannot reliably produce tool-call JSON. Some implementers use extraction; direct-file runners (`agent`, `agent-sdk`) write to the working tree and diptych inspects the resulting diff. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.diptych/` in your project. No accounts, no SaaS, no telemetry-by-default (OpenTelemetry is opt-in via `otel.enabled: true`).
 
 ---
 
-## 11. What's new in v1 (Phase 6 features)
+## 11. Current advanced features
 
-These features shipped in Phase 6 and are all active by default unless noted:
+These features are active by default unless noted:
 
 - **Command palette (Ctrl+K)** — searchable overlay listing all slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
 - **Rich plan editor** — lazygit-style inline editor for the Task Brief. Set `briefReview: rich` in config or press `e` from the simple review view. See [FEATURES.md §Plan editor screen](./FEATURES.md#plan-editor-screen-lazygit-style).
@@ -291,7 +293,7 @@ These features shipped in Phase 6 and are all active by default unless noted:
 | Wire up workflow lifecycle hooks | [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
 | Debug a failing run | [docs/DEBUGGING.md](./DEBUGGING.md) |
 | Understand the architecture end-to-end | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
-| See what is intentionally not in v1 | [docs/FUTURE.md](./FUTURE.md) |
+| See what is intentionally out of scope | [docs/FUTURE.md](./FUTURE.md) |
 
 Two minutes in and you should be ready to type `diptych start "..."`. Start with something small. Watch the planner ask a clarifying question. Review the brief. Let the implementer churn. Read `review.md` at the end.
 

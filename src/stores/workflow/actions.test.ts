@@ -5,7 +5,10 @@ import { tasksStore } from './tasks.js';
 import { tokensStore } from './tokens.js';
 import { lifecycleStore } from './lifecycle.js';
 import { abortStore } from './abort.js';
+import { approvalPromptStore, openApprovalPrompt } from '../approval-prompt/prompt.js';
+import { costApprovalStore, openCostApprovalPrompt } from '../cost-approval/prompt.js';
 import { taskId } from '../../core/schemas/task.js';
+import type { CostPrediction } from '../../core/schemas/summary.js';
 import {
   makePlannerStatus,
   makeRetry,
@@ -104,6 +107,39 @@ describe('addEvent — cancelled gate', () => {
 
 describe('resetWorkflow', () => {
   beforeEach(() => resetWorkflow());
+
+  it('closes a pending tiered approval prompt with the cancelled decision', async () => {
+    const pending = openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'network',
+      actionDescription: 'push to origin',
+      phase: 'implementing',
+    });
+    expect(approvalPromptStore.get().status).toBe('pending');
+
+    resetWorkflow();
+
+    expect(approvalPromptStore.get().status).toBe('idle');
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+  });
+
+  it('closes a pending cost-approval prompt as not approved', async () => {
+    const prediction: CostPrediction = {
+      estimatedTasks: 1,
+      lowCost: 0.01,
+      expectedCost: 0.02,
+      highCost: 0.05,
+      plannerTool: 'anthropic',
+      implementerTool: 'anthropic',
+    };
+    const pending = openCostApprovalPrompt(prediction);
+    expect(costApprovalStore.get().status).toBe('pending');
+
+    resetWorkflow();
+
+    expect(costApprovalStore.get().status).toBe('idle');
+    await expect(pending).resolves.toBe(false);
+  });
 
   it('clears armed abort state before resetting sub-stores', () => {
     // Seed the abort store into an armed state, then verify resetWorkflow clears it

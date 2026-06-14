@@ -150,3 +150,13 @@ describe('handoff command — defaults', () => {
     expect(logs.join('\n')).toContain(join(tmp, '.diptych', 'handoffs', 'spec-kit'));
   });
 });
+
+describe('handoff command — target aliasing', () => {
+  it('normalizes the "speckit" alias to the canonical spec-kit target', async () => {
+    await runHandoff(['speckit']);
+
+    expect(writes).toMatchObject([
+      { target: 'spec-kit', outDir: join(tmp, '.diptych', 'handoffs', 'spec-kit') },
+    ]);
+  });
+});

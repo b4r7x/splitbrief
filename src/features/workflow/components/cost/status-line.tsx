@@ -26,14 +26,21 @@ export function CostStatusLine({
   const maxBudget = configStore.use((s) => s.config?.workflow?.maxBudget);
   const { localRate, routedTasks, costBreakdown, pricingState, totalTasks } = useCostStats();
 
-  const totalCacheRead = Object.values(tokens.perPhase).reduce(
-    (sum, p) => sum + p.cacheReadTokens,
-    0,
+  // The cache-hit ratio folds numerator (cacheReadTokens) and denominator
+  // (inputTokens) from the same perPhase buckets so both share a basis. On a
+  // resumed session perPhase restarts empty while tokenUsage stays cumulative,
+  // so reading the denominator from tokenUsage would skew the ratio.
+  const phaseTotals = Object.values(tokens.perPhase).reduce(
+    (acc, p) => ({
+      cacheRead: acc.cacheRead + p.cacheReadTokens,
+      plannerInput: acc.plannerInput + (p.plannerInputTokens ?? 0),
+      input: acc.input + p.inputTokens,
+    }),
+    { cacheRead: 0, plannerInput: 0, input: 0 },
   );
-  const plannerInput =
-    (tokens.tokenUsage?.plannerInput ?? 0) + (tokens.tokenUsage?.escalationInput ?? 0);
-  const implementerInput = tokens.tokenUsage?.implementerInput ?? 0;
-  const totalInput = plannerInput + implementerInput;
+  const totalCacheRead = phaseTotals.cacheRead;
+  const plannerInput = phaseTotals.plannerInput;
+  const totalInput = phaseTotals.input;
 
   const layout = buildCostStatusLineLayout({
     renderWidth,

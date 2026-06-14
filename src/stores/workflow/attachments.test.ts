@@ -13,7 +13,6 @@ function makeAttachment(id: string): Attachment {
     path: `/tmp/${id}.png`,
     mimeType: 'image/png',
     sizeBytes: 100,
-    addedAt: Date.now(),
   };
 }
 
@@ -103,6 +102,7 @@ describe('attachment actions', () => {
         path: real(path),
       },
     ]);
+    expect(attachmentsStore.peek()[0]).not.toHaveProperty('addedAt');
   });
 
   it('returns resolver errors without mutating pending attachments', () => {
@@ -149,7 +149,7 @@ describe('attachment actions', () => {
 
   it('formats long attachment names without requiring workflow imports', () => {
     expect(attachmentShortName('/tmp/averyveryveryverylongname.png')).toBe(
-      'averyveryveryverylong...',
+      'averyveryveryverylongna…',
     );
   });
 });

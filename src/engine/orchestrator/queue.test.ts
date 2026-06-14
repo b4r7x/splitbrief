@@ -14,7 +14,7 @@ import {
 } from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
-import { createStateSerializer } from './state-serializer.js';
+import { createWriteSequencer } from './serial-executor.js';
 import { transitionAndSave } from './state-ops.js';
 
 let dirs: string[] = [];
@@ -79,7 +79,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('hello world', 'researching');
@@ -108,6 +108,7 @@ describe('enqueue', () => {
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
+        return null;
       },
     });
 
@@ -121,7 +122,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('inject me', 'researching');
@@ -145,7 +146,7 @@ describe('enqueue', () => {
         supportsImages: false,
         supportsSelfSummarisation: false,
       },
-      injectUserTurn: async () => {},
+      injectUserTurn: async () => null,
     });
     let writtenState: WorkflowState | undefined;
     const setState = (s: WorkflowState) => {
@@ -160,7 +161,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('no state', 'researching');
@@ -195,7 +196,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('overflow', 'researching');
@@ -227,6 +228,7 @@ describe('enqueue', () => {
       injectUserTurn: async () => {
         injectionCount += 1;
         if (injectionCount === 1) await firstInjection;
+        return null;
       },
     });
 
@@ -240,7 +242,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('first', 'researching');
@@ -262,7 +264,7 @@ describe('enqueue', () => {
     let state: WorkflowState | undefined = makeResearchingState();
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
-    const serialize = createStateSerializer();
+    const serialize = createWriteSequencer();
 
     const handler = createQueueHandler({
       projectDir,
@@ -308,7 +310,7 @@ describe('enqueue', () => {
       bus,
       persistTranscript: false,
       planner,
-      serialize: createStateSerializer(),
+      serialize: createWriteSequencer(),
     });
 
     handler('do not drop me', 'researching');
@@ -588,6 +590,7 @@ describe('native injection', () => {
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
+        return null;
       },
     });
     const message = makeMessage('inject this');
@@ -660,6 +663,7 @@ describe('native injection', () => {
       },
       injectUserTurn: async () => {
         state = transition(state, { type: 'ENQUEUE_USER_MSG', message: makeMessage('concurrent') });
+        return null;
       },
     });
 
@@ -698,6 +702,7 @@ describe('clarifications', () => {
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
+        return null;
       },
     });
     const questions = [{ id: 'q1', type: 'input' as const, text: 'Use JWT?' }];
@@ -720,7 +725,6 @@ describe('clarifications', () => {
     if (!msg) throw new Error('expected a queued clarification message');
     expect(msg.origin).toBe('clarification');
     expect(msg.question).toBe('Use JWT?');
-    expect(msg.questionId).toBe('q1');
     expect(msg.text).toBe('Yes, use JWT');
 
     expect(events.find((e) => e.type === 'message_queued')).toBeDefined();
@@ -843,7 +847,6 @@ describe('clarifications', () => {
     const answeredEvent = events.find((e) => e.type === 'clarification_answered');
     if (!answeredEvent || answeredEvent.type !== 'clarification_answered')
       throw new Error('clarification_answered event missing');
-    expect(answeredEvent.questionId).toBe('cq1');
     expect(answeredEvent.answer).toBe('Yes, use GraphQL');
 
     const collectedEvent = events.find((e) => e.type === 'clarifications_collected');

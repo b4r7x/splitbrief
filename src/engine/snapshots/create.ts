@@ -22,6 +22,7 @@ import { acquireSnapshotLock } from './lock.js';
 import { collectTrackedFiles, hashFile } from './files.js';
 import { encodeSnapshotPath, generateSnapshotId } from './path-codec.js';
 import { hasBaseline, readManifest, writeManifest } from './manifest.js';
+import { nowIso } from '../../utils/format-time.js';
 
 export type CreateSnapshotOptions = {
   projectDir: string;
@@ -54,17 +55,24 @@ async function captureFile(opts: {
   }
   const encodedName = encodeSnapshotPath(path);
   const absPath = join(projectDir, path);
-  let sizeBytes = 0;
+
+  let contents: Buffer;
   try {
-    const contents = await readFile(absPath);
-    sizeBytes = contents.length;
-    const blobPath = join(filesDir, encodedName);
-    assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
-    await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
+    contents = await readFile(absPath);
   } catch {
-    // File may be unreadable — skip writing but still record it
+    // Read failure (unreadable/removed source). The path stays tracked via its
+    // hash, but no blob is written and no entry is recorded — restore reports it
+    // as a missing snapshot file rather than reading a blob that never existed.
+    return { hash };
   }
-  return { hash, entry: { path, hash, encodedName, sizeBytes } };
+
+  // Write failure means snapshot storage is broken; propagating fails the whole
+  // snapshot instead of silently recording an entry whose blob is absent.
+  const blobPath = join(filesDir, encodedName);
+  assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
+  await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
+
+  return { hash, entry: { path, hash, encodedName } };
 }
 
 function buildManifest(opts: {
@@ -81,7 +89,7 @@ function buildManifest(opts: {
     version: 1,
     id: opts.id,
     sessionId: opts.sessionId,
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(),
     phase: opts.phase,
     fileHashes: opts.fileHashes,
     fileEntries: opts.fileEntries,

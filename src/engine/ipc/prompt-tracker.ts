@@ -1,5 +1,5 @@
 import type { Socket } from 'node:net';
-import { error, type AppError } from '../../utils/error.js';
+import { error } from '../../utils/error.js';
 import type { EventBus } from '../events/types.js';
 import type {
   IpcPromptRequest,
@@ -8,21 +8,10 @@ import type {
   ServerMessage,
 } from './protocol.js';
 
-export type IpcPromptUnavailableError = AppError<
-  'ipc-prompt-no-client-headless',
-  {
-    promptKind: IpcPromptRequest['kind'];
-  }
-> & {
-  code: 'ipc_prompt_no_client_headless';
-  promptKind: IpcPromptRequest['kind'];
-};
-
 type PendingPrompt = {
   request: IpcPromptRequest;
   resolve: (response: IpcPromptResponse) => void;
   reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout> | null;
 };
 
 type PromptTrackerOptions = {
@@ -32,19 +21,20 @@ type PromptTrackerOptions = {
   writeMessage: (socket: Socket, msg: ServerMessage) => void;
 };
 
-const PROMPT_TIMEOUT_MS = 30_000;
-
-function createNoClientPromptError(request: IpcPromptRequest): IpcPromptUnavailableError {
-  return Object.assign(
+export const ipcPromptError = {
+  cancelledWhileClosing: (promptKind: IpcPromptRequest['kind']) =>
     error(
-      'ipc-prompt-no-client-headless',
-      `IPC prompt cannot be answered in explicit headless mode without an attached client: ${request.kind}`,
-      { promptKind: request.kind },
+      'ipc-prompt-cancelled-closing',
+      `IPC prompt cancelled while closing server: ${promptKind}`,
+      { promptKind },
     ),
-    {
-      code: 'ipc_prompt_no_client_headless' as const,
-      promptKind: request.kind,
-    },
+} as const;
+
+function createNoClientPromptError(request: IpcPromptRequest) {
+  return error(
+    'ipc-prompt-no-client-headless',
+    `IPC prompt cannot be answered in explicit headless mode without an attached client: ${request.kind}`,
+    { promptKind: request.kind },
   );
 }
 
@@ -71,7 +61,6 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
         return false;
       }
 
-      if (pending.timer) clearTimeout(pending.timer);
       pendingPrompts.delete(requestId);
       pending.resolve(response);
       return true;
@@ -79,17 +68,6 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     sendPendingPrompts(socket: Socket): void {
       for (const pending of pendingPrompts.values()) {
         sendPrompt(socket, pending.request);
-        if (!pending.timer) {
-          pending.timer = setTimeout(() => {
-            if (!pendingPrompts.has(pending.request.requestId)) return;
-            pendingPrompts.delete(pending.request.requestId);
-            pending.reject(
-              new Error(
-                `IPC prompt timed out after ${PROMPT_TIMEOUT_MS / 1000}s: ${pending.request.kind}`,
-              ),
-            );
-          }, PROMPT_TIMEOUT_MS);
-        }
       }
     },
     requestClientPrompt(requestWithoutId: IpcPromptRequestInput): Promise<IpcPromptResponse> {
@@ -112,29 +90,7 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
           return;
         }
 
-        const timer: ReturnType<typeof setTimeout> | null = currentSocket
-          ? setTimeout(() => {
-              pendingPrompts.delete(request.requestId);
-              reject(
-                new Error(
-                  `IPC prompt timed out after ${PROMPT_TIMEOUT_MS / 1000}s: ${request.kind}`,
-                ),
-              );
-            }, PROMPT_TIMEOUT_MS)
-          : null;
-
-        pendingPrompts.set(request.requestId, {
-          request,
-          timer,
-          resolve: (response) => {
-            if (timer) clearTimeout(timer);
-            resolve(response);
-          },
-          reject: (err) => {
-            if (timer) clearTimeout(timer);
-            reject(err);
-          },
-        });
+        pendingPrompts.set(request.requestId, { request, resolve, reject });
         if (currentSocket) {
           sendPrompt(currentSocket, request);
         } else {
@@ -149,7 +105,6 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     },
     rejectAll(errFor: (request: IpcPromptRequest) => Error): void {
       for (const pending of pendingPrompts.values()) {
-        if (pending.timer) clearTimeout(pending.timer);
         pending.reject(errFor(pending.request));
       }
       pendingPrompts.clear();

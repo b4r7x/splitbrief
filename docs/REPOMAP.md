@@ -114,7 +114,7 @@ Other files:
 
 `src/engine/orchestrator/planning/run.ts` is the single caller. On planning entry, it invokes `buildRepoMap(projectDir, { focusFiles, tokenBudget })`, threading `focusFiles` from mentioned-filename extraction and `tokenBudget` from `config.codebase.tokenBudget` (default 4000).
 
-The resulting string is passed to the planner as a new `codebaseContext: string` parameter on `Planner.plan(feature, projectDir, callbacks, skillsContext, codebaseContext)`. Each backend adapter wraps it in `<repo-map>...</repo-map>` and injects it:
+The resulting string is passed to the planner as an optional `codebaseContext` field on `PlanOptions`; the planner is invoked as `Planner.plan(opts)` with `opts = { feature, projectDir, callbacks, skillsContext, codebaseContext }`. Each backend adapter wraps it in `<repo-map>...</repo-map>` and injects it:
 
 - `cli` planners prepend the block to the first-phase prompt.
 - `api` planners include it in the system prompt.
@@ -130,7 +130,7 @@ Alternatives considered and rejected:
 
 - **A — TypeScript Compiler API (`ts-morph` / `typescript`).** Native to our stack, but 10–20× slower than tree-sitter for tag extraction and pulls the full TS compiler (~30 MB) at runtime just to list symbols. Overkill — we don't need semantic resolution. **Rejected.**
 - **B — Aider's repomap via subprocess.** Zero implementation effort, but requires Python in the user's environment, adds cross-process serialization, and breaks the "single TS binary" UX. The algorithm is small enough (PageRank ~50 LOC, tree-sitter wrapper ~100 LOC) to own. **Rejected.**
-- **C — Embedding-based retrieval (Voyage / OpenAI embeddings).** Semantically smarter than symbol matching, but adds per-call cost, network round-trip, vendor lock-in, and an index-sync problem. Local-only users get nothing. **Rejected for v1**, deferred as a possible `codebase.kind: "embeddings"` adapter.
+- **C — Embedding-based retrieval (Voyage / OpenAI embeddings).** Semantically smarter than symbol matching, but adds per-call cost, network round-trip, vendor lock-in, and an index-sync problem. Local-only users get nothing. **Rejected for now**, deferred as a possible `codebase.kind: "embeddings"` adapter.
 - **D — Skip caching, parse every run.** Simpler, no SQLite, but ~3s on every `diptych start` for a 200-file repo is unacceptable repeated cost. **Rejected.**
 - **E — TypeScript Language Server (tsserver) over LSP.** Zero new parsing code, but requires a long-running subprocess with a complex lifecycle, heavy startup overhead, and is TS-only by design anyway. Out of proportion for the gain. **Rejected.**
 

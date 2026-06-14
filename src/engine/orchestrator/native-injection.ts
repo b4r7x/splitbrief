@@ -1,7 +1,7 @@
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
-import { transitionAndSave } from './state-ops.js';
+import { addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { publishWarningFromError } from './events.js';
 
 export type DispatchNativeInjectionOptions = {
@@ -23,8 +23,9 @@ export async function dispatchNativeInjection(opts: DispatchNativeInjectionOptio
       message.origin === 'clarification' && message.question
         ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
         : message.text;
-    await planner.injectUserTurn(injectionText, projectDir);
-    const next = transitionAndSave({ projectDir, sessionId }, getState(), {
+    const usage = await planner.injectUserTurn(injectionText, projectDir);
+    const booked = addUsageAndSave({ projectDir, sessionId, bus }, getState(), 'planner', usage);
+    const next = transitionAndSave({ projectDir, sessionId }, booked, {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,
     });

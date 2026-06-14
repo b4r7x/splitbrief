@@ -10,9 +10,13 @@ import {
   scheduleIpcReconnect,
   type IpcClientActions,
   type IpcClientState,
-} from './ipc-client-connection.js';
+} from '../../../engine/ipc/client.js';
 
-export type { IpcClientActions, IpcClientState, IpcClientStatus } from './ipc-client-connection.js';
+export type {
+  IpcClientActions,
+  IpcClientState,
+  IpcClientStatus,
+} from '../../../engine/ipc/client.js';
 
 export function useIpcClient(opts: {
   sockPath: string;
@@ -26,7 +30,6 @@ export function useIpcClient(opts: {
   const [state, setState] = useState<IpcClientState>({
     status: 'connecting',
     sessionId: null,
-    readonly: false,
   });
 
   const socketRef = useRef<Socket | null>(null);
@@ -68,7 +71,6 @@ export function useIpcClient(opts: {
       setState({
         status: 'detached',
         sessionId: null,
-        readonly: false,
       });
       return () => {
         disposed = true;
@@ -80,8 +82,7 @@ export function useIpcClient(opts: {
     attemptRef.current = 0;
     setState((prev) => ({
       ...prev,
-      status:
-        prev.status === 'connected' || prev.status === 'readonly' ? prev.status : 'connecting',
+      status: prev.status === 'connected' ? prev.status : 'connecting',
     }));
 
     function connect() {

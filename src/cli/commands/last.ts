@@ -4,7 +4,7 @@ import { cliError } from '../errors.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { buildAliasedSessions } from '../sessions/aliases.js';
 import { continueCommand } from './continue.js';
-import { addWorkflowOptions } from '../options.js';
+import { addWorkflowOptions, assertWorktreeStartOnly } from '../options.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface LastDeps {
@@ -29,6 +29,7 @@ export async function lastCommand(
   deps: LastDeps = defaultDeps,
 ): Promise<void> {
   assertNotWindows();
+  assertWorktreeStartOnly(opts);
 
   const sessionId = await findMostRecentSession(opts.projectDir);
   await deps.continueCommand(sessionId, opts);

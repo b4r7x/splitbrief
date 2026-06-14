@@ -165,8 +165,7 @@ function rewindReset(
     attempt: 0,
     awaitingContinue: false,
     plannerSessionId: undefined,
-    clarifications: [],
-    analysisResult: undefined,
+    changedFilesBaseline: undefined,
     discoveredValidation: undefined,
     rewindPending: { target, ...(comment ? { comment } : {}) },
   };
@@ -271,7 +270,7 @@ export function transition(
       return { ...state, phase: 'implementing' };
 
     case 'START_TASK':
-      return { ...setTaskStatus(state, action.taskId, 'in_progress'), attempt: 0 };
+      return setTaskStatus(state, action.taskId, 'in_progress');
 
     case 'TASK_SENT': {
       const sentId = state.tasks[state.currentTaskIndex]?.id;

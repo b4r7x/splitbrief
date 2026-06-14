@@ -7,8 +7,9 @@ import { detectAvailableProviders, KNOWN_PROVIDERS } from '../providers/registry
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { warnError } from '../../lib/warn.js';
+import { warnError, warnStderr } from '../../lib/warn.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
+import { parseMajorVersion } from '../availability.js';
 import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isPlannerToolId, type PlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
 import { typedEntries } from '../../utils/type-guards.js';
@@ -18,9 +19,21 @@ function providerDescription(id: ProviderId): string {
   return info.isLocal ? `${info.displayName} (local)` : `${info.displayName} API`;
 }
 
-const CLI_PLANNERS: Array<{ tool: PlannerToolId; description: string }> = typedEntries(
-  CLI_TOOLS,
-).map(([tool, meta]) => ({ tool, description: meta.description }));
+const CLI_PLANNERS: Array<{ tool: PlannerToolId; description: string; testedVersion: string }> =
+  typedEntries(CLI_TOOLS).map(([tool, meta]) => ({
+    tool,
+    description: meta.description,
+    testedVersion: meta.testedVersion,
+  }));
+
+function warnOnVersionMismatch(tool: PlannerToolId, version: string, testedVersion: string): void {
+  const installedMajor = parseMajorVersion(version);
+  const testedMajor = parseMajorVersion(testedVersion);
+  if (installedMajor === null || testedMajor === null || installedMajor === testedMajor) return;
+  warnStderr(
+    `${tool}: installed CLI version ${version} differs in major version from the tested ${testedVersion} — flag/JSON contracts may have changed`,
+  );
+}
 
 const API_PLANNERS: { tool: PlannerToolId; description: string }[] = [
   { tool: 'anthropic', description: providerDescription('anthropic') },
@@ -73,7 +86,7 @@ export async function detectAvailablePlanners(
   opts: DetectPlannersOptions = {},
 ): Promise<PlannerDetection[]> {
   const cliResults = await Promise.all(
-    CLI_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
+    CLI_PLANNERS.map(async ({ tool, description, testedVersion }): Promise<PlannerDetection> => {
       try {
         const planner = await createPlanner(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
@@ -82,6 +95,7 @@ export async function detectAvailablePlanners(
         if (available) {
           try {
             version = (await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS)) ?? undefined;
+            if (version) warnOnVersionMismatch(tool, version, testedVersion);
           } catch (err) {
             error = `Version probe failed: ${toErrorMessage(err)}`;
             warnError(`planner.getVersion(${tool})`, err);

@@ -24,7 +24,7 @@ export function computeDiff(
     };
   }
 
-  // Files > 5000 lines: Myers diff is O(m×n), use faster positional fallback
+  // Files > 5000 lines: classic LCS DP is O(m×n) time AND memory; fall back to positional diff
   if (oldLines.length > LARGE_FILE_THRESHOLD || newLines.length > LARGE_FILE_THRESHOLD) {
     return diffLinesSimple(oldLines, newLines);
   }

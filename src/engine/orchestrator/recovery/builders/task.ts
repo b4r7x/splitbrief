@@ -22,6 +22,7 @@ export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskReco
 
 export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions {
   allowRetryOverride?: boolean | undefined;
+  message?: string | undefined;
 }
 
 export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
@@ -69,7 +70,7 @@ export function buildRetryExhaustedRecoveryIssue(
     task: opts.task,
     files: taskFiles(opts.task),
     affectedTaskIds: [opts.task.id],
-    message: `${opts.task.id} exhausted recovery retries`,
+    message: opts.message ?? `${opts.task.id} exhausted recovery retries`,
     details: [
       validation.detail,
       ...attemptDetails(opts.attempts, opts.maxAttempts),

@@ -3,9 +3,13 @@ import type { EventBus } from '../../events/types.js';
 import { countBySeverity } from '../../../utils/collections.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { BRIEF_QUALITY_FILE } from '../../../core/paths.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeSpecFile, type SpecFileRef } from '../../../core/paths-io.js';
 import { evaluateBriefQuality } from '../../spec/brief-quality.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
+
+export function writeBriefQuality(ref: SpecFileRef, report: BriefQualityReport): void {
+  writeSpecFile(ref, BRIEF_QUALITY_FILE, JSON.stringify(report, null, 2), null);
+}
 
 export function runBriefQualityGate(opts: {
   tasks: Task[];
@@ -16,12 +20,7 @@ export function runBriefQualityGate(opts: {
 }): { report: BriefQualityReport; ok: boolean } {
   const { tasks, projectDir, sessionId, bus, phase } = opts;
   const report = evaluateBriefQuality(tasks);
-  writeSpecFile(
-    { projectDir, sessionId },
-    BRIEF_QUALITY_FILE,
-    JSON.stringify(report, null, 2),
-    null,
-  );
+  writeBriefQuality({ projectDir, sessionId }, report);
   const { error: errorCount, warning: warningCount } = countBySeverity(report.issues);
   if (report.passed) {
     bus.publish({

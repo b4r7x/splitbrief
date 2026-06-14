@@ -28,10 +28,7 @@ function missingExpectedEvidence(expectedEvidence: string[], observedEvidence: s
   if (expectedEvidence.length === 0) return [];
   if (observedEvidence.length === 0) return [...expectedEvidence];
   return expectedEvidence.filter(
-    (expected) =>
-      !observedEvidence.some(
-        (observed) => observed.includes(expected) || expected.includes(observed),
-      ),
+    (expected) => !observedEvidence.some((observed) => observed.includes(expected)),
   );
 }
 

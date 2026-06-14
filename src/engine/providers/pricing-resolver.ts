@@ -113,9 +113,9 @@ export function resolvePricing(
   const effectiveModelId = getEffectiveModelId(providerId, modelId);
   if (!effectiveModelId) return makeUnpriced(providerId, modelId);
 
-  // models-dev and runtime catalogs do not currently expose cache pricing fields, so when they
-  // produce a priced result we merge cache rates from the bundled fallback for the same
-  // provider/model. This keeps cache-aware cost math consistent regardless of the data source.
+  // Prefer cache rates from the catalog that priced input/output; when that catalog omits them
+  // (or for the bundled path) fall back to the bundled fallback's verified cache rates so
+  // cache-aware cost math stays consistent regardless of the data source.
   const bundled = findKnownModel(providerId, effectiveModelId);
 
   const modelsDev = lookupModelsDevModel(providerId, effectiveModelId, cache);
@@ -125,8 +125,8 @@ export function resolvePricing(
       input: modelsDev.pricingInput,
       output: modelsDev.pricingOutput,
       source: 'models-dev',
-      cacheRead: bundled?.pricingCacheRead,
-      cacheWrite: bundled?.pricingCacheWrite,
+      cacheRead: modelsDev.pricingCacheRead ?? bundled?.pricingCacheRead,
+      cacheWrite: modelsDev.pricingCacheWrite ?? bundled?.pricingCacheWrite,
     });
   }
 
@@ -137,8 +137,8 @@ export function resolvePricing(
       input: runtime.pricingInput,
       output: runtime.pricingOutput,
       source: 'runtime',
-      cacheRead: bundled?.pricingCacheRead,
-      cacheWrite: bundled?.pricingCacheWrite,
+      cacheRead: runtime.pricingCacheRead ?? bundled?.pricingCacheRead,
+      cacheWrite: runtime.pricingCacheWrite ?? bundled?.pricingCacheWrite,
     });
   }
 

@@ -153,9 +153,9 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
    `saveState()` writes to `.diptych/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
-8. For user-gated moments (approval, clarification, continuation, budget exceeded, budget pause, cost approval, edit conflicts, tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onBudgetExceeded(…)`, `callbacks.onBudgetPaused(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
+8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
-10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow after state is saved; continue later with an explicit session id if the saved state is resumable. Esc does **not** abort generation — it only closes overlays.
+10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow after state is saved; continue later with an explicit session id if the saved state is resumable. Esc Esc also aborts via a two-press ladder: the first Esc arms an `interrupt` (live phase) or `cancel` (question prompt) intent, the second fires it (`src/app/keys.ts`); a lone Esc with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, updates cumulative stats, clears `.diptych/active`, and the UI unmounts.
 
 ---
@@ -249,7 +249,7 @@ type PlannerCapabilities = {
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript-rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be overridden per-project via config:
 
@@ -269,10 +269,10 @@ planner:
 
 When a capability is missing, the orchestrator falls back:
 
-- **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript-rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix. Spec 004 details the fallback.
+- **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript-rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
 - **No `injectUserTurn`?** → Queue user messages, drain at next phase boundary (backends that implement `injectUserTurn` get them dispatched immediately as native user turns).
 - **No conversational planning?** → User answers only at approval gates; no inline Q&A.
-- **No hint escalation?** → Jump straight from retries to full-escalation on failure.
+- **No hint escalation?** → Skip the hint tier: after local retries and the optional tier 0 intermediate model, go straight to full escalation on failure.
 
 Adding a new capability means extending `PlannerCapabilities`, setting it per backend, and adding the fallback branch in the orchestrator. No backend-identity `if` chains.
 
@@ -303,7 +303,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/engine/events/types.ts` (add variant to the `EngineEvent` discriminated union) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
+| New event type | `src/engine/events/schema.ts` (add a Zod member to the `EngineEventSchema` discriminated union; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
@@ -332,7 +332,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 └────────┘ └──────────┘ └────────────┘ └──────────────┘ └──────────┘
 ```
 
-- **`EngineEvent`** is a discriminated union with snake_case `type`, mandatory `ts`, and usually `phase` (`src/engine/events/types.ts`) — the single source of truth for all engine events. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
+- **`EngineEvent`** is a discriminated union with snake_case `type`, mandatory `ts`, and usually `phase` — defined as `EngineEventSchema` in `src/engine/events/schema.ts`, with the `EngineEvent` alias (`z.infer`) re-exported from `src/engine/events/types.ts`. The single source of truth for all engine events. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
 - **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
 - **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
 - **`tuiSink`** (`src/features/workflow/tui-sink.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
@@ -341,7 +341,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`otelSink`** (opt-in, `config.otel.enabled: true`) maps `EngineEvent` → OpenTelemetry spans — see [OTEL.md](./OTEL.md) §Design decisions.
 - **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
 
-Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onBudgetExceeded` / `onBudgetPaused` / `onCostApprovalNeeded` / `onUserEditConflict` / `onTieredApproval` / `onTaskReviewNeeded` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification.
+Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onCostApprovalNeeded` / `onUserEditConflict` / `onTieredApproval` / `onTaskReviewNeeded` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not a callback: it fans out as `budget_warning` / `budget_paused` / `budget_exceeded` events and resolves through the recovery channel.
 
 ### Design decisions — Why EventBus
 
@@ -455,7 +455,6 @@ src/
 │   ├── hook-trust-prompt.ts       Interactive hook-trust gating
 │   ├── init-stores.ts             Eager store bootstrap before render
 │   ├── options.ts                 Shared commander option parsers
-│   ├── otel-bootstrap.ts          OpenTelemetry init at process start
 │   ├── render.ts                  Ink / fullscreen-ink mount
 │   └── setup.ts                   resolveProjectDir + setup helpers
 │
@@ -470,11 +469,11 @@ src/
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
 │   ├── hooks/trust.ts             Hook trust store (.diptych/hook-trust.json)
-│   ├── layout/                    pure helpers: chrome-rows,
+│   ├── sections/                  pure section builders:
 │   │                              completed-task-summary-rows,
-│   │                              diff-height, event-sections,
-│   │                              scroll-window, terminal-width,
-│   │                              rect
+│   │                              event-sections
+│   │                              (other layout math lives under
+│   │                              features/workflow/layout/)
 │   ├── migration/                 executor, legacy migration helpers
 │   ├── model-display.ts           formatToolModel, etc.
 │   ├── paths.ts                   All on-disk path constants + builders
@@ -516,13 +515,15 @@ src/
 │   │                              extract-mentioned-filenames
 │   ├── config-assertions.ts       Runtime config invariants
 │   ├── constants.ts               Engine-wide constants
-│   ├── detection/                 adapter, cache, detect, service
+│   ├── detection/                 cache, detect, service
 │   │                              (auto-detect installed CLI tools)
-│   ├── errors/hints.ts            Error-classifier hints
+│   ├── error-hints.ts             Error-classifier hints
 │   ├── events/
 │   │   ├── bus.ts                 createEventBus (sync pub/sub)
+│   │   ├── schema.ts              EngineEventSchema union +
+│   │   │                          parseEngineEvent
 │   │   ├── sinks/                 jsonl, otel, stdout-json, tui
-│   │   └── types.ts               EngineEvent union,
+│   │   └── types.ts               EngineEvent alias (z.infer),
 │   │                              EventSink, EventBus
 │   ├── worktree.ts                listWorktrees, removeWorktree,
 │   │                              createWorktree
@@ -533,7 +534,7 @@ src/
 │   │   ├── render.ts              renderHandoff (sync built-ins),
 │   │   │                          renderHandoffWithCustom (async)
 │   │   ├── renderers/             agents-md, claude-code, copilot-issue,
-│   │   │                          spec-kit, shared
+│   │   │                          spec-kit, base-files
 │   │   ├── types.ts               HandoffInput, HandoffPack
 │   │   └── write.ts               writeHandoffPack (top-level orchestration)
 │   ├── hooks/
@@ -550,8 +551,9 @@ src/
 │   │                              base (shared pipeline), command-invoke,
 │   │                              types
 │   ├── ipc/                       Per-session IPC server for attach/detach
-│   │                              crash-diagnostic, heartbeat, lockfile,
-│   │                              protocol, server, server-entry, spawn-server
+│   │                              client, crash-diagnostic, heartbeat,
+│   │                              lockfile, protocol, server, server-entry,
+│   │                              spawn-server
 │   ├── mcp/                       MCP server exposing session resources
 │   │                              auth-token, discovery, handlers,
 │   │                              resolver, server, types
@@ -578,7 +580,7 @@ src/
 │   │   │                          runBriefsApprovalLoop)
 │   │   ├── queue.ts               Message queue (enqueue, drain, clear)
 │   │   ├── resume-context.ts      ResumeContextHolder
-│   │   ├── run/                   init, phases, run (top-level runWorkflow)
+│   │   ├── run/                   init, phases, workflow (top-level runWorkflow)
 │   │   ├── session-lifecycle.ts   shutdownWorkflow + summary IO
 │   │   ├── signals.ts             SIGINT/SIGTERM handler wiring
 │   │   ├── state-ops.ts           transitionAndSave, addUsageAndSave,
@@ -598,7 +600,7 @@ src/
 │   ├── planners/                  5 backends: agent, agent-sdk, api,
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, command-invoke, context,
-│   │                              escalation, planning-helpers, summary,
+│   │                              escalation, single-phase, summary,
 │   │                              types
 │   ├── providers/                 anthropic adapter+stream (prompt caching:
 │   │                              system sent as block array with
@@ -618,10 +620,11 @@ src/
 │   │                              spawn helpers), sandbox-env (sandbox
 │   │                              environment setup), trust (runner trust
 │   │                              prompts)
-│   ├── session-expiry.ts          Stale-session pruning helpers
+│   ├── session-expiry.ts          Session-expired error detection +
+│   │                              resume-fallback (runWithResumeFallback)
 │   ├── skill-discovery.ts         Planner skill source discovery
 │   ├── snapshots/
-│   │   ├── path-codec.ts          encodeSnapshotPath, decodeSnapshotPath,
+│   │   ├── path-codec.ts          encodeSnapshotPath (one-way sha256),
 │   │   │                          generateSnapshotId
 │   │   ├── manifest.ts            writeManifest, readManifest,
 │   │   │                          listSnapshotIds, listSnapshots, hasBaseline
@@ -642,7 +645,7 @@ src/
 │   │   └── token-budget.ts        Per-mode planner token budgets
 │   └── streaming/                 output-parsers (stream-json, jsonl,
 │                                  text, opencode), spawn-collect,
-│                                  stream-errors, token-utils,
+│                                  stream-errors, token-usage,
 │                                  transcript-buffer
 │
 ├── stores/                        useSyncExternalStore module-state
@@ -675,8 +678,10 @@ src/
 │   │                              evidence, phase-timing, progress,
 │   │                              task-table)
 │   ├── runners/                   picker, view, catalog, hooks,
-│   │                              transforms, view-state (planner /
-│   │                              implementer runner selection)
+│   │                              transforms, view-state,
+│   │                              two-column-picker/{picker, keyboard,
+│   │                              use-column-state, use-nav-state}
+│   │                              (planner / implementer runner selection)
 │   └── workflow/                  Largest feature
 │       ├── attach-resolver.ts     /attach path resolver
 │       ├── conversation-rows/     row-based conversation renderer
@@ -692,7 +697,7 @@ src/
 │       │                          plan-editor-help-overlay, review-view,
 │       │                          sidebar, task-summary
 │       ├── handlers.ts            Runtime command context actions
-│       ├── hooks/                 ipc-client-connection, use-advisory,
+│       ├── hooks/                 use-advisory,
 │       │                          use-cost-stats, use-input-mode,
 │       │                          use-ipc-client, use-keys,
 │       │                          use-mouse-scroll, use-plan-editor-keys,
@@ -717,10 +722,7 @@ src/
 │   ├── overlays/                  overlay-panel, text-input-overlay
 │   ├── pickers/                   cursor-cell, cursor-glyph,
 │   │                              filtering, scroll-window,
-│   │                              filterable-list, single-column,
-│   │                              two-column-picker/{picker,
-│   │                              keyboard, use-column-state,
-│   │                              use-nav-state}
+│   │                              filterable-list, single-column
 │   ├── screen-shell.tsx
 │   ├── scroll-indicator.tsx
 │   ├── session-row.tsx
@@ -738,9 +740,10 @@ src/
 │   ├── file-listing.ts            listProjectFiles, MAX_PROJECT_FILES
 │   ├── fs.ts                      ensureSecureDir, SECURE_FILE_MODE (0o600)
 │   ├── git.ts                     simple-git helpers
+│   ├── otel.ts                    OpenTelemetry bootstrap + flushOtel exit drain
 │   ├── path-confinement.ts        isPathConfined, assertPathConfined
 │   ├── process/                   errors, line-buffer, registry, spawn
-│   ├── terminal/                  kitty-keyboard, escape-debounce, filtered-stdin, debug-keys
+│   ├── terminal/                  kitty-keyboard, escape-debounce, filtered-stdin, key-debug, editor-handover
 │   └── warn.ts                    process.stderr warn helper
 │
 └── utils/                         Pure helpers (no domain)
@@ -813,7 +816,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 ### EngineEvent Variants
 
-`src/engine/events/types.ts` defines the discriminated union. Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source union for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
+`src/engine/events/schema.ts` defines the discriminated union as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source union for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (6):**
 `workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`
@@ -985,8 +988,7 @@ export type SnapshotManifest
 
 ```ts
 // path-codec.ts
-export function encodeSnapshotPath(rel: string): string
-export function decodeSnapshotPath(encoded: string): string
+export function encodeSnapshotPath(rel: string): string  // sha256 hex blob name; one-way (no decode)
 export function generateSnapshotId(now?: Date): string
 // manifest.ts
 export async function writeManifest(projectDir, sessionId, manifest): Promise<void>
@@ -1179,7 +1181,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 
 ## 11. Configuration schema additions
 
-`.diptych/config.yaml` is written as `version: 3`; `version: 2` is accepted and migrated for backwards compatibility. The full schema lives in `src/core/schemas/config.ts`. Phase 1–6 added optional sections:
+`.diptych/config.yaml` is written as `version: 3`; `version: 2` is accepted and migrated for backwards compatibility. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
 
 ```yaml
 workflow:
@@ -1228,7 +1230,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 9. **ESM `.js` suffix on every internal import.** `'./foo.js'` not `'./foo'`. Required for Node 22 ESM resolution.
 10. **Conversation row exhaustive switches handle EVERY EngineEvent variant.** Both `getGutterRole` and `eventRows` end with `default: return assertNever(event)`. Adding a variant without updating both is a TypeScript error.
 11. **One foreground active session per project directory.** `.diptych/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `diptych worktree` (each worktree has its own `.diptych/`).
-12. **Snapshot path encoding.** Always go through `encodeSnapshotPath` / `decodeSnapshotPath` — never bare-join slashes.
+12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
 
 ---
@@ -1242,7 +1244,7 @@ Quickest path for a fresh agent:
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts` — see how each mode differs.
 5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
-6. `src/engine/events/types.ts` — see the full event vocabulary.
+6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.
 
 For UI specifically: `src/app.tsx` → `src/features/workflow/screen.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows.ts`.

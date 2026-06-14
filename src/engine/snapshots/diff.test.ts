@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { snapshotManifestPath } from '../../core/paths.js';
 import { createSnapshot } from './create.js';
-import { computeSnapshotDiff, formatSnapshotDiff } from './diff.js';
+import { computeSnapshotDiff, fallbackDiff, formatSnapshotDiff } from './diff.js';
 import { encodeSnapshotPath } from './path-codec.js';
 
 let tmp: string;
@@ -198,6 +198,42 @@ describe('computeSnapshotDiff', () => {
     const fooDiff = result.files.find((f) => f.path === 'foo.ts');
     expect(fooDiff?.status).toBe('modified');
     expect(fooDiff?.diff ?? '').not.toContain('EVIL SNAPSHOT CONTENT');
+  });
+});
+
+describe('fallbackDiff', () => {
+  it('labels the headers and emits aligned add/remove lines for shared context', async () => {
+    const snapshotFile = join(tmp, 'snap.txt');
+    const currentFile = join(tmp, 'cur.txt');
+    await writeFile(snapshotFile, 'line one\nline two\nline three');
+    await writeFile(currentFile, 'line one\nline TWO changed\nline three');
+
+    const diff = await fallbackDiff(snapshotFile, currentFile, 'src/foo.ts');
+
+    expect(diff).toContain('--- snapshot/src/foo.ts');
+    expect(diff).toContain('+++ current/src/foo.ts');
+    expect(diff).toContain('- line two');
+    expect(diff).toContain('+ line TWO changed');
+    // Unchanged surrounding lines appear once as context, not duplicated as a
+    // full remove-then-add block like the old degenerate differ produced.
+    expect(diff).toContain('  line one');
+    expect(diff.match(/line one/g)?.length).toBe(1);
+  });
+
+  it('returns an empty string when the two files are identical', async () => {
+    const snapshotFile = join(tmp, 'snap.txt');
+    const currentFile = join(tmp, 'cur.txt');
+    await writeFile(snapshotFile, 'same\ncontent');
+    await writeFile(currentFile, 'same\ncontent');
+
+    expect(await fallbackDiff(snapshotFile, currentFile, 'src/foo.ts')).toBe('');
+  });
+
+  it('returns an empty string when either file is missing', async () => {
+    const snapshotFile = join(tmp, 'snap.txt');
+    await writeFile(snapshotFile, 'present');
+
+    expect(await fallbackDiff(snapshotFile, join(tmp, 'absent.txt'), 'src/foo.ts')).toBe('');
   });
 });
 

@@ -1,6 +1,8 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import { getLineParser } from '../streaming/output-parsers.js';
+import { accumulateUsage } from '../streaming/token-usage.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
 
@@ -33,8 +35,8 @@ function substitutePromptPlaceholder(
   }
 
   return {
-    command: commandHasPlaceholder ? command.replace('{prompt}', prompt) : command,
-    args: argsHavePlaceholder ? args.map((a) => a.replace('{prompt}', prompt)) : args,
+    command: commandHasPlaceholder ? command.replaceAll('{prompt}', () => prompt) : command,
+    args: argsHavePlaceholder ? args.map((a) => a.replaceAll('{prompt}', () => prompt)) : args,
     useStdin: false,
   };
 }
@@ -88,7 +90,15 @@ export async function invokeCommandBasedRunner(
       });
     }
 
-    stdout = result.output;
+    const parseLine = getLineParser(format);
+    let text = '';
+    for (const line of result.output.split('\n')) {
+      const parsed = parseLine(line);
+      if (parsed.text) text += parsed.text;
+      if (parsed.usage) usage = accumulateUsage(usage, parsed.usage);
+    }
+
+    stdout = text;
     stderr = result.stderr;
   } else {
     const result = await spawnAndCollect({

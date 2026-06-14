@@ -3,7 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { pluralize } from '../../../utils/pluralize.js';
+import { countNoun } from '../../../utils/pluralize.js';
 
 interface SummaryCheckpointsProps {
   checkpointSummary: CheckpointSummaryRollup | undefined;
@@ -61,7 +61,7 @@ function checkpointSummaryText(
   if (isSmall) return compactCheckpointCount(summary.count);
 
   const parts = [
-    `${summary.count} ${pluralize(summary.count, 'checkpoint')}`,
+    countNoun(summary.count, 'checkpoint'),
     `latest: ${latest}`,
     summary.preFinalReviewId ? `pre-final-review: ${summary.preFinalReviewId}` : null,
     summary.latestRunCheckpointId && summary.latestRunCheckpointId !== summary.latestId

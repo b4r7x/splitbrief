@@ -41,6 +41,12 @@ export const configError = {
       { path },
       cause,
     ),
+  unreadable: (path: string) =>
+    error(
+      'config-unreadable',
+      `Config file ${path} exists but could not be read — check its permissions or delete it to use defaults.`,
+      { path },
+    ),
   validationFailed: (path: string, issues: string[]) =>
     error('config-validation-failed', issues.join('\n'), { path, issues }),
   loadNotCalled: (operation: string) =>
@@ -104,6 +110,7 @@ export const configError = {
     ),
 
   isInvalidYaml: matches('config-invalid-yaml'),
+  isUnreadable: matches('config-unreadable'),
   isValidationFailed: matches('config-validation-failed'),
   isLoadNotCalled: matches('config-load-not-called'),
   isSaveFailed: matches('config-save-failed'),

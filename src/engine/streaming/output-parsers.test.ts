@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseTextLine } from './parse-text.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import { parseOpencodeLine } from './parse-opencode.js';
-import { accumulateUsage } from './token-utils.js';
+import { accumulateUsage } from './token-usage.js';
 
 describe('parseTextLine', () => {
   it('returns empty for blank line', () => {
@@ -185,36 +185,78 @@ describe('parseOpencodeLine', () => {
     expect(parseOpencodeLine('   ')).toEqual({});
   });
 
-  it('parses text type event', () => {
-    const event = { type: 'text', text: 'generated code' };
+  it('parses text part from the real envelope', () => {
+    const event = {
+      type: 'text',
+      timestamp: 1781345484606,
+      sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+      part: {
+        id: 'prt_ec076ff1800121yroOznZEpT7r',
+        sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+        messageID: 'msg_ec076de2d001eIfRD5tzzP0L6w',
+        type: 'text',
+        text: 'a.js, err.txt, out.txt\n\ndone',
+        time: { start: 1781345484605, end: 1781345484605 },
+      },
+    };
     const result = parseOpencodeLine(JSON.stringify(event));
-    expect(result.text).toBe('generated code');
+    expect(result.text).toBe('a.js, err.txt, out.txt\n\ndone');
   });
 
-  it('parses step_finish with usage tokens', () => {
-    const event = { type: 'step_finish', usage: { tokens: { input: 500, output: 200 } } };
+  it('parses step_finish usage from part.tokens', () => {
+    const event = {
+      type: 'step_finish',
+      timestamp: 1781345484609,
+      sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+      part: {
+        id: 'prt_ec076ff3f001seD4fnNJbMtL5k',
+        sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+        messageID: 'msg_ec076de2d001eIfRD5tzzP0L6w',
+        type: 'step-finish',
+        reason: 'stop',
+        cost: 0.1121604,
+        tokens: {
+          total: 64362,
+          input: 64328,
+          output: 34,
+          reasoning: 32,
+          cache: { read: 0, write: 0 },
+        },
+      },
+    };
     const result = parseOpencodeLine(JSON.stringify(event));
-    expect(result.usage).toEqual({ inputTokens: 500, outputTokens: 200 });
+    expect(result.usage).toEqual({ inputTokens: 64328, outputTokens: 34 });
   });
 
   it('returns empty for invalid JSON', () => {
     expect(parseOpencodeLine('broken')).toEqual({});
   });
 
-  it('returns empty for unknown event type', () => {
-    const event = { type: 'unknown_type', data: 'whatever' };
-    expect(parseOpencodeLine(JSON.stringify(event))).toEqual({});
+  it('ignores step_start and tool_use envelope events', () => {
+    const stepStart = {
+      type: 'step_start',
+      timestamp: 1781345478338,
+      sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+      part: {
+        id: 'prt_ec076e6c1001DVcresNhfJy8i2',
+        sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
+        messageID: 'msg_ec076de2d001eIfRD5tzzP0L6w',
+        type: 'step-start',
+      },
+    };
+    expect(parseOpencodeLine(JSON.stringify(stepStart))).toEqual({});
+    expect(parseOpencodeLine(JSON.stringify({ type: 'tool_use', part: { type: 'tool' } }))).toEqual(
+      {},
+    );
   });
 
-  it('ignores text type with non-string text field', () => {
-    const event = { type: 'text', text: 42 };
-    expect(parseOpencodeLine(JSON.stringify(event))).toEqual({});
-  });
-
-  it('handles text type with empty string', () => {
-    const event = { type: 'text', text: '' };
-    // empty string is still a valid string
-    expect(parseOpencodeLine(JSON.stringify(event))).toEqual({ text: '' });
+  it('ignores the legacy top-level text/usage shapes that opencode never emits', () => {
+    expect(parseOpencodeLine(JSON.stringify({ type: 'text', text: 'generated code' }))).toEqual({});
+    expect(
+      parseOpencodeLine(
+        JSON.stringify({ type: 'step_finish', usage: { tokens: { input: 500, output: 200 } } }),
+      ),
+    ).toEqual({});
   });
 });
 

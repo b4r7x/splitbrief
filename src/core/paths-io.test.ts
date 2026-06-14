@@ -12,11 +12,16 @@ import {
   validateTaskPath,
   validateFilename,
   buildSpecFrontmatter,
+  getDiptychVersion,
   pathError,
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, TASKS_FILE } from './paths.js';
+import { formatTasks } from '../engine/spec/formatter.js';
+import { parseTasksStrict } from '../engine/spec/parser.js';
+import type { Task } from './schemas/task.js';
+import { taskId } from './schemas/task.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -198,6 +203,15 @@ describe('writeProjectFile', () => {
     expect(existsSync(written)).toBe(true);
     expect(readFileSync(written, 'utf-8')).toBe('export const x = 1;');
   });
+
+  it.each([
+    ['.git/config'],
+    ['.diptych/config.yaml'],
+  ])('rejects model-named write into the control plane (%s) and leaves nothing on disk', (path) => {
+    const dir = makeTmp();
+    expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
+    expect(existsSync(join(dir, path))).toBe(false);
+  });
 });
 
 describe('validateTaskPath', () => {
@@ -241,6 +255,22 @@ describe('validateTaskPath', () => {
       cleanupTempDir(outside);
     }
   });
+
+  it.each([
+    ['.git/config'],
+    ['.git/hooks/pre-commit'],
+    ['.diptych/config.yaml'],
+  ])('rejects model-named write into the control plane (%s)', (path) => {
+    const dir = makeTmp();
+    expect(() => validateTaskPath(dir, path)).toThrow('escapes project directory');
+  });
+
+  itUnix('rejects a control-plane write reaching .git through an in-repo symlink', () => {
+    const dir = makeTmp();
+    mkdirSync(join(dir, '.git'), { recursive: true });
+    symlinkSync(join(dir, '.git'), join(dir, 'evil'));
+    expect(() => validateTaskPath(dir, 'evil/config')).toThrow('escapes project directory');
+  });
 });
 
 describe('buildSpecFrontmatter', () => {
@@ -278,6 +308,23 @@ describe('buildSpecFrontmatter', () => {
     const fm = buildSpecFrontmatter(fullMeta);
     expect(fm.startsWith('---\n')).toBe(true);
     expect(fm).toMatch(/\n---\n$/);
+  });
+
+  it('emits created_at as a valid ISO 8601 timestamp', () => {
+    const fm = buildSpecFrontmatter(fullMeta);
+    const value = fm.match(/created_at: (.+)/)?.[1] ?? '';
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(new Date(value).toISOString()).toBe(value);
+  });
+});
+
+describe('getDiptychVersion', () => {
+  it('returns the version from the real package.json, not the 0.0.0 fallback', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../package.json'), 'utf-8'),
+    ) as { version: string };
+    expect(getDiptychVersion()).toBe(pkg.version);
+    expect(getDiptychVersion()).not.toBe('0.0.0');
   });
 });
 
@@ -322,6 +369,58 @@ describe('writeSpecFile with metadata', () => {
     expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toBe(
       '# Plain Spec',
     );
+  });
+
+  it('prepends provenance frontmatter to tasks.md even though formatTasks output starts with a task block', () => {
+    const dir = makeTmp();
+    const task: Task = {
+      id: taskId('T001'),
+      title: 'Create thing',
+      action: 'create',
+      file: 'src/thing.ts',
+      dependsOn: [],
+      description: 'Make the thing.',
+      tests: ['it works'],
+      constraints: [],
+      typeDefs: '',
+      implementationSteps: ['write it'],
+      status: 'pending',
+    };
+    const formatted = formatTasks([task]);
+    expect(formatted.startsWith('---\nid:')).toBe(true);
+
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE, formatted, meta);
+    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
+    if (content === null) throw new Error('expected tasks file to be present');
+    expect(content.startsWith('---\ngenerated_by: diptych v')).toBe(true);
+    expect(content).toContain('planner: claude-code');
+    expect(content).toContain('id: T001');
+
+    const parsed = parseTasksStrict(content);
+    expect(parsed.map((t) => t.id)).toEqual([task.id]);
+  });
+
+  it('does not double-prepend provenance when tasks.md already carries file frontmatter', () => {
+    const dir = makeTmp();
+    const task: Task = {
+      id: taskId('T001'),
+      title: 'Create thing',
+      action: 'create',
+      file: 'src/thing.ts',
+      dependsOn: [],
+      description: 'Make the thing.',
+      tests: ['it works'],
+      constraints: [],
+      typeDefs: '',
+      implementationSteps: ['write it'],
+      status: 'pending',
+    };
+    const withProvenance = buildSpecFrontmatter(meta) + formatTasks([task]);
+    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE, withProvenance, meta);
+    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
+    if (content === null) throw new Error('expected tasks file to be present');
+    const fmCount = (content.match(/generated_by:/g) ?? []).length;
+    expect(fmCount).toBe(1);
   });
 });
 

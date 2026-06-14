@@ -75,4 +75,10 @@ describe('validateNumber', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.maxRetries')!;
     expect(validateNumber('3.5', def)).toBeNull();
   });
+
+  it('accepts schema-valid context windows beyond the old 131072 cap', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'implementer.contextLength')!;
+    expect(validateNumber('200000', def)).toBe(200000);
+    expect(validateNumber('1000000', def)).toBe(1000000);
+  });
 });

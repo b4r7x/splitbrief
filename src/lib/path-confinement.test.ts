@@ -1,12 +1,15 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   assertExistingPathConfined,
+  assertModelWritablePathConfined,
   assertPathConfined,
   assertWritablePathConfined,
+  isInsideRoot,
   isPathConfined,
+  nearestExistingAncestor,
 } from './path-confinement.js';
 
 const ROOT = '/safe/root/dir';
@@ -63,6 +66,44 @@ describe('assertPathConfined', () => {
   });
 });
 
+describe('assertModelWritablePathConfined — control plane', () => {
+  it.each([
+    ['.git/config', '.git/config'],
+    ['nested .git path', '.git/hooks/pre-commit'],
+    ['.diptych/config.yaml', '.diptych/config.yaml'],
+    ['nested .diptych path', '.diptych/sessions/s/state.json'],
+  ])('rejects model-named write to %s', (_label, path) => {
+    const root = createTempDir('path-conf-cp-root');
+    tmpDirs.push(root);
+    expect(() => assertModelWritablePathConfined(path, root)).toThrow(/control plane/);
+  });
+
+  it('still allows ordinary in-repo source paths', () => {
+    const root = createTempDir('path-conf-cp-ok');
+    tmpDirs.push(root);
+    expect(() => assertModelWritablePathConfined('src/feature/foo.ts', root)).not.toThrow();
+  });
+
+  itUnix('rejects a model-named write reaching .git through an in-repo symlink', () => {
+    const root = createTempDir('path-conf-cp-symlink');
+    tmpDirs.push(root);
+    mkdirSync(join(root, '.git'), { recursive: true });
+    symlinkSync(join(root, '.git'), join(root, 'evil'));
+
+    expect(() => assertModelWritablePathConfined('evil/config', root)).toThrow(/control plane/);
+  });
+
+  itUnix('rejects a model-named write to a hardlink targeting a control-plane file', () => {
+    const root = createTempDir('path-conf-cp-hardlink');
+    tmpDirs.push(root);
+    mkdirSync(join(root, '.git'), { recursive: true });
+    writeFileSync(join(root, '.git', 'config'), '[core]\n');
+    linkSync(join(root, '.git', 'config'), join(root, 'innocent.txt'));
+
+    expect(() => assertModelWritablePathConfined('innocent.txt', root)).toThrow(/hardlink/);
+  });
+});
+
 describe('isPathConfined', () => {
   it('recognizes a nested path as confined and an escaping path as not', () => {
     expect(isPathConfined('handoffs/spec-kit', ROOT)).toBe(true);
@@ -73,5 +114,37 @@ describe('isPathConfined', () => {
   it('rejects Windows drive-absolute paths regardless of separator', () => {
     expect(isPathConfined('C:\\windows', ROOT)).toBe(false);
     expect(isPathConfined('C:/windows', ROOT)).toBe(false);
+  });
+});
+
+describe('isInsideRoot', () => {
+  it('treats the root itself and descendants as inside', () => {
+    expect(isInsideRoot('/a/b', '/a/b')).toBe(true);
+    expect(isInsideRoot('/a/b', '/a/b/c')).toBe(true);
+    expect(isInsideRoot('/a/b', '/a/b/c/d.txt')).toBe(true);
+  });
+
+  it('treats siblings and ancestors as outside', () => {
+    expect(isInsideRoot('/a/b', '/a/c')).toBe(false);
+    expect(isInsideRoot('/a/b', '/a')).toBe(false);
+    expect(isInsideRoot('/a/b', '/x/y')).toBe(false);
+  });
+});
+
+describe('nearestExistingAncestor', () => {
+  itUnix('resolves an existing path to its realpath', () => {
+    const root = createTempDir('near-root');
+    tmpDirs.push(root);
+    mkdirSync(join(root, 'present'), { recursive: true });
+    expect(nearestExistingAncestor(join(root, 'present'))).toBe(
+      join(nearestExistingAncestor(root), 'present'),
+    );
+  });
+
+  itUnix('walks up to the nearest existing ancestor for a missing leaf', () => {
+    const root = createTempDir('near-missing');
+    tmpDirs.push(root);
+    const realRoot = nearestExistingAncestor(root);
+    expect(nearestExistingAncestor(join(root, 'a', 'b', 'c'))).toBe(realRoot);
   });
 });

@@ -159,6 +159,12 @@ function applyContinueRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
+  if (issue.reason === 'budget-paused') {
+    const acknowledgedAtCost = recoveryFactNumber(issue.facts, 'currentCost');
+    if (acknowledgedAtCost !== undefined) {
+      state = { ...state, budgetPauseAcknowledgedAtCost: acknowledgedAtCost };
+    }
+  }
   state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
@@ -182,11 +188,17 @@ function applyAbortRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  // Preserve the pre-cancel task record: CANCEL guts tasks to idle/0, which would zero
+  // out summary.json and lifetime stats. The aborted session must still reflect the work
+  // done, so we restore the pre-cancel tasks/index onto the resolved state.
+  const { tasks, currentTaskIndex } = opts.state;
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(opts, state, { type: 'CANCEL' });
   state = transitionAndSave(opts, state, {
     type: 'RESOLVE_PENDING_RECOVERY',
   });
+  state = { ...state, tasks, currentTaskIndex };
+  state = transitionAndSave(opts, state, { type: 'RESOLVE_PENDING_RECOVERY' });
   publishRecoveryResolved(opts.bus, issue, opts.action, 'aborted');
   return { ok: true, action: opts.action, issue, state, status: 'aborted' };
 }

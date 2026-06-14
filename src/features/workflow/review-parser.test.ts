@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
+import { terminalSequences } from '../../lib/terminal/control.js';
+import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from './handlers.js';
 import { createReviewInputHandler, parseReviewCommand } from './review-parser.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
@@ -57,6 +60,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setActiveTerminalHandover(undefined);
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   await rm(tmpDir, { recursive: true, force: true });
@@ -212,6 +216,19 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     expect(feedbackStore.get().message).toContain('Failed to open editor');
   });
 
+  it('opens the external editor for a non-brief review without resolving the gate', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    reviewStore.setReviewFile('/tmp/spec.md');
+    vi.stubEnv('EDITOR', 'true');
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('edit');
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get().isError).toBe(false);
+  });
+
   it('surfaces non-zero editor exit status and keeps brief review unresolved', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
@@ -224,5 +241,47 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('Editor exited with status 42');
+  });
+
+  it('brackets the async editor spawn with terminal handover and resumes stdin', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    reviewStore.setReviewFile('/tmp/tasks.md');
+    vi.stubEnv('EDITOR', 'true');
+
+    const stdinCalls: string[] = [];
+    const sourceStdin = Object.assign(new PassThrough(), {
+      pause(): NodeJS.ReadStream {
+        stdinCalls.push('pause');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+      resume(): NodeJS.ReadStream {
+        stdinCalls.push('resume');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+    });
+    setActiveTerminalHandover({
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: sourceStdin as unknown as NodeJS.ReadStream,
+    });
+
+    const written: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+    try {
+      await handleInput('edit');
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+
+    const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
+    const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
+    expect(exitIndex).toBeGreaterThanOrEqual(0);
+    expect(enterIndex).toBeGreaterThan(exitIndex);
+    expect(stdinCalls).toEqual(['pause', 'resume']);
   });
 });

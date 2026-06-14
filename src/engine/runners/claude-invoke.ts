@@ -4,6 +4,7 @@ import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
+import { processError } from '../../lib/process/errors.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
 import type { ToolUseInfo } from './types.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
@@ -51,6 +52,8 @@ interface StreamHandlerState {
   text: string;
   sessionId: string | null;
   usage: TokenDelta | null;
+  resultText: string | null;
+  isError: boolean;
 }
 
 interface StreamHandlerCallbacks {
@@ -60,7 +63,13 @@ interface StreamHandlerCallbacks {
 }
 
 function createStreamHandler(callbacks: StreamHandlerCallbacks) {
-  const state: StreamHandlerState = { text: '', sessionId: null, usage: null };
+  const state: StreamHandlerState = {
+    text: '',
+    sessionId: null,
+    usage: null,
+    resultText: null,
+    isError: false,
+  };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
 
   function handleLine(line: string): void {
@@ -90,6 +99,11 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.isResult && parsed.text) {
       state.text = parsed.text;
+      state.resultText = parsed.text;
+    }
+
+    if (parsed.isError) {
+      state.isError = true;
     }
 
     if (parsed.usage) {
@@ -100,28 +114,38 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   return { state, handleLine };
 }
 
+function throwIfErrorResult(state: StreamHandlerState): void {
+  if (!state.isError) return;
+  throw processError.exitCode({
+    command: 'claude',
+    code: 0,
+    stderr: '',
+    output: state.resultText ?? state.text,
+    detail: state.resultText ?? state.text,
+  });
+}
+
 interface BuildArgsOpts {
   sessionId?: string | null;
   model?: string | undefined;
-  images?: Attachment[] | undefined;
+  effort?: EffortLevel | undefined;
+  permissionMode?: 'acceptEdits' | undefined;
 }
 
-function applyEffortPrefix(prompt: string, effort: EffortLevel | undefined): string {
-  if (!effort) return prompt;
-  return `/effort ${effort}\n\n${prompt}`;
+function applyImageRefs(prompt: string, images: Attachment[] | undefined): string {
+  if (!images || images.length === 0) return prompt;
+  const refs = images.map((img) => `[image attachment: ${img.path}]`).join('\n');
+  return `${refs}\n\n${prompt}`;
 }
 
 function buildClaudeArgs(opts: BuildArgsOpts): string[] {
-  const { sessionId, model, images } = opts;
+  const { sessionId, model, effort, permissionMode } = opts;
   const args: string[] = ['-p', '--output-format', 'stream-json', '--verbose'];
 
   if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
+  if (permissionMode) args.push('--permission-mode', permissionMode);
   if (sessionId) args.push('--session-id', sessionId);
-  if (images) {
-    for (const img of images) {
-      args.push('--image', img.path);
-    }
-  }
   return args;
 }
 
@@ -148,11 +172,7 @@ export async function runClaudePlannerStream(
 ): Promise<ClaudePlannerStreamResult> {
   const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images, signal } =
     opts;
-  const args = buildClaudeArgs({
-    sessionId,
-    model,
-    ...(images ? { images } : {}),
-  });
+  const args = buildClaudeArgs({ sessionId, model, effort });
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
   state.sessionId = sessionId;
@@ -161,11 +181,14 @@ export async function runClaudePlannerStream(
     command: 'claude',
     args,
     cwd: projectDir,
-    stdin: applyEffortPrefix(prompt, effort),
+    stdin: applyImageRefs(prompt, images),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
+    errorDetail: () => state.resultText ?? undefined,
     signal,
   });
+
+  throwIfErrorResult(state);
 
   return { text: state.text, sessionId: state.sessionId, usage: state.usage };
 }
@@ -176,25 +199,29 @@ export interface ClaudeOneShotOpts {
   onOutput: (text: string) => void;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
+  permissionMode?: 'acceptEdits' | undefined;
   signal?: AbortSignal | undefined;
   env?: NodeJS.ProcessEnv | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
-  const { prompt, projectDir, onOutput, model, effort, signal, env } = opts;
+  const { prompt, projectDir, onOutput, model, effort, permissionMode, signal, env } = opts;
   const { state, handleLine } = createStreamHandler({ onOutput });
-  const args = buildClaudeArgs({ model });
+  const args = buildClaudeArgs({ model, effort, permissionMode });
 
   await spawnWithStdin({
     command: 'claude',
     args,
     cwd: projectDir,
     env,
-    stdin: applyEffortPrefix(prompt, effort),
+    stdin: prompt,
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
+    errorDetail: () => state.resultText ?? undefined,
     signal,
   });
+
+  throwIfErrorResult(state);
 
   return { text: state.text, usage: state.usage };
 }

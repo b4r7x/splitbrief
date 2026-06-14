@@ -2,7 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 
 interface ConversationScrollState {
   scrollOffset: number;
-  expandedDiffs: Set<number>;
+  expandedDiffs: Set<string>;
   renderableCountAtScroll: number;
   heightAtScroll: number;
 }
@@ -58,13 +58,13 @@ export const conversationScrollStore = {
       ...clearAnchor({ ...s, scrollOffset: 0 }),
       renderableCountAtScroll: renderableCount,
     })),
-  toggleDiff: (idx: number) =>
+  toggleDiff: (key: string) =>
     store.set((s) => {
       const next = new Set(s.expandedDiffs);
-      if (next.has(idx)) {
-        next.delete(idx);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(idx);
+        next.add(key);
       }
       return { ...s, expandedDiffs: next };
     }),

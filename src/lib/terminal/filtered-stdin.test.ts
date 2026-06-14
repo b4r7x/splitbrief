@@ -155,6 +155,22 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.disable();
   });
 
+  it('reassembles a multibyte UTF-8 character split across two raw chunks', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+
+    // '😀' is U+1F600, four UTF-8 bytes. Splitting it mid-sequence must not produce
+    // replacement characters: the StringDecoder buffers the leading bytes until the rest lands.
+    const emoji = Buffer.from('😀', 'utf8');
+    const cleanPromise = readFiltered(filtered.stdin, '😀'.length);
+    fakeStdin.emit('data', emoji.subarray(0, 2));
+    fakeStdin.emit('data', emoji.subarray(2));
+
+    await expect(cleanPromise).resolves.toBe('😀');
+
+    filtered.disable();
+  });
+
   it('passes plain text chunks through when no escape sequence is present', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
@@ -258,6 +274,45 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     fakeStdin.emit('data', Buffer.from('left\u001b'));
     await new Promise((r) => setTimeout(r, 30));
     expect(collected.join('')).toBe('left\u001b');
+
+    filtered.disable();
+  });
+
+  it('holds a longer marker-prefix briefly, then flushes the whole remainder as one chunk', async () => {
+    // `\u001b[2` is a paste-marker prefix the mouse layer does not catch (no `<`), so the paste
+    // layer holds it for one chunk in case `[200~`/`[201~` is split. With no continuation the
+    // entire held remainder must flush as its own chunk rather than being withheld forever and
+    // later merged into the next keypress.
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const chunks: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('left\u001b[2'));
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(chunks.join('')).toBe('left\u001b[2');
+    expect(chunks).toContain('\u001b[2');
+
+    filtered.disable();
+  });
+
+  it('does not merge a flushed held prefix with a later unrelated keypress', async () => {
+    // Before the fix, a longer held prefix was withheld indefinitely and then merged with the
+    // next chunk, so `\u001b[2` + a later `x` re-parsed as a single corrupted sequence. The
+    // flush timer must emit the held prefix on its own so the subsequent key stays separate.
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const chunks: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b[2'));
+    await new Promise((r) => setTimeout(r, 30));
+    fakeStdin.emit('data', Buffer.from('x'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(chunks.join('')).toBe('\u001b[2x');
+    expect(chunks).not.toContain('\u001b[2x');
 
     filtered.disable();
   });
@@ -522,12 +577,10 @@ describe('createFilteredStdin bracketed paste handling', () => {
     const collected: string[] = [];
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
-    // The mouse layer does not hold back `\u001b[20`, so the paste layer must.
+    // The mouse layer does not hold back `\u001b[20`, so the paste layer must. The continuation
+    // arrives in the same input burst (as a real split marker does), before the held-prefix flush
+    // timer fires, so the marker reassembles instead of leaking its body.
     fakeStdin.emit('data', Buffer.from('before\u001b[20'));
-    await new Promise((r) => setTimeout(r, 10));
-    expect(collected.join('')).toBe('before');
-    expect(filtered.isPasteActive()).toBe(false);
-
     fakeStdin.emit('data', Buffer.from('0~content\u001b[201~'));
     await new Promise((r) => setTimeout(r, 10));
     expect(collected.join('')).toBe('beforecontent');
@@ -581,16 +634,41 @@ describe('createFilteredStdin bracketed paste handling', () => {
     filtered.disable();
   });
 
-  it('keeps a raw ESC inside pasted content out of the key stream', async () => {
+  it('strips ESC/CSI bytes from inside pasted content so they never reach the key stream', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const collected: string[] = [];
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
-    fakeStdin.emit('data', Buffer.from('\u001b[200~ab\u001b[201~'));
+    // A paste body that itself carries a CSI cursor-move and a bare two-byte escape. Forwarded
+    // verbatim, Ink would explode these into synthetic keypresses (arrow/return/etc.); they must
+    // be dropped so only the printable text survives.
+    fakeStdin.emit('data', Buffer.from('\u001b[200~a\u001b[Bb\u001bcc\u001b[201~'));
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(collected.join('')).toBe('ab');
+    const seen = collected.join('');
+    expect(seen).toBe('abcc');
+    expect(seen).not.toContain('\u001b');
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
+
+  it('never emits a bare carriage return mid-paste, converting it to a newline', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    // Single-chunk regime: an entire bracketed paste whose body holds CR and CRLF line breaks. A
+    // bare \r reaching Ink is parsed as a Return keypress and fires the composer's submit (and the
+    // approval/cost gates) mid-paste, so the filter must rewrite every CR to a newline.
+    fakeStdin.emit('data', Buffer.from('\u001b[200~line one\rline two\r\nline three\u001b[201~'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const seen = collected.join('');
+    expect(seen).not.toContain('\r');
+    expect(seen).toBe('line one\nline two\nline three');
     expect(filtered.isPasteActive()).toBe(false);
 
     filtered.disable();

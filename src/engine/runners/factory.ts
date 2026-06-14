@@ -31,6 +31,7 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
           model: config.planner.model,
           initialSessionId,
           effort: config.planner.effort,
+          timeout: config.planner.timeout,
         });
       }
       const mod = await loadCliPlanner();
@@ -55,6 +56,7 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
         apiKey: config.planner.apiKey,
         initialSessionId,
         effort: config.planner.effort,
+        timeout: config.planner.timeout,
       });
     }
     default:
@@ -70,6 +72,11 @@ export async function createPlanner(
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
   }
+  if (config.planner.temperature !== undefined && config.planner.kind !== 'api') {
+    warnStderr(
+      `planner-temperature: dropped (${config.planner.kind} backend does not accept sampling temperature)`,
+    );
+  }
   return planner;
 }
 
@@ -78,6 +85,11 @@ export async function createImplementer(
   options?: ImplementerFactoryOptions,
 ): Promise<Implementer> {
   const kind = config.implementer.kind;
+  if (config.implementer.temperature !== undefined && kind !== 'api') {
+    warnStderr(
+      `implementer-temperature: dropped (${kind} backend does not accept sampling temperature)`,
+    );
+  }
   switch (kind) {
     case 'cli': {
       const mod = await loadCliImplementer();

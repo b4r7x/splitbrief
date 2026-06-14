@@ -94,26 +94,35 @@ function getImplementerProvider(config: Config): ProviderDef {
   });
 }
 
-export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {
+export type ContextLengthOrigin = 'env' | 'config' | 'detected' | 'fallback';
+
+export interface DetectedCapabilities {
+  contextLength: number;
+  origin: ContextLengthOrigin;
+}
+
+export async function detectCapabilities(config: Config): Promise<DetectedCapabilities> {
   const envCtx = process.env.DIPTYCH_CONTEXT_LENGTH;
   const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
-  const configCtx = config.implementer.contextLength ?? 8192;
-  const fallback = { contextLength: Number.isNaN(parsed) ? configCtx : parsed };
+  if (!Number.isNaN(parsed)) return { contextLength: parsed, origin: 'env' };
 
-  if (config.implementer.kind !== 'api') return fallback;
+  if (config.implementer.contextLength !== undefined) {
+    return { contextLength: config.implementer.contextLength, origin: 'config' };
+  }
 
-  const provider = getImplementerProvider(config);
-
-  if (provider.detectContextLength) {
-    try {
-      const ctx = await provider.detectContextLength(config.implementer.model);
-      if (ctx) return { contextLength: ctx };
-    } catch (error) {
-      warnError(`detectCapabilities(${provider.name})`, error);
+  if (config.implementer.kind === 'api') {
+    const provider = getImplementerProvider(config);
+    if (provider.detectContextLength) {
+      try {
+        const ctx = await provider.detectContextLength(config.implementer.model);
+        if (ctx) return { contextLength: ctx, origin: 'detected' };
+      } catch (error) {
+        warnError(`detectCapabilities(${provider.name})`, error);
+      }
     }
   }
 
-  return fallback;
+  return { contextLength: 8192, origin: 'fallback' };
 }
 
 async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {

@@ -126,18 +126,14 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       name: DEFAULT_AGENT_SDK_MODEL,
       isDefault: true,
       contextLength: 1_000_000,
-      ...CLAUDE_SONNET_46_PRICING,
       catalogProvider: 'anthropic',
-      provenance:
-        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); unpriced-meta, pricing not served',
     },
     {
       name: 'claude-opus-4-6',
       contextLength: 1_000_000,
-      ...CLAUDE_OPUS_46_PRICING,
       catalogProvider: 'anthropic',
-      provenance:
-        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); unpriced-meta, pricing not served',
     },
   ],
   anthropic: [
@@ -172,14 +168,18 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       name: 'deepseek-chat',
       isDefault: true,
       contextLength: 128_000,
-      pricingInput: 0.28,
-      pricingOutput: 0.42,
-      provenance: 'DeepSeek V3.2 fallback (2026-04)',
+      pricingInput: 0.14,
+      pricingOutput: 0.28,
+      provenance:
+        'DeepSeek V4 Flash fallback (2026-06); deepseek-chat is the legacy alias for V4 Flash, scheduled for removal 2026-07-24',
     },
     {
       name: 'deepseek-reasoner',
       contextLength: 128_000,
-      provenance: 'DeepSeek V3.2 fallback (2026-04)',
+      pricingInput: 0.14,
+      pricingOutput: 0.28,
+      provenance:
+        'DeepSeek V4 Flash reasoning fallback (2026-06); priced at the V4 Flash rate alongside the deepseek-chat alias removal on 2026-07-24',
     },
   ],
   openai: [
@@ -195,7 +195,8 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       contextLength: 1_050_000,
       pricingInput: 2.5,
       pricingOutput: 15,
-      provenance: 'OpenAI flagship fallback (2026-04)',
+      provenance:
+        'OpenAI flagship fallback (2026-04); flat base rate, models.dev context_over_200k tiers not applied',
     },
     {
       name: 'gpt-5-codex',

@@ -1,4 +1,5 @@
 import type { Phase } from '../../core/schemas/enums.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 import type { EventBus } from '../events/types.js';
 import { eventPhase } from '../events/schema.js';
 import type { QueueHandler, WorkflowSinks } from '../orchestrator/types.js';
@@ -71,7 +72,7 @@ export function createIpcWorkflowBridge(bus: EventBus): IpcWorkflowBridge {
           type: 'warning',
           ts: Date.now(),
           phase: currentPhase,
-          message: `IPC input buffered (queue not ready): ${trimmed.length > 40 ? trimmed.slice(0, 40) + '...' : trimmed}`,
+          message: `IPC input buffered (queue not ready): ${truncateWithEllipsis(trimmed, 40)}`,
         });
         return;
       }

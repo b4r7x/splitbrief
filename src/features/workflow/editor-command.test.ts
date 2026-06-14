@@ -15,4 +15,16 @@ describe('resolveEditorArgv', () => {
     vi.stubEnv('EDITOR', '   ');
     expect(resolveEditorArgv()).toEqual({ command: 'vi', args: [] });
   });
+
+  it('prefers VISUAL over EDITOR', () => {
+    vi.stubEnv('VISUAL', 'nvim --clean');
+    vi.stubEnv('EDITOR', 'vim');
+    expect(resolveEditorArgv()).toEqual({ command: 'nvim', args: ['--clean'] });
+  });
+
+  it('falls back to EDITOR when VISUAL is empty', () => {
+    vi.stubEnv('VISUAL', '   ');
+    vi.stubEnv('EDITOR', 'emacs -nw');
+    expect(resolveEditorArgv()).toEqual({ command: 'emacs', args: ['-nw'] });
+  });
 });

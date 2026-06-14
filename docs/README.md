@@ -76,10 +76,9 @@ Specialized subsystem docs linked from the main chapters above.
 - [DIRECTION.md](./DIRECTION.md) — UX principles, engineering decisions
 - [FUTURE.md](./FUTURE.md) — Open questions, longer-horizon backlog
 - [FEATURES.md](./FEATURES.md) — Feature catalog
-- [CHANGELOG.md](./CHANGELOG.md) — Release notes
-- [MIGRATION.md](./MIGRATION.md) — Migration guide for the SOTA uplift
+- [CHANGELOG.md](../CHANGELOG.md) — Release notes
+- [MIGRATION.md](./MIGRATION.md) — Migration guide for the 2026-04-20 EventBus architecture release
 - [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) — Cost-aware implementer: design direction
-- [COST-AWARE-IMPLEMENTER-HANDOFF.md](./COST-AWARE-IMPLEMENTER-HANDOFF.md) — Cost-aware implementer: implementation handoff
 
 ## Project-level
 

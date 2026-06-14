@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -24,6 +24,15 @@ function makeSessionWithLockfile(projectDir: string, sessionId: string, startTim
     exitedAt: startTimeMs + 5000,
   };
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
+}
+
+function makeInteractiveSession(projectDir: string, sessionId: string, mtimeMs: number): void {
+  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  mkdirSync(sessDir, { recursive: true });
+  const statePath = join(sessDir, 'state.json');
+  writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
+  const seconds = mtimeMs / 1000;
+  utimesSync(statePath, seconds, seconds);
 }
 
 describe('isNumericAlias', () => {
@@ -97,17 +106,42 @@ describe('buildAliasedSessions', () => {
     expect(result[0]!.sessionId).toBe('valid-session');
   });
 
-  it('skips sessions without lockfiles', async () => {
+  it('includes lockfile-less interactive sessions ordered by state mtime', async () => {
+    const { buildAliasedSessions } = await import('./aliases.js');
+    const projectDir = makeTmpProject();
+
+    makeInteractiveSession(projectDir, 'interactive-only', 9_000_000);
+
+    const result = await buildAliasedSessions(projectDir);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.sessionId).toBe('interactive-only');
+    expect(result[0]!.alias).toBe(1);
+    expect(result[0]!.lockfile).toBeNull();
+  });
+
+  it('skips empty session directories with neither lockfile nor state', async () => {
     const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'has-lockfile', 1000);
-    // Create dir with no lockfile.
-    mkdirSync(join(projectDir, '.diptych', 'sessions', 'no-lockfile'), { recursive: true });
+    mkdirSync(join(projectDir, '.diptych', 'sessions', 'empty-dir'), { recursive: true });
 
     const result = await buildAliasedSessions(projectDir);
     expect(result).toHaveLength(1);
     expect(result[0]!.sessionId).toBe('has-lockfile');
+  });
+
+  it('orders a newer interactive session ahead of an older detached one', async () => {
+    const { buildAliasedSessions } = await import('./aliases.js');
+    const projectDir = makeTmpProject();
+
+    makeSessionWithLockfile(projectDir, 'old-detached', 1_000_000);
+    makeInteractiveSession(projectDir, 'new-interactive', 5_000_000);
+
+    const result = await buildAliasedSessions(projectDir);
+
+    expect(result.map((s) => s.sessionId)).toEqual(['new-interactive', 'old-detached']);
+    expect(result[0]!.alias).toBe(1);
   });
 });
 

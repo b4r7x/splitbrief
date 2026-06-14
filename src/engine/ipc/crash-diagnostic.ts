@@ -3,7 +3,7 @@ import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { SERVER_LOG_FILE } from '../../core/paths.js';
 import type { LockfileData, ServerStatus } from './lockfile.js';
-import { assertSessionConfinement } from './lockfile.js';
+import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 
 export type CrashDiagnostic = {
   sessionId: string;

@@ -80,6 +80,20 @@ describe('formatModelName (heuristic)', () => {
   it.each([['gpt-7-nano', 'GPT-7 Nano']])('GPT hyphen format: %s → %s', (input, expected) => {
     expect(formatModelName(input)).toBe(expected);
   });
+
+  it.each([
+    ['someword', 'Someword'],
+    ['unknown-token', 'Unknown Token'],
+  ])('capitalizes plain tokens: %s → %s', (input, expected) => {
+    expect(formatModelName(input)).toBe(expected);
+  });
+
+  it.each([
+    ['mymodel:alpha', 'Mymodel Alpha'],
+    ['mymodel:beta-rc', 'Mymodel Beta Rc'],
+  ])('capitalizes tag parts: %s → %s', (input, expected) => {
+    expect(formatModelName(input)).toBe(expected);
+  });
 });
 
 describe('formatToolModel', () => {

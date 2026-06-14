@@ -79,14 +79,17 @@ describe('home navigation flow (through real App)', () => {
     expect(focused).toContain(RECENT_SESSIONS_HINT);
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('workflow');
+    });
 
     const route = routerStore.get();
-    expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
       expect(route.sessionId).toBe('resume-me');
     }
-    expect(ui.lastFrame() ?? '').toContain('Checking run readiness...');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Checking run readiness...');
+    });
 
     ui.unmount();
   });
@@ -181,15 +184,15 @@ describe('home navigation flow (through real App)', () => {
     ui.stdin.write(CTRL_R);
     await tick(20);
     ui.stdin.write(ENTER);
-    await tick(20);
+    await vi.waitFor(() => {
+      const fb = feedbackStore.get();
+      expect(fb.message ?? '').toContain('orphan feature');
+      expect(fb.message ?? '').toContain('missing or invalid');
+    });
 
     expect(routerStore.get().screen).toBe('home');
     expect(ui.lastFrame() ?? '').not.toContain(HOME_HINT);
     expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
-
-    const fb = feedbackStore.get();
-    expect(fb.message ?? '').toContain('orphan feature');
-    expect(fb.message ?? '').toContain('missing or invalid');
 
     ui.unmount();
   });

@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import {
   approvalPromptStore,
   closeApprovalPrompt,
 } from '../../../stores/approval-prompt/prompt.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getApprovalPromptRows } from '../prompt-rows.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
+import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 
 type ConfirmStep = 'phrase' | 'reason';
+type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
 
 export function ApprovalPrompt() {
   const state = approvalPromptStore.use((s) => s);
@@ -17,22 +21,28 @@ export function ApprovalPrompt() {
   const [reasonInput, setReasonInput] = useState('');
   const [confirmStep, setConfirmStep] = useState<ConfirmStep>('phrase');
   const [phraseError, setPhraseError] = useState('');
+  const graceUntilRef = useRef(0);
+  const promptIdentityRef = useRef<PromptIdentity>(null);
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
+  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
-  const isActive = state.status === 'pending';
+  const isActive = state.status === 'pending' && !hasOverlay;
   const promptIdentity = state.status === 'pending' ? state.resolve : null;
 
-  useEffect(() => {
+  if (promptIdentity !== promptIdentityRef.current) {
+    promptIdentityRef.current = promptIdentity;
     setPhraseInput('');
     setReasonInput('');
     setConfirmStep('phrase');
     setPhraseError('');
-  }, [promptIdentity]);
+    if (promptIdentity) graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
+  }
 
   useInput(
     (input, key) => {
       if (state.status !== 'pending') return;
+      if (Date.now() < graceUntilRef.current) return;
       const { request } = state;
 
       if (request.tier === 'sticky') {

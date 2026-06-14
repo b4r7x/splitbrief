@@ -243,7 +243,7 @@ type TokenDelta = {
 }
 ```
 
-Deltas are accumulated per planning phase via `accumulateUsage()` (`src/engine/streaming/token-utils.ts`) and published through `cost_update` events.
+Deltas are accumulated per planning phase via `accumulateUsage()` (`src/engine/streaming/token-usage.ts`) and published through `cost_update` events.
 
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
 
@@ -275,6 +275,21 @@ Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `ope
 The planner reads artifacts from disk (session directory or project root) via `readCliPhaseOutput()`. It checks the session folder first, then looks for markdown-linked paths in stdout, then falls back to stdout text. Claude Code uses `--session-id` for session resume. Output is parsed line by line via each tool's `parseLine` function.
 
 The implementer writes files directly (`writesFiles: 'direct'`). Change detection via git diff. Claude Code gets a special path through `runClaudeOneShot()`.
+
+#### Tested CLI version matrix
+
+Each `CLI_TOOLS` entry in `src/engine/runners/cli-tools.ts` carries a `testedVersion` — the upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified against. These tools ship breaking CLI changes with no compatibility guarantee, so `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()` and prints a dimmed stderr warning when the installed **major** version differs from the tested one. The warning is advisory; detection still reports the tool as available.
+
+| `tool` | command | tested version |
+|---|---|---|
+| `claude-code` | `claude` | 2.0.0 |
+| `codex` | `codex` | 0.40.0 |
+| `opencode` | `opencode` | 0.5.0 |
+| `aider` | `aider` | 0.86.0 |
+| `copilot` | `copilot` | 0.3.0 |
+| `kilo-code` | `kilo` | 0.1.0 |
+
+When you adjust a tool's `buildArgs` or `parseLine` to track an upstream CLI change, bump that tool's `testedVersion` to the release you verified against and update this table.
 
 ### api
 
@@ -395,7 +410,7 @@ type Config = {
   hooks?: HooksConfig
   otel?: OtelConfig
   snapshots?: { auto?: { preTask?: boolean; postTask?: boolean; preFinalReview?: boolean } }
-  // ... plus theme, shikiTheme, sessions, palette
+  // ... plus theme, sessions, palette
 }
 ```
 

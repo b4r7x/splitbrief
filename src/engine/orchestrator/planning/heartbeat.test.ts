@@ -13,7 +13,6 @@ function createMockBus() {
     subscribe() {
       return () => {};
     },
-    unsubscribeAll() {},
   };
 }
 

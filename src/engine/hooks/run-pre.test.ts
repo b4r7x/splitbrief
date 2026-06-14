@@ -143,4 +143,20 @@ describe('runPreHooks', () => {
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
     expect(result.allow).toBe(true);
   });
+
+  it('surfaces a builtin warn message as a warning instead of failing open', async () => {
+    const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+    const commitEvent: EngineEvent = {
+      type: 'git_commit',
+      ts: 1,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      message: 'feat: x',
+      file: 'does-not-exist-anywhere.ts',
+    };
+    const result = await runPreHooks(hooks, 'pre_commit', commitEvent, ctx);
+    expect(result.allow).toBe(true);
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings?.some((w) => w.includes('could not scan'))).toBe(true);
+  });
 });

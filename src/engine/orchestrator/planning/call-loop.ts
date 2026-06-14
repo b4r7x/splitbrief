@@ -1,4 +1,4 @@
-import { createBusTextHandler } from '../events.js';
+import { createBusTextHandler, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
@@ -70,6 +70,7 @@ export async function runPlannerCallInContinuationLoop(
             recordOutput(text);
             textHandler(text);
           },
+          onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase }, message),
           onSessionId: (id) => {
             state = transitionAndSave({ projectDir, sessionId }, state, {
               type: 'SET_PLANNER_SESSION_ID',

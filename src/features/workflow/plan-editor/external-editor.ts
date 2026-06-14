@@ -6,12 +6,17 @@ import { formatTasks } from '../../../engine/spec/formatter.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { assertSessionConfinement } from '../../../engine/ipc/lockfile.js';
+import { assertSessionConfinement } from '../../../core/sessions/confinement.js';
 import { resolveEditorArgv } from '../editor-command.js';
 import { renumberTasks } from './actions.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
+import {
+  resumeTerminalAfterEditor,
+  suspendTerminalForEditor,
+} from '../../../lib/terminal/editor-handover.js';
 
-const SPLIT_INSTRUCTION = '# Edit the task below. Use --- to split into multiple tasks.';
+const SPLIT_INSTRUCTION =
+  '# Edit the task below. Use --- to split into multiple tasks. Each new task needs its own `--- id/title/action/file ---` frontmatter block.';
 
 function removeTempFile(tmpPath: string): void {
   try {
@@ -105,14 +110,14 @@ export function openExternalEditor(opts: {
 
   let result: ReturnType<typeof spawnSync>;
   try {
-    process.stdin.pause();
+    suspendTerminalForEditor();
     result = spawnSync(command, [...args, tmpPath], { stdio: 'inherit' });
   } catch (err) {
     planEditorStore.setSaveError(`Failed to open editor: ${toErrorMessage(err)}`);
     removeTempFile(tmpPath);
     return;
   } finally {
-    process.stdin.resume();
+    resumeTerminalAfterEditor();
   }
 
   if (result.error) {

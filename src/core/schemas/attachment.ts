@@ -11,7 +11,6 @@ export const AttachmentSchema = z.object({
   path: z.string(),
   mimeType: z.string(),
   sizeBytes: z.number().int().positive(),
-  addedAt: z.number().int(),
 });
 
 export type Attachment = z.infer<typeof AttachmentSchema>;

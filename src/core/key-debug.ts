@@ -4,7 +4,7 @@ import {
   isKeyDebugEnabled,
   logParsedKey,
   logRawChunk,
-} from '../lib/terminal/debug-keys.js';
+} from '../lib/terminal/key-debug.js';
 import { DIPTYCH_DIR } from './paths.js';
 
 const DEBUG_KEYS_ENV = 'DIPTYCH_DEBUG_KEYS';

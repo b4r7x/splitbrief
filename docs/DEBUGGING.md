@@ -12,7 +12,7 @@ Every run writes its full `EngineEvent` stream to:
 .diptych/sessions/<session-id>/session.jsonl
 ```
 
-One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` via `appendEngineEvent` in `src/core/state/persistence.ts`. See `src/engine/events/types.ts` for the full event union — `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` via `appendEngineEvent` in `src/core/state/persistence.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union — `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
 
 Inspect with `jq`:
 
@@ -61,7 +61,7 @@ DIPTYCH_OTEL_EXPORTER=console diptych start --json --mode quick "…"
 diptych start --otel-exporter console --json --mode quick "…"
 ```
 
-Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output. Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/cli/otel-bootstrap.ts`.
+Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output. Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/lib/otel.ts`.
 
 ### Debug environment variables
 
@@ -69,10 +69,9 @@ There is no `debug` package / namespace logger in diptych today. The diagnostic 
 
 | Variable | Effect | Source |
 |---|---|---|
-| `OTEL_TRACES_EXPORTER=console` | Bootstrap built-in OTel console exporter | `src/cli/otel-bootstrap.ts` |
-| `DIPTYCH_OTEL_EXPORTER=console` | Alias for the above | `src/cli/otel-bootstrap.ts` |
+| `OTEL_TRACES_EXPORTER=console` | Bootstrap built-in OTel console exporter | `src/lib/otel.ts` |
+| `DIPTYCH_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
 | `DIPTYCH_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/registry.ts` |
-| `NODE_ENV=development` | Enables store-creation logging | `src/stores/create-store.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
 For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.
@@ -82,7 +81,7 @@ For finer-grained traces, use the event log or OTel spans. API-key-bearing env v
 ### "Configuration errors in .diptych/config.yaml"
 
 Cause: YAML failed zod validation. The message lists each failing path. Check:
-- `version: 2` is present.
+- `version: 3` is present (2 accepted but deprecated).
 - Top-level `planner` / `implementer` have a valid `kind`.
 - Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
 - No unknown keys in `codebase`, `hooks`, `otel` — those sections are `.strict()`.

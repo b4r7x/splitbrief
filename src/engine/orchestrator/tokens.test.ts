@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { addUsage } from './tokens.js';
+import { addUsage, recordTaskUsage } from './tokens.js';
 import { createInitialState } from '../../core/state/machine.js';
+import { createEventBus } from '../events/bus.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 
 function baseState(): WorkflowState {
@@ -71,5 +75,54 @@ describe('addUsage — escalation cache token routing', () => {
     const state = baseState();
     expect(addUsage(state, 'planner', null)).toBe(state);
     expect(addUsage(state, 'escalation', undefined)).toBe(state);
+  });
+});
+
+describe('recordTaskUsage — explicit cache persistence', () => {
+  it('persists explicit-zero escalation cache fields for an escalated task with no cache activity', () => {
+    const taskBreakdowns: TaskTokenUsage[] = [];
+    const tokensBefore = makeUsage({ plannerCacheRead: 1_000_000, plannerCacheCreate: 1_000_000 });
+    const currentUsage = makeUsage({
+      escalationInput: 100_000,
+      escalationOutput: 50_000,
+      plannerCacheRead: 1_000_000,
+      plannerCacheCreate: 1_000_000,
+    });
+
+    recordTaskUsage({
+      task: makeTask({ id: 'T001' }),
+      method: 'escalated-full',
+      tokensBefore,
+      currentUsage,
+      bus: createEventBus(),
+      state: baseState(),
+      taskBreakdowns,
+    });
+
+    const recorded = taskBreakdowns.at(0);
+    expect(recorded?.escalationCacheReadTokens).toBe(0);
+    expect(recorded?.escalationCacheCreateTokens).toBe(0);
+  });
+
+  it('persists explicit-zero implementer cache fields for a local task with no cache activity', () => {
+    const taskBreakdowns: TaskTokenUsage[] = [];
+    const tokensBefore = makeUsage();
+    const currentUsage = makeUsage({ implementerInput: 30_000, implementerOutput: 10_000 });
+
+    recordTaskUsage({
+      task: makeTask({ id: 'T001' }),
+      method: 'local',
+      tokensBefore,
+      currentUsage,
+      bus: createEventBus(),
+      state: baseState(),
+      taskBreakdowns,
+    });
+
+    const recorded = taskBreakdowns.at(0);
+    expect(recorded?.implementerCacheReadTokens).toBe(0);
+    expect(recorded?.implementerCacheCreateTokens).toBe(0);
+    expect(recorded?.escalationCacheReadTokens).toBeUndefined();
+    expect(recorded?.escalationCacheCreateTokens).toBeUndefined();
   });
 });

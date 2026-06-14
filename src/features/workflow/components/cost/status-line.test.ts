@@ -170,16 +170,20 @@ describe('CostStatusLine', () => {
       },
       perPhase: {
         planning: {
-          inputTokens: 1000,
-          outputTokens: 100,
+          inputTokens: 2000,
+          outputTokens: 200,
           cacheReadTokens: 500,
           cacheCreateTokens: 0,
+          plannerInputTokens: 2000,
+          implementerInputTokens: 0,
         },
         implementing: {
-          inputTokens: 3000,
-          outputTokens: 300,
+          inputTokens: 2000,
+          outputTokens: 200,
           cacheReadTokens: 500,
           cacheCreateTokens: 0,
+          plannerInputTokens: 0,
+          implementerInputTokens: 2000,
         },
       },
     });
@@ -189,6 +193,64 @@ describe('CostStatusLine', () => {
 
     expect(frame).toContain('plan 50%');
     expect(frame).toContain('cache 20%');
+    ui.unmount();
+  });
+
+  it('divides the cache-hit ratio by the perPhase input, not the cumulative tokenUsage', () => {
+    // Regression for F-457: on resume perPhase restarts empty while the
+    // persisted tokenUsage stays cumulative, so the two must not be mixed in
+    // one ratio. The numerator (cacheReadTokens) was already perPhase-based;
+    // the bug was the denominator. Here the perPhase input (1000) is much
+    // smaller than the cumulative tokenUsage input (9000), so the basis is
+    // observable: folding the denominator from perPhase yields cache 50%
+    // (1000 / (1000 + 1000)), while a regression back to the cumulative
+    // tokenUsage denominator would render cache 10% (1000 / (1000 + 9000)).
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-4-6',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+        },
+        workflow: { mode: 'standard' },
+      }),
+    });
+    terminalSizeStore.__testReset({ cols: 120 });
+    tokensStore.__testReset({
+      tokenUsage: {
+        plannerInput: 4000,
+        plannerOutput: 500,
+        implementerInput: 5000,
+        implementerOutput: 500,
+        escalationInput: 0,
+        escalationOutput: 0,
+        plannerCacheRead: 1000,
+      },
+      perPhase: {
+        implementing: {
+          inputTokens: 1000,
+          outputTokens: 100,
+          cacheReadTokens: 1000,
+          cacheCreateTokens: 0,
+          plannerInputTokens: 0,
+          implementerInputTokens: 1000,
+        },
+      },
+    });
+
+    const ui = render(createElement(CostStatusLine));
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('cache 50%');
+    expect(frame).not.toContain('cache 10%');
     ui.unmount();
   });
 });

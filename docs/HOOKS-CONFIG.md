@@ -27,15 +27,15 @@ The first time you run with hooks defined, diptych prompts to trust them. Use `-
 
 ## Hook events
 
-11 events fire during a workflow. Each can have multiple hooks declared.
+Ten events fire during a workflow (plus `pre_compact`, a reserved key with no dispatch site yet). Each can have multiple hooks declared.
 
 | Event            | When                                        | Payload (event fields)                                              |
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `action`, `index`, `total`                |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
-| `pre_validation` | Before tsc/lint/test runs                   | `taskId`, `file`                                                     |
-| `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{tsc,lint,test}`), `error?`           |
+| `pre_validation` | Before tsc/lint/test runs                   | `taskId`                                                            |
+| `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
 | `pre_commit`     | Before optional product-level git commit    | `taskId`, `file`                                                     |
 | `post_commit`    | After optional product-level git commit succeeds | `taskId`, `message`                                             |
 | `pre_escalation` | Before planner escalation runs              | `taskId`                                                             |
@@ -113,7 +113,7 @@ Return value shape:
 | Return                              | Effect                          |
 |-------------------------------------|---------------------------------|
 | `{ kind: 'allow' }`                 | Continue normally               |
-| `{ kind: 'deny', message?: string }` | Block action (respects `on_failure`) |
+| `{ kind: 'deny', message?: string }` | Always blocks the action (independent of `on_failure`) |
 | `{ kind: 'warn', message?: string }` | Log warning, continue          |
 | `{ kind: 'crash', message: string }` | Treated as crash                |
 | Any other shape                     | Treated as `warn` with an unrecognized-outcome message |
@@ -164,15 +164,15 @@ args: ["${event.file}", "--task=${event.taskId}"]
 
 | Placeholder          | Available in events with that field    | Resolution                               |
 |----------------------|----------------------------------------|------------------------------------------|
-| `${event.file}`      | task_*, validate, pre_commit           | Project-relative path string             |
+| `${event.file}`      | task_*, pre_commit                     | Project-relative path string             |
 | `${event.taskId}`    | task_*, validate, escalate, git_commit | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
 | `${event.message}`   | error, warning, git_commit             | String                                   |
-| `${event.stages}`    | validate                               | JSON-stringified `{tsc, lint, test}`     |
+| `${event.stages}`    | validate                               | JSON-stringified `{typecheck, lint, test}` |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
-| `${event.method}`    | task_completed, task_tokens            | `'local'` / `'hint'` / `'escalation'`   |
+| `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'`, `'failed'`, `'skipped'`, `'mcp-tool'` |
 
 Missing fields collapse to empty string. Object/array values are JSON-stringified. **No `eval`** — substitution is regex-based.
 
@@ -189,13 +189,13 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 | `pre_planning`    | `${event.feature}`, `${event.ts}`, `${event.phase}`, `${event.type}`              |
 | `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.action}`, `${event.index}`, `${event.total}` |
 | `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
-| `pre_validation`  | `${event.taskId}`, `${event.file}`                                                |
-| `post_validation` | `${event.taskId}`, `${event.file}`, `${event.stages}`, `${event.passed}`, `${event.error}` |
+| `pre_validation`  | `${event.taskId}`                                                                 |
+| `post_validation` | `${event.taskId}`, `${event.stages}`, `${event.passed}`, `${event.error}`         |
 | `pre_commit`      | `${event.taskId}`, `${event.file}`                                                |
 | `post_commit`     | `${event.taskId}`, `${event.file}`, `${event.message}`                            |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
 | `on_error`        | `${event.message}`                                                                |
-| `on_complete` / `pre_compact` | `${event.ts}`, `${event.phase}`, `${event.type}`                      |
+| `on_complete`     | `${event.ts}`, `${event.phase}`, `${event.type}`                                 |
 
 ## Subprocess protocol
 
@@ -237,18 +237,16 @@ A hook that only needs to run side effects can exit 0 and write nothing. To infl
 ```json
 {
   "decision": "deny",
-  "message": "migrations/ touched — requires manual review",
-  "modify": { "constraints": ["read-only on migrations/"] }
+  "message": "migrations/ touched — requires manual review"
 }
 ```
 
 | Field     | Type                              | Meaning                                                                                       |
 |-----------|-----------------------------------|-----------------------------------------------------------------------------------------------|
-| `decision`| `"allow" \| "deny" \| "warn"`     | Workflow control. `deny` on a `pre_*` hook with `on_failure: block` aborts the upcoming action. |
+| `decision`| `"allow" \| "deny" \| "warn"`     | Workflow control. On a `pre_*` hook, `deny` always aborts the upcoming action regardless of `on_failure`. A `decision` value outside this trio is surfaced as a `warn` (it never silently allows). |
 | `message` | string                            | Surfaced in the TUI and in the `hook_blocked` / `warning` event.                               |
-| `modify`  | object                            | `pre_task` only: rewrites task prompt fields. Allowed keys: `signature`, `implementationSteps`, `constraints`. |
 
-Invalid stdout JSON is treated as success with an empty body (the hook's side effects stand; no warning is emitted for malformed output beyond a debug log).
+The response is read from the **last JSON object line** of stdout, so a hook may log diagnostics first and emit the `{ "decision": … }` object on its final line. If no line parses as a JSON object the output is treated as success with an empty body (the hook's side effects stand; no warning is emitted).
 
 ### stderr
 
@@ -267,15 +265,6 @@ Post hooks fire after the action has already happened. A `deny` returned from `p
 
 Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.diptych/config.yaml` declaration order, then discovered `.diptych/hooks/` modules. There is no fan-out or parallelism.
 
-Each hook's stdin reflects any `modify` patch returned by the previous hook for that event. Example:
-
-```yaml
-hooks:
-  pre_task:
-    - command: "./hooks/add-constraint.sh"   # returns {"modify": {"constraints": ["no network"]}}
-    - command: "./hooks/log-task.sh"         # stdin.event.constraints already includes "no network"
-```
-
 Hooks for **different events** never overlap — the orchestrator runs one task at a time, so `post_task` for task N completes before `pre_task` for task N+1 starts. A hung or slow hook at one event does not race with hooks at another event for the same task.
 
 If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`), the remaining hooks for that event are skipped and the action is aborted.
@@ -284,13 +273,17 @@ If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`)
 
 ### `on_failure` outcomes
 
-| `on_failure`       | On non-zero exit / timeout / `decision: deny` | Effect on workflow                                        |
-|--------------------|------------------------------------------------|-----------------------------------------------------------|
-| `block`            | Treated as failure                             | Aborts the upcoming action (skip task, skip optional commit, etc.) |
-| `warn` (default)   | Logs a warning event                           | Workflow continues                                        |
-| `ignore`           | Treated as success                             | No log                                                    |
+`on_failure` governs **crashes, timeouts, and non-zero exit codes** — not explicit denials. A `decision: "deny"` (or a module returning `{ kind: 'deny' }`) always blocks a `pre_*` action regardless of `on_failure`.
+
+| `on_failure`       | On crash / timeout / non-zero exit | Effect on workflow                                        |
+|--------------------|-------------------------------------|-----------------------------------------------------------|
+| `block`            | Treated as failure                  | Aborts the upcoming action (skip task, skip optional commit, etc.) |
+| `warn` (default)   | Logs a warning event                | Workflow continues                                        |
+| `ignore`           | Treated as success                  | No log                                                    |
 
 `block` only meaningful on `pre_*` hooks. On `post_*` hooks, `block` is logged informationally — the action already happened.
+
+The aborted action is event-specific: `pre_task` and `pre_validation` mark the current task `skipped` (recording skipped evidence) and continue with the next task; `pre_commit` skips the optional commit but still completes the task; `pre_planning` aborts the planner run; `pre_escalation` surfaces a recovery prompt named after the hook (reason `retry-exhausted`) instead of silently giving up.
 
 ### Per-scenario behavior
 
@@ -303,7 +296,8 @@ Specific runtime failures are handled as follows, independent of (or layered on 
 | Module default export is missing or not a function | Clear load error; treated as failure per `on_failure`.                                    |
 | Timeout (`timeout_ms` exceeded)                  | Child killed (`SIGTERM`, then `SIGKILL`). Treated as failure per `on_failure`.             |
 | Module exceeds `timeout_ms`                      | Promise abandoned (JS cannot terminate in-process code). Treated as failure per `on_failure`. |
-| Stdout is invalid JSON                           | Treated as success with empty body. Side effects of the hook stand.                        |
+| Stdout has no JSON object line                   | Treated as success with empty body. Side effects of the hook stand.                        |
+| Stdout's last JSON line has an unrecognized `decision` | Surfaced as a `warn` (never silently allowed); side effects stand.                     |
 | `decision: "deny"` returned on a `post_*` event  | Ignored for flow; logged informationally.                                                  |
 | Hook crashes mid-stream                          | Partial stderr flushed as `warning`; treated as failure per `on_failure`.                  |
 | Non-zero exit code                               | Treated as `deny` if `on_failure: block`; `warn` otherwise.                                |
@@ -415,4 +409,4 @@ Alternatives that were considered and rejected when the hook system was designed
 - **JS modules only (no shell).** Type-safe and in-process, but excludes users who want to wire up `prettier`, a secret scanner, or a Slack notifier without writing TypeScript against a not-yet-public SDK. Shell / script hooks cover the common case today; `kind: module` was added later as a complement, not a replacement.
 - **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what diptych exposes — our events are workflow-shaped (`pre_task`, `post_validation`, optional `pre_commit`). Tool calls belong to the configured planner or implementer runner, while diptych hooks stay at deterministic workflow boundaries.
 - **Auto-trust hook config (no `--allow-hooks` prompt).** Simpler UX, but a malicious diff that adds a hook becomes RCE on the next `diptych start`. Unacceptable. Explicit trust (hash + prompt) is the cost of safety.
-- **Parallel / async fan-out within an event.** Lower latency, but `modify` patches are order-dependent — hook B observing hook A's changes only makes sense under sequential execution. The latency win is hypothetical; five hooks on one event is already pathological.
+- **Parallel / async fan-out within an event.** Lower latency, but deny short-circuiting is order-dependent — a later hook should never run after an earlier one has already aborted the action. The latency win is hypothetical; five hooks on one event is already pathological.

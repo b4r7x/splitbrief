@@ -7,12 +7,17 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore, _lifecycleInternal } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { completionStore } from '../stores/ui/completion.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
-import { openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
-import { openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
+import {
+  planEditorKeysStore,
+  usePlanEditorKeys,
+} from '../features/workflow/hooks/use-plan-editor-keys.js';
 import type { CostPrediction } from '../core/schemas/summary.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
@@ -32,6 +37,7 @@ function makeCostPrediction(): CostPrediction {
       taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
       contextConfidenceCounts: {
         contextExplicit: 1,
+        contextDetected: 0,
         contextKnownCatalog: 0,
         contextCachedProvider: 0,
         contextConservativeFallback: 0,
@@ -60,6 +66,29 @@ function Harness({
   return (
     <Box>
       <Text>ready</Text>
+    </Box>
+  );
+}
+
+function EditorKeyLayer() {
+  usePlanEditorKeys({ onSave: () => Promise.resolve(), sessionDir: '/tmp/session' });
+  return null;
+}
+
+function EditorHarness({
+  exit,
+  interruptWorkflow,
+  mountEditor = true,
+}: {
+  exit: () => void;
+  interruptWorkflow?: () => InterruptResult;
+  mountEditor?: boolean;
+}) {
+  useAppKeys({ exit, interruptWorkflow });
+  return (
+    <Box>
+      <Text>ready</Text>
+      {mountEditor && <EditorKeyLayer />}
     </Box>
   );
 }
@@ -102,6 +131,43 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     expect(abortStore.get().armed).toBe('exit');
     expect(interruptWorkflow).toHaveBeenCalledTimes(1);
     expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('interrupting a live workflow closes a pending tiered approval prompt', async () => {
+    const exit = vi.fn();
+    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
+    const pending = openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'network',
+      actionDescription: 'push to origin',
+      phase: 'implementing',
+    });
+    expect(approvalPromptStore.get().status).toBe('pending');
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    await tick();
+
+    writeCtrlC(ui);
+    await tick();
+
+    expect(approvalPromptStore.get().status).toBe('idle');
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('interrupting a live workflow closes a pending cost-approval prompt as not approved', async () => {
+    const exit = vi.fn();
+    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
+    const pending = openCostApprovalPrompt(makeCostPrediction());
+    expect(costApprovalStore.get().status).toBe('pending');
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    await tick();
+
+    writeCtrlC(ui);
+    await tick();
+
+    expect(costApprovalStore.get().status).toBe('idle');
+    await expect(pending).resolves.toBe(false);
     ui.unmount();
   });
 
@@ -195,6 +261,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
   afterEach(() => {
     cancelEscapeAction();
     abortStore.clear();
+    completionStore.reset();
     handlers.clearAllHandlers();
     _lifecycleInternal.set({ phase: 'idle', cancelled: false, queueDepth: 0 });
     vi.useRealTimers();
@@ -375,20 +442,46 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
+
+  it('ESC does not arm while a completion menu is open', async () => {
+    const abort = vi.fn();
+    handlers.setAbortHandler(abort);
+    const exit = vi.fn();
+    completionStore.setOpen(true);
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    await tick();
+
+    writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    // The completion menu owns ESC (it dismisses the menu), so the global ladder is suppressed:
+    // dismissing the menu neither arms interruption nor reaches the interrupt/cancel handlers.
+    expect(abortStore.get().armed).toBe('none');
+    expect(abort).not.toHaveBeenCalled();
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
 });
 
 describe('useAppKeys: keystroke binding', () => {
   beforeEach(() => {
     resetAllStores();
+    planEditorKeysStore.__testReset();
   });
 
   afterEach(() => {
     abortStore.clear();
+    approvalPromptStore.__testReset();
+    costApprovalStore.__testReset();
+    planEditorKeysStore.__testReset();
   });
 
   it.each([
     { name: 'Ctrl+K', input: '\x0b', overlay: 'command-palette' },
-    { name: 'Ctrl+/', input: '\x1f', overlay: 'help' },
+    { name: 'Ctrl+/ (legacy \\x1f)', input: '\x1f', overlay: 'help' },
+    { name: 'Ctrl+/ (kitty CSI-u)', input: '\x1b[47;5u', overlay: 'help' },
   ] as const)('$name opens the $overlay overlay', async ({ input, overlay }) => {
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
@@ -415,6 +508,81 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
+    ui.unmount();
+  });
+
+  it('Ctrl+K does not open command-palette while the rich plan editor key layer is mounted', async () => {
+    const exit = vi.fn();
+    const ui = renderFeature(<EditorHarness exit={exit} />);
+    await tick(20);
+
+    // Mounting the editor's key hook publishes its active state; the global layer releases Ctrl+K.
+    expect(planEditorKeysStore.get()).toBe(true);
+    expect(overlayStore.get().active).toBe('none');
+
+    writeKey(ui, '\x0b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('Ctrl+K reopens the command-palette once the rich plan editor key layer unmounts', async () => {
+    const exit = vi.fn();
+    const ui = renderFeature(<EditorHarness exit={exit} mountEditor={false} />);
+    await tick(20);
+
+    expect(planEditorKeysStore.get()).toBe(false);
+
+    writeKey(ui, '\x0b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('command-palette');
+    ui.unmount();
+  });
+
+  it('Ctrl+/ still opens help while the rich plan editor key layer is mounted', async () => {
+    const exit = vi.fn();
+    const ui = renderFeature(<EditorHarness exit={exit} />);
+    await tick(20);
+
+    expect(planEditorKeysStore.get()).toBe(true);
+
+    writeKey(ui, '\x1f');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('help');
+    ui.unmount();
+  });
+
+  it('Ctrl+K while a tiered approval prompt is pending does not open an overlay over it', async () => {
+    const exit = vi.fn();
+    void openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'network',
+      actionDescription: 'push to origin',
+      phase: 'implementing',
+    });
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x0b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('Ctrl+K while a cost-approval prompt is pending does not open an overlay over it', async () => {
+    const exit = vi.fn();
+    void openCostApprovalPrompt(makeCostPrediction());
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x0b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 

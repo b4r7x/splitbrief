@@ -31,11 +31,13 @@ export function PlannerStatusCard({ event, chrome = false }: PlannerStatusCardPr
 
   if (event.status === 'running') {
     const suffix = toolLabel ? ` (${toolLabel})` : '';
+    const heartbeat =
+      latestHeartbeat && latestHeartbeat.phase === event.phase ? latestHeartbeat : undefined;
     const heartbeatSuffix =
-      latestHeartbeat && latestHeartbeat.accumulatedTokens > 0
-        ? ` · ${formatTokenCount(latestHeartbeat.accumulatedTokens)}`
+      heartbeat && heartbeat.accumulatedTokens > 0
+        ? ` · ${formatTokenCount(heartbeat.accumulatedTokens)}`
         : '';
-    const hintSuffix = latestHeartbeat?.phaseHint ? ` · ${latestHeartbeat.phaseHint}` : '';
+    const hintSuffix = heartbeat?.phaseHint ? ` · ${heartbeat.phaseHint}` : '';
 
     if (chrome) {
       return (

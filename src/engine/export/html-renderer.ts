@@ -1,7 +1,9 @@
+import { isAbsolute } from 'node:path';
 import { formatCost, formatPercent } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { costKnownFlags, type CostBreakdown } from '../../core/schemas/summary.js';
 import { formatTime } from '../../utils/format-time.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { REPORT_CSS } from './report-styles.js';
 import type { BriefQualityExport, DriftExport, EvidenceExport, ExportData } from './types.js';
 
@@ -11,7 +13,7 @@ export function renderSessionHtml(data: ExportData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>diptych — ${escapeHtml(data.feature)}</title>
+<title>diptych — ${escapeHtml(redactSecrets(data.feature))}</title>
 <style>${REPORT_CSS}</style>
 </head>
 <body>
@@ -37,7 +39,7 @@ function renderHeader(data: ExportData): string {
       : 'In progress';
   return `<header class="report-header">
 <div class="logo">diptych ${data.isComplete ? 'complete' : 'in progress'}</div>
-<h1>${escapeHtml(data.feature)}</h1>
+<h1>${escapeHtml(redactSecrets(data.feature))}</h1>
 <p class="muted">${completionLabel} · session ${escapeHtml(data.sessionId)}</p>
 </header>`;
 }
@@ -97,8 +99,13 @@ function renderEvidence(evidence: EvidenceExport): string {
   return `<section class="report-section">
 <h2>Evidence</h2>
 <p><span class="success">${evidence.tasksWithValidationEvidence}/${evidence.totalTasks}</span> tasks with validation evidence.</p>
-<p class="muted">See <a href="evidence.json">evidence.json</a> for the full ledger. ${evidence.escalatedTasks} escalated · ${evidence.failedTasks} failed.</p>
+<p class="muted">See ${renderEvidenceLink(evidence.href)} for the full ledger. ${evidence.escalatedTasks} escalated · ${evidence.failedTasks} failed.</p>
 </section>`;
+}
+
+function renderEvidenceLink(href: string): string {
+  if (isAbsolute(href)) return `the ledger at <code>${escapeHtml(href)}</code>`;
+  return `<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>`;
 }
 
 function renderScoredResult(title: string, result: DriftExport | BriefQualityExport): string {

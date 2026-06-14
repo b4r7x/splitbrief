@@ -2,38 +2,33 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
-import { pluralize } from '../../../utils/pluralize.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { countNoun } from '../../../utils/pluralize.js';
 
 interface ReadinessPanelProps {
   report: ReadinessReport;
-  onContinue?: () => void;
 }
 
-export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
+export function ReadinessPanel({ report }: ReadinessPanelProps) {
   const t = useTheme();
   const { exit } = useApp();
-  const canContinue = report.status !== 'blocked' && onContinue !== undefined;
+  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
   const notableChecks = report.sections
     .flatMap((section) => section.checks)
     .filter((check) => check.severity === 'blocker' || check.severity === 'warning')
     .slice(0, 6);
 
-  useInput((input, key) => {
-    if ((key.return || input === ' ') && canContinue) {
-      onContinue?.();
-      return;
-    }
-    if (key.escape || input === 'q') {
-      exit();
-    }
-  });
+  useInput(
+    (input, key) => {
+      if (key.escape || input === 'q') {
+        exit();
+      }
+    },
+    { isActive: !hasOverlay },
+  );
 
   return (
-    <OverlayPanel
-      title="Run Readiness"
-      hint={canContinue ? 'Enter continue · q exit' : 'q exit'}
-      maxWidth={86}
-    >
+    <OverlayPanel title="Run Readiness" hint="q exit" maxWidth={86}>
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
           <Text color={statusColor(report.status, t)} bold>
@@ -42,7 +37,7 @@ export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
           <Text color={t.textDim}>
             {report.status === 'blocked'
               ? `Required: ${report.nextAction.label} — ${report.nextAction.reason}`
-              : `${report.counts.warning} ${pluralize(report.counts.warning, 'advisory note')}; start can continue.`}
+              : `${countNoun(report.counts.warning, 'advisory note')}; start can continue.`}
           </Text>
         </Box>
         {notableChecks.length > 0 ? (

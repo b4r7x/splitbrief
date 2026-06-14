@@ -37,6 +37,10 @@ export function SummaryEvidence({ summary, ledger }: SummaryEvidenceProps) {
             .filter((v) => v.passed)
             .map((v) => v.stage)
             .join(',') || '—';
+        const retries = task.validation
+          .filter((v) => v.retryState === 'retry' || v.retryState === 'escalated')
+          .map((v) => `${v.stage}:${v.retryState}`)
+          .join(',');
         const expected =
           task.expectedEvidence.length > 0
             ? truncateWithEllipsis(task.expectedEvidence.join('; '), truncate)
@@ -56,6 +60,7 @@ export function SummaryEvidence({ summary, ledger }: SummaryEvidenceProps) {
             </Box>
             <Box flexDirection="column">
               <Text color={theme.textDim}>passed: {passed}</Text>
+              {retries && <Text color={theme.textDim}>retries: {retries}</Text>}
               <Text color={theme.textDim}>expected: {expected}</Text>
               <Text color={theme.textDim}>observed: {observed}</Text>
             </Box>

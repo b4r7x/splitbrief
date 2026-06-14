@@ -61,6 +61,22 @@ describe('createIpcWorkflowBridge', () => {
     bridge.close();
   });
 
+  it('truncates long buffered input in the warning with a single ellipsis glyph', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+    const events: Array<{ type: string; message?: string }> = [];
+    bus.subscribe((event) => events.push(event));
+
+    const longInput = 'x'.repeat(80);
+    bridge.onUserInput(longInput);
+
+    const warning = events.find((event) => event.type === 'warning');
+    expect(warning?.message).toBe(
+      `IPC input buffered (queue not ready): ${longInput.slice(0, 39)}…`,
+    );
+    bridge.close();
+  });
+
   it('exposes an AbortSignal that is not aborted initially', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);

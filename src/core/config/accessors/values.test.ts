@@ -6,7 +6,6 @@ const mockConfig = makeConfig({
   planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
   implementer: { temperature: 0.3 },
   theme: 'terminal',
-  shikiTheme: 'github-dark',
   sessions: { scope: 'project' },
 });
 
@@ -19,7 +18,7 @@ describe('getConfigValue', () => {
 
   it('reads top-level values', () => {
     expect(getConfigValue(mockConfig, 'theme')).toBe('terminal');
-    expect(getConfigValue(mockConfig, 'shikiTheme')).toBe('github-dark');
+    expect(getConfigValue(mockConfig, 'sessions.scope')).toBe('project');
   });
 
   it('returns undefined for missing paths', () => {

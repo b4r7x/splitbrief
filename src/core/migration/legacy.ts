@@ -1,4 +1,5 @@
 import { narrowRecord } from '../../utils/type-guards.js';
+import { parseJsonlLine } from '../../lib/fs.js';
 import { slugify } from '../../utils/slugify.js';
 import { sessionsRoot } from '../paths.js';
 import { MAX_SLUG_LENGTH } from '../sessions/lifecycle.js';
@@ -55,19 +56,19 @@ export function migrateEventLines(content: string): { lines: string[]; warnings:
   const migrated: string[] = [];
   const warnings: string[] = [];
   for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const obj = narrowRecord(JSON.parse(trimmed));
-      if (!obj) {
-        warnings.push(`Skipping non-object events line: ${line}`);
-        continue;
-      }
-      if (!('kind' in obj)) obj.kind = 'event';
-      migrated.push(JSON.stringify(obj));
-    } catch {
+    const result = parseJsonlLine(line);
+    if (result.kind === 'blank') continue;
+    if (result.kind === 'corrupt') {
       warnings.push(`Skipping corrupt events line: ${line}`);
+      continue;
     }
+    const obj = narrowRecord(result.value);
+    if (!obj) {
+      warnings.push(`Skipping non-object events line: ${line}`);
+      continue;
+    }
+    if (!('kind' in obj)) obj.kind = 'event';
+    migrated.push(JSON.stringify(obj));
   }
   return { lines: migrated, warnings };
 }

@@ -54,6 +54,30 @@ describe('migrateConfig', () => {
       expect(migrateConfig(v3Config)).toEqual(v3Config);
     });
 
+    it('folds a legacy top-level commitStrategy into git on a v3 config', () => {
+      const v3Config = {
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1' },
+        workflow: { commitStrategy: 'per-task', maxRetries: 3 },
+      };
+      const result = migrateConfig(v3Config) as Record<string, unknown>;
+      const workflow = result.workflow as Record<string, unknown>;
+      expect(workflow.git).toEqual({ commitStrategy: 'per-task' });
+    });
+
+    it('keeps an explicit v3 git.commitStrategy over the legacy field', () => {
+      const v3Config = {
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1' },
+        workflow: { commitStrategy: 'per-task', git: { commitStrategy: 'checkpoint' } },
+      };
+      const result = migrateConfig(v3Config) as Record<string, unknown>;
+      const workflow = result.workflow as Record<string, unknown>;
+      expect(workflow.git).toEqual({ commitStrategy: 'checkpoint' });
+    });
+
     it('throws on unsupported version', () => {
       expect(() =>
         migrateConfig({
@@ -64,13 +88,57 @@ describe('migrateConfig', () => {
       ).toThrow(/Unsupported config version/);
     });
 
-    it('treats missing version as v1 and migrates to v3', () => {
+    it('migrates a missing-version config to v3 while warning about the lossy v1 path', () => {
       const noVersion = {
         planner: { kind: 'claude-code' },
         implementer: { kind: 'api', tool: 'ollama', model: 'qwen' },
       };
-      const result = migrateConfig(noVersion) as Record<string, unknown>;
+      const warnings: string[] = [];
+      const result = migrateConfig(noVersion, warnings) as Record<string, unknown>;
       expect(result.version).toBe(3);
+      expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(true);
+    });
+
+    it('warns when the missing-version v1 path drops post-v1 effort and capabilities', () => {
+      const noVersion = {
+        planner: {
+          kind: 'shell',
+          command: 'my-planner',
+          model: 'x',
+          effort: 'high',
+          capabilities: { supportsSessionResume: true },
+        },
+        implementer: { kind: 'api', tool: 'ollama', model: 'qwen', effort: 'low' },
+      };
+      const warnings: string[] = [];
+      const result = migrateConfig(noVersion, warnings) as Record<string, unknown>;
+      const planner = result.planner as Record<string, unknown>;
+      const implementer = result.implementer as Record<string, unknown>;
+      expect(planner.effort).toBeUndefined();
+      expect(planner.capabilities).toBeUndefined();
+      expect(implementer.effort).toBeUndefined();
+      expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(true);
+    });
+
+    it('warns when version is missing instead of silently routing through v1', () => {
+      const noVersion = {
+        planner: { kind: 'claude-code' },
+        implementer: { kind: 'api', tool: 'ollama', model: 'qwen' },
+      };
+      const warnings: string[] = [];
+      migrateConfig(noVersion, warnings);
+      expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(true);
+    });
+
+    it('does not warn about a missing version when version is explicit', () => {
+      const v3Config = {
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1' },
+      };
+      const warnings: string[] = [];
+      migrateConfig(v3Config, warnings);
+      expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(false);
     });
 
     it('throws if config is not an object', () => {

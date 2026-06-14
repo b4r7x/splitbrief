@@ -36,9 +36,9 @@ const gates: Gate[] = [
   },
   {
     id: '4',
-    description: 'No raw throw new Error in engine/lib/cli',
+    description: 'No raw new Error in engine/lib/cli/core (any spelling, not just throw)',
     command:
-      '{ rg "throw new Error" src/engine/ src/lib/ src/cli/ | rg -v \'\\.test\\.\' || true; } | wc -l',
+      "{ rg \"new Error\\(\" src/engine/ src/lib/ src/cli/ src/core/ | rg -v '\\.test\\.' | rg -v 'recordException\\(new Error' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -157,14 +157,14 @@ const gates: Gate[] = [
     id: '18',
     description: 'No dead exports/files (knip)',
     command:
-      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --reporter compact 2>/dev/null | rg . || true; } | wc -l',
+      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --reporter compact | rg . || true; } | wc -l',
     expected: 0,
   },
   {
     id: '19',
     description: 'No runtime circular deps + layer-direction graph (dependency-cruiser)',
     command:
-      '{ npx depcruise --config .dependency-cruiser.cjs --output-type err-long src 2>/dev/null | rg "^\\s+error " || true; } | wc -l',
+      '{ npx depcruise --config .dependency-cruiser.cjs --output-type err-long src | rg "^\\s+error " || true; } | wc -l',
     expected: 0,
   },
   {
@@ -187,6 +187,14 @@ const gates: Gate[] = [
       'No present tracked runtime artifacts under .diptych/ or .tiny-spec/ (excluding intentional fixtures)',
     command:
       '{ git ls-files -z .diptych/ .tiny-spec/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '23',
+    description:
+      'VISION.md NOT-list hosts every non-goal that satellite docs redirect to (kanban, plan archive, cross-plan, swarm, project-management)',
+    command:
+      "{ for term in 'kanban' 'plan archive' 'cross-plan' 'swarm' 'project-management'; do rg -iq \"$term\" docs/VISION.md || printf 'missing: %s\\n' \"$term\"; done; } | wc -l",
     expected: 0,
   },
 ];

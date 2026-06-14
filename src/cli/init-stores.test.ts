@@ -23,9 +23,29 @@ function requireConfig() {
   return state.config;
 }
 
+// Seed a fresh detection cache so loadDetection() serves from disk and never
+// spawns the CLI-tool / network provider probes during boot. Each test gets a
+// unique temp projectDir, so without this every initStores() call would re-run
+// the full detection sweep (subprocess spawns + provider HTTP), which starves
+// this file under full-suite parallelism and trips the test timeout.
+function seedDetectionCache(projectDir: string): void {
+  const cache = {
+    version: 1,
+    timestamp: Date.now(),
+    planners: [],
+    implementers: [],
+  };
+  writeFileSync(
+    join(projectDir, DIPTYCH_DIR, 'detection-cache.json'),
+    JSON.stringify(cache),
+    'utf-8',
+  );
+}
+
 function makeProjectDir(): string {
   tmp = createTempDir('init-stores-test');
   mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+  seedDetectionCache(tmp);
   return tmp;
 }
 
@@ -116,7 +136,6 @@ describe('initStores', () => {
       startedAt: Date.parse('2026-04-18T10:00:00.000Z'),
       completedAt: Date.parse('2026-04-18T10:05:00.000Z'),
       stateVersion: 1,
-      stateFile: null,
       status: 'complete',
       summary: {
         feature: 'bootstrap test',
@@ -231,6 +250,38 @@ describe('initStores', () => {
     await initStores(dir);
 
     expect(process.stdout.listenerCount('resize')).toBe(before + 1);
+  }, 30_000);
+
+  it('preserves an explicitly configured implementer contextLength through boot', async () => {
+    const savedEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
+    delete process.env.DIPTYCH_CONTEXT_LENGTH;
+    try {
+      const dir = makeProjectDir();
+      writeConfigYaml(
+        dir,
+        toYaml({
+          ...createDefaultConfig(),
+          planner: { kind: 'cli', tool: 'claude-code' },
+          implementer: {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen:7b',
+            contextLength: 16384,
+          },
+        }),
+      );
+
+      await initStores(dir);
+
+      // Provider detection during boot must not overwrite an explicitly configured value.
+      expect(requireConfig().implementer.contextLength).toBe(16384);
+      // An explicit value is not boot-detected, so context routing must not label it 'detected'.
+      expect(configStore.getDetectedContextLength()).toBeUndefined();
+    } finally {
+      if (savedEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
+      else process.env.DIPTYCH_CONTEXT_LENGTH = savedEnv;
+    }
   }, 30_000);
 
   it('throws a CLI error when config loading yields no config state', async () => {

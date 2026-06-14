@@ -147,3 +147,34 @@ export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
   writeFileSync(join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   writeIndex(dir, indexEntries);
 }
+
+export function detachHead(dir: string): void {
+  const git = (args: string) => execSync(`git ${args}`, { cwd: dir, stdio: 'pipe' });
+  const sha = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
+  git(`checkout --detach ${sha}`);
+}
+
+export function startConflictingMerge(dir: string): void {
+  const git = (args: string) => execSync(`git ${args}`, { cwd: dir, stdio: 'pipe' });
+  git('init -b main');
+  git('config user.email "test@test.com"');
+  git('config user.name "Test"');
+
+  writeFileSync(join(dir, 'conflict.txt'), 'base\n');
+  git('add conflict.txt');
+  git('commit -m base');
+
+  git('checkout -b feature');
+  writeFileSync(join(dir, 'conflict.txt'), 'feature\n');
+  git('commit -am feature');
+
+  git('checkout main');
+  writeFileSync(join(dir, 'conflict.txt'), 'main\n');
+  git('commit -am main');
+
+  try {
+    git('merge feature');
+  } catch {
+    // The merge is expected to fail with a conflict, leaving MERGE_HEAD in place.
+  }
+}

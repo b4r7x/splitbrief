@@ -41,15 +41,20 @@ This block looks like a task but has invalid frontmatter.
 `;
 
 describe('reviewAutoSplitOutput', () => {
-  it('rejects an approved tasks.md that mixes valid tasks with malformed task-like blocks', async () => {
+  it('re-prompts after a malformed tasks.md, then adopts a corrected file', async () => {
     const projectDir = createTempDir('auto-split-review-test');
     dirs.push(projectDir);
     const sessionId = 'sess-auto-split';
     const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
+    const fixedTask = makePassingTask({ id: 'T010', file: 'src/parser.ts', title: 'Corrected' });
     const state = makeImplState([task]);
     const { bus, events } = makeBusRecorder();
     const onApprovalNeeded = vi.fn(async (_type: 'spec' | 'plan' | 'briefs', filePath: string) => {
-      await writeFile(filePath, `${formatTasks([task])}\n${malformedTaskLikeBlock}`, 'utf8');
+      if (onApprovalNeeded.mock.calls.length === 1) {
+        await writeFile(filePath, `${formatTasks([task])}\n${malformedTaskLikeBlock}`, 'utf8');
+      } else {
+        await writeFile(filePath, formatTasks([fixedTask]), 'utf8');
+      }
       return { approved: true };
     });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -62,12 +67,74 @@ describe('reviewAutoSplitOutput', () => {
       setTrackedState,
     });
 
-    expect(result).toMatchObject({ approved: false, tasks: [task] });
-    expect(onApprovalNeeded).toHaveBeenCalledOnce();
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(result.approved).toBe(true);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks.map((t) => t.id)).toEqual(['T010']);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
         message: expect.stringContaining('invalid Task Briefs'),
+      }),
+    );
+  });
+
+  it('re-prompts after an edit instead of approving on the first edit', async () => {
+    const projectDir = createTempDir('auto-split-review-test');
+    dirs.push(projectDir);
+    const sessionId = 'sess-auto-split-edit';
+    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
+    const editedTask = makePassingTask({ id: 'T020', file: 'src/parser.ts', title: 'Edited' });
+    const state = makeImplState([task]);
+    const { bus } = makeBusRecorder();
+    const onApprovalNeeded = vi.fn(async (_type: 'spec' | 'plan' | 'briefs', filePath: string) => {
+      if (onApprovalNeeded.mock.calls.length === 1) {
+        await writeFile(filePath, formatTasks([editedTask]), 'utf8');
+        return { approved: false as const, action: 'edit' as const };
+      }
+      return { approved: true as const };
+    });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const setTrackedState = vi.fn();
+
+    const result = await reviewAutoSplitOutput({
+      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
+      state,
+      tasks: [task],
+      setTrackedState,
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(result.approved).toBe(true);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks.map((t) => t.id)).toEqual(['T020']);
+  });
+
+  it('rejects into a resumable state when the reviewer quits', async () => {
+    const projectDir = createTempDir('auto-split-review-test');
+    dirs.push(projectDir);
+    const sessionId = 'sess-auto-split-reject';
+    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
+    const state = makeImplState([task]);
+    const { bus, events } = makeBusRecorder();
+    const onApprovalNeeded = vi.fn(async () => ({ approved: false as const }));
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const setTrackedState = vi.fn();
+
+    const result = await reviewAutoSplitOutput({
+      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
+      state,
+      tasks: [task],
+      setTrackedState,
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledOnce();
+    expect(result.approved).toBe(false);
+    expect(result.state.phase).toBe('idle');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('rejected'),
       }),
     );
   });

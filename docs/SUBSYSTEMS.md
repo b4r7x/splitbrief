@@ -1,4 +1,4 @@
-# diptych -- Supporting subsystems
+# diptych — Supporting subsystems
 
 These subsystems sit outside the core workflow loop but are essential to the full system. Each section explains what it does, where the code lives, and how to use it. For the core workflow, see [HOW-IT-WORKS.md](./HOW-IT-WORKS.md). For the engine and EventBus, see [ENGINE.md](./ENGINE.md). For approval and recovery, see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
@@ -10,7 +10,7 @@ These subsystems sit outside the core workflow loop but are essential to the ful
 
 User-declared commands that fire on workflow events. Configured in the `hooks` section of the diptych config file, or auto-discovered from `.diptych/hooks/` as ES module files named by event (e.g. `pre-task.ts`, `post-commit.js`). Discovery and merge logic lives in `src/engine/hooks/discover.ts`.
 
-**Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`, `pre_compact`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre.ts`, which also runs active built-in hooks before user entries.
+**Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre.ts`, which also runs active built-in hooks before user entries. `pre_compact` is a reserved event key — it is config-validated but has no dispatch site yet (see `docs/HOOKS-CONFIG.md`).
 
 **Post-hooks and on-hooks** (`post_task`, `post_validation`, `post_commit`, `on_complete`, `on_error`) fire asynchronously after the action through the hook sink on the EventBus (`src/engine/hooks/sink.ts`). A deny outcome from a post-hook is informational only -- it cannot block the already-completed action.
 
@@ -38,7 +38,7 @@ Auto-snapshot triggers fire at `preTask`, `postTask`, and `preFinalReview` phase
 
 `diptych start --detach` spawns a background server process (`src/engine/ipc/spawn-server.ts` -> `src/engine/ipc/server-entry.ts`). The server runs the workflow headlessly and exposes a Unix domain socket at `.diptych/sessions/<id>/ipc.sock`. The IPC protocol (`src/engine/ipc/protocol.ts`) defines `ServerMessage` and `ClientMessage` types over newline-delimited JSON.
 
-`diptych attach <session-id>` connects a TUI client to the socket. On connect, the server sends `session_meta`, replays historical events from the session JSONL log (`src/engine/ipc/replay.ts`), then streams live events. The client sends user input and prompt responses back to the server. Only one client can attach at a time -- a second connection enters a control-channel grace window where it can send `{kind:'detach'}` to steal the session, or gets rejected with `already_attached`.
+`diptych attach <session-id>` connects a TUI client to the socket. On connect, the server sends `session_meta`, replays historical events from the session JSONL log (`src/engine/ipc/replay.ts`), then streams live events. The client sends user input and prompt responses back to the server. Only one client can attach at a time -- a second connection enters a control-channel grace window where it can send `{kind:'detach'}` to steal the session, or gets rejected with `already_attached`. When the session is stolen, the server sends the displaced client a terminal `already_attached` error frame before destroying its socket, so the displaced client stops (does not reconnect) instead of treating the close as a transient drop.
 
 `diptych ps` lists active IPC sockets. `diptych detach` (or sending a `detach` message) disconnects the client without stopping the server. If the server process dies, crash diagnostics are built from the lockfile and server log tail (`src/engine/ipc/crash-diagnostic.ts`), showing a post-mortem with PID, timestamps, exit code, signal, and the last log lines. Events: `ipc_server_started`, `ipc_client_attached`, `ipc_client_detached`.
 
@@ -157,7 +157,7 @@ The ledger is consumed during the final review phase indirectly: `analyzeBriefDr
 
 Activated via `diptych start --rpc`. The workflow runs headlessly with a machine-readable command interface over stdin/stdout. Both directions use newline-delimited JSON -- one object per line.
 
-**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. Seven command types:
+**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. Eight command types:
 
 | `type` | Fields | What it does |
 |---|---|---|

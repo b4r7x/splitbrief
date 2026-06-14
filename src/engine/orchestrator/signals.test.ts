@@ -52,4 +52,15 @@ describe('withSignalHandlers', () => {
     expect(result).toEqual({ cancelled: true });
     expect(handler).toHaveBeenCalledOnce();
   });
+
+  it('returns cancelled=true and fires handler on SIGHUP (terminal close / SSH drop)', async () => {
+    const handler = vi.fn();
+
+    const result = await withSignalHandlers(handler, async () => {
+      process.emit('SIGHUP');
+    });
+
+    expect(result).toEqual({ cancelled: true });
+    expect(handler).toHaveBeenCalledOnce();
+  });
 });

@@ -26,6 +26,7 @@ function estimateFor(
       contextExplicit: tasks.filter(
         (task) => (task.contextConfidence ?? 'context-explicit') === 'context-explicit',
       ).length,
+      contextDetected: tasks.filter((task) => task.contextConfidence === 'context-detected').length,
       contextKnownCatalog: 0,
       contextCachedProvider: tasks.filter(
         (task) => task.contextConfidence === 'context-cached-provider',

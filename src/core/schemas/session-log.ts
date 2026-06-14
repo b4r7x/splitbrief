@@ -16,7 +16,6 @@ export const SessionLogMessageEntrySchema = z.object({
   text: z.string(),
   interrupted: z.boolean().optional(),
   queuedAt: z.string().optional(),
-  drainedAt: z.string().optional(),
 });
 export type SessionLogMessageEntry = z.infer<typeof SessionLogMessageEntrySchema>;
 
@@ -35,6 +34,7 @@ export const SessionLogSummaryEntrySchema = z.object({
   kind: z.literal('summary'),
   text: z.string(),
   summarizedUpTo: SessionLogTimestampSchema,
+  summarizedCount: z.number().int().nonnegative().optional(),
   tokenEstimate: z.number().optional(),
   structured: StructuredSummarySchema.optional(),
 });

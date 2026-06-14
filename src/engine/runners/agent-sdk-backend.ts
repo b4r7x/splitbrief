@@ -2,8 +2,7 @@ import type { InvokeResult } from './types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { effortToAnthropicBudget } from '../../core/schemas/enums.js';
-import { accumulateUsage, toTokenDelta } from '../streaming/token-utils.js';
+import { accumulateUsage, toTokenDelta } from '../streaming/token-usage.js';
 import { createChangeDetector, type ChangeDetector } from '../change-detection.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 import { error } from '../../utils/error.js';
@@ -39,7 +38,7 @@ interface SdkQueryOptions {
     cwd: string;
     resume?: string | undefined;
     env?: Record<string, string | undefined>;
-    thinking?: { type: 'enabled'; budgetTokens: number } | undefined;
+    effort?: EffortLevel | undefined;
     abortController?: AbortController | undefined;
   };
 }
@@ -240,8 +239,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
           cwd: projectDir,
         };
         if (resumeId) options.resume = resumeId;
-        if (effort)
-          options.thinking = { type: 'enabled', budgetTokens: effortToAnthropicBudget(effort) };
+        if (effort) options.effort = effort;
         // Set `options.env` for two reasons: `env` carries the sandbox HOME/XDG/cache
         // redirect (opts.sandboxEnv) that isolates a staged direct-implementer run, and
         // `apiKey` scopes ANTHROPIC_API_KEY to this SDK call so concurrent workflows with

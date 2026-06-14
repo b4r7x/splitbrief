@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectAvailablePlanners } from './detect.js';
 import { detectAvailableProviders } from '../providers/registry.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
+import { runCommand } from '../../lib/process/spawn.js';
+import { CLI_TOOLS } from '../runners/cli-tools.js';
+
+vi.mock('../../lib/process/spawn.js', () => ({
+  runCommand: vi.fn(),
+}));
+
+const runCommandMock = vi.mocked(runCommand);
 
 describe('detectAvailablePlanners', () => {
   const providerResults = [
@@ -51,6 +59,65 @@ describe('detectAvailablePlanners', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe('detectAvailablePlanners CLI version matrix', () => {
+  const providerResults = [
+    { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
+  ] as const;
+
+  let stderr: string;
+  let writeSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderr = '';
+    writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderr += String(chunk);
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    writeSpy.mockRestore();
+    runCommandMock.mockReset();
+  });
+
+  // Every CLI tool reports its own tested version, except the one under test,
+  // so the only warning that can appear is the deliberate mismatch.
+  function mockVersionsExcept(overrideCommand: string, overrideStdout: string) {
+    runCommandMock.mockImplementation(async (command: string) => {
+      if (command === overrideCommand) return { stdout: overrideStdout, stderr: '', code: 0 };
+      const entry = Object.values(CLI_TOOLS).find((e) => e.command === command);
+      return { stdout: entry ? entry.testedVersion : '0.0.0', stderr: '', code: 0 };
+    });
+  }
+
+  it('warns when an installed CLI major version differs from the tested one', async () => {
+    const testedMajor = Number(CLI_TOOLS.codex.testedVersion.split('.')[0]);
+    const installed = `${testedMajor + 9}.0.0`;
+    mockVersionsExcept(CLI_TOOLS.codex.command, `codex ${installed}`);
+
+    const codex = (await detectAvailablePlanners({ providerResults: [...providerResults] })).find(
+      (r) => r.tool === 'codex',
+    );
+
+    expect(codex).toMatchObject({ available: true, version: installed });
+    expect(codex).not.toHaveProperty('error');
+    expect(stderr).toContain('codex');
+    expect(stderr).toContain('differs in major version');
+    expect(stderr).toContain(CLI_TOOLS.codex.testedVersion);
+  });
+
+  it('does not warn when the installed CLI major version matches the tested one', async () => {
+    mockVersionsExcept(CLI_TOOLS.codex.command, `codex ${CLI_TOOLS.codex.testedVersion}`);
+
+    const codex = (await detectAvailablePlanners({ providerResults: [...providerResults] })).find(
+      (r) => r.tool === 'codex',
+    );
+
+    expect(codex).toMatchObject({ available: true, version: CLI_TOOLS.codex.testedVersion });
+    expect(stderr).not.toContain('differs in major version');
   });
 });
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   KNOWN_PROVIDERS,
   getProvider,
@@ -181,6 +181,7 @@ describe('detectCapabilities', () => {
 
     const result = await detectCapabilities(config);
     expect(result.contextLength).toBe(32768);
+    expect(result.origin).toBe('config');
   });
 
   it('returns default 8192 for non-api implementer without contextLength', async () => {
@@ -191,6 +192,70 @@ describe('detectCapabilities', () => {
 
     const result = await detectCapabilities(config);
     expect(result.contextLength).toBe(8192);
+    expect(result.origin).toBe('fallback');
+  });
+
+  describe('api-kind precedence', () => {
+    setupFetchMock();
+
+    let savedEnv: string | undefined;
+
+    beforeEach(() => {
+      savedEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
+      delete process.env.DIPTYCH_CONTEXT_LENGTH;
+    });
+
+    afterEach(() => {
+      if (savedEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
+      else process.env.DIPTYCH_CONTEXT_LENGTH = savedEnv;
+    });
+
+    function ollamaConfig(contextLength?: number): Config {
+      return {
+        implementer: {
+          kind: 'api' as const,
+          provider: 'ollama' as const,
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen:7b',
+          ...(contextLength !== undefined ? { contextLength } : {}),
+        },
+        planner: { kind: 'cli' as const, tool: 'claude-code' as const },
+      } as Config;
+    }
+
+    function mockDetectedContext(num: number): void {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ parameters: `num_ctx ${num}` }), { status: 200 }),
+      );
+    }
+
+    it('env DIPTYCH_CONTEXT_LENGTH wins over provider detection', async () => {
+      process.env.DIPTYCH_CONTEXT_LENGTH = '4096';
+      mockDetectedContext(131072);
+
+      const result = await detectCapabilities(ollamaConfig());
+
+      expect(result.contextLength).toBe(4096);
+      expect(result.origin).toBe('env');
+    });
+
+    it('explicit config contextLength wins over provider detection', async () => {
+      mockDetectedContext(131072);
+
+      const result = await detectCapabilities(ollamaConfig(16384));
+
+      expect(result.contextLength).toBe(16384);
+      expect(result.origin).toBe('config');
+    });
+
+    it('falls back to provider detection when neither env nor config is set', async () => {
+      mockDetectedContext(131072);
+
+      const result = await detectCapabilities(ollamaConfig());
+
+      expect(result.contextLength).toBe(131072);
+      expect(result.origin).toBe('detected');
+    });
   });
 });
 

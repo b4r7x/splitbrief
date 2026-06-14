@@ -18,7 +18,6 @@ export const EmittedChainSchema = z.object({
   uniqueOutOfBoundsFiles: z.array(z.string()),
   representativePath: z.string(),
   detectedAtTaskId: TaskIdSchema,
-  ts: z.number(),
 });
 
 export const DriftChainStateSchema = z.object({

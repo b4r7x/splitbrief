@@ -2,14 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerCostTier } from '../../../core/schemas/implementer-config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { routeTaskToImplementerProfile } from './route.js';
 
 const context: ProjectContext = {
   name: 'test-project',
   dir: '/repo',
-  runtime: 'node',
-  testCommand: 'npm test',
 };
 
 function profile(
@@ -360,6 +359,46 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.selectedProfile).toBe('legacy-default');
     expect(decision.contextLength).toBe(10_000);
     expect(decision.reason).toContain('conservative context-length fallback');
+  });
+
+  it('assesses a cache-resolvable model at its catalog context length, matching the estimate path', () => {
+    const task = makeTask();
+    const contextCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) =>
+        providerId === 'deepseek'
+          ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
+          : null,
+    };
+    const runtimeWorker: ResolvedImplementerProfile = {
+      name: 'runtime-worker',
+      costTier: 'cheap',
+      config: {
+        kind: 'api',
+        provider: 'deepseek',
+        apiBase: 'https://api.deepseek.com/v1',
+        apiKey: 'test-key',
+        model: 'runtime-only',
+      },
+      capabilities: { writesFiles: 'extracted-code' },
+      isDefault: false,
+    };
+
+    const withoutCache = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [runtimeWorker],
+    });
+    expect(withoutCache.contextLength).toBe(8192);
+
+    const withCache = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [runtimeWorker],
+      contextCache,
+    });
+    expect(withCache.selectedProfile).toBe('runtime-worker');
+    expect(withCache.contextLength).toBe(12_000);
   });
 
   it('rejects profiles that only fit after unsafe currentCode truncation', () => {

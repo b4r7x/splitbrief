@@ -11,7 +11,7 @@ describe('recordApprovalEvidence / recordRejectionEvidence', () => {
       ledger,
       tier: 'confirm',
       actionClass: 'destructive',
-      actionDescription: 'rm -rf',
+      actionDescription: 'write .git/config',
       reason: 'needed',
     });
     expect(updated.approvals).toHaveLength(1);

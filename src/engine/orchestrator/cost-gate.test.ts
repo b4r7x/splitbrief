@@ -16,6 +16,7 @@ function makePrediction(overrides: Partial<CostPrediction> = {}): CostPrediction
       taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
       contextConfidenceCounts: {
         contextExplicit: 5,
+        contextDetected: 0,
         contextKnownCatalog: 4,
         contextCachedProvider: 2,
         contextConservativeFallback: 1,
@@ -74,10 +75,12 @@ describe('decideCostGate', () => {
       }),
     ).toBe('skip');
   });
-  it('returns skip when knownActualEstimate is null', () => {
+  it('returns skip-unknown-cost when knownActualEstimate is null', () => {
     const prediction = makePrediction();
     prediction.deterministic!.totals.knownActualEstimate = null;
-    expect(decideCostGate({ mode: 'standard', prediction, costGateEnabled: true })).toBe('skip');
+    expect(decideCostGate({ mode: 'standard', prediction, costGateEnabled: true })).toBe(
+      'skip-unknown-cost',
+    );
   });
 });
 

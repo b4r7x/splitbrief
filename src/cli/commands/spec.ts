@@ -15,13 +15,12 @@ import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { resolveHooksConfig } from '../../engine/hooks/discover.js';
 import { rejectUntrustedRunners } from '../../engine/runners/trust.js';
 
-type SpecOpts = { auto: boolean; project?: string; allowHooks: boolean };
+type SpecOpts = { project?: string; allowHooks: boolean };
 
 export function registerSpecCommand(program: Command): void {
   program
     .command('spec <feature>')
     .description('Generate spec, plan, and tasks only (no implementation)')
-    .option('--auto', 'Auto-approve spec and plan', false)
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .action(async (feature: string, opts: SpecOpts) => {
@@ -35,19 +34,13 @@ export function registerSpecCommand(program: Command): void {
       await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
       rejectUntrustedRunners(baseConfig, projectDir, opts.allowHooks);
       printConfigWarnings(warnings);
-      const config = opts.auto
-        ? {
-            ...baseConfig,
-            workflow: { ...baseConfig.workflow, autoApproveSpec: true, autoApprovePlan: true },
-          }
-        : baseConfig;
 
       const sessionId = beginSession(projectDir, feature);
 
-      const planner = await createPlanner(config);
+      const planner = await createPlanner(baseConfig);
 
       console.log(
-        `Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`,
+        `Planning feature: ${feature} (planner: ${getRunnerDisplayName(baseConfig.planner)})\n`,
       );
 
       const result: PlanResult = await withCliErrors(() =>

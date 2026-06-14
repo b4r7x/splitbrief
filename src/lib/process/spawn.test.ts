@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { runCommand, spawnWithTimeout, spawnWithStdin } from './spawn.js';
+import { runCommand, spawnWithTimeout, spawnWithStdin, spawnError } from './spawn.js';
 import { killProcess } from './registry.js';
 import { isENOENT } from './errors.js';
 import { spawn } from 'node:child_process';
+describe('spawnError', () => {
+  it('tags the unavailable-streams failure with a domain kind', () => {
+    const err = spawnError.streamsUnavailable();
+    expect(err.kind).toBe('process-streams-unavailable');
+    expect(err.message).toBe('Process streams not available');
+  });
+});
+
 describe('runCommand', () => {
   it('resolves with stdout, stderr, and exit code', async () => {
     const result = await runCommand('echo', ['hello']);
@@ -34,6 +42,21 @@ describe('runCommand', () => {
     await expect(runCommand('node', ['-e', 'process.exit(42)'])).rejects.toMatchObject({
       kind: 'process-output',
     });
+  });
+
+  it('rejects with a timeout-kinded error when the command exceeds the timeout', async () => {
+    await expect(
+      runCommand('node', ['-e', 'setTimeout(() => {}, 10_000)'], { timeout: 100 }),
+    ).rejects.toMatchObject({ kind: 'command-timeout' });
+  });
+
+  it('uses the provided label in the timeout message', async () => {
+    await expect(
+      runCommand('node', ['-e', 'setTimeout(() => {}, 10_000)'], {
+        timeout: 100,
+        label: 'typecheck validation',
+      }),
+    ).rejects.toThrow('typecheck validation timed out');
   });
 });
 
@@ -132,6 +155,35 @@ describe('spawnWithTimeout', () => {
         onProgress: () => {},
       }),
     ).rejects.toThrow();
+  });
+
+  it('reassembles multibyte stdout split across data chunks without corruption', async () => {
+    // The child writes each UTF-8 byte of '日本語' in its own write, forcing the parent stream
+    // to receive multibyte characters split across data events. With setEncoding('utf8') the
+    // partial sequences buffer until complete, so the decoded output must be lossless.
+    const program = [
+      'const bytes = Buffer.from("日本語", "utf8");',
+      'let i = 0;',
+      'const tick = () => {',
+      '  if (i >= bytes.length) return;',
+      '  process.stdout.write(bytes.subarray(i, i + 1));',
+      '  i += 1;',
+      '  setTimeout(tick, 1);',
+      '};',
+      'tick();',
+    ].join('');
+
+    const result = await spawnWithTimeout({
+      command: 'node',
+      args: ['-e', program],
+      cwd: process.cwd(),
+      timeout: 5000,
+      onProgress: () => {},
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.output).toBe('日本語');
+    expect(result.output).not.toContain('�');
   });
 
   it('rejects with AbortError when aborted after output', async () => {
@@ -294,6 +346,58 @@ describe('spawnWithStdin', () => {
 
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
     expect(lines).toContain('before abort');
+  });
+
+  it('kills the whole process group on abort so grandchildren are not orphaned', async () => {
+    const controller = new AbortController();
+    let resolveGrandchild: (pid: number) => void = () => {};
+    const grandchildPid = new Promise<number>((resolve) => {
+      resolveGrandchild = resolve;
+    });
+
+    // The child detaches a long-lived grandchild and prints its PID. Without group
+    // teardown the grandchild would survive the parent's death and leak; detached+group
+    // SIGTERM reaches the entire group, so the grandchild must die with the parent.
+    const childProgram = [
+      "const { spawn } = require('node:child_process');",
+      "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
+      'console.log(gc.pid);',
+      'setTimeout(() => {}, 60_000);',
+    ].join('');
+
+    const promise = spawnWithStdin({
+      command: 'node',
+      args: ['-e', childProgram],
+      cwd: '.',
+      notFoundMessage: 'node not found',
+      onLine: (line) => {
+        const pid = Number.parseInt(line.trim(), 10);
+        if (Number.isInteger(pid)) resolveGrandchild(pid);
+      },
+      signal: controller.signal,
+    });
+
+    const pid = await grandchildPid;
+    expect(pid).toBeGreaterThan(0);
+
+    controller.abort();
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+
+    const stillAlive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const deadline = Date.now() + 5000;
+    while (stillAlive() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(stillAlive()).toBe(false);
   });
 });
 

@@ -4,12 +4,16 @@ import { warnError } from '../../lib/warn.js';
 
 const OpencodeTextEvent = z.object({
   type: z.literal('text'),
-  text: z.string(),
+  part: z.object({
+    type: z.literal('text'),
+    text: z.string(),
+  }),
 });
 
 const OpencodeStepFinishEvent = z.object({
   type: z.literal('step_finish'),
-  usage: z.object({
+  part: z.object({
+    type: z.literal('step-finish'),
     tokens: z.object({
       input: z.number(),
       output: z.number(),
@@ -30,14 +34,14 @@ export function parseOpencodeLine(line: string): ParsedLine {
   }
 
   const text = OpencodeTextEvent.safeParse(event);
-  if (text.success) return { text: text.data.text };
+  if (text.success) return { text: text.data.part.text };
 
   const step = OpencodeStepFinishEvent.safeParse(event);
   if (step.success) {
     return {
       usage: {
-        inputTokens: step.data.usage.tokens.input,
-        outputTokens: step.data.usage.tokens.output,
+        inputTokens: step.data.part.tokens.input,
+        outputTokens: step.data.part.tokens.output,
       },
     };
   }

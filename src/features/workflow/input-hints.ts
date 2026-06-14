@@ -1,6 +1,6 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import type { IpcClientStatus } from './hooks/ipc-client-connection.js';
+import type { IpcClientStatus } from '../../engine/ipc/client.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 
 export interface InputHintInput {
@@ -21,7 +21,6 @@ export function resolveInputHint(input: InputHintInput): string {
 
 export function resolveAttachInputHint(status: IpcClientStatus): string {
   if (status === 'connected') return 'queue message to running workflow';
-  if (status === 'readonly') return 'attached read-only';
   if (status === 'reconnecting') return 'reconnecting to server...';
   if (status === 'failed') return 'server connection failed';
   if (status === 'detached') return 'detached';

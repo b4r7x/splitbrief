@@ -4,8 +4,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { transitionAndSave } from '../state-ops.js';
-import { publishRecoveryPrompted } from '../events.js';
+import { raisePendingRecovery } from '../state-ops.js';
 import { buildDependencyBlockedRecoveryIssue } from '../recovery/builders/task.js';
 import { stopWithReview } from './stop-with-review.js';
 
@@ -23,7 +22,6 @@ export async function checkDependencyGate(opts: {
   taskBreakdowns: TaskTokenUsage[];
 }): Promise<{ state: WorkflowState; stopped: boolean }> {
   const { wctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir, sessionId } = wctx;
   let state = opts.state;
   const failedTaskIds = getFailedTaskIds(state);
   const skippedTaskIds = getSkippedTaskIds(state);
@@ -41,12 +39,7 @@ export async function checkDependencyGate(opts: {
     phase: state.phase,
     createdAt: nowIso(),
   });
-  state = transitionAndSave({ projectDir, sessionId }, state, {
-    type: 'SET_PENDING_RECOVERY',
-    issue,
-  });
-  publishRecoveryPrompted(wctx.bus, issue);
-  setTrackedState(state);
+  state = raisePendingRecovery(wctx, state, issue, setTrackedState);
   state = await stopWithReview({
     wctx,
     state,

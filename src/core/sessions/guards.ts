@@ -9,5 +9,5 @@ export function clearStaleSession(projectDir: string): void {
     throw sessionError.stillActive(active);
   }
 
-  clearActive(projectDir);
+  clearActive({ projectDir, sessionId: active });
 }

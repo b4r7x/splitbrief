@@ -34,7 +34,9 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   );
 
   const [step, setStep] = useState<Step>(() =>
-    planners.filter((p) => p.available).length === 0 ? 'no-planners' : 'planner',
+    planners.filter((p) => p.available && p.type !== 'shell').length === 0
+      ? 'no-planners'
+      : 'planner',
   );
 
   const finalize = (finalConfig: Config) => {

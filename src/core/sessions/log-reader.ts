@@ -1,6 +1,7 @@
 import { existsSync, createReadStream, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
+import { parseJsonlLine } from '../../lib/fs.js';
 import type {
   SessionLogEntry,
   SessionLogEventEntry,
@@ -25,14 +26,9 @@ async function* readSessionLogFile(file: string): AsyncIterable<SessionLogEntry>
   const stream = createReadStream(file, { encoding: 'utf-8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of rl) {
-    if (!line.trim()) continue;
-    let raw: unknown;
-    try {
-      raw = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const parsed = SessionLogEntrySchema.safeParse(raw);
+    const result = parseJsonlLine(line);
+    if (result.kind !== 'value') continue;
+    const parsed = SessionLogEntrySchema.safeParse(result.value);
     if (parsed.success) yield parsed.data;
   }
 }
@@ -65,10 +61,15 @@ export async function readCompactedMessages(dir: string): Promise<SessionLogMess
   const messages = entries.filter((entry) => entry.kind === 'message');
   if (!latestSummary) return messages;
 
-  return [
-    summaryAsMessage(latestSummary),
-    ...messages.filter((message) => isAfterTimestamp(message.ts, latestSummary.summarizedUpTo)),
-  ];
+  return [summaryAsMessage(latestSummary), ...keptAfterSummary(messages, latestSummary)];
+}
+
+function keptAfterSummary(
+  messages: SessionLogMessageEntry[],
+  summary: SessionLogSummaryEntry,
+): SessionLogMessageEntry[] {
+  if (summary.summarizedCount !== undefined) return messages.slice(summary.summarizedCount);
+  return messages.filter((message) => isAfterTimestamp(message.ts, summary.summarizedUpTo));
 }
 
 export function findLatestSummary(entries: SessionLogEntry[]): SessionLogSummaryEntry | null {

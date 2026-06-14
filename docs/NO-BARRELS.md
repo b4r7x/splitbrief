@@ -8,11 +8,11 @@
 
 ```ts
 // ✅ Good — direct import, named and traceable
-import { workflowStore } from '../stores/workflow/workflow.js';
-import { loadConfig } from '../core/config/loading.js';
+import { eventsStore } from '../stores/workflow/events.js';
+import { loadConfig } from '../core/config/load/io.js';
 
 // ❌ Bad — goes through a barrel
-import { workflowStore } from '../stores/index.js';
+import { eventsStore } from '../stores/index.js';
 import { loadConfig } from '../core/config/index.js';
 ```
 
