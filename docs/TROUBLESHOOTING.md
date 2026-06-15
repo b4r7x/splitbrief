@@ -300,17 +300,17 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ## Workflow issues
 
-### Symptom: `diptych resume` says "session already active" but nothing is running
+### Symptom: a session is reported active but nothing is running
 
-**Likely cause:** Each session writes a per-session lockfile at `.diptych/sessions/<id>/lockfile.json` that records the PID and heartbeat. If the server process died without writing a clean exit, the lockfile is stale and diptych treats it as an active session.
+**Likely cause:** Each session writes a per-session lockfile at `.diptych/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.diptych/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
 
 **Fix:**
-1. Run `diptych ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed`.
-2. If the session is listed as `crashed`, the process is already gone — `diptych continue <session-id>` will resume that session, while `diptych attach <session-id>` attaches if a server is still running.
-3. If you want to force-clear a stale lock: `rm .diptych/sessions/<session-id>/lockfile.json` — but prefer `diptych ps` so you can see all crashed sessions at once.
-4. If the lock is fresh and a real process is alive, you have a genuine concurrent session — attach to that one rather than starting another.
+1. Run `diptych ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed` or exited.
+2. Run `diptych start ...` again. Current versions clear `.diptych/active` automatically when the active lockfile has exited or the PID is gone.
+3. If you want to resume that interrupted session instead of starting fresh, run `diptych continue <session-id>`.
+4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Attach to that one rather than starting another.
 
-**Prevention:** Always exit cleanly (Ctrl-C in the TUI, not SIGKILL). For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
+**Prevention:** Prefer clean TUI cancellation or `diptych continue` for interrupted work. For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 

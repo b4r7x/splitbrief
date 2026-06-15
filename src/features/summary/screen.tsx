@@ -6,6 +6,7 @@ import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { Session } from '../../core/schemas/session.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
@@ -24,6 +25,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger.js';
 import { uniqueSorted } from '../../utils/collections.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -57,6 +59,19 @@ function formatImplementerSummary(summary: Summary): string | null {
   return formatToolModel(summary.implementerTool, summary.implementerModel);
 }
 
+function getSummaryHeading(status: Session['status'], theme: ReturnType<typeof useTheme>) {
+  switch (status) {
+    case 'complete':
+      return { text: 'diptych complete', color: theme.success };
+    case 'failed':
+      return { text: 'diptych failed with summary', color: theme.error };
+    case 'interrupted':
+      return { text: 'diptych interrupted with summary', color: theme.warning };
+    default:
+      return assertNever(status);
+  }
+}
+
 interface SummaryEvidenceLedgerState {
   key: string;
   ledger: EvidenceLedger | null;
@@ -84,7 +99,12 @@ function useSummaryEvidenceLedger(
       return;
     }
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    let ledger: EvidenceLedger | null = null;
+    try {
+      ledger = readEvidenceLedger(projectDir, sessionId);
+    } catch {
+      ledger = null;
+    }
     setState({ key: ledgerKey, ledger });
   }, [projectDir, sessionId, evidencePath, ledgerKey]);
 
@@ -98,6 +118,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
   const summary = routerStore.use((s) => (s.screen === 'summary' ? s.summary : null));
   const sessionId = routerStore.use((s) => (s.screen === 'summary' ? s.sessionId : undefined));
+  const status = routerStore.use((s) => (s.screen === 'summary' ? s.status : 'complete'));
   const evidenceLedger = useSummaryEvidenceLedger(summary, sessionId);
   if (!summary) return null;
 
@@ -117,12 +138,13 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const briefQualityText = bq ? formatScoreSummary(bq.score, bq, 'quality') : 'quality n/a';
   const driftText = drift ? formatScoreSummary(drift.score, drift) : null;
   const implementerSummary = formatImplementerSummary(summary);
+  const heading = getSummaryHeading(status, theme);
 
   return (
     <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
-        <Text bold color={theme.success}>
-          diptych complete
+        <Text bold color={heading.color}>
+          {heading.text}
         </Text>
       </Box>
       <Box justifyContent="center" width="100%">

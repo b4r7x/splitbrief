@@ -14,6 +14,7 @@ import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
   serializeChangedFilesBaseline,
+  withActiveTaskSnapshot,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
@@ -46,8 +47,19 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   // keeps per-task cost identity for already-completed tasks (F-454).
   const taskBreakdowns: TaskTokenUsage[] = [...(state.taskBreakdowns ?? [])];
 
-  function syncBaselineIntoState(): void {
-    state = { ...state, changedFilesBaseline: serializeChangedFilesBaseline(changedFilesBaseline) };
+  function syncBaselineIntoState(nextState: WorkflowState = state): WorkflowState {
+    state = {
+      ...nextState,
+      changedFilesBaseline: serializeChangedFilesBaseline(changedFilesBaseline),
+    };
+    return state;
+  }
+
+  function persistBaselineState(nextState: WorkflowState = state): WorkflowState {
+    const synced = syncBaselineIntoState(nextState);
+    setTrackedState(synced);
+    saveState({ projectDir, sessionId }, synced);
+    return synced;
   }
 
   function persistTaskBreakdowns(): void {
@@ -170,6 +182,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskBreakdowns,
       setTrackedState,
       setCurrentTask,
+      onTaskStartSnapshot: (snapshotState, taskStartSnapshot) => {
+        changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, taskStartSnapshot);
+        return persistBaselineState(snapshotState);
+      },
       onTaskAcceptedFiles: (files) => {
         for (const file of files) taskAcceptedFiles.add(file);
       },
@@ -183,7 +199,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskAcceptedFiles,
       acknowledgedUserEditFiles,
     });
-    syncBaselineIntoState();
+    persistBaselineState();
 
     const reviewDecision = await reviewTaskIfNeeded({
       wctx: taskWorkflowContext,

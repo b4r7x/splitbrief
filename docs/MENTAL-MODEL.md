@@ -99,7 +99,7 @@ Every workflow run is a session. A session is a folder on disk under `.diptych/s
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One foreground active session at a time per project directory. `.diptych/active` is the foreground lock file — it contains the current session ID when the active pointer is present. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.diptych/`.
+One foreground active session at a time per project directory. `.diptych/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.diptych/`.
 
 `diptych resume` picks up the active interrupted workflow. If the active pointer is absent, use `diptych continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
 

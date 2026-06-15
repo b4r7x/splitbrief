@@ -66,10 +66,7 @@ export function eventRows(options: {
     case 'clarification_answered':
       return [];
     case 'workflow_cancelled':
-      return [
-        row(`${keyPrefix}-title`, 'Workflow cancelled', 'warning', true),
-        row(`${keyPrefix}-resume`, 'Resume with: diptych resume', 'textDim'),
-      ];
+      return [row(`${keyPrefix}-title`, 'Workflow cancelled', 'warning', true)];
     case 'paused_external_changes':
       return cardRows({
         keyPrefix,

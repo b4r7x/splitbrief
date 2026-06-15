@@ -72,12 +72,12 @@ Runtime state of the active workflow run.
 
 ### Navigation -- `src/stores/navigation/`
 
-- **routerStore** -- current screen (`home` | `workflow` | `summary` | `setup`) plus screen-specific data (feature name, resume state, summary). Validates transitions against a fixed map -- you can't navigate from `home` to `summary` directly.
+- **routerStore** -- current screen (`home` | `workflow` | `summary` | `setup`) plus screen-specific data (feature name, resume state, summary, summary status). Validates transitions against a fixed map. Session selection routes resumable interrupted sessions to `workflow`; sessions with a persisted summary open `summary` with their terminal status.
 
 ### UI -- `src/stores/ui/`
 
 - **overlayStore** -- active overlay type, overlay stack, exclusive flag.
-- **feedbackStore** -- user-facing messages with 3-second auto-clear.
+- **feedbackStore** -- user-facing feedback. Informational messages and transient errors auto-clear after 3 seconds; persistent errors remain until replaced or reset.
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
 - **inputHeightStore** -- current composer height in rows.
@@ -214,7 +214,8 @@ type RouteData =
   | { screen: 'home' }
   | { screen: 'workflow'; feature: string; resumeState?: WorkflowState;
       sessionId?: string; attach?: WorkflowAttach }
-  | { screen: 'summary'; summary: Summary; sessionId?: string }
+  | { screen: 'summary'; summary: Summary; sessionId?: string;
+      status: Session['status'] }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
 ```
 

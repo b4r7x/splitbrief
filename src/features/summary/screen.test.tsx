@@ -6,6 +6,8 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { Session } from '../../core/schemas/session.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger.js';
@@ -18,6 +20,19 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { SummaryScreen } from './screen.js';
 
+function showSummaryRoute(opts: {
+  summary: Summary;
+  sessionId?: string | undefined;
+  status?: Session['status'] | undefined;
+}) {
+  routerStore.init({
+    screen: 'summary',
+    summary: opts.summary,
+    sessionId: opts.sessionId,
+    status: opts.status ?? 'complete',
+  });
+}
+
 describe('SummaryScreen', () => {
   beforeEach(() => {
     resetAllStores();
@@ -28,7 +43,7 @@ describe('SummaryScreen', () => {
   });
 
   it('renders the persisted mode from the summary', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary({ mode: 'standard' }) });
+    showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -41,7 +56,7 @@ describe('SummaryScreen', () => {
 
   it('does not label old summaries with the current live config mode', () => {
     configStore.__testReset({ config: makeConfig({ workflow: { mode: 'quick' } }) });
-    routerStore.init({ screen: 'summary', summary: makeSummary() });
+    showSummaryRoute({ summary: makeSummary() });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -53,8 +68,7 @@ describe('SummaryScreen', () => {
   });
 
   it('uses task compiler language in the summary header', () => {
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       summary: makeSummary({ totalTasks: 5, completedByLocal: 4, escalatedToPlanner: 1 }),
     });
 
@@ -68,9 +82,43 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
+  it('labels complete summaries as complete', () => {
+    showSummaryRoute({ summary: makeSummary(), status: 'complete' });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('diptych complete');
+
+    ui.unmount();
+  });
+
+  it('does not label failed summaries as complete', () => {
+    showSummaryRoute({ summary: makeSummary(), status: 'failed' });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('diptych failed with summary');
+    expect(frame).not.toContain('diptych complete');
+
+    ui.unmount();
+  });
+
+  it('does not label interrupted summaries as complete', () => {
+    showSummaryRoute({ summary: makeSummary(), status: 'interrupted' });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('diptych interrupted with summary');
+    expect(frame).not.toContain('diptych complete');
+
+    ui.unmount();
+  });
+
   it('labels mixed-profile implementer runs without implying one global implementer', () => {
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       sessionId: 'summary-session',
       summary: makeSummary({
         implementerTool: 'ollama',
@@ -113,7 +161,7 @@ describe('SummaryScreen', () => {
   });
 
   it('renders "quality n/a" when no briefQuality present', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary() });
+    showSummaryRoute({ summary: makeSummary() });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -124,8 +172,7 @@ describe('SummaryScreen', () => {
   });
 
   it('renders brief quality score when briefQuality is present', () => {
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       summary: makeSummary({
         briefQuality: { score: 0.8, passed: true, errorCount: 0, warningCount: 2 },
       }),
@@ -141,8 +188,7 @@ describe('SummaryScreen', () => {
   });
 
   it('renders drift warning count when driftSummary is present', () => {
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       summary: makeSummary({
         driftSummary: { passed: false, score: 0.84, errorCount: 0, warningCount: 1 },
       }),
@@ -159,8 +205,7 @@ describe('SummaryScreen', () => {
 
   it('renders checkpoint and review packet rollups from the summary', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 60, isSmall: false });
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       sessionId: 'summary-session',
       summary: makeSummary({
         checkpointSummary: {
@@ -226,8 +271,7 @@ describe('SummaryScreen', () => {
 
       terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
       configStore.__testReset({ projectDir });
-      routerStore.init({
-        screen: 'summary',
+      showSummaryRoute({
         sessionId,
         summary: makeSummary({
           evidenceSummary: {
@@ -258,11 +302,41 @@ describe('SummaryScreen', () => {
     }
   });
 
+  it('renders the evidence rollup when the routed session id cannot read a ledger', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-screen-invalid-ledger-'));
+    try {
+      terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
+      configStore.__testReset({ projectDir });
+      showSummaryRoute({
+        sessionId: '../outside',
+        summary: makeSummary({
+          evidenceSummary: {
+            path: 'evidence.json',
+            totalTasks: 1,
+            tasksWithValidationEvidence: 0,
+            escalatedTasks: 0,
+            failedTasks: 0,
+          },
+        }),
+      });
+
+      const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+      await tick();
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame).toContain('Evidence');
+      expect(frame).toContain('0/1 validated');
+
+      ui.unmount();
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps checkpoint and packet details readable on narrow terminals', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 60, isSmall: true });
     const longName = `post-task-${'very-long-name-'.repeat(8)}`;
-    routerStore.init({
-      screen: 'summary',
+    showSummaryRoute({
       sessionId: 'small-summary-session',
       summary: makeSummary({
         checkpointSummary: {
@@ -306,7 +380,7 @@ describe('SummaryScreen', () => {
   });
 
   it('does not render "full" mode label anywhere', () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary({ mode: 'standard' }) });
+    showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
@@ -317,7 +391,7 @@ describe('SummaryScreen', () => {
   });
 
   it('exits to home when Enter is pressed on the empty composer', async () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary() });
+    showSummaryRoute({ summary: makeSummary() });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     ui.stdin.write('\r');
@@ -329,7 +403,7 @@ describe('SummaryScreen', () => {
   });
 
   it('ignores Enter on the composer while an overlay is open', async () => {
-    routerStore.init({ screen: 'summary', summary: makeSummary() });
+    showSummaryRoute({ summary: makeSummary() });
     overlayStore.open('command-palette');
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);

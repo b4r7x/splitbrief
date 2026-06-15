@@ -46,7 +46,11 @@ export function RecentSessionsList({
   return (
     <RecentSessionsShell>
       {filtered.map((s, i) => (
-        <SessionRow key={s.id} session={s} showCursor isCursor={i === selectedIndex} />
+        <SessionRow
+          key={s.id}
+          session={s}
+          cursor={{ kind: 'outdent', isCursor: i === selectedIndex }}
+        />
       ))}
     </RecentSessionsShell>
   );

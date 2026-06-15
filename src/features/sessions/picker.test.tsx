@@ -9,7 +9,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import type { Session } from '../../core/schemas/session.js';
 import { SessionsPicker } from './picker.js';
 import { tick } from '#testing/helpers/ink.js';
@@ -28,8 +28,7 @@ beforeEach(() => {
   configStore.reset();
   overlayStore.reset();
   routerStore.reset();
-  feedbackStore.reset();
-  // Seed configStore with a real tmpDir projectDir via real load (defaults ok).
+  sessionSelectStore.reset();
   configStore.load(tmp);
 });
 
@@ -39,7 +38,7 @@ afterEach(() => {
   configStore.reset();
   overlayStore.reset();
   routerStore.reset();
-  feedbackStore.reset();
+  sessionSelectStore.reset();
 });
 
 describe('SessionsPicker', () => {
@@ -67,11 +66,9 @@ describe('SessionsPicker', () => {
     await tick(1);
     await tick(1);
 
-    // User-observable: the features appear in the rendered frame.
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('add authentication');
     expect(frame).toContain('refactor payments');
-    // Title reflects the number of sessions loaded from disk.
     expect(frame).toContain('(2)');
 
     instance.unmount();
@@ -87,5 +84,35 @@ describe('SessionsPicker', () => {
     expect(frame.toLowerCase()).toMatch(/no.*sessions/);
 
     instance.unmount();
+  });
+
+  it('keeps a selection error visible while the picker stays open', async () => {
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-missing-state',
+        feature: 'resume missing state',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+
+    overlayStore.open('sessions');
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    instance.stdin.write('\r');
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('resume missing state');
+    expect(frame).toContain('saved workflow state');
+    expect(routerStore.get().screen).toBe('home');
+    expect(overlayStore.get().active).toBe('sessions');
+
+    instance.unmount();
+    expect(sessionSelectStore.get().error).toBeNull();
   });
 });

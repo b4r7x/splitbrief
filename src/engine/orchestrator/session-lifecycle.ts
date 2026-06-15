@@ -5,9 +5,9 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../events/types.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-import { isTerminalPhase } from '../../core/phases.js';
 import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { isResumable } from '../../core/phases.js';
 import { saveState } from '../../core/state/persistence.js';
 import { updateStats } from '../../core/stats/persistence.js';
 import { warnError } from '../../lib/warn.js';
@@ -17,6 +17,7 @@ import {
   deserializeChangedFilesBaseline,
   inferTaskAcceptedChangedFiles,
 } from './changed-files-baseline.js';
+import { restoreDirtyFilesFromSnapshot } from './approval/file-snapshots.js';
 import { withSignalHandlers } from './signals.js';
 import { createClearQueueHandler, createQueueHandler } from './queue.js';
 import { createWriteSequencer } from './serial-executor.js';
@@ -34,7 +35,8 @@ export type SaveFinalSessionOpts = {
 };
 
 export function shouldPreserveActiveState(state: WorkflowState | null): boolean {
-  return state?.pendingRecovery !== undefined || (state !== null && !isTerminalPhase(state.phase));
+  if (!state) return false;
+  return state.pendingRecovery !== undefined || isResumable(state);
 }
 
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {
@@ -75,11 +77,10 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
 
 // On interrupt the implementer may already have written several files of a multi-file
 // task (agent/cli runners write directly), so rolling back only `task.file` would leave
-// siblings dirty and feed the resumed run a partially-applied tree. Roll back the task's
-// whole attributed set instead — but only the files the task INTRODUCED, identified by
-// their absence from the pre-task baseline. Files already changed before the task started
-// (the user's pre-run uncommitted edits, or earlier accepted work) are preserved rather
-// than discarded to HEAD, which is what the old single-file `checkout --` destroyed.
+// siblings dirty and feed the resumed run a partially-applied tree. Newer states carry a
+// task-start snapshot so attributed files can be restored to their exact pre-task content,
+// including user-dirty files. Older persisted states fall back to discarding only files
+// the task introduced, preserving the previous compatibility behavior.
 async function rollBackInterruptedTask(
   projectDir: string,
   currentTask: Pick<Task, 'file' | 'action'>,
@@ -94,6 +95,10 @@ async function rollBackInterruptedTask(
     inFlight !== undefined && inFlight.file === currentTask.file
       ? await inferTaskAcceptedChangedFiles(projectDir, inFlight, baseline?.head ?? null)
       : [currentTask.file];
+  if (baseline?.activeTaskSnapshot !== undefined) {
+    await restoreDirtyFilesFromSnapshot(projectDir, baseline.activeTaskSnapshot, attributed);
+    return;
+  }
   const taskIntroduced = baseline
     ? attributed.filter((file) => !baseline.fingerprints.has(file))
     : attributed;

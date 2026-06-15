@@ -8,11 +8,12 @@ import {
   isSessionLive,
   generateSessionId,
 } from './lifecycle.js';
-import { DIPTYCH_DIR } from '../paths.js';
+import { DIPTYCH_DIR, LOCKFILE } from '../paths.js';
 import { sessionDir } from '../paths.js';
 import { STATE_FILE } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../state/machine.js';
+import { currentProcessStartTimeMs, HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
 
 let tmp: string;
 
@@ -23,6 +24,35 @@ afterEach(() => {
 function makeTmp(): string {
   tmp = createTempDir('active-test');
   return tmp;
+}
+
+function writeState(projectDir: string, sessionId: string, phase: string): void {
+  const sDir = sessionDir(projectDir, sessionId);
+  mkdirSync(sDir, { recursive: true });
+  const state = { ...createInitialState('feature'), phase };
+  writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
+}
+
+function writeLockfile(
+  projectDir: string,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  const sDir = sessionDir(projectDir, sessionId);
+  mkdirSync(sDir, { recursive: true });
+  writeFileSync(
+    join(sDir, LOCKFILE),
+    JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      startTimeMs: currentProcessStartTimeMs(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'standard',
+      feature: 'feature',
+      ...overrides,
+    }),
+  );
 }
 
 describe('writeActive / readActive round-trip', () => {
@@ -97,29 +127,89 @@ describe('isSessionLive', () => {
 
   it('returns false for session in complete phase', () => {
     const dir = makeTmp();
-    const sDir = sessionDir(dir, '2026-04-14-done');
-    mkdirSync(sDir, { recursive: true });
-    const state = { ...createInitialState('done'), phase: 'complete' };
-    writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
+    writeState(dir, '2026-04-14-done', 'complete');
     expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-done' })).toBe(false);
   });
 
   it('returns false for session in idle phase', () => {
     const dir = makeTmp();
-    const sDir = sessionDir(dir, '2026-04-14-idle');
-    mkdirSync(sDir, { recursive: true });
-    const state = createInitialState('idle');
-    writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
+    writeState(dir, '2026-04-14-idle', 'idle');
     expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-idle' })).toBe(false);
   });
 
-  it('returns true for session in implementing phase', () => {
+  it('returns true for a lockfile-less session in implementing phase', () => {
     const dir = makeTmp();
-    const sDir = sessionDir(dir, '2026-04-14-implementing');
-    mkdirSync(sDir, { recursive: true });
-    const state = { ...createInitialState('feature'), phase: 'implementing' };
-    writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
+    writeState(dir, '2026-04-14-implementing', 'implementing');
     expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-implementing' })).toBe(true);
+  });
+
+  it('returns false for an implementing session whose lockfile has exited', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-exited';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId, { exitedAt: Date.now(), exitCode: 0 });
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns false for an implementing session whose lockfile is invalid', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-invalid-lockfile';
+    writeState(dir, sessionId, 'implementing');
+    const sDir = sessionDir(dir, sessionId);
+    writeFileSync(join(sDir, LOCKFILE), JSON.stringify({ version: 1, sessionId }));
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns false for an implementing session whose lockfile names another session', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-mismatched-lockfile';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId, { sessionId: '2026-04-14-other-session' });
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns false for an implementing session whose lockfile pid is gone', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-dead-pid';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId, { pid: 99999999 });
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns false for an implementing session whose heartbeat is stale', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-stale-heartbeat';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId, {
+      lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
+    });
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns false for an implementing session when the pid was reused', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-reused-pid';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId, {
+      pid: process.pid,
+      startTimeMs: 1,
+    });
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(false);
+  });
+
+  it('returns true for an implementing session with a live lockfile pid', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-14-live-pid';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId);
+
+    expect(isSessionLive({ projectDir: dir, sessionId })).toBe(true);
   });
 
   it('returns false when state.json is corrupt', () => {

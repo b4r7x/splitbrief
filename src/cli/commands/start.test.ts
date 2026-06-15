@@ -15,12 +15,12 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { registerStartCommand } from './start.js';
 import type { StartDeps } from './start.js';
 import {
   CONFIG_FILE,
   DIPTYCH_DIR,
+  LOCKFILE,
   STATE_FILE,
   worktreePath,
   sessionDir,
@@ -107,6 +107,28 @@ function writeLiveSession(projectDir: string, sessionId: string): void {
   writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
 }
 
+function writeSessionLockfile(
+  projectDir: string,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  const sDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  mkdirSync(sDir, { recursive: true });
+  writeFileSync(
+    join(sDir, LOCKFILE),
+    JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'standard',
+      feature: 'test',
+      ...overrides,
+    }),
+  );
+}
+
 function writeConfigMarker(projectDir: string): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(
@@ -134,40 +156,51 @@ function writeConfigMarker(projectDir: string): void {
   );
 }
 
-function writeReadyReadinessFixtures(projectDir: string): void {
+function writeReadyReadinessFixtures(
+  projectDir: string,
+  options: { validation?: boolean; codebase?: boolean } = {},
+): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
   const configFilePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
-  writeFileSync(
-    configFilePath,
-    [
-      'version: 3',
-      'planner:',
-      '  kind: api',
-      '  provider: ollama',
-      '  apiBase: http://localhost:11434/v1',
-      '  model: qwen2.5-coder:7b',
-      '  contextLength: 32768',
-      'implementer:',
-      '  kind: api',
-      '  provider: ollama',
-      '  apiBase: http://localhost:11434/v1',
-      '  model: qwen2.5-coder:7b',
-      '  contextLength: 32768',
-      'validation:',
-      '  typecheck: true',
-      '  lint: true',
-      '  test: true',
+  const validation = options.validation ?? true;
+  const lines = [
+    'version: 3',
+    'planner:',
+    '  kind: api',
+    '  provider: ollama',
+    '  apiBase: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  contextLength: 32768',
+    'implementer:',
+    '  kind: api',
+    '  provider: ollama',
+    '  apiBase: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  contextLength: 32768',
+    'validation:',
+    `  typecheck: ${validation ? 'true' : 'false'}`,
+    `  lint: ${validation ? 'true' : 'false'}`,
+    `  test: ${validation ? 'true' : 'false'}`,
+  ];
+  if (validation) {
+    lines.push(
       '  typecheckCommand: node -e ""',
       '  lintCommand: node -e ""',
       '  testCommand: node -e ""',
-      'workflow:',
-      '  approve: default',
-      '  maxRetries: 3',
-      '  persistTranscript: true',
-      '  mode: standard',
-    ].join('\n'),
+    );
+  }
+  lines.push(
+    'workflow:',
+    '  approve: default',
+    '  maxRetries: 3',
+    '  persistTranscript: true',
+    '  mode: standard',
   );
+  if (options.codebase === false) {
+    lines.push('codebase:', '  enabled: false');
+  }
+  writeFileSync(configFilePath, lines.join('\n'));
   chmodSync(configFilePath, 0o600);
   writeFileSync(
     join(projectDir, 'package.json'),
@@ -206,6 +239,17 @@ describe('start command — concurrency guard', () => {
     const activePath = join(tmp, DIPTYCH_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
     expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
+  });
+
+  it('clears an exited active marker before starting interactive setup', async () => {
+    const sessionId = '2026-04-18-exited';
+    writeLiveSession(tmp, sessionId);
+    writeSessionLockfile(tmp, sessionId, { exitedAt: Date.now(), exitCode: 0 });
+
+    await runStart(['--project', tmp, 'another feature']);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'another feature' });
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
   });
 });
 
@@ -864,38 +908,25 @@ describe('start command — liveness record (F-261)', () => {
   }
 
   it('creates and then releases a liveness record across a real headless start run', async () => {
-    writeReadyReadinessFixtures(tmp);
+    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    const briefCompleteTask = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: 'src/example.ts',
-      description: 'Add a single example function to src/example.ts',
-      tests: ['verifies the example function returns the expected value for the documented input'],
-      constraints: ['keep the change confined to the example function'],
-      typeDefs: 'export function example(): void',
-      implementationSteps: ['1. Add the example function', '2. Export it from src/example.ts'],
-      scope: { inBounds: ['the example function'], outOfBounds: ['unrelated modules'] },
-      evidence: ['the new function is exported and importable'],
-    });
+    let midRunPid: number | undefined;
+    let midRunExitedAt: number | undefined;
     const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [briefCompleteTask],
-        usage: { inputTokens: 50, outputTokens: 25 },
+      quickPlan: vi.fn().mockImplementation(async () => {
+        const lock = await readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+        midRunPid = lock?.pid;
+        midRunExitedAt = lock?.exitedAt;
+        return {
+          spec: '',
+          plan: '',
+          tasks: [],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        };
       }),
     });
     const implementer = makeImplementer();
-    let midRunPid: number | undefined;
-    let midRunExitedAt: number | undefined;
-    implementer.implement = vi.fn().mockImplementation(async () => {
-      const lock = await readLockfile(sessionDir(tmp, onlySessionId(tmp)));
-      midRunPid = lock?.pid;
-      midRunExitedAt = lock?.exitedAt;
-      return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-    });
 
     const realHeadlessDeps: StartDeps = {
       ...fakeDeps,

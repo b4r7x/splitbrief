@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { TieredApprovalRequest } from '../../core/approval/types.js';
+import type { Summary } from '../../core/schemas/summary.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import { readActive } from '../../core/sessions/lifecycle.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from './prompt-grace.js';
 
-const runWorkflow = vi.hoisted(() => vi.fn());
+const runWorkflow = vi.hoisted(() => vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>());
 
 vi.mock('../../engine/orchestrator/run/workflow.js', () => ({
   runWorkflow,
@@ -21,6 +26,8 @@ const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
 const { planEditorStore } = await import('../../stores/workflow/plan-editor.js');
 const { openApprovalPrompt } = await import('../../stores/approval-prompt/prompt.js');
 const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prompt.js');
+const { createInitialState } = await import('../../core/state/machine.js');
+const { saveState } = await import('../../core/state/persistence.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
@@ -190,6 +197,83 @@ describe('WorkflowScreen key arbitration', () => {
     expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
 
     ui.unmount();
+  });
+
+  it('routes completion with the runner-generated session id without reading the active pointer', async () => {
+    const projectDir = createTempDir('workflow-screen-complete');
+    try {
+      const summary = makeSummary({ feature: 'generated completion id' });
+      runWorkflow.mockImplementation(async (opts) => {
+        opts.callbacks.onComplete(summary);
+        return summary;
+      });
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: 'generated completion id',
+        readiness: readyReadiness(projectDir),
+      });
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(routerStore.get().screen).toBe('summary');
+      });
+
+      const firstCall = runWorkflow.mock.calls[0];
+      if (!firstCall) throw new Error('expected runWorkflow to be called');
+      const route = routerStore.get();
+      expect(readActive(projectDir)).toBeNull();
+      expect(firstCall[0].sessionId).toMatch(/^\d{4}-\d{2}-\d{2}-generated-completion-id/);
+      if (route.screen === 'summary') {
+        expect(route.summary).toEqual(summary);
+        expect(route.sessionId).toBe(firstCall[0].sessionId);
+        expect(route.status).toBe('complete');
+      }
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('routes final-review failures as interrupted summaries instead of defaulting to complete', async () => {
+    const projectDir = createTempDir('workflow-screen-final-review-failed');
+    try {
+      const summary = makeSummary({ feature: 'final review failure' });
+      runWorkflow.mockImplementation(async (opts) => {
+        if (!opts.sessionId) throw new Error('expected generated session id');
+        saveState(
+          { projectDir, sessionId: opts.sessionId },
+          { ...createInitialState('final review failure'), phase: 'final-review' },
+        );
+        return summary;
+      });
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: 'final review failure',
+        readiness: readyReadiness(projectDir),
+      });
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(routerStore.get().screen).toBe('summary');
+      });
+
+      const route = routerStore.get();
+      if (route.screen === 'summary') {
+        expect(route.summary).toEqual(summary);
+        expect(route.status).toBe('interrupted');
+      }
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 
   it('the focused composer does not capture the rich plan editor keymap during brief review', async () => {

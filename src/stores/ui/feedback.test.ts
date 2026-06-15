@@ -35,6 +35,13 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
 
+    feedbackStore.setTransientError('temporary failure');
+    expect(feedbackStore.get().message).toBe('temporary failure');
+    expect(feedbackStore.get().isError).toBe(true);
+    vi.advanceTimersByTime(3000);
+    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
+
     // reset cancels the pending auto-clear timer and clears state.
     feedbackStore.setMessage('will be cleared');
     feedbackStore.reset();

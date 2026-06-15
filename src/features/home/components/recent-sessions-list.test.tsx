@@ -25,6 +25,10 @@ function makeSessions(labels: string[]): Session[] {
   );
 }
 
+function renderWithOutdentRoom(element: Parameters<typeof renderFeature>[0]) {
+  return renderFeature(<Box marginLeft={2}>{element}</Box>);
+}
+
 describe('RecentSessionsList', () => {
   let selected: Session | null;
   let closed: number;
@@ -48,7 +52,7 @@ describe('RecentSessionsList', () => {
 
   it('renders the header, all rows, the hint line, and seats the cursor on row 0', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -78,7 +82,7 @@ describe('RecentSessionsList', () => {
       'third-recent-session-feature-that-is-also-long',
     ]);
     const ui = renderFeature(
-      <Box width={72}>
+      <Box marginLeft={2} width={72}>
         <RecentSessionsList
           sessions={sessions}
           hasOverlay={false}
@@ -96,7 +100,7 @@ describe('RecentSessionsList', () => {
 
   it('Down moves the cursor to a later row and wraps from the last row back to the first', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -126,7 +130,7 @@ describe('RecentSessionsList', () => {
 
   it('Up at index 0 calls onClose, does not call onSelect, and does not wrap to the last row', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -149,7 +153,7 @@ describe('RecentSessionsList', () => {
 
   it('Enter selects the currently highlighted row (not always index 0) and does not call onClose', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -171,7 +175,7 @@ describe('RecentSessionsList', () => {
 
   it('Esc calls onClose', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -191,7 +195,7 @@ describe('RecentSessionsList', () => {
 
   it('typed chars are swallowed (browse, not filter): the visible row set and cursor stay put', async () => {
     const sessions = makeSessions(['alpha task', 'beta task', 'gamma task']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={false}
@@ -218,7 +222,7 @@ describe('RecentSessionsList', () => {
 
   it('with hasOverlay=true, Down/Enter/Esc are no-ops', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderFeature(
+    const ui = renderWithOutdentRoom(
       <RecentSessionsList
         sessions={sessions}
         hasOverlay={true}

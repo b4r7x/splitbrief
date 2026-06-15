@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
@@ -10,7 +11,6 @@ import { createInitialState } from '../../../src/core/state/machine.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
-import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
 import { CURSOR } from '../../../src/components/pickers/cursor-glyph.js';
 import { App } from '../../../src/app.js';
@@ -21,7 +21,7 @@ const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
 const HOME_HINT = 'Ctrl+R recent /help /config /skills Ctrl+K';
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
 // Ink collapses the trailing space of the cursor cell when it abuts the next
 // column, so the rendered frame contains the bare glyph, not the padded cell.
 const CURSOR_GLYPH = CURSOR.trimEnd();
@@ -89,6 +89,45 @@ describe('home navigation flow (through real App)', () => {
     }
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('Checking run readiness...');
+    });
+
+    ui.unmount();
+  });
+
+  it('Ctrl+R + Enter opens the summary screen for a completed recent session', async () => {
+    const summary = makeSummary({ feature: 'completed feature' });
+    saveSummary(
+      { projectDir, sessionId: 'summary-me' },
+      makeSession({
+        id: 'summary-me',
+        feature: 'completed feature',
+        status: 'complete',
+        summary,
+        startedAt: 1_700_000_600,
+      }),
+    );
+
+    const ui = renderFeature(<App />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    });
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('summary');
+    });
+
+    const route = routerStore.get();
+    if (route.screen === 'summary') {
+      expect(route.sessionId).toBe('summary-me');
+      expect(route.summary).toEqual(summary);
+    }
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('diptych complete');
+      expect(frame).toContain('completed feature');
     });
 
     ui.unmount();
@@ -185,14 +224,22 @@ describe('home navigation flow (through real App)', () => {
     await tick(20);
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      const fb = feedbackStore.get();
-      expect(fb.message ?? '').toContain('orphan feature');
-      expect(fb.message ?? '').toContain('missing or invalid');
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('orphan feature');
+      expect(frame).toContain('missing or invalid');
     });
 
     expect(routerStore.get().screen).toBe('home');
     expect(ui.lastFrame() ?? '').not.toContain(HOME_HINT);
     expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+
+    await tick(3100);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).not.toContain('missing or invalid');
+      expect(frame).toContain(RECENT_SESSIONS_HINT);
+      expect(frame).toContain(CURSOR_GLYPH);
+    });
 
     ui.unmount();
   });

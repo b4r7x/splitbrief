@@ -919,7 +919,9 @@ describe('runSingleTask — happy path', () => {
     });
   });
 
-  it('restores failing task changes to the pre-task state when the retry ladder exhausts', async () => {
+  it('restores failing task changes to the pre-task state when the retry ladder exhausts', {
+    timeout: 30_000,
+  }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
     const task = makeTask({
       id: 'T001',

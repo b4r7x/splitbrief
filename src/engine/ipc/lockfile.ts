@@ -1,33 +1,20 @@
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync, realpathSync } from 'node:fs';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { resolve, basename } from 'node:path';
-import { z } from 'zod';
 import { LOCKFILE } from '../../core/paths.js';
 import { writeSecureFileAsync } from '../../lib/fs.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
-import { HEARTBEAT_STALENESS_MS } from './constants.js';
-import { WorkflowModeSchema } from '../../core/schemas/enums.js';
 import { error } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
+import {
+  checkSessionLockStatus,
+  currentProcessStartTimeMs,
+  LockfileDataSchema,
+  readSessionLockfileData,
+  type LockfileData,
+} from '../../core/sessions/lockfile-status.js';
 
-const LockfileDataSchema = z.object({
-  version: z.literal(1),
-  pid: z.number().int().positive(),
-  startTimeMs: z.number(),
-  lastAliveMs: z.number(),
-  sessionId: z.string(),
-  mode: WorkflowModeSchema,
-  feature: z.string(),
-  authToken: z.string().optional(),
-  exitedAt: z.number().optional(),
-  exitCode: z.number().optional(),
-  signal: z.string().optional(),
-  cause: z.string().optional(),
-});
-
-export type LockfileData = z.infer<typeof LockfileDataSchema>;
+export type { LockfileData } from '../../core/sessions/lockfile-status.js';
 
 export type ServerStatus =
   | { alive: true; data: LockfileData }
@@ -59,7 +46,11 @@ export async function writeLockfile(
   sessionDir: string,
   data: Omit<LockfileData, 'version'>,
 ): Promise<void> {
-  const payload: LockfileData = { version: 1, ...data };
+  const payload: LockfileData = {
+    version: 1,
+    ...data,
+    startTimeMs: data.pid === process.pid ? currentProcessStartTimeMs() : data.startTimeMs,
+  };
   await writeSecureFileAsync(lockfilePath(sessionDir), JSON.stringify(payload));
 }
 
@@ -185,75 +176,32 @@ export async function markSignaled(sessionDir: string, signal: string): Promise<
 }
 
 export async function readLockfile(sessionDir: string): Promise<LockfileData | null> {
-  if (!existsSync(sessionDir)) return null;
-  const p = lockfilePath(sessionDir);
-  if (!existsSync(p)) return null;
-  try {
-    const raw = await readFile(p, 'utf-8');
-    const data = LockfileDataSchema.parse(JSON.parse(raw));
-    validateLockfileSessionId(sessionDir, data);
-    return data;
-  } catch {
-    return null;
-  }
+  const result = readSessionLockfileData({ sessionDir });
+  return result.kind === 'valid' ? result.data : null;
 }
 
 export async function confinedReadLockfile(
   sessionDir: string,
   expectedSessionId: string,
 ): Promise<LockfileData | null> {
-  if (!existsSync(sessionDir)) return null;
-  const p = lockfilePath(sessionDir);
-  if (!existsSync(p)) return null;
-  try {
-    const raw = await readFile(p, 'utf-8');
-    const data = LockfileDataSchema.parse(JSON.parse(raw));
-    validateLockfileSessionId(sessionDir, data);
-    if (data.sessionId !== expectedSessionId) {
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-const execFileAsync = promisify(execFile);
-
-async function isProcessAliveByPid(pid: number, startTimeMs: number): Promise<boolean> {
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-
-  try {
-    const { stdout } = await execFileAsync('ps', ['-o', 'lstart=', '-p', String(pid)]);
-    const psTime = Date.parse(stdout.trim());
-    if (!Number.isNaN(psTime) && Math.abs(psTime - startTimeMs) > 2000) {
-      return false;
-    }
-  } catch {
-    // ps failed: fall through to staleness check
-  }
-
-  return true;
+  const result = readSessionLockfileData({ sessionDir, expectedSessionId });
+  return result.kind === 'valid' ? result.data : null;
 }
 
 export async function checkServerStatus(sessionDir: string): Promise<ServerStatus> {
-  const data = await readLockfile(sessionDir);
+  const status = checkSessionLockStatus({ sessionDir });
 
-  if (!data) return { alive: false, crashed: false, data: null };
-
-  if (data.exitedAt !== undefined) return { alive: false, crashed: false, data };
-
-  if (!(await isProcessAliveByPid(data.pid, data.startTimeMs))) {
-    return { alive: false, crashed: true, data };
+  switch (status.kind) {
+    case 'missing':
+    case 'invalid':
+      return { alive: false, crashed: false, data: null };
+    case 'exited':
+      return { alive: false, crashed: false, data: status.data };
+    case 'dead':
+      return { alive: false, crashed: true, processAlive: false, data: status.data };
+    case 'stale':
+      return { alive: false, crashed: true, processAlive: true, data: status.data };
+    case 'live':
+      return { alive: true, data: status.data };
   }
-
-  if (Date.now() - data.lastAliveMs > HEARTBEAT_STALENESS_MS) {
-    return { alive: false, crashed: true, processAlive: true, data };
-  }
-
-  return { alive: true, data };
 }

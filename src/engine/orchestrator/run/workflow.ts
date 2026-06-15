@@ -50,12 +50,13 @@ async function acquireLiveness(opts: {
   sessionId: string;
   feature: string;
   mode: WorkflowMode;
-}): Promise<() => void> {
+  signal?: AbortSignal | undefined;
+}): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
   ensureSessionDir(opts.projectDir, opts.sessionId);
   try {
     const status = await checkServerStatus(dir);
-    if (status.alive) return () => {};
+    if (status.alive) return async () => {};
     const now = Date.now();
     await writeLockfile(dir, {
       pid: process.pid,
@@ -66,13 +67,18 @@ async function acquireLiveness(opts: {
       feature: opts.feature,
     });
     const stopHeartbeat = startHeartbeat(dir);
-    return () => {
+    return async () => {
       stopHeartbeat();
-      void markExited(dir, 0).catch((err) => warnError('Failed to mark session exited', err));
+      try {
+        await markExited(dir, 0);
+      } catch (err) {
+        warnError('Failed to mark session exited', err);
+      }
     };
   } catch (err) {
+    if (opts.signal?.aborted) return async () => {};
     warnError('Failed to acquire session liveness lockfile', err);
-    return () => {};
+    return async () => {};
   }
 }
 
@@ -123,6 +129,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     sessionId,
     feature,
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    signal: opts.signal,
   });
 
   writeActive({ projectDir, sessionId });
@@ -273,6 +280,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     });
     return result;
   } finally {
-    releaseLiveness();
+    await releaseLiveness();
   }
 }

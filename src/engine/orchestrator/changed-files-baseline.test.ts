@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import {
   captureChangedFilesBaseline,
   changedFilesSinceBaseline,
+  deserializeChangedFilesBaseline,
+  serializeChangedFilesBaseline,
   userVisibleChangedFiles,
+  withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
 import { commitChanges, stageAll } from '../../lib/git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -54,6 +57,28 @@ describe('captureChangedFilesBaseline', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+});
+
+describe('changed-files baseline persistence', () => {
+  it('round-trips the active task snapshot when one is present', () => {
+    const baseline = withActiveTaskSnapshot(
+      {
+        head: 'abc123',
+        fingerprints: new Map([['src/a.ts', 'hash-a']]),
+      },
+      {
+        head: 'abc123',
+        files: ['src/a.ts'],
+        dirtyFileContents: { 'src/a.ts': 'user edit a\n' },
+      },
+    );
+
+    const persisted = serializeChangedFilesBaseline(baseline);
+    const deserialized = deserializeChangedFilesBaseline(persisted);
+
+    expect(persisted.activeTaskSnapshot?.dirtyFileContents['src/a.ts']).toBe('user edit a\n');
+    expect(deserialized.activeTaskSnapshot?.dirtyFileContents['src/a.ts']).toBe('user edit a\n');
   });
 });
 

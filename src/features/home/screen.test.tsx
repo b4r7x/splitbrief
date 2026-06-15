@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
@@ -11,7 +12,6 @@ import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { CURSOR } from '../../components/pickers/cursor-glyph.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -25,7 +25,7 @@ const ESC = '\u001b';
 const ENTER = '\r';
 const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
 const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
 // Ink collapses the trailing space of the cursor cell when it abuts the next
 // column, so the rendered frame contains the bare ▸ glyph, not "▸ ".
 const CURSOR_GLYPH = CURSOR.trimEnd();
@@ -53,6 +53,12 @@ function lineIndexContaining(frame: string, text: string): number {
   const index = frame.split('\n').findIndex((line) => line.includes(text));
   expect(index).toBeGreaterThanOrEqual(0);
   return index;
+}
+
+function columnIndexOf(frame: string, text: string): number {
+  const line = frame.split('\n').find((l) => l.includes(text));
+  expect(line).toBeDefined();
+  return line?.indexOf(text) ?? -1;
 }
 
 describe('HomeScreen', () => {
@@ -310,6 +316,22 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
+  it('Ctrl+R does not shift the recent-session rows horizontally', async () => {
+    seedSessions(3);
+    const marker = 'focus feature 1';
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const before = columnIndexOf(ui.lastFrame() ?? '', marker);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+
+    const after = columnIndexOf(ui.lastFrame() ?? '', marker);
+    expect(after).toBe(before);
+    ui.unmount();
+  });
+
   it('Ctrl+R is a no-op when there are no sessions', async () => {
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
@@ -411,6 +433,39 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
+  it('Enter opens a completed session summary from the recent-sessions list', async () => {
+    const summary = makeSummary({ feature: 'completed feature' });
+    saveSummary(
+      { projectDir, sessionId: 'summary-me' },
+      makeSession({
+        id: 'summary-me',
+        feature: 'completed feature',
+        status: 'complete',
+        summary,
+        startedAt: 1_700_000_550,
+      }),
+    );
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    });
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('summary');
+    });
+
+    const route = routerStore.get();
+    if (route.screen === 'summary') {
+      expect(route.sessionId).toBe('summary-me');
+      expect(route.summary).toEqual(summary);
+    }
+    ui.unmount();
+  });
+
   it('Enter on a failed session without a summary stays on home and surfaces feedback', async () => {
     saveSummary(
       { projectDir, sessionId: 'failed-one' },
@@ -432,7 +487,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     });
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(feedbackStore.get().message ?? '').toContain('broken feature');
+      expect(ui.lastFrame() ?? '').toContain('failed without a summary');
     });
 
     expect(routerStore.get().screen).toBe('home');

@@ -10,12 +10,15 @@ import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
-import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
+
+const SESSION_PICKER_HINT = '\u2191\u2193 navigate  Enter resume/view  Esc close';
 
 const filterSession = (s: Session, query: string): boolean => filterByFields(s, query, ['feature']);
 
 export function SessionsPicker() {
   const t = useTheme();
+  const selectionError = sessionSelectStore.use((s) => s.error);
   const [{ cols, isSmall }, { projectDir }, { allSessions: sessions }] = useStores(
     terminalSizeStore,
     configStore,
@@ -26,7 +29,13 @@ export function SessionsPicker() {
     sessionsStore.loadAll(projectDir);
   }, [projectDir]);
 
+  useEffect(() => {
+    sessionSelectStore.clearError();
+    return () => sessionSelectStore.clearError();
+  }, []);
+
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
+  const hint = selectionError ? `Error: ${selectionError}` : SESSION_PICKER_HINT;
 
   return (
     <FilterableList
@@ -35,7 +44,7 @@ export function SessionsPicker() {
       getKey={(session) => session.id}
       onConfirm={(session) => handleSessionSelect(session, projectDir)}
       title={`Sessions (${sessions.length})`}
-      hint={'\u2191\u2193 navigate  Enter resume/view  Esc close'}
+      hint={hint}
       bordered={false}
       chromeRows={12}
       maxVisible={5}
@@ -46,7 +55,7 @@ export function SessionsPicker() {
         </Text>
       }
       renderItem={(session, { isCursor }) => (
-        <SessionRow session={session} showCursor isCursor={isCursor} />
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor }} />
       )}
     />
   );

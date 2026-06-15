@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Text } from 'ink';
 import type { Key } from 'ink';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { MultilineInput } from './multiline-input.js';
 
@@ -198,14 +198,15 @@ describe('MultilineInput astral-plane editing', () => {
     await tick(20);
 
     ui.stdin.write(`a${EMOJI}`);
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
+    });
 
     ui.stdin.write(BACKSPACE);
-    await tick(20);
-
-    // The emoji is gone entirely — no half-surrogate residue.
-    expect(ui.lastFrame() ?? '').toContain('value:[a]');
+    await vi.waitFor(() => {
+      // The emoji is gone entirely — no half-surrogate residue.
+      expect(ui.lastFrame() ?? '').toContain('value:[a]');
+    });
   });
 
   it('left then right arrow steps over the full emoji code point', async () => {
@@ -220,14 +221,16 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(LEFT);
     await tick(20);
     ui.stdin.write('x');
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
+    });
 
     // Right steps over the whole emoji; typing lands after it.
     ui.stdin.write(RIGHT);
     await tick(20);
     ui.stdin.write('y');
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
+    });
   });
 });

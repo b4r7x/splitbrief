@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
-import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { createStartReadinessRecord } from '../../core/readiness/format.js';
@@ -16,7 +15,7 @@ import { ScreenShell } from '../../components/screen-shell.js';
 import { WorkflowBody } from './components/body.js';
 import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
-import { useWorkflowRunner } from './hooks/use-runner.js';
+import { useWorkflowRunner, type WorkflowCompletion } from './hooks/use-runner.js';
 import { useIpcClient } from './hooks/use-ipc-client.js';
 import { createIpcPromptDispatcher } from './ipc-prompt-dispatcher.js';
 import { useReadinessFetch } from './hooks/use-readiness-fetch.js';
@@ -86,8 +85,8 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const { cols, rows, isSmall } = terminal;
   const inputRows = input.rows;
 
-  const onComplete = (summary: Summary) =>
-    routerStore.navigate({ to: 'summary', summary, sessionId });
+  const onComplete = ({ summary, sessionId, status }: WorkflowCompletion) =>
+    routerStore.navigate({ to: 'summary', summary, sessionId, status });
 
   const inputMode = useInputMode();
   const runner = useWorkflowRunner({

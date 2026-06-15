@@ -4,6 +4,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import type { Session } from '../../../core/schemas/session.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
@@ -33,7 +34,7 @@ import { killAllProcesses } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { readActive } from '../../../core/sessions/lifecycle.js';
+import { generateSessionId, readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -51,12 +52,18 @@ interface UseWorkflowRunnerOptions {
   plannerContext?: string | undefined;
   projectDir: string;
   config: Config;
-  onComplete: (summary: Summary) => void;
+  onComplete: (completion: WorkflowCompletion) => void;
   initialResumeState?: WorkflowState | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
   sessionId?: string | undefined;
   enabled?: boolean | undefined;
+}
+
+export interface WorkflowCompletion {
+  summary: Summary;
+  sessionId: string;
+  status: Session['status'];
 }
 
 interface UseWorkflowRunnerResult {
@@ -78,6 +85,7 @@ export function useWorkflowRunner({
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindEventRef = useRef<EngineEvent | null>(null);
+  const sessionIdRef = useRef<string | undefined>(initialSessionId);
   const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<WorkflowState | undefined>(undefined);
@@ -95,7 +103,14 @@ export function useWorkflowRunner({
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     let stateForRun = resumeState;
-    let activeSessionId = initialSessionId;
+    if (initialSessionId) sessionIdRef.current = initialSessionId;
+    const pendingRecoverySessionId = stateForRun?.pendingRecovery
+      ? (readActive(projectDir) ?? undefined)
+      : undefined;
+    const sessionIdForRun =
+      sessionIdRef.current ?? pendingRecoverySessionId ?? generateSessionId(projectDir, feature);
+    sessionIdRef.current = sessionIdForRun;
+    let activeSessionId = sessionIdForRun;
     let recoveryPromptAlreadyPublished = false;
 
     resetWorkflow(stateForRun);
@@ -110,9 +125,7 @@ export function useWorkflowRunner({
     });
     setRewindHandler((request) => {
       inputMode.resetMode();
-      const rewindSessionId = activeSessionId ?? readActive(projectDir);
-      if (!rewindSessionId) return;
-      const ref = { projectDir, sessionId: rewindSessionId };
+      const ref = { projectDir, sessionId: activeSessionId };
       const current = loadState(ref);
       if (!current) return;
 
@@ -141,11 +154,6 @@ export function useWorkflowRunner({
       let retryProfileOverrideTaskId: TaskId | undefined;
       while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery) {
-          activeSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
-          if (!activeSessionId) {
-            feedbackStore.setError('No active session found for pending recovery.');
-            return;
-          }
           const recovery = await promptPendingRecovery({
             state: stateForRun,
             activeSessionId,
@@ -181,7 +189,8 @@ export function useWorkflowRunner({
             inputMode,
             abortedRef,
             controller,
-            onComplete,
+            onComplete: (summary) =>
+              onComplete({ summary, sessionId: activeSessionId, status: 'complete' }),
           }),
           savedState: stateForRun,
           selectedSkills,
@@ -195,19 +204,20 @@ export function useWorkflowRunner({
 
         if (isWorkflowAborted(controller, abortedRef)) return;
 
-        const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
+        const savedSessionId = activeSessionId;
         const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
 
         // A failed final-review gate returns without onComplete and leaves the phase at
         // 'final-review' (a LIVE_PHASE). Drive the screen to the terminal summary view so
         // the user is not stranded on a live-looking workflow screen.
         if (!saved?.pendingRecovery && saved?.phase === 'final-review') {
-          onComplete(summary);
+          onComplete({ summary, sessionId: savedSessionId, status: 'interrupted' });
           return;
         }
         if (!saved?.pendingRecovery) return;
 
         activeSessionId = savedSessionId;
+        sessionIdRef.current = savedSessionId;
         stateForRun = saved;
         setInlineResume(saved);
         recoveryPromptAlreadyPublished = true;
