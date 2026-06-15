@@ -17,7 +17,14 @@ If you're new to diptych, read this in order: recipes 1–5 cover the basic work
 **Run:**
 
 ```bash
-npm install --global diptych        # or: npm install --save-dev diptych
+# Not yet published on npm. Install from source:
+git clone https://github.com/b4r7x/tiny-spec.git
+cd tiny-spec
+npm install
+npm run build
+npm link
+
+cd your-project
 diptych init                        # interactive wizard
 diptych start "add a hello-world endpoint"
 ```

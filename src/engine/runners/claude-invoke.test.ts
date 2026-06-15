@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaudePlannerStream, runClaudeOneShot } from './claude-invoke.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 /**
@@ -23,6 +24,51 @@ function installShim(bodyLines: string[]): string {
   writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return shimPath;
+}
+
+/**
+ * Installs a `claude` shim that records its argv and the stdin it received to
+ * files in `shimDir`, then emits a single result event. Lets a test assert what
+ * the invoke module actually delivered to the subprocess.
+ */
+function installRecordingShim(): { argvFile: string; stdinFile: string } {
+  const argvFile = join(shimDir, 'argv.txt');
+  const stdinFile = join(shimDir, 'stdin.txt');
+  const shimPath = join(shimDir, 'claude');
+  const script = [
+    '#!/bin/bash',
+    `printf '%s\\n' "$@" > '${argvFile}'`,
+    `cat > '${stdinFile}'`,
+    `printf '%s\\n' '{"type":"result","result":"ok"}'`,
+  ].join('\n');
+  writeFileSync(shimPath, `${script}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return { argvFile, stdinFile };
+}
+
+/**
+ * Installs a `claude` shim that emits the given stream-json lines and then exits
+ * with a non-zero code, mirroring a real API-level failure where claude exits 1
+ * with empty stderr and the human-readable reason living only in the result event.
+ */
+function installFailingShim(bodyLines: string[], exitCode: number): string {
+  const shimPath = join(shimDir, 'claude');
+  const body = bodyLines
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
+  writeFileSync(shimPath, `#!/bin/bash\n${body}\nexit ${exitCode}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return shimPath;
+}
+
+function makeImage(path: string): Attachment {
+  return {
+    id: path,
+    kind: 'image',
+    path,
+    mimeType: 'image/png',
+    sizeBytes: 1,
+  };
 }
 
 beforeEach(() => {
@@ -156,7 +202,117 @@ describe('runClaudePlannerStream', () => {
         onOutput: () => {},
         signal: controller.signal,
       }),
-    ).rejects.toThrow('The operation was aborted');
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('surfaces the in-band is_error reason when claude exits 1 with empty stderr', async () => {
+    // Real API failures: claude exits 1 with EMPTY stderr and the human-readable
+    // reason lives only in the stream-json result event with is_error: true.
+    installFailingShim(
+      [
+        '{"type":"system","session_id":"sess-fail"}',
+        '{"type":"result","is_error":true,"result":"Credit balance is too low","session_id":"sess-fail"}',
+      ],
+      1,
+    );
+
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('Credit balance is too low'),
+    });
+  });
+
+  it('surfaces an is_error result as a failure even when claude exits 0', async () => {
+    // claude can report an API-level failure in the result event (is_error: true)
+    // while still exiting 0; that reason must surface as a failure, not silent success.
+    installShim([
+      '{"type":"system","session_id":"sess-zero"}',
+      '{"type":"result","is_error":true,"result":"Overloaded: please retry","session_id":"sess-zero"}',
+    ]);
+
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('Overloaded: please retry'),
+    });
+  });
+
+  it('embeds image attachments as prompt references in stdin, never as --image argv', async () => {
+    const { argvFile, stdinFile } = installRecordingShim();
+
+    await runClaudePlannerStream({
+      prompt: 'describe the screenshot',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: () => {},
+      images: [makeImage('/tmp/a.png'), makeImage('/tmp/b.png')],
+    });
+
+    const argv = readFileSync(argvFile, 'utf8');
+    const stdin = readFileSync(stdinFile, 'utf8');
+
+    // The claude CLI has no --image flag; it must never appear in the argv.
+    expect(argv).not.toContain('--image');
+    expect(argv).not.toContain('/tmp/a.png');
+
+    // Attachment paths reach the model as prompt references it can Read itself.
+    expect(stdin).toContain('[image attachment: /tmp/a.png]');
+    expect(stdin).toContain('[image attachment: /tmp/b.png]');
+    expect(stdin).toContain('describe the screenshot');
+  });
+
+  it('passes effort as an --effort argv flag, never as an /effort stdin prefix', async () => {
+    const { argvFile, stdinFile } = installRecordingShim();
+
+    await runClaudePlannerStream({
+      prompt: 'go',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: () => {},
+      effort: 'high',
+      images: [makeImage('/tmp/a.png')],
+    });
+
+    const argv = readFileSync(argvFile, 'utf8').split('\n');
+    const stdin = readFileSync(stdinFile, 'utf8');
+
+    // Effort reaches the CLI as a flag the binary understands, not a slash command
+    // that the planner subprocess would reject and discard the whole prompt over.
+    const effortIdx = argv.indexOf('--effort');
+    expect(effortIdx).toBeGreaterThanOrEqual(0);
+    expect(argv[effortIdx + 1]).toBe('high');
+
+    // The prompt itself must never be prefixed with the unsupported /effort command.
+    expect(stdin).not.toContain('/effort');
+    expect(stdin.startsWith('[image attachment: /tmp/a.png]')).toBe(true);
+    expect(stdin).toContain('go');
+  });
+
+  it('omits the --effort flag entirely when no effort is configured', async () => {
+    const { argvFile } = installRecordingShim();
+
+    await runClaudePlannerStream({
+      prompt: 'go',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: () => {},
+    });
+
+    const argv = readFileSync(argvFile, 'utf8');
+    expect(argv).not.toContain('--effort');
   });
 });
 
@@ -228,7 +384,42 @@ describe('runClaudeOneShot', () => {
         onOutput: () => {},
         signal: controller.signal,
       }),
-    ).rejects.toThrow('The operation was aborted');
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('passes effort as an --effort argv flag and leaves stdin as the raw prompt', async () => {
+    const { argvFile, stdinFile } = installRecordingShim();
+
+    await runClaudeOneShot({
+      prompt: 'escalate me',
+      projectDir: shimDir,
+      onOutput: () => {},
+      effort: 'xhigh',
+    });
+
+    const argv = readFileSync(argvFile, 'utf8').split('\n');
+    const stdin = readFileSync(stdinFile, 'utf8');
+
+    const effortIdx = argv.indexOf('--effort');
+    expect(effortIdx).toBeGreaterThanOrEqual(0);
+    expect(argv[effortIdx + 1]).toBe('xhigh');
+    expect(stdin).not.toContain('/effort');
+    expect(stdin.startsWith('escalate me')).toBe(true);
+  });
+
+  it('surfaces an is_error result as a failure even when claude exits 0', async () => {
+    installShim(['{"type":"result","is_error":true,"result":"Credit balance is too low"}']);
+
+    await expect(
+      runClaudeOneShot({
+        prompt: 'p',
+        projectDir: shimDir,
+        onOutput: () => {},
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('Credit balance is too low'),
+    });
   });
 
   it('returns empty text + null usage when the stream contains no result event', async () => {

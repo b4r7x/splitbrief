@@ -61,6 +61,14 @@ describe('processError.exitCode', () => {
       opts: { command: 'node', code: 127, stderr: '' },
       expected: 'node exited with code 127',
     },
+    {
+      opts: { command: 'claude', code: 1, stderr: '', detail: 'Invalid API key' },
+      expected: 'claude exited with code 1: Invalid API key',
+    },
+    {
+      opts: { command: 'claude', code: 1, stderr: 'real stderr', detail: 'ignored fallback' },
+      expected: 'claude exited with code 1: real stderr',
+    },
   ])('formats process-output errors for non-zero exits', ({ opts, expected }) => {
     const err = processError.exitCode(opts);
 
@@ -78,5 +86,16 @@ describe('processError.exitCode', () => {
     });
 
     expect(err.data.output).toBe('stdout text');
+  });
+
+  it('falls back to detail for output when stderr and output are empty', () => {
+    const err = processError.exitCode({
+      command: 'claude',
+      code: 1,
+      stderr: '',
+      detail: 'Credit balance is too low',
+    });
+
+    expect(err.data.output).toBe('Credit balance is too low');
   });
 });

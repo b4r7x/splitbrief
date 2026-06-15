@@ -104,4 +104,18 @@ describe('computeDiff', () => {
     expect(result.linesAdded).toBe(0);
     expect(result.linesRemoved).toBe(3);
   });
+
+  it('uses positional fallback past the 5000-line threshold instead of LCS alignment', () => {
+    const base = Array.from({ length: 6000 }, (_, i) => `line${i}`);
+    const inserted = ['HEADER', ...base];
+
+    const result = computeDiff(base.join('\n'), inserted.join('\n'));
+
+    // LCS would recognize a single inserted line; the positional fallback realigns
+    // every position, so the trailing line of the longer side appears as a pure addition.
+    expect(result.diff).toContain('+ HEADER');
+    expect(result.diff).toContain(`+ line${base.length - 1}`);
+    expect(result.linesAdded).toBeGreaterThan(1);
+    expect(result.linesRemoved).toBeGreaterThan(0);
+  });
 });

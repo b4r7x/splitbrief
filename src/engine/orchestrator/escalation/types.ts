@@ -18,6 +18,8 @@ export type RetryResult =
       attempts: number;
       validationResults?: ValidationResult[] | undefined;
       changedFiles?: string[] | undefined;
+      tool?: string | undefined;
+      model?: string | undefined;
     }
   | { completed: false; method: 'failed'; attempts: number };
 
@@ -66,6 +68,8 @@ export type RetryStepOpts = {
   usageCategory: UsageCategory;
   retryFailureFallback: string;
   profileOverride?: string | undefined;
+  resultTool?: string | undefined;
+  resultModel?: string | undefined;
   invokeRetry: (args: RetryInvokeArgs) => Promise<{
     success: boolean;
     error?: string | undefined;

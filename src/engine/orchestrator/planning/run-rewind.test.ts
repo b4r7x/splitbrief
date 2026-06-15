@@ -194,6 +194,22 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(events.some((e) => e.type === 'plan_approved' && e.phase === 'implementing')).toBe(true);
   });
 
+  it('rewind-to-spec publishes a running planner_status at the specifying phase', async () => {
+    const { events } = await runPhase({
+      planner: makePassingPlanner({
+        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      }),
+      config: makeConfig({ workflow: auto() }),
+      state: prepareState('specifying'),
+      rewindPending: { target: 'spec' },
+    });
+
+    const specifyingRunning = events.find(
+      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'specifying',
+    );
+    expect(specifyingRunning).toBeDefined();
+  });
+
   it('rewindPending cleared on resulting state after regeneration', async () => {
     const { result } = await runPhase({
       planner: makePassingPlanner({
@@ -209,6 +225,64 @@ describe('runPlanningPhase — rewindPending', () => {
 
     expect(result.cancelled).toBe(false);
     expect(result.state.rewindPending).toBeUndefined();
+  });
+
+  const rewindSpecGateCases: Array<{
+    name: string;
+    workflow: Partial<ReturnType<typeof manual>>;
+    prompts: boolean;
+  }> = [
+    {
+      name: "approve 'spec' prompts the rewound spec",
+      workflow: { approve: 'spec' },
+      prompts: true,
+    },
+    { name: "approve 'all' prompts the rewound spec", workflow: { approve: 'all' }, prompts: true },
+    {
+      name: "approve 'plan' skips the rewound spec gate",
+      workflow: { approve: 'plan' },
+      prompts: false,
+    },
+    {
+      name: "approve 'none' skips the rewound spec gate",
+      workflow: { approve: 'none' },
+      prompts: false,
+    },
+    {
+      name: "approve 'spec' overrides a hand-set autoApproveSpec flag",
+      workflow: { approve: 'spec', autoApproveSpec: true },
+      prompts: true,
+    },
+    {
+      name: 'both legacy auto flags skip the rewound spec gate',
+      workflow: { autoApproveSpec: true, autoApprovePlan: true },
+      prompts: false,
+    },
+  ];
+
+  it.each(rewindSpecGateCases)('rewind-to-spec gate honors workflow.approve — $name', async ({
+    workflow,
+    prompts,
+  }) => {
+    const approvalTypes: string[] = [];
+    const onApprovalNeeded = vi.fn(async (type: string) => {
+      approvalTypes.push(type);
+      return { approved: true };
+    });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    const { result } = await runPhase({
+      planner: makePassingPlanner({
+        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      }),
+      callbacks,
+      config: makeConfig({ workflow }),
+      state: prepareState('specifying'),
+      rewindPending: { target: 'spec' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(approvalTypes.includes('spec')).toBe(prompts);
   });
 
   it('speckit mode new-planning (no rewind) invokes planner.plan exactly once', async () => {

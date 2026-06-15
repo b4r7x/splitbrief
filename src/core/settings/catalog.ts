@@ -3,8 +3,6 @@ import {
   APPROVE_LEVELS,
   COMMIT_STRATEGIES,
   EFFORT_LEVELS,
-  SESSION_SCOPES,
-  SHIKI_THEMES,
   THEME_MODES,
   WORKFLOW_MODES,
 } from '../schemas/enums.js';
@@ -85,7 +83,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.temperature',
     label: 'Temperature',
     section: 'Implementer',
-    description: '0=precise  0.3=balanced  1+=creative',
+    description: '0=precise  0.3=balanced  1+=creative (dropped on non-api backends)',
     kind: 'number',
     min: 0,
     max: 2,
@@ -97,7 +95,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Token context window',
     kind: 'number',
     min: 1024,
-    max: 131072,
     integer: true,
   },
   {
@@ -179,7 +176,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'none | checkpoint (tags) | per-task (commits)',
     kind: 'enum',
     options: [...COMMIT_STRATEGIES],
-    readValue: (config) => config.workflow.git?.commitStrategy ?? config.workflow.commitStrategy,
+    readValue: (config) => config.workflow.git?.commitStrategy,
   },
   {
     id: 'workflow.git.createBranch',
@@ -196,21 +193,5 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Color palette mode',
     kind: 'enum',
     options: [...THEME_MODES],
-  },
-  {
-    id: 'shikiTheme',
-    label: 'Syntax Theme',
-    section: 'Appearance',
-    description: 'Syntax highlighting theme',
-    kind: 'enum',
-    options: [...SHIKI_THEMES],
-  },
-  {
-    id: 'sessions.scope',
-    label: 'Scope',
-    section: 'Sessions',
-    description: 'Session storage scope',
-    kind: 'enum',
-    options: [...SESSION_SCOPES],
   },
 ];

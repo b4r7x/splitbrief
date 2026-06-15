@@ -1,6 +1,7 @@
 import { existsSync, renameSync, readFileSync, realpathSync, mkdirSync, rmSync } from 'node:fs';
-import { join, relative, isAbsolute } from 'node:path';
+import { join } from 'node:path';
 import { writeSecureFile } from '../../lib/fs.js';
+import { isInsideRoot } from '../../lib/path-confinement.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import {
   DIPTYCH_DIR,
@@ -14,17 +15,24 @@ import {
 } from '../paths.js';
 import { writeActive } from '../sessions/lifecycle.js';
 import { deriveSessionId, migrateState, migrateEventLines } from './legacy.js';
+import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { nowIso } from '../../utils/format-time.js';
+import { error } from '../../utils/error.js';
+
+export const migrationError = {
+  legacyDirOutsideRoot: (dir: string, root: string) =>
+    error(
+      'migration-legacy-dir-outside-root',
+      `Legacy directory ${dir} resolves outside project root ${root}. Refusing to migrate.`,
+      { dir, root },
+    ),
+} as const;
 
 export type MigrationResult =
   | { status: 'not-needed' }
   | { status: 'skipped'; sourceDir: string; warnings: string[] }
   | { status: 'migrated'; sourceDir: string; sessionId: string; warnings: string[] };
-
-function isInsideRoot(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
 
 function assertLegacyDirConfined(projectDir: string, dir: string): void {
   const realProject = realpathSync(projectDir);
@@ -35,9 +43,7 @@ function assertLegacyDirConfined(projectDir: string, dir: string): void {
     return;
   }
   if (!isInsideRoot(realProject, realDir)) {
-    throw new Error(
-      `Legacy directory ${dir} resolves outside project root ${realProject}. Refusing to migrate.`,
-    );
+    throw migrationError.legacyDirOutsideRoot(dir, realProject);
   }
 }
 
@@ -84,7 +90,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
   }
 
   const feature = String(oldState.feature ?? 'unknown');
-  const startedAt = String(oldState.startedAt ?? new Date().toISOString());
+  const startedAt = String(oldState.startedAt ?? nowIso());
   const sessionId = deriveSessionId({ feature, startedAt, projectDir });
 
   const tempDir = `${sessionDir(projectDir, sessionId)}.tmp`;
@@ -95,8 +101,21 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
 
   rmSync(tempDir, { recursive: true, force: true });
 
+  const newState = migrateState(oldState);
+  const validated = WorkflowStateSchema.safeParse(newState);
+  if (!validated.success) {
+    return {
+      status: 'skipped',
+      sourceDir,
+      warnings: [
+        ...warnings,
+        `Migrated state for ${sourceDir} does not match the current schema: ${validated.error.message}`,
+        'Skipping migration to preserve the legacy directory. Delete it manually if you want to start fresh.',
+      ],
+    };
+  }
+
   try {
-    const newState = migrateState(oldState);
     writeSecureFile(join(tempDir, STATE_FILE), JSON.stringify(newState, null, 2) + '\n');
 
     const eventsSource = join(sourceDir, 'events.jsonl');

@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { QueuedMessage } from '../../core/schemas/workflow.js';
+import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { createEventBus } from '../events/bus.js';
+import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { transitionAndSave, refreshAndPersistCode } from './state-ops.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { transitionAndSave, raisePendingRecovery, refreshAndPersistCode } from './state-ops.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -42,6 +45,51 @@ describe('transitionAndSave', () => {
 
       expect(next.phase).toBe('specifying');
       expect(next.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+});
+
+describe('raisePendingRecovery', () => {
+  it('persists the issue, publishes recovery_prompted, and notifies setTrackedState', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const bus = createEventBus();
+      const events: EngineEvent[] = [];
+      bus.subscribe((event) => events.push(event));
+      const issue = makeRecoveryIssue();
+      const state = createInitialState('feature');
+      let tracked: WorkflowState | undefined;
+
+      const next = raisePendingRecovery({ projectDir, sessionId, bus }, state, issue, (s) => {
+        tracked = s;
+      });
+
+      expect(next.pendingRecovery).toEqual(issue);
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
+      expect(tracked).toBe(next);
+      const prompted = events.find((event) => event.type === 'recovery_prompted');
+      expect(prompted).toMatchObject({ issueId: issue.id, reason: issue.reason });
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('still persists and publishes when no setTrackedState is given', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const bus = createEventBus();
+      const events: EngineEvent[] = [];
+      bus.subscribe((event) => events.push(event));
+      const issue = makeRecoveryIssue({ id: 'rec_2026_04_28_002' });
+      const state = createInitialState('feature');
+
+      const next = raisePendingRecovery({ projectDir, sessionId, bus }, state, issue);
+
+      expect(next.pendingRecovery).toEqual(issue);
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
+      expect(events.some((event) => event.type === 'recovery_prompted')).toBe(true);
     } finally {
       cleanupTempDir(projectDir);
     }

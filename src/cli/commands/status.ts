@@ -11,7 +11,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';
@@ -28,7 +28,7 @@ function printCostHistory(projectDir: string): void {
     }
 
     console.log(
-      `\n${ansis.bold(`Cost History (${analytics.completedSessions} ${pluralize(analytics.completedSessions, 'session')})`)}`,
+      `\n${ansis.bold(`Cost History (${countNoun(analytics.completedSessions, 'session')})`)}`,
     );
     console.log(`  ${ansis.dim('Total spent:')}    ${formatCost(analytics.totalCost)}`);
     console.log(`  ${ansis.dim('Total saved:')}    ~${formatCost(analytics.totalSavings)}`);
@@ -45,7 +45,7 @@ function printCostHistory(projectDir: string): void {
       for (const [id, data] of providers) {
         const name = getProviderDisplayName(id);
         console.log(
-          `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} ${pluralize(data.sessions, 'session')})`,
+          `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${countNoun(data.sessions, 'session')})`,
         );
       }
     }

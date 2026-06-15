@@ -56,6 +56,27 @@ describe('applyCode', () => {
     expect(readFileSync(filePath, 'utf-8')).toBe(newCode);
   });
 
+  it('modify action on a small file with markers patches instead of writing literal markers', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'small.ts');
+    const task = makeTask({ action: 'modify', file: 'src/small.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(filePath, 'export const old = true;\nexport const keep = 1;\n');
+
+    const patchCode =
+      '<<<<<<< SEARCH\nexport const old = true;\n=======\nexport const patched = true;\n>>>>>>> REPLACE';
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(true);
+    const content = readFileSync(filePath, 'utf-8');
+    expect(content).toContain('export const patched = true;');
+    expect(content).toContain('export const keep = 1;');
+    expect(content).not.toContain('export const old = true;');
+    expect(content).not.toContain('<<<<<<< SEARCH');
+    expect(content).not.toContain('>>>>>>> REPLACE');
+  });
+
   it('modify action with search/replace markers applies patch', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'large.ts');
@@ -76,7 +97,7 @@ describe('applyCode', () => {
     expect(content).not.toContain('export const old = true;');
   });
 
-  it('search/replace patches all occurrences of a repeated search block', async () => {
+  it('search/replace rejects an ambiguous search block matching multiple occurrences', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'repeated.ts');
     const task = makeTask({ action: 'modify', file: 'src/repeated.ts' });
@@ -86,6 +107,25 @@ describe('applyCode', () => {
     lines[10] = 'const x = old;';
     lines[50] = 'const x = old;';
     lines[100] = 'const x = old;';
+    const original = lines.join('\n');
+    writeFileSync(filePath, original);
+
+    const patchCode = '<<<<<<< SEARCH\nconst x = old;\n=======\nconst x = new;\n>>>>>>> REPLACE';
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ambiguous search block (3 matches)');
+    expect(readFileSync(filePath, 'utf-8')).toBe(original);
+  });
+
+  it('search/replace patches a single unique occurrence', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'unique.ts');
+    const task = makeTask({ action: 'modify', file: 'src/unique.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
+    lines[100] = 'const x = old;';
     writeFileSync(filePath, lines.join('\n'));
 
     const patchCode = '<<<<<<< SEARCH\nconst x = old;\n=======\nconst x = new;\n>>>>>>> REPLACE';
@@ -94,7 +134,7 @@ describe('applyCode', () => {
     expect(result.success).toBe(true);
     const content = readFileSync(filePath, 'utf-8');
     expect(content).not.toContain('const x = old;');
-    expect(content.match(/const x = new;/g)).toHaveLength(3);
+    expect(content.match(/const x = new;/g)).toHaveLength(1);
   });
 
   it('search/replace returns error when search block not found', async () => {
@@ -112,6 +152,58 @@ describe('applyCode', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('Search block not found');
+    expect(result.error).toContain('line-ending-normalized');
+  });
+
+  it('search/replace with CRLF markers patches an LF file without clobbering it', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'crlf-markers.ts');
+    const task = makeTask({ action: 'modify', file: 'src/crlf-markers.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
+    lines[10] = 'export const old = true;';
+    writeFileSync(filePath, lines.join('\n'));
+
+    const patchCode = [
+      '<<<<<<< SEARCH',
+      'export const old = true;',
+      '=======',
+      'export const patched = true;',
+      '>>>>>>> REPLACE',
+    ].join('\r\n');
+
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(true);
+    const content = readFileSync(filePath, 'utf-8');
+    expect(content).toContain('export const patched = true;');
+    expect(content).not.toContain('export const old = true;');
+    expect(content).not.toContain('<<<<<<< SEARCH');
+    expect(content).not.toContain('\r\n');
+  });
+
+  it('search/replace patches a CRLF file from LF markers and preserves CRLF endings', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'crlf-file.ts');
+    const task = makeTask({ action: 'modify', file: 'src/crlf-file.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
+    lines[10] = 'const target = "before";';
+    writeFileSync(filePath, lines.join('\r\n'));
+
+    const patchCode =
+      '<<<<<<< SEARCH\nconst target = "before";\n=======\nconst target = "after";\n>>>>>>> REPLACE';
+
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(true);
+    const content = readFileSync(filePath, 'utf-8');
+    expect(content).toContain('const target = "after";');
+    expect(content).not.toContain('const target = "before";');
+    expect(content).toContain('\r\n');
+    expect(content).not.toMatch(/[^\r]\n/);
   });
 
   it('search/replace preserves dollar sign patterns verbatim', async () => {
@@ -214,5 +306,35 @@ describe('applyCode', () => {
     } finally {
       cleanupTempDir(outside);
     }
+  });
+
+  it.each([
+    ['.git/config', 'create'],
+    ['.git/config', 'modify'],
+    ['.diptych/sessions/x/state.json', 'create'],
+    ['.diptych/sessions/x/state.json', 'modify'],
+  ] as const)('refuses to write model output into the control plane (%s, %s)', async (file, action) => {
+    tempDir = createTempDir('impl-test');
+    const task = makeTask({ action, file });
+
+    const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('escapes project directory');
+    expect(existsSync(join(tempDir, file))).toBe(false);
+  });
+
+  itUnix('refuses to modify an existing .git file (does not truncate it in place)', async () => {
+    tempDir = createTempDir('impl-test');
+    mkdirSync(join(tempDir, '.git'), { recursive: true });
+    const gitConfig = join(tempDir, '.git', 'config');
+    writeFileSync(gitConfig, '[core]\n  bare = false\n');
+    const task = makeTask({ action: 'modify', file: '.git/config' });
+
+    const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('escapes project directory');
+    expect(readFileSync(gitConfig, 'utf-8')).toBe('[core]\n  bare = false\n');
   });
 });

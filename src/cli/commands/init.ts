@@ -2,9 +2,9 @@ import type { Command } from 'commander';
 import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import { App } from '../../app.js';
-import { configPath, initConfig } from '../../core/config/load/io.js';
+import { configPath } from '../../core/config/load/io.js';
 import { renderApp } from '../render.js';
-import { resolveProjectDir } from '../setup.js';
+import { resolveProjectDir, assertInteractiveTty } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../../core/paths.js';
@@ -23,7 +23,8 @@ export function registerInitCommand(program: Command): void {
         return;
       }
 
-      initConfig(projectDir, { force: opts.reconfigure });
+      assertInteractiveTty();
+
       await initStores(projectDir);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
       await renderApp(createElement(App), { fullscreen: true });

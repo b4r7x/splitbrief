@@ -89,10 +89,42 @@ describe('renderSessionHtml', () => {
           tasksWithValidationEvidence: 4,
           escalatedTasks: 1,
           failedTasks: 0,
+          href: 'evidence.json',
         },
       }),
     );
     expect(html).toContain('4/5');
+  });
+
+  it('links to the evidence href when it is a relative path', () => {
+    const html = renderSessionHtml(
+      makeExportData({
+        evidence: {
+          totalTasks: 5,
+          tasksWithValidationEvidence: 4,
+          escalatedTasks: 1,
+          failedTasks: 0,
+          href: '../session/evidence.json',
+        },
+      }),
+    );
+    expect(html).toContain('<a href="../session/evidence.json">../session/evidence.json</a>');
+  });
+
+  it('prints an absolute evidence href as text instead of a broken link', () => {
+    const html = renderSessionHtml(
+      makeExportData({
+        evidence: {
+          totalTasks: 5,
+          tasksWithValidationEvidence: 4,
+          escalatedTasks: 1,
+          failedTasks: 0,
+          href: '/tmp/session/evidence.json',
+        },
+      }),
+    );
+    expect(html).not.toContain('<a href="/tmp/session/evidence.json">');
+    expect(html).toContain('<code>/tmp/session/evidence.json</code>');
   });
 
   it('omits evidence section when no evidence data', () => {
@@ -106,6 +138,15 @@ describe('renderSessionHtml', () => {
     );
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('redacts secrets from the feature title and heading', () => {
+    const html = renderSessionHtml(
+      makeExportData({ feature: 'use sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa for auth' }),
+    );
+    expect(html).not.toContain('sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(html).toContain('<title>diptych — use sk-ant-***REDACTED*** for auth</title>');
+    expect(html).toContain('<h1>use sk-ant-***REDACTED*** for auth</h1>');
   });
 
   it('includes inline CSS', () => {

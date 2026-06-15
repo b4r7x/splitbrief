@@ -1,7 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import { existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
-import { IPC_SOCK_FILE } from '../../core/paths.js';
+import { ipcSockPath } from '../../core/paths.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import {
@@ -12,8 +11,10 @@ import {
 } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
-import { rejectAsAlreadyAttached, tryControlDetach } from './control-detach.js';
-import { createPromptTracker, type IpcPromptUnavailableError } from './prompt-tracker.js';
+import { rejectAsAlreadyAttached, tokensMatch, tryControlDetach } from './control-detach.js';
+import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
+import { error } from '../../utils/error.js';
+import { canonicalJSON } from '../../utils/canonical-json.js';
 import { replaySession } from './replay-session.js';
 import { writeServerMessage } from './write-message.js';
 
@@ -36,9 +37,16 @@ export type IpcServer = {
   close(): Promise<void>;
 };
 
-export type { IpcPromptUnavailableError };
-
 const MAX_LIVE_BACKLOG_EVENTS = 1000;
+
+function eventIdentity(event: EngineEvent): string {
+  return canonicalJSON(event);
+}
+
+export const ipcServerError = {
+  bindFailed: (reason: string) =>
+    error('ipc-server-bind-failed', `IPC server failed to bind: ${reason}`, { reason }),
+} as const;
 
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
   const {
@@ -53,7 +61,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     sessionJsonlPath,
     noClientPromptBehavior = 'wait',
   } = opts;
-  const sockPath = join(sessionDir, IPC_SOCK_FILE);
+  const sockPath = ipcSockPath(sessionDir);
 
   if (existsSync(sockPath)) {
     try {
@@ -92,7 +100,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     let detached = false;
     let authenticated = false;
     let replaying = true;
-    let replayEndTs: number | null = null;
+    const replayedIdentities = new Set<string>();
     let replayStarted = false;
     const liveBacklog: EngineEvent[] = [];
     const client: { socket: Socket; unsubscribe: () => void } = {
@@ -108,9 +116,8 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       if (detached) return;
       detached = true;
       client.unsubscribe();
-      if (currentClient?.socket === socket) {
-        currentClient = null;
-      }
+      if (currentClient?.socket !== socket) return;
+      currentClient = null;
       bus.publish({ type: 'ipc_client_detached', ts: Date.now(), phase: 'idle' });
     }
 
@@ -133,7 +140,6 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         startedAt,
         mode,
         feature,
-        readonly: false,
       });
 
       bus.publish({ type: 'ipc_client_attached', ts: Date.now(), phase: 'idle' });
@@ -142,7 +148,6 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       const unsubscribe = bus.subscribe((event) => {
         if (socket.destroyed) return;
         if (replaying) {
-          if (replayEndTs !== null && event.ts <= replayEndTs) return;
           if (liveBacklog.length >= MAX_LIVE_BACKLOG_EVENTS) {
             const warning: EngineEvent = {
               type: 'warning',
@@ -165,11 +170,12 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
       if (sessionJsonlPath) {
         try {
-          replayEndTs = await replaySession({
+          const replayed = await replaySession({
             socket,
             sessionJsonlPath,
             writeMessage: writeServerMessage,
           });
+          for (const event of replayed) replayedIdentities.add(eventIdentity(event));
         } catch (err) {
           bus.publish({
             type: 'warning',
@@ -186,7 +192,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
       replaying = false;
       for (const event of liveBacklog.splice(0)) {
-        if (replayEndTs !== null && event.ts <= replayEndTs) continue;
+        if (replayedIdentities.delete(eventIdentity(event))) continue;
         writeEvent(event);
       }
     }
@@ -219,7 +225,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         }
 
         if (msg.kind === 'authenticate') {
-          if (msg.token !== authToken) {
+          if (!tokensMatch(msg.token, authToken)) {
             writeServerMessage(socket, {
               kind: 'error',
               code: 'unauthorized',
@@ -265,8 +271,6 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
               message: `IPC: response for unknown prompt ${msg.requestId}`,
             });
           }
-        } else if (msg.kind === 'recovery_response') {
-          onUserInput(`${msg.action} recovery issue ${msg.issueId}`);
         } else if (msg.kind === 'detach') {
           detachClient();
           socket.destroy();
@@ -287,8 +291,9 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       },
     );
 
-    socket.on('data', (chunk: Buffer) => {
-      lineBuffer.push(chunk.toString('utf8'));
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk: string) => {
+      lineBuffer.push(chunk);
     });
 
     socket.on('close', () => {
@@ -308,7 +313,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', (err) => {
-      reject(new Error(`IPC server failed to bind: ${err.message}`));
+      reject(ipcServerError.bindFailed(err.message));
     });
     server.listen(sockPath, () => {
       resolve();
@@ -323,9 +328,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       return promptTracker.requestClientPrompt(requestWithoutId);
     },
     close(): Promise<void> {
-      promptTracker.rejectAll(
-        (request) => new Error(`IPC prompt cancelled while closing server: ${request.kind}`),
-      );
+      promptTracker.rejectAll((request) => ipcPromptError.cancelledWhileClosing(request.kind));
 
       if (currentClient) {
         try {

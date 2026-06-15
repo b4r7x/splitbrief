@@ -46,7 +46,7 @@ export function formatTaskReviewPrompt(request: TaskReviewRequest): string {
   return lines.filter(Boolean).join('\n');
 }
 
-export function parseTaskReviewAnswer(input: string): TaskReviewResponse {
+export function parseTaskReviewAnswer(input: string): TaskReviewResponse | null {
   const trimmed = input.trim();
   if (!trimmed) return { action: 'continue' };
 
@@ -62,7 +62,8 @@ export function parseTaskReviewAnswer(input: string): TaskReviewResponse {
     return { action: 'revise-plan', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() };
   }
 
-  return { action: COMMAND_ALIASES[lower] ?? 'continue' };
+  const action = COMMAND_ALIASES[lower];
+  return action ? { action } : null;
 }
 
 function formatEvidenceLines(request: TaskReviewRequest): string[] {

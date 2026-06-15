@@ -15,7 +15,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Run `node --version` and confirm output starts with `v22.` or higher.
 2. If lower, install Node 22 LTS (`nvm install 22 && nvm use 22`, or use `volta`, `fnm`, or your platform package manager).
-3. Re-run `npm install` from a clean tree (`rm -rf node_modules package-lock.json && npm install`) so native bindings (Shiki WASM, etc.) re-resolve against the new ABI.
+3. Re-run `npm install` from a clean tree (`rm -rf node_modules package-lock.json && npm install`) so native bindings (better-sqlite3, etc.) re-resolve against the new ABI.
 4. Re-run `npm run typecheck` to confirm the toolchain works end-to-end.
 
 **Prevention:** Pin the engine in your shell profile via `nvm`/`fnm`. The `package.json` `engines.node` field already declares the minimum; add a `.nvmrc` if you frequently switch projects.
@@ -57,7 +57,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `diptych doctor` or `diptych start` says Run Readiness is `blocked`
 
-**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.diptych/config.yaml`, not a git repository, a live `.diptych/active` session in the same checkout, or a dirty source checkout for an operation that requires a clean worktree. `diptych doctor` can also report a missing config because it does not bootstrap setup files.
+**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.diptych/config.yaml`, not a git repository, an in-progress git operation (merge, rebase, etc.), or a live `.diptych/active` session in the same checkout. `diptych doctor` can also report a missing config because it does not bootstrap setup files.
 
 **Fix:**
 1. Read the `Next action` line. It points to `diptych init`, config repair, or cleaning/isolating the repo.
@@ -186,15 +186,16 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** Long Opus runs exceed the runner's default timeout, especially on large repos with rich repo-maps. The default per-call timeout is conservative.
+**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. `cli`/`agent-sdk` planners have no built-in cap at all unless you set one.
 
 **Fix:**
-1. Raise `planner.timeout` (milliseconds) in `.diptych/config.yaml` (Opus planning passes can take several minutes).
-2. Use `--detach` so the planner runs in the background and the TUI re-attaches when it completes — useful for long invocations.
-3. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
-4. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
+1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
+2. Set `planner.timeout` (milliseconds) in `.diptych/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
+3. Use `--detach` so the planner runs in the background and the TUI re-attaches when it completes — useful for long invocations.
+4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
+5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
-**Prevention:** Always set explicit timeouts when using high-latency planners, and prefer `--detach` for long jobs so terminal disconnects do not interrupt them.
+**Prevention:** Keep local models warm so time-to-first-token stays under the 60s idle guard, set `planner.timeout` as a total-call ceiling for high-latency planners, and prefer `--detach` for long jobs so terminal disconnects do not interrupt them.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -814,7 +815,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 1. Confirm `echo $NO_COLOR` is empty.
 2. Confirm `$TERM` advertises color (`xterm-256color` or similar): `echo $TERM`.
 3. Drop `--no-color` from your command if you added it.
-4. For pipe / file redirection, color is auto-suppressed by design; capture the diff with `--ansi` or render to a richer target.
+4. For pipe / file redirection, color is auto-suppressed by design; run the diff in a color-capable TTY or set `FORCE_COLOR=1` to keep ANSI codes when capturing the output.
 
 **Prevention:** Configure your terminal as a `xterm-256color` (or modern) `$TERM` and leave `NO_COLOR` unset.
 
@@ -838,15 +839,19 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ---
 
-### Symptom: `Editor not found. Set $EDITOR.` (when pressing `e` at a review gate)
+### Symptom: `Failed to open editor: …` or `Editor exited with …` (when pressing `e` at a review gate)
 
-**Likely cause:** The rich plan editor and the spec/brief inline-edit flow both open `$EDITOR`. If that variable is unset, the command fails before opening anything.
+**Likely cause:** Both the rich plan editor and the spec/brief inline-edit flow resolve `$EDITOR`, falling back to `vi` when it is unset or empty, then spawn it. The failure is in launching or running that resolved command, not a missing variable:
+- The resolved binary is not on `PATH` (e.g. `EDITOR=code` on a machine without VS Code) — the spawn errors and you get `Failed to open editor: …`.
+- The editor exits non-zero or is killed by a signal — you get `Editor exited with status … . Edit cancelled.` (plan editor) or `Failed to open editor: Editor exited with …` (spec/brief flow).
+- A GUI editor returns immediately without blocking (e.g. `code` without `--wait`), so the edit is treated as cancelled.
 
 **Fix:**
-1. Set your editor before launching diptych: `export EDITOR=vi` (or `nano`, `code --wait`, etc.) in your shell profile.
-2. For one-off runs: `EDITOR=vi diptych start "..."`.
+1. Confirm the resolved editor is installed and on `PATH`: `which "${EDITOR:-vi}"`.
+2. For GUI editors, use the blocking flag so diptych waits for you to save and close: `export EDITOR='code --wait'`.
+3. For a one-off run with a known-good editor: `EDITOR=vi diptych start "..."`.
 
-**Prevention:** Add `export EDITOR=<your-editor>` to your `.bashrc` / `.zshrc` so it is always set.
+**Prevention:** Point `$EDITOR` at a terminal editor (`vi`, `nano`) or a GUI editor with its wait flag in your `.bashrc` / `.zshrc`; leaving `$EDITOR` unset is fine — diptych uses `vi`.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §Review gates.
 

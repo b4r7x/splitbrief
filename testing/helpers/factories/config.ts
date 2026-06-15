@@ -34,7 +34,6 @@ type ConfigInput = {
   validation: Config['validation'];
   workflow: Config['workflow'];
   theme?: Config['theme'];
-  shikiTheme?: Config['shikiTheme'];
   sessions?: Config['sessions'];
   escalation?: Config['escalation'];
   codebase?: Config['codebase'];
@@ -77,7 +76,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     },
   };
   if (overrides?.theme !== undefined) base.theme = overrides.theme;
-  if (overrides?.shikiTheme !== undefined) base.shikiTheme = overrides.shikiTheme;
   if (overrides?.sessions !== undefined) base.sessions = overrides.sessions;
   if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
@@ -108,6 +106,4 @@ export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>
 export const defaultContext: ProjectContext = {
   name: 'test-project',
   dir: join(tmpdir(), `diptych-test-${process.pid}`),
-  runtime: 'node',
-  testCommand: 'npm test',
 };

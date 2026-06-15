@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { formatTaskPrompt, formatRetryPrompt } from './prompt-formatter.js';
 import { formatTasks } from './formatter.js';
-import { parseTasks } from './parser.js';
+import { parseTasks, parseTasksStrict } from './parser.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
-import { truncateMiddle, computeTokenBudget } from './token-budget.js';
+import { truncateMiddle, computeTokenBudget, DEFAULT_API_CONTEXT_LENGTH } from './token-budget.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
 import type { Task } from '../../core/schemas/task.js';
 
-const context = { ...defaultContext, testCommand: 'node --test' };
+const context = defaultContext;
 
 type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
   id?: string;
@@ -311,13 +311,26 @@ describe('formatTaskPrompt with contextLength', () => {
     expect(prompt).not.toContain('// ===');
   });
 
-  it('works without contextLength (backward compatible)', () => {
+  it('inserts currentCode unbudgeted when contextLength is omitted (callers supply their own default)', () => {
     const task = makeTask({
       action: 'modify',
       currentCode: 'export const x = 1;\n',
     });
     const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('export const x = 1;');
+    expect(prompt).not.toContain('truncated');
+  });
+
+  it('truncates large currentCode at the default api context window when that window is passed', () => {
+    const largeCode = 'x'.repeat(50000);
+    const task = makeTask({
+      action: 'modify',
+      currentCode: largeCode,
+    });
+    const prompt = formatTaskPrompt({ task, context, contextLength: DEFAULT_API_CONTEXT_LENGTH });
+
+    expect(prompt).toContain('// ... truncated to fit context window ...');
+    expect(prompt.length).toBeLessThan(largeCode.length);
   });
 });
 
@@ -422,5 +435,120 @@ describe('formatTasks', () => {
       file: 'src/bar.ts',
       dependsOn: [first.id],
     });
+  });
+
+  it('wraps signature, currentCode, and typeDefs in code fences', () => {
+    const task = makeTask({
+      action: 'modify',
+      signature: 'export function greet(name: string): string',
+      currentCode: 'export function old(): void {}',
+      typeDefs: 'export type Foo = { bar: string };',
+    });
+
+    const markdown = formatTasks([task]);
+    const signatureFenced = markdown.slice(
+      markdown.indexOf('### Signature'),
+      markdown.indexOf('### Current Code'),
+    );
+
+    expect(signatureFenced).toContain('```\nexport function greet(name: string): string\n```');
+    expect(markdown).toContain('```\nexport function old(): void {}\n```');
+    expect(markdown).toContain('```\nexport type Foo = { bar: string };\n```');
+  });
+
+  it('round-trips currentCode that contains heading and separator lines', () => {
+    const currentCode =
+      'export function old() {\n  return `---`;\n}\n### not a real heading\n--- not a separator';
+    const task = makeTask({
+      action: 'modify',
+      currentCode,
+      typeDefs: 'export type Foo = {\n  bar: string;\n};',
+      signature: 'export function old(): void',
+    });
+
+    const parsed = parseTasks(formatTasks([task]));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.currentCode).toBe(currentCode);
+    expect(parsed[0]?.typeDefs).toBe('export type Foo = {\n  bar: string;\n};');
+    expect(parsed[0]?.signature).toBe('export function old(): void');
+  });
+
+  it('round-trips code that itself contains a triple-backtick fenced block', () => {
+    const currentCode = 'const md = `\n```js\nfoo()\n```\n`;';
+    const task = makeTask({
+      action: 'modify',
+      currentCode,
+      typeDefs: 'export type Bar = string;',
+    });
+
+    const parsed = parseTasks(formatTasks([task]));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.currentCode).toBe(currentCode);
+    expect(parsed[0]?.typeDefs).toBe('export type Bar = string;');
+  });
+
+  it.each([
+    ['colon', 'Fix: parse the frontmatter'],
+    ['hash', '#42 rename the module'],
+    ['double quote', 'Wrap "title" in quotes'],
+    ['single quote', "Don't break the parser"],
+    ['leading dash', '- not a list item'],
+    ['trailing space', 'title with trailing space '],
+  ] as const)('strict round-trips a title needing YAML quoting (%s)', (_name, title) => {
+    const task = makeTask({ id: 'T001', title });
+
+    const parsed = parseTasksStrict(formatTasks([task]));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.title).toBe(title);
+  });
+
+  it('strict round-trips a file path that needs YAML quoting', () => {
+    const task = makeTask({ id: 'T001', file: 'src/weird: name.ts' });
+
+    const parsed = parseTasksStrict(formatTasks([task]));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.file).toBe('src/weird: name.ts');
+  });
+
+  it('strict round-trips a multi-line title without producing a block scalar inline', () => {
+    const title = 'first line\nsecond line: with colon and "quotes"';
+    const task = makeTask({ id: 'T001', title });
+
+    const parsed = parseTasksStrict(formatTasks([task]));
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.title).toBe(title);
+  });
+
+  it('strict-parse round-trips signature/currentCode/typeDefs whose fenced bodies contain --- documents', () => {
+    const signature = 'export function loadFrontmatter(raw: string): Frontmatter';
+    const currentCode = ['---', 'id: T999', 'title: looks like a task', '---', 'body line'].join(
+      '\n',
+    );
+    const typeDefs = ['export type Frontmatter = {', '  ---: never;', '};'].join('\n');
+    const first = makeTask({
+      id: 'T001',
+      action: 'modify',
+      signature,
+      currentCode,
+      typeDefs,
+    });
+    const second = makeTask({
+      id: 'T002',
+      title: 'Second task',
+      file: 'src/second.ts',
+      dependsOn: [first.id],
+    });
+
+    const parsed = parseTasksStrict(formatTasks([first, second]));
+
+    expect(parsed.map((t) => t.id)).toEqual(['T001', 'T002']);
+    expect(parsed[0]?.signature).toBe(signature);
+    expect(parsed[0]?.currentCode).toBe(currentCode);
+    expect(parsed[0]?.typeDefs).toBe(typeDefs);
   });
 });

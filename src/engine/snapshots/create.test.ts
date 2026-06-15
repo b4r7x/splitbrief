@@ -1,9 +1,11 @@
-import { mkdtemp, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EventBus, EngineEvent } from '../events/types.js';
+import { snapshotManifestPath } from '../../core/paths.js';
 import { createSnapshot } from './create.js';
+import { restoreSnapshot } from './restore.js';
 
 let tmp: string;
 
@@ -20,7 +22,6 @@ function makeMockBus(): { bus: EventBus; events: EngineEvent[] } {
   const bus: EventBus = {
     publish: (e) => events.push(e),
     subscribe: () => () => {},
-    unsubscribeAll: () => {},
   };
   return { bus, events };
 }
@@ -41,6 +42,22 @@ describe('createSnapshot — first call (baseline)', () => {
     const filesDir = join(result.snapshotDir, 'files');
     const written = await readdir(filesDir);
     expect(written.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('records file entries with only path, hash, and encodedName (no sizeBytes)', async () => {
+    await writeFile(join(tmp, 'foo.ts'), 'export const x = 1;');
+
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const entry = result.manifest.fileEntries.find((e) => e.path === 'foo.ts');
+    expect(entry).toBeDefined();
+    expect(Object.keys(entry ?? {}).sort()).toEqual(['encodedName', 'hash', 'path']);
+
+    const manifestFile = snapshotManifestPath(tmp, 'sess-01', result.manifest.id);
+    const raw = JSON.parse(await readFile(manifestFile, 'utf-8'));
+    for (const persisted of raw.fileEntries) {
+      expect(persisted).not.toHaveProperty('sizeBytes');
+    }
   });
 
   it('stores name in manifest when provided', async () => {
@@ -104,6 +121,56 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(entries).toHaveLength(2);
     const encodedNames = new Set(entries.map((e) => e.encodedName));
     expect(encodedNames.size).toBe(2);
+  });
+
+  it('captures and restores a very long unicode path without ENAMETOOLONG', async () => {
+    // hex(utf8(path)) doubled the byte count (worse for multi-byte chars), so a
+    // deep CJK path blew past the 255-byte filename limit and lost its blob.
+    // sha256 blob names are fixed length, so the round-trip stays intact.
+    const longUnicodePath = `${'長い経路名フォルダ'.repeat(20)}.ts`;
+    await writeFile(join(tmp, longUnicodePath), 'unicode content');
+
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+
+    const entry = baseline.manifest.fileEntries.find((e) => e.path === longUnicodePath);
+    expect(entry).toBeDefined();
+    expect(entry?.encodedName).toMatch(/^[a-f0-9]{64}$/);
+
+    await writeFile(join(tmp, longUnicodePath), 'clobbered');
+    const result = await restoreSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      idOrName: baseline.manifest.id,
+      force: true,
+    });
+
+    expect(result.forcedPaths).toContain(longUnicodePath);
+    expect(await readFile(join(tmp, longUnicodePath), 'utf-8')).toBe('unicode content');
+  });
+
+  it('degrades on an unreadable source file: tracks the hash but writes no blob entry', async () => {
+    await writeFile(join(tmp, 'readable.ts'), 'ok');
+    const secret = join(tmp, 'secret.ts');
+    await writeFile(secret, 'cannot read me');
+    await chmod(secret, 0o200);
+
+    try {
+      const result = await createSnapshot({
+        projectDir: tmp,
+        sessionId: 'sess-01',
+        phase: 'manual',
+      });
+
+      expect(Object.keys(result.manifest.fileHashes)).toContain('secret.ts');
+      expect(result.manifest.fileEntries.some((e) => e.path === 'secret.ts')).toBe(false);
+      expect(result.manifest.fileEntries.some((e) => e.path === 'readable.ts')).toBe(true);
+    } finally {
+      await chmod(secret, 0o600);
+    }
   });
 
   it('emits snapshot_created when mock bus provided, with correct fileCount', async () => {

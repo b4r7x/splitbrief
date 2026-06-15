@@ -6,7 +6,8 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { formatCostDisplay, useCostStats } from './use-cost-stats.js';
+import { formatCost } from '../../../core/formatting.js';
+import { formatCostDisplay, formatSpentText, useCostStats } from './use-cost-stats.js';
 
 function Harness() {
   const stats = useCostStats();
@@ -81,5 +82,32 @@ describe('formatCostDisplay', () => {
     );
 
     expect(display.showSavings).toBe(false);
+  });
+});
+
+describe('formatSpentText', () => {
+  const pricedBreakdown = {
+    hypotheticalCost: 0,
+    actualPlannerCost: 0,
+    actualImplementerCost: 12.5,
+    totalActualCost: 12.5,
+    savingsAmount: 0,
+    savingsPercentage: 0,
+    localCompletionRate: 1,
+    hasPricedUsage: true,
+    hasUnpricedUsage: false,
+    hasSavingsEstimate: false,
+  };
+
+  it('qualifies the priced spend when the actual cost is partially unknown', () => {
+    expect(formatSpentText({ ...pricedBreakdown, isTotalActualCostKnown: false }, 'priced')).toBe(
+      `${formatCost(12.5)} + unknown`,
+    );
+  });
+
+  it('leaves the priced spend unqualified when the actual cost is fully known', () => {
+    expect(formatSpentText({ ...pricedBreakdown, isTotalActualCostKnown: true }, 'priced')).toBe(
+      formatCost(12.5),
+    );
   });
 });

@@ -4,7 +4,7 @@ import { resolveProjectDir } from '../setup.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
-import { assignSessionAliases, listSessionDirs } from '../sessions/aliases.js';
+import { assignSessionAliases, listSessionDirs, sessionSortKeyMs } from '../sessions/aliases.js';
 import { renderTable } from '../render-table.js';
 import { formatTime } from '../../utils/format-time.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
@@ -26,6 +26,7 @@ type SessionRow = {
   pid: number | null;
   mode: WorkflowMode | '-';
   startTimeMs: number;
+  sortKeyMs: number;
   endTimeMs: number | null;
   lastAliveMs: number | null;
   feature: string;
@@ -43,6 +44,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
       pid: null,
       mode: '-',
       startTimeMs: 0,
+      sortKeyMs: sessionSortKeyMs(sessDir, null),
       endTimeMs: null,
       lastAliveMs: null,
       feature: '-',
@@ -68,6 +70,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
     pid: data.pid,
     mode: data.mode,
     startTimeMs: data.startTimeMs,
+    sortKeyMs: data.startTimeMs,
     endTimeMs: data.exitedAt ?? null,
     lastAliveMs: data.lastAliveMs,
     feature: data.feature,
@@ -78,8 +81,12 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
 function assignDisplayedAliases(rows: SessionRow[]): SessionRow[] {
   const aliases = assignSessionAliases(
     rows
-      .filter((row): row is SessionRow & { lockfile: LockfileData } => row.lockfile !== null)
-      .map((row) => ({ sessionId: row.sessionId, lockfile: row.lockfile })),
+      .filter((row) => row.lockfile !== null || row.sortKeyMs > 0)
+      .map((row) => ({
+        sessionId: row.sessionId,
+        sortKeyMs: row.sortKeyMs,
+        lockfile: row.lockfile,
+      })),
   );
   const aliasBySession = new Map(aliases.map((row) => [row.sessionId, row.alias]));
   return rows.map((row) => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
@@ -103,7 +110,7 @@ export async function psCommand(
     await Promise.all(names.map((name) => buildRow(join(root, name), name, deps))),
   );
 
-  rows.sort((a, b) => b.startTimeMs - a.startTimeMs);
+  rows.sort((a, b) => b.sortKeyMs - a.sortKeyMs);
 
   const now = Date.now();
 

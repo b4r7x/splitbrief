@@ -86,8 +86,6 @@ async function runSingleEval(
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onQuestionAsked: async () => '',
-        onBudgetExceeded: async () => true,
-        onBudgetPaused: async () => 'continue',
         onContinuationNeeded: async () => '',
         onComplete: () => undefined,
       },

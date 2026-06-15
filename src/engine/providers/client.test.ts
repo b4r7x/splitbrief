@@ -5,6 +5,7 @@ import {
   fetchModelList,
   createMetadataProvider,
   createProviderShell,
+  describeProviderUnavailability,
 } from './client.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
@@ -16,6 +17,32 @@ describe('createProviderShell', () => {
     expect(shell.getLastError()).toBe('boom');
     shell.trackError(undefined);
     expect(shell.getLastError()).toBeUndefined();
+  });
+});
+
+describe('describeProviderUnavailability', () => {
+  it('reports a missing key for a remote provider with no key', () => {
+    expect(
+      describeProviderUnavailability({ isLocal: false, hasKey: false, lastError: undefined }),
+    ).toBe('no API key is configured');
+  });
+
+  it('surfaces the tracked last error when a remote provider has a key', () => {
+    expect(
+      describeProviderUnavailability({ isLocal: false, hasKey: true, lastError: 'HTTP 401' }),
+    ).toBe('HTTP 401');
+  });
+
+  it('reports an empty model list when a keyed remote provider tracked no error', () => {
+    expect(
+      describeProviderUnavailability({ isLocal: false, hasKey: true, lastError: undefined }),
+    ).toBe('no models were returned');
+  });
+
+  it('reports an unreachable endpoint for a local provider with no tracked error', () => {
+    expect(
+      describeProviderUnavailability({ isLocal: true, hasKey: false, lastError: undefined }),
+    ).toBe('the endpoint is unreachable');
   });
 });
 
@@ -81,6 +108,38 @@ describe('fetchModelList', () => {
     expect(result).toEqual([{ id: 'm1' }, { id: 'm2' }]);
     // Last onError call should clear the error.
     expect(errors.at(-1)).toBeUndefined();
+  });
+
+  it('passes an AbortSignal to fetch and aborts when the request stalls past the timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      let signalRef: AbortSignal | undefined;
+      vi.mocked(globalThis.fetch).mockImplementationOnce((_url, init) => {
+        signalRef = (init as RequestInit | undefined)?.signal as AbortSignal;
+        return new Promise((_resolve, reject) => {
+          signalRef?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        });
+      });
+
+      const errors: Array<string | undefined> = [];
+      const pending = fetchModelList({
+        endpoint: 'https://slow.example.com/v1/models',
+        onError: (err: string | undefined) => errors.push(err),
+        extractModels: defaultExtract,
+      });
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      const result = await pending;
+
+      expect(signalRef).toBeInstanceOf(AbortSignal);
+      expect(signalRef?.aborted).toBe(true);
+      expect(result).toEqual([]);
+      expect(errors.some((e) => /abort|timeout/i.test(e ?? ''))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses custom headers verbatim when provided (no Authorization injection)', async () => {

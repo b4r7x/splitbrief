@@ -134,6 +134,16 @@ describe('createQuestionAccumulator', () => {
     expect(all.length).toBe(1);
   });
 
+  it('extracts question whose text contains -->, even when a chunk splits after it', () => {
+    const acc = createQuestionAccumulator();
+    const first = acc.addChunk('<!-- Q:{"id":"q1","type":"input","text":"use arrow --> here"}');
+    expect(first.length).toBe(0);
+    const second = acc.addChunk(' -->');
+    expect(second.length).toBe(1);
+    expect(second[0]?.id).toBe('q1');
+    expect(second[0]?.text).toBe('use arrow --> here');
+  });
+
   it('buffer does not grow unbounded after many chunks', () => {
     const acc = createQuestionAccumulator();
     acc.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"A?"} -->');

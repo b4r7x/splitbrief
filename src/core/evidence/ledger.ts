@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, unlinkSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Task } from '../schemas/task.js';
 import type { WorkflowMode } from '../schemas/enums.js';
@@ -12,6 +12,7 @@ import { EvidenceLedgerSchema } from '../schemas/evidence.js';
 import { EVIDENCE_FILE, sessionDir } from '../paths.js';
 import { ensureSecureDir, readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { nowIso } from '../../utils/format-time.js';
+import { evidenceError } from './errors.js';
 
 function buildExpectedEvidence(task: Task): string[] {
   const out: string[] = [];
@@ -152,10 +153,53 @@ export function evidenceLedgerPath(projectDir: string, sessionId: string): strin
 
 const LEDGER_LOCK_SUFFIX = '.lock';
 const LEDGER_LOCK_MAX_ATTEMPTS = 100;
-const LEDGER_LOCK_SPIN_MS = 5;
+const LEDGER_LOCK_SLEEP_MS = 5;
+const LEDGER_LOCK_STALE_MS = 30_000;
+
+type LedgerLockHolder = { pid: number; acquiredAt: number };
 
 function evidenceLedgerLockPath(ledgerPath: string): string {
   return `${ledgerPath}${LEDGER_LOCK_SUFFIX}`;
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: unknown) {
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+    return code === 'EPERM';
+  }
+}
+
+function readLockHolder(lockPath: string): LedgerLockHolder | null {
+  let raw: string;
+  try {
+    raw = readFileSync(lockPath, 'utf-8');
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object') return null;
+  const { pid, acquiredAt } = parsed as { pid?: unknown; acquiredAt?: unknown };
+  if (typeof pid !== 'number' || typeof acquiredAt !== 'number') return null;
+  return { pid, acquiredAt };
+}
+
+function lockIsStale(lockPath: string): boolean {
+  const holder = readLockHolder(lockPath);
+  if (holder === null) return true;
+  if (!isPidAlive(holder.pid)) return true;
+  return Date.now() - holder.acquiredAt > LEDGER_LOCK_STALE_MS;
 }
 
 function acquireEvidenceLedgerLock(lockPath: string): void {
@@ -163,18 +207,28 @@ function acquireEvidenceLedgerLock(lockPath: string): void {
   for (let attempt = 0; attempt < LEDGER_LOCK_MAX_ATTEMPTS; attempt++) {
     try {
       const fd = openSync(lockPath, 'wx');
-      closeSync(fd);
+      try {
+        const holder: LedgerLockHolder = { pid: process.pid, acquiredAt: Date.now() };
+        writeSync(fd, JSON.stringify(holder));
+      } finally {
+        closeSync(fd);
+      }
       return;
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
       if (code !== 'EEXIST') throw err;
-      const deadline = Date.now() + LEDGER_LOCK_SPIN_MS;
-      while (Date.now() < deadline) {
-        // spin until retry or timeout slice elapses
+      if (lockIsStale(lockPath)) {
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // another holder reclaimed or refreshed the lock; retry the acquire loop
+        }
+        continue;
       }
+      sleepSync(LEDGER_LOCK_SLEEP_MS);
     }
   }
-  throw new Error(`timed out acquiring evidence ledger lock: ${lockPath}`);
+  throw evidenceError.lockTimeout(lockPath);
 }
 
 function releaseEvidenceLedgerLock(lockPath: string): void {

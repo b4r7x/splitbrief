@@ -29,7 +29,7 @@ describe('executeRuntimeCommand', () => {
     expect(errorMsg).toContain('Unknown command');
   });
 
-  it('executes fuzzy command matches', async () => {
+  it('does not execute a fuzzy command match and suggests the nearest command', async () => {
     const calls: string[] = [];
     let errorMsg = '';
     const cmds: RuntimeCommandDef[] = [
@@ -56,14 +56,14 @@ describe('executeRuntimeCommand', () => {
     await executeRuntimeCommand(cmds, '/mde', 'home', (msg) => {
       errorMsg = msg;
     });
-    expect(calls).toEqual(['mode']);
-    expect(errorMsg).toBe('');
+    expect(calls).toEqual([]);
+    expect(errorMsg).toBe('Unknown command: /mde. Did you mean /mode?');
 
     await executeRuntimeCommand(cmds, '/reject-rn confirm', 'home', (msg) => {
       errorMsg = msg;
     });
-    expect(calls).toEqual(['mode', 'reject:confirm']);
-    expect(errorMsg).toBe('');
+    expect(calls).toEqual([]);
+    expect(errorMsg).toBe('Unknown command: /reject-rn. Did you mean /reject-run?');
   });
 
   it('reports an error when the command is not valid on the current screen', () => {

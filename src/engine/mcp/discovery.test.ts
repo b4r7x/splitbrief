@@ -11,7 +11,6 @@ const SESSION_STUB = {
   startedAt: Date.now(),
   completedAt: null,
   stateVersion: 1,
-  stateFile: null,
   status: 'interrupted' as const,
   summary: null,
 };

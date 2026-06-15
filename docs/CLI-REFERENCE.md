@@ -90,7 +90,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
 | `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
-| `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. |
+| `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
 | `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`, `agent`, `agent-sdk`. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
@@ -191,14 +191,13 @@ Run only the planner. Produces `spec.md`, `plan.md`, and `tasks.md` for the feat
 ### Usage
 
 ```
-diptych spec <feature> [--auto] [--project <dir>] [--allow-hooks]
+diptych spec <feature> [--project <dir>] [--allow-hooks]
 ```
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--auto` | boolean | `false` | Auto-approve spec and plan (sets `workflow.autoApproveSpec` and `workflow.autoApprovePlan` in the loaded config). |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 
@@ -208,11 +207,11 @@ diptych spec <feature> [--auto] [--project <dir>] [--allow-hooks]
 # Generate a spec for review
 diptych spec "add SSO via Okta"
 
-# Auto-approve and run in another repo
-diptych spec --auto --project ../service-a "add health endpoint"
+# Run in another repo
+diptych spec --project ../service-a "add health endpoint"
 
 # CI-friendly invocation
-diptych spec --auto --allow-hooks "tighten zod schemas"
+diptych spec --allow-hooks "tighten zod schemas"
 ```
 
 ### Exit codes
@@ -490,20 +489,20 @@ diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
-  [--project <dir>] [--worktree [name]] \
+  [--project <dir>] \
   [--no-fullscreen] [--no-mouse] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
 
-Resume accepts the same workflow override options as `start` except `--detach` (which is start-only). See [`diptych start`](#diptych-start) for the shared runner, mode, budget, OTel, and approval flags.
+Resume accepts the same workflow override options as `start` except `--detach` and `--worktree` (both start-only; `--worktree` is rejected because a resumed session already lives in its original worktree). See [`diptych start`](#diptych-start) for the shared runner, mode, budget, OTel, and approval flags.
 
 | Flag | Notes |
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--rpc` | Resume the run in RPC mode, reading commands from stdin and writing NDJSON responses to stdout. Mutually exclusive with `--json`. |
-| `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. |
+| `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. The workflow mode resolved on the original run is saved in `state.json`; resume reuses it unless `--mode` is passed, which overrides it and prints a warning. |
 
 ### Examples
 
@@ -541,8 +540,9 @@ diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
 
 - `maybeMigrate(projectDir)` runs before state load, so legacy layouts are upgraded transparently.
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'diptych start'.`
-- `isResumable(state)` rejects terminal phases with: `Cannot resume from phase "<phase>".`
+- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `planning`, `implementing`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.`
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
+- The workflow mode is pinned in `state.json` alongside `plannerModel`; resume reuses the saved mode and approval level unless `--mode` is passed explicitly, in which case the override applies and a warning is printed.
 
 ---
 
@@ -566,7 +566,7 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
 | `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; rejected for live detached sessions. |
-| Other resume flags | — | — | Runner overrides, mode, budget, OTel, fullscreen/mouse, and approval controls. `--worktree` is only applied by `start`. |
+| Other resume flags | — | — | Runner overrides, mode, budget, OTel, fullscreen/mouse, and approval controls. `--worktree` is rejected — it is a `start`-only flag, since a resumed session already lives in its original worktree. |
 
 ### Examples
 
@@ -998,7 +998,7 @@ List snapshots for a session in chronological order.
 diptych snapshot restore <id-or-name> [--session <id>] [--project <dir>] [--force]
 ```
 
-Restore the working tree to a previously captured snapshot. Files modified after the snapshot are reported as conflicts and skipped — pass `--force` to overwrite them.
+Restore the working tree to a previously captured snapshot. Files modified after the snapshot are reported as conflicts and skipped — pass `--force` to overwrite them. Tracked files created after the snapshot (absent from its manifest) are reported as extraneous and skipped; `--force` deletes them so the tree matches the snapshot exactly.
 
 #### Options
 
@@ -1564,7 +1564,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `migrate`, `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
-| `--auto` | `start`, `resume`, `continue`, `last`, `spec` | `false` | On workflow commands it aliases `--approve none`; on `spec` it auto-approves spec and plan. |
+| `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | NDJSON event stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
 | `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
@@ -1595,7 +1595,7 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 
 ### RPC stream (`--rpc`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command. Live `continue` / `last` targets reject `--rpc` rather than attaching.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `regenerate`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command. Live `continue` / `last` targets reject `--rpc` rather than attaching.
 
 ### Workflow modes (`--mode`)
 
@@ -1603,8 +1603,8 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 |---|:---:|:---:|---|
 | `instant` | 1 | none | Trivial edits that need almost no ceremony. |
 | `quick` | 1 | none | Small tasks that still need a brief. |
-| `standard` (default) | 4 | supporting spec | Ordinary feature work. |
-| `speckit` | 6–7 | supporting spec + plan | Large, risky, or externally visible work. |
+| `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work. |
+| `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work. |
 
 `full` is a legacy alias for `speckit`. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
 

@@ -17,7 +17,7 @@ import {
 } from '../../../core/paths.js';
 import { appendEngineEvent, saveState } from '../../../core/state/persistence.js';
 import { saveSummary } from '../../../core/sessions/io.js';
-import { writeSecureFile } from '../../../lib/fs.js';
+import { fsError, writeSecureFile } from '../../../lib/fs.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -134,6 +134,7 @@ async function writeRichArtifacts(): Promise<string> {
     taskFitCounts: { fits: 1, tight: 1, overflow: 0, unknown: 0 },
     contextConfidenceCounts: {
       contextExplicit: 1,
+      contextDetected: 0,
       contextKnownCatalog: 0,
       contextCachedProvider: 0,
       contextConservativeFallback: 1,
@@ -360,6 +361,15 @@ describe('buildRunExplain', () => {
       path: `.diptych/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,
       present: false,
     });
+  });
+
+  it('rejects session ids that fail the canonical session-id pattern', async () => {
+    const projectDir = createTempDir('explain-invalid-id');
+    dirs.push(projectDir);
+
+    await expect(buildRunExplain({ projectDir, sessionId: '@bad' })).rejects.toSatisfy(
+      fsError.isInvalidId,
+    );
   });
 
   it('does not mutate existing session artifacts', async () => {

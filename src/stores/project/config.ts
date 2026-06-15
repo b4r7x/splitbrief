@@ -1,5 +1,11 @@
 import { createStore, storeBase } from '../create-store.js';
-import { loadConfig, writeConfig, configPath } from '../../core/config/load/io.js';
+import {
+  loadConfig,
+  writeConfig,
+  writeConfigDocument,
+  rawDocumentHasVersion,
+  configPath,
+} from '../../core/config/load/io.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import {
@@ -14,21 +20,26 @@ import {
   cloneConfig,
   cloneValue,
   persistedConfigForSave,
+  editsForSave,
   type SaveOptions,
 } from './config-persistence.js';
 
 interface ConfigState {
   config: Config | null;
   diskConfig: Config | null;
+  rawYaml: string;
   projectDir: string;
   overrides: CLIOverrides;
+  detectedContextLength: number | undefined;
 }
 
 const initial: ConfigState = {
   config: null,
   diskConfig: null,
+  rawYaml: '',
   projectDir: '',
   overrides: {},
+  detectedContextLength: undefined,
 };
 
 const store = createStore<ConfigState>(initial);
@@ -39,7 +50,7 @@ interface SaveResult {
 }
 
 function load(projectDir: string, overrides: CLIOverrides = {}) {
-  const { config: loaded, warnings } = loadConfig(projectDir);
+  const { config: loaded, warnings, rawYaml } = loadConfig(projectDir);
   for (const w of warnings) warnStderr(`⚠ ${w}`);
   const base = cloneConfig(loaded);
   const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
@@ -51,13 +62,15 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
   store.set({
     config,
     diskConfig: cloneConfig(loaded),
+    rawYaml,
     projectDir,
     overrides: cloneValue(overrides),
+    detectedContextLength: undefined,
   });
 }
 
 function save(updated: Config, options?: SaveOptions): SaveResult {
-  const { config, diskConfig, projectDir } = store.get();
+  const { config, diskConfig, rawYaml, projectDir } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
   const persisted = persistedConfigForSave({
@@ -66,9 +79,20 @@ function save(updated: Config, options?: SaveOptions): SaveResult {
     updated,
     options,
   });
+  const edits = options?.changedPaths?.length ? editsForSave(updated, options) : [];
   try {
-    writeConfig(projectDir, persisted);
-    store.set((s) => ({ ...s, config: cloneConfig(updated), diskConfig: cloneConfig(persisted) }));
+    let nextRaw = rawYaml;
+    if (edits.length > 0 && rawDocumentHasVersion(rawYaml)) {
+      nextRaw = writeConfigDocument(projectDir, rawYaml, edits);
+    } else {
+      nextRaw = writeConfig(projectDir, persisted);
+    }
+    store.set((s) => ({
+      ...s,
+      config: cloneConfig(updated),
+      diskConfig: cloneConfig(persisted),
+      rawYaml: nextRaw,
+    }));
     return { ok: true };
   } catch (err) {
     return { ok: false, error: configError.saveFailed(configPath(projectDir), err) };
@@ -81,19 +105,29 @@ function useConfig(): Config {
   return config;
 }
 
-function setContextLength(contextLength: number) {
+function setContextLength(contextLength: number, detected = false) {
   store.set((s) => {
     if (!s.config) return s;
+    const nextDetected = detected ? contextLength : undefined;
     const current = resolveImplementerProfiles(s.config).defaultProfile.config.contextLength;
-    if (current === contextLength) return s;
+    if (current === contextLength) {
+      return s.detectedContextLength === nextDetected
+        ? s
+        : { ...s, detectedContextLength: nextDetected };
+    }
     return {
       ...s,
+      detectedContextLength: nextDetected,
       config: updateDefaultImplementerConfig(s.config, (existing) => ({
         ...existing,
         contextLength,
       })),
     };
   });
+}
+
+function getDetectedContextLength(): number | undefined {
+  return store.get().detectedContextLength;
 }
 
 function setApprovalEnabled(enabled: boolean) {
@@ -124,6 +158,7 @@ function __testReset(next?: Partial<ConfigState>): void {
         ? cloneConfig(state.config)
         : null,
     overrides: cloneValue(state.overrides),
+    detectedContextLength: state.detectedContextLength,
   });
 }
 
@@ -133,6 +168,7 @@ export const configStore = {
   save,
   useConfig,
   setContextLength,
+  getDetectedContextLength,
   setApprovalEnabled,
   __testReset,
 };

@@ -12,7 +12,6 @@ import {
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { SANDBOX_DIR } from '../../../core/paths.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { handleRetryAndEscalation } from './handle.js';
@@ -160,7 +159,7 @@ describe('handleRetryAndEscalation', () => {
     expect(escalateTier2).toBeDefined();
   });
 
-  it('runs tier-1 hint escalation sandboxed (staged projectDir + sandboxEnv + fileIgnoreProjectDir)', async () => {
+  it('runs tier-1 hint escalation against the staged projectDir with the runner auth env intact (no sandboxEnv)', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -179,7 +178,7 @@ describe('handleRetryAndEscalation', () => {
     const escalateHint = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv?.HOME).toBe(join(opts.projectDir, SANDBOX_DIR, 'home'));
+      expect(opts.sandboxEnv).toBeUndefined();
       return { success: false, output: 'hint text', code: null, usage: null };
     });
 
@@ -361,7 +360,7 @@ describe('handleRetryAndEscalation', () => {
     const escalateFull = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv?.HOME).toBe(join(opts.projectDir, SANDBOX_DIR, 'home'));
+      expect(opts.sandboxEnv).toBeUndefined();
       return {
         success: true,
         output: 'full code',
@@ -459,6 +458,84 @@ describe('handleRetryAndEscalation', () => {
     expect(result.method).toBe('failed');
     expect(finalState.currentTaskIndex).toBe(0);
     expect(finalState.tasks[0]?.status).toBe('pending');
+  });
+
+  it('pre_escalation deny raises a hook-named recovery instead of a generic retry-exhausted one', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+    writeFileSync(
+      join(projectDir, 'deny-escalation.mjs'),
+      [
+        'export default function () {',
+        "  return { kind: 'deny', message: 'policy: escalation not allowed' };",
+        '}',
+      ].join('\n'),
+    );
+
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const escalateHint = vi.fn();
+    const escalateFull = vi.fn();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'still broken',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const planner = makePlanner({ escalateHint, escalateFull });
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          hooks: {
+            pre_escalation: [
+              {
+                kind: 'module',
+                path: 'deny-escalation.mjs',
+                timeout_ms: 30_000,
+                on_failure: 'warn',
+              },
+            ],
+          },
+        }),
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
+      },
+      task,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    // Escalation tiers must never run once the hook denies.
+    expect(escalateHint).not.toHaveBeenCalled();
+    expect(escalateFull).not.toHaveBeenCalled();
+    expect(busEvents.find((e) => e.type === 'escalate')).toBeUndefined();
+
+    // The recovery is attributed to the hook, not silently mislabeled as retry exhaustion.
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+    });
+    expect(finalState.pendingRecovery?.message).toContain('pre_escalation hook');
+    expect(finalState.pendingRecovery?.message).toContain('policy: escalation not allowed');
+    expect(finalState.pendingRecovery?.message).not.toContain('exhausted recovery retries');
+    expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
+      type: 'recovery_prompted',
+      reason: 'retry-exhausted',
+    });
   });
 });
 
@@ -666,7 +743,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('intermediate retry succeeds via fetch stub → completed with method=escalated-intermediate and tokens in implementer category', async () => {
+  it('intermediate retry succeeds via fetch stub → result carries the intermediate provider/model identity, tokens in implementer category', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -720,6 +797,13 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-intermediate');
+    // The intermediate tier is a paid call to a separately configured provider/model;
+    // its identity must travel on the result so booking/pricing never default to the
+    // primary implementer (regression for F-418).
+    if (result.completed) {
+      expect(result.tool).toBe('openrouter');
+      expect(result.model).toBe('x-ai/grok-4-fast');
+    }
 
     const escalateTier0 = busEvents.find((e) => e.type === 'escalate' && e.tier === 0);
     expect(escalateTier0).toBeDefined();

@@ -10,7 +10,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
-import { SPEC_FILE } from '../../../core/paths.js';
+import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -210,6 +210,82 @@ describe('runApprovalLoop', () => {
       'utf8',
     );
     expect(onDisk).toContain('With auth.');
+  });
+
+  it('spec gate: editing spec.md on disk then approving triggers regeneration', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const onApprovalNeeded = async () => {
+      writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nEdited by user.\n', null);
+      return { approved: true };
+    };
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner: makePlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+    });
+
+    expect(result.rejected).toBe(false);
+    expect(result.regenerated).toBe(true);
+    expect(events.some((e) => e.type === 'spec_regenerated')).toBe(true);
+  });
+
+  it('spec gate: approving without an on-disk edit does not regenerate', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner: makePlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+    });
+
+    expect(result.regenerated).toBe(false);
+    expect(events.some((e) => e.type === 'spec_regenerated')).toBe(false);
+  });
+
+  it('plan gate: editing plan.md on disk then approving triggers regeneration', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nFirst draft.\n', null);
+    const onApprovalNeeded = async () => {
+      writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nEdited by user.\n', null);
+      return { approved: true };
+    };
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runApprovalLoop({
+      type: 'plan',
+      filePath: specPath,
+      planner: makePlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+    });
+
+    expect(result.rejected).toBe(false);
+    expect(result.regenerated).toBe(true);
+    expect(events.some((e) => e.type === 'plan_regenerated')).toBe(true);
   });
 
   it('passes the abort signal into planner regeneration callbacks', async () => {

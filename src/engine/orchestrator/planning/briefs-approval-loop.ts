@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { EventBus } from '../../events/types.js';
-import { createBusTextHandler, publishError } from '../events.js';
+import { createBusTextHandler, publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { isENOENT } from '../../../lib/process/errors.js';
@@ -47,8 +47,10 @@ export async function runBriefsApprovalLoop(
     const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
     if (signal?.aborted) return { state, tasks, rejected: false, aborted: true };
 
+    const warnDropped = (message: string) => publishWarning({ bus, phase: state.phase }, message);
+
     if (result.action === 'edit') {
-      const edited = await readPersistedTasks(tasksFilePath);
+      const edited = await readPersistedTasks(tasksFilePath, warnDropped);
       if (!edited.ok) {
         publishError({ bus: bus, phase: state.phase }, edited.message);
         continue;

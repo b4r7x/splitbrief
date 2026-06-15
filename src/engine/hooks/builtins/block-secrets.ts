@@ -11,18 +11,23 @@ function filesToScan(event: EngineEvent, ctx: HookContext): string[] {
 }
 
 export async function blockSecrets(event: EngineEvent, ctx: HookContext): Promise<HookOutcome> {
+  const unscannable: string[] = [];
   for (const file of filesToScan(event, ctx)) {
     const abs = resolveFromProject(ctx.projectDir, file);
     let content: string;
     try {
       content = await readFile(abs, 'utf8');
     } catch {
+      unscannable.push(file);
       continue;
     }
     const { redacted } = redactSecretsWithMetadata(content);
     if (redacted) {
       return { kind: 'deny', message: `secret detected in ${file}` };
     }
+  }
+  if (unscannable.length > 0) {
+    return { kind: 'warn', message: `could not scan ${unscannable.join(', ')} for secrets` };
   }
   return { kind: 'allow' };
 }

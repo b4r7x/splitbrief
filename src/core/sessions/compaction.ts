@@ -1,6 +1,6 @@
-import { appendFile, lstat } from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SECURE_FILE_MODE, fsError } from '../../lib/fs.js';
+import { SECURE_FILE_MODE, rejectSymlinkTargetAsync } from '../../lib/fs.js';
 import { SESSION_LOG_FILE } from '../paths.js';
 import type { ResolvedCompactionFormat, StructuredSummary } from '../schemas/compaction.js';
 import type {
@@ -39,7 +39,7 @@ export async function compactTranscript(
 ): Promise<TranscriptCompactionResult> {
   const log = await readLogCompactionState(opts.sessionDir);
   const previousStructured = log.latestSummary?.structured;
-  const messages = messagesToSummarize(log, opts.format, previousStructured);
+  const { messages, offset } = messagesToSummarize(log, opts.format, previousStructured);
   const summarizeCount =
     messages.length - normalizedKeepCount(opts.keepRecentCount ?? DEFAULT_KEEP_RECENT_COUNT);
   if (summarizeCount <= 0) return { summary: '', entriesRemoved: 0 };
@@ -55,6 +55,7 @@ export async function compactTranscript(
     ts: String(Date.now()),
     text: summary,
     summarizedUpTo,
+    summarizedCount: offset + summarizeCount,
     ...(structured ? { structured } : {}),
   });
 
@@ -70,15 +71,7 @@ type LogCompactionState = {
 };
 
 async function rejectSessionLogSymlink(sessionDir: string): Promise<void> {
-  const logFile = join(sessionDir, SESSION_LOG_FILE);
-  try {
-    const st = await lstat(logFile);
-    if (st.isSymbolicLink()) {
-      throw fsError.symlinkWrite(logFile);
-    }
-  } catch (err) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
+  await rejectSymlinkTargetAsync(join(sessionDir, SESSION_LOG_FILE));
 }
 
 async function readLogCompactionState(sessionDir: string): Promise<LogCompactionState> {
@@ -97,11 +90,18 @@ function messagesToSummarize(
   log: LogCompactionState,
   format: ResolvedCompactionFormat,
   previousStructured: StructuredSummary | undefined,
-): SessionLogMessageEntry[] {
-  if (format !== 'structured' || !previousStructured || !log.latestSummary) return log.messages;
-  return log.messages.filter((message) =>
+): { messages: SessionLogMessageEntry[]; offset: number } {
+  if (format !== 'structured' || !previousStructured || !log.latestSummary) {
+    return { messages: log.messages, offset: 0 };
+  }
+  const summarizedCount = log.latestSummary.summarizedCount;
+  if (summarizedCount !== undefined) {
+    return { messages: log.messages.slice(summarizedCount), offset: summarizedCount };
+  }
+  const kept = log.messages.filter((message) =>
     isAfterTimestamp(message.ts, log.latestSummary?.summarizedUpTo ?? ''),
   );
+  return { messages: kept, offset: log.messages.length - kept.length };
 }
 
 function normalizedKeepCount(keepRecentCount: number): number {

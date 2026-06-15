@@ -1,7 +1,7 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../engine/spec/brief-quality.js';
 import { uniqueSorted } from '../../utils/collections.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { STALE_ESTIMATE_STATUSES, hasStaleOrConflict } from '../../core/plan-review/predicates.js';
 import type { PlanReviewRisk, PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
@@ -52,15 +52,14 @@ export function buildTaskDetailParts(task: Task): string {
   const hasScope =
     (task.scope?.inBounds?.length ?? 0) > 0 || (task.scope?.outOfBounds?.length ?? 0) > 0;
   const parts: string[] = [];
-  if (validationCount > 0)
-    parts.push(`validation: ${validationCount} ${pluralize(validationCount, 'check')}`);
+  if (validationCount > 0) parts.push(`validation: ${countNoun(validationCount, 'check')}`);
   if (evidenceCount > 0) parts.push(`evidence: ${evidenceCount}`);
   parts.push(`scope: ${hasScope ? 'set' : 'missing'}`);
   return parts.join(' · ');
 }
 
 export function formatTaskCount(count: number): string {
-  return `${count} ${pluralize(count, 'task')}`;
+  return countNoun(count, 'task');
 }
 
 function inferValidationStatus(

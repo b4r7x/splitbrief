@@ -24,7 +24,7 @@ export type DriftFinding = z.infer<typeof DriftFindingSchema>;
 export const DriftReportSchema = z.object({
   version: z.literal(1),
   passed: z.boolean(),
-  score: z.number().refine(Number.isFinite, { message: 'score must be finite' }),
+  score: z.number().refine(Number.isFinite, { error: 'score must be finite' }),
   changedFiles: z.array(z.string()),
   expectedFiles: z.array(z.string()),
   findings: z.array(DriftFindingSchema),

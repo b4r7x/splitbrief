@@ -4,8 +4,9 @@ import { routerStore } from '../stores/navigation/router.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
-import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../stores/cost-approval/prompt.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { costApprovalStore, closeCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
+import { completionStore } from '../stores/ui/completion.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin.js';
 import {
@@ -13,10 +14,8 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import {
-  requestWorkflowCancel,
-  type InterruptResult,
-} from '../features/workflow/app-integration.js';
+import { requestCancel, type InterruptResult } from '../features/workflow/handlers.js';
+import { planEditorKeysStore } from '../features/workflow/hooks/use-plan-editor-keys.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
@@ -62,26 +61,33 @@ function fireInterrupt(interruptWorkflow: () => InterruptResult) {
   cancelEscapeAction();
   interruptWorkflow();
   killAllProcesses();
+  closeApprovalPrompt();
+  closeCostApprovalPrompt({ approved: false });
   abortStore.clear();
 }
 
 function fireCancel() {
   cancelEscapeAction();
-  requestWorkflowCancel();
+  requestCancel();
+  closeApprovalPrompt();
+  closeCostApprovalPrompt({ approved: false });
   abortStore.clear();
 }
 
 export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions) {
-  const [route, overlay, approval, cost] = useStores(
+  const [route, overlay, approval, cost, completion] = useStores(
     routerStore,
     overlayStore,
     approvalPromptStore,
     costApprovalStore,
+    completionStore,
   );
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const overlayHasStack = overlay.stack.length > 0;
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
+  const completionOpen = completion.open;
+  const planEditorActive = planEditorKeysStore.use((mounted) => mounted);
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
@@ -155,6 +161,7 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
         !isOpen &&
         !overlayExclusive &&
         !promptPending &&
+        !completionOpen &&
         !route.attach,
     },
   );
@@ -174,21 +181,30 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
 
   useInput(
     (input, key) => {
-      const shortcut = handleShortcutKeys(input, key, route.screen);
+      const shortcut = handleShortcutKeys(input, key, route.screen, planEditorActive);
       if (shortcut.type !== 'none') {
         applyAction(shortcut, exit);
         return;
       }
     },
-    { isActive: !isOpen },
+    { isActive: !isOpen && !promptPending },
   );
 }
 
-function handleShortcutKeys(input: string, key: Key, screen: Screen): AppKeyAction {
-  if (key.ctrl && input === 'k') return { type: 'open-overlay', overlay: 'command-palette' };
+function handleShortcutKeys(
+  input: string,
+  key: Key,
+  screen: Screen,
+  planEditorActive: boolean,
+): AppKeyAction {
+  // While the rich plan editor owns the screen, Ctrl+K is its reorder chord, so the global
+  // command palette must not claim it — otherwise one press both reorders and opens the palette.
+  if (key.ctrl && input === 'k')
+    return planEditorActive ? NONE : { type: 'open-overlay', overlay: 'command-palette' };
   if (key.ctrl && input === 's' && screen === 'home')
     return { type: 'open-overlay', overlay: 'skills' };
-  if (input === '\x1f') return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
+  if (input === '\x1f' || (key.ctrl && input === '/'))
+    return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
   if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
   if (key.ctrl && input === 'q') return { type: 'exit' };
   return NONE;

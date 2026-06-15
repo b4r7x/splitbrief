@@ -274,7 +274,7 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 
 ## Engine Write Pattern
 
-Since the 2026-04 uplift the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
+Since the 2026-04-20 release the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
 
 - Engine code publishes events; sinks write to stores; UI components subscribe reactively and re-render only when their selected slice changes.
 - Non-event cross-cutting writes (abort / queue handler registration) still go through the `sinks` surface on the workflow context; `abortStore` is the one store engine code still reads directly for cancellation status.

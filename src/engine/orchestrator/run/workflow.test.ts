@@ -11,13 +11,14 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import { generateSessionId, readActive, writeActive } from '../../../core/sessions/lifecycle.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
@@ -113,6 +114,83 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((e) => e.type === 'error')).toBeDefined();
   });
 
+  it('records the session status as failed (not interrupted) when planning fails', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'planning-failed-sid';
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        commitStrategy: 'none',
+        mode: 'quick',
+        persistTranscript: false,
+      },
+    });
+
+    // An available planner that returns zero tasks routes through handlePlanningFailure
+    // with a real (non-abort) error. The persisted session must read as 'failed', not the
+    // user-cancel status 'interrupted' (F-127).
+    await runWorkflow({
+      feature: 'planning-failure',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '',
+          tasks: [],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      }),
+    });
+
+    const { listAllSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted?.status).toBe('failed');
+  });
+
+  it('writes a liveness record (pid + fresh heartbeat) for an interactive run and marks it exited on completion', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const config = unavailablePlannerConfig();
+    const before = Date.now();
+
+    await runWorkflow({
+      feature: 'liveness-record',
+      projectDir,
+      config,
+      callbacks,
+      sessionId: 'liveness-sid',
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    });
+
+    // acquireLiveness writes the lockfile at the start of EVERY run (TUI/headless/RPC),
+    // so checkServerStatus can refuse a concurrent resume/continue. Assert the record on disk.
+    const { sessionDir } = await import('../../../core/paths.js');
+    const { readLockfile, checkServerStatus } = await import('../../ipc/lockfile.js');
+    const dir = sessionDir(projectDir, 'liveness-sid');
+    const lock = await readLockfile(dir);
+    expect(lock).not.toBeNull();
+    expect(lock?.pid).toBe(process.pid);
+    expect(lock?.sessionId).toBe('liveness-sid');
+    expect(lock?.feature).toBe('liveness-record');
+    expect(lock?.lastAliveMs).toBeGreaterThanOrEqual(before);
+
+    // releaseLiveness() runs in the finally arm and marks the record exited (best-effort,
+    // fire-and-forget) so the session no longer reads as alive once the run finishes.
+    let status = await checkServerStatus(dir);
+    for (let i = 0; i < 50 && status.alive; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      status = await checkServerStatus(dir);
+    }
+    expect(status.alive).toBe(false);
+  });
+
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -206,8 +284,9 @@ describe('runWorkflow — smoke', () => {
     });
     const controller = new AbortController();
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
+    // No fixture pre-write of `.diptych/active`: runWorkflow itself must write the pointer
+    // for the explicit sessionId, and the rewind-abort reason must preserve it (F-317).
     await runWorkflow({
       feature: 'rewind-active',
       projectDir,
@@ -251,6 +330,92 @@ describe('runWorkflow — smoke', () => {
     });
 
     expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('writes the .diptych/active pointer for a generated session id with no fixture pre-write', async () => {
+    // The flagship TUI journey passes no explicit sessionId; runWorkflow generates one and
+    // MUST publish it to `.diptych/active` so rewind/resume/status/recovery can find the run
+    // (F-317). A rewind-abort reason preserves the pointer past saveFinalSession so we can
+    // read back exactly the producer-written id without any hand-written fixture.
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'echo', args: ['done'] },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        commitStrategy: 'none',
+        mode: 'quick',
+        persistTranscript: false,
+      },
+    });
+    const controller = new AbortController();
+    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
+
+    expect(readActive(projectDir)).toBeNull();
+    // runWorkflow generates the id via generateSessionId; computing it here (before any
+    // session dir exists) yields the exact id the producer will write to the pointer.
+    const expectedSessionId = generateSessionId(projectDir, 'pointer from producer');
+
+    await runWorkflow({
+      feature: 'pointer from producer',
+      projectDir,
+      config,
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+    });
+
+    expect(readActive(projectDir)).toBe(expectedSessionId);
+  });
+
+  it('carries the planner-produced tasks straight into the task loop and completes them', async () => {
+    // The post-plan boundary (formerly applyPostPlanDrain, F-069) used to be a no-op
+    // placeholder between planning and the task loop. With it gone, planning.state must
+    // flow directly into runTasksAndReview — observable as the planner's task actually
+    // being implemented and counted in the summary.
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+
+    const summary = await runWorkflow({
+      feature: 'carry planned task',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the planned task ran'],
+              typeDefs: 'type HelloTask = { file: string }',
+            }),
+          ],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001' });
+    expect(summary.totalTasks).toBe(1);
+    expect(summary.completedByLocal).toBe(1);
   });
 
   it('runs auto-discovered pre_task module hooks without hooks config', async () => {
@@ -440,5 +605,128 @@ describe('runWorkflow — recovery resume', () => {
       reason: 'retry-exhausted',
       taskId: 'T001',
     });
+  });
+
+  it('preserves the original session start across a resume so time and cost share a basis', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'sess-run-start-basis';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    const task = makeTask({ id: 'T001' });
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      validationSummary: 'tsc failed',
+      attempts: 1,
+      maxAttempts: 2,
+      createdAt: '2026-04-29T00:00:00.000Z',
+    });
+    // The saved session started an hour before this resume. The resumed run must accumulate
+    // time from this original start rather than restarting the clock at Date.now().
+    const originalStart = '2026-04-29T00:00:00.000Z';
+    const originalStartMs = Date.parse(originalStart);
+    const savedState: WorkflowState = {
+      ...transition(implementingState([task]), { type: 'SET_PENDING_RECOVERY', issue }),
+      startedAt: originalStart,
+    };
+    saveState({ projectDir, sessionId }, savedState);
+
+    const { callbacks } = makeCallbacks();
+    const summary = await runWorkflow({
+      feature: 'feat',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      savedState,
+      sessionId,
+      _planner: makePlanner({
+        isAvailable: async () => {
+          throw new Error(
+            'availability should not be checked while pending recovery is unresolved',
+          );
+        },
+      }),
+    });
+
+    // totalTime is measured from the original session start, so it spans more than a year —
+    // far larger than the few milliseconds this resume actually ran.
+    expect(summary.totalTime).toBeGreaterThan(Date.now() - originalStartMs - 60_000);
+
+    // The persisted session record keeps the original start instead of overwriting it with
+    // the resume's wall-clock time.
+    const { listAllSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted?.startedAt).toBe(originalStartMs);
+  });
+
+  it('prices the resumed summary at the state-pinned runner identity, not the new config', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'sess-run-identity';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    const task = makeTask({ id: 'T001' });
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      validationSummary: 'tsc failed',
+      attempts: 1,
+      maxAttempts: 2,
+      createdAt: '2026-04-29T00:00:00.000Z',
+    });
+    // makeImplStateWithMetadata pins plannerTool 'claude-code' / implementer 'ollama' (qwen2.5).
+    const savedState = transition(implementingState([task]), {
+      type: 'SET_PENDING_RECOVERY',
+      issue,
+    });
+    saveState({ projectDir, sessionId }, savedState);
+
+    const { callbacks } = makeCallbacks();
+    // The new config switches the implementer to deepseek; the resumed summary must keep
+    // the state-pinned identity so cumulative usage is not re-priced at the new runner.
+    const summary = await runWorkflow({
+      feature: 'feat',
+      projectDir,
+      config: makeConfig({
+        implementer: {
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          apiKey: 'test-key',
+          model: 'deepseek-chat',
+        },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      savedState,
+      sessionId,
+      _planner: makePlanner({
+        isAvailable: async () => {
+          throw new Error(
+            'availability should not be checked while pending recovery is unresolved',
+          );
+        },
+      }),
+    });
+
+    expect(summary.plannerTool).toBe('claude-code');
+    expect(summary.implementerTool).toBe('ollama');
+    expect(summary.implementerModel).toBe('qwen2.5');
   });
 });

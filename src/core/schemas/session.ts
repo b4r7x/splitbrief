@@ -7,7 +7,6 @@ const SessionBaseSchema = z.object({
   startedAt: z.number(),
   completedAt: z.number().nullable(),
   stateVersion: z.number(),
-  stateFile: z.string().nullable(),
 });
 
 export const SessionSchema = z.discriminatedUnion('status', [

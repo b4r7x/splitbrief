@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { startConflictingMerge } from '#testing/helpers/git.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import { registerDoctorCommand } from './doctor.js';
@@ -20,6 +21,15 @@ afterEach(() => {
 });
 
 function initGitRepo(projectDir: string): void {
+  execSync('git init', { cwd: projectDir, stdio: 'pipe' });
+  execSync('git config user.email "test@test.com"', { cwd: projectDir, stdio: 'pipe' });
+  execSync('git config user.name "Test"', { cwd: projectDir, stdio: 'pipe' });
+  writeFileSync(join(projectDir, '.gitkeep'), '');
+  execSync('git add .gitkeep', { cwd: projectDir, stdio: 'pipe' });
+  execSync('git commit -m init', { cwd: projectDir, stdio: 'pipe' });
+}
+
+function initGitRepoWithoutCommit(projectDir: string): void {
   execSync('git init', { cwd: projectDir, stdio: 'pipe' });
 }
 
@@ -186,5 +196,49 @@ describe('doctor command', () => {
     expect(
       parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
     ).toContain('repo.not-git');
+  });
+
+  it('reports a repository with an in-progress merge as blocked', async () => {
+    startConflictingMerge(tmp);
+    writeConfig(tmp);
+    const writes = captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+    };
+    expect(parsed.report?.status).toBe('blocked');
+    expect(
+      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
+    ).toContain('repo.in-progress-git-op');
+  });
+
+  it('reports a zero-commit repository as blocked', async () => {
+    initGitRepoWithoutCommit(tmp);
+    writeConfig(tmp);
+    const writes = captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+    };
+    expect(parsed.report?.status).toBe('blocked');
+    expect(
+      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
+    ).toContain('repo.no-commits');
   });
 });

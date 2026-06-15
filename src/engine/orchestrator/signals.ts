@@ -12,12 +12,14 @@ export async function withSignalHandlers(
 
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  process.on('SIGHUP', onSignal);
   try {
     await fn();
     return { cancelled: receivedSignal };
   } finally {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
+    process.removeListener('SIGHUP', onSignal);
     await pendingShutdown;
   }
 }

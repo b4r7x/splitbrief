@@ -4,7 +4,7 @@ import type { ReviewPacketSummary, Summary } from '../../../core/schemas/summary
 import { DIPTYCH_DIR } from '../../../core/paths.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { pluralize } from '../../../utils/pluralize.js';
+import { formatScoreSummary } from '../../../core/formatting.js';
 
 interface SummaryReviewPacketProps {
   summary: Summary;
@@ -42,13 +42,7 @@ function formatDriftStatus(packet: ReviewPacketSummary, summary: Summary): strin
   const status = packet.driftPassed ? 'passed' : 'failed';
   if (!summary.driftSummary) return status;
 
-  const issueText =
-    summary.driftSummary.errorCount > 0
-      ? ` · ${summary.driftSummary.errorCount} ${pluralize(summary.driftSummary.errorCount, 'error')}`
-      : summary.driftSummary.warningCount > 0
-        ? ` · ${summary.driftSummary.warningCount} ${pluralize(summary.driftSummary.warningCount, 'warning')}`
-        : '';
-  return `${status} · score ${summary.driftSummary.score.toFixed(2)}${issueText}`;
+  return `${status} · ${formatScoreSummary(summary.driftSummary.score, summary.driftSummary)}`;
 }
 
 function formatCompactDriftStatus(packet: ReviewPacketSummary): string {

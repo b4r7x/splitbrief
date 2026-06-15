@@ -22,6 +22,7 @@ export interface ExitCodeErrorOptions {
   code: number | null;
   stderr: string;
   output?: string | undefined;
+  detail?: string | undefined;
 }
 
 export const processError = {
@@ -41,14 +42,14 @@ export const processError = {
 
   exitCode: (opts: ExitCodeErrorOptions) => {
     const subject = opts.label ?? opts.command;
-    const detail = opts.stderr?.trim();
+    const detail = opts.stderr?.trim() || opts.detail?.trim();
     const message = `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`;
     return error('process-output', redactSecrets(message), {
       command: opts.command,
       label: opts.label,
       code: opts.code,
       stderr: redactSecrets(opts.stderr ?? ''),
-      output: redactSecrets(opts.output ?? opts.stderr ?? ''),
+      output: redactSecrets(opts.output ?? opts.detail ?? opts.stderr ?? ''),
     });
   },
 

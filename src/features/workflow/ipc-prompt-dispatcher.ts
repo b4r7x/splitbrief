@@ -1,4 +1,5 @@
 import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
+import type { RecoveryAction } from '../../core/schemas/enums.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
@@ -6,8 +7,40 @@ import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
 } from './user-edit-conflict-prompt.js';
+import {
+  ACTION_ALIASES,
+  formatRecoveryActionChoice,
+  formatRecoveryActionText,
+} from './recovery-prompt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+
+type IpcRecoveryIssue = Extract<IpcPromptRequest, { kind: 'recovery_needed' }>['issue'];
+
+export function formatIpcRecoveryPrompt(issue: IpcRecoveryIssue): string {
+  const context = { reason: issue.reason };
+  const lines = [
+    `Recovery needed: ${issue.message}`,
+    `Recommended: ${formatRecoveryActionText(issue.recommendedAction, context)}`,
+    '',
+    ...issue.availableActions.map((action) => formatRecoveryActionChoice(action, context)),
+  ];
+  return lines.join('\n').trimEnd();
+}
+
+export function parseIpcRecoveryAction(input: string, issue: IpcRecoveryIssue): RecoveryAction {
+  const available = new Set(issue.availableActions);
+  const isWhitespaceOnly = input.length > 0 && input.trim().length === 0;
+  if (isWhitespaceOnly && available.has('pause-run')) return 'pause-run';
+
+  const normalized = input.trim().toLowerCase();
+  for (const action of issue.availableActions) {
+    if (ACTION_ALIASES[action].includes(normalized)) return action;
+  }
+  if (available.has('pause-run')) return 'pause-run';
+  if (available.has(issue.recommendedAction)) return issue.recommendedAction;
+  return issue.availableActions[0] ?? 'pause-run';
+}
 
 export function createIpcPromptDispatcher(
   inputMode: UseInputModeResult,
@@ -26,11 +59,6 @@ export function createIpcPromptDispatcher(
       };
     }
 
-    if (request.kind === 'external_changes') {
-      const result = await inputMode.setReviewMode('External changes detected. continue / quit');
-      return { kind: 'external_changes', proceed: result.approved };
-    }
-
     if (request.kind === 'user_edit_conflict') {
       const answer = await inputMode.setQuestionMode(
         formatUserEditConflictPrompt(request.conflict),
@@ -46,20 +74,6 @@ export function createIpcPromptDispatcher(
         `Question ${request.num}/${request.total}: ${request.question.text}`,
       );
       return { kind: 'question_asked', answer };
-    }
-
-    if (request.kind === 'budget_exceeded') {
-      const result = await inputMode.setReviewMode(
-        `Budget exceeded: $${request.currentCost.toFixed(2)} of $${request.maxBudget.toFixed(2)}. continue / quit`,
-      );
-      return { kind: 'budget_exceeded', proceed: result.approved };
-    }
-
-    if (request.kind === 'budget_paused') {
-      const result = await inputMode.setReviewMode(
-        `Budget ${Math.round((request.currentCost / request.maxBudget) * 100)}% reached: ${request.currentCost.toFixed(2)} of ${request.maxBudget.toFixed(2)}. continue / abort`,
-      );
-      return { kind: 'budget_paused', decision: result.approved ? 'continue' : 'abort' };
     }
 
     if (request.kind === 'continuation_needed') {
@@ -87,12 +101,10 @@ export function createIpcPromptDispatcher(
     }
 
     if (request.kind === 'recovery_needed') {
-      const result = await inputMode.setReviewMode(
-        `Recovery needed: ${request.issue.message}. retry / abort`,
-      );
+      const answer = await inputMode.setQuestionMode(formatIpcRecoveryPrompt(request.issue));
       return {
         kind: 'recovery_needed',
-        action: result.approved ? 'retry-same-worker' : 'abort-workflow',
+        action: parseIpcRecoveryAction(answer, request.issue),
       };
     }
 

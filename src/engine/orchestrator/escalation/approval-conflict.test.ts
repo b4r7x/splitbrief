@@ -46,11 +46,11 @@ describe('handleApprovalTimeUserEditConflict', () => {
       callbacks,
       bus,
       planner: makePlanner(),
-      context: { name: 'test', dir: projectDir, runtime: 'node', testCommand: 'npm test' },
+      context: { name: 'test', dir: projectDir },
       implementer: makeImplementer(),
       metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      validator: { runValidation: async () => [] },
+      validator: { primeBaseline: async () => {}, runValidation: async () => [] },
     };
 
     const nextState = await handleApprovalTimeUserEditConflict({

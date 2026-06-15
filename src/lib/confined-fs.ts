@@ -55,7 +55,7 @@ export async function confinedReadFileAsync(
   try {
     const filePath = resolveConfinedReadPath(projectDir, relativePath);
     if (filePath === null) return null;
-    return readFile(filePath, 'utf-8');
+    return await readFile(filePath, 'utf-8');
   } catch (err) {
     if (isPathConfinementReadError(err)) throw err;
     return null;

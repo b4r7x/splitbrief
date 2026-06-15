@@ -9,8 +9,7 @@ If you are adding a new startup step — reading a file, hydrating a store, prob
 ## Entry flow
 
 ```
-bin/diptych
-  → src/cli.ts                  # commander registers subcommands + top-level error handler
+src/cli.ts                      # commander registers subcommands + top-level error handler
   → registerXCommand(program)   # each subcommand adds its .action() handler
   → program.parseAsync()        # dispatches to the matched action handler
 
@@ -28,16 +27,17 @@ Two things about this flow are load-bearing:
 
 ---
 
-## `initStores()` — single file, three sections
+## `initStores()` — single file, four sections
 
 **File:** `src/cli/init-stores.ts`
 
-The function is one sequential async procedure with three internal phases. Each phase is either a helper in the same file or a small block of direct calls. The file stays small on purpose — the structure of startup is visible at a glance.
+The function is one sequential async procedure with four internal phases. Each phase is either a helper in the same file or a small block of direct calls. The file stays small on purpose — the structure of startup is visible at a glance.
 
 ```
 initStores(projectDir, opts)
-├── initUIChrome()          # terminal resize subscription, highlight theme
+├── initUIChrome()          # terminal resize subscription
 ├── loadProjectState()      # config, sessions, input-history persistence
+├── ensureHooksTrusted()    # resolve merged hooks, prompt for trust before discovery
 └── loadDiscovery()         # provider capabilities, skills, model catalog
 ```
 
@@ -47,6 +47,7 @@ initStores(projectDir, opts)
 |---|---|---|
 | `initUIChrome` | Subscribe to terminal resize | sync |
 | `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()` | sync |
+| `ensureHooksTrusted` | `resolveHooksConfig()` → prompt for hook trust before any subprocess discovery | async |
 | `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, skills + detection + catalog in parallel | async |
 
 `detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe, writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
@@ -126,7 +127,12 @@ await Promise.all([
   discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
     skillsStore.setAvailable(skills);
   }),
-  loadDetectionIntoStores({ detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
+  loadDetectionIntoStores(
+    getDefaultDetectionService(),
+    { detectAll, fetchModelsDevCatalog, discoverAllCliTools },
+    detectionStore,
+    projectDir,
+  ),
 ]);
 ```
 

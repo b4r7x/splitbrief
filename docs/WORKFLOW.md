@@ -144,16 +144,16 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 | `idle` | — | no | no | no |
 | `researching` | planner | yes | no | yes |
 | `specifying` | planner | yes | no | yes |
-| `reviewing-spec` | planner | no | yes | no |
-| `clarifying` | planner | no | yes | no |
-| `constitution-check` | planner | no | yes | no |
-| `planning` | planner | yes | no | yes |
-| `reviewing-plan` | planner | no | yes | no |
-| `reviewing-briefs` | planner | no | yes | no |
-| `analyzing` | planner | no | yes | no |
+| `reviewing-spec` | planner | no | no | no |
+| `clarifying` | planner | no | no | no |
+| `constitution-check` | planner | no | no | no |
+| `planning` | planner | yes | yes | yes |
+| `reviewing-plan` | planner | no | no | no |
+| `reviewing-briefs` | planner | no | no | no |
+| `analyzing` | planner | no | no | no |
 | `implementing` | implementer | yes | yes | yes |
-| `validating-task` | implementer | no | yes | no |
-| `escalating` | implementer | yes | yes | yes |
+| `validating-task` | implementer | no | no | no |
+| `escalating` | implementer | yes | no | yes |
 | `final-review` | planner | yes | yes | yes |
 | `complete` | — | no | no | no |
 
@@ -161,7 +161,7 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 **Cancellable** — single Ctrl-C aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
 
-**Resumable** — `diptych resume` can pick up here. All review/gate phases plus `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`. Generative phases (`researching`, `specifying`, `planning`) are not resumable — if the process dies mid-stream, the stream is lost and the feature must restart.
+**Resumable** — `diptych resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `planning`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
@@ -222,7 +222,7 @@ Four user actions during a live phase:
 
 **Queue lifecycle.** `ENQUEUE_USER_MSG` appends. `MARK_DELIVERED_NATIVE` flags a message as delivered to the native session. `DRAIN_QUEUE` timestamps all un-drained messages. `CLEAR_QUEUE` removes drained entries. On the next safe-point the orchestrator reads the queue, folds contents into the next prompt as `[user also says: ...]`, and drains.
 
-**Esc does not abort.** Esc closes overlays and the command palette. Abort is Ctrl-C only — deliberate modifier-press makes accidents less likely.
+**Esc Esc aborts (two-press ladder).** On the workflow screen, the first Esc arms an abort intent — `interrupt` while a live phase runs, or `cancel` while a question prompt is open (`abortStore.arm(...)` in `src/app/keys.ts`); a second Esc fires it, interrupting the step or cancelling the workflow. The armed intent auto-clears after 2 seconds. With an overlay open, Esc closes the topmost overlay instead. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys for the full key map.
 
 ---
 
@@ -270,11 +270,11 @@ Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTask
 
 ### Resumable phases
 
-`reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`. Plus any phase with `awaitingContinue: true`.
+`planning`, `implementing`, `final-review` (the `RESUMABLE_PHASES` set in `src/core/phases.ts`). Plus any phase with `awaitingContinue: true`.
 
 ### Non-resumable phases
 
-`researching`, `specifying`, `planning` (without `awaitingContinue`). If the process died mid-generation, the stream is lost. The feature must restart.
+Every other phase — `researching`, `specifying`, `reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `validating-task`, `escalating` — unless `awaitingContinue: true`. The terminal phases `idle` and `complete` are never resumable. If the process died mid-generation without `awaitingContinue`, the stream is lost and the feature must restart.
 
 ### Recovery on resume
 
@@ -297,6 +297,7 @@ In-flight tasks: tasks marked `in_progress` at save time are re-attempted from `
 
 When a task fails validation `maxRetries` times:
 
+0. **Intermediate tier** — only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`: a paid mid-tier API model retries the task. Success → task `done`.
 1. **Hint escalation** — if planner has `supportsHintEscalation`: short hint to implementer, one retry. Success → task `done`.
 2. **Full escalation** — planner writes the code directly. Success → task `escalated`.
 3. **Recovery** — if all tiers fail, `pendingRecovery` is set. The phase stays where the stop occurred.
@@ -341,7 +342,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
  8. phase: specifying → SPEC_DONE → reviewing-spec
     callbacks.onApprovalNeeded('spec', specPath)
-      approve  → APPROVE_SPEC
+      approve  → re-read spec.md; if edited on disk, regenerate plan + tasks
+                 from the edited spec, then APPROVE_SPEC
+      edit     → open $EDITOR on spec.md, then re-prompt the gate
       comment  → planner.regenerate() → loop back to reviewing-spec
       reject   → REJECT_SPEC → idle. Workflow ends.
 
@@ -410,11 +413,6 @@ type WorkflowState = {
   plannerModel?: string
   implementerTool?: string
   implementerModel?: string
-
-  // Speckit-only
-  clarifications?: Array<{ id: string; question: string; answer: string }>
-  constitutionFailureReason?: string
-  analysisResult?: AnalyzeResult
 }
 
 type QueuedMessage = {

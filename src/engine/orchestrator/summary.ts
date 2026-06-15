@@ -150,6 +150,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const costedBreakdowns = taskBreakdowns?.map((task) => {
     const isCostKnown = isTaskUsageCostKnown({
       task,
+      tokenUsage: state.tokenUsage,
       implementerTool,
       plannerTool,
       implementerModel,

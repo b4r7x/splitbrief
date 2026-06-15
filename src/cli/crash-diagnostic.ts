@@ -90,7 +90,5 @@ export async function showCrashDiagnostic(
   const key = await waitForKey();
   if (key === '1') {
     process.stdout.write('Exiting. Run `diptych start` to begin a new workflow.\n');
-    process.exit(0);
   }
-  process.exit(0);
 }

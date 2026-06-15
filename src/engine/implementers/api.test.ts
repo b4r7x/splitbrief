@@ -205,15 +205,15 @@ describe('api implementer — OpenAI-compatible path', () => {
     if (!result.success) expect(result.error).toMatch(/API implementer requires an explicit model/);
   });
 
-  it('clamps max_tokens to within the configured contextLength', async () => {
+  async function capturedMaxTokens(contextLength: number): Promise<number> {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
-    const cfg = makeConfig({ implementer: { contextLength: 2048 } });
+    const cfg = makeConfig({ implementer: { contextLength } });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T007', file: 'src/clamp.ts', action: 'create' });
 
-    const result = await implementer.implement({
+    await implementer.implement({
       task,
       projectDir,
       config: cfg,
@@ -221,7 +221,22 @@ describe('api implementer — OpenAI-compatible path', () => {
       onOutput: vi.fn(),
     });
 
-    expect(result.success).toBe(true);
+    const init = fetchMock.mock.calls.at(0)?.[1] as { body?: string } | undefined;
+    const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
+    expect(typeof body.max_tokens).toBe('number');
+    return body.max_tokens as number;
+  }
+
+  it('clamps max_tokens to the conservative output cap for a window-sized contextLength', async () => {
+    // A 1M context window must not become a 1M max_tokens — that 400s. The output
+    // budget is clamped to the conservative per-model cap regardless of window size.
+    const maxTokens = await capturedMaxTokens(1_000_000);
+    expect(maxTokens).toBeLessThanOrEqual(8192);
+  });
+
+  it('clamps max_tokens to the conservative output cap with the default contextLength', async () => {
+    const maxTokens = await capturedMaxTokens(8192);
+    expect(maxTokens).toBeLessThanOrEqual(8192);
   });
 
   it('uses provider-specific env var for API key fallback (OPENROUTER_API_KEY)', async () => {
@@ -351,6 +366,79 @@ describe('api implementer — Anthropic path', () => {
       else process.env['ANTHROPIC_API_KEY'] = orig;
     }
   });
+
+  it('forwards configured effort to the Anthropic request body as a thinking budget', async () => {
+    const code = '```ts\nexport const x = 1;\n```';
+    fetchMock.mockResolvedValue(
+      makeAnthropicSseResponse(code, { input_tokens: 1, output_tokens: 1 }),
+    );
+
+    const cfg = makeConfig({
+      implementer: {
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'test-key',
+        model: 'claude-sonnet-4-6',
+        effort: 'high',
+      },
+    });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T015', file: 'src/effort.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    const init = fetchMock.mock.calls.at(0)?.[1] as { body?: string } | undefined;
+    const body = JSON.parse(String(init?.body)) as {
+      thinking?: { type?: string; budget_tokens?: number };
+    };
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 24_000 });
+  });
+
+  it('aborts a stalled stream once the configured timeout elapses', async () => {
+    // A stream that connects but never yields a chunk must not hang forever: the
+    // configured timeout aborts the in-flight fetch and the call fails.
+    fetchMock.mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      const signal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (!signal) return;
+          signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      );
+    });
+
+    const cfg = makeConfig({
+      implementer: {
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'test-key',
+        model: 'claude-sonnet-4-6',
+        timeout: 50,
+      },
+    });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T016', file: 'src/stall.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(existsSync(join(projectDir, 'src/stall.ts'))).toBe(false);
+  }, 10_000);
 
   it('refuses env-sourced Anthropic key with a custom apiBase', async () => {
     const orig = process.env['ANTHROPIC_API_KEY'];

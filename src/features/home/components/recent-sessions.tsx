@@ -27,12 +27,14 @@ export function RecentSessions({
   const [{ sessions }, { projectDir }] = useStores(sessionsStore, configStore);
   const theme = useTheme();
 
-  useEffect(() => {
-    if (limit !== undefined && limit <= 0) return;
-    sessionsStore.load(projectDir);
-  }, [projectDir, limit]);
+  const shouldLoad = limit === undefined || limit > 0;
 
-  if (limit !== undefined && limit <= 0) return null;
+  useEffect(() => {
+    if (!shouldLoad) return;
+    sessionsStore.load(projectDir);
+  }, [projectDir, shouldLoad]);
+
+  if (!shouldLoad) return null;
 
   if (sessions.length === 0) {
     return (

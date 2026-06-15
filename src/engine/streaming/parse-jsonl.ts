@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
-import { TokenUsageLikeSchema, toTokenDelta } from './token-utils.js';
+import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { warnError } from '../../lib/warn.js';
 

@@ -1,8 +1,8 @@
-# API Key Security
+# API key security
 
 diptych connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
 
-## Recommended: Environment Variables
+## Recommended: environment variables
 
 Set your API key as an environment variable. This keeps it out of project files and version control.
 
@@ -12,7 +12,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persists across sessions.
 
-### Provider Reference
+### Provider reference
 
 | Provider | Environment Variable | Notes |
 |----------|---------------------|-------|
@@ -28,7 +28,7 @@ Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persi
 
 ✅ Environment variables are not committed to git, not stored on disk in project files, and work across all tools that read from the environment.
 
-## Alternative: Config File
+## Alternative: config file
 
 You can set `apiKey` directly in `.diptych/config.yaml` under `planner` or `implementer`:
 
@@ -45,7 +45,7 @@ implementer:
 
 ⚠️ **diptych warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable when the provider uses its official endpoint. Keep an inline key for a known provider with a custom/proxy `apiBase`; environment keys are intentionally rejected for that case to avoid sending your provider key to an unexpected endpoint.
 
-## Security Measures
+## Security measures
 
 diptych takes several steps to protect your API keys:
 
@@ -56,7 +56,7 @@ diptych takes several steps to protect your API keys:
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — known providers (e.g., Anthropic keys starting with `sk-ant-`) are validated against expected formats; mismatches produce warnings, not errors, since key formats may change over time
 
-## Best Practices
+## Best practices
 
 1. ✅ **Use environment variables** over config file storage
 2. ✅ **Add `.diptych/` to `.gitignore`** — prevents accidental commits of config files that may contain keys

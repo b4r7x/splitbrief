@@ -45,9 +45,17 @@ describe('applyCLIOverrides — approve / auto', () => {
     expect(result.workflow.autoApprovePlan).toBe(false);
   });
 
-  it('--auto wins when both --auto and --approve are provided', () => {
-    const result = applyCLIOverrides(baseConfig, { approve: 'spec', autoApprove: true });
-    expect(result.workflow.approve).toBe('none');
+  it('--auto overrides an explicit --approve and warns instead of silently winning', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      const result = applyCLIOverrides(baseConfig, { approve: 'spec', autoApprove: true });
+      expect(result.workflow.approve).toBe('none');
+      const output = stderr.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toMatch(/--approve/);
+      expect(output).toMatch(/overrid|ignored/i);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   it('throws on invalid --approve value', () => {

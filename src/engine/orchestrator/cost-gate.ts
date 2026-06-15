@@ -7,7 +7,7 @@ interface CostGateInput {
   costGateEnabled: boolean;
 }
 
-export type CostGateDecision = 'gate' | 'skip';
+export type CostGateDecision = 'gate' | 'skip' | 'skip-unknown-cost';
 
 export function decideCostGate(input: CostGateInput): CostGateDecision {
   if (!input.costGateEnabled) return 'skip';
@@ -15,6 +15,6 @@ export function decideCostGate(input: CostGateInput): CostGateDecision {
   if (!input.prediction) return 'skip';
   const deterministic = input.prediction.deterministic;
   if (!deterministic) return 'skip';
-  if (deterministic.totals.knownActualEstimate === null) return 'skip';
+  if (deterministic.totals.knownActualEstimate === null) return 'skip-unknown-cost';
   return 'gate';
 }

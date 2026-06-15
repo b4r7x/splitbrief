@@ -18,8 +18,29 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseTasks } from '../../spec/parser.js';
 import { createValidator } from '../validation.js';
 import type { WorkflowSinks } from '../types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { runTasksAndReview } from './phases.js';
+import type { CostPrediction } from '../../../core/schemas/summary.js';
+import { runPlanningPhases, runTasksAndReview } from './phases.js';
+
+const DENY_HOOK_MODULE = 'export default () => ({ kind: "deny", message: "planning blocked" });\n';
+
+function denyPrePlanningConfig(): Config {
+  return makeNoValidationConfig({
+    workflow: { commitStrategy: 'none' },
+    hooks: {
+      pre_planning: [
+        {
+          kind: 'module',
+          path: '.diptych/hooks/pre-planning.ts',
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
+    },
+  });
+}
 
 const TEST_SINKS: WorkflowSinks = {
   setAbortHandler: () => {},
@@ -140,6 +161,88 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       expect(prediction.prediction.deterministic?.totals.hypotheticalAllPlanner).toBeGreaterThan(0);
       expect(prediction.prediction.deterministic?.totals.estimatedSavings).toBeGreaterThan(0);
     }
+  }, 20_000);
+
+  it('skips the cost gate and warns when implementer pricing is unknown', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const planner = makePlanner();
+    const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
+    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      implementerProfiles: {
+        default: 'unknown-worker',
+        profiles: {
+          'unknown-worker': {
+            kind: 'api' as const,
+            provider: 'custom-cloud',
+            apiBase: 'https://models.example/v1',
+            apiKey: 'test-key',
+            model: 'custom-model',
+            contextLength: 20_000,
+            costTier: 'unknown' as const,
+          },
+        },
+      },
+    };
+
+    await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'custom-cloud',
+          implementerModel: 'custom-model',
+          mode: 'standard',
+        },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'custom-cloud',
+        implementerModel: 'custom-model',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const prediction = events.find((event) => event.type === 'cost_prediction');
+    if (prediction?.type === 'cost_prediction') {
+      expect(prediction.prediction.deterministic?.totals.knownActualEstimate).toBeNull();
+    }
+    expect(onCostApprovalNeeded).not.toHaveBeenCalled();
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' &&
+          event.message === 'cost gate skipped: implementer pricing unknown',
+      ),
+    ).toBe(true);
   }, 20_000);
 
   it('runs opt-in planner estimate review before implementation and publishes the result', async () => {
@@ -269,6 +372,99 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(completedPredictionIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(completedPredictionIndex);
     expect(result.summary.costPrediction?.plannerEstimateReview?.status).toBe('completed');
+  }, 20_000);
+
+  it('hands the completed estimate review to the cost gate it recommends a decision for', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          classification: 'needs-user-decision',
+          affectedTaskIds: ['T001'],
+          reason: 'Estimate is uncertain for the selected worker.',
+          recommendedUserDecision: 'Decline and pick a larger-context worker.',
+        }),
+        usage: { inputTokens: 10, outputTokens: 5 },
+      })
+      .mockResolvedValue({ text: '### Verdict\npass', usage: null });
+    const planner = makePlanner({ review });
+    let gatePrediction: CostPrediction | undefined;
+    const onCostApprovalNeeded = vi.fn().mockImplementation(async (prediction: CostPrediction) => {
+      gatePrediction = prediction;
+      return true;
+    });
+    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      plannerEstimateReview: true,
+      implementerProfiles: {
+        default: 'cheap-worker',
+        profiles: {
+          'cheap-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onCostApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(gatePrediction?.plannerEstimateReview).toMatchObject({
+      status: 'completed',
+      classification: 'needs-user-decision',
+      recommendedUserDecision: 'Decline and pick a larger-context worker.',
+    });
   }, 20_000);
 
   it('surfaces auto-split output for approval before task execution', async () => {
@@ -993,6 +1189,169 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(result.summary.reviewPacket?.finalReviewStatus).toBe('failed');
   });
 
+  it('skips the cost gate and predicts only remaining tasks when resuming past the first task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const done = makeTask({ id: 'T001', status: 'done' });
+    const remaining = makeTask({ id: 'T002' });
+    const state = makeImplState([done, remaining], { currentTaskIndex: 1 });
+    const planner = makePlanner();
+    const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
+    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      implementerProfiles: {
+        default: 'cheap-worker',
+        profiles: {
+          'cheap-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer({
+          implement: vi.fn().mockResolvedValue({
+            success: true,
+            output: 'code',
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }),
+        }),
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onCostApprovalNeeded).not.toHaveBeenCalled();
+    const taskStarts = events.filter((event) => event.type === 'task_started');
+    expect(taskStarts.map((event) => event.taskId)).toEqual(['T002']);
+    const prediction = events.find((event) => event.type === 'cost_prediction');
+    if (prediction?.type === 'cost_prediction') {
+      expect(prediction.prediction.deterministic?.taskCount).toBe(1);
+    }
+    expect(result.summary.totalTasks).toBe(2);
+  }, 20_000);
+
+  it('aborts without executing any task when the cost gate is declined', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeImplState([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })]);
+    const planner = makePlanner();
+    const onCostApprovalNeeded = vi.fn().mockResolvedValue(false);
+    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const implement = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'code',
+      usage: { inputTokens: 50, outputTokens: 25 },
+    });
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      implementerProfiles: {
+        default: 'cheap-worker',
+        profiles: {
+          'cheap-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer({ implement }),
+        metadata: {
+          plannerTool: 'anthropic',
+          plannerModel: 'claude-opus-4-6',
+          implementerTool: 'deepseek',
+          implementerModel: 'deepseek-chat',
+          mode: 'standard',
+        },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onCostApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(result.completed).toBe(false);
+    expect(implement).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'task_started')).toBe(false);
+  }, 20_000);
+
   it('resumes a persisted failed-final-review state and completes when the review passes', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', status: 'done' });
@@ -1039,5 +1398,102 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
     expect(events.find((event) => event.type === 'workflow_complete')).toBeDefined();
     expect(loadState({ projectDir, sessionId })?.phase).toBe('complete');
+  });
+});
+
+describe('runPlanningPhases', () => {
+  function setupDenyProject(): { projectDir: string; sessionId: string } {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'run-planning-deny-test',
+      sessionId: 'sess-planning',
+      files: { '.diptych/hooks/pre-planning.ts': DENY_HOOK_MODULE },
+    });
+    dirs.push(projectDir);
+    return { projectDir, sessionId };
+  }
+
+  it('lets the deny-capable pre_planning hook block a fresh planning run', async () => {
+    const { projectDir, sessionId } = setupDenyProject();
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const state = transition(createInitialState('feat'), { type: 'START' });
+
+    const result = await runPlanningPhases({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: denyPrePlanningConfig(),
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      savedState: undefined,
+      selectedSkills: undefined,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(false);
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' && event.message === 'pre_planning blocked: planning blocked',
+      ),
+    ).toBe(true);
+  });
+
+  it('fires the deny-capable pre_planning hook on a rewind re-entry', async () => {
+    const { projectDir, sessionId } = setupDenyProject();
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const savedState: WorkflowState = {
+      ...makeImplState([makeTask({ id: 'T001' })]),
+      rewindPending: { target: 'plan' },
+    };
+
+    const result = await runPlanningPhases({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: denyPrePlanningConfig(),
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      savedState,
+      selectedSkills: undefined,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(false);
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' && event.message === 'pre_planning blocked: planning blocked',
+      ),
+    ).toBe(true);
   });
 });

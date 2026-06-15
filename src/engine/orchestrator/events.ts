@@ -10,7 +10,12 @@ import type {
   Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
-import type { EngineEvent, EventBus, ValidationStages } from '../events/types.js';
+import type {
+  EngineEvent,
+  EventBus,
+  ValidationStages,
+  ValidationStageSkips,
+} from '../events/types.js';
 import type { ValidationResult } from './validation-result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
@@ -32,9 +37,18 @@ type ValidationPhase =
   | { phase: 'progress'; stages: ValidationStages; startTime: number }
   | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
-export function createBusTextHandler(ctx: BusContext): (text: string) => void {
+export function createBusTextHandler(
+  ctx: BusContext,
+  role?: 'planner' | 'implementer',
+): (text: string) => void {
   return (text) =>
-    ctx.bus.publish({ type: 'planner_text', ts: Date.now(), phase: ctx.phase, text });
+    ctx.bus.publish({
+      type: 'planner_text',
+      ts: Date.now(),
+      phase: ctx.phase,
+      text,
+      ...(role !== undefined && { role }),
+    });
 }
 
 export function publishPlannerStatus(
@@ -138,9 +152,14 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   }
 
   const stages: ValidationStages = { ...EMPTY_STAGES };
+  const skipped: ValidationStageSkips = {};
   let failedError: string | undefined;
   let passed = true;
   for (const r of opts.results) {
+    if (r.skipped) {
+      skipped[r.stage] = true;
+      continue;
+    }
     if (r.stage === 'typecheck') stages.typecheck = r.passed;
     else if (r.stage === 'lint') stages.lint = r.passed;
     else if (r.stage === 'test') stages.test = r.passed;
@@ -149,6 +168,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
       if (failedError === undefined) failedError = r.error;
     }
   }
+  const hasSkips = Object.keys(skipped).length > 0;
   ctx.bus.publish({
     type: 'validate',
     ts: Date.now(),
@@ -157,6 +177,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     status: 'done',
     passed,
     stages,
+    ...(hasSkips && { skipped }),
     ...(failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });

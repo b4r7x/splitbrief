@@ -2,15 +2,21 @@ import type { HookEntry, HookCommandEntry, HookModuleEntry } from '../../core/sc
 import type { EngineEvent } from '../events/types.js';
 import { spawnWithTimeout } from '../../lib/process/spawn.js';
 import { isENOENT, isNodeError, processError } from '../../lib/process/errors.js';
-import { substituteEventFields } from './substitute.js';
+import { startsWithEventPlaceholder, substituteEventFields } from './substitute.js';
 import type { HookOutcome, HookContext } from './types.js';
 import { loadHookModule } from './load-module.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { error } from '../../utils/error.js';
 
 type HookResponse = {
-  decision?: 'allow' | 'deny' | 'warn';
+  decision?: string;
   message?: string;
 };
+
+export const hookError = {
+  timedOut: (timeoutMs: number) =>
+    error('hook-timed-out', `hook timed out after ${timeoutMs}ms`, { timeoutMs }),
+} as const;
 
 export async function runHook(
   entry: HookEntry,
@@ -28,7 +34,7 @@ async function runCommandHook(
   event: EngineEvent,
   ctx: HookContext,
 ): Promise<HookOutcome> {
-  const args = entry.args.map((a) => substituteEventFields(a, event));
+  const args = guardInterpolatedArgs(entry.args, event);
   const stdin = JSON.stringify({ event, context: ctx });
 
   try {
@@ -62,6 +68,20 @@ async function runCommandHook(
   }
 }
 
+function guardInterpolatedArgs(templates: readonly string[], event: EngineEvent): string[] {
+  const out: string[] = [];
+  let guarded = false;
+  for (const template of templates) {
+    const value = substituteEventFields(template, event);
+    if (!guarded && startsWithEventPlaceholder(template) && value.startsWith('-')) {
+      out.push('--');
+      guarded = true;
+    }
+    out.push(value);
+  }
+  return out;
+}
+
 function interpretHookOutput(
   entry: HookCommandEntry,
   output: string,
@@ -81,6 +101,13 @@ function interpretHookOutput(
     return {
       kind: 'warn',
       ...(parsed.message !== undefined && { message: parsed.message }),
+      ...stderrOpt,
+    };
+  }
+  if (parsed?.decision !== undefined && parsed.decision !== 'allow') {
+    return {
+      kind: 'warn',
+      message: `unrecognized hook decision: ${String(parsed.decision)}`,
       ...stderrOpt,
     };
   }
@@ -108,10 +135,7 @@ async function runModuleHook(
     const result = await Promise.race([
       Promise.resolve(loaded.fn(event, ctx)),
       new Promise<never>((_, rej) => {
-        timer = setTimeout(
-          () => rej(new Error(`hook timed out after ${entry.timeout_ms}ms`)),
-          entry.timeout_ms,
-        );
+        timer = setTimeout(() => rej(hookError.timedOut(entry.timeout_ms)), entry.timeout_ms);
       }),
     ]).finally(() => clearTimeout(timer));
     return validateOutcome(result);
@@ -133,11 +157,23 @@ function validateOutcome(result: unknown): HookOutcome {
 function tryParseResponse(stdout: string): HookResponse | null {
   const trimmed = stdout.trim();
   if (!trimmed) return null;
+  const whole = parseJsonObject(trimmed);
+  if (whole) return whole;
+  const lines = trimmed.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const candidate = parseJsonObject(lines[i]?.trim() ?? '');
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function parseJsonObject(text: string): HookResponse | null {
+  if (!text.startsWith('{')) return null;
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed = JSON.parse(text) as unknown;
     if (parsed !== null && typeof parsed === 'object') return parsed as HookResponse;
   } catch {
-    // malformed hook stdout → treat as no decision (allow)
+    return null;
   }
   return null;
 }

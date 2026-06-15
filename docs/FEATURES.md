@@ -97,7 +97,7 @@ diptych start "add profile settings"
 diptych start --json "fix parser edge case"
 ```
 
-`diptych doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. `diptych start` writes a compact `.diptych/sessions/<id>/readiness.json` record inside the active execution session before model calls. In headless mode the readiness report is emitted as the first structured JSON line.
+`diptych doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.diptych/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`diptych start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 
@@ -111,7 +111,7 @@ diptych start --json "fix parser edge case"
 
 **When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want diptych to create git history as part of the run.
 
-In this repository, implementation agents must never stage or commit. Leave `workflow.git.commitStrategy: none` while working on diptych itself.
+Leave `workflow.git.commitStrategy: none` (the default) if you want diptych to keep changes unstaged for manual review.
 
 ```yaml
 validation: { typecheck: true, lint: true, test: true, testCommand: "npm test" }
@@ -123,19 +123,18 @@ Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
 
 ### Retry + escalation logic
 
-**What it does.** A failing task retries up to `workflow.maxRetries` (default 3) before escalating. Escalation has two tiers: a **hint** call (planner suggests a fix that the implementer applies) for backends with `supportsHintEscalation`, then a **full** escalation where the planner writes the code itself.
+**What it does.** A failing task retries up to `workflow.maxRetries` (default 3) before escalating. Escalation then runs three tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`), then **tier 2 — full** (the planner writes the code itself).
 
-**How to use.** Tune `workflow.maxRetries` and the optional intermediate fallback:
+**How to use.** Tune `workflow.maxRetries` and the optional intermediate tier:
 
 ```yaml
 workflow: { maxRetries: 3 }
 escalation:
-  enabled: true
   intermediateProvider: openrouter
   intermediateModel: z-ai/glm-4.6
 ```
 
-**When to use.** Set `escalation.enabled: true` to add a mid-tier model between the cheap implementer and the expensive planner.
+**When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the cheap implementer and the expensive planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
 
 Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`. Tokens consumed during escalation are tracked separately (`escalationInput` / `escalationOutput`) so you can see how much "rescue" cost.
 
@@ -251,10 +250,12 @@ Rich review also has a read-only Worker Packet Preview for the selected task. Th
 | `R` | Regenerate flagged tasks (sends back to planner for targeted regen) |
 | `p` | Toggle Worker Packet Preview |
 | `e` | Open task in `$EDITOR` |
-| `Ctrl+J` / `Ctrl+K` | Reorder down / up |
+| `Ctrl+J` / `Ctrl+K` | Reorder down / up (also `Ctrl+N` / `Ctrl+P`) |
 | `Y` | Save: write `tasks.md`, re-run quality gate, dispatch `APPROVE_BRIEFS` |
 | `q` | Discard edits, return to simple view |
 | `?` | Open help overlay |
+
+While the rich editor is open, `Ctrl+K` belongs to it (reorder up): the global command-palette shortcut releases that chord so a single press never both reorders a task and opens the palette. The palette is still reachable everywhere else, and the editor's other global shortcuts (help, settings, quit) keep working.
 
 **Contextual footer keybindings.** The footer dynamically shows keybindings relevant to the current cursor position and editor state. For example: `Enter: expand | e: edit | d: delete | Y: approve all` when a task is selected, or `x: flag | R: regen flagged` when tasks are flagged. The footer updates as context changes — no hidden `?` overlay needed for basic discovery.
 
@@ -509,7 +510,7 @@ diptych mcp serve --port 4321 --session <id>
 diptych mcp serve --all-sessions               # expose every session in the project
 ```
 
-External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack v1 paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
+External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
 
 **When to use.** Live mode for external agents that need to inspect diptych state without a copied handoff pack and report evidence back to the active ledger. MCP does not become diptych's project write path; implementation remains inside the configured planner or implementer runner.
 
@@ -579,7 +580,7 @@ diptych attach                # picks the only running session
 diptych attach <id>           # explicit
 ```
 
-(Not supported on Windows in v1.)
+(Not supported on Windows — attach requires Unix domain sockets.)
 
 ### `diptych detach [session-id]`
 
@@ -732,7 +733,7 @@ palette:
 
 **What it does.** Browses summary-backed past sessions from `.diptych/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
 
-Sessions are execution records, not a plan archive or project-management database. Plan Review v2 is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
+Sessions are execution records scoped to one workflow each. The brief review gate is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
 
 ### Settings overlay
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { streamAnthropicCompletion } from './stream.js';
+import type { StreamMessage } from '../dispatch-stream.js';
 
 function makeSseResponse(events: string[]): Response {
   return new Response(events.join(''), {
@@ -31,6 +32,15 @@ async function captureRequestSystem(
   const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
   const body = JSON.parse(String((init as RequestInit).body));
   return body.system as CapturedSystemBlock[] | undefined;
+}
+
+async function captureRequestBody(
+  opts: Parameters<typeof streamAnthropicCompletion>[0],
+): Promise<Record<string, unknown>> {
+  vi.mocked(globalThis.fetch).mockResolvedValue(makeSseResponse(MINIMAL_SSE));
+  await streamAnthropicCompletion(opts);
+  const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+  return JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
 }
 
 describe('streamAnthropicCompletion', () => {
@@ -149,5 +159,144 @@ describe('system message cache control in the request body', () => {
     ]);
     expect(system).toHaveLength(1);
     expect(system?.[0]?.cache_control).toEqual({ type: 'ephemeral' });
+  });
+});
+
+describe('messages typed via the producer StreamMessage shape', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('splits a producer-typed StreamMessage[] into system blocks and conversation', async () => {
+    const messages: StreamMessage[] = [
+      { role: 'system', content: 'system preamble' },
+      { role: 'user', content: 'hello' },
+    ];
+    const body = await captureRequestBody({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages,
+      temperature: 0.3,
+      onProgress: () => {},
+    });
+    const system = body.system as CapturedSystemBlock[];
+    const conversation = body.messages as Array<{ role: string; content: string }>;
+    expect(system).toHaveLength(1);
+    expect(system[0]?.text).toBe('system preamble');
+    expect(conversation).toEqual([{ role: 'user', content: 'hello' }]);
+  });
+});
+
+describe('temperature handling by model generation', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('omits temperature for current-generation models on the no-effort arm', async () => {
+    const body = await captureRequestBody({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-opus-4-8',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.7,
+      onProgress: () => {},
+    });
+    expect(body).not.toHaveProperty('temperature');
+  });
+
+  it('still sends temperature for legacy 4.6-generation models on the no-effort arm', async () => {
+    const body = await captureRequestBody({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.7,
+      onProgress: () => {},
+    });
+    expect(body.temperature).toBe(0.7);
+  });
+});
+
+describe('max_tokens covers the thinking budget when effort is set', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('raises max_tokens above the high-effort budget even when none is passed', async () => {
+    const body = await captureRequestBody({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.3,
+      effort: 'high',
+      onProgress: () => {},
+    });
+    const thinking = body.thinking as { budget_tokens: number };
+    expect(typeof body.max_tokens).toBe('number');
+    expect(body.max_tokens as number).toBeGreaterThan(thinking.budget_tokens);
+  });
+
+  it('raises max_tokens above the xhigh-effort budget', async () => {
+    const body = await captureRequestBody({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.3,
+      effort: 'xhigh',
+      onProgress: () => {},
+    });
+    const thinking = body.thinking as { budget_tokens: number };
+    expect(body.max_tokens as number).toBeGreaterThan(thinking.budget_tokens);
+  });
+});
+
+describe('stream that the model truncates at max_tokens', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns the accumulated text and surfaces a warning when the stop_reason is max_tokens', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"cut off here"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":28096}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    );
+
+    const progress: string[] = [];
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.3,
+      effort: 'high',
+      onProgress: (text) => progress.push(text),
+    });
+
+    expect(result.text).toBe('cut off here');
+    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 28096 });
+    expect(progress.some((line) => line.includes('truncated'))).toBe(true);
   });
 });

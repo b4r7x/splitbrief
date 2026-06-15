@@ -34,10 +34,12 @@ export function resolveProfileContextLength(
   profile: ResolvedImplementerProfile,
   conservativeContextLength: number,
   cache?: ModelCacheAccessor | undefined,
+  detectedContextLength?: number | undefined,
 ): ResolvedProfileContextLength {
   const contextLength = profile.config.contextLength;
   if (contextLength !== undefined) {
-    return { contextLength, source: 'explicit', usedConservativeContextLength: false };
+    const source = contextLength === detectedContextLength ? 'detected' : 'explicit';
+    return { contextLength, source, usedConservativeContextLength: false };
   }
 
   const providerId = profileProviderId(profile);

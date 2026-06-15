@@ -6,7 +6,7 @@ export function computeEta(
   totalTasks: number,
 ): string {
   if (taskCompletionTimes.length === 0) return '';
-  const remainingTasks = totalTasks - currentTask;
+  const remainingTasks = totalTasks - currentTask + 1;
   if (remainingTasks <= 0) return '';
   const avgTime = taskCompletionTimes.reduce((a, b) => a + b, 0) / taskCompletionTimes.length;
   return formatEta(avgTime * remainingTasks);

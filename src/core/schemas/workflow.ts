@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { PhaseSchema } from './enums.js';
+import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema } from './enums.js';
 import { TaskSchema } from './task.js';
-import { TokenUsageSchema } from './tokens.js';
-import { AnalyzeResultSchema } from './analyze.js';
+import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery.js';
 import { topoSort } from '../state/topo-sort.js';
 
@@ -25,7 +24,11 @@ export const QueuedMessageSchema = z.object({
   drainedAt: z.string().optional(),
   origin: z.enum(['user-input', 'clarification']).optional(),
   question: z.string().optional(),
-  questionId: z.string().optional(),
+});
+
+export const ChangedFilesBaselineSchema = z.object({
+  head: z.string().nullable(),
+  fingerprints: z.record(z.string(), z.string()),
 });
 
 const TASK_ACTIVE_PHASES = new Set(['validating-task', 'escalating']);
@@ -41,11 +44,16 @@ export const WorkflowStateSchema = z
     plannerSessionId: z.string().nullable().optional(),
     startedAt: z.string(),
     tokenUsage: TokenUsageSchema,
+    taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
     plannerTool: z.string().optional(),
     plannerModel: z.string().optional(),
     implementerTool: z.string().optional(),
     implementerModel: z.string().optional(),
+    mode: WorkflowModeSchema.optional(),
+    approve: ApproveLevelSchema.optional(),
+    selectedSkills: z.array(z.string()).optional(),
     awaitingContinue: z.boolean().default(false),
+    budgetPauseAcknowledgedAtCost: z.number().optional(),
     messageQueue: z.array(QueuedMessageSchema).default([]),
     rewindPending: z
       .object({
@@ -53,16 +61,7 @@ export const WorkflowStateSchema = z
         comment: z.string().optional(),
       })
       .optional(),
-    clarifications: z
-      .array(
-        z.object({
-          id: z.string(),
-          question: z.string(),
-          answer: z.string(),
-        }),
-      )
-      .optional(),
-    analysisResult: AnalyzeResultSchema.optional(),
+    changedFilesBaseline: ChangedFilesBaselineSchema.optional(),
     pendingRecovery: RecoveryIssueSchema.optional(),
     discoveredValidation: DiscoveredValidationSchema.optional(),
     external: z.record(z.string(), z.unknown()).optional(),
@@ -103,3 +102,4 @@ export const WorkflowStateSchema = z
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
+export type PersistedChangedFilesBaseline = z.infer<typeof ChangedFilesBaselineSchema>;

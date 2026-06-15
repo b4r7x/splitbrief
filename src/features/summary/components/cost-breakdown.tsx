@@ -31,21 +31,29 @@ export function SummaryCostBreakdown({
   return (
     <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
       <LabeledRow label="Actual cost" labelWidth={labelWidth}>
-        <Text bold>{formatKnownCost(costBreakdown.totalActualCost, totalCostKnown)}</Text>
+        <Text bold>
+          {formatKnownCost(costBreakdown.totalActualCost, totalCostKnown ? 'known' : 'partial')}
+        </Text>
       </LabeledRow>
       <LabeledRow label="Planner cost" labelWidth={labelWidth}>
         <Text color={t.textDim}>
-          {formatKnownCost(costBreakdown.actualPlannerCost, plannerCostKnown)}
+          {formatKnownCost(costBreakdown.actualPlannerCost, plannerCostKnown ? 'known' : 'partial')}
         </Text>
       </LabeledRow>
       <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
         <Text color={t.textDim}>
-          {formatKnownCost(costBreakdown.actualImplementerCost, implementerCostKnown)}
+          {formatKnownCost(
+            costBreakdown.actualImplementerCost,
+            implementerCostKnown ? 'known' : 'partial',
+          )}
         </Text>
       </LabeledRow>
       <LabeledRow label="All-planner baseline" labelWidth={labelWidth}>
         <Text color={t.textDim}>
-          {formatKnownCost(costBreakdown.hypotheticalCost, allPlannerBaselineKnown)}
+          {formatKnownCost(
+            costBreakdown.hypotheticalCost,
+            allPlannerBaselineKnown ? 'known' : 'partial',
+          )}
         </Text>
       </LabeledRow>
       <LabeledRow label="Saved" labelWidth={labelWidth}>

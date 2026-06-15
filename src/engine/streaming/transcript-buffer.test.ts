@@ -133,6 +133,33 @@ describe('createTranscriptBuffer', () => {
     expect((entries[0] as { phase?: string }).phase).toBeUndefined();
   });
 
+  it('auto-persists multibyte text by byte size, not UTF-16 code-unit count', () => {
+    tmp = createTempDir('transcript-buffer');
+    const buf = createTranscriptBuffer({
+      projectDir: tmp,
+      sessionId: SESSION_ID,
+      phase: undefined,
+      persistTranscript: true,
+    });
+
+    // Each '한' is one UTF-16 code unit but three UTF-8 bytes. 6000 chars is well under the
+    // 16 KiB code-unit count yet ~18 KiB of bytes, so byte-aware flushing must persist it.
+    const blob = '한'.repeat(6000);
+    expect(blob.length).toBeLessThan(16 * 1024);
+    expect(Buffer.byteLength(blob, 'utf8')).toBeGreaterThan(16 * 1024);
+    buf.append(blob);
+
+    const entries = readEntries(tmp, SESSION_ID);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual(
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        text: blob,
+      }),
+    );
+  });
+
   it('flush() on an empty buffer is a no-op', () => {
     tmp = createTempDir('transcript-buffer');
     const buf = createTranscriptBuffer({

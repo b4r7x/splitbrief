@@ -84,7 +84,7 @@ export function InputFooter() {
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
   const advisory = useAdvisory();
   const workflow = configStore.useConfig().workflow;
-  const commitStrategy = workflow.git?.commitStrategy ?? workflow.commitStrategy ?? 'none';
+  const commitStrategy = workflow.git?.commitStrategy ?? 'none';
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
   const taskText = `Task ${currentTask}/${totalTasks}${etaText ? ` · ${etaText}` : ''}`;

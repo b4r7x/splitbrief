@@ -98,6 +98,28 @@ describe('RecentSessions', () => {
     full.unmount();
   });
 
+  it('a resize that changes limit but keeps it positive does not re-read the sessions directory', async () => {
+    saveSummary(
+      { projectDir, sessionId: 'rs-first' },
+      makeSession({ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }),
+    );
+
+    const ui = renderFeature(<RecentSessions limit={5} />);
+    await tick(20);
+    expect(sessionsStore.get().sessions.map((s) => s.id)).toEqual(['rs-first']);
+
+    saveSummary(
+      { projectDir, sessionId: 'rs-second' },
+      makeSession({ id: 'rs-second', feature: 'second', startedAt: 1_700_000_001 }),
+    );
+
+    ui.rerender(<RecentSessions limit={4} />);
+    await tick(20);
+
+    expect(sessionsStore.get().sessions.map((s) => s.id)).toEqual(['rs-first']);
+    ui.unmount();
+  });
+
   it('limit<=0 renders null and skips the load effect', async () => {
     seed([{ id: 'hidden-one', feature: 'should-not-load', startedAt: 1_700_000_000 }]);
     sessionsStore.reset();

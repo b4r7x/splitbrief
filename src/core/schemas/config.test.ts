@@ -80,6 +80,25 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
+  it('requires escalation.intermediateModel when intermediateProvider is set', () => {
+    expect(
+      ConfigSchema.safeParse({
+        ...validConfig,
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      hasIssueAtPath(
+        issuesFor({
+          ...validConfig,
+          escalation: { intermediateProvider: 'deepseek' },
+        }),
+        'escalation.intermediateModel',
+      ),
+    ).toBe(true);
+  });
+
   it('validates implementer profile names and default profile references', () => {
     expect(
       hasIssueAtPath(

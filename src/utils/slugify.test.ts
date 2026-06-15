@@ -10,6 +10,10 @@ describe('slugify', () => {
     expect(slugify('héllo wörld')).toBe('h-llo-w-rld');
   });
 
+  it('returns empty string for an all-non-Latin (CJK) feature', () => {
+    expect(slugify('機能を追加')).toBe('');
+  });
+
   it('removes leading and trailing hyphens', () => {
     expect(slugify('--add auth--')).toBe('add-auth');
   });

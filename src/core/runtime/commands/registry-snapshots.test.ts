@@ -11,7 +11,7 @@ describe('/handoff command', () => {
     expect(cmd?.validScreens).toContain('summary');
   });
 
-  it('calls setFeedbackError with usage hint when no args given', () => {
+  it('shows a usage hint when no args given', () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -24,7 +24,7 @@ describe('/handoff command', () => {
     expect(error).toMatch(/usage/i);
   });
 
-  it('calls setFeedbackError mentioning valid targets for unknown target', () => {
+  it('reports valid targets for an unknown target', () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -38,7 +38,7 @@ describe('/handoff command', () => {
     expect(error).toContain('spec-kit');
   });
 
-  it('calls writeHandoff with spec-kit and no taskId', async () => {
+  it('writes a spec-kit handoff with no taskId', async () => {
     const calls: Array<{ target: string; taskId: string | undefined }> = [];
     const commands = createRuntimeCommands(
       makeCtx({
@@ -53,7 +53,7 @@ describe('/handoff command', () => {
     expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
   });
 
-  it('calls writeHandoff with claude-code and task id T003', async () => {
+  it('writes a claude-code handoff for task id T003', async () => {
     const calls: Array<{ target: string; taskId: string | undefined }> = [];
     const commands = createRuntimeCommands(
       makeCtx({
@@ -68,7 +68,7 @@ describe('/handoff command', () => {
     expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
   });
 
-  it('calls setFeedbackMessage containing output path on success', async () => {
+  it('reports the output path on success', async () => {
     let message: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -83,7 +83,7 @@ describe('/handoff command', () => {
     expect(message).toContain('/proj/.diptych/sessions/s1/handoffs/spec-kit');
   });
 
-  it('calls setFeedbackError when writeHandoff rejects', async () => {
+  it('surfaces an error when the handoff fails', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({

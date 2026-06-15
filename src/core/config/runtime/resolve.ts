@@ -5,8 +5,10 @@ import { DEFAULT_WORKFLOW_MODE } from '../../schemas/config.js';
 export function resolveMode(opts: {
   config: Config;
   cliOverride?: WorkflowMode | undefined;
+  savedMode?: WorkflowMode | undefined;
 }): WorkflowMode {
   if (opts.cliOverride) return opts.cliOverride;
+  if (opts.savedMode) return opts.savedMode;
   return opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE;
 }
 
@@ -22,10 +24,12 @@ export function resolveApproveLevel(opts: {
   configApprove?: ApproveLevel | undefined;
   cliOverride?: ApproveLevel | undefined;
   legacyAutoFlag?: boolean | undefined;
+  savedApprove?: ApproveLevel | undefined;
 }): ApproveLevel {
   if (opts.legacyAutoFlag) return 'none';
   if (opts.cliOverride && opts.cliOverride !== 'default') return opts.cliOverride;
   if (opts.configApprove && opts.configApprove !== 'default') return opts.configApprove;
+  if (opts.savedApprove && opts.savedApprove !== 'default') return opts.savedApprove;
   return MODE_DEFAULT_APPROVE[opts.mode];
 }
 

@@ -134,7 +134,7 @@ Features are vertical slices. Each `src/features/<name>/` owns its screen (or ov
 
 The main screen during execution. Key hooks:
 
-- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`. Creates the EventBus, wires `tuiSink`, manages the run lifecycle. Returns `startedAt` and `handleResume`.
+- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`, passing `tuiSink: createTuiSink()` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `handleResume`.
 - **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
 - **`useWorkflowKeys()`** -- keyboard shortcuts (Ctrl-C abort, Ctrl-D detach, arrow navigation).
 - **`useIpcClient()`** -- connects to a running workflow via Unix socket for attach mode.
@@ -203,7 +203,8 @@ interface TokensState {
 
 // src/stores/project/config.ts
 interface ConfigState {
-  config: Config | null;   // full resolved config (disk + CLI overrides)
+  config: Config | null;       // full resolved config (disk + CLI overrides)
+  diskConfig: Config | null;   // config as persisted on disk, without overrides
   projectDir: string;
   overrides: CLIOverrides;
 }

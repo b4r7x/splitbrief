@@ -43,12 +43,27 @@ describe('blockSecrets', () => {
     expect(outcome.kind).toBe('allow');
   });
 
-  it('allows when file does not exist', async () => {
+  it('warns (does not fail open) when a listed file cannot be scanned', async () => {
     const outcome = await blockSecrets(makeEvent('missing.ts'), {
       projectDir: dir,
       sessionId: 's',
     });
-    expect(outcome.kind).toBe('allow');
+    expect(outcome.kind).toBe('warn');
+    if (outcome.kind === 'warn') {
+      expect(outcome.message).toContain('could not scan');
+      expect(outcome.message).toContain('missing.ts');
+    }
+  });
+
+  it('denies a secret in a readable file even when another listed file is unscannable', async () => {
+    const secret = join(dir, 'secret.env');
+    writeFileSync(secret, 'API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD');
+    const outcome = await blockSecrets(makeEvent('task.ts'), {
+      projectDir: dir,
+      sessionId: 's',
+      files: ['missing.ts', 'secret.env'],
+    });
+    expect(outcome.kind).toBe('deny');
   });
 
   it('allows when event has no file field', async () => {

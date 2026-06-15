@@ -60,9 +60,9 @@ The flowchart covers `src/**` source. Two trees outside it also hold colocated t
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components do not get dedicated tests.** Ink is tested at the feature seam (`screen.tsx` / `overlay.tsx` / `picker.tsx`). Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) are the exception — their cost amortises across consumers.
+**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a cost drilldown, a plan editor, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` and `src/features/summary/components/` already are. Styling-only or pure-passthrough sub-components stay covered transitively through the feature seam (`screen.tsx` / `overlay.tsx` / `picker.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
 
-**Orchestrator internals do not get dedicated tests.** Pure decision modules in `src/engine/` do (parsers, state machine, layout math, pricing math). Control-flow modules (`approval`, `continuation`, `escalation/*`, `task/loop.ts`, `task/step.ts`, `queue`, `signals`, `planning/*`, `run/*`) are covered only via integration tests at the `runWorkflow()` seam.
+**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — budget/cost gating, escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
 **Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
 
@@ -76,13 +76,13 @@ Colocated support files under `src/**` that import `vitest` or another dev-only 
 
 ## Current workflow policy
 
-Cost-aware implementer routing, user-edit conflict handling, and Plan Review v2 follow the same rule: test the decision contract, not the private call graph.
+Cost-aware implementer routing, user-edit conflict handling, and the brief review gate follow the same rule: test the decision contract, not the private call graph.
 
 **Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, cheapest-capable selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
 
 **User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
-**Plan Review v2.** Keep pure editor reducers/actions colocated with the store or hook module when they have branching behavior. Component tests should render the Plan Review surface and assert visible markers the user depends on: selected worker, context fit or overflow, dirty state, save error, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
+**Brief review gate.** Keep pure editor reducers/actions colocated with the store or hook module when they have branching behavior. Component tests should render the plan editor surface and assert visible markers the user depends on: selected worker, context fit or overflow, dirty state, save error, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
@@ -199,7 +199,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
 - **Zero new fakes.** Use `createFakePlanner` / `createFakeImplementer` from `testing/helpers/orchestrator-factories.ts`. Extend them via their `script` parameter, not by copying their shape into a new file.
-- **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (persistence home-dir), `node:fs` (disk-full simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
+- **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:fs/promises` (write-failure / `mkdtemp` interception), `node:fs` (`statSync` ENOENT simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
 - **Import `testing/helpers/**` from `src/**` tests via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a long relative `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`).
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
 
@@ -382,8 +382,8 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; the single consumer currently reaches them via a relative path (`src/core/migration/executor.test.ts`).
-- Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (home dir for `stores/ui/persistence`), `node:fs` (disk-full only), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path — either resolved from `__dirname` (`src/core/migration/executor.test.ts`) or from `process.cwd()` via `resolve('testing/fixtures/…')` (`src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`, `src/engine/hooks/load-module.test.ts`, and the `testing/fixtures/hooks/*.mjs` references in `dispatch.test.ts` / `run-pre.test.ts`).
+- Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/ipc/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist
 
@@ -410,10 +410,10 @@ Why: real stores, real Ink render, observable output + observable store state.
 
 ## Low-value test audit
 
-For the cost-aware implementer pool and Plan Review v2 work, the audit target is narrow:
+For the cost-aware implementer pool and brief review gate work, the audit target is narrow:
 
 - Delete or rewrite tests that only prove a wrapper calls another helper, a hook stores React state, a schema accepts a literal already type-checked by TypeScript, or a component "does not crash."
-- Keep tests that encode routing policy, context overflow behavior, conflict classification, save/round-trip behavior, visible Plan Review markers, or user-facing CLI wording.
+- Keep tests that encode routing policy, context overflow behavior, conflict classification, save/round-trip behavior, visible plan editor markers, or user-facing CLI wording.
 - Prefer rewriting many one-key or one-getter cases into a table or a single lifecycle test over deleting behavior coverage.
 
 ## Convention cross-reference

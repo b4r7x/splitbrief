@@ -4,6 +4,7 @@ import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { parseTextLine } from '../streaming/parse-text.js';
+import { getLineParser } from '../streaming/output-parsers.js';
 import { processError } from '../../lib/process/errors.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { createCommandAvailability } from '../availability.js';
@@ -38,26 +39,31 @@ export function createCliImplementer(
             projectDir,
             onOutput,
             model: effectiveModel,
+            permissionMode: 'acceptEdits',
             signal: composedSignal,
             env,
           });
         }
 
         if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
-        const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
+        const builtArgs = tool.implementer.buildArgs({ prompt, model: effectiveModel });
+        const args = config.args ? [...builtArgs, ...config.args] : builtArgs;
+        const parseLine = config.outputFormat
+          ? getLineParser(config.outputFormat)
+          : (tool.implementer.parseLine ?? parseTextLine);
 
         return await spawnAndCollect({
           command: tool.command,
           args,
           cwd: projectDir,
           env,
-          parseLine: tool.implementer.parseLine ?? parseTextLine,
+          parseLine,
           notFoundMessage: tool.notFoundMessage,
           onText: onOutput,
           signal: composedSignal,
         });
       } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === 'TimeoutError') {
+        if (timeoutSignal.aborted && !signal?.aborted) {
           throw processError.timeout({
             command: `Tool implementer (${toolName})`,
             label: `Tool implementer (${toolName})`,

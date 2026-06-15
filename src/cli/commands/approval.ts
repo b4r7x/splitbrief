@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import {
   readApprovalsStore,
-  writeApprovalsStore,
+  mutateApprovalsStore,
   clearGrantsByScope,
 } from '../../core/approval/store.js';
 import { cliError, withCliErrors } from '../errors.js';
@@ -62,10 +62,12 @@ export function registerApprovalCommand(program: Command): void {
         }
 
         const scope = rawScope;
-        const before = readApprovalsStore(projectDir);
-        const after = clearGrantsByScope(before, scope);
-        writeApprovalsStore(projectDir, after);
-        const count = before.grants.length - after.grants.length;
+        let count = 0;
+        mutateApprovalsStore(projectDir, (before) => {
+          const after = clearGrantsByScope(before, scope);
+          count = before.grants.length - after.grants.length;
+          return after;
+        });
         console.log(`Cleared ${count} approval grant(s).`);
       }),
     );

@@ -11,7 +11,7 @@ diptych is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Product-level git commit strategies are optional; agents working in this repository must never stage or commit.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git commit strategies are optional and off by default; the default leaves changes unstaged for manual review.
 
 The goal is *same planning quality, lower total cost*. Typical split: ~350K planner tokens per feature, ~$0 implementer tokens when running locally.
 
@@ -28,7 +28,7 @@ The "smart" side. Its responsibilities, in order:
 3. **Write supporting docs when needed** — `spec.md` and `plan.md` for larger, riskier, or more ambiguous work.
 4. **Write `tasks.md`** — the transport format that carries one or more Task Briefs to the implementer.
 5. **Review** the entire diff at the end against the Task Brief and any supporting spec.
-6. **Escalate** — when the implementer fails a task 3× in a row, the planner either hints or takes over and fixes the task itself.
+6. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then the planner either hints or takes over and fixes the task itself.
 
 The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the Task Brief and any supporting spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
 
@@ -107,7 +107,7 @@ idle
 
 **Live phases** (single Ctrl-C aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Resumable phases** (saved state can continue from here): `reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`, plus any phase with `awaitingContinue: true`. The planner-generation phases (`researching`, `specifying`, `planning`) are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-generation, the stream is lost and the only safe behaviour is to restart the feature.
+**Resumable phases** (saved state can continue from here): `planning`, `implementing`, `final-review` — the `RESUMABLE_PHASES` set in `src/core/phases.ts` — plus any phase with `awaitingContinue: true`. Every other phase (the review/gate phases, `analyzing`, `validating-task`, `escalating`, and the generative phases `researching`/`specifying`) is **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-stream, the stream is lost and the only safe behaviour is to restart the feature.
 
 ---
 
@@ -137,9 +137,11 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 Runs after every implementer response. Defined in `src/engine/orchestrator/validation.ts`.
 
-1. **Type-check** — the configured, discovered, or heuristic command; default fallback is `npx tsc --noEmit`.
-2. **Lint** — `npm run lint` / Biome / ESLint, depending on config.
-3. **Tests** — the `testCommand` from config, typically `npm test`.
+1. **Type-check** — the configured, discovered, or heuristic command. The built-in `npx tsc --noEmit` default applies only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency); on other languages the stage is skipped when nothing else resolves.
+2. **Lint** — the configured, discovered, or heuristic command; the stage is skipped when no lint command resolves.
+3. **Tests** — the configured, discovered, or heuristic command, falling back to `npm test`.
+
+A stage that resolves to no command is recorded as *skipped* (not a pass). When every enabled stage is skipped, the run emits a warning so a nothing-validated task is not mistaken for all-green.
 
 Each step *stops on first failure* and reports the error back to the orchestrator, which either retries or escalates.
 
@@ -150,9 +152,10 @@ Each step *stops on first failure* and reports the error back to the orchestrato
 On validation failure:
 
 - **Attempts 1–3**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt). No planner involvement.
-- **After 3rd failure**: escalate.
-  - **Hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
-  - **Full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
+- **After 3rd failure**: escalate through the tiers in order.
+  - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
+  - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
+  - **Tier 2 — full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
 
 Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.
 
@@ -168,7 +171,8 @@ User-facing pauses where the workflow waits for explicit input. Each gate asks: 
 
 On a gate:
 
-- Approve → advance.
+- Approve → if the artifact was edited on disk (via the `edit` action below), the change is treated as feedback and downstream artifacts are regenerated from it; otherwise advance.
+- Edit → open `$EDITOR` on the artifact, then re-prompt the gate so you can approve the edited file.
 - Comment without approve → the planner regenerates the artifact using the comment as feedback, then loops back to the gate.
 - Reject without comment → cancel the workflow, return to idle.
 
@@ -252,12 +256,12 @@ The orchestrator reads capabilities at run start and degrades gracefully per bac
 
 The engine publishes every observable step as an `EngineEvent` on a single `EventBus` (synchronous pub/sub, `src/engine/events/bus.ts`). Sinks subscribe and receive the stream in registration order. The bus is the only broadcast channel between engine and the rest of the system.
 
-- **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) in `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new variant to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed during the 2026-04 uplift.
+- **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) defined as `EngineEventSchema` in `src/engine/events/schema.ts`; the `EngineEvent` alias (`z.infer`) is re-exported from `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new Zod member to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed in the 2026-04-20 release.
 - **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and swallowed so it does not break fan-out to the others. Sinks that want operator-visible failures must publish their own warning before throwing.
 - **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `treeRecorderSink`, optional `tuiSink`, optional `stdoutJsonSink`, optional `otelSink`, and optional hook sink.
 - **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onBudgetPaused`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not gated by a callback: it publishes `budget_*` events and pauses through the recovery channel. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 
@@ -340,7 +344,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.
 
-Typed event schema: `src/engine/events/types.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/conversation-rows/event-rows.ts`.
+Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `EngineEvent` alias is re-exported from `src/engine/events/types.ts`). Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/conversation-rows/event-rows.ts`.
 
 ---
 

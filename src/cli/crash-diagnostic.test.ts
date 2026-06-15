@@ -186,30 +186,30 @@ describe('showCrashDiagnostic', () => {
     }
   }
 
-  it('calls buildCrashDiagnostic and writes to stdout, then exits on key "2"', async () => {
+  it('writes the crash diagnostic to stdout, then returns on key "2" without exiting', async () => {
     await withProcessStubs(async ({ written, exitCode }) => {
       await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
       expect(written.length).toBeGreaterThan(0);
       expect(written.join('')).toContain('CRASHED');
-      expect(exitCode()).toBe(0);
+      expect(exitCode()).toBeUndefined();
     });
   });
 
-  it('exits with 0 and writes accurate new-workflow instructions when key "1" is pressed', async () => {
+  it('writes accurate new-workflow instructions and returns without exiting when key "1" is pressed', async () => {
     await withProcessStubs(async ({ written, exitCode }) => {
       await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '1');
       expect(written.join('')).toContain('Exiting. Run `diptych start`');
       expect(written.join('')).not.toContain('Starting new workflow');
-      expect(exitCode()).toBe(0);
+      expect(exitCode()).toBeUndefined();
     });
   });
 
-  it('non-TTY default path exits without waiting for interactive input', async () => {
+  it('non-TTY default path returns without waiting for interactive input or exiting', async () => {
     await withProcessStubs(
       async ({ written, exitCode }) => {
         await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
         expect(written.join('')).toContain('[2] Exit and inspect logs manually');
-        expect(exitCode()).toBe(0);
+        expect(exitCode()).toBeUndefined();
       },
       { stubTTY: true },
     );

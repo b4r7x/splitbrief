@@ -60,7 +60,6 @@ src/cli/
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
-├── otel-bootstrap.ts  # OTEL_TRACES_EXPORTER=console shortcut (BasicTracerProvider + ConsoleSpanExporter)
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core)
 │   ├── start.ts
 │   ├── resume.ts
@@ -105,7 +104,8 @@ src/stores/ui/
 ```
 src/engine/events/
 ├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
-├── types.ts           # EngineEvent discriminated union + EventSink + EventBus types
+├── schema.ts          # EngineEventSchema discriminated union + parseEngineEvent
+├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
     ├── tree-recorder.ts # maps EngineEvents to session tree entries; branches on recovery
@@ -238,7 +238,7 @@ features/workflow/
 │   └── use-keys.ts
 ├── handlers.ts               # pure helper — engine↔UI bridge
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
-└── layout.ts                 # pure helper — geometry snapshots
+└── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 
 **Overlay-style feature** (e.g. `features/settings/`):
@@ -303,7 +303,7 @@ Is it a pure, zero-dep, framework-agnostic primitive?
 └── YES → src/utils/
 
 Is it a boundary wrapper around an external system?
-  (git, fs, node:child_process, terminal I/O, shiki, simple-git, HTTP)
+  (git, fs, node:child_process, terminal I/O, better-sqlite3, simple-git, HTTP)
 └── YES → src/lib/<domain>/
 
 Does it know diptych concepts (config, cost, tokens, sessions, `.diptych/`, state machine)?
@@ -329,8 +329,8 @@ Am I about to create an `index.ts` that only re-exports?
 | `src/utils/` | stdlib, npm, other `utils/` | anyone |
 | `src/lib/` | stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
 | `src/core/` | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
-| `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/` |
-| `src/stores/` | `utils/`, `core/`, `lib/` | anyone |
+| `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
+| `src/stores/` | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only `app.tsx` |
 
 Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`.
@@ -357,7 +357,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/two-column-picker/`, plus the `src/hooks/use-static-selector.ts` selection hook.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 

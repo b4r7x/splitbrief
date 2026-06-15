@@ -55,10 +55,12 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   if (!storeConfig) return;
 
   let contextLength: number | undefined;
+  let contextLengthDetected = false;
   try {
     const caps = await detectCapabilities(storeConfig);
     if (caps.contextLength) {
       contextLength = caps.contextLength;
+      contextLengthDetected = caps.origin === 'detected';
     }
   } catch (err) {
     warnError('Could not detect provider capabilities', err);
@@ -66,7 +68,7 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   }
 
   if (contextLength !== undefined) {
-    configStore.setContextLength(contextLength);
+    configStore.setContextLength(contextLength, contextLengthDetected);
   }
 
   await Promise.all([

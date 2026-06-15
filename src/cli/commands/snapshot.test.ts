@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
+import { existsSync, mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -8,6 +9,10 @@ import { registerSnapshotCommand } from './snapshot.js';
 
 let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+function makeSessionDir(sessionId: string): void {
+  mkdirSync(join(tmp, '.diptych', 'sessions', sessionId), { recursive: true });
+}
 
 beforeEach(() => {
   tmp = createTempDir('snapshot-command-test');
@@ -34,6 +39,7 @@ async function runSnapshot(args: string[]): Promise<void> {
 
 describe('snapshot create', () => {
   it('creates a snapshot and prints the ID when --session is provided', async () => {
+    makeSessionDir('test-sess');
     await writeFile(join(tmp, 'src.ts'), 'export {}');
 
     await runSnapshot(['create', '--project', tmp, '--session', 'test-sess']);
@@ -47,6 +53,7 @@ describe('snapshot create', () => {
   });
 
   it('first invocation produces a snapshot that subsequently appears in list output', async () => {
+    makeSessionDir('first-sess');
     await writeFile(join(tmp, 'src.ts'), 'v1');
 
     await runSnapshot(['create', '--project', tmp, '--session', 'first-sess', '--name', 'kickoff']);
@@ -59,6 +66,21 @@ describe('snapshot create', () => {
     expect(out).toMatch(/kickoff/);
     expect(out).toMatch(/files=/);
   });
+
+  it('refuses to create a snapshot for a session id with no existing session dir', async () => {
+    await writeFile(join(tmp, 'src.ts'), 'export {}');
+
+    let captured: unknown;
+    try {
+      await runSnapshot(['create', '--project', tmp, '--session', 'missing-sess']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toMatch(/session 'missing-sess' not found/);
+    expect(existsSync(join(tmp, '.diptych', 'sessions', 'missing-sess'))).toBe(false);
+  });
 });
 
 describe('snapshot list', () => {
@@ -69,6 +91,7 @@ describe('snapshot list', () => {
   });
 
   it('lists created snapshots after creating them', async () => {
+    makeSessionDir('test-sess');
     await writeFile(join(tmp, 'src.ts'), 'version 1');
 
     await runSnapshot(['create', '--project', tmp, '--session', 'test-sess']);

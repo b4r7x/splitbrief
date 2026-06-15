@@ -86,6 +86,40 @@ describe('streamCompletion', () => {
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
+  it('surfaces a truncation warning when the finish_reason is length', async () => {
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () => ({
+            [Symbol.asyncIterator]() {
+              const chunks = [
+                { choices: [{ delta: { content: 'cut off' } }] },
+                { choices: [{ delta: {}, finish_reason: 'length' }] },
+              ];
+              let i = 0;
+              return {
+                async next() {
+                  const chunk = chunks[i++];
+                  if (!chunk) return { done: true, value: undefined };
+                  return { done: false, value: chunk };
+                },
+              };
+            },
+          }),
+        },
+      },
+    };
+    const progress: string[] = [];
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: (text) => progress.push(text),
+    });
+
+    expect(result.text).toBe('cut off');
+    expect(progress.some((line) => line.includes('truncated'))).toBe(true);
+  });
+
   it('subtracts nested cached prompt tokens from billable input usage', async () => {
     const client = makeMockClient([
       {
@@ -122,25 +156,32 @@ describe('streamCompletion', () => {
     ).rejects.toThrow('cancelled');
   });
 
-  it('maps ECONNREFUSED to a user-friendly error', async () => {
+  it('maps a refused connection from the OpenAI SDK to the Ollama hint', async () => {
+    const econnrefused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:11434'), {
+      code: 'ECONNREFUSED',
+    });
+    const fetchFailed = Object.assign(new TypeError('fetch failed'), { cause: econnrefused });
+    const apiConnectionError = Object.assign(new Error('Connection error.'), {
+      name: 'APIConnectionError',
+      cause: fetchFailed,
+    });
     const client: MockClient = {
       chat: {
         completions: {
           create: async () => {
-            throw Object.assign(new Error('Connection refused'), {
-              code: 'ECONNREFUSED',
-            });
+            throw apiConnectionError;
           },
         },
       },
     };
 
     await expect(
-      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      streamCompletion(client, 'qwen3', [{ role: 'user', content: 'hi' }], {
         temperature: 0.2,
         onProgress: () => {},
+        endpoint: { provider: 'ollama', apiBase: 'http://localhost:11434' },
       }),
-    ).rejects.toThrow(/Cannot connect to/);
+    ).rejects.toThrow(/Ollama is not running/);
   });
 
   it('maps HTTP error status to a user-friendly error', async () => {
@@ -226,6 +267,102 @@ describe('streamCompletion', () => {
     expect(capturedBody).not.toHaveProperty('max_completion_tokens');
   });
 
+  it('routes the gpt-5 family through max_completion_tokens and omits temperature', async () => {
+    let capturedBody: CreateBody | undefined;
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async (body) => {
+            capturedBody = body;
+            return {
+              [Symbol.asyncIterator]() {
+                return {
+                  async next() {
+                    return { done: true, value: undefined };
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    };
+
+    await streamCompletion(client, 'gpt-5', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.7,
+      onProgress: () => {},
+      maxTokens: 4096,
+      effort: 'high',
+      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
+    });
+
+    expect(capturedBody?.max_completion_tokens).toBe(4096);
+    expect(capturedBody).not.toHaveProperty('max_tokens');
+    expect(capturedBody).not.toHaveProperty('temperature');
+    expect(capturedBody?.reasoning_effort).toBe('high');
+  });
+
+  it('clamps xhigh reasoning_effort to high for direct OpenAI reasoning models', async () => {
+    let capturedBody: CreateBody | undefined;
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async (body) => {
+            capturedBody = body;
+            return {
+              [Symbol.asyncIterator]() {
+                return {
+                  async next() {
+                    return { done: true, value: undefined };
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    };
+
+    await streamCompletion(client, 'o3', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      effort: 'xhigh',
+      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
+    });
+
+    expect(capturedBody?.reasoning_effort).toBe('high');
+  });
+
+  it('keeps temperature and verbatim effort for non-reasoning OpenAI models', async () => {
+    let capturedBody: CreateBody | undefined;
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async (body) => {
+            capturedBody = body;
+            return {
+              [Symbol.asyncIterator]() {
+                return {
+                  async next() {
+                    return { done: true, value: undefined };
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    };
+
+    await streamCompletion(client, 'gpt-4o', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
+    });
+
+    expect(capturedBody?.temperature).toBe(0.2);
+  });
+
   it('uses developer messages for direct OpenAI reasoning model instructions', async () => {
     let capturedBody: CreateBody | undefined;
     const client: MockClient = {
@@ -289,5 +426,31 @@ describe('streamCompletion', () => {
 
     expect(capturedBody?.thinking).toEqual({ type: 'enabled', budget_tokens: 24000 });
     expect(capturedBody).not.toHaveProperty('temperature');
+  });
+
+  it('pairs max_tokens above the thinking budget so the effort request is not a guaranteed 400', async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response('', { status: 200 });
+      }),
+    );
+
+    await streamAnthropicCompletion({
+      apiKey: 'sk-ant-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.7,
+      effort: 'high',
+      onProgress: () => {},
+    });
+
+    const thinking = capturedBody?.thinking as { budget_tokens: number };
+    expect(thinking.budget_tokens).toBe(24000);
+    expect(typeof capturedBody?.max_tokens).toBe('number');
+    expect(capturedBody?.max_tokens as number).toBeGreaterThan(thinking.budget_tokens);
   });
 });

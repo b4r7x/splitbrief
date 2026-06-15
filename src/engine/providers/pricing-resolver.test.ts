@@ -84,8 +84,8 @@ describe('pricing-resolver', () => {
 
     it('merges bundled cache pricing when runtime catalog provides pricing without cache fields', () => {
       // Simulate a runtime model cache entry for anthropic/claude-sonnet-4-6 with pricing
-      // but no cache rates (DetectedModel has no cache pricing fields). We expect resolvePricing
-      // to merge the bundled fallback's verified cache rates so cost math stays cache-aware.
+      // but no cache rates. We expect resolvePricing to merge the bundled fallback's verified
+      // cache rates so cost math stays cache-aware.
       const cache = makeModelCacheAccessor({
         providerModels: {
           anthropic: [{ id: 'claude-sonnet-4-6', pricingInput: 3, pricingOutput: 15 }],
@@ -96,6 +96,49 @@ describe('pricing-resolver', () => {
       expect(result.source).toBe('runtime');
       expect(result.cacheReadPer1M).toBe(0.3);
       expect(result.cacheWritePer1M).toBe(3.75);
+    });
+
+    it('prefers models.dev catalog cache rates over the bundled fallback', () => {
+      const cache = makeModelCacheAccessor({
+        catalog: {
+          anthropic: {
+            id: 'anthropic',
+            models: {
+              'claude-sonnet-4-6': {
+                id: 'claude-sonnet-4-6',
+                cost: { input: 3, output: 15, cache_read: 0.11, cache_write: 1.22 },
+                limit: { context: 1_000_000 },
+              },
+            },
+          },
+        },
+      });
+      const result = resolvePricing('anthropic', cache, 'claude-sonnet-4-6');
+      expect(result.isPriced).toBe(true);
+      expect(result.source).toBe('models-dev');
+      expect(result.cacheReadPer1M).toBe(0.11);
+      expect(result.cacheWritePer1M).toBe(1.22);
+    });
+
+    it('prefers runtime catalog cache rates over the bundled fallback', () => {
+      const cache = makeModelCacheAccessor({
+        providerModels: {
+          anthropic: [
+            {
+              id: 'claude-sonnet-4-6',
+              pricingInput: 3,
+              pricingOutput: 15,
+              pricingCacheRead: 0.22,
+              pricingCacheWrite: 2.44,
+            },
+          ],
+        },
+      });
+      const result = resolvePricing('anthropic', cache, 'claude-sonnet-4-6');
+      expect(result.isPriced).toBe(true);
+      expect(result.source).toBe('runtime');
+      expect(result.cacheReadPer1M).toBe(0.22);
+      expect(result.cacheWritePer1M).toBe(2.44);
     });
   });
 

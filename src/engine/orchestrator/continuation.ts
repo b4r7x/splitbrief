@@ -3,16 +3,19 @@ import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
+import { join } from 'node:path';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { parseTasksStrict } from '../spec/parser.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import { buildProjectContextMarkdown } from '../planners/context.js';
 import { transitionAndSave } from './state-ops.js';
+import { publishWarning } from './events.js';
 import { runPlannerReview } from './planner-review.js';
 import { drainQueue, formatDrainedMessages } from './queue.js';
+import { readPersistedTasks } from './planning/io.js';
 
 export function buildContinuationPrompt(partialResponse: string, userMessage: string): string {
   const instruction = userMessage.trim() || 'Please continue from where you left off.';
@@ -178,7 +181,12 @@ export async function regenerateFromFeedback(
   }
 
   const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
-  const basePrompt = buildTasksPrompt(spec, plan, languageContext, state.tasks);
+  const persisted = await readPersistedTasks(
+    join(sessionDir(projectDir, sessionId), TASKS_FILE),
+    (message) => publishWarning({ bus, phase: state.phase }, message),
+  );
+  const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
+  const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
   const result = await runPlannerReview({
     planner,
     prompt: prefix ? prefix + basePrompt : basePrompt,
@@ -190,5 +198,11 @@ export async function regenerateFromFeedback(
     writeTo: TASKS_FILE,
     signal: ctx.signal,
   });
-  return { kind: 'tasks', state: result.state, tasks: parseTasksStrict(result.text) };
+  return {
+    kind: 'tasks',
+    state: result.state,
+    tasks: parseTasksStrict(result.text, (message) =>
+      publishWarning({ bus, phase: state.phase }, message),
+    ),
+  };
 }

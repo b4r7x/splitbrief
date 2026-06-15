@@ -5,7 +5,7 @@ import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
 interface ProviderModelCache {
-  models: DetectedModel[];
+  models: readonly DetectedModel[];
   fetchedAt: number;
   isStale: boolean;
 }
@@ -31,33 +31,39 @@ function isExpired(fetchedAt: number): boolean {
   return Date.now() - fetchedAt >= TTL_MS;
 }
 
-function cloneModels(models: DetectedModel[]): DetectedModel[] {
-  return models.map(cloneDetectedModel);
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
 }
 
-function cloneCatalog(catalog: ModelsDevCatalog): ModelsDevCatalog {
-  return structuredClone(catalog);
+function freezeModels(models: DetectedModel[]): readonly DetectedModel[] {
+  return deepFreeze(models.map(cloneDetectedModel));
+}
+
+function freezeCatalog(catalog: ModelsDevCatalog): ModelsDevCatalog {
+  return deepFreeze(structuredClone(catalog));
 }
 
 export const modelCacheStore = {
   ...storeBase(store),
 
   setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
-    const cloned = cloneModels(models);
+    const frozen = freezeModels(models);
     store.set((prev) => ({
       ...prev,
       providers: {
         ...prev.providers,
-        [provider]: { models: cloned, fetchedAt: Date.now(), isStale: false },
+        [provider]: { models: frozen, fetchedAt: Date.now(), isStale: false },
       },
     }));
   },
 
-  getProviderModels(provider: ProviderId): DetectedModel[] | null {
+  getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
     const cache = store.get().providers[provider];
     if (!cache || cache.isStale) return null;
     if (isExpired(cache.fetchedAt)) return null;
-    return cloneModels(cache.models);
+    return cache.models;
   },
 
   // Object.entries is safe here: runs inside store.set(), not inside useStores() Proxy tracking.
@@ -75,7 +81,7 @@ export const modelCacheStore = {
   setModelsDevCatalog(catalog: ModelsDevCatalog): void {
     store.set((prev) => ({
       ...prev,
-      modelsDevCatalog: cloneCatalog(catalog),
+      modelsDevCatalog: freezeCatalog(catalog),
       modelsDevFetchedAt: Date.now(),
     }));
   },
@@ -84,6 +90,6 @@ export const modelCacheStore = {
     const { modelsDevCatalog, modelsDevFetchedAt } = store.get();
     if (!modelsDevCatalog || modelsDevFetchedAt === null) return null;
     if (Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS) return null;
-    return cloneCatalog(modelsDevCatalog);
+    return modelsDevCatalog;
   },
 };

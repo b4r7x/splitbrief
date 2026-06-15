@@ -168,6 +168,26 @@ describe('startIpcServer', () => {
     }
   });
 
+  it('rejects authentication with a wrong token and closes the socket', async () => {
+    const { srv } = await makeServer();
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    socket.write(
+      JSON.stringify({ kind: 'authenticate', token: `${AUTH_TOKEN}-extra-bytes` }) + '\n',
+    );
+
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+    expect(msg.kind).toBe('error');
+    if (msg.kind === 'error') {
+      expect(msg.code).toBe('unauthorized');
+      expect(msg.message).toBe('IPC: invalid auth token');
+    }
+
+    await waitForClose(socket);
+    expect(socket.destroyed).toBe(true);
+  });
+
   it('publishes ipc_client_attached when client connects', async () => {
     const { srv, bus } = await makeServer();
     const attachedPromise = waitForEvent(bus, 'ipc_client_attached');
@@ -232,6 +252,26 @@ describe('startIpcServer', () => {
     const { srv } = await makeServer();
     const s1 = await connectAndAuth(srv.sockPath);
 
+    const victimFrames: ServerMessage[] = [];
+    let victimClosed = false;
+    let frameArrivedBeforeClose = false;
+    let victimBuf = '';
+    s1.on('data', (chunk: Buffer) => {
+      victimBuf += chunk.toString('utf8');
+      const lines = victimBuf.split('\n');
+      victimBuf = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const frame = JSON.parse(trimmed) as ServerMessage;
+        victimFrames.push(frame);
+        if (frame.kind === 'error' && !victimClosed) frameArrivedBeforeClose = true;
+      }
+    });
+    s1.on('close', () => {
+      victimClosed = true;
+    });
+
     const s2 = await connectClient(srv.sockPath);
     sockets.push(s2);
     s2.write(
@@ -243,9 +283,41 @@ describe('startIpcServer', () => {
     await waitForClose(s1);
     await waitForClose(s2);
     expect(s1.destroyed).toBe(true);
+
+    const terminalFrame = victimFrames.find((f) => f.kind === 'error');
+    expect(terminalFrame).toBeDefined();
+    if (terminalFrame?.kind === 'error') {
+      expect(terminalFrame.code).toBe('already_attached');
+    }
+    expect(frameArrivedBeforeClose).toBe(true);
   });
 
-  it('calls onUserInput when client sends user_input', async () => {
+  it('reassembles a multibyte auth token split across frames in the detach handshake', async () => {
+    const token = 'トークン値';
+    const { srv } = await makeServer({ authToken: token });
+    const s1 = await connectClient(srv.sockPath);
+    sockets.push(s1);
+    s1.write(JSON.stringify({ kind: 'authenticate', token }) + '\n');
+    const meta = await readLines(s1, 1);
+    if (meta[0]!.kind !== 'session_meta') throw new Error('expected session_meta');
+
+    const s2 = await connectClient(srv.sockPath);
+    sockets.push(s2);
+    const handshake = Buffer.from(
+      `${JSON.stringify({ kind: 'authenticate', token })}\n${JSON.stringify({ kind: 'detach' })}\n`,
+      'utf8',
+    );
+    // Split inside the first multibyte character of the token.
+    const at = handshake.indexOf(Buffer.from(token, 'utf8')[0]!) + 1;
+    s2.write(handshake.subarray(0, at));
+    await tick();
+    s2.write(handshake.subarray(at));
+
+    await waitForClose(s1);
+    expect(s1.destroyed).toBe(true);
+  });
+
+  it('delivers user_input text when a client sends it', async () => {
     const { srv, onUserInput } = await makeServer();
     const socket = await connectAndAuth(srv.sockPath);
 
@@ -253,6 +325,27 @@ describe('startIpcServer', () => {
     await tick();
     await tick();
     expect(onUserInput).toHaveBeenCalledWith('hello world');
+  });
+
+  it('reassembles multibyte user_input split across socket frames', async () => {
+    const { srv, onUserInput } = await makeServer();
+    const socket = await connectAndAuth(srv.sockPath);
+
+    // The payload contains '日本語', a multibyte string. Splitting the encoded frame mid-character
+    // must not corrupt it: the server socket buffers the partial sequence across data events.
+    const frame = Buffer.from(
+      JSON.stringify({ kind: 'user_input', text: '日本語' }) + '\n',
+      'utf8',
+    );
+    // Byte 30 lands inside the first multibyte character ('日' occupies bytes 29-31).
+    const split = 30;
+    socket.write(frame.subarray(0, split));
+    await tick();
+    socket.write(frame.subarray(split));
+    await tick();
+    await tick();
+
+    expect(onUserInput).toHaveBeenCalledWith('日本語');
   });
 
   it('ignores user_input messages without string text', async () => {
@@ -277,7 +370,9 @@ describe('startIpcServer', () => {
     const waiting = waitForEvent(bus, 'warning');
     let settled = false;
     const promptPromise = srv.requestClientPrompt({
-      kind: 'external_changes',
+      kind: 'approval_needed',
+      approvalType: 'spec',
+      filePath: '/tmp/spec.md',
     });
     promptPromise
       .finally(() => {
@@ -299,17 +394,17 @@ describe('startIpcServer', () => {
 
     expect(prompt).toBeDefined();
     if (prompt?.kind !== 'prompt_request') throw new Error('missing prompt_request');
-    expect(prompt.request.kind).toBe('external_changes');
+    expect(prompt.request.kind).toBe('approval_needed');
 
     socket.write(
       JSON.stringify({
         kind: 'prompt_response',
         requestId: prompt.request.requestId,
-        response: { kind: 'external_changes', proceed: true },
+        response: { kind: 'approval_needed', approved: true },
       }) + '\n',
     );
 
-    await expect(promptPromise).resolves.toEqual({ kind: 'external_changes', proceed: true });
+    await expect(promptPromise).resolves.toEqual({ kind: 'approval_needed', approved: true });
   });
 
   it('ignores prompt_response messages with invalid response payloads', async () => {
@@ -319,7 +414,11 @@ describe('startIpcServer', () => {
     const socket = await connectAndAuth(srv.sockPath);
 
     let settled = false;
-    const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'spec',
+      filePath: '/tmp/spec.md',
+    });
     promptPromise
       .finally(() => {
         settled = true;
@@ -334,7 +433,7 @@ describe('startIpcServer', () => {
       JSON.stringify({
         kind: 'prompt_response',
         requestId: msg.request.requestId,
-        response: { kind: 'external_changes', proceed: 'yes' },
+        response: { kind: 'approval_needed', approved: 'yes' },
       }) + '\n',
     );
     await tick();
@@ -357,29 +456,50 @@ describe('startIpcServer', () => {
       }),
     ).rejects.toMatchObject({
       kind: 'ipc-prompt-no-client-headless',
-      code: 'ipc_prompt_no_client_headless',
-      promptKind: 'approval_needed',
       data: { promptKind: 'approval_needed' },
       message:
         'IPC prompt cannot be answered in explicit headless mode without an attached client: approval_needed',
     });
   });
 
-  it('rejects prompt promises after 30s timeout once a client is attached', async () => {
+  it('keeps a human prompt pending while a client is attached and resolves only on response', async () => {
     const { srv } = await makeServer();
-    await connectAndAuth(srv.sockPath);
+    const socket = await connectAndAuth(srv.sockPath);
+
+    let settled = false;
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'spec',
+      filePath: '/tmp/spec.md',
+    });
+    promptPromise
+      .finally(() => {
+        settled = true;
+      })
+      .catch(() => undefined);
+
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+    if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
 
     vi.useFakeTimers();
     try {
-      const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
-      const assertion = expect(promptPromise).rejects.toThrow(
-        'IPC prompt timed out after 30s: external_changes',
-      );
-      await vi.advanceTimersByTimeAsync(30_000);
-      await assertion;
+      await vi.advanceTimersByTimeAsync(60_000);
     } finally {
       vi.useRealTimers();
     }
+    await tick();
+    expect(settled).toBe(false);
+
+    socket.write(
+      JSON.stringify({
+        kind: 'prompt_response',
+        requestId: msg.request.requestId,
+        response: { kind: 'approval_needed', approved: true },
+      }) + '\n',
+    );
+
+    await expect(promptPromise).resolves.toEqual({ kind: 'approval_needed', approved: true });
   });
 
   it('sends prompt requests immediately to an attached client', async () => {
@@ -387,26 +507,27 @@ describe('startIpcServer', () => {
     const socket = await connectAndAuth(srv.sockPath);
 
     const promptPromise = srv.requestClientPrompt({
-      kind: 'budget_paused',
-      currentCost: 8.5,
-      maxBudget: 10,
+      kind: 'question_asked',
+      question: { id: 'q1', type: 'input', text: 'Which option?' },
+      num: 1,
+      total: 3,
     });
     const msgs = await readLines(socket, 1);
     const msg = msgs[0]!;
 
     expect(msg.kind).toBe('prompt_request');
     if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
-    expect(msg.request).toMatchObject({ kind: 'budget_paused', currentCost: 8.5, maxBudget: 10 });
+    expect(msg.request).toMatchObject({ kind: 'question_asked', num: 1, total: 3 });
 
     socket.write(
       JSON.stringify({
         kind: 'prompt_response',
         requestId: msg.request.requestId,
-        response: { kind: 'budget_paused', decision: 'continue' },
+        response: { kind: 'question_asked', answer: 'option A' },
       }) + '\n',
     );
 
-    await expect(promptPromise).resolves.toEqual({ kind: 'budget_paused', decision: 'continue' });
+    await expect(promptPromise).resolves.toEqual({ kind: 'question_asked', answer: 'option A' });
   });
 
   it('round-trips tiered approval prompts through an attached client', async () => {
@@ -529,6 +650,38 @@ describe('startIpcServer', () => {
     socket.write(JSON.stringify({ kind: 'detach' }) + '\n');
     await detachedPromise;
     await waitForClose(socket);
+  });
+
+  it('does not publish ipc_client_detached for a client that never attached', async () => {
+    const events: EngineEvent[] = [];
+    const { srv, bus } = await makeServer();
+    bus.subscribe((e) => events.push(e));
+
+    // Wrong token: server writes an error, destroys the socket, and detaches before attaching.
+    const badAuth = await connectClient(srv.sockPath);
+    sockets.push(badAuth);
+    badAuth.write(JSON.stringify({ kind: 'authenticate', token: 'wrong-token' }) + '\n');
+    const badAuthMsgs = await readLines(badAuth, 1);
+    expect(badAuthMsgs[0]!.kind).toBe('error');
+    await waitForClose(badAuth);
+
+    // Pre-auth command: rejected and socket destroyed without ever attaching.
+    const preAuth = await connectClient(srv.sockPath);
+    sockets.push(preAuth);
+    preAuth.write(JSON.stringify({ kind: 'user_input', text: 'hi' }) + '\n');
+    const preAuthMsgs = await readLines(preAuth, 1);
+    expect(preAuthMsgs[0]!.kind).toBe('error');
+    await waitForClose(preAuth);
+
+    // Never-authenticated probe: just connect and close.
+    const probe = await connectClient(srv.sockPath);
+    sockets.push(probe);
+    probe.destroy();
+    await waitForClose(probe);
+    await tick();
+
+    expect(events.some((e) => e.type === 'ipc_client_attached')).toBe(false);
+    expect(events.some((e) => e.type === 'ipc_client_detached')).toBe(false);
   });
 
   it('publishes warning on malformed JSON, does not crash', async () => {

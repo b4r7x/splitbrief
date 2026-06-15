@@ -1,41 +1,21 @@
-import { resolve } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
+import {
+  commandTokensAfterInterpreter,
+  isPathLike,
+  isRepoLocal,
+} from '../../core/trust/path-classification.js';
 import { error } from '../../utils/error.js';
-
-const CODE_LOADING_INTERPRETERS = new Set([
-  'node',
-  'nodejs',
-  'python',
-  'python3',
-  'ruby',
-  'perl',
-  'php',
-  'npx',
-  'tsx',
-  'ts-node',
-  'bun',
-  'deno',
-]);
-
-function isPathLike(token: string): boolean {
-  if (token.includes('/') || token.includes('\\')) return true;
-  // Bare repo-relative executables: scripts/runner, bin/tool (no leading ./)
-  return /^[a-zA-Z0-9_.-]+[\\/][a-zA-Z0-9_.\\/-]+$/.test(token);
-}
-
-function isRepoLocal(token: string, projectDir: string): boolean {
-  if (token.startsWith('./') || token.startsWith('../')) return true;
-  if (token.startsWith('/')) {
-    return resolve(token).startsWith(resolve(projectDir));
-  }
-  // Relative paths without ./ resolve against project cwd during execution.
-  if (isPathLike(token)) return true;
-  return false;
-}
 
 function tokenIsRepoLocalExecutable(token: string, projectDir: string): boolean {
   if (!isPathLike(token) || !isRepoLocal(token, projectDir)) return false;
   return true;
+}
+
+function flagValue(token: string): string | null {
+  const eq = token.indexOf('=');
+  if (eq === -1) return null;
+  const value = token.slice(eq + 1);
+  return value.length > 0 ? value : null;
 }
 
 function commandHasRepoLocalPaths(
@@ -44,12 +24,11 @@ function commandHasRepoLocalPaths(
   projectDir: string,
 ): boolean {
   const tokens = [...command.split(/\s+/).filter((t) => t.length > 0), ...args];
-  const interpreter = tokens[0] ?? '';
-  const checkTokens =
-    CODE_LOADING_INTERPRETERS.has(interpreter) && tokens.length > 1 ? tokens.slice(1) : tokens;
+  const checkTokens = commandTokensAfterInterpreter(tokens);
   for (const token of checkTokens) {
-    if (token.startsWith('-')) continue;
-    if (tokenIsRepoLocalExecutable(token, projectDir)) return true;
+    const candidate = token.startsWith('-') ? flagValue(token) : token;
+    if (candidate === null) continue;
+    if (tokenIsRepoLocalExecutable(candidate, projectDir)) return true;
   }
   return false;
 }

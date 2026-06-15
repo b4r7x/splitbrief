@@ -326,6 +326,20 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.contextLength).toBe(8192);
   });
 
+  it('records boot-detected provenance only when the value is flagged detected', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    expect(configStore.getDetectedContextLength()).toBeUndefined();
+
+    configStore.setContextLength(131072, true);
+    expect(loadedConfig().implementer.contextLength).toBe(131072);
+    expect(configStore.getDetectedContextLength()).toBe(131072);
+
+    configStore.setContextLength(16384, false);
+    expect(loadedConfig().implementer.contextLength).toBe(16384);
+    expect(configStore.getDetectedContextLength()).toBeUndefined();
+  });
+
   it('returns error result when write fails', () => {
     writeConfigYaml();
     configStore.load(tmpDir);
@@ -349,5 +363,136 @@ describe('configStore.save', () => {
     const updated = { ...before, implementer: { ...before.implementer, model: 'picker-choice' } };
     configStore.save(updated);
     expect(loadedConfig().implementer.model).toBe('picker-choice');
+  });
+
+  it('writes a complete versioned config when saving changed paths with no existing file', () => {
+    configStore.load(tmpDir);
+    const updated = { ...loadedConfig(), theme: 'mono' as const };
+
+    const result = configStore.save(updated, { changedPaths: ['theme'] });
+
+    expect(result.ok).toBe(true);
+    const written = YAML.parse(readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'));
+    expect(written.theme).toBe('mono');
+    expect(written.version).toBe(3);
+    const { config: diskConfig, warnings } = loadConfig(tmpDir);
+    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.version).toBe(3);
+    expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
+  });
+});
+
+describe('configStore.save preserves the raw config document', () => {
+  beforeEach(() => {
+    tmpDir = createTempDir('config-store-test');
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  function writeRawConfig(yaml: string) {
+    mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), yaml, 'utf-8');
+  }
+
+  function readRawConfig(): string {
+    return readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8');
+  }
+
+  const HAND_EDITED = `# diptych config — hand edited, keep me
+version: 3
+implementer:
+  model: qwen2.5-coder:7b # my favourite model
+  context_length: 8192
+theme: terminal
+my_custom_key: keep-this-too
+`;
+
+  it('preserves comments, key order, and unknown keys when saving one setting', () => {
+    writeRawConfig(HAND_EDITED);
+    configStore.load(tmpDir);
+
+    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const result = configStore.save(updated, { changedPaths: ['theme'] });
+
+    expect(result.ok).toBe(true);
+    const raw = readRawConfig();
+    expect(raw).toContain('# diptych config — hand edited, keep me');
+    expect(raw).toContain('# my favourite model');
+    expect(raw).toContain('my_custom_key: keep-this-too');
+    expect(raw).toMatch(/theme: mono/);
+    expect(raw.indexOf('implementer:')).toBeLessThan(raw.indexOf('theme:'));
+  });
+
+  it('does not bake default-merged values into the file on save', () => {
+    writeRawConfig(HAND_EDITED);
+    configStore.load(tmpDir);
+
+    configStore.save({ ...loadedConfig(), theme: 'mono' as const }, { changedPaths: ['theme'] });
+
+    const raw = readRawConfig();
+    expect(raw).not.toContain('planner:');
+    expect(raw).not.toContain('validation:');
+    expect(raw).not.toContain('workflow:');
+    expect(raw).not.toContain('max_retries');
+    const parsed = YAML.parse(raw) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(
+      ['implementer', 'my_custom_key', 'theme', 'version'].sort(),
+    );
+  });
+
+  it('writes the changed value with snake_case keys via the document path', () => {
+    writeRawConfig(HAND_EDITED);
+    configStore.load(tmpDir);
+
+    const before = loadedConfig();
+    const updated = {
+      ...before,
+      workflow: { ...before.workflow, mode: 'speckit' as const },
+    };
+    configStore.save(updated, { changedPaths: ['workflow.mode'] });
+
+    const parsed = YAML.parse(readRawConfig()) as Record<string, unknown>;
+    expect((parsed.workflow as Record<string, unknown>).mode).toBe('speckit');
+    const { config: reloaded } = loadConfig(tmpDir);
+    expect(reloaded.workflow.mode).toBe('speckit');
+    expect(reloaded.implementer.model).toBe('qwen2.5-coder:7b');
+  });
+
+  it('removes keys that no longer apply after a runner kind change', () => {
+    writeRawConfig(`version: 3
+implementer:
+  kind: api
+  provider: ollama
+  api_base: http://localhost:11434/v1
+  model: qwen2.5-coder:7b
+`);
+    configStore.load(tmpDir);
+
+    const before = loadedConfig();
+    const updated = {
+      ...before,
+      implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
+    };
+    configStore.save(updated, {
+      changedPaths: [
+        'implementer.kind',
+        'implementer.tool',
+        'implementer.provider',
+        'implementer.apiBase',
+      ],
+    });
+
+    const implementer = (YAML.parse(readRawConfig()) as Record<string, unknown>)
+      .implementer as Record<string, unknown>;
+    expect(implementer.kind).toBe('cli');
+    expect(implementer.tool).toBe('codex');
+    expect(implementer.provider).toBeUndefined();
+    expect(implementer.api_base).toBeUndefined();
   });
 });

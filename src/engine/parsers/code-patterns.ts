@@ -52,13 +52,14 @@ export const CODE_LINE_STARTS = [
 
 export const CODE_LINE_CHARS = ['{', '}', ')', ';', '//', '/*', ' *', '*/'];
 
-const FENCED_BLOCK_SOURCE = '```[\\w]*\\s*\\n([\\s\\S]*?)```';
 const FENCE_OPEN_LINE_RE = /^```[\w]*\s*\n/gm;
 const FENCE_CLOSE_LINE_RE = /^```\s*$/gm;
 const CODE_PREFIX_RE = /^(import |export |\/\/|\/\*)/;
+const FENCE_MARKER_RE = /^(`{3,})/;
 
-function makeFencedRegex(flags = ''): RegExp {
-  return new RegExp(FENCED_BLOCK_SOURCE, flags);
+function fenceMarkerLength(trimmed: string): number | null {
+  const match = trimmed.match(FENCE_MARKER_RE);
+  return match?.[1] ? match[1].length : null;
 }
 
 export const EXPORT_BOUNDARY_RE =
@@ -84,9 +85,28 @@ export const DECLARATION_NAME_RE = /(?:function|const|class|interface|type)\s+(\
 
 export function extractFencedBlocks(text: string): string[] {
   const blocks: string[] = [];
-  const re = makeFencedRegex('g');
-  for (let match = re.exec(text); match !== null; match = re.exec(text)) {
-    if (match[1] !== undefined) blocks.push(match[1].trim());
+  const lines = text.split('\n');
+
+  let openIndex = -1;
+  let openLength = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const marker = fenceMarkerLength((lines[i] ?? '').trim());
+    if (marker === null) continue;
+    if (openIndex === -1) {
+      openIndex = i;
+      openLength = marker;
+      continue;
+    }
+    if (marker >= openLength) {
+      blocks.push(
+        lines
+          .slice(openIndex + 1, i)
+          .join('\n')
+          .trim(),
+      );
+      openIndex = -1;
+      openLength = 0;
+    }
   }
   return blocks;
 }
@@ -97,9 +117,4 @@ export function stripMarkdownFences(text: string): string {
 
 export function hasCodePrefix(line: string): boolean {
   return CODE_PREFIX_RE.test(line);
-}
-
-export function extractFirstFencedBlock(text: string): string | null {
-  const match = text.match(makeFencedRegex());
-  return match?.[1] !== undefined ? match[1].trim() : null;
 }

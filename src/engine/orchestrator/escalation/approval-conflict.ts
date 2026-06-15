@@ -1,8 +1,8 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { transitionAndSave } from '../state-ops.js';
-import { publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
+import { raisePendingRecovery } from '../state-ops.js';
+import { publishUserEditConflict } from '../events.js';
 import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
 import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -25,11 +25,5 @@ export async function handleApprovalTimeUserEditConflict(opts: {
     phase: opts.state.phase,
     createdAt: nowIso(),
   });
-  const next = transitionAndSave(opts.ctx, opts.state, {
-    type: 'SET_PENDING_RECOVERY',
-    issue,
-  });
-  publishRecoveryPrompted(opts.ctx.bus, issue);
-  opts.setTrackedState?.(next);
-  return next;
+  return raisePendingRecovery(opts.ctx, opts.state, issue, opts.setTrackedState);
 }

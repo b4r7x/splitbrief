@@ -42,7 +42,7 @@ export interface ConversationRowScrollComputation {
 
 export interface ConversationRowInputs {
   sections: Section<EngineEvent>[];
-  expandedDiffs: Set<number>;
+  expandedDiffs: Set<string>;
   cols: number;
   viewportHeight: number;
   streaming: StreamingOutputState;

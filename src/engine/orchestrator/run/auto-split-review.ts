@@ -16,10 +16,13 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 
 type ApprovedSplitTasksResult = { ok: true; tasks: Task[] } | { ok: false; message: string };
 
-async function readApprovedSplitTasks(tasksFilePath: string): Promise<ApprovedSplitTasksResult> {
+async function readApprovedSplitTasks(
+  tasksFilePath: string,
+  onWarning?: (message: string) => void,
+): Promise<ApprovedSplitTasksResult> {
   try {
     const text = await readFile(tasksFilePath, 'utf8');
-    const tasks = parseTasksStrict(text);
+    const tasks = parseTasksStrict(text, onWarning);
     return tasks.length > 0
       ? { ok: true, tasks }
       : { ok: false, message: `${tasksFilePath} has no Task Briefs.` };
@@ -55,55 +58,97 @@ export async function reviewAutoSplitOutput(opts: {
   });
   opts.setTrackedState(state);
 
-  const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
-  if (!result.approved && result.action !== 'edit') {
-    publishError(
-      { bus: opts.wctx.bus, phase: state.phase },
-      result.comment
-        ? `Auto-split overflow rejected: ${result.comment}`
-        : 'Auto-split overflow rejected before implementation.',
-    );
+  let tasks = opts.tasks;
+
+  while (true) {
+    if (opts.wctx.signal?.aborted) return { state, tasks, approved: false };
+    const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
+    if (opts.wctx.signal?.aborted) return { state, tasks, approved: false };
+
+    const warnDropped = (message: string) =>
+      publishWarning({ bus: opts.wctx.bus, phase: state.phase }, message);
+
+    if (result.action === 'edit') {
+      const edited = await readApprovedSplitTasks(tasksFilePath, warnDropped);
+      if (!edited.ok) {
+        publishError(
+          { bus: opts.wctx.bus, phase: state.phase },
+          `Auto-split overflow review failed: ${edited.message}`,
+        );
+        continue;
+      }
+      const { ok, report } = runBriefQualityGate({
+        tasks: edited.tasks,
+        projectDir: opts.wctx.projectDir,
+        sessionId: opts.wctx.sessionId,
+        bus: opts.wctx.bus,
+        phase: state.phase,
+      });
+      if (!ok) {
+        publishError(
+          { bus: opts.wctx.bus, phase: state.phase },
+          `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
+        );
+        continue;
+      }
+      tasks = edited.tasks;
+      state = transitionAndSave(opts.wctx, state, {
+        type: 'BRIEFS_READY',
+        tasks,
+      });
+      opts.setTrackedState(state);
+      continue;
+    }
+
+    if (!result.approved) {
+      publishError(
+        { bus: opts.wctx.bus, phase: state.phase },
+        result.comment
+          ? `Auto-split overflow rejected: ${result.comment}`
+          : 'Auto-split overflow rejected before implementation.',
+      );
+      state = transitionAndSave(opts.wctx, state, {
+        type: 'REJECT_BRIEFS',
+      });
+      opts.setTrackedState(state);
+      return { state, tasks, approved: false };
+    }
+
+    const approvedTasksResult = await readApprovedSplitTasks(tasksFilePath, warnDropped);
+    if (!approvedTasksResult.ok) {
+      publishError(
+        { bus: opts.wctx.bus, phase: state.phase },
+        `Auto-split overflow review failed: ${approvedTasksResult.message}`,
+      );
+      continue;
+    }
+    const approvedTasks = approvedTasksResult.tasks;
+
+    const { ok, report } = runBriefQualityGate({
+      tasks: approvedTasks,
+      projectDir: opts.wctx.projectDir,
+      sessionId: opts.wctx.sessionId,
+      bus: opts.wctx.bus,
+      phase: state.phase,
+    });
+    if (!ok) {
+      publishError(
+        { bus: opts.wctx.bus, phase: state.phase },
+        `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
+      );
+      continue;
+    }
+
     state = transitionAndSave(opts.wctx, state, {
-      type: 'REJECT_BRIEFS',
+      type: 'BRIEFS_READY',
+      tasks: approvedTasks,
+    });
+    state = transitionAndSave(opts.wctx, state, {
+      type: 'APPROVE_BRIEFS',
     });
     opts.setTrackedState(state);
-    return { state, tasks: opts.tasks, approved: false };
+    return { state, tasks: approvedTasks, approved: true };
   }
-
-  const approvedTasksResult = await readApprovedSplitTasks(tasksFilePath);
-  if (!approvedTasksResult.ok) {
-    publishError(
-      { bus: opts.wctx.bus, phase: state.phase },
-      `Auto-split overflow review failed: ${approvedTasksResult.message}`,
-    );
-    return { state, tasks: opts.tasks, approved: false };
-  }
-  const approvedTasks = approvedTasksResult.tasks;
-
-  const { ok, report } = runBriefQualityGate({
-    tasks: approvedTasks,
-    projectDir: opts.wctx.projectDir,
-    sessionId: opts.wctx.sessionId,
-    bus: opts.wctx.bus,
-    phase: state.phase,
-  });
-  if (!ok) {
-    publishError(
-      { bus: opts.wctx.bus, phase: state.phase },
-      `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
-    );
-    return { state, tasks: approvedTasks, approved: false };
-  }
-
-  state = transitionAndSave(opts.wctx, state, {
-    type: 'BRIEFS_READY',
-    tasks: approvedTasks,
-  });
-  state = transitionAndSave(opts.wctx, state, {
-    type: 'APPROVE_BRIEFS',
-  });
-  opts.setTrackedState(state);
-  return { state, tasks: approvedTasks, approved: true };
 }
 
 export function formatSkippedSplitNotice(skippedSplits: AutoSplitOverflowSkippedSplit[]): string {

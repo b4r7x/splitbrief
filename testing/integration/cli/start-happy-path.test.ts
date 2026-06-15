@@ -17,6 +17,7 @@ beforeEach(() => {
   resetAllStores();
   tmp = createTempDir('cli-start-happy');
   createTestGitRepo(tmp);
+  process.stdin.isTTY = true;
   const diptychDir = join(tmp, DIPTYCH_DIR);
   mkdirSync(diptychDir, { recursive: true });
   writeFileSync(
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanupTempDir(tmp);
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
 });
 
 describe('CLI integration: start happy path', { timeout: 30_000 }, () => {

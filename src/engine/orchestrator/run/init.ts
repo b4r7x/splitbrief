@@ -20,9 +20,8 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
 import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
-import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
+import type { EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { error } from '../../../utils/error.js';
@@ -50,6 +49,17 @@ import { createValidator } from '../validation.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
+
+function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
+  const name = getRunnerDisplayName(plannerConfig);
+  if (plannerConfig.kind === 'api') {
+    const reason = planner.unavailabilityReason?.();
+    return reason
+      ? `Planner '${name}' is not available: ${reason}.`
+      : `Planner '${name}' is not available. Check the API key, endpoint, and model.`;
+  }
+  return `Planner '${name}' is not available. Make sure it's installed.`;
+}
 
 export type RunWorkflowOptions = {
   feature: string;
@@ -82,6 +92,8 @@ export type RunWorkflowOptions = {
   retryProfileOverrideTaskId?: TaskId | undefined;
   /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
   modelCache?: ModelCacheAccessor | undefined;
+  /** Implementer context length sourced from boot provider detection (not explicit config/CLI/env). Injected from composition layer. */
+  detectedContextLength?: number | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
@@ -102,7 +114,7 @@ export type InitializeWorkflowArgs = {
 
 export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
   const { opts, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
-  const { feature, projectDir, callbacks, savedState, sinks } = opts;
+  const { feature, projectDir, callbacks, sinks } = opts;
 
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
@@ -159,6 +171,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
   }
 
+  let savedState = opts.savedState;
   if (savedState) setTrackedState(savedState);
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
 
@@ -166,7 +179,15 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const planner = opts._planner ?? (await createPlanner(config, initialSessionId));
   if (savedState && !hasPendingRecovery) {
-    await autoCompactResumeContext({ projectDir, sessionId, bus, config, planner });
+    savedState = await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config,
+      planner,
+      state: savedState,
+    });
+    setTrackedState(savedState);
     if (!planner.capabilities.supportsSessionResume) {
       await applyRebuiltContext({
         projectDir,
@@ -183,7 +204,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     if (!available) {
       publishError(
         { bus: bus, phase: savedState?.phase ?? 'idle' },
-        `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`,
+        plannerUnavailableMessage(config.planner, planner),
       );
       return {
         ok: false,
@@ -201,8 +222,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   if (savedState) {
     state = savedState;
     setTrackedState(state);
-    publishPlannerStatus(bus, state, 'running');
     bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
+    publishPlannerStatus(bus, state, 'running');
   } else {
     state = createInitialState(feature);
     state = {
@@ -213,11 +234,14 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(summaryBase.implementerModel !== undefined && {
         implementerModel: summaryBase.implementerModel,
       }),
+      ...(opts.selectedSkills && opts.selectedSkills.length > 0
+        ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
+        : {}),
     };
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'START' });
     setTrackedState(state);
-    publishPlannerStatus(bus, state, 'running');
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
+    publishPlannerStatus(bus, state, 'running');
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', text: feature },
@@ -251,11 +275,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const context: ProjectContext = {
     name: typeof pkg?.['name'] === 'string' ? pkg['name'] : 'unknown',
     dir: projectDir,
-    runtime: 'node',
-    testCommand: config.validation.testCommand ?? 'npm test',
   };
 
-  const validator = createValidator();
+  const validator = createValidator({ captureBaseline: true });
   const wctx: WorkflowContext = {
     projectDir,
     sessionId,
@@ -270,6 +292,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     resumeHolder,
     sinks,
     validator,
+    ...(opts.detectedContextLength !== undefined && {
+      detectedContextLength: opts.detectedContextLength,
+    }),
     ...(opts.retryProfileOverride !== undefined && {
       retryProfileOverride: opts.retryProfileOverride,
     }),
@@ -283,28 +308,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
   };
-
-  if (!savedState && config.hooks) {
-    const prePlanPayload: EngineEvent = {
-      type: 'workflow_started',
-      ts: Date.now(),
-      phase: state.phase,
-      feature,
-    };
-    const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, {
-      projectDir,
-      sessionId,
-    });
-    if (!pre.allow) {
-      bus.publish({
-        type: 'warning',
-        ts: Date.now(),
-        phase: state.phase,
-        message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}`,
-      });
-      return { ok: false, summary: buildSummary({ ...summaryBase, state }) };
-    }
-  }
 
   return { ok: true, state, wctx };
 }

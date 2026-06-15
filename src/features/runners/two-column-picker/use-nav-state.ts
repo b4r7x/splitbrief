@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../../../components/pickers/filtering.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { clampIndex } from '../../../utils/indexing.js';
 import { handleKeyboardInput } from './keyboard.js';
 import { useColumnState } from './use-column-state.js';
@@ -156,37 +157,45 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   const resetRight = () => rightCol.reset(allowCustomRight ? 1 : 0);
 
-  useInput((input, key) => {
-    handleKeyboardInput(input, key, {
-      leftActive,
-      rightActive,
-      isSpecial,
-      isDisabled,
-      isOnVirtual,
-      currentRightIsCustom,
-      leftCurrentItem: leftCol.currentItem,
-      leftFiltered: leftCol.items,
-      filteredRight,
-      leftEffectiveIndex: leftCol.effectiveIndex,
-      rightEffectiveIndex,
-      rightItems,
-      rightPlaceholder,
-      leftGetKey,
-      isRightItemCustom,
-      onDeleteRight,
-      onCustomRightOverlay,
-      onConfirm,
-      onCancel,
-      onRefresh: params.onRefresh,
-      setActiveColumn,
-      setSelectedLeftKey,
-      setLeftFilter: leftCol.setFilter,
-      setRightFilter: rightCol.setFilter,
-      setLeftIndex: leftCol.setIndex,
-      setRightIndex: rightCol.setIndex,
-      resetRight,
-    });
-  });
+  const isActive = overlayStore.use(
+    (s) =>
+      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
+  );
+
+  useInput(
+    (input, key) => {
+      handleKeyboardInput(input, key, {
+        leftActive,
+        rightActive,
+        isSpecial,
+        isDisabled,
+        isOnVirtual,
+        currentRightIsCustom,
+        leftCurrentItem: leftCol.currentItem,
+        leftFiltered: leftCol.items,
+        filteredRight,
+        leftEffectiveIndex: leftCol.effectiveIndex,
+        rightEffectiveIndex,
+        rightItems,
+        rightPlaceholder,
+        leftGetKey,
+        isRightItemCustom,
+        onDeleteRight,
+        onCustomRightOverlay,
+        onConfirm,
+        onCancel,
+        onRefresh: params.onRefresh,
+        setActiveColumn,
+        setSelectedLeftKey,
+        setLeftFilter: leftCol.setFilter,
+        setRightFilter: rightCol.setFilter,
+        setLeftIndex: leftCol.setIndex,
+        setRightIndex: rightCol.setIndex,
+        resetRight,
+      });
+    },
+    { isActive },
+  );
 
   return {
     activeColumn,

@@ -346,7 +346,6 @@ describe('buildSummary', () => {
             uniqueOutOfBoundsFiles: ['src/foo.ts', 'src/bar.ts'],
             representativePath: 'src/foo.ts',
             detectedAtTaskId: taskId('T004'),
-            ts: Date.now(),
           },
         ],
       };
@@ -385,7 +384,6 @@ describe('buildSummary', () => {
             uniqueOutOfBoundsFiles: ['src/a.ts'],
             representativePath: 'src/a.ts',
             detectedAtTaskId: taskId('T002'),
-            ts: Date.now(),
           },
           {
             chainLength: 5,
@@ -393,7 +391,6 @@ describe('buildSummary', () => {
             uniqueOutOfBoundsFiles: ['src/b.ts', 'src/c.ts'],
             representativePath: 'src/b.ts',
             detectedAtTaskId: taskId('T007'),
-            ts: Date.now(),
           },
         ],
       };
@@ -443,9 +440,9 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
     });
-    expect(summary.estimatedCostSavings).toBe('$17.30');
+    expect(summary.estimatedCostSavings).toBe('$17.58');
     expect(summary.costBreakdown?.hypotheticalCost).toBe(18);
-    expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.7, 10);
+    expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
     expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
   });
 
@@ -465,7 +462,7 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
     });
-    expect(summary.estimatedCostSavings).toBe('$12.73');
+    expect(summary.estimatedCostSavings).toBe('$13.08');
   });
 
   it('marks savings unavailable when implementer price is unknown', () => {
@@ -656,8 +653,8 @@ describe('buildSummary task costs', () => {
       throw new Error('expected task and cost breakdown');
     expect(first.cost).toBeUndefined();
     expect(first.costPosture).toBe('unknown-price');
-    expect(second.cost).toBeCloseTo(0.35, 10);
-    expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.35, 10);
+    expect(second.cost).toBeCloseTo(0.21, 10);
+    expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.21, 10);
     expect((first.cost ?? 0) + (second.cost ?? 0)).toBeCloseTo(
       summary.costBreakdown.actualImplementerCost,
       10,

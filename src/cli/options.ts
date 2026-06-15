@@ -1,4 +1,5 @@
 import { InvalidArgumentError, type Command } from 'commander';
+import { OutputFormatSchema } from '../core/schemas/enums.js';
 import { cliError } from './errors.js';
 
 function collectOption(value: string, previous: string[] | undefined): string[] {
@@ -33,12 +34,30 @@ export function parseBudgetOption(value: string): number {
   return parsed;
 }
 
+export function parseOutputFormatOption(value: string): string {
+  const parsed = OutputFormatSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new InvalidArgumentError(
+      `'${value}' is not a valid output format. Must be one of: ${OutputFormatSchema.options.join(', ')}.`,
+    );
+  }
+  return parsed.data;
+}
+
 function parseEnvRefOption(value: string): string {
   return value.startsWith('env:') ? value : `env:${value}`;
 }
 
 export function assertModeFlagsExclusive(opts: { json?: boolean; rpc?: boolean }): void {
   if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
+}
+
+export function assertWorktreeStartOnly(opts: { worktree?: string }): void {
+  if (opts.worktree !== undefined) {
+    throw cliError(
+      '--worktree is only supported by `diptych start`; a resumed session already lives in its original worktree.',
+    );
+  }
 }
 
 export function addWorkflowOptions(cmd: Command): Command {
@@ -63,6 +82,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option(
       '--planner-output-format <format>',
       'Planner output format: stream-json, jsonl, text, or opencode',
+      parseOutputFormatOption,
     )
     .option(
       '--planner-context-length <tokens>',
@@ -89,6 +109,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option(
       '--implementer-output-format <format>',
       'Implementer output format: stream-json, jsonl, text, or opencode',
+      parseOutputFormatOption,
     )
     .option(
       '--implementer-context-length <tokens>',

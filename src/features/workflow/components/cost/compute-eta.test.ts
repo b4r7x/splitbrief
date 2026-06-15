@@ -6,20 +6,21 @@ describe('computeEta', () => {
     expect(computeEta([], 0, 5)).toBe('');
   });
 
-  it('returns empty when all tasks done', () => {
-    expect(computeEta([3000, 4000], 5, 5)).toBe('');
+  it('counts the in-progress task while the final task is running', () => {
+    // currentTask 5 of 5 is still running → remaining = 1, avg = 3500ms → ~3s
+    expect(computeEta([3000, 4000], 5, 5)).toBe('~3s remaining');
   });
 
   it('calculates ETA from average task time', () => {
-    // avg = 5000ms, remaining = 2 tasks → ~10s remaining
+    // avg = 5000ms, remaining = 3 tasks (incl. in-progress) → ~15s remaining
     const result = computeEta([4000, 6000], 3, 5);
-    expect(result).toBe('~10s remaining');
+    expect(result).toBe('~15s remaining');
   });
 
   it('formats minutes for longer ETAs', () => {
-    // avg = 120_000ms (2m), remaining = 3 → ~6m remaining
+    // avg = 120_000ms (2m), remaining = 4 (incl. in-progress) → ~8m remaining
     const result = computeEta([120_000, 120_000], 2, 5);
-    expect(result).toBe('~6m 0s remaining');
+    expect(result).toBe('~8m 0s remaining');
   });
 
   it('returns empty when currentTask exceeds totalTasks', () => {

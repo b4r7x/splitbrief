@@ -6,14 +6,22 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
-import { createClientFromProvider } from '../providers/client.js';
+import { createClientFromProvider, describeProviderUnavailability } from '../providers/client.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { isProviderId } from '../../core/schemas/enums.js';
-import { modelSupportsEffort, modelSupportsImages } from '../providers/capability-inference.js';
+import {
+  modelSupportsEffort,
+  modelSupportsImages,
+  clampToMaxOutput,
+} from '../providers/capability-inference.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
+import { composeAbortSignal } from '../../utils/abort.js';
+
+const DEFAULT_CONTEXT_LENGTH = 8192;
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -29,6 +37,7 @@ function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefine
 async function invokeApi(opts: {
   client: StreamClient | null;
   model: string;
+  contextLength: number;
   planner: {
     provider: string;
     apiBase?: string | undefined;
@@ -43,6 +52,8 @@ async function invokeApi(opts: {
   signal?: AbortSignal | undefined;
 }): Promise<InvokeResult> {
   const messages = buildMessages(opts.prompt, opts.priorMessages);
+  const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  const maxTokens = clampToMaxOutput(Math.max(opts.contextLength - promptTokens, 1024));
   return dispatchStreamCompletion({
     provider: opts.planner.provider,
     client: opts.client,
@@ -52,6 +63,7 @@ async function invokeApi(opts: {
     messages,
     temperature: opts.planner.temperature ?? 0.3,
     onProgress: opts.onOutput,
+    maxTokens,
     effort: opts.effort,
     images: opts.images,
     signal: opts.signal,
@@ -71,6 +83,8 @@ export function createApiPlanner(config: Config): Planner {
   const client: StreamClient | null =
     provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
   const effort = plannerCfg.effort;
+  const timeout = plannerCfg.timeout;
+  const contextLength = plannerCfg.contextLength ?? DEFAULT_CONTEXT_LENGTH;
   const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
   const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
   const supportsImages = providerId !== null && modelSupportsImages(providerId, model);
@@ -88,10 +102,12 @@ export function createApiPlanner(config: Config): Planner {
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
-  }) =>
-    invokeApi({
+  }) => {
+    const effectiveSignal = composeAbortSignal(signal, timeout);
+    return invokeApi({
       client,
       model,
+      contextLength,
       planner: {
         provider,
         apiBase: resolved.baseURL,
@@ -103,8 +119,9 @@ export function createApiPlanner(config: Config): Planner {
       priorMessages,
       effort: supportsEffort ? effort : undefined,
       images: supportsImages ? images : undefined,
-      signal,
+      signal: effectiveSignal,
     });
+  };
 
   return createPlannerBase({
     invokePlan: invoke,
@@ -115,9 +132,16 @@ export function createApiPlanner(config: Config): Planner {
       try {
         return (await resolved.listModels()).length > 0;
       } catch {
-        /* API unreachable — treat as unavailable */
         return false;
       }
+    },
+
+    unavailabilityReason() {
+      return describeProviderUnavailability({
+        isLocal: resolved.isLocal,
+        hasKey: resolved.apiKey().length > 0,
+        lastError: resolved.getLastError?.(),
+      });
     },
 
     async getVersion() {

@@ -49,6 +49,9 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   }
 
   function initializeTree(ts: number): SessionTree | null {
+    const existing = reconstructTree(dir);
+    if (existing) return existing;
+
     const fresh = createEmptyTree(ts);
     const root = fresh.entries.get(fresh.meta.leafId);
     if (!root) return null;

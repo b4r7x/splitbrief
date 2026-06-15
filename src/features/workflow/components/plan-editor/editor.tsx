@@ -8,7 +8,7 @@ import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import { PlanReviewHeader } from '../brief-review-view.js';
 import { usePlanEditorKeys } from '../../hooks/use-plan-editor-keys.js';
-import { createSaveHandler } from '../../plan-editor-save.js';
+import { createSaveHandler } from '../../plan-editor/save.js';
 import { loadPlanEditorData } from '../../plan-editor/loader.js';
 import { PlanEditorFooter } from './footer.js';
 import { WorkerPacketPreviewPanel, usePacketPreview } from './preview-panel.js';
@@ -88,7 +88,6 @@ export function PlanEditorComponent({
   const selectedTask = tasks[cursor];
   const selectedTaskMetadata = selectedTask ? reviewMetadata.get(selectedTask.id) : undefined;
   const projectDir = configState.projectDir || sessionDirPath;
-  const testCommand = configState.config?.validation.testCommand ?? 'npm test';
   const previewRows = isPacketPreviewOpen
     ? (height ?? 24) < 18
       ? 1
@@ -109,7 +108,6 @@ export function PlanEditorComponent({
     selectedTask,
     selectedTaskMetadata,
     projectDir,
-    testCommand,
     config: configState.config,
     width,
   });

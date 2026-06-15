@@ -21,7 +21,6 @@ function createSessionFixture(projectDir: string, sessionId: string): void {
       startedAt: 1,
       completedAt: null,
       stateVersion: 1,
-      stateFile: null,
       status: 'interrupted',
       summary: null,
     }),

@@ -2,7 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import type { Phase, TaskCompletionMethod } from '../../core/schemas/enums.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
@@ -21,9 +21,19 @@ export interface PhaseTokens {
   implementerCacheCreateTokens?: number | undefined;
 }
 
+export interface TaskAttemptTokens {
+  method: TaskCompletionMethod;
+  implementerTokens: number;
+  escalationTokens: number;
+  retryCount: number;
+  tool?: string | undefined;
+  model?: string | undefined;
+}
+
 export interface PerTaskTokens {
   totalTokens: number;
   title: string;
+  attempts?: TaskAttemptTokens[] | undefined;
 }
 
 export interface TokensState {
@@ -145,16 +155,30 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       return { ...state, prediction: event.prediction };
 
     case 'task_tokens': {
-      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '' };
-      const totalTokens = event.implementerTokens + event.escalationTokens;
+      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '', attempts: [] };
+      // One attempt record per task_tokens event keeps each (re)run priced at its own
+      // tool/model identity; display totals sum across attempts.
+      const attempt: TaskAttemptTokens = {
+        method: event.method,
+        implementerTokens: event.implementerTokens,
+        escalationTokens: event.escalationTokens,
+        retryCount: event.retryCount,
+        ...(event.tool !== undefined && { tool: event.tool }),
+        ...(event.model !== undefined && { model: event.model }),
+      };
+      const attempts = [...(existing.attempts ?? []), attempt];
+      const totalTokens = attempts.reduce(
+        (sum, a) => sum + a.implementerTokens + a.escalationTokens,
+        0,
+      );
       return {
         ...state,
-        perTask: { ...state.perTask, [event.taskId]: { ...existing, totalTokens } },
+        perTask: { ...state.perTask, [event.taskId]: { ...existing, totalTokens, attempts } },
       };
     }
 
     case 'task_started': {
-      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '' };
+      const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '', attempts: [] };
       return {
         ...state,
         perTask: { ...state.perTask, [event.taskId]: { ...existing, title: event.title } },
@@ -177,6 +201,31 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         escalatedCount,
         completedTaskCount: state.completedTaskCount + 1,
       };
+    }
+
+    case 'task_reset': {
+      // task_reset fires on two paths: a review redo (the task completed, so undo its
+      // counters before the next task_completed) and a recovery retry of the current,
+      // not-yet-completed task (nothing to undo). A recorded attempt only exists when the
+      // task previously completed, so gate every decrement on the prior attempt's method.
+      // Per-attempt token rows are kept across resets.
+      const attempts = state.perTask[event.taskId]?.attempts ?? [];
+      const last = attempts.at(-1);
+      let { localCount, escalatedCount, completedTaskCount } = state;
+      if (last) {
+        if ((last.method === 'local' || last.method === 'mcp-tool') && localCount > 0) {
+          localCount -= 1;
+        } else if (
+          (last.method === 'escalated-intermediate' ||
+            last.method === 'escalated-hint' ||
+            last.method === 'escalated-full') &&
+          escalatedCount > 0
+        ) {
+          escalatedCount -= 1;
+        }
+        if (completedTaskCount > 0) completedTaskCount -= 1;
+      }
+      return { ...state, localCount, escalatedCount, completedTaskCount };
     }
 
     case 'task_skipped':
@@ -219,7 +268,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'task_retry':
     case 'task_escalating':
     case 'task_full_fail':
-    case 'task_reset':
     case 'task_review_needed':
     case 'hint_failed':
     case 'implementer_generate_running':

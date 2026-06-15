@@ -15,6 +15,7 @@ import { recordLocalTaskEvidence } from '../../engine/orchestrator/evidence/task
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { SummaryScreen } from './screen.js';
 
 describe('SummaryScreen', () => {
@@ -311,6 +312,31 @@ describe('SummaryScreen', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('full');
+
+    ui.unmount();
+  });
+
+  it('exits to home when Enter is pressed on the empty composer', async () => {
+    routerStore.init({ screen: 'summary', summary: makeSummary() });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(routerStore.get().screen).toBe('home');
+
+    ui.unmount();
+  });
+
+  it('ignores Enter on the composer while an overlay is open', async () => {
+    routerStore.init({ screen: 'summary', summary: makeSummary() });
+    overlayStore.open('command-palette');
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(routerStore.get().screen).toBe('summary');
 
     ui.unmount();
   });

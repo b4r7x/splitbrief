@@ -112,6 +112,42 @@ describe('throwMappedError', () => {
     }
   });
 
+  test('wraps a refused connection nested two cause levels deep', () => {
+    const econnrefused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:11434'), {
+      code: 'ECONNREFUSED',
+    });
+    const fetchFailed = Object.assign(new TypeError('fetch failed'), { cause: econnrefused });
+    const apiConnectionError = Object.assign(new Error('Connection error.'), {
+      cause: fetchFailed,
+    });
+    try {
+      throwMappedError(apiConnectionError, {
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434',
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(matches('stream-connection-refused')(err)).toBe(true);
+      expect((err as Error & { message: string }).message).toContain('Ollama is not running');
+    }
+  });
+
+  test('recognizes an OpenAI APIConnectionError by name as a connection failure', () => {
+    const apiConnectionError = Object.assign(new Error('Connection error.'), {
+      name: 'APIConnectionError',
+    });
+    try {
+      throwMappedError(apiConnectionError, {
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434',
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(matches('stream-connection-refused')(err)).toBe(true);
+      expect((err as Error & { message: string }).message).toContain('Ollama is not running');
+    }
+  });
+
   test('wraps HTTP status errors with original as cause', () => {
     const underlying = Object.assign(new Error('Too Many Requests'), { status: 429 });
     try {
@@ -123,6 +159,28 @@ describe('throwMappedError', () => {
         expect(err.data).toMatchObject({ status: 429, provider: 'openai' });
       }
       expect((err as Error & { cause?: unknown }).cause).toBe(underlying);
+    }
+  });
+
+  test('terminates on a self-referential cause chain instead of hanging', () => {
+    const cyclic = Object.assign(new Error('cyclic'), {}) as Error & { cause?: unknown };
+    cyclic.cause = cyclic;
+    expect(() => throwMappedError(cyclic, { provider: 'ollama' })).toThrow(cyclic);
+  });
+
+  test('terminates on a multi-node cause cycle and still detects ECONNREFUSED', () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED'), {
+      code: 'ECONNREFUSED',
+    }) as Error & { cause?: unknown };
+    const outer = Object.assign(new Error('fetch failed'), { cause: refused }) as Error & {
+      cause?: unknown;
+    };
+    refused.cause = outer;
+    try {
+      throwMappedError(outer, { provider: 'ollama', apiBase: 'http://localhost:11434' });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(matches('stream-connection-refused')(err)).toBe(true);
     }
   });
 

@@ -8,15 +8,12 @@ import {
   normalizeUserEditConflictAction,
   DESTRUCTIVE_CONFLICT_ACTIONS,
 } from './conflicts.js';
-import {
-  publishRecoveryPrompted,
-  publishUserEditConflict,
-  publishWarningFromError,
-} from '../events.js';
+import { publishUserEditConflict, publishWarningFromError } from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;
@@ -42,16 +39,7 @@ export async function checkUserEditConflicts(opts: {
     setTrackedState,
   } = opts;
   const { state } = opts;
-
-  const promptRecovery = (issue: RecoveryIssue): { state: WorkflowState; stopped: boolean } => {
-    const next = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'SET_PENDING_RECOVERY',
-      issue,
-    });
-    publishRecoveryPrompted(bus, issue);
-    setTrackedState(next);
-    return { state: next, stopped: true };
-  };
+  const scope = { projectDir, sessionId, bus };
 
   try {
     const changedFiles = await changedFilesSinceBaseline(projectDir, baseline);
@@ -98,7 +86,7 @@ export async function checkUserEditConflicts(opts: {
       phase: state.phase,
       createdAt: nowIso(),
     });
-    return promptRecovery(issue);
+    return { state: raisePendingRecovery(scope, state, issue, setTrackedState), stopped: true };
   } catch (err) {
     publishWarningFromError(
       { bus: bus, phase: state.phase },
@@ -120,5 +108,56 @@ export async function checkUserEditConflicts(opts: {
     phase: state.phase,
     createdAt: nowIso(),
   });
-  return promptRecovery(issue);
+  return { state: raisePendingRecovery(scope, state, issue, setTrackedState), stopped: true };
+}
+
+export async function detectValidationFailureUserEdit(opts: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  state: WorkflowState;
+  task: Task;
+  taskIndex: number;
+  taskChangedFiles: string[];
+  taskStartSnapshot: ChangedFilesSnapshot;
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; diverted: boolean }> {
+  const { projectDir, sessionId, bus, task, taskIndex, taskChangedFiles, setTrackedState } = opts;
+  const { state } = opts;
+
+  let failingUniverse: string[];
+  try {
+    failingUniverse = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
+  } catch (err) {
+    publishWarningFromError(
+      { bus, phase: state.phase },
+      'Failed to inspect validation-failure changed files',
+      err,
+    );
+    return { state, diverted: false };
+  }
+
+  const attributed = new Set(taskChangedFiles);
+  const foreignFiles = failingUniverse.filter((file) => !attributed.has(file));
+  if (foreignFiles.length === 0) return { state, diverted: false };
+
+  const conflict = classifyUserEditConflict({
+    files: foreignFiles,
+    currentTask: task,
+    allTasks: state.tasks,
+    currentTaskIndex: taskIndex,
+  });
+  if (conflict.kind === 'unrelated' || conflict.kind === 'future-task-stale-input') {
+    return { state, diverted: false };
+  }
+
+  publishUserEditConflict({ bus, phase: state.phase }, conflict, 'pause');
+  const issue = buildUserEditConflictRecoveryIssue({
+    conflict,
+    currentTask: task,
+    phase: state.phase,
+    createdAt: nowIso(),
+  });
+  const next = raisePendingRecovery({ projectDir, sessionId, bus }, state, issue, setTrackedState);
+  return { state: next, diverted: true };
 }

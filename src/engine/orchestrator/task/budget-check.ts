@@ -4,8 +4,7 @@ import type { WorkflowContext } from '../types.js';
 import { enforceBudget } from '../budget/check.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
-import { transitionAndSave } from '../state-ops.js';
-import { publishRecoveryPrompted } from '../events.js';
+import { raisePendingRecovery } from '../state-ops.js';
 import {
   buildBudgetExceededRecoveryIssue,
   buildBudgetPausedRecoveryIssue,
@@ -27,7 +26,7 @@ export async function checkBudgetAfterTask(opts: {
 }> {
   const { wctx, state, taskBreakdowns, totalTasks, budgetWarningEmitted, budgetPauseEmitted } =
     opts;
-  const { config, projectDir, sessionId, callbacks, bus } = wctx;
+  const { config, bus } = wctx;
 
   if (config.workflow.maxBudget === undefined) {
     return {
@@ -54,11 +53,13 @@ export async function checkBudgetAfterTask(opts: {
     ...(implementerModel !== undefined && { implementerModel }),
     taskBreakdowns,
     pricingCache: wctx.modelCache,
-    callbacks,
     bus,
     warningEmitted: budgetWarningEmitted,
     pauseEmitted: budgetPauseEmitted,
     pauseThreshold: config.workflow.budgetPauseThreshold,
+    ...(state.budgetPauseAcknowledgedAtCost !== undefined && {
+      acknowledgedAtCost: state.budgetPauseAcknowledgedAtCost,
+    }),
   });
 
   if (!budgetResult.stop || !budgetResult.recovery) {
@@ -92,11 +93,7 @@ export async function checkBudgetAfterTask(opts: {
           createdAt: nowIso(),
         });
 
-  const newState = transitionAndSave({ projectDir, sessionId }, state, {
-    type: 'SET_PENDING_RECOVERY',
-    issue,
-  });
-  publishRecoveryPrompted(wctx.bus, issue);
+  const newState = raisePendingRecovery(wctx, state, issue);
 
   return {
     state: newState,

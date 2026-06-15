@@ -67,12 +67,7 @@ export function getCostApprovalPromptRowsForPrediction(
   cols: number,
 ): number {
   const summary = formatCostGateSummary(prediction);
-  if (!summary) {
-    return (
-      2 + wrappedRows('Cost estimate unavailable. Proceeding automatically.', Math.max(1, cols - 4))
-    );
-  }
-
+  if (!summary) return 0;
   const summaryLine = `${summary.taskCount} tasks | Est. ${summary.estimatedCost} | All-planner: ${summary.allPlannerCost} | Saving: ${summary.estimatedSavings} (${summary.savingsPercentage}%)`;
   return 8 + wrappedRows(summaryLine, costTextWidth(cols));
 }

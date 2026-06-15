@@ -18,3 +18,12 @@ function abortError(signal: AbortSignal | undefined): Error {
 export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw abortError(signal);
 }
+
+export function composeAbortSignal(
+  signal: AbortSignal | undefined,
+  timeout: number | undefined,
+): AbortSignal | undefined {
+  const timeoutSignal = timeout !== undefined ? AbortSignal.timeout(timeout) : undefined;
+  if (signal && timeoutSignal) return AbortSignal.any([signal, timeoutSignal]);
+  return timeoutSignal ?? signal;
+}

@@ -1,4 +1,4 @@
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { StartReadinessRecordSchema, type StartReadinessRecord } from '../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from './types.js';
 
@@ -27,9 +27,7 @@ export function formatReadinessReport(report: ReadinessReport): string {
       `Required action: ${report.nextAction.label}${report.nextAction.command ? ` (${report.nextAction.command})` : ''}`,
     );
   } else if (report.counts.warning > 0) {
-    lines.push(
-      `Advisory: ${report.counts.warning} ${pluralize(report.counts.warning, 'warning')}; start can continue.`,
-    );
+    lines.push(`Advisory: ${countNoun(report.counts.warning, 'warning')}; start can continue.`);
   } else {
     lines.push('Ready: no blockers or warnings.');
   }
@@ -82,6 +80,10 @@ export function readinessBlockerMessage(report: ReadinessReport): string {
   );
   if (blockers.length === 0) return 'Readiness blocked.';
   return blockers.map((check) => `${check.id}: ${check.summary}`).join('\n');
+}
+
+export function readinessBlockerPointer(report: ReadinessReport): string {
+  return `Run readiness blocked: ${countNoun(report.counts.blocker, 'blocker')}. Resolve the blockers above (run \`diptych doctor\` for details).`;
 }
 
 function blockerOnlySection(section: ReadinessSection): ReadinessSection | null {

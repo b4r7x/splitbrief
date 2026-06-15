@@ -13,6 +13,8 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     testTimeout: 10_000,
+    pool: 'forks',
+    maxWorkers: 4,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

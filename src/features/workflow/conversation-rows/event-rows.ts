@@ -1,7 +1,7 @@
-import { formatCost } from '../../../core/formatting.js';
+import { formatCost, formatScoreSummary } from '../../../core/formatting.js';
 import { formatModelName } from '../../../core/model-display.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { pluralize } from '../../../utils/pluralize.js';
+import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { getGutterRole } from './event-role.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
@@ -140,7 +140,7 @@ export function eventRows(options: {
       return cardRows({
         keyPrefix,
         label: 'brief quality',
-        value: `score ${event.score.toFixed(2)} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        value: formatScoreSummary(event.score, { errorCount: 0, warningCount: event.warningCount }),
         width: ctx.width,
         labelTone: 'success',
       });
@@ -148,7 +148,10 @@ export function eventRows(options: {
       return cardRows({
         keyPrefix,
         label: 'brief quality',
-        value: `score ${event.score.toFixed(2)} · ${event.errorCount} ${pluralize(event.errorCount, 'error')} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        value: formatScoreSummary(event.score, {
+          errorCount: event.errorCount,
+          warningCount: event.warningCount,
+        }),
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'error',
@@ -157,7 +160,10 @@ export function eventRows(options: {
       return cardRows({
         keyPrefix,
         label: 'drift',
-        value: `score ${event.score.toFixed(2)} · ${event.errorCount} ${pluralize(event.errorCount, 'error')} · ${event.warningCount} ${pluralize(event.warningCount, 'warning')}`,
+        value: formatScoreSummary(event.score, {
+          errorCount: event.errorCount,
+          warningCount: event.warningCount,
+        }),
         width: ctx.width,
         labelTone: event.passed ? 'success' : 'warning',
         valueTone: event.passed ? 'textDim' : 'warning',
@@ -338,7 +344,7 @@ export function eventRows(options: {
       return cardRows({
         keyPrefix,
         label: 'attachments dropped',
-        value: `${event.count} ${pluralize(event.count, 'image')} dropped (${event.reason})`,
+        value: `${countNoun(event.count, 'image')} dropped (${event.reason})`,
         width: ctx.width,
         labelTone: 'warning',
         valueTone: 'warning',

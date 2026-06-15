@@ -7,7 +7,6 @@ export const SnapshotFileEntrySchema = z.object({
   path: z.string(),
   hash: z.string(),
   encodedName: z.string(),
-  sizeBytes: z.number().nonnegative(),
 });
 export type SnapshotFileEntry = z.infer<typeof SnapshotFileEntrySchema>;
 
@@ -36,7 +35,6 @@ export type RunSnapshotKind = z.infer<typeof RunSnapshotKindSchema>;
 export const RunSnapshotLedgerSchema = z.object({
   version: z.literal(1),
   sessionId: z.string(),
-  taskIndex: z.number().int().nonnegative().optional(),
   runSnapshotIds: z.array(z.string()),
   runSnapshotKinds: z.record(z.string(), RunSnapshotKindSchema).optional(),
   accepted: z.boolean(),

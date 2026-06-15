@@ -110,6 +110,56 @@ describe('markExited', () => {
   });
 });
 
+describe('exit/crash record vs concurrent heartbeat (CAS)', () => {
+  it('a heartbeat that read the file before the crash was recorded cannot erase exitedAt', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: sessionIdFor(testDir),
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    // Worst-case interleaving: the heartbeat tick begins its read-modify-rewrite, then the
+    // crash handler records exitedAt before the heartbeat's write lands. The CAS must detect
+    // the concurrent write, re-read, and refuse to clobber the crash record.
+    const heartbeat = updateHeartbeat(testDir);
+    const crash = markCrashed(testDir, 'uncaught', 'boom');
+    await Promise.all([heartbeat, crash]);
+
+    const after = await readLockfile(testDir);
+    expect(after!.exitedAt).toBeDefined();
+    expect(after!.signal).toBe('uncaught');
+    expect(after!.cause).toBe('boom');
+  });
+
+  it('keeps the crash record across repeated concurrent heartbeats', async () => {
+    for (let i = 0; i < 25; i++) {
+      const dir = join(testDir, `iter-${i}`);
+      mkdirSync(dir, { recursive: true });
+      await writeLockfile(dir, {
+        pid: 1234,
+        startTimeMs: 1000,
+        lastAliveMs: 1000,
+        sessionId: basename(dir),
+        mode: 'standard',
+        feature: 'test feature',
+      });
+
+      await Promise.all([
+        updateHeartbeat(dir),
+        markCrashed(dir, 'uncaught', 'boom'),
+        updateHeartbeat(dir),
+      ]);
+
+      const after = await readLockfile(dir);
+      expect(after!.exitedAt, `iteration ${i}`).toBeDefined();
+      expect(after!.signal, `iteration ${i}`).toBe('uncaught');
+    }
+  });
+});
+
 describe('markCrashed', () => {
   it('adds signal and cause', async () => {
     await writeLockfile(testDir, {
@@ -191,6 +241,13 @@ describe('readLockfile', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null (not a raw ENOENT) when the session directory does not exist', async () => {
+    const missingDir = join(testDir, 'nonexistent-session');
+    expect(existsSync(missingDir)).toBe(false);
+    await expect(readLockfile(missingDir)).resolves.toBeNull();
+    await expect(confinedReadLockfile(missingDir, 'nonexistent-session')).resolves.toBeNull();
+  });
+
   it('returns null for corrupt JSON', async () => {
     const { writeFileSync } = await import('node:fs');
     const { join: pathJoin } = await import('node:path');
@@ -253,6 +310,13 @@ describe('checkServerStatus', () => {
     expect(status).toEqual({ alive: false, crashed: false, data: null });
   });
 
+  it('returns the not-found status when the session directory does not exist', async () => {
+    const missingDir = join(testDir, 'nonexistent-session');
+    expect(existsSync(missingDir)).toBe(false);
+    const status = await checkServerStatus(missingDir);
+    expect(status).toEqual({ alive: false, crashed: false, data: null });
+  });
+
   it('returns alive:false crashed:false when lockfile has exitedAt', async () => {
     await writeLockfile(testDir, {
       pid: 99999,
@@ -269,7 +333,7 @@ describe('checkServerStatus', () => {
     expect((status as { alive: false; crashed: boolean; data: unknown }).crashed).toBe(false);
   });
 
-  it('returns alive:false crashed:true when lastAliveMs is stale', async () => {
+  it('returns alive:false crashed:true processAlive:false when the pid is dead and stale', async () => {
     // Use a non-existent PID so kill(pid, 0) throws; test staleness path regardless
     await writeLockfile(testDir, {
       pid: 99999999,
@@ -282,7 +346,34 @@ describe('checkServerStatus', () => {
 
     const status = await checkServerStatus(testDir);
     expect(status.alive).toBe(false);
-    expect((status as { alive: false; crashed: boolean; data: unknown }).crashed).toBe(true);
+    const narrowed = status as {
+      alive: false;
+      crashed: boolean;
+      processAlive?: boolean;
+      data: unknown;
+    };
+    expect(narrowed.crashed).toBe(true);
+    expect(narrowed.processAlive).toBeFalsy();
+  });
+
+  it('returns processAlive:true (not a crash) when the pid is verified live but the heartbeat is stale', async () => {
+    // The current process is provably alive; a stale heartbeat must surface as an unresponsive
+    // live process, NOT be conflated with a crash that licenses resuming a second orchestrator.
+    const now = Date.now();
+    await writeLockfile(testDir, {
+      pid: process.pid,
+      startTimeMs: now,
+      lastAliveMs: now - HEARTBEAT_STALENESS_MS - 1000,
+      sessionId: sessionIdFor(testDir),
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    const status = await checkServerStatus(testDir);
+    expect(status.alive).toBe(false);
+    expect(
+      status as { alive: false; crashed: boolean; processAlive?: boolean; data: unknown },
+    ).toMatchObject({ processAlive: true });
   });
 
   it('(integration) returns alive:true for current process PID with fresh lockfile', async () => {

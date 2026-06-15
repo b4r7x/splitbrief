@@ -91,7 +91,11 @@ Diptych does not write this automatically. Run the addition once before your fir
 
 ## Command behavior
 
-`diptych start --worktree <name> "<feature>"` creates `.trees/<name>` on branch `diptych/<name>` and continues the workflow inside that worktree. Older docs described a v1 flow that only printed a follow-up `cd .trees/<name>; diptych start ...` command; current diptych does the directory selection for the run. `diptych start --detach --worktree <name> "<feature>"` applies the same ordering before spawning the detached server, so the server's project root is the worktree.
+`diptych start --worktree <name> "<feature>"` creates `.trees/<name>` on branch `diptych/<name>` and continues the workflow inside that worktree. Older docs described an earlier flow that only printed a follow-up `cd .trees/<name>; diptych start ...` command; current diptych does the directory selection for the run. `diptych start --detach --worktree <name> "<feature>"` applies the same ordering before spawning the detached server, so the server's project root is the worktree.
+
+On creation, diptych copies the base checkout's `.diptych/config.yaml` and `.diptych/hooks/` into the new worktree so the run uses your configured runners and hooks rather than factory defaults. Everything else under `.diptych/` stays isolated: sessions, the `.diptych/active` pointer, snapshots, and the accept/reject ledger are created fresh per worktree and are never shared back to the base tree.
+
+When the repo declares submodules (a `.gitmodules` file at the root), diptych runs `git submodule update --init --recursive` in the new worktree after `git worktree add`, because `git worktree add` alone leaves submodule directories empty. Submodules are populated so builds and tests inside the worktree see the same dependencies as the base checkout.
 
 `diptych worktree list` prints `NAME`, `PATH`, `BRANCH`, `STATUS`, `SESSION`, `PHASE`, and `UPDATED`. Missing session data renders as `unknown`. `diptych worktree switch <name>` prints shell instructions because a child process cannot change your parent shell's current directory. `diptych worktree remove <name>` refuses live sessions and uncommitted changes unless `--force` is passed; forced removal warns with the live session id and uncommitted file count when known.
 

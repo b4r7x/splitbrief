@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../../core/paths.js';
@@ -6,8 +6,16 @@ import { captureCurrentFileContents, getChangedFilesSinceSnapshot } from './file
 import { createStagedProject, promoteStagedChanges } from './staged-project.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+const touchedEnvKeys: string[] = [];
+
+afterEach(() => {
+  for (const key of touchedEnvKeys) delete process.env[key];
+  touchedEnvKeys.length = 0;
+});
 
 describe('createStagedProject', () => {
   it('copies project files and leaves runtime directories out of the staged project', async () => {
@@ -160,6 +168,38 @@ describe('createStagedProject — sensitive file exclusion', () => {
         expect(existsSync(join(staged.projectDir, '.env'))).toBe(false);
         expect(existsSync(join(staged.projectDir, '.env.local'))).toBe(false);
         expect(existsSync(join(staged.projectDir, '.env.production'))).toBe(false);
+      } finally {
+        staged.cleanup();
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("preserves the configured runner's auth key in the sandbox env while stripping other secrets", async () => {
+    const dir = createTempDir('staged-runner-auth-test');
+    try {
+      createTestGitRepo(dir);
+      touchedEnvKeys.push('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN');
+      process.env.OPENAI_API_KEY = 'sk-openai';
+      process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+      process.env.GITHUB_TOKEN = 'gh-secret';
+
+      const config = makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'openai',
+          apiBase: 'https://api.openai.com/v1',
+          model: 'gpt-4',
+        },
+        planner: { kind: 'cli', tool: 'codex', model: 'auto' },
+      });
+
+      const staged = await createStagedProject(dir, config);
+      try {
+        expect(staged.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
+        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(staged.sandboxEnv.GITHUB_TOKEN).toBeUndefined();
       } finally {
         staged.cleanup();
       }

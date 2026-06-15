@@ -6,6 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 
 describe('settings overlay integration', () => {
   let dir: string;
@@ -66,6 +67,34 @@ describe('settings overlay integration', () => {
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.workflow.maxRetries).toBe(5);
     });
+    ui.unmount();
+  });
+
+  it('keeps edit mode open and surfaces an error when committing invalid input', async () => {
+    overlayStore.open('settings', 'workflow.maxRetries');
+    const ui = renderFeature(<SettingsOverlay />);
+    await tick(20);
+
+    ui.stdin.write('\r'); // enter edit mode (seeded "3")
+    await tick(40);
+    ui.stdin.write('\x7f'); // backspace — clear seeded value
+    await tick(40);
+    ui.stdin.write('9');
+    ui.stdin.write('9'); // "99" is above max (10)
+    await tick(40);
+
+    ui.stdin.write('\r'); // attempt commit of out-of-range value
+    await tick(40);
+
+    // Edit mode stays open: the buffer is still shown with its cursor marker.
+    expect(ui.lastFrame() ?? '').toContain('[99|]');
+    // The invalid value was NOT persisted.
+    expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+    // A feedback error was surfaced.
+    const feedback = feedbackStore.get();
+    expect(feedback.isError).toBe(true);
+    expect(feedback.message).toContain('Max Retries');
+
     ui.unmount();
   });
 

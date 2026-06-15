@@ -45,7 +45,7 @@ A typical run, step by step:
 6. User reviews the briefs
 7. For each task: implementer writes code, diptych validates (typecheck → lint → test)
 8. If validation fails: retry up to 3 times, then escalate to bigger models
-9. If escalation fails: enter recovery — user picks next action (retry, skip, split, abort)
+9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
 10. Planner reviews the final result against the spec
 11. Session summary written to disk, workflow done
 
@@ -127,13 +127,13 @@ The orchestrator never branches on backend type. It calls `planner.plan()` and `
 
 After the implementer writes code for a task, diptych runs validation: typecheck → lint → test. The pipeline stops on the first failure.
 
-If validation fails, the implementer retries with the error message (up to 3 attempts by default). If retries are exhausted, escalation kicks in:
+If validation fails, the implementer retries with the error message (up to 3 attempts by default). If those local retries are exhausted, escalation kicks in:
 
-- **Tier 0** — Local code-fix attempt, no API call
-- **Tier 1** — Hint escalation: send error context to an intermediate model
-- **Tier 2** — Full escalation: send everything to the most capable model available
+- **Tier 0** — Intermediate model: a paid mid-tier API model (configured via `escalation.intermediateProvider`) retries the task. Runs only when an intermediate provider is set
+- **Tier 1** — Hint escalation: the planner reads the error and writes a short hint, then the implementer retries once with that hint
+- **Tier 2** — Full escalation: the planner takes over and writes the code itself
 
-If all tiers fail, the recovery system takes over: the user sees the failure and picks an action — retry with a different model, ask the planner to split the task into smaller pieces, skip the task, pause, or abort.
+If all tiers fail, the recovery system takes over: the user sees the failure and picks an action — retry the same worker, route to a bigger worker, skip the task, pause, or abort.
 
 ---
 

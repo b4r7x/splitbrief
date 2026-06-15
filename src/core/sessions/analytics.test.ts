@@ -22,7 +22,6 @@ const completeDefaults = {
   feature: 'test',
   startedAt: 1000,
   completedAt: 2000,
-  stateFile: null,
   stateVersion: 1,
 };
 const interruptedDefaults = {
@@ -30,7 +29,6 @@ const interruptedDefaults = {
   feature: 'test',
   startedAt: 1000,
   completedAt: null,
-  stateFile: null,
   stateVersion: 1,
 };
 

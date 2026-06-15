@@ -36,17 +36,21 @@ describe('conversationScrollStore', () => {
   });
 
   it('toggle diffs and reset flow', () => {
-    conversationScrollStore.toggleDiff(3);
-    expect(conversationScrollStore.get().expandedDiffs.has(3)).toBe(true);
+    conversationScrollStore.toggleDiff('implementer_generate_done:3');
+    expect(conversationScrollStore.get().expandedDiffs.has('implementer_generate_done:3')).toBe(
+      true,
+    );
 
-    conversationScrollStore.toggleDiff(3);
-    expect(conversationScrollStore.get().expandedDiffs.has(3)).toBe(false);
+    conversationScrollStore.toggleDiff('implementer_generate_done:3');
+    expect(conversationScrollStore.get().expandedDiffs.has('implementer_generate_done:3')).toBe(
+      false,
+    );
 
-    conversationScrollStore.toggleDiff(1);
-    conversationScrollStore.toggleDiff(5);
+    conversationScrollStore.toggleDiff('implementer_generate_done:1');
+    conversationScrollStore.toggleDiff('implementer_generate_done:5');
     const { expandedDiffs } = conversationScrollStore.get();
-    expect(expandedDiffs.has(1)).toBe(true);
-    expect(expandedDiffs.has(5)).toBe(true);
+    expect(expandedDiffs.has('implementer_generate_done:1')).toBe(true);
+    expect(expandedDiffs.has('implementer_generate_done:5')).toBe(true);
 
     conversationScrollStore.scrollUp({ renderableCount: 5, totalHeight: 10, maxOffset: 10 });
     conversationScrollStore.reset();

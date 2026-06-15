@@ -9,13 +9,18 @@ import type { InvokeResult } from '../runners/types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
-import { toTokenDelta } from '../streaming/token-utils.js';
+import { toTokenDelta } from '../streaming/token-usage.js';
 import { throwMappedError } from '../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../constants.js';
+import { TRUNCATION_WARNING } from './constants.js';
 import { attachImagesToLastUserMessage } from './image-attach.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { usesOpenAiMaxCompletionTokens } from './capability-inference.js';
+import {
+  usesOpenAiMaxCompletionTokens,
+  isOpenAiReasoningModel,
+  clampOpenAiEffort,
+} from './capability-inference.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -28,7 +33,7 @@ interface StreamCompletionOptions {
 }
 
 interface StreamChunk {
-  choices: Array<{ delta?: { content?: string | null } }>;
+  choices: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
   usage?: {
     prompt_tokens?: number | null;
     completion_tokens?: number | null;
@@ -59,7 +64,7 @@ type OpenAIRequestMessage = {
 type StreamRequestBody = {
   model: string;
   messages: OpenAIRequestMessage[];
-  temperature: number;
+  temperature?: number | undefined;
   stream: true;
   stream_options: { include_usage: true };
   max_tokens?: number | undefined;
@@ -129,7 +134,7 @@ function toOpenAIRequest(body: StreamRequestBody): ChatCompletionCreateParamsStr
   return {
     model: body.model,
     messages: body.messages.map(toOpenAIMessage),
-    temperature: body.temperature,
+    ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
     stream: true,
     stream_options: body.stream_options,
     ...(body.max_completion_tokens !== undefined
@@ -153,10 +158,40 @@ function tokenLimitFields(
   return { max_tokens: maxTokens };
 }
 
+// Direct-OpenAI reasoning models reject `temperature` (400). Other
+// OpenAI-compatible endpoints accept it, so the omission is endpoint-gated.
+function directOpenAiReasoningModel(
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+): boolean {
+  return directOpenAIEndpoint(endpoint) && isOpenAiReasoningModel(model);
+}
+
+function temperatureField(
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+  temperature: number,
+): Pick<StreamRequestBody, 'temperature'> {
+  if (directOpenAiReasoningModel(endpoint, model)) return {};
+  return { temperature };
+}
+
+function effortField(
+  endpoint: StreamCompletionOptions['endpoint'],
+  model: string,
+  effort: EffortLevel | undefined,
+): Pick<StreamRequestBody, 'reasoning_effort'> {
+  if (effort === undefined) return {};
+  if (directOpenAiReasoningModel(endpoint, model))
+    return { reasoning_effort: clampOpenAiEffort(effort) };
+  return { reasoning_effort: effort };
+}
+
 function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
   return {
     choices: chunk.choices.map((choice) => ({
       delta: choice.delta.content === undefined ? {} : { content: choice.delta.content },
+      ...(choice.finish_reason != null && { finish_reason: choice.finish_reason }),
     })),
     usage: chunk.usage
       ? {
@@ -208,11 +243,11 @@ export async function streamCompletion(
       {
         model,
         messages: toProviderMessages(finalMessages, endpoint, model),
-        temperature,
+        ...temperatureField(endpoint, model, temperature),
         stream: true,
         stream_options: { include_usage: true },
         ...tokenLimitFields(endpoint, model, maxTokens),
-        ...(effort !== undefined ? { reasoning_effort: effort } : {}),
+        ...effortField(endpoint, model, effort),
       },
       // Forwarded to fetch so an abort cancels the initial POST, not just the chunk loop.
       signal ? { signal } : undefined,
@@ -235,6 +270,9 @@ export async function streamCompletion(
       if (content) {
         fullResponse += content;
         onProgress(content);
+      }
+      if (chunk.choices?.[0]?.finish_reason === 'length') {
+        onProgress(TRUNCATION_WARNING);
       }
       if (chunk.usage) {
         usage = toTokenDelta(chunk.usage) ?? usage;

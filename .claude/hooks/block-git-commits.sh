@@ -35,6 +35,12 @@ while [ $i -lt $N ]; do
     # value argument when it takes one).
     while [ $i -lt $N ]; do
       gt="${TOKENS[$i]}"
+      # Strip quoting that the shell would remove before exec'ing git, so that
+      # `git "commit"`, `git 'commit'`, and `git c\ommit` cannot slip past the
+      # subcommand match below.
+      gt="${gt//\'/}"
+      gt="${gt//\"/}"
+      gt="${gt//\\/}"
       case "$gt" in
         -C)
           i=$((i + 2)) ;;                         # -C <path>

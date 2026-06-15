@@ -3,8 +3,14 @@ import { mkdirSync, writeFileSync, statSync, readFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { listSessions, listAllSessions, saveSummary } from './io.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { saveState, loadState } from '../state/persistence.js';
+import { isResumable } from '../phases.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { taskId } from '../schemas/task.js';
 
 let tmp: string;
 
@@ -86,7 +92,7 @@ describe('listSessions', () => {
     expect(sessions[29]?.startedAt).toBe(5000);
   });
 
-  it('skips subdirectories missing summary.json', () => {
+  it('skips subdirectories with neither summary.json nor a recoverable state.json', () => {
     tmp = createTempDir('sessions-io-test');
     const emptySubdir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-empty');
     mkdirSync(emptySubdir, { recursive: true });
@@ -257,5 +263,90 @@ describe('saveSummary', () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.id).toBe('2024-01-01-rt-1');
     expect(sessions[0]?.feature).toBe('roundtrip');
+  });
+
+  it('round-trips a summary with multiple taskBreakdown rows', () => {
+    tmp = createTempDir('sessions-io-test');
+    const id = '2024-01-01-breakdown';
+    const firstRow = {
+      taskId: taskId('T001'),
+      taskTitle: 'first task',
+      method: 'local' as const,
+      implementerTokens: 500_000,
+      escalationTokens: 0,
+      retryCount: 0,
+      tool: 'deepseek',
+      model: 'deepseek-chat',
+    };
+    const secondRow = {
+      taskId: taskId('T002'),
+      taskTitle: 'second task',
+      method: 'local' as const,
+      implementerTokens: 300_000,
+      escalationTokens: 0,
+      retryCount: 0,
+      tool: 'deepseek',
+      model: 'deepseek-chat',
+    };
+
+    const session = makeSession({
+      id,
+      status: 'complete',
+      summary: makeSummary({ taskBreakdown: [firstRow, secondRow] }),
+    });
+    saveSummary({ projectDir: tmp, sessionId: id }, session);
+
+    const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, id, 'summary.json'), 'utf-8');
+    const persisted = JSON.parse(raw) as Session;
+    const breakdown = persisted.summary?.taskBreakdown ?? [];
+    expect(breakdown.map((row) => row.taskId)).toEqual([taskId('T001'), taskId('T002')]);
+    expect(breakdown.find((row) => row.taskId === taskId('T001'))).toMatchObject({
+      implementerTokens: 500_000,
+      tool: 'deepseek',
+    });
+  });
+});
+
+describe('crashed-run recovery from state.json', () => {
+  it('lists a summary-less session that has a state.json as interrupted and resumable', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-crashed';
+    const state = makeImplState([makeTask()], { feature: 'crashed-feature' });
+    saveState({ projectDir: tmp, sessionId }, state);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId, 'summary.json'))).toBe(false);
+
+    const sessions = listSessions(tmp);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.id).toBe(sessionId);
+    expect(sessions[0]?.feature).toBe('crashed-feature');
+    expect(sessions[0]?.status).toBe('interrupted');
+    expect(sessions[0]?.summary).toBeNull();
+
+    const recovered = loadState({ projectDir: tmp, sessionId });
+    expect(recovered).not.toBeNull();
+    expect(recovered && isResumable(recovered)).toBe(true);
+  });
+
+  it('prefers summary.json over state.json when both exist', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-both';
+    saveState({ projectDir: tmp, sessionId }, makeImplState([makeTask()]));
+    saveSummary(
+      { projectDir: tmp, sessionId },
+      makeSession({ id: sessionId, status: 'complete', feature: 'finished' }),
+    );
+
+    const sessions = listSessions(tmp);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.status).toBe('complete');
+    expect(sessions[0]?.feature).toBe('finished');
+  });
+
+  it('still skips a summary-less directory that has no state.json', () => {
+    tmp = createTempDir('sessions-io-test');
+    const emptyDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-empty');
+    mkdirSync(emptyDir, { recursive: true });
+
+    expect(listSessions(tmp)).toEqual([]);
   });
 });

@@ -1,17 +1,20 @@
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { confinedReadLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
-import { sessionsRoot, sessionDir } from '../../core/paths.js';
+import { sessionsRoot, sessionDir, STATE_FILE, SUMMARY_FILE } from '../../core/paths.js';
 import { cliError } from '../errors.js';
 
 export type AliasedSession = {
   alias: number;
   sessionId: string;
-  lockfile: LockfileData;
+  sortKeyMs: number;
+  lockfile: LockfileData | null;
 };
 
 export type AliasableSession = {
   sessionId: string;
-  lockfile: LockfileData;
+  sortKeyMs: number;
+  lockfile: LockfileData | null;
 };
 
 export function listSessionDirs(projectDir: string): string[] {
@@ -22,24 +25,39 @@ export function listSessionDirs(projectDir: string): string[] {
     .map((e) => e.name);
 }
 
+function mtimeMs(filePath: string): number {
+  try {
+    return statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+export function sessionSortKeyMs(sessDir: string, lockfile: LockfileData | null): number {
+  if (lockfile) return lockfile.startTimeMs;
+  return Math.max(mtimeMs(join(sessDir, STATE_FILE)), mtimeMs(join(sessDir, SUMMARY_FILE)));
+}
+
 export function assignSessionAliases(sessions: AliasableSession[]): AliasedSession[] {
   return [...sessions]
-    .sort((a, b) => b.lockfile.startTimeMs - a.lockfile.startTimeMs)
+    .sort((a, b) => b.sortKeyMs - a.sortKeyMs)
     .map((s, i) => ({
       alias: i + 1,
       sessionId: s.sessionId,
+      sortKeyMs: s.sortKeyMs,
       lockfile: s.lockfile,
     }));
 }
 
 export async function buildAliasedSessions(projectDir: string): Promise<AliasedSession[]> {
-  const sessions: { sessionId: string; lockfile: LockfileData }[] = [];
+  const sessions: AliasableSession[] = [];
 
   for (const name of listSessionDirs(projectDir)) {
     const sessDir = sessionDir(projectDir, name);
-    const data = await confinedReadLockfile(sessDir, name);
-    if (!data) continue;
-    sessions.push({ sessionId: name, lockfile: data });
+    const lockfile = await confinedReadLockfile(sessDir, name);
+    const sortKeyMs = sessionSortKeyMs(sessDir, lockfile);
+    if (!lockfile && sortKeyMs === 0) continue;
+    sessions.push({ sessionId: name, sortKeyMs, lockfile });
   }
 
   return assignSessionAliases(sessions);

@@ -40,8 +40,33 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
     ...pricingFieldsFromResolved(inputRaw, outputRaw, isFree),
   };
 
+  if (model.cost?.cache_read !== undefined) {
+    result.pricingCacheRead = model.cost.cache_read;
+  }
+
+  if (model.cost?.cache_write !== undefined) {
+    result.pricingCacheWrite = model.cost.cache_write;
+  }
+
   if (model.limit?.context !== undefined) {
     result.contextLength = model.limit.context;
+  }
+
+  if (model.limit?.output !== undefined) {
+    result.maxOutputTokens = model.limit.output;
+  }
+
+  if (model.temperature !== undefined) {
+    result.supportsTemperature = model.temperature;
+  }
+
+  if (model.reasoning !== undefined) {
+    result.supportsReasoning = model.reasoning;
+  }
+
+  const imageInput = model.modalities?.input?.includes('image');
+  if (imageInput !== undefined) {
+    result.supportsImages = imageInput;
   }
 
   const releaseDate = pickFreshestDate(model.release_date, model.last_updated);
@@ -56,16 +81,28 @@ function mergeDetectedModel(
 ): DetectedModel {
   if (!current) return incoming;
   const contextLength = incoming.contextLength ?? current.contextLength;
+  const maxOutputTokens = incoming.maxOutputTokens ?? current.maxOutputTokens;
   const pricingInput = incoming.pricingInput ?? current.pricingInput;
   const pricingOutput = incoming.pricingOutput ?? current.pricingOutput;
+  const pricingCacheRead = incoming.pricingCacheRead ?? current.pricingCacheRead;
+  const pricingCacheWrite = incoming.pricingCacheWrite ?? current.pricingCacheWrite;
   const isFree = incoming.isFree ?? current.isFree;
+  const supportsTemperature = incoming.supportsTemperature ?? current.supportsTemperature;
+  const supportsReasoning = incoming.supportsReasoning ?? current.supportsReasoning;
+  const supportsImages = incoming.supportsImages ?? current.supportsImages;
   const releaseDate = incoming.releaseDate ?? current.releaseDate;
   const capabilities = incoming.capabilities ?? current.capabilities;
   return {
     ...current,
     ...incoming,
     ...(contextLength !== undefined ? { contextLength } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...pricingFieldsFromResolved(pricingInput, pricingOutput, isFree),
+    ...(pricingCacheRead !== undefined ? { pricingCacheRead } : {}),
+    ...(pricingCacheWrite !== undefined ? { pricingCacheWrite } : {}),
+    ...(supportsTemperature !== undefined ? { supportsTemperature } : {}),
+    ...(supportsReasoning !== undefined ? { supportsReasoning } : {}),
+    ...(supportsImages !== undefined ? { supportsImages } : {}),
     ...(releaseDate !== undefined ? { releaseDate } : {}),
     ...(capabilities !== undefined ? { capabilities } : {}),
   };

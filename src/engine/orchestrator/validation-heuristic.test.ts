@@ -18,6 +18,7 @@ describe('detectValidationHeuristic', () => {
     const result = detectValidationHeuristic(tmpDir);
     expect(result?.language).toBe('rust');
     expect(result?.typecheckCommand).toBe('cargo check');
+    expect(result?.lintCommand).toBe('cargo clippy --no-deps');
     expect(result?.testCommand).toBe('cargo test');
   });
 

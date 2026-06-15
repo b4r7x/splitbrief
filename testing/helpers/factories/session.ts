@@ -14,7 +14,6 @@ export function makeSession(overrides?: SessionOverrides): Session {
     startedAt: 1_700_000_000,
     completedAt: null,
     stateVersion: 1,
-    stateFile: null,
     ...overrides,
   };
   if (status === 'complete') {

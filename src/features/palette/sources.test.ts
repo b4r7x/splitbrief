@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { saveState } from '../../core/state/persistence.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -16,6 +23,7 @@ function buildCommandSources(
     phase: 'idle',
     tasks: [],
     sessions: [],
+    projectDir: '/tmp/diptych-test',
     onRuntimeCommand,
     onWorkflowMode: noop,
   }).commandItems;
@@ -93,5 +101,59 @@ describe('buildPaletteSources command items', () => {
     items[0]?.action();
 
     expect(calls).toEqual(['/settings']);
+  });
+});
+
+describe('buildPaletteSources session items', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = createTempDir('palette-session-test');
+    overlayStore.reset();
+    routerStore.reset();
+    feedbackStore.reset();
+  });
+
+  afterEach(() => {
+    if (tmp) cleanupTempDir(tmp);
+    overlayStore.reset();
+    routerStore.reset();
+    feedbackStore.reset();
+  });
+
+  it('resumes an interrupted session with its saved state instead of starting fresh', () => {
+    const session = makeSession({
+      id: 'sess-resume',
+      feature: 'add auth',
+      status: 'interrupted',
+      summary: null,
+    });
+    const savedState = {
+      ...createInitialState('saved add auth'),
+      phase: 'implementing' as const,
+    };
+    saveState({ projectDir: tmp, sessionId: session.id }, savedState);
+
+    const { sessionItems } = buildPaletteSources({
+      commands: [],
+      screen: 'home',
+      config: makeConfig(),
+      phase: 'idle',
+      tasks: [],
+      sessions: [session],
+      projectDir: tmp,
+      onRuntimeCommand: noop,
+      onWorkflowMode: noop,
+    });
+
+    sessionItems[0]?.action();
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.feature).toBe('saved add auth');
+      expect(route.resumeState).toEqual(savedState);
+      expect(route.sessionId).toBe(session.id);
+    }
   });
 });

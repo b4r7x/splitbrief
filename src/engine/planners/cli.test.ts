@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, chmodSync, symlinkSync } from 'node:fs';
+import { writeFileSync, chmodSync, symlinkSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCliPlanner } from './cli.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -30,6 +30,21 @@ function installShim(command: string, bodyLines: string[]): void {
     .join('\n');
   writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
+}
+
+function installRecordingShim(command: string, bodyLines: string[]): { argvFile: string } {
+  const argvFile = join(shimDir, 'argv.txt');
+  const shimPath = join(shimDir, command);
+  const body = bodyLines
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
+  writeFileSync(shimPath, `#!/bin/bash\nprintf '%s\\n' "$@" > '${argvFile}'\n${body}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return { argvFile };
+}
+
+function readArgv(argvFile: string): string[] {
+  return readFileSync(argvFile, 'utf8').split('\n').slice(0, -1);
 }
 
 beforeEach(() => {
@@ -220,5 +235,41 @@ Outside task content.
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
+  });
+
+  it('appends cfg.args to the tool argv when planner.args is set', async () => {
+    const { argvFile } = installRecordingShim('codex', [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'response' },
+      }),
+    ]);
+
+    const planner = createCliPlanner(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'codex', args: ['--reasoning', 'high'] },
+      }),
+    );
+
+    await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    const argv = readArgv(argvFile);
+    expect(argv.slice(-2)).toEqual(['--reasoning', 'high']);
+  });
+
+  it('uses cfg.outputFormat to select the parser over the tool default', async () => {
+    // Codex defaults to JSONL; opencode-format lines would be opaque to it.
+    // Forcing outputFormat: 'text' makes the planner read raw lines verbatim.
+    installShim('codex', ['plain text line']);
+
+    const planner = createCliPlanner(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'codex', outputFormat: 'text' },
+      }),
+    );
+
+    const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    expect(result.text).toContain('plain text line');
   });
 });

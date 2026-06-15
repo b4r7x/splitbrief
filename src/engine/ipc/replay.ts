@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { EngineEvent } from '../events/types.js';
 import { parseEngineEvent } from '../events/schema.js';
+import { parseJsonlLine } from '../../lib/fs.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 export type ReplayOptions = {
@@ -69,14 +70,9 @@ export async function* streamReplayEvents(opts: ReplayOptions): AsyncGenerator<E
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
   for await (const line of rl) {
-    if (!line.trim()) continue;
-    let raw: unknown;
-    try {
-      raw = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const event = entryToEvent(raw);
+    const result = parseJsonlLine(line);
+    if (result.kind !== 'value') continue;
+    const event = entryToEvent(result.value);
     if (!event) continue;
     yield event;
   }

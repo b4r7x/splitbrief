@@ -70,7 +70,7 @@ Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/I
 - **No decorative comments.** No section banners. Ordering documents, not banners.
 - **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions listed in [CLAUDE.md](./CLAUDE.md).
 - **Engine has zero React imports.** `src/engine/` must not import `ink`, `react`, or anything under `src/features/`, `src/components/`, `src/hooks/`.
-- **Use options objects for wide APIs.** Exported or cross-boundary functions switch to a named options object at 4+ parameters; any 6+ parameter function needs one unless it is a tiny local math/helper primitive.
+- **Use options objects for wide APIs.** Any function with 4+ parameters, or any exported/cross-boundary function with 3+ parameters, switches to a named options object; a bare `boolean` param or two adjacent same-typed params are banned regardless of count. Tiny local non-exported math/helper primitives are exempt. Canonical: [docs/CODE-STANDARD.md §4](./docs/CODE-STANDARD.md#4-parameter-design).
 
 Full rule index: [docs/PRINCIPLES.md](./docs/PRINCIPLES.md).
 
@@ -105,7 +105,7 @@ Built-in hook source lives under `src/engine/hooks/builtins/`. Adding a new buil
 
 ## Release process
 
-Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). `npm run prepublishOnly` triggers `npm run build`. Maintainers handle the tag + publish.
+Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepack` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. Maintainers handle the tag + publish.
 
 ## Getting help
 

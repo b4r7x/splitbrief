@@ -7,6 +7,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
+import { hashTaskBrief } from '../brief-hash.js';
 import { createResolver } from './resolver.js';
 
 const SESSION_STUB = {
@@ -15,7 +16,6 @@ const SESSION_STUB = {
   startedAt: 1700000000000,
   completedAt: null,
   stateVersion: 1,
-  stateFile: null,
   status: 'interrupted' as const,
   summary: null,
 };
@@ -317,7 +317,7 @@ describe('readResource - /manifest.json', () => {
     expect(result).toBeNull();
   });
 
-  it('computes briefHash from state tasks when brief-hash.json is absent', async () => {
+  it('computes briefHash from live state tasks', async () => {
     const projectDir = createTempDir('resolver-test');
     dirs.push(projectDir);
     const id = 'sess-c';
@@ -328,27 +328,7 @@ describe('readResource - /manifest.json', () => {
     const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
     const manifest = JSON.parse(result!.text!);
 
-    expect('briefHash' in manifest).toBe(true);
-    expect(typeof manifest.briefHash).toBe('string');
-    expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it('includes briefHash when brief-hash.json is present', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
-    const id = 'sess-d';
-    ensureSessionDir(projectDir, id);
-    writeCanonicalArtifacts(projectDir, id);
-    writeFileSync(
-      join(sessionPath(projectDir, id), 'brief-hash.json'),
-      JSON.stringify({ hash: 'abc123' }),
-    );
-
-    const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
-    const manifest = JSON.parse(result!.text!);
-
-    expect(manifest.briefHash).toBe('abc123');
+    expect(manifest.briefHash).toBe(hashTaskBrief([taskOne, taskTwo]));
   });
 });
 

@@ -7,6 +7,7 @@ import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SessionSchema } from '../../core/schemas/session.js';
+import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
 import { renderHandoffWithCustom } from './render.js';
 import { buildManifest, writeManifest } from './manifest.js';
 import { loadState } from '../../core/state/persistence.js';
@@ -22,6 +23,8 @@ import {
 } from '../../lib/path-confinement.js';
 import { getCurrentCommitSha } from '../../lib/git.js';
 import { error, matches } from '../../utils/error.js';
+import { resolveValidationDisplayCommand } from '../orchestrator/validation.js';
+import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 
 const isPathEscape = matches('path-confined-escape');
 
@@ -62,6 +65,15 @@ export const handoffWriteError = {
       { outDir },
     ),
   isUnsafeOverwriteTarget: matches('handoff-unsafe-overwrite-target'),
+  appendBriefHashMismatch: (outDir: string, existingHash: string, currentHash: string) =>
+    error(
+      'handoff-append-brief-hash-mismatch',
+      `refusing to append to "${outDir}": existing pack describes a different Task Brief ` +
+        `(manifest briefHash ${existingHash} ≠ current ${currentHash}). ` +
+        'Use --mode overwrite to replace the pack.',
+      { outDir, existingHash, currentHash },
+    ),
+  isAppendBriefHashMismatch: matches('handoff-append-brief-hash-mismatch'),
 } as const;
 
 function isInsideDiptychDir(outDir: string, projectDir: string): boolean {
@@ -86,6 +98,39 @@ function assertSafeOverwriteTarget(outDir: string, projectDir: string): void {
   throw handoffWriteError.unsafeOverwriteTarget(outDir);
 }
 
+function readExistingManifestBriefHash(outDir: string): string | undefined {
+  const manifestPath = join(outDir, 'manifest.json');
+  if (!existsSync(manifestPath)) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const result = HandoffManifestSchema.safeParse(parsed);
+    return result.success ? result.data.briefHash : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveHandoffValidation(
+  config: Config,
+  discovered: DiscoveredValidation | undefined,
+  projectDir: string,
+): { typecheck?: string; lint?: string; test?: string } {
+  const result: { typecheck?: string; lint?: string; test?: string } = {};
+  if (config.validation.typecheck) {
+    const cmd = resolveValidationDisplayCommand('typecheckCommand', config, discovered, projectDir);
+    if (cmd) result.typecheck = cmd;
+  }
+  if (config.validation.lint) {
+    const cmd = resolveValidationDisplayCommand('lintCommand', config, discovered, projectDir);
+    if (cmd) result.lint = cmd;
+  }
+  if (config.validation.test) {
+    const cmd = resolveValidationDisplayCommand('testCommand', config, discovered, projectDir);
+    if (cmd) result.test = cmd;
+  }
+  return result;
+}
+
 export async function writeHandoffPack(options: WriteHandoffOptions): Promise<WriteHandoffResult> {
   const { projectDir, sessionId, target, outDir, selectedTaskIds, mode } = options;
 
@@ -104,14 +149,8 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
     // config absent or invalid — use empty validation and untrusted renderers
   }
 
-  const validation: { typecheck?: string; lint?: string; test?: string } = loadedConfig
-    ? {
-        ...(loadedConfig.validation.typecheck ? { typecheck: 'npm run typecheck' } : {}),
-        ...(loadedConfig.validation.lint ? { lint: 'npm run lint' } : {}),
-        ...(loadedConfig.validation.test
-          ? { test: loadedConfig.validation.testCommand ?? 'npm test' }
-          : {}),
-      }
+  const validation = loadedConfig
+    ? resolveHandoffValidation(loadedConfig, state.discoveredValidation, projectDir)
     : {};
   const configMode: WorkflowMode | undefined = loadedConfig?.workflow.mode;
 
@@ -179,6 +218,13 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   if (mode === 'default' && existsSync(outDir)) {
     throw handoffWriteError.outputDirectoryExists(outDir);
+  }
+
+  if (mode === 'append' && existsSync(outDir)) {
+    const existingHash = readExistingManifestBriefHash(outDir);
+    if (existingHash !== undefined && existingHash !== briefHash) {
+      throw handoffWriteError.appendBriefHashMismatch(outDir, existingHash, briefHash);
+    }
   }
 
   if (mode === 'overwrite' && existsSync(outDir)) {

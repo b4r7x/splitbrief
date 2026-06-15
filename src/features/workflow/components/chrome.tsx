@@ -71,6 +71,7 @@ export function WorkflowHeader({ startedAt }: { startedAt: string }) {
 
 export function WorkflowFooter({
   handleInput,
+  onEmptySubmit,
   onRuntimeCommand,
   commands,
   mode,
@@ -78,6 +79,7 @@ export function WorkflowFooter({
   disabled,
 }: {
   handleInput: (text: string) => void;
+  onEmptySubmit?: (() => void) | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
   mode: InputMode;
@@ -89,6 +91,7 @@ export function WorkflowFooter({
       <FeedbackRow />
       <Composer
         onSubmit={handleInput}
+        onEmptySubmit={onEmptySubmit}
         onRuntimeCommand={onRuntimeCommand}
         commands={commands}
         mode={mode}

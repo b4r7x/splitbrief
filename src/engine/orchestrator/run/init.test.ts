@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
   makeCallbacks,
@@ -13,6 +13,8 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
+import { formatValidationError } from '../validation.js';
+import { loadState } from '../../../core/state/persistence.js';
 import type { SummaryBase } from '../summary.js';
 import { initializeWorkflow } from './init.js';
 
@@ -97,6 +99,273 @@ describe('initializeWorkflow', () => {
         reason: 'blocked by discovered hook',
         warnings: [],
       });
+    });
+  });
+
+  it('persists the selected skill ids in the initial workflow state on a fresh run', async () => {
+    await withTempDir('diptych-init-skills', async (projectDir) => {
+      const feature = 'feature needing skills';
+      const sessionId = 'session-init-skills';
+      const config = makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+      let trackedState: WorkflowState | undefined;
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+          selectedSkills: [
+            {
+              id: 'typescript',
+              name: 'TypeScript',
+              description: 'ts skill',
+              path: '/skills/typescript/SKILL.md',
+              scope: 'global',
+            },
+            {
+              id: 'react',
+              name: 'React',
+              description: 'react skill',
+              path: '/skills/react/SKILL.md',
+              scope: 'global',
+            },
+          ],
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: (state) => {
+          trackedState = state;
+        },
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(trackedState?.selectedSkills).toEqual(['typescript', 'react']);
+      expect(loadState({ projectDir, sessionId })?.selectedSkills).toEqual(['typescript', 'react']);
+    });
+  });
+
+  it('surfaces the api provider cause when an api planner is unavailable', async () => {
+    await withTempDir('diptych-init-api-unavailable', async (projectDir) => {
+      const feature = 'needs a reachable provider';
+      const sessionId = 'session-init-api-unavailable';
+      const config = makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'openrouter',
+          model: 'some-model',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'k',
+        },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const events: EngineEvent[] = [];
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'openrouter',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'openrouter',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner({
+            isAvailable: vi.fn().mockResolvedValue(false),
+            unavailabilityReason: () => 'HTTP 401',
+          }),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+          _eventSink: (e) => events.push(e),
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(false);
+      const errorEvent = events.find(
+        (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
+      );
+      expect(errorEvent?.message).toContain("Planner 'openrouter' is not available");
+      expect(errorEvent?.message).toContain('HTTP 401');
+      expect(errorEvent?.message).not.toContain("Make sure it's installed");
+    });
+  });
+
+  it('keeps install wording when a cli planner is unavailable', async () => {
+    await withTempDir('diptych-init-cli-unavailable', async (projectDir) => {
+      const feature = 'needs an installed cli';
+      const sessionId = 'session-init-cli-unavailable';
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const events: EngineEvent[] = [];
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'claude-code',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) }),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+          _eventSink: (e) => events.push(e),
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(false);
+      const errorEvent = events.find(
+        (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
+      );
+      expect(errorEvent?.message).toBe(
+        "Planner 'claude-code' is not available. Make sure it's installed.",
+      );
+    });
+  });
+
+  it('builds a validator that captures the run-start baseline so pre-existing failures are relabeled', async () => {
+    await withTempDir('diptych-init-baseline', async (projectDir) => {
+      const feature = 'red-at-start project';
+      const sessionId = 'session-init-baseline';
+      const config = makeConfig({
+        validation: {
+          typecheck: true,
+          lint: false,
+          test: false,
+          typecheckCommand: 'node -e "process.exit(1)"',
+        },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(true);
+      if (!init.ok) return;
+
+      await init.wctx.validator.primeBaseline({
+        task: makeTask({ file: 'src/app.ts', action: 'modify' }),
+        projectDir,
+        config,
+      });
+      const results = await init.wctx.validator.runValidation({
+        task: makeTask({ file: 'src/app.ts', action: 'modify' }),
+        projectDir,
+        config,
+        bus: init.wctx.bus,
+        phase: 'implementing',
+      });
+
+      const baseline = init.wctx.validator.getBaselineFailingStages?.();
+      expect(baseline?.has('typecheck')).toBe(true);
+
+      const error = formatValidationError(results, baseline);
+      expect(error).toContain('pre-existing failure');
+      expect(error).toContain('not caused by this task');
+      expect(error).not.toContain('Your previous code had an error');
     });
   });
 });

@@ -3,7 +3,7 @@ import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js'
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
-import { createCommandAvailability } from '../availability.js';
+import { createCommandExistsAvailability } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 
 export function resolveCapabilities(
@@ -73,6 +73,6 @@ export function createCommandBasedPlanner(
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
     ...(overrides?.readPhaseOutput && { readPhaseOutput: overrides.readPhaseOutput }),
-    ...createCommandAvailability(config.command),
+    ...createCommandExistsAvailability(config.command),
   });
 }

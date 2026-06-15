@@ -3,6 +3,7 @@ import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js
 import { ApprovalsStoreSchema } from '../schemas/approval-store.js';
 import { approvalsFile } from '../paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
+import { lockSibling, withFileLock } from '../../lib/file-lock.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
@@ -16,7 +17,16 @@ export const approvalsStoreError = {
       { reason },
       cause,
     ),
+  lockTimeout: (lockPath: string) =>
+    error('approval-store-lock-timeout', `timed out waiting for approval store lock: ${lockPath}`, {
+      lockPath,
+    }),
 } as const;
+
+function withApprovalsLock<T>(projectDir: string, fn: () => T): T {
+  const lockPath = lockSibling(approvalsFile(projectDir));
+  return withFileLock(lockPath, () => approvalsStoreError.lockTimeout(lockPath), fn);
+}
 
 export function readApprovalsStore(projectDir: string): ApprovalsStore {
   const filePath = approvalsFile(projectDir);
@@ -34,6 +44,19 @@ export function readApprovalsStore(projectDir: string): ApprovalsStore {
 
 export function writeApprovalsStore(projectDir: string, store: ApprovalsStore): void {
   writeSecureFile(approvalsFile(projectDir), JSON.stringify(store, null, 2));
+}
+
+export function mutateApprovalsStore(
+  projectDir: string,
+  transform: (store: ApprovalsStore) => ApprovalsStore | null,
+): ApprovalsStore {
+  return withApprovalsLock(projectDir, () => {
+    const current = readApprovalsStore(projectDir);
+    const next = transform(current);
+    if (next === null) return current;
+    writeApprovalsStore(projectDir, next);
+    return next;
+  });
 }
 
 export function clearGrantsByScope(

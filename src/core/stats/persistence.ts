@@ -1,6 +1,10 @@
 import { getDiptychPath } from '../paths.js';
 import { StatsSchema, emptyStats, type Stats } from '../schemas/stats.js';
-import { writeSecureFile, readValidatedJson } from '../../lib/fs.js';
+import { writeSecureFile, readValidatedJsonResult } from '../../lib/fs.js';
+import { lockSibling, withFileLock } from '../../lib/file-lock.js';
+import { warnError } from '../../lib/warn.js';
+import { error } from '../../utils/error.js';
+import { nowIso } from '../../utils/format-time.js';
 import type { CostBreakdown } from '../schemas/summary.js';
 import { accumulateProviderCosts } from './provider-costs.js';
 
@@ -10,16 +14,33 @@ function statsPath(projectDir: string): string {
   return getDiptychPath(projectDir, STATS_FILE);
 }
 
+const statsError = {
+  lockTimeout: (lockPath: string) =>
+    error('stats-lock-timeout', `timed out waiting for stats store lock: ${lockPath}`, {
+      lockPath,
+    }),
+} as const;
+
+function withStatsLock<T>(projectDir: string, fn: () => T): T {
+  const lockPath = lockSibling(statsPath(projectDir));
+  return withFileLock(lockPath, () => statsError.lockTimeout(lockPath), fn);
+}
+
+function parseStats(value: unknown): Stats | null {
+  const r = StatsSchema.safeParse(value);
+  return r.success ? r.data : null;
+}
+
 export function readStats(projectDir: string): Stats {
-  return readValidatedJson(
-    statsPath(projectDir),
-    (v) => {
-      const r = StatsSchema.safeParse(v);
-      return r.success ? r.data : null;
-    },
-    emptyStats(),
-    'stats: unreadable file',
-  );
+  const result = readValidatedJsonResult(statsPath(projectDir), parseStats);
+  if (result.kind === 'value') return result.value;
+  if (result.kind === 'unreadable') {
+    warnError(
+      `stats: unreadable ${STATS_FILE}; run 'diptych stats --rebuild' to heal it`,
+      result.cause,
+    );
+  }
+  return emptyStats();
 }
 
 function writeStats(projectDir: string, stats: Stats): void {
@@ -38,7 +59,7 @@ export interface StatsUpdateInput {
 function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
   const next: Stats = {
     version: 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso(),
     totalSessions: stats.totalSessions + 1,
     totalCost: stats.totalCost + input.costBreakdown.totalActualCost,
     totalSavings:
@@ -46,9 +67,7 @@ function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
       (input.costBreakdown.hasSavingsEstimate === false ? 0 : input.costBreakdown.savingsAmount),
     totalHypotheticalCost:
       stats.totalHypotheticalCost +
-      (input.costBreakdown.hasSavingsEstimate === false
-        ? 0
-        : input.costBreakdown.hypotheticalCost + input.costBreakdown.actualPlannerCost),
+      (input.costBreakdown.hasSavingsEstimate === false ? 0 : input.costBreakdown.hypotheticalCost),
     averageSavingsPercentage: 0,
     totalTasks: stats.totalTasks + input.totalTasks,
     totalLocalTasks: stats.totalLocalTasks + input.completedByLocal,
@@ -68,14 +87,26 @@ function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
 }
 
 export function updateStats(projectDir: string, input: StatsUpdateInput): void {
-  const current = readStats(projectDir);
-  writeStats(projectDir, accumulateSession(current, input));
+  withStatsLock(projectDir, () => {
+    const existing = readValidatedJsonResult(statsPath(projectDir), parseStats);
+    if (existing.kind === 'unreadable') {
+      warnError(
+        `stats: skipping update; existing ${STATS_FILE} is unreadable and lifetime totals would be lost. Run 'diptych stats --rebuild' to heal it`,
+        existing.cause,
+      );
+      return;
+    }
+    const current = existing.kind === 'value' ? existing.value : emptyStats();
+    writeStats(projectDir, accumulateSession(current, input));
+  });
 }
 
 export function rebuildStats(projectDir: string, sessions: StatsUpdateInput[]): void {
-  let stats = emptyStats();
-  for (const input of sessions) {
-    stats = accumulateSession(stats, input);
-  }
-  writeStats(projectDir, stats);
+  withStatsLock(projectDir, () => {
+    let stats = emptyStats();
+    for (const input of sessions) {
+      stats = accumulateSession(stats, input);
+    }
+    writeStats(projectDir, stats);
+  });
 }

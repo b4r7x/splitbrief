@@ -5,8 +5,16 @@ import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, REVIEW_FILE, TASKS_FILE } from '../../core/paths.js';
-import { getCurrentDiff, getCurrentChangedFiles } from '../../lib/git.js';
+import { SPEC_FILE, REVIEW_FILE, TASKS_FILE, isInternalGitStatusPath } from '../../core/paths.js';
+import {
+  getCurrentDiff,
+  getCurrentChangedFiles,
+  getCommittedFilesSince,
+  getDiffSince,
+  getRunStartHead,
+} from '../../lib/git.js';
+import { userVisibleChangedFiles } from './changed-files-baseline.js';
+import { uniqueInOrder } from '../../utils/collections.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
@@ -29,8 +37,32 @@ import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
 import { drainQueue, formatDrainedMessages } from './queue.js';
 import { withContinuationLoop } from './continuation.js';
+import { RUN_COMMIT_MESSAGE_PREFIX } from './task/commit.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };
+
+type RunBaselineUniverse = { diff: string; changedFiles: string[] };
+
+// Per-task commits move the run's changes out of the working tree, so a raw
+// `git status`/`git diff` universe is empty and omits them. Diffing against the
+// run-start HEAD (newest commit not authored by this run) plus untracked-file
+// contents recovers the run-attributed universe; with no run commits the
+// run-start HEAD is the current HEAD and this collapses to the working-tree diff.
+async function resolveRunBaselineUniverse(projectDir: string): Promise<RunBaselineUniverse> {
+  const runStartHead = await getRunStartHead(projectDir, RUN_COMMIT_MESSAGE_PREFIX);
+  const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
+  if (runStartHead === null) {
+    return {
+      diff: await getCurrentDiff(projectDir, isInternalGitStatusPath),
+      changedFiles: status,
+    };
+  }
+  const committed = userVisibleChangedFiles(await getCommittedFilesSince(projectDir, runStartHead));
+  return {
+    diff: await getDiffSince(projectDir, runStartHead, isInternalGitStatusPath),
+    changedFiles: uniqueInOrder([...committed, ...status]),
+  };
+}
 
 export async function runFinalReviewPhase(
   opts: {
@@ -105,7 +137,8 @@ export async function runFinalReviewPhase(
 
   let reviewStatus: 'written' | 'failed' = 'written';
   try {
-    let diff = await getCurrentDiff(projectDir);
+    const universe = await resolveRunBaselineUniverse(projectDir);
+    let diff = universe.diff;
     if (diff.length > MAX_DIFF_CHARS) {
       const omitted = diff.length - MAX_DIFF_CHARS;
       diff =
@@ -118,14 +151,16 @@ export async function runFinalReviewPhase(
 
     let driftPromptSection: string | undefined;
     try {
-      const changedFiles = await getCurrentChangedFiles(projectDir);
       const ledger = readEvidenceLedger(projectDir, sessionId);
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
-        changedFiles,
+        changedFiles: universe.changedFiles,
         diff,
         ledger,
         briefHash: hashTaskBrief(state.tasks),
+        preRunChangedFiles: state.changedFilesBaseline
+          ? Object.keys(state.changedFilesBaseline.fingerprints)
+          : null,
       });
       writeDriftReport(projectDir, sessionId, driftReport);
       publishDriftReport(bus, state.phase, driftReport);

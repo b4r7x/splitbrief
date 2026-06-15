@@ -1,3 +1,4 @@
+import { capitalize } from '../utils/capitalize.js';
 import { getProviderDisplayName } from './providers/catalog.js';
 
 export function formatToolModel(tool?: string, model?: string): string {
@@ -79,7 +80,7 @@ function formatTag(tag: string): string {
     .split('-')
     .map((part) => {
       if (SIZE_RE.test(part)) return part.toUpperCase();
-      return part.charAt(0).toUpperCase() + part.slice(1);
+      return capitalize(part);
     })
     .filter(Boolean)
     .join(' ');
@@ -146,7 +147,7 @@ function parseModelName(rawId: string): string {
       continue;
     }
 
-    parts.push(raw.charAt(0).toUpperCase() + raw.slice(1));
+    parts.push(capitalize(raw));
   }
 
   if (parts[0] === 'Claude' && parts.length >= 3) {

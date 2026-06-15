@@ -29,6 +29,27 @@ describe('extractCode', () => {
     expect(result.code).toContain('writeFile');
   });
 
+  it('concatenates multiple marker-bearing blocks instead of keeping only the longest', () => {
+    const first =
+      '<<<<<<< SEARCH\nconst a = 1;\n=======\nconst a = 2;\n>>>>>>> REPLACE\nconst padding = "longer block";';
+    const second = '<<<<<<< SEARCH\nconst b = 1;\n=======\nconst b = 2;\n>>>>>>> REPLACE';
+    const response = `First patch:\n\n\`\`\`ts\n${first}\n\`\`\`\n\nSecond patch:\n\n\`\`\`ts\n${second}\n\`\`\``;
+    const result = extractCode(response);
+    if (!('code' in result)) throw new Error('expected code result');
+    expect(result.code).toContain('const a = 2;');
+    expect(result.code).toContain('const b = 2;');
+  });
+
+  it('keeps nested fenced content when the outer fence is longer than the inner fence', () => {
+    const response =
+      '````markdown\n# Example\n\n```ts\nexport const value = 1;\n```\n\nTrailing prose after the inner fence.\n````';
+    const result = extractCode(response);
+    if (!('code' in result)) throw new Error('expected code result');
+    expect(result.code).toContain('export const value = 1;');
+    expect(result.code).toContain('```ts');
+    expect(result.code).toContain('Trailing prose after the inner fence.');
+  });
+
   it('extracts raw code starting with import as high confidence', () => {
     const response =
       'import { join } from "node:path";\n\nexport const base = join("/tmp", "test");';

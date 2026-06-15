@@ -258,11 +258,17 @@ describe('runSpeckitPlanning', () => {
     expect(phasesInOrder).toContain('analyzing');
   });
 
+  it('publishes a running planner_status at the specifying phase so its OTel span opens', async () => {
+    const { events } = await runSpeckit();
+    const specifyingRunning = events.find(
+      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'specifying',
+    );
+    expect(specifyingRunning).toBeDefined();
+  });
+
   it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValueOnce({ approved: true })
-      .mockResolvedValueOnce({ approved: true })
       .mockResolvedValue({ approved: false });
     const { result, projectDir, sessionId, events } = await runSpeckit({
       plannerOverrides: { plan: vi.fn().mockResolvedValue(invalidPlanResult()) },
@@ -275,8 +281,6 @@ describe('runSpeckitPlanning', () => {
     let tasksPath = '';
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValueOnce({ approved: true })
-      .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async (_type, filePath) => {
         tasksPath = filePath;
         writeFileSync(filePath, formatTasks(invalidPlanResult().tasks), 'utf8');

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
 import {
+  installTerminalOutputErrorGuard,
   isBrokenOutputError,
   restoreTerminalControl,
   setTerminalInputModes,
@@ -54,8 +55,8 @@ describe('terminal control', () => {
       return true;
     }) as typeof process.stdout.write;
 
-    setTerminalInputModes(true);
-    setTerminalInputModes(false);
+    setTerminalInputModes('enable');
+    setTerminalInputModes('disable');
 
     expect(written).toEqual([
       terminalSequences.enableMouseTracking,
@@ -111,5 +112,48 @@ describe('terminal control', () => {
     writeTerminalSequence(terminalSequences.showCursor);
 
     expect(() => process.stdout.emit('error', err)).not.toThrow();
+  });
+
+  it('warns instead of crashing when the async write callback reports a non-pipe error', () => {
+    const fatal: NodeJS.ErrnoException = new Error('write ENOSPC');
+    fatal.code = 'ENOSPC';
+    const warnings: string[] = [];
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      warnings.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    process.stdout.write = ((
+      _chunk: string,
+      encodingOrCallback?: BufferEncoding | WriteCallback,
+      callback?: WriteCallback,
+    ) => {
+      callbackFromWriteArgs(encodingOrCallback, callback)?.(fatal);
+      return false;
+    }) as typeof process.stdout.write;
+
+    try {
+      expect(() => writeTerminalSequence(terminalSequences.showCursor)).not.toThrow();
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+
+    expect(warnings.join('')).toContain('write ENOSPC');
+  });
+
+  it('swallows broken-pipe error events on both stdout and stderr', () => {
+    installTerminalOutputErrorGuard();
+    const epipe = createEpipeError();
+
+    expect(() => process.stdout.emit('error', epipe)).not.toThrow();
+    expect(() => process.stderr.emit('error', epipe)).not.toThrow();
+  });
+
+  it('re-raises non-broken-pipe stderr error events', () => {
+    installTerminalOutputErrorGuard();
+    const fatal: NodeJS.ErrnoException = new Error('write ENOSPC');
+    fatal.code = 'ENOSPC';
+
+    expect(() => process.stderr.emit('error', fatal)).toThrow('write ENOSPC');
   });
 });

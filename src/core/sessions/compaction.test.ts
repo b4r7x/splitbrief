@@ -83,6 +83,33 @@ describe('compactTranscript', () => {
     });
   });
 
+  it('records summarizedCount so a kept message on the boundary timestamp survives a re-read', async () => {
+    appendEntry({ ts: 1000, kind: 'message', role: 'user', text: 'msg 0' });
+    appendEntry({ ts: 1001, kind: 'message', role: 'assistant', text: 'msg 1' });
+    appendEntry({ ts: 1001, kind: 'message', role: 'user', text: 'msg 2 same ts' });
+    appendEntry({ ts: 1002, kind: 'message', role: 'assistant', text: 'msg 3' });
+    const planner: TranscriptCompactionPlanner = {
+      summarize: async () => '## Summary\nOlder work',
+    };
+
+    const result = await compactTranscript({
+      sessionDir,
+      planner,
+      keepRecentCount: 2,
+      format: 'freeform',
+    });
+
+    expect(result).toEqual({ summary: '## Summary\nOlder work', entriesRemoved: 2 });
+    expect(readLogEntries().at(-1)).toMatchObject({ kind: 'summary', summarizedCount: 2 });
+
+    const messages = await readCompactedMessages(sessionDir);
+    expect(messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '## Summary\nOlder work' },
+      { role: 'user', text: 'msg 2 same ts' },
+      { role: 'assistant', text: 'msg 3' },
+    ]);
+  });
+
   it('handles an empty session without appending a summary', async () => {
     appendFileSync(logFile(), '');
     let summarizeCalls = 0;
@@ -371,6 +398,28 @@ describe('readCompactedMessages', () => {
     expect(messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: 'user', text: JSON.stringify(structured) },
       { role: 'user', text: 'recent' },
+    ]);
+  });
+
+  it('keeps a recent message whose timestamp equals the last summarized one via summarizedCount', async () => {
+    appendEntry({ ts: 1000, kind: 'message', role: 'user', text: 'old request' });
+    appendEntry({ ts: 1001, kind: 'message', role: 'assistant', text: 'old answer' });
+    appendEntry({ ts: 1001, kind: 'message', role: 'user', text: 'kept on boundary' });
+    appendEntry({ ts: 1002, kind: 'message', role: 'assistant', text: 'kept later' });
+    appendEntry({
+      ts: 2000,
+      kind: 'summary',
+      text: 'summary',
+      summarizedUpTo: 1001,
+      summarizedCount: 2,
+    });
+
+    const messages = await readCompactedMessages(sessionDir);
+
+    expect(messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'summary' },
+      { role: 'user', text: 'kept on boundary' },
+      { role: 'assistant', text: 'kept later' },
     ]);
   });
 });

@@ -12,6 +12,7 @@ import { loadState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { applyRecoveryAction } from './actions.js';
+import { buildBudgetPausedRecoveryIssue } from './builders/workflow.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -128,6 +129,40 @@ describe('applyRecoveryAction: reason policy', () => {
   });
 });
 
+describe('applyRecoveryAction: abort-workflow', () => {
+  it('keeps the pre-cancel task record so the aborted summary is not gutted to zero tasks', () => {
+    const { projectDir, sessionId } = setupSession('abort');
+    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
+    const issue: RecoveryIssue = {
+      ...routeBiggerIssue(tasks[1] as Task),
+      reason: 'context-overflow',
+      availableActions: ['route-bigger-worker', 'pause-run', 'abort-workflow'],
+    };
+    const state: WorkflowState = {
+      ...implementingState(tasks),
+      currentTaskIndex: 1,
+      pendingRecovery: issue,
+    };
+    const { bus } = makeBus();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'abort-workflow',
+      bus,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe('aborted');
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+  });
+});
+
 describe('applyRecoveryAction: route-bigger-worker', () => {
   it('retries the current task with the bigger profile when it exists', () => {
     const { projectDir, sessionId } = setupSession('route-bigger-success');
@@ -240,5 +275,36 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
       status: 'blocked',
       code: 'profile-not-found',
     });
+  });
+});
+
+describe('applyRecoveryAction: continue on budget-paused', () => {
+  it('records the acknowledged cost so later tasks do not re-pause', () => {
+    const { projectDir, sessionId } = setupSession('budget-continue-ack');
+    const task = makeTask({ id: 'T300', status: 'in_progress' });
+    const issue = buildBudgetPausedRecoveryIssue({
+      currentCost: 1.2,
+      maxBudget: 2,
+      phase: 'implementing',
+      threshold: 0.5,
+      nextTask: task,
+      createdAt,
+    });
+    const state: WorkflowState = { ...implementingState([task]), pendingRecovery: issue };
+    const { bus } = makeBus();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'continue',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.budgetPauseAcknowledgedAtCost).toBe(1.2);
+    expect(loadState({ projectDir, sessionId })?.budgetPauseAcknowledgedAtCost).toBe(1.2);
   });
 });

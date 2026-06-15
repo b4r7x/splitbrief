@@ -23,6 +23,8 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     usageCategory,
     retryFailureFallback,
     profileOverride,
+    resultTool,
+    resultModel,
     invokeRetry,
     onValidationAfterRetryFail,
   } = opts;
@@ -44,7 +46,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     saveState(ctx, state);
   }
 
-  const staged = await createStagedProject(ctx.projectDir);
+  const staged = await createStagedProject(ctx.projectDir, retryRuntime.config);
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
     retryResult = await invokeRetry({
@@ -175,11 +177,16 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
           validationResults: commitResult.validationResults,
         }),
         ...(actualChangedFiles.length > 0 && { changedFiles: actualChangedFiles }),
+        ...(resultTool !== undefined && { tool: resultTool }),
+        ...(resultModel !== undefined && { model: resultModel }),
       },
     };
   }
 
-  const validationError = formatValidationError(commitResult.validationResults);
+  const validationError = formatValidationError(
+    commitResult.validationResults,
+    ctx.validator.getBaselineFailingStages?.(),
+  );
   onValidationAfterRetryFail?.(validationError);
   return { state: commitResult.state, task, lastError: validationError, attempts };
 }

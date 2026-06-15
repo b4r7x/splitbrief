@@ -67,6 +67,4 @@ export type CodeContext =
 export interface ProjectContext {
   name: string;
   dir: string;
-  runtime: 'node';
-  testCommand: string;
 }

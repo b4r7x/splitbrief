@@ -22,7 +22,7 @@ declare module '@anthropic-ai/claude-agent-sdk' {
       cwd: string;
       resume?: string | undefined;
       env?: Record<string, string | undefined>;
-      thinking?: { type: 'enabled'; budgetTokens: number } | undefined;
+      effort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined;
       abortController?: AbortController | undefined;
     };
   }

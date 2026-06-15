@@ -4,7 +4,6 @@ import { taskId } from '../../core/schemas/task.js';
 import { FileActionSchema } from '../../core/schemas/enums.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
-import { extractFirstFencedBlock } from '../parsers/code-patterns.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { TASK_BRIEF_HEADINGS } from './headings.js';
 import { error, matches } from '../../utils/error.js';
@@ -31,26 +30,42 @@ export const parseTasksError = {
   invalidTaskBlock: (detail: string) =>
     error('parse-tasks-invalid-block', `Invalid task block: ${detail}`, { detail }),
   isInvalidTaskBlock: matches('parse-tasks-invalid-block'),
+  unterminatedTaskBlock: () =>
+    error('parse-tasks-unterminated-block', 'unterminated task block after separator'),
+  isUnterminatedTaskBlock: matches('parse-tasks-unterminated-block'),
 } as const;
 
 export type ParseTasksOptions = {
   strict?: boolean;
+  onWarning?: (message: string) => void;
 };
 
 export function parseTasks(tasksMarkdown: string, options?: ParseTasksOptions): Task[] {
-  const tasks = parseTaskBlocksFromMarkdown(tasksMarkdown, options?.strict ?? false);
+  const tasks = parseTaskBlocksFromMarkdown(tasksMarkdown, {
+    strict: options?.strict ?? false,
+    ...(options?.onWarning !== undefined && { onWarning: options.onWarning }),
+  });
   return topoSort(tasks);
 }
 
-export function parseTasksStrict(tasksMarkdown: string): Task[] {
-  return parseTasks(tasksMarkdown, { strict: true });
+export function parseTasksStrict(
+  tasksMarkdown: string,
+  onWarning?: (message: string) => void,
+): Task[] {
+  return parseTasks(tasksMarkdown, {
+    strict: true,
+    ...(onWarning !== undefined && { onWarning }),
+  });
 }
 
 export function parseTaskBlocksStrict(tasksMarkdown: string): Task[] {
-  return parseTaskBlocksFromMarkdown(tasksMarkdown, true);
+  return parseTaskBlocksFromMarkdown(tasksMarkdown, { strict: true });
 }
 
-function parseTaskBlocksFromMarkdown(tasksMarkdown: string, strict: boolean): Task[] {
+function parseTaskBlocksFromMarkdown(
+  tasksMarkdown: string,
+  opts: { strict: boolean; onWarning?: (message: string) => void },
+): Task[] {
   const stripped = normalizeTaskSeparators(stripFileFrontmatter(tasksMarkdown));
   const blocks = splitTaskBlocks(stripped);
   const tasks: Task[] = [];
@@ -59,9 +74,12 @@ function parseTaskBlocksFromMarkdown(tasksMarkdown: string, strict: boolean): Ta
     const task = parseTaskBlock(block);
     if (task) {
       tasks.push(task);
+      if (opts.strict && opts.onWarning) warnUnknownSections(block, task.id, opts.onWarning);
       continue;
     }
-    if (strict && looksLikeTaskBlock(block)) {
+    if (!opts.strict) continue;
+    if (opensUnterminatedFrontmatter(block)) throw parseTasksError.unterminatedTaskBlock();
+    if (looksLikeTaskBlock(block)) {
       const reason = taskBlockParseFailure(block);
       throw parseTasksError.invalidTaskBlock(reason);
     }
@@ -70,10 +88,49 @@ function parseTaskBlocksFromMarkdown(tasksMarkdown: string, strict: boolean): Ta
   return tasks;
 }
 
+function warnUnknownSections(
+  block: string,
+  id: TaskId,
+  onWarning: (message: string) => void,
+): void {
+  const unknown = unknownSectionHeaders(block);
+  if (unknown.length === 0) return;
+  onWarning(
+    `Task ${id} has section(s) not in the Task Brief grammar and will be dropped: ${unknown.join(', ')}`,
+  );
+}
+
+function fenceMarkerLength(trimmed: string): number | null {
+  const match = trimmed.match(/^(`{3,})/);
+  return match?.[1] ? match[1].length : null;
+}
+
 function looksLikeTaskBlock(block: string): boolean {
   const trimmed = block.trim();
   if (!trimmed.startsWith('---')) return false;
   return /\bid:\s*\S/.test(trimmed);
+}
+
+function opensUnterminatedFrontmatter(block: string): boolean {
+  if (!block.trim().startsWith('---')) return false;
+  const lines = block.split('\n');
+  let fenceLength = 0;
+  let separators = 0;
+  let contentAfterOpen = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const marker = fenceMarkerLength(trimmed);
+    if (marker !== null) {
+      if (fenceLength === 0) fenceLength = marker;
+      else if (marker >= fenceLength) fenceLength = 0;
+    }
+    if (fenceLength === 0 && trimmed === '---') {
+      separators += 1;
+      continue;
+    }
+    if (separators === 1 && trimmed !== '') contentAfterOpen = true;
+  }
+  return separators < 2 && contentAfterOpen;
 }
 
 function taskBlockParseFailure(block: string): string {
@@ -87,7 +144,25 @@ function taskBlockParseFailure(block: string): string {
 }
 
 function normalizeTaskSeparators(content: string): string {
-  return content.replace(/([^\r\n])---(\r?\n(?=id:\s*))/g, '$1\n---$2');
+  const lines = content.split('\n');
+  let fenceLength = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const marker = fenceMarkerLength(line.trim());
+    if (marker !== null) {
+      if (fenceLength === 0) fenceLength = marker;
+      else if (marker >= fenceLength) fenceLength = 0;
+      continue;
+    }
+
+    if (fenceLength > 0) continue;
+    if (!/^id:/.test(lines[i + 1] ?? '')) continue;
+
+    lines[i] = line.replace(/([^\r])---(\r?)$/, '$1\n---$2');
+  }
+
+  return lines.join('\n');
 }
 
 export function stripFileFrontmatter(content: string): string {
@@ -101,15 +176,27 @@ export function splitTaskBlocks(markdown: string): string[] {
   const lines = markdown.split('\n');
   let current: string[] = [];
   let state: 'idle' | 'in-frontmatter' | 'in-body' = 'idle';
-  let inFence = false;
+  let fenceLength = 0;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
     const trimmed = line.trim();
-    if (trimmed.startsWith('```')) {
-      inFence = !inFence;
+
+    const recoversFromUnclosedFence =
+      fenceLength > 0 &&
+      state === 'in-body' &&
+      trimmed === '---' &&
+      nextNonBlankLineIsTaskId(lines, i + 1) &&
+      !fenceClosesBefore(lines, i + 1, fenceLength);
+    if (recoversFromUnclosedFence) fenceLength = 0;
+
+    const marker = fenceMarkerLength(trimmed);
+    if (marker !== null) {
+      if (fenceLength === 0) fenceLength = marker;
+      else if (marker >= fenceLength) fenceLength = 0;
     }
 
-    const isSeparator = !inFence && trimmed === '---';
+    const isSeparator = (fenceLength === 0 && trimmed === '---') || recoversFromUnclosedFence;
 
     if (state === 'idle' && isSeparator) {
       current = [line];
@@ -126,11 +213,28 @@ export function splitTaskBlocks(markdown: string): string[] {
     }
   }
 
-  if (state === 'in-body' && current.length > 0) {
+  if (state !== 'idle' && current.length > 0) {
     blocks.push(current.join('\n'));
   }
 
   return blocks;
+}
+
+function nextNonBlankLineIsTaskId(lines: string[], from: number): boolean {
+  for (let i = from; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    if (trimmed === '') continue;
+    return /^id:\s*\S/.test(trimmed);
+  }
+  return false;
+}
+
+function fenceClosesBefore(lines: string[], from: number, openLength: number): boolean {
+  for (let i = from; i < lines.length; i++) {
+    const marker = fenceMarkerLength((lines[i] ?? '').trim());
+    if (marker !== null && marker >= openLength) return true;
+  }
+  return false;
 }
 
 function parseTaskBlock(block: string): Task | null {
@@ -212,15 +316,52 @@ function readSection(sectionMap: Record<string, string>, ...headers: readonly st
   return '';
 }
 
+const KNOWN_SECTION_KEYS: readonly string[] = Object.values(TASK_BRIEF_HEADINGS).flatMap(
+  (h) => h.keys,
+);
+
+function isKnownSectionKey(header: string): boolean {
+  return KNOWN_SECTION_KEYS.some((key) => header === key || header.startsWith(`${key} (`));
+}
+
+function unknownSectionHeaders(block: string): string[] {
+  const { body } = extractFrontmatter(block);
+  const unknown: string[] = [];
+  let fenceLength = 0;
+
+  for (const line of body.split('\n')) {
+    const marker = fenceMarkerLength(line.trim());
+    if (marker !== null) {
+      if (fenceLength === 0) fenceLength = marker;
+      else if (marker >= fenceLength) fenceLength = 0;
+    }
+
+    const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
+    if (headerMatch?.[1]) {
+      const header = headerMatch[1].trim();
+      if (!isKnownSectionKey(header.toLowerCase())) unknown.push(header);
+    }
+  }
+
+  return unknown;
+}
+
 function extractSections(block: string): Sections {
   const { body } = extractFrontmatter(block);
 
   const sectionMap: Record<string, string> = {};
   let currentHeader = '';
+  let fenceLength = 0;
   const lines = body.split('\n');
 
   for (const line of lines) {
-    const headerMatch = line.match(/^###\s+(.+)/);
+    const marker = fenceMarkerLength(line.trim());
+    if (marker !== null) {
+      if (fenceLength === 0) fenceLength = marker;
+      else if (marker >= fenceLength) fenceLength = 0;
+    }
+
+    const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
     if (headerMatch?.[1]) {
       currentHeader = headerMatch[1].trim().toLowerCase();
     } else if (currentHeader) {
@@ -228,7 +369,7 @@ function extractSections(block: string): Sections {
     }
   }
 
-  const scopeText = sectionMap['scope'] ?? '';
+  const scopeText = readSection(sectionMap, ...TASK_BRIEF_HEADINGS.scope.keys);
   const { inBounds, outOfBounds, approvedOutOfBounds } = extractScopeBuckets(scopeText);
 
   return {
@@ -294,9 +435,34 @@ function extractScopeBuckets(text: string): {
 }
 
 function extractCodeBlock(text: string): string {
-  const block = extractFirstFencedBlock(text);
-  if (block !== null) return block;
-  return text.trim();
+  const lines = text.split('\n');
+
+  let openIndex = -1;
+  let openLength = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const marker = fenceMarkerLength((lines[i] ?? '').trim());
+    if (marker !== null) {
+      openIndex = i;
+      openLength = marker;
+      break;
+    }
+  }
+  if (openIndex === -1) return text.trim();
+
+  let closeIndex = -1;
+  for (let i = lines.length - 1; i > openIndex; i--) {
+    const marker = fenceMarkerLength((lines[i] ?? '').trim());
+    if (marker !== null && marker >= openLength) {
+      closeIndex = i;
+      break;
+    }
+  }
+  if (closeIndex === -1) return text.trim();
+
+  return lines
+    .slice(openIndex + 1, closeIndex)
+    .join('\n')
+    .trim();
 }
 
 function extractListItems(text: string): string[] {

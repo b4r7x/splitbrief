@@ -47,6 +47,7 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
   return {
     callbacks: {
       onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+      onCostApprovalNeeded: vi.fn().mockResolvedValue(true),
       onComplete: vi.fn(),
       ...overrides,
     },
@@ -77,7 +78,7 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '', usage: null }),
-    summarize: vi.fn().mockResolvedValue(''),
+    summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
     capabilities: {
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,

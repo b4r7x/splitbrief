@@ -3,14 +3,16 @@ import type { InvokeResult } from '../../runners/types.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
+import { anthropicModelSupportsTemperature } from '../capability-inference.js';
 import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
-import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
+import { stripV1Suffix, ANTHROPIC_API_VERSION, TRUNCATION_WARNING } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { parsePartialUsage } from '../metadata.js';
 import { throwIfAborted } from '../../../utils/abort.js';
+import type { StreamMessage } from '../dispatch-stream.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -23,6 +25,15 @@ type AnthropicEventType =
   | 'error';
 
 const DEFAULT_MAX_TOKENS = 4096;
+// Headroom above the thinking budget so the visible answer is never truncated.
+// max_tokens must exceed budget_tokens, or the request 400s.
+const EFFORT_OUTPUT_HEADROOM = 4096;
+
+function resolveMaxTokens(requested: number | undefined, effort: EffortLevel | undefined): number {
+  const base = requested ?? DEFAULT_MAX_TOKENS;
+  if (effort === undefined) return base;
+  return Math.max(base, effortToAnthropicBudget(effort) + EFFORT_OUTPUT_HEADROOM);
+}
 
 interface AnthropicTextBlock {
   type: 'text';
@@ -49,7 +60,7 @@ interface AnthropicStreamOptions {
   apiKey: string;
   apiBase: string;
   model: string;
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  messages: StreamMessage[];
   temperature: number;
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
@@ -62,9 +73,10 @@ interface SseEvent {
   data: string;
 }
 
-function splitSystemMessages(
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-): { system: AnthropicSystemBlock[] | undefined; conversation: AnthropicMessage[] } {
+function splitSystemMessages(messages: StreamMessage[]): {
+  system: AnthropicSystemBlock[] | undefined;
+  conversation: AnthropicMessage[];
+} {
   const systemBlocks: AnthropicSystemBlock[] = [];
   const conversation: AnthropicMessage[] = [];
 
@@ -194,6 +206,12 @@ function getApiErrorMessage(payload: Record<string, unknown>): string {
   return JSON.stringify(payload);
 }
 
+function getStopReason(payload: Record<string, unknown>): string | null {
+  const delta = narrowRecord(payload.delta);
+  if (delta === null) return null;
+  return typeof delta.stop_reason === 'string' ? delta.stop_reason : null;
+}
+
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<InvokeResult> {
@@ -230,9 +248,10 @@ export async function streamAnthropicCompletion(
       body: JSON.stringify({
         model: opts.model,
         messages: finalConversation,
-        ...(opts.effort === undefined && { temperature: opts.temperature }),
+        ...(opts.effort === undefined &&
+          anthropicModelSupportsTemperature(opts.model) && { temperature: opts.temperature }),
         stream: true,
-        max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+        max_tokens: resolveMaxTokens(opts.maxTokens, opts.effort),
         ...(system && { system }),
         ...(opts.effort !== undefined && {
           thinking: { type: 'enabled', budget_tokens: effortToAnthropicBudget(opts.effort) },
@@ -283,6 +302,7 @@ export async function streamAnthropicCompletion(
         }
         case 'message_delta':
           usage = mergeUsage(usage, parsePartialUsage(payload.usage));
+          if (getStopReason(payload) === 'max_tokens') opts.onProgress(TRUNCATION_WARNING);
           break;
         case 'error':
           throw streamError.apiError('anthropic', getApiErrorMessage(payload));

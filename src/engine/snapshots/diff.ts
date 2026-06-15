@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import ansis from 'ansis';
 import { readFileSafeAsync } from '../../lib/fs.js';
+import { computeDiff } from '../../utils/diff.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
@@ -43,15 +44,6 @@ function execFileFailure(err: unknown): { code: number | null; stdout: string | 
   };
 }
 
-function manualTwoPassDiff(snapshotContent: string, currentContent: string, path: string): string {
-  const snapshotLines = snapshotContent.split('\n');
-  const currentLines = currentContent.split('\n');
-  const header = `--- snapshot/${path}\n+++ current/${path}\n@@ -1,${snapshotLines.length} +1,${currentLines.length} @@\n`;
-  const removed = snapshotLines.map((l) => `-${l}`).join('\n');
-  const added = currentLines.map((l) => `+${l}`).join('\n');
-  return `${header}${removed}\n${added}\n`;
-}
-
 async function readBothFiles(
   snapshotFile: string,
   currentFile: string,
@@ -64,14 +56,16 @@ async function readBothFiles(
   return [snapshotContent, currentContent];
 }
 
-async function fallbackDiff(
+export async function fallbackDiff(
   snapshotFile: string,
   currentFile: string,
   path: string,
 ): Promise<string> {
   const pair = await readBothFiles(snapshotFile, currentFile);
   if (pair === null) return '';
-  return manualTwoPassDiff(pair[0], pair[1], path);
+  const { diff } = computeDiff(pair[0], pair[1]);
+  if (diff === '') return '';
+  return `--- snapshot/${path}\n+++ current/${path}\n${diff}\n`;
 }
 
 async function unifiedDiff(

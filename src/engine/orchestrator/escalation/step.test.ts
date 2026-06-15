@@ -180,6 +180,7 @@ describe('runRetryStep', () => {
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const controller = new AbortController();
     const validator = {
+      primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi.fn().mockImplementation(async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         return [{ stage: 'test' as const, passed: true }];

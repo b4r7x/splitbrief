@@ -3,6 +3,7 @@ import { Text, useInput } from 'ink';
 import type { Config } from '../../core/schemas/config.js';
 import { useTheme } from '../../components/theme.js';
 import { TextInputOverlay } from '../../components/overlays/text-input-overlay.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 import { usePickerActions } from './use-picker-actions.js';
 import { viewReducer, initialViewState } from './view-state.js';
@@ -22,12 +23,16 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
   const t = useTheme();
   const isTextInput =
     viewState.view.kind === 'custom-command' || viewState.view.kind === 'custom-model';
+  const overlayAllowsKeys = overlayStore.use(
+    (s) =>
+      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
+  );
 
   useInput(
     (_input, key) => {
       if (key.escape) actions.closeOverlay();
     },
-    { isActive: isTextInput },
+    { isActive: isTextInput && overlayAllowsKeys },
   );
 
   if (viewState.view.kind === 'custom-command') {

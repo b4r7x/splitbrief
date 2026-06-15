@@ -47,7 +47,7 @@ const FORBIDDEN_SHELL_COMMANDS = new Set([
 const SHELL_EVALUATION_FLAGS = new Set(['-c', '--command', '/c', '/C']);
 
 const HookCommandEntrySchema = z
-  .object({
+  .strictObject({
     kind: z.literal('command').default('command'),
     name: z.string().min(1).optional(),
     command: z.string().min(1),
@@ -55,7 +55,6 @@ const HookCommandEntrySchema = z
     timeout_ms: z.number().int().positive().max(300_000).default(30_000),
     on_failure: FailureModeSchema.default('warn'),
   })
-  .strict()
   .superRefine((entry, ctx) => {
     if (FORBIDDEN_SHELL_COMMANDS.has(entry.command)) {
       ctx.addIssue({
@@ -84,15 +83,13 @@ const HookCommandEntrySchema = z
     }
   });
 
-export const HookModuleEntrySchema = z
-  .object({
-    kind: z.literal('module'),
-    name: z.string().min(1).optional(),
-    path: z.string().min(1),
-    timeout_ms: z.number().int().positive().max(300_000).default(30_000),
-    on_failure: FailureModeSchema.default('warn'),
-  })
-  .strict();
+export const HookModuleEntrySchema = z.strictObject({
+  kind: z.literal('module'),
+  name: z.string().min(1).optional(),
+  path: z.string().min(1),
+  timeout_ms: z.number().int().positive().max(300_000).default(30_000),
+  on_failure: FailureModeSchema.default('warn'),
+});
 
 function isObjectWithoutKind(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && !('kind' in value);
@@ -113,9 +110,7 @@ const hookEventConfigShape = Object.fromEntries(
   HOOK_EVENTS.map((event) => [event, z.array(HookEntrySchema).optional()]),
 );
 
-export const HooksConfigSchema: z.ZodType<HooksConfig> = z
-  .object({
-    builtin: z.record(z.string(), z.boolean()).optional(),
-    ...hookEventConfigShape,
-  })
-  .strict();
+export const HooksConfigSchema: z.ZodType<HooksConfig> = z.strictObject({
+  builtin: z.record(z.string(), z.boolean()).optional(),
+  ...hookEventConfigShape,
+});

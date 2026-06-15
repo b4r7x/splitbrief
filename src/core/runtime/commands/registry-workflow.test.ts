@@ -326,7 +326,7 @@ describe('/redo-task command', () => {
 });
 
 describe('/repomap rebuild command', () => {
-  it('calls rebuildRepomap and surfaces success message when cache was present', async () => {
+  it('surfaces a success message when the repomap cache was present', async () => {
     const messages: string[] = [];
     const commands = createRuntimeCommands(
       makeCtx({
@@ -342,7 +342,7 @@ describe('/repomap rebuild command', () => {
     expect(messages[0]).toMatch(/cleared/i);
   });
 
-  it('calls rebuildRepomap and surfaces not-present message when no cache exists', async () => {
+  it('surfaces a not-present message when no repomap cache exists', async () => {
     const messages: string[] = [];
     const commands = createRuntimeCommands(
       makeCtx({

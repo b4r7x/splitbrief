@@ -66,6 +66,50 @@ describe('check-invariants', () => {
     );
   });
 
+  it('gate 18/19 pipeline shape fails closed when the wrapped tool crashes to stderr', () => {
+    const crash = 'sh -c \'echo "boom: tool crashed" >&2; exit 2\'';
+    const gate: Gate = {
+      id: 'tool-crash',
+      description: 'Tool crash via gate 18/19 shape',
+      command: `{ ${crash} | rg . || true; } | wc -l`,
+      expected: 0,
+    };
+    const log = vi.fn();
+
+    expect(runInvariantGates([gate], undefined, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [tool-crash] Tool crash via gate 18/19 shape: command failed (expected 0) FAIL',
+    );
+  });
+
+  it('gate 18/19 shape would fail OPEN if crash stderr were swallowed by 2>/dev/null', () => {
+    const crash = 'sh -c \'echo "boom: tool crashed" >&2; exit 2\'';
+    const swallowed: Gate = {
+      id: 'swallowed',
+      description: 'Swallowed crash',
+      command: `{ ${crash} 2>/dev/null | rg . || true; } | wc -l`,
+      expected: 0,
+    };
+    const log = vi.fn();
+
+    expect(runInvariantGates([swallowed], undefined, log)).toBe(0);
+    expect(log).toHaveBeenCalledWith('  ✓ [swallowed] Swallowed crash: 0 (expected 0) PASS');
+  });
+
+  it('gate 18/19 shape still counts findings on a clean (non-crashing) tool run', () => {
+    const findings = 'printf "finding-a\\nfinding-b\\n"';
+    const gate: Gate = {
+      id: 'findings',
+      description: 'Findings counted',
+      command: `{ ${findings} | rg . || true; } | wc -l`,
+      expected: 0,
+    };
+    const log = vi.fn();
+
+    expect(runInvariantGates([gate], undefined, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith('  ✗ [findings] Findings counted: 2 (expected 0) FAIL');
+  });
+
   it('fails closed when gate output is not numeric', () => {
     const gate: Gate = {
       id: 'nonnumeric',

@@ -1,4 +1,5 @@
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
+import { toYaml } from '../../core/config/load/transform.js';
 import { deepEqual } from '../../utils/deep-equal.js';
 import { isRecord } from '../../utils/type-guards.js';
 
@@ -7,6 +8,11 @@ export interface SaveOptions {
 }
 
 export type Path = readonly string[];
+
+export interface ConfigEdit {
+  path: Path;
+  value: unknown;
+}
 
 export function cloneConfig(config: Config): Config {
   return structuredClone(config);
@@ -92,6 +98,38 @@ export function persistedConfigForSave(args: PersistedConfigArgs): Config {
   return ConfigSchema.parse(
     persistedValueForSave({ persisted, effective, updated, path: [], changedPaths }),
   );
+}
+
+function readPath(source: Config, path: Path): unknown {
+  return path.reduce<unknown>(
+    (current, part) => (isRecord(current) ? current[part] : undefined),
+    source,
+  );
+}
+
+function snakeEdit(camelPath: Path, value: unknown): ConfigEdit {
+  let nested: Record<string, unknown> = {};
+  for (let i = camelPath.length - 1; i >= 0; i--) {
+    const segment = camelPath[i];
+    if (segment === undefined) continue;
+    nested = { [segment]: i === camelPath.length - 1 ? value : nested };
+  }
+  const transformed = toYaml(nested);
+  const snakePath: string[] = [];
+  let cursor: unknown = transformed;
+  for (let i = 0; i < camelPath.length; i++) {
+    if (!isRecord(cursor)) break;
+    const key = Object.keys(cursor)[0];
+    if (key === undefined) break;
+    snakePath.push(key);
+    cursor = cursor[key];
+  }
+  return { path: snakePath, value: cursor };
+}
+
+export function editsForSave(updated: Config, options?: SaveOptions): ConfigEdit[] {
+  const changedPaths = parseChangedPaths(options?.changedPaths);
+  return changedPaths.map((path) => snakeEdit(path, readPath(updated, path)));
 }
 
 function setPath(target: Record<string, unknown>, path: Path, value: unknown): void {

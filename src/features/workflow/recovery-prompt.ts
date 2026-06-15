@@ -3,7 +3,7 @@ import { PROMPTABLE_RECOVERY_ACTIONS } from '../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery.js';
 import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery.js';
 import { formatTruncatedList } from '../../core/formatting.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
@@ -18,7 +18,7 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
   'abort-workflow': 'a',
 };
 
-const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
+export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
   'planner-split-rebase': [],
@@ -128,9 +128,7 @@ function recommendedAction(issue: RecoveryIssue, actions: RecoveryAction[]): Rec
 
 function formatRecoveryHeader(issue: RecoveryIssue): string {
   const attemptSuffix =
-    issue.attempts !== undefined
-      ? ` after ${issue.attempts} ${pluralize(issue.attempts, 'attempt')}`
-      : '';
+    issue.attempts !== undefined ? ` after ${countNoun(issue.attempts, 'attempt')}` : '';
   return `Recovery needed: ${issue.message}${attemptSuffix}`;
 }
 

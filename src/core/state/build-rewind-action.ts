@@ -25,7 +25,9 @@ export function buildRewindAction(
   request: RewindTarget,
   ref: SessionRef,
   current: WorkflowState,
+  opts: { persistEvent?: boolean } = {},
 ): RewindOutcome {
+  const persistEvent = opts.persistEvent ?? true;
   if (request.target === 'spec') {
     const event: RewindEvent = {
       ts: Date.now(),
@@ -33,7 +35,7 @@ export function buildRewindAction(
       phase: current.phase,
       ...(request.comment ? { comment: request.comment } : {}),
     };
-    appendEngineEvent(ref, event);
+    if (persistEvent) appendEngineEvent(ref, event);
     return {
       action: { type: 'REWIND_TO_SPEC', ...(request.comment ? { comment: request.comment } : {}) },
       event,
@@ -46,7 +48,7 @@ export function buildRewindAction(
       phase: current.phase,
       ...(request.comment ? { comment: request.comment } : {}),
     };
-    appendEngineEvent(ref, event);
+    if (persistEvent) appendEngineEvent(ref, event);
     return {
       action: { type: 'REWIND_TO_PLAN', ...(request.comment ? { comment: request.comment } : {}) },
       event,
@@ -59,7 +61,7 @@ export function buildRewindAction(
     taskId: tid,
     phase: current.phase,
   };
-  appendEngineEvent(ref, event);
+  if (persistEvent) appendEngineEvent(ref, event);
   return {
     action: { type: 'RESET_TASK', taskId: tid },
     event,

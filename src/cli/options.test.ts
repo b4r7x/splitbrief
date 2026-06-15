@@ -4,6 +4,7 @@ import {
   assertModeFlagsExclusive,
   parseBudgetOption,
   parseNumberOption,
+  parseOutputFormatOption,
   parsePositiveIntegerOption,
 } from './options.js';
 
@@ -48,6 +49,18 @@ describe('parseBudgetOption', () => {
   it('rejects negative budgets', () => {
     expect(() => parseBudgetOption('-1')).toThrow(InvalidArgumentError);
     expect(() => parseBudgetOption('-1')).toThrow(/valid budget amount/);
+  });
+});
+
+describe('parseOutputFormatOption', () => {
+  it.each(['stream-json', 'jsonl', 'text', 'opencode'])('accepts %j', (value) => {
+    expect(parseOutputFormatOption(value)).toBe(value);
+  });
+
+  it.each(['json', 'yaml', '', 'STREAM-JSON'])('rejects %j with a friendly error', (value) => {
+    expect(() => parseOutputFormatOption(value)).toThrow(InvalidArgumentError);
+    expect(() => parseOutputFormatOption(value)).toThrow(/not a valid output format/);
+    expect(() => parseOutputFormatOption(value)).toThrow(/stream-json, jsonl, text, opencode/);
   });
 });
 

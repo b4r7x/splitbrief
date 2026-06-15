@@ -39,9 +39,13 @@ function isDiffEvent<TEvent extends SectionableEvent>(event: TEvent): event is T
   return event.type === 'implementer_generate_done';
 }
 
-export function findLatestRenderableDiffEventIndex<TEvent extends SectionableEvent>(
+export function diffEventKey(event: SectionableEvent): string {
+  return `${event.type}:${event.ts ?? 0}`;
+}
+
+export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
   sections: Section<TEvent>[],
-): number | null {
+): string | null {
   for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
     const section = sections[sectionIndex];
     if (!section || section.type === 'completed-task') continue;
@@ -49,7 +53,7 @@ export function findLatestRenderableDiffEventIndex<TEvent extends SectionableEve
       const event = section.items[index];
       if (!event) continue;
       if (isDiffEvent(event) && event.diff) {
-        return section.startIndex + index;
+        return diffEventKey(event);
       }
     }
   }
@@ -125,7 +129,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
             title: range.startEvent.title,
             method: endEvent.method,
             retries: endEvent.retries,
-            duration: Math.round(endEvent.duration / 1000),
+            duration: endEvent.duration,
             file: range.startEvent.file,
           },
         });

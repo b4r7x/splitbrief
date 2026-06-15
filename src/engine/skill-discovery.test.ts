@@ -65,6 +65,25 @@ describe('discoverSkills', () => {
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
   });
 
+  it('tags discovered project skills with the project directory and reads them confined', async () => {
+    const skillsDir = join(TMP, '.claude', 'skills');
+    mkdirSync(skillsDir, { recursive: true });
+    writeFileSync(
+      join(skillsDir, 'confined.md'),
+      '---\nname: Confined\ndescription: Read via confinement\n---\nConfined body',
+    );
+
+    const skills = await discoverSkills('claude-code', TMP);
+    const proj = skills.find((s: SkillMeta) => s.scope === 'project');
+    expect(proj?.projectDir).toBe(TMP);
+
+    const content = await loadSkillContent(skills);
+    expect(content).toContain('### Confined');
+    expect(content).toContain('Confined body');
+
+    rmSync(join(TMP, '.claude'), { recursive: true, force: true });
+  });
+
   it('discovers claude-code skills from subdirectory SKILL.md', async () => {
     const skillDir = join(TMP, '.claude', 'skills', 'my-skill');
     mkdirSync(skillDir, { recursive: true });
@@ -300,6 +319,80 @@ describe('loadSkillContent', () => {
     const content = await loadSkillContent(skills);
     expect(content).toContain('[... truncated]');
     expect(content.length).toBeLessThan(20_000);
+
+    rmSync(join(TMP, '.claude'), { recursive: true, force: true });
+  });
+
+  it('discloses skills fully dropped after the budget break', async () => {
+    const skillsDir = join(TMP, '.claude', 'skills');
+    mkdirSync(skillsDir, { recursive: true });
+    const bigContent = 'x'.repeat(16_000);
+    writeFileSync(
+      join(skillsDir, 'first.md'),
+      `---\nname: First\ndescription: Fills budget\n---\n${bigContent}`,
+    );
+    writeFileSync(
+      join(skillsDir, 'second.md'),
+      '---\nname: Second\ndescription: Dropped\n---\nSecond body',
+    );
+    writeFileSync(
+      join(skillsDir, 'third.md'),
+      '---\nname: Third\ndescription: Dropped\n---\nThird body',
+    );
+
+    const mk = (id: string, name: string): SkillMeta => ({
+      id,
+      name,
+      description: '',
+      path: join(skillsDir, `${id}.md`),
+      scope: 'project',
+    });
+    const skills: SkillMeta[] = [
+      mk('first', 'First'),
+      mk('second', 'Second'),
+      mk('third', 'Third'),
+    ];
+
+    const content = await loadSkillContent(skills);
+    expect(content).toContain('### First');
+    expect(content).not.toContain('Second body');
+    expect(content).not.toContain('Third body');
+    expect(content).toContain('2 more selected skills omitted');
+    expect(content).toContain('budget 16000 chars');
+    expect(content).toContain('Second, Third');
+
+    rmSync(join(TMP, '.claude'), { recursive: true, force: true });
+  });
+
+  it('names the partially-truncated skill plus the rest in the omission marker', async () => {
+    const skillsDir = join(TMP, '.claude', 'skills');
+    mkdirSync(skillsDir, { recursive: true });
+    // First skill leaves >MIN_TRUNCATED_CHARS room so the second is partially truncated.
+    writeFileSync(
+      join(skillsDir, 'a.md'),
+      `---\nname: Alpha\ndescription: ''\n---\n${'a'.repeat(15_000)}`,
+    );
+    writeFileSync(
+      join(skillsDir, 'b.md'),
+      `---\nname: Beta\ndescription: ''\n---\n${'b'.repeat(5_000)}`,
+    );
+    writeFileSync(join(skillsDir, 'c.md'), "---\nname: Gamma\ndescription: ''\n---\nGamma body");
+
+    const mk = (id: string, name: string): SkillMeta => ({
+      id,
+      name,
+      description: '',
+      path: join(skillsDir, `${id}.md`),
+      scope: 'project',
+    });
+    const skills: SkillMeta[] = [mk('a', 'Alpha'), mk('b', 'Beta'), mk('c', 'Gamma')];
+
+    const content = await loadSkillContent(skills);
+    expect(content).toContain('### Beta');
+    expect(content).toContain('[... truncated]');
+    expect(content).toContain('1 more selected skills omitted');
+    expect(content).toContain('Gamma');
+    expect(content).not.toContain('Gamma body');
 
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
   });

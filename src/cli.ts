@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { bootstrapOtel } from './cli/otel-bootstrap.js';
+import { bootstrapOtel, flushOtel } from './lib/otel.js';
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { registerStartCommand } from './cli/commands/start.js';
@@ -26,12 +26,16 @@ import { registerLastCommand } from './cli/commands/last.js';
 import { isCliError } from './cli/errors.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
+import { getDiptychVersion } from './core/paths-io.js';
 
 bootstrapOtel();
 
 const program = new Command();
 
-program.name('diptych').version('0.1.0').description('Cost-optimized AI coding orchestrator');
+program
+  .name('diptych')
+  .version(getDiptychVersion())
+  .description('Cost-optimized AI coding orchestrator');
 
 program.addHelpText('after', HELP_EXAMPLES);
 
@@ -56,7 +60,8 @@ registerPsCommand(program);
 registerContinueCommand(program);
 registerLastCommand(program);
 
-program.parseAsync().catch((err) => {
+program.parseAsync().catch(async (err) => {
+  await flushOtel();
   if (isCliError(err)) {
     console.error(`${ansis.red('Error:')} ${err.message}`);
     process.exit(err.exitCode);

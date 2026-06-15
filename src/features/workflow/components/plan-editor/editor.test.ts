@@ -104,7 +104,9 @@ describe('PlanEditorComponent review metadata', () => {
         width: 120,
       }),
     );
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Failed to load Task Briefs');
+    });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Failed to load Task Briefs');
@@ -243,7 +245,9 @@ describe('PlanEditorComponent review metadata', () => {
         width: 160,
       }),
     );
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('ready 1');
+    });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('ready 1');
@@ -446,7 +450,9 @@ describe('PlanEditorComponent review metadata', () => {
         width: 100,
       }),
     );
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('T001 pending src/a.ts');
+    });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('T001 pending src/a.ts');
@@ -472,7 +478,9 @@ describe('PlanEditorComponent review metadata', () => {
         width: 100,
       }),
     );
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('+ 5 more tasks');
+    });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('approve | e/edit');
@@ -801,7 +809,9 @@ describe('PlanEditorComponent review metadata', () => {
         width: 48,
       }),
     );
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('+ 2 more tasks');
+    });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('ready 0');

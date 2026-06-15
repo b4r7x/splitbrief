@@ -84,6 +84,8 @@ export interface PlannerCallbacks {
   discoveredValidation?: DiscoveredValidation | undefined;
   /** Abort signal propagated from the continuation loop so backends can cancel in-flight requests. */
   signal?: AbortSignal | undefined;
+  /** Emitted when a parsed Task Brief contains `###` sections outside the grammar and they are dropped. */
+  onWarning?: ((message: string) => void) | undefined;
 }
 
 export interface PlannerOutputCallbacks {
@@ -178,15 +180,25 @@ export interface Planner extends RunnerRuntime {
     callbacks: PlannerOutputCallbacks,
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
-  summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string>;
+  summarize(
+    messages: PlannerSummaryMessage[],
+    projectDir?: string,
+  ): Promise<{ text: string; usage: TokenDelta | null }>;
 
   summarizeStructured?(
     messages: PlannerSummaryMessage[],
     previousSummary?: StructuredSummary,
     projectDir?: string,
-  ): Promise<{ text: string; structured: StructuredSummary | null }>;
+  ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>;
 
-  injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
+  injectUserTurn?: (text: string, projectDir: string) => Promise<TokenDelta | null>;
+
+  /**
+   * Human-readable cause for the most recent `isAvailable()` returning false
+   * (e.g. missing API key, unreachable endpoint, auth rejection, empty model list).
+   * Backends that can only fail to install do not implement it.
+   */
+  unavailabilityReason?: () => string | undefined;
 
   readonly capabilities: PlannerCapabilities;
 }

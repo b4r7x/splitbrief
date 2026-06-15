@@ -71,4 +71,42 @@ describe('runQuickPlanning', () => {
       message: expect.stringContaining('quick planner returned zero tasks'),
     });
   });
+
+  it('emits a warning when approve level overrides quick default', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '',
+        plan: '',
+        tasks: [],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [{ text: '# empty', filename: TASKS_FILE }],
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({ workflow: { mode: 'quick', approve: 'all' } });
+    const { bus, events } = makeBusRecorder();
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: createInitialState('feature'),
+      feature: 'feature',
+    });
+
+    const warning = events.find((event) => event.type === 'warning');
+    expect(warning).toBeDefined();
+    if (warning && 'message' in warning) {
+      expect(warning.message).toContain('quick');
+      expect(warning.message).toContain('all');
+    }
+  });
 });

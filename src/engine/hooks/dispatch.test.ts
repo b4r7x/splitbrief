@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { runHook } from './dispatch.js';
+import { runHook, hookError } from './dispatch.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookModuleEntry } from '../../core/schemas/hooks.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -65,6 +65,23 @@ async function withTempModule<T>(
   }
 }
 
+const reportArgvScript =
+  'process.stdout.write(JSON.stringify({ decision: "deny", message: process.argv.slice(2).join(" ") }))';
+
+async function withTempScript<T>(
+  source: string,
+  run: (scriptPath: string) => Promise<T>,
+): Promise<T> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-script-'));
+  const scriptPath = join(tempDir, 'hook.mjs');
+  try {
+    await writeFile(scriptPath, source);
+    return await run(scriptPath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
 describe('runHook', () => {
   it('returns allow for a successful command (echo)', async () => {
     const outcome = await runHook(mkEntry({ command: 'echo', args: ['hello'] }), event, ctx);
@@ -112,6 +129,62 @@ describe('runHook', () => {
     if (outcome.kind === 'deny') expect(outcome.message).toBe('nope');
   });
 
+  it('warns (never silently allows) on an unrecognized decision value', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: ['-e', 'process.stdout.write(JSON.stringify({decision:"block"}))'],
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('warn');
+    if (outcome.kind === 'warn') expect(outcome.message).toContain('unrecognized hook decision');
+  });
+
+  it('extracts the decision from the last JSON line of mixed stdout', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: [
+          '-e',
+          'console.log("scanning files...");console.log(JSON.stringify({decision:"deny",message:"blocked by policy"}))',
+        ],
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('deny');
+    if (outcome.kind === 'deny') expect(outcome.message).toBe('blocked by policy');
+  });
+
+  it('parses a pretty-printed multi-line JSON object', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: [
+          '-e',
+          'process.stdout.write(JSON.stringify({decision:"deny",message:"x"}, null, 2))',
+        ],
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('deny');
+  });
+
+  it('allows when stdout has no JSON object line', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: ['-e', 'console.log("just a log line");console.log("done")'],
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('allow');
+  });
+
   it('substitutes event field placeholders in args', async () => {
     const placeholder = ['$', '{event.title}'].join('');
     const outcome = await runHook(
@@ -123,6 +196,33 @@ describe('runHook', () => {
       ctx,
     );
     expect(outcome.kind).toBe('allow');
+  });
+
+  it('inserts a -- guard before a flag-shaped interpolated value so it reaches argv as data', async () => {
+    const placeholder = ['$', '{event.file}'].join('');
+    const flagEvent: EngineEvent = { ...event, file: '--unexpected-flag' };
+    await withTempScript(reportArgvScript, async (scriptPath) => {
+      const outcome = await runHook(
+        mkEntry({ command: 'node', args: [scriptPath, placeholder] }),
+        flagEvent,
+        ctx,
+      );
+      expect(outcome.kind).toBe('deny');
+      if (outcome.kind === 'deny') expect(outcome.message).toBe('-- --unexpected-flag');
+    });
+  });
+
+  it('does not insert a guard for author-controlled flag templates with interpolated values', async () => {
+    const placeholder = ['--mode=$', '{event.phase}'].join('');
+    await withTempScript(reportArgvScript, async (scriptPath) => {
+      const outcome = await runHook(
+        mkEntry({ command: 'node', args: [scriptPath, placeholder] }),
+        event,
+        ctx,
+      );
+      expect(outcome.kind).toBe('deny');
+      if (outcome.kind === 'deny') expect(outcome.message).toBe('--mode=implementing');
+    });
   });
 });
 
@@ -178,6 +278,13 @@ describe('runHook — kind: module', () => {
         if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
       },
     );
+  });
+
+  it('tags the module timeout with a domain kind', () => {
+    const err = hookError.timedOut(10);
+    expect(err.kind).toBe('hook-timed-out');
+    expect(err.message).toBe('hook timed out after 10ms');
+    expect(err.data).toEqual({ timeoutMs: 10 });
   });
 
   it.each([

@@ -1,9 +1,7 @@
-export function encodeSnapshotPath(relativePath: string): string {
-  return Buffer.from(relativePath, 'utf8').toString('hex');
-}
+import { sha256Hex } from '../../utils/sha256.js';
 
-export function decodeSnapshotPath(encodedName: string): string {
-  return Buffer.from(encodedName, 'hex').toString('utf8');
+export function encodeSnapshotPath(relativePath: string): string {
+  return sha256Hex(relativePath);
 }
 
 export function generateSnapshotId(now?: Date): string {

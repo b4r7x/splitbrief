@@ -1,21 +1,10 @@
 # diptych — Product & Engineering Direction
 
-What diptych optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**.
+What diptych optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**. Point-in-time status — what was built when, and what is still open — lives in the dated [Historical Appendix](#historical-appendix-2026-05-01) and the issue tracker, not in the durable sections above it.
 
 ---
 
-## Next Up (unimplemented — pick these up next)
-
-These are specced in DIRECTION but not yet built. Each is a standalone feature, implementable independently:
-
-1. **Unified autocomplete** (AD-11) — `/` for slash commands, `@` for file paths, Tab for per-command argument completion. One fuzzy-ranked dropdown for all discovery.
-2. **Structured compaction follow-ups** (AD-12, partial) — Core structured/freeform transcript compaction exists. Remaining direction: tree-session compaction entries and read-file tracking across branches.
-3. **External `$EDITOR` integration** — Open user's editor for writing long feature descriptions. Pasting multi-paragraph specs into terminal input is painful.
-4. **HTML/Markdown session export** — Export workflow results as shareable artifact. For sharing reports, demonstrating value, onboarding teammates.
-
----
-
-## UX Principles
+## UX principles
 
 diptych is a CLI tool. CLI tools are loved when they respect the developer's time and attention. Seven principles guide every UX decision:
 
@@ -49,13 +38,13 @@ For API implementers, stream the last N lines being written in real-time. Transf
 
 ---
 
-## Testing Architecture
+## Testing architecture
 
 ### Philosophy
 
 Tests verify **behavior** — observable state, emitted events, files on disk, rendered output. Never wiring. Full rules in `TESTING.md`.
 
-### The Faux Provider Pattern
+### The faux provider pattern
 
 Orchestrator tests should exercise the full pipeline (planner → tasks → implementer → validation) with **scripted responses at the interface level** — no subprocess, no network, no `vi.mock`.
 
@@ -83,7 +72,7 @@ Design goals:
 
 ---
 
-## Architecture Decisions (2026-05-01 audit)
+## Architecture decisions (2026-05-01 audit)
 
 ### AD-1: Events layer is foundational
 
@@ -174,7 +163,7 @@ Implemented for transcript compaction: `workflow.compactionFormat` supports `aut
 
 ---
 
-## Competitive Advantages (preserve these)
+## Competitive advantages (preserve these)
 
 These are diptych-only features that no comparable tool offers:
 
@@ -194,9 +183,20 @@ These are diptych-only features that no comparable tool offers:
 
 ---
 
-## UX Improvements (implemented 2026-05-01)
+## Historical appendix (2026-05-01)
 
-### Area Ratings (post-implementation)
+Point-in-time tracker content captured during the 2026-05-01 audit. These tables are a snapshot, not durable direction — scores were self-assigned against a private audit with no checkable rubric, and the open/done status drifts as work lands. Live status belongs in the issue tracker; this section is kept only as a dated historical record. Durable direction is the UX Principles, Architecture Decisions, and Competitive Advantages above.
+
+### Open at the time (2026-05-01)
+
+These were specced in DIRECTION but not yet built as of the audit. Each is a standalone feature, implementable independently. Current status lives in the issue tracker.
+
+1. **Unified autocomplete** (AD-11) — `/` for slash commands, `@` for file paths, Tab for per-command argument completion. One fuzzy-ranked dropdown for all discovery.
+2. **Structured compaction follow-ups** (AD-12, partial) — Core structured/freeform transcript compaction exists. Remaining direction: tree-session compaction entries and read-file tracking across branches.
+3. **External `$EDITOR` integration** — Open user's editor for writing long feature descriptions. Pasting multi-paragraph specs into terminal input is painful.
+4. **HTML/Markdown session export** — Export workflow results as shareable artifact. For sharing reports, demonstrating value, onboarding teammates.
+
+### Area ratings (post-implementation, 2026-05-01)
 
 | Area | Score | Status |
 |---|---|---|
@@ -209,7 +209,7 @@ These are diptych-only features that no comparable tool offers:
 | Streaming output | 9/10 | Live partial output during API implementer generation |
 | Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
 
-### Specific feature targets
+### Specific feature targets (status as of 2026-05-01)
 
 | Feature | What it does | Status |
 |---|---|---|
@@ -235,9 +235,7 @@ These are diptych-only features that no comparable tool offers:
 
 ---
 
----
-
-## Session Model (implemented 2026-05-01)
+## Session model (implemented 2026-05-01)
 
 The session model uses an append-only JSONL tree with typed entries. This is the foundation for intelligent recovery, cost tracking, and workflow visibility. Implementation: `src/core/sessions/tree/`.
 
@@ -269,7 +267,7 @@ Linear sessions lose context on recovery. When an agent attempt fails and we try
 
 ---
 
-## What We Will NOT Build
+## What we will NOT build
 
 These are conscious anti-goals, not TODO items:
 

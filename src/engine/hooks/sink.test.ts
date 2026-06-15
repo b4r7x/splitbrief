@@ -212,6 +212,22 @@ describe('createHookSink', () => {
     expect(warnings[0]).toContain('marker');
   });
 
+  it('never dispatches a pre_compact hook (reserved event with no dispatch site)', async () => {
+    const { bus, warnings, all } = makeBus();
+    const hooks: HooksConfig = {
+      pre_compact: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
+    };
+    const sink = createHookSink(hooks, ctx, bus);
+    const completeEvent: EngineEvent = { type: 'workflow_complete', ts: 1, phase: 'idle' };
+    const errorEvent: EngineEvent = { type: 'error', ts: 1, phase: 'idle', message: 'err' };
+    sink(taskCompletedEvent);
+    sink(completeEvent);
+    sink(errorEvent);
+    await waitForNoActivity(all);
+    expect(warnings).toHaveLength(0);
+    expect(all).toHaveLength(0);
+  });
+
   it('catches unexpected thrown errors and publishes warning', async () => {
     const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {

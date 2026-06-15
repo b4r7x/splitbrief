@@ -36,7 +36,7 @@ async function finishPlanAndBriefsApproval(args: {
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
   let finalTasks = tasks;
-  if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
+  if (!skipPlanApproval) {
     const planLoop = await runApprovalLoop({
       type: 'plan',
       filePath: planPath,
@@ -97,16 +97,19 @@ async function finishPlanAndBriefsApproval(args: {
 export async function handleRewindSpec(args: {
   opts: PlanningPhaseOptions;
   rewindPending: RewindPending;
+  skipSpecApproval: boolean;
   skipPlanApproval: boolean;
   metadata: SpecMetadata;
   skillsContext: string | undefined;
   state: WorkflowState;
 }): Promise<PlanningPhaseResult> {
-  const { opts, rewindPending, skipPlanApproval, metadata, skillsContext } = args;
+  const { opts, rewindPending, skipSpecApproval, skipPlanApproval, metadata, skillsContext } = args;
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const signal = wctx.signal;
   let state = args.state;
+
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   if (rewindPending.comment) {
     appendMessage(
@@ -148,7 +151,7 @@ export async function handleRewindSpec(args: {
   publishPlannerStatus(wctx.bus, state, 'running');
 
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
-  if (!config.workflow.autoApproveSpec) {
+  if (!skipSpecApproval) {
     const specLoop = await runApprovalLoop({
       type: 'spec',
       filePath: specPath,

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { TwoColumnPicker } from './picker.js';
 
 interface Tool {
@@ -62,16 +63,16 @@ describe('TwoColumnPicker', () => {
       expect(leftChanges.at(-1)).toBe('alpha');
     });
 
-    ui.stdin.write('\u001B[B'); // ↓ → 'beta' (disabled)
+    ui.stdin.write('\u001B[B'); // down -> 'beta' (disabled)
     await vi.waitFor(() => {
       expect(leftChanges.at(-1)).toBe('beta');
     });
 
-    ui.stdin.write('\r'); // Enter on disabled — no-op
+    ui.stdin.write('\r'); // Enter on disabled - no-op
     await tick(20);
     expect(confirms).toEqual([]);
 
-    ui.stdin.write('\u001B[B'); // ↓ → 'gamma'
+    ui.stdin.write('\u001B[B'); // down -> 'gamma'
     await vi.waitFor(() => {
       expect(leftChanges.at(-1)).toBe('gamma');
       expect(ui.lastFrame()).toContain('Gamma');
@@ -111,9 +112,9 @@ describe('TwoColumnPicker', () => {
     await tick(20);
     expect(ui.lastFrame()).toContain('alpha-1');
 
-    ui.stdin.write('\r'); // Enter left → focus right
+    ui.stdin.write('\r'); // Enter left -> focus right
     await tick(20);
-    ui.stdin.write('\r'); // Enter right → confirm
+    ui.stdin.write('\r'); // Enter right -> confirm
     await tick(20);
 
     expect(confirms).toEqual([{ l: 'alpha', r: 'a-1' }]);
@@ -143,11 +144,78 @@ describe('TwoColumnPicker', () => {
     );
     await tick(20);
 
-    ui.stdin.write('\u001B[C'); // → with no left item
+    ui.stdin.write('\u001B[C'); // right with no left item
     await tick(20);
     ui.stdin.write('\u001B'); // Escape
     await tick(20);
 
+    expect(cancelled).toBe(1);
+    ui.unmount();
+  });
+
+  it('ignores keys while a foreign overlay is open, then handles them once it closes', async () => {
+    overlayStore.open('help');
+    let cancelled = 0;
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {
+          cancelled++;
+        }}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write('\u001B'); // Escape - ignored while the overlay is on top
+    await tick(20);
+    expect(cancelled).toBe(0);
+
+    overlayStore.close();
+    await tick(20);
+
+    ui.stdin.write('\u001B'); // Escape now reaches the picker and fires onCancel
+    await tick(20);
+    expect(cancelled).toBe(1);
+    ui.unmount();
+  });
+
+  it('handles keys while its own picker overlay is the active overlay', async () => {
+    overlayStore.open('planner-picker');
+    let cancelled = 0;
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: [],
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {
+          cancelled++;
+        }}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write('\u001B'); // Escape - active because the picker's own overlay is topmost
+    await tick(20);
     expect(cancelled).toBe(1);
     ui.unmount();
   });

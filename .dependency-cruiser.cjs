@@ -36,10 +36,10 @@ module.exports = {
     {
       name: 'engine-below-ui',
       comment:
-        'src/engine/ has zero React/Ink and zero UI imports (LAYERS.md, INVARIANTS.md gate 12/12b/12c). It may import utils, lib, core, stores, and engine siblings.',
+        'src/engine/ has zero React/Ink and zero UI imports (LAYERS.md, INVARIANTS.md gate 12/12b/12c). It may import utils, lib, core, and engine siblings only; stores sit above engine (the sanctioned channel is stores importing engine types, never the reverse).',
       severity: 'error',
       from: { path: '^src/engine/' },
-      to: { path: '^src/(features|components|hooks|app|cli)/' },
+      to: { path: '^src/(stores|features|components|hooks|app|cli)/' },
     },
     {
       name: 'stores-engine-type-only',

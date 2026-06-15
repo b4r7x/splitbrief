@@ -1,6 +1,7 @@
 import { getRunnerDisplayName } from '../../config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { isProviderLocal, isProviderSubscription } from '../../providers/catalog.js';
+import { formatCost } from '../../formatting.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
@@ -24,7 +25,7 @@ export function buildCostChecks(config: Config): ReadinessCheck[] {
       {
         id: 'cost.budget-set',
         severity: 'ok',
-        summary: `Budget cap set to $${config.workflow.maxBudget.toFixed(2)}.`,
+        summary: `Budget cap set to ${formatCost(config.workflow.maxBudget)}.`,
         details: [`Pause threshold: ${config.workflow.budgetPauseThreshold ?? 'default'}`],
         metadata: {
           maxBudget: config.workflow.maxBudget,

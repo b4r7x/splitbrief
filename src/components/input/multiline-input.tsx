@@ -1,7 +1,13 @@
 import { useRef, useState } from 'react';
 import { useInput, type Key } from 'ink';
 import { normalizeLineEndings } from './segments.js';
-import { resolveEditAction, applyEditAction, navigateVertically } from './text-editing.js';
+import {
+  resolveEditAction,
+  applyEditAction,
+  navigateVertically,
+  prevCodePointIndex,
+  nextCodePointIndex,
+} from './text-editing.js';
 import {
   ControlledMultilineInput,
   type ControlledMultilineInputProps,
@@ -11,6 +17,11 @@ import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 const MULTI_BYTE_SUPPRESS_MS = 50;
 
 const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
+
+function isC0Control(ch: string): boolean {
+  const code = ch.codePointAt(0);
+  return code !== undefined && (code < 0x20 || code === 0x7f);
+}
 
 function parseDroppedImagePath(input: string): string | null {
   const trimmed = input.trim();
@@ -65,6 +76,7 @@ export function MultilineInput({
 
       if (key.shift && (key.upArrow || key.downArrow)) return;
       if (key.pageUp || key.pageDown) return;
+      if (key.home || key.end) return;
 
       const submitKey = keyBindings?.submit ?? ((k: Key) => k.return && k.ctrl);
       const newlineKey = keyBindings?.newline ?? ((k: Key) => k.return);
@@ -136,18 +148,22 @@ export function MultilineInput({
           setPasteLength(0);
         }
       } else if (key.leftArrow) {
-        setCursorIndex(Math.max(0, cursorIndex - 1));
+        setCursorIndex(prevCodePointIndex(value, cursorIndex));
         setPasteLength(0);
       } else if (key.rightArrow) {
-        setCursorIndex(Math.min(value.length, cursorIndex + 1));
+        setCursorIndex(nextCodePointIndex(value, cursorIndex));
         setPasteLength(0);
       } else if (key.backspace || key.delete) {
         if (cursorIndex > 0) {
-          onChange(value.slice(0, cursorIndex - 1) + value.slice(cursorIndex));
-          setCursorIndex(cursorIndex - 1);
+          const prev = prevCodePointIndex(value, cursorIndex);
+          onChange(value.slice(0, prev) + value.slice(cursorIndex));
+          setCursorIndex(prev);
           setPasteLength(0);
         }
       } else {
+        // A lone C0 control byte (e.g. Ctrl+/ as `\x1f` on legacy terminals) is a
+        // chord the global handler owns, not text — inserting it would corrupt the draft.
+        if (input.length === 1 && isC0Control(input)) return;
         if (input) {
           const normalized = normalizeLineEndings(input).normalize('NFC');
           const newValue = value.slice(0, cursorIndex) + normalized + value.slice(cursorIndex);

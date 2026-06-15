@@ -408,6 +408,74 @@ describe('restoreSnapshot — event emission', () => {
   });
 });
 
+describe('restoreSnapshot — extraneous files created after snapshot', () => {
+  it('reports a tracked file created after the snapshot as extraneous and leaves it on disk without force', async () => {
+    await writeFile(join(tmp, 'kept.ts'), 'kept');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
+
+    // Create a new tracked file AFTER the snapshot was captured.
+    await writeFile(join(tmp, 'created-later.ts'), 'new');
+
+    const result = await restoreSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      idOrName: snap.manifest.id,
+    });
+
+    expect(result.extraneousPaths).toContain('created-later.ts');
+    expect(result.deletedPaths).not.toContain('created-later.ts');
+    await expect(readFile(join(tmp, 'created-later.ts'), 'utf-8')).resolves.toBe('new');
+  });
+
+  it('deletes the extraneous file under force so the tree matches the snapshot', async () => {
+    await writeFile(join(tmp, 'kept.ts'), 'kept');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
+
+    await writeFile(join(tmp, 'created-later.ts'), 'new');
+
+    const result = await restoreSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      idOrName: snap.manifest.id,
+      force: true,
+    });
+
+    expect(result.extraneousPaths).toContain('created-later.ts');
+    expect(result.deletedPaths).toContain('created-later.ts');
+    await expect(readFile(join(tmp, 'created-later.ts'), 'utf-8')).rejects.toThrow();
+  });
+
+  it('reports no extraneous paths when every tracked file is present in the snapshot', async () => {
+    await writeFile(join(tmp, 'only.ts'), 'only');
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+
+    const result = await restoreSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      idOrName: baseline.manifest.id,
+    });
+
+    expect(result.extraneousPaths).toHaveLength(0);
+    expect(result.deletedPaths).toHaveLength(0);
+  });
+});
+
 describe('restoreSnapshot — path confinement', () => {
   it('rejects manifest paths that traverse outside the project via ../', async () => {
     await writeFile(join(tmp, 'safe.ts'), 'safe');

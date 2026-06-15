@@ -2,16 +2,14 @@ import { z } from 'zod';
 import { CliToolIdSchema, EffortLevelSchema, OutputFormatSchema } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
-const PlannerCapabilitiesSchema = z
-  .object({
-    supportsConversationalPlanning: z.boolean(),
-    supportsHintEscalation: z.boolean(),
-    supportsSessionResume: z.boolean(),
-    supportsEffort: z.boolean(),
-    supportsImages: z.boolean(),
-    supportsSelfSummarisation: z.boolean(),
-  })
-  .strict();
+const PlannerCapabilitiesSchema = z.strictObject({
+  supportsConversationalPlanning: z.boolean(),
+  supportsHintEscalation: z.boolean(),
+  supportsSessionResume: z.boolean(),
+  supportsEffort: z.boolean(),
+  supportsImages: z.boolean(),
+  supportsSelfSummarisation: z.boolean(),
+});
 
 const CliRunnerFields = {
   kind: z.literal('cli'),
@@ -27,12 +25,15 @@ const ApiRunnerFields = {
   apiKey: z.string().optional(),
 };
 
+const PlannerCapabilitiesField = {
+  capabilities: PlannerCapabilitiesSchema.partial().optional(),
+};
+
 const ShellRunnerFields = {
   kind: z.literal('shell'),
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
-  capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
 const AgentRunnerFields = {
@@ -40,7 +41,6 @@ const AgentRunnerFields = {
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
-  capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
 const AgentSdkRunnerFields = {
@@ -105,10 +105,28 @@ export function getRunnerKindMeta(kind: RunnerKind): RunnerKindCapabilities {
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
   return z.discriminatedUnion('kind', [
-    z.object({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }).strict(),
-    z.object({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }).strict(),
-    z.object({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }).strict(),
-    z.object({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }).strict(),
-    z.object({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }).strict(),
+    z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
+  ]);
+}
+
+export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
+  return z.discriminatedUnion('kind', [
+    z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
+    z.strictObject({
+      ...RUNNER_DESCRIPTORS.shell.fields,
+      ...PlannerCapabilitiesField,
+      ...commonFields,
+    }),
+    z.strictObject({
+      ...RUNNER_DESCRIPTORS.agent.fields,
+      ...PlannerCapabilitiesField,
+      ...commonFields,
+    }),
+    z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
   ]);
 }

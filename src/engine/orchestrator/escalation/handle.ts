@@ -9,6 +9,9 @@ import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { getChangedFilesSnapshot, type ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import { raisePendingRecovery } from '../state-ops.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 type HandleRetryOptions = {
   wctx: WorkflowContext;
@@ -71,12 +74,26 @@ export async function handleRetryAndEscalation(
       sessionId: ctx.sessionId,
     });
     if (!pre.allow) {
+      const reason = pre.reason ?? 'hook denied';
       publishWarning(
         { bus: ctx.bus, phase: retries.state.phase },
-        `pre_escalation blocked: ${pre.reason ?? 'hook denied'}`,
+        `pre_escalation blocked: ${reason}`,
       );
+      const issue = buildRetryExhaustedRecoveryIssue({
+        task,
+        phase: retries.state.phase,
+        message: `${task.id} escalation blocked by pre_escalation hook: ${reason}`,
+        attempts: retries.attempts,
+        maxAttempts: ctx.config.workflow.maxRetries,
+        allowRetryOverride: true,
+        ...(ctx.implementerProfile !== undefined && {
+          selectedImplementerProfile: ctx.implementerProfile,
+        }),
+        createdAt: nowIso(),
+      });
+      const nextState = raisePendingRecovery(ctx, retries.state, issue);
       return {
-        state: retries.state,
+        state: nextState,
         result: failedRetry(retries.attempts),
       };
     }

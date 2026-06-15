@@ -1,6 +1,6 @@
-import { appendFileSync, chmodSync, existsSync, readFileSync, lstatSync, mkdirSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { SECURE_FILE_MODE, writeSecureFile, fsError } from '../../../lib/fs.js';
+import { SECURE_FILE_MODE, writeSecureFile, rejectSymlinkTarget } from '../../../lib/fs.js';
 import {
   TreeEntryEnvelopeSchema,
   TreeMetaSchema,
@@ -20,16 +20,6 @@ export function treeJsonlPath(sessionDir: string): string {
 
 export function treeMetaPath(sessionDir: string): string {
   return join(sessionDir, TREE_META);
-}
-
-function rejectSymlinkTarget(filePath: string): void {
-  try {
-    if (lstatSync(filePath).isSymbolicLink()) {
-      throw fsError.symlinkWrite(filePath);
-    }
-  } catch (err) {
-    if (fsError.isSymlinkWrite(err)) throw err;
-  }
 }
 
 export function appendTreeEntry(sessionDir: string, entry: TreeEntryEnvelope): void {
@@ -138,18 +128,17 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
   const lastEntry = entries.at(-1);
   if (!firstEntry || !lastEntry) return null;
 
-  const resolvedLeafId = meta && entryMap.has(meta.leafId) ? meta.leafId : lastEntry.id;
+  const metaIsCurrent = meta !== null && entryMap.has(meta.leafId) && meta.entryCount >= maxCount;
 
-  const resolvedMeta: TreeMeta =
-    meta && entryMap.has(meta.leafId)
-      ? meta
-      : {
-          leafId: resolvedLeafId,
-          entryCount: maxCount,
-          branchCount: countBranches(childMap),
-          createdAt: firstEntry.timestamp,
-          updatedAt: lastEntry.timestamp,
-        };
+  const resolvedMeta: TreeMeta = metaIsCurrent
+    ? meta
+    : {
+        leafId: lastEntry.id,
+        entryCount: Math.max(meta?.entryCount ?? 0, maxCount),
+        branchCount: Math.max(meta?.branchCount ?? 0, countBranches(childMap)),
+        createdAt: meta?.createdAt ?? firstEntry.timestamp,
+        updatedAt: lastEntry.timestamp,
+      };
 
   return { entries: entryMap, children: childMap, meta: resolvedMeta };
 }

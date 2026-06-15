@@ -109,6 +109,15 @@ describe('shell implementer', () => {
     ).rejects.toThrow(/command not found|ENOENT/);
   });
 
+  it('throws a timeout error when the shell command outlives the configured timeout', async () => {
+    const config = makeConfig({ command: '/bin/sleep', args: ['10'], timeout: 200 });
+    const task = makeTask();
+
+    await expect(
+      implementTask(task, { projectDir: '/tmp', config, context, onOutput: () => {} }),
+    ).rejects.toThrow(/timed out/);
+  });
+
   it('successful code extraction from stdout with fenced code', async () => {
     const codeOutput = '```typescript\nexport function hello() { return "hi"; }\n```';
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', codeOutput] });

@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { windowSlice } from '../../components/pickers/scroll-window.js';
+import { dropLastCodePoint } from '../../components/input/text-editing.js';
 import { buildPaletteResults } from './results.js';
 import type { PaletteResult } from './results.js';
 import { buildPaletteSources } from './sources.js';
@@ -53,6 +54,7 @@ export function CommandPaletteOverlay({
     phase,
     tasks,
     sessions,
+    projectDir,
     onRuntimeCommand,
     onWorkflowMode,
   });
@@ -91,7 +93,7 @@ export function CommandPaletteOverlay({
         return;
       }
       if (key.backspace || key.delete) {
-        setQuery((q) => q.slice(0, -1));
+        setQuery((q) => dropLastCodePoint(q));
         setCursor(0);
         return;
       }

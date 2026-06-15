@@ -30,7 +30,6 @@ implementerProfiles:
 validation:     { typecheck, lint, test, testCommand }
 workflow:       { mode, approve, maxRetries, git, maxBudget, ... }
 theme:          terminal | mono
-shikiTheme:     github-dark | github-light
 sessions:       { scope: project | global }
 escalation:     { enabled, intermediateProvider, intermediateModel }
 codebase:       { enabled, tokenBudget, cacheDir, include, exclude }
@@ -40,6 +39,8 @@ snapshots:      { auto: { preTask, postTask, preFinalReview } }
 palette:        { customActions: [...] }
 trust:          { customRenderers }
 approval:       { enabled, headless, tiers, feedRejectionsToPlanner }
+plannerEstimateReview: boolean
+autoSplitOverflow:     boolean
 ```
 
 Top-level keys are **not** strict at the root — unknown keys are ignored. Most nested objects (`hooks`, `codebase`, `otel`, every runner config) are `.strict()` and will reject unknown fields.
@@ -75,9 +76,9 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `model` | string | — | Model identifier. Planner: optional. Implementer: required for every runner kind; use `auto` when you want the runner's default model. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | provider default | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. |
-| `temperature` | 0..2 | provider default | Sampling temperature. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
-| `timeout` | ms (≤ 600000) | unset → provider default | Per-call timeout. Raise for long planner thinks; lower for cheap probe calls. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | Maps to `thinking.budget_tokens` for Anthropic (2k / 8k / 24k / 48k). Other providers may ignore. |
+| `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner and implementer); the `cli`, `shell`, `agent`, and `agent-sdk` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
+| `timeout` | ms (≤ 600000) | unset → no total-call cap (only the 60s stream-idle guard, see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option (the levels match diptych's enum); other providers and runner kinds may ignore it. |
 
 ### `kind: cli`
 
@@ -107,7 +108,6 @@ planner:
   args: ["--mcp-config", ".diptych/mcp.json"]
   outputFormat: stream-json
   contextLength: 1000000
-  temperature: 0.7
   timeout: 600000
   effort: high
 ```
@@ -158,10 +158,10 @@ Arbitrary `stdin → stdout` command. Diptych writes the prompt to stdin and par
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `command` | non-empty string | yes | Executable path (relative to project or absolute) |
+| `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — diptych never runs your command with `--version`, so the script is not invoked until planning starts. |
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
-| `capabilities` | partial object | no | Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, `supportsEffort`, `supportsImages`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. |
+| `capabilities` | partial object | no | **Planner only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api`/`agent-sdk` planner instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
 
 ```yaml
 planner:
@@ -188,9 +188,10 @@ implementer:
   kind: agent
   command: ./scripts/my-coding-agent.sh
   args: ["--apply"]
-  capabilities:
-    supportsSessionResume: true
+  model: auto
 ```
+
+A `planner` may also be `kind: agent`; only the planner variant accepts `capabilities` (the same planner feature flags as `kind: shell`).
 
 **When to use:** integrating a tool whose contract is "I edit files, you check git diff" rather than "I print a unified diff".
 
@@ -235,7 +236,7 @@ Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Becaus
 
 ## 3. `implementer`
 
-Same discriminated union as `planner`. The schema difference: `model` is required on every implementer variant, including `agent-sdk`. Use `model: auto` to ask the runner adapter for its default when supported.
+Same discriminated union as `planner`, with two schema differences: `model` is required on every implementer variant (including `agent-sdk`), and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. Use `model: auto` to ask the runner adapter for its default when supported. Implementer write behavior (`extracted-code` vs `direct`) is configured per profile via `capabilities.writesFiles` under `implementerProfiles`.
 
 YAML — minimal (local Ollama):
 
@@ -255,10 +256,12 @@ implementer:
   provider: anthropic
   apiBase: https://api.anthropic.com/v1
   model: claude-sonnet-4-6
-  contextLength: 1000000
+  contextLength: 200000
   temperature: 0.3
   timeout: 240000
 ```
+
+`contextLength` is the input context window, used to size the prompt budget. It is **not** the per-response output cap — diptych clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
 
 **When to use:**
 - *Cheap local* — Ollama or LM Studio for cost-free iteration on small tasks.
@@ -271,7 +274,7 @@ implementer:
 
 `implementer` remains required for backwards compatibility and existing configs do not need to change. New configs may also define named implementer profiles so task routing can choose a cheap capable worker per Task Brief.
 
-An implementer pool is still one product role. Diptych selects one capable profile for a Task Brief; it does not run a swarm, race workers against each other, or parallel-write the same checkout. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
+An implementer pool is still one product role: diptych selects one capable profile per Task Brief. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
 
 Profile names must be stable event-safe identifiers: lowercase letters, numbers, and hyphens, starting with a letter, up to 64 characters.
 
@@ -323,7 +326,7 @@ When recovery offers `route-bigger-worker`, the issue names a target profile fro
 
 ## 4. `validation`
 
-What runs after every implementer task. The four base fields are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. Three optional command overrides let you pin exact validation commands per project.
+What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project.
 
 ### Schema
 
@@ -332,10 +335,10 @@ validation: {
   typecheck:    boolean;
   lint:         boolean;
   test:         boolean;
-  testCommand:  string; // non-empty
-  typecheckCommand?: string; // optional
-  lintCommand?:      string; // optional
-  testPattern?:      string; // optional
+  testCommand?:      string; // optional, non-empty
+  typecheckCommand?: string; // optional, non-empty
+  lintCommand?:      string; // optional, non-empty
+  testPattern?:      string; // optional, non-empty
 }
 ```
 
@@ -346,7 +349,7 @@ validation: {
 | `typecheck` | boolean | `true` | Master switch for the type-checking stage |
 | `lint` | boolean | `true` | Master switch for the linting stage |
 | `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | `npm test` | Argv-style test runner command. Diptych appends `-- <test-file>` for the affected test, so shell operators and environment expansion are not interpreted here. |
+| `testCommand` | string | — | Argv-style override for the test command. When set, it runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, diptych resolves a command from discovered/heuristic project metadata, falling back to the built-in `npm test`; only that built-in fallback is scoped to the affected test (`npm test -- <test-file>`). |
 | `typecheckCommand` | string | — | Optional override for the type-checking command (e.g. `cargo check`, `go vet ./...`, `mypy src/`) |
 | `lintCommand` | string | — | Optional override for the linting command (e.g. `cargo clippy --no-deps`, `ruff check`) |
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Defaults to TypeScript patterns (`*.test.ts`, `*.test.tsx`) |
@@ -381,7 +384,7 @@ Diptych resolves each validation stage through 4 layers, in priority order:
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
 2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no project command override exists.
 3. **Heuristic fallback** — if no config or discovery exists, diptych looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
-4. **Built-in defaults / graceful skip** — typecheck falls back to `npx tsc --noEmit`, tests fall back to `npm test`, and lint skips when unresolved.
+4. **Built-in defaults / graceful skip** — typecheck falls back to `npx tsc --noEmit` only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency) and skips otherwise, tests fall back to `npm test`, and lint skips when unresolved. A stage with no resolved command is recorded as skipped, and a run where every enabled stage is skipped emits a warning.
 
 Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
 
@@ -420,11 +423,13 @@ workflow: {
   // Mode + brief review
   mode?:                  'instant' | 'quick' | 'standard' | 'speckit';
   briefReview?:           'simple' | 'rich';
+  taskReview?:            'none' | 'failed' | 'every';
 
   // Budget
   maxBudget?:             number > 0;
   budgetPauseThreshold?:  0..1;
   driftChainThreshold?:   0..1;
+  costGate?:              boolean; // default true
 
   // Speckit-only
   speckit?:               { minCoverage?: 0..1 };
@@ -441,18 +446,20 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `mode` | enum | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` is accepted as a one-time alias for `speckit`. |
-| `approve` | enum | `default` | Approval gates: `none` (full auto), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
+| `approve` | enum | `default` | Approval gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
 | `autoApproveSpec` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `autoApprovePlan` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
-| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (one commit at end), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
+| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
 | `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` from the simple view to opt into rich for the current session. |
+| `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), and stops at the hard cap. |
 | `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
-| `speckit.minCoverage` | 0..1 | unset | Speckit-mode minimum test-coverage gate. |
+| `costGate` | boolean | `true` | Pause for cost approval before implementation when a deterministic cost estimate is available. Set `false` to skip the gate. The gate is always skipped in `instant`/`quick` modes and when no deterministic estimate exists. |
+| `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
 | `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit and `/compact-transcript`. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` and `agent-sdk` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
@@ -464,9 +471,11 @@ workflow: {
 | `instant` | 1 | `none` | `simple` | off | Trivial edits, no ceremony |
 | `quick` | 1 | `none` | `simple` | off | Small task, still want a brief |
 | `standard` (default) | 4 | `spec` | `simple` | off | Ordinary feature work |
-| `speckit` | 6–7 | `all` | `rich` | off | Large, risky, externally visible |
+| `speckit` | 6–7 | `all` | `simple` | off | Large, risky, externally visible |
 
 `approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
+
+`briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). For `speckit` runs, `rich` is recommended; set it explicitly in config or press `e` from the simple view to opt in for the current session.
 
 ### YAML examples
 
@@ -510,7 +519,7 @@ workflow:
 
 **When to use what:**
 - `git.createBranch: true` — when running diptych in CI or against `main` and you don't want the changes landing on the current branch.
-- `git.commitStrategy: none` — the default and recommended setting for manual review. In this repository, implementation agents must keep this behavior and must never stage or commit.
+- `git.commitStrategy: none` — the default and recommended setting for manual review; diptych leaves changes unstaged so you can review and commit them yourself.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling.
 - `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
@@ -522,7 +531,7 @@ workflow:
 
 ## 6. `escalation`
 
-When a task fails locally past `maxRetries`, diptych can re-route to a stronger model — either an "intermediate" tier configured here or back to the planner ("full escalation").
+When a task fails locally past `maxRetries`, diptych escalates through a tier ladder: **tier 0** retries with the "intermediate" mid-tier model configured here, then **tier 1** has the planner write a hint, then **tier 2** hands the task to the planner ("full escalation"). The intermediate tier runs only when `intermediateProvider` is set.
 
 ### Schema
 
@@ -536,20 +545,19 @@ escalation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Toggle the intermediate tier. If `false`, failed tasks escalate straight to the planner. |
-| `intermediateProvider` | string | — | Provider id for the mid-tier model (any `ProviderId`). |
-| `intermediateModel` | string | — | Model id at that provider. |
+| `enabled` | boolean | on when `intermediateProvider` is set | Toggle for the intermediate tier. The tier is active by default once `intermediateProvider` is configured; set `enabled: false` to disable it (failed tasks then escalate straight to the planner) without removing the provider config. |
+| `intermediateProvider` | string | — | Provider id for the mid-tier model (any `ProviderId`). When unset, the intermediate tier never runs. |
+| `intermediateModel` | string | — | Model id at that provider. Falls back to the implementer's model when unset. |
 
 YAML:
 
 ```yaml
 escalation:
-  enabled: true
   intermediateProvider: openrouter
   intermediateModel: z-ai/glm-4.6
 ```
 
-**When to use:** you run a cheap implementer (Ollama / DeepSeek) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class.
+**When to use:** you run a cheap implementer (Ollama / DeepSeek) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 
 ---
 
@@ -638,7 +646,7 @@ type HookEntry =
 | Built-in | Default | Description |
 |---|---|---|
 | `prettier-on-change` | off | Run `prettier --write` on touched files in `post_task` |
-| `block-secrets` | off | Reject commits/diffs containing common secret patterns in `pre_commit` |
+| `block-secrets` | off | Reject commits/diffs containing common secret patterns in `pre_commit`; warns (rather than silently passing) when a listed file cannot be scanned |
 
 YAML — minimal:
 
@@ -704,7 +712,7 @@ Exporter selection — set **one** of:
 - `DIPTYCH_OTEL_EXPORTER=console` — alias for the same.
 - `--otel-exporter console` — CLI flag, same effect.
 
-For OTLP HTTP/gRPC exporters, provide your own in-process provider bootstrap or add support to `src/cli/otel-bootstrap.ts`; only `console` is built in.
+For OTLP HTTP/gRPC exporters, provide your own in-process provider bootstrap or add support to `src/lib/otel.ts`; only `console` is built in.
 
 **When to use:** wire diptych into your existing observability stack to track per-task duration, planner vs implementer cost, escalation rates.
 
@@ -889,26 +897,30 @@ palette:
 
 ---
 
-## 14. `theme`, `shikiTheme`, `sessions`
+## 14. `theme`, `sessions`, `plannerEstimateReview`, `autoSplitOverflow`
+
+These are top-level fields (siblings of `workflow`, not nested under it).
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `theme` | enum | `terminal` | `terminal` (uses your terminal's color scheme) \| `mono` (no color) |
-| `shikiTheme` | enum | `github-dark` | `github-dark` \| `github-light` (Shiki syntax-highlighting theme) |
 | `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.diptych`. |
+| `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
+| `autoSplitOverflow` | boolean | `false` | After the cost gate, automatically split tasks that overflow the implementer's context budget (or that the planner review flags as too large) into smaller child tasks before implementation. Splits that would drop acceptance criteria, dependencies, or produce too many children are skipped with a warning. |
 
 ```yaml
 theme: mono
-shikiTheme: github-light
 sessions:
   scope: global
+plannerEstimateReview: true
+autoSplitOverflow: true
 ```
 
 ---
 
 ## 15. Environment variables
 
-Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/runners/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
+Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, `src/engine/runners/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
 
 ### Provider authentication
 
@@ -947,7 +959,6 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `EDITOR` | External editor for spec/plan/brief review (`vi` fallback). |
-| `NODE_ENV` | `development` enables verbose store logs. |
 
 ---
 
@@ -970,7 +981,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api/agent-sdk only; warns + ignored otherwise) | start, resume, continue, last |
 | `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
 | `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
-| `--planner-context-length <tokens>` | Planner context length (tokens) | start, resume, continue, last |
+| `--planner-context-length <tokens>` | Planner context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue, last |
 | `--planner-effort <level>` | Planner effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
 | `--implementer <p>` | Implementer provider override | start, resume, continue, last |
 | `--implementer-model <m>` | Implementer model override | start, resume, continue, last |
@@ -988,7 +999,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
 | `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
-| `--worktree [name]` | Run in a linked git worktree | start, resume, continue, last |
+| `--worktree [name]` | Run in a linked git worktree | start |
 | `--yolo` | Skip action-level tiered approval prompts for this session | start, resume, continue, last |
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |
@@ -1049,12 +1060,14 @@ planner:
   timeout: 600000
 
 # ---------- Implementer: Sonnet via direct Anthropic API ----------
+# contextLength is the input window, not the output cap; max_tokens is clamped to
+# the model's max-output limit independently.
 implementer:
   kind: api
   provider: anthropic
   apiBase: https://api.anthropic.com/v1
   model: claude-sonnet-4-6
-  contextLength: 1000000
+  contextLength: 200000
   temperature: 0.3
   timeout: 240000
 
@@ -1160,7 +1173,6 @@ palette:
 
 # ---------- Theme + sessions ----------
 theme: terminal
-shikiTheme: github-dark
 sessions:
   scope: project
 ```

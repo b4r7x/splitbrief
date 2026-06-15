@@ -156,6 +156,28 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('backspace removes a whole emoji from the query, not a lone surrogate', async () => {
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    write(instance, 'hi😀');
+    await tick(1);
+    await tick(1);
+    expect(instance.lastFrame() ?? '').toContain('hi😀_');
+
+    write(instance, BACKSPACE);
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('hi_');
+    // No half of the surrogate pair left behind.
+    expect(frame).not.toContain('\ud83d');
+    expect(frame).not.toContain('\ude00');
+    instance.unmount();
+  });
+
   it('shows "No matching commands" when query has no matches', async () => {
     const instance = renderCommandPalette();
     await tick(1);

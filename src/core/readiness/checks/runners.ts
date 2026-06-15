@@ -50,7 +50,9 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
     summary: 'Runner availability was not probed.',
     details: [
       'Readiness does not require network probes or CLI auth checks.',
-      'Verify the runner CLI directly if availability is uncertain.',
+      config.planner.kind === 'api'
+        ? 'Verify the API key, endpoint, and model directly if availability is uncertain.'
+        : 'Verify the runner CLI directly if availability is uncertain.',
     ],
   });
 

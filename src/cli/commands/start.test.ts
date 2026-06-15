@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
+import { execSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
@@ -7,19 +8,31 @@ import {
   readFileSync,
   existsSync,
   readdirSync,
+  realpathSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { registerStartCommand } from './start.js';
 import type { StartDeps } from './start.js';
-import { CONFIG_FILE, DIPTYCH_DIR, STATE_FILE, worktreePath } from '../../core/paths.js';
+import {
+  CONFIG_FILE,
+  DIPTYCH_DIR,
+  STATE_FILE,
+  worktreePath,
+  sessionDir,
+} from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 import { parseIpcServerArgs } from '../../engine/ipc/server-args.js';
+import { runHeadless } from '../headless.js';
+import { readLockfile, checkServerStatus } from '../../engine/ipc/lockfile.js';
 
 import { routerStore } from '../../stores/navigation/router.js';
+import { MAX_SLUG_LENGTH } from '../../core/sessions/lifecycle.js';
 
 const spawnServerMock =
   vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
@@ -42,10 +55,11 @@ const fakeDeps: StartDeps = {
 let tmp: string;
 
 beforeEach(() => {
-  tmp = createTempDir('start-command-test');
+  tmp = realpathSync(createTempDir('start-command-test'));
   createTestGitRepo(tmp);
   resetAllStores();
   routerStore.init({ screen: 'home' });
+  process.stdin.isTTY = true;
   renderCalls.length = 0;
   spawnServerMock.mockClear();
   runHeadlessMock.mockClear();
@@ -75,6 +89,7 @@ beforeEach(() => {
 
 afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
 });
 
 /**
@@ -107,6 +122,13 @@ function writeConfigMarker(projectDir: string): void {
       '  apiBase: http://localhost:11434/v1',
       '  model: qwen2.5-coder:7b',
       '  contextLength: 32768',
+      'validation:',
+      '  typecheck: true',
+      '  lint: true',
+      '  test: true',
+      '  typecheckCommand: node -e ""',
+      '  lintCommand: node -e ""',
+      '  testCommand: node -e ""',
     ].join('\n'),
     'utf-8',
   );
@@ -136,7 +158,9 @@ function writeReadyReadinessFixtures(projectDir: string): void {
       '  typecheck: true',
       '  lint: true',
       '  test: true',
-      '  testCommand: npm test',
+      '  typecheckCommand: node -e ""',
+      '  lintCommand: node -e ""',
+      '  testCommand: node -e ""',
       'workflow:',
       '  approve: default',
       '  maxRetries: 3',
@@ -182,6 +206,27 @@ describe('start command — concurrency guard', () => {
     const activePath = join(tmp, DIPTYCH_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
     expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
+  });
+});
+
+describe('start command — non-TTY preflight (F-321)', () => {
+  it('fails fast without creating a session when stdin is not a TTY', async () => {
+    writeConfigMarker(tmp);
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, 'implement X']);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('interactive mode needs a TTY');
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions'))).toBe(false);
+    expect(renderCalls).toEqual([]);
   });
 });
 
@@ -232,6 +277,16 @@ describe('start command — --worktree flag', () => {
     expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/add-auth');
   });
 
+  it('falls back to slug "unknown" when --worktree is bare and the feature is all-non-Latin', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // CJK feature slugifies to '', so the empty-slug fallback must produce 'unknown'
+    await runStart(['--project', tmp, '機能を追加', '--worktree']);
+
+    expect(existsSync(worktreePath(tmp, 'unknown'))).toBe(true);
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/unknown');
+  });
+
   it('falls back to slug "session" when --worktree is bare and no feature is given', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -239,6 +294,34 @@ describe('start command — --worktree flag', () => {
 
     expect(existsSync(worktreePath(tmp, 'session'))).toBe(true);
     expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/session');
+  });
+
+  it('caps the derived slug at MAX_SLUG_LENGTH when --worktree is bare and the feature is long', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const feature = 'a'.repeat(MAX_SLUG_LENGTH + 10);
+    await runStart(['--project', tmp, feature, '--worktree']);
+
+    const cappedSlug = 'a'.repeat(MAX_SLUG_LENGTH);
+    expect(existsSync(worktreePath(tmp, cappedSlug))).toBe(true);
+    expect(existsSync(worktreePath(tmp, feature))).toBe(false);
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain(`.trees/${cappedSlug}`);
+  });
+
+  it('bounds the derived slug to MAX_SLUG_LENGTH so the IPC socket path stays under the sun_path cap', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Far exceed the cap so the boundary is genuinely crossed and the derived
+    // slug length stays bounded regardless of how long the feature grows.
+    const feature = 'a'.repeat(MAX_SLUG_LENGTH * 4);
+    await runStart(['--project', tmp, feature, '--worktree']);
+
+    const cappedSlug = 'a'.repeat(MAX_SLUG_LENGTH);
+    expect(cappedSlug.length).toBe(MAX_SLUG_LENGTH);
+    expect(cappedSlug.length).toBeLessThan(feature.length);
+    expect(existsSync(worktreePath(tmp, cappedSlug))).toBe(true);
+    expect(existsSync(worktreePath(tmp, feature))).toBe(false);
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain(`.trees/${cappedSlug}`);
   });
 
   it('wraps createWorktree errors as cliError with exitCode 1', async () => {
@@ -257,13 +340,17 @@ describe('start command — --worktree flag', () => {
     expect((captured as Error).message).toContain('Branch diptych/my-feature already exists.');
   });
 
-  it('creates setup artifacts in the returned worktree path after createWorktree succeeds', async () => {
+  it('requests setup in the returned worktree path without writing config when createWorktree succeeds', async () => {
     const wtPath = worktreePath(tmp, 'my-feature');
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runStart(['--project', tmp, '--worktree', 'my-feature', 'implement X']);
 
-    expect(existsSync(join(wtPath, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(wtPath)).toBe(true);
+    expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'implement X' });
+    // The default-config write is deferred to wizard completion, so the fresh
+    // worktree carries no config yet, and none leaks into the base checkout.
+    expect(existsSync(join(wtPath, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
     expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
   });
 
@@ -387,6 +474,60 @@ describe('start command — --worktree flag', () => {
     });
   });
 
+  it('prints config load warnings to stderr on the detached path before spawning the server', async () => {
+    writeReadyReadinessFixtures(tmp);
+    const configFilePath = join(tmp, DIPTYCH_DIR, CONFIG_FILE);
+    writeFileSync(
+      configFilePath,
+      [
+        'version: 2',
+        'planner:',
+        '  kind: api',
+        '  provider: ollama',
+        '  apiBase: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+        '  contextLength: 32768',
+        'implementer:',
+        '  kind: api',
+        '  provider: ollama',
+        '  apiBase: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+        '  contextLength: 32768',
+        'validation:',
+        '  typecheck: true',
+        '  lint: true',
+        '  test: true',
+        '  typecheckCommand: node -e ""',
+        '  lintCommand: node -e ""',
+        '  testCommand: node -e ""',
+        'workflow:',
+        '  approve: default',
+        '  maxRetries: 3',
+        '  persistTranscript: true',
+        '  mode: standard',
+      ].join('\n'),
+    );
+    chmodSync(configFilePath, 0o600);
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const stderrChunks: string[] = [];
+    let warningsBeforeSpawn = '';
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+    spawnServerMock.mockImplementationOnce(async (opts: SpawnServerOptions) => {
+      warningsBeforeSpawn = stderrChunks.join('');
+      mkdirSync(opts.sessionDir, { recursive: true });
+      return { ok: true, pid: 1234, sessionId: opts.sessionId };
+    });
+
+    await runStart(['--project', tmp, '--detach', 'implement X']);
+
+    expect(spawnServerMock).toHaveBeenCalledTimes(1);
+    expect(warningsBeforeSpawn).toContain('config.version 2 is deprecated');
+  });
+
   it('normalizes the legacy --mode full alias through nested detached overrides', async () => {
     spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -399,6 +540,41 @@ describe('start command — --worktree flag', () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.mode).toBe('speckit');
     expect(parsed?.overrides.mode).toBe('speckit');
+  });
+
+  it('rolls back the worktree and branch when server spawn fails, so the same command can be retried (F-187)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const spawnFailure = { ok: false, reason: 'boom' } as unknown as Awaited<
+      ReturnType<typeof spawnServerMock>
+    >;
+    spawnServerMock.mockImplementationOnce(async () => spawnFailure);
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--worktree', 'retry-me', '--detach', 'implement X']);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('Failed to start server');
+    expect(existsSync(worktreePath(tmp, 'retry-me'))).toBe(false);
+    const branchesAfterFailure = execSync('git branch --list diptych/retry-me', {
+      cwd: tmp,
+      encoding: 'utf-8',
+    });
+    expect(branchesAfterFailure.trim()).toBe('');
+
+    await runStart(['--project', tmp, '--worktree', 'retry-me', '--detach', 'implement X']);
+
+    expect(existsSync(worktreePath(tmp, 'retry-me'))).toBe(true);
+    const wtPath = worktreePath(tmp, 'retry-me');
+    const artifact = readOnlySessionArtifact(wtPath, 'server-args.json') as {
+      projectDir?: string;
+    };
+    expect(artifact.projectDir).toBe(wtPath);
   });
 
   it('rejects --detach without a feature argument before creating any worktree', async () => {
@@ -453,6 +629,9 @@ describe('start command — worktree indicator passthrough', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await runStart(['--project', tmp, '--worktree', 'my-feature', 'prepare branch']);
     const wtPath = worktreePath(tmp, 'my-feature');
+    // A completed wizard leaves a config on disk; without it the deferred-setup
+    // gate would route to 'setup' instead of exercising worktree passthrough.
+    writeConfigMarker(wtPath);
     routerStore.init({ screen: 'home' });
 
     await runStart(['--project', wtPath, 'implement X']);
@@ -493,6 +672,27 @@ describe('start command — readiness', () => {
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
     expect(renderCalls).toEqual([]);
+  });
+
+  it('throws a one-line pointer instead of re-listing every blocker in the error message', async () => {
+    writeReadyReadinessFixtures(tmp);
+    writeLiveSession(tmp, '2026-04-28-live');
+    writeFileSync(join(tmp, 'scratch.txt'), 'local edit');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const message = (captured as Error).message;
+    expect(message).toContain('Run readiness blocked');
+    expect(message).toContain('blocker');
+    expect(message.split('\n')).toHaveLength(1);
+    expect(message).not.toContain('repo.active-session-live');
   });
 
   it('emits readiness before headless workflow execution and persists compact session evidence', async () => {
@@ -611,7 +811,7 @@ describe('start command — shorthand invocation', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'implement auth flow']);
+    await program.parseAsync(['node', 'diptych', 'implement auth flow', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
   });
@@ -648,6 +848,90 @@ describe('start command — shorthand invocation', () => {
     ]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'build feature X' });
+  });
+});
+
+describe('start command — liveness record (F-261)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function onlySessionId(projectDir: string): string {
+    const sessionsDir = join(projectDir, DIPTYCH_DIR, 'sessions');
+    const ids = readdirSync(sessionsDir);
+    expect(ids).toHaveLength(1);
+    return ids[0] ?? '';
+  }
+
+  it('creates and then releases a liveness record across a real headless start run', async () => {
+    writeReadyReadinessFixtures(tmp);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    const briefCompleteTask = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/example.ts',
+      description: 'Add a single example function to src/example.ts',
+      tests: ['verifies the example function returns the expected value for the documented input'],
+      constraints: ['keep the change confined to the example function'],
+      typeDefs: 'export function example(): void',
+      implementationSteps: ['1. Add the example function', '2. Export it from src/example.ts'],
+      scope: { inBounds: ['the example function'], outOfBounds: ['unrelated modules'] },
+      evidence: ['the new function is exported and importable'],
+    });
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '',
+        plan: '',
+        tasks: [briefCompleteTask],
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+    });
+    const implementer = makeImplementer();
+    let midRunPid: number | undefined;
+    let midRunExitedAt: number | undefined;
+    implementer.implement = vi.fn().mockImplementation(async () => {
+      const lock = await readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+      midRunPid = lock?.pid;
+      midRunExitedAt = lock?.exitedAt;
+      return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+    });
+
+    const realHeadlessDeps: StartDeps = {
+      ...fakeDeps,
+      runHeadless: (options) =>
+        runHeadless({ ...options, _planner: planner, _implementer: implementer }),
+    };
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, realHeadlessDeps);
+    await program.parseAsync([
+      'node',
+      'diptych',
+      'start',
+      '--json',
+      '--mode',
+      'quick',
+      'implement X',
+      '--project',
+      tmp,
+    ]);
+
+    const sessionId = onlySessionId(tmp);
+    const dir = sessionDir(tmp, sessionId);
+
+    expect(midRunPid).toBe(process.pid);
+    expect(midRunExitedAt).toBeUndefined();
+
+    let status = await checkServerStatus(dir);
+    for (let i = 0; i < 50 && status.alive; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      status = await checkServerStatus(dir);
+    }
+    expect(status.alive).toBe(false);
+    const lock = await readLockfile(dir);
+    expect(lock?.exitedAt).toBeDefined();
   });
 });
 

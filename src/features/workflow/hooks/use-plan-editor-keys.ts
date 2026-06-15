@@ -1,10 +1,22 @@
+import { useEffect } from 'react';
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { createStore, storeBase } from '../../../stores/create-store.js';
 import { deleteTask, mergeWithPrevious, moveTaskDown, moveTaskUp } from '../plan-editor/actions.js';
 import { openExternalEditor } from '../plan-editor/external-editor.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Task } from '../../../core/schemas/task.js';
+
+const mountedStore = createStore<boolean>(false);
+
+// True only while the rich plan editor's key layer is mounted. The global shortcut
+// layer reads this to release Ctrl+K (its command-palette binding) back to the editor's
+// reorder chord, so a single press never both reorders a task and opens the palette.
+export const planEditorKeysStore = {
+  ...storeBase(mountedStore),
+  __testReset: () => mountedStore.set(false),
+};
 
 export type PlanEditorAction =
   | { type: 'none' }
@@ -134,6 +146,11 @@ export interface PlanEditorKeysOptions {
 export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
   const { onSave, sessionDir, onTogglePacketPreview, onRegenerateFlagged } = options;
   const isOverlayOpen = overlayStore.use((s) => s.active !== 'none');
+
+  useEffect(() => {
+    mountedStore.set(true);
+    return () => mountedStore.set(false);
+  }, []);
 
   useInput(
     (_input, _key) => {

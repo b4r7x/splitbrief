@@ -2,6 +2,7 @@ import {
   tryParseStructuredSummary,
   type StructuredSummary,
 } from '../../core/schemas/compaction.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { PlannerSummaryMessage } from './types.js';
 
@@ -56,14 +57,14 @@ export async function summarize(
   config: PlannerSummaryConfig,
   messages: PlannerSummaryMessage[],
   projectDir?: string,
-): Promise<string> {
-  if (messages.length === 0) return '';
+): Promise<{ text: string; usage: TokenDelta | null }> {
+  if (messages.length === 0) return { text: '', usage: null };
   const result = await config.invokeEscalate({
     prompt: buildSummaryPrompt(messages),
     projectDir: projectDir ?? process.cwd(),
     callbacks: { onOutput: () => {} },
   });
-  return result.text.trim();
+  return { text: result.text.trim(), usage: result.usage };
 }
 
 export async function summarizeStructured(
@@ -71,13 +72,13 @@ export async function summarizeStructured(
   messages: PlannerSummaryMessage[],
   previousSummary?: StructuredSummary,
   projectDir?: string,
-): Promise<{ text: string; structured: StructuredSummary | null }> {
-  if (messages.length === 0) return { text: '', structured: null };
+): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }> {
+  if (messages.length === 0) return { text: '', structured: null, usage: null };
   const result = await config.invokeEscalate({
     prompt: buildStructuredSummaryPrompt(messages, previousSummary),
     projectDir: projectDir ?? process.cwd(),
     callbacks: { onOutput: () => {} },
   });
   const text = result.text.trim();
-  return { text, structured: tryParseStructuredSummary(text) };
+  return { text, structured: tryParseStructuredSummary(text), usage: result.usage };
 }

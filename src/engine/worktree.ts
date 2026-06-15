@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import {
   DIPTYCH_DIR,
   ACTIVE_FILE,
+  CONFIG_FILE,
   STATE_FILE,
   SESSIONS_DIR,
   TREES_DIR,
@@ -15,11 +16,12 @@ import {
   assertWritablePathConfined,
   pathConfinementError,
 } from '../lib/path-confinement.js';
-import { getCurrentBranch, type GitClient } from '../lib/git.js';
+import { getCurrentBranch, showFileAtHead, type GitClient } from '../lib/git.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
 import { PhaseSchema, type Phase } from '../core/schemas/enums.js';
 import { isTerminalPhase } from '../core/phases.js';
+import { checkServerStatus, readLockfile } from './ipc/lockfile.js';
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
@@ -57,16 +59,16 @@ export const worktreeError = {
       `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`,
       { name },
     ),
-  sourceDirty: (fileCount: number) =>
+  sourceDirty: (files: string[]) =>
     error(
       'worktree-source-dirty',
-      `Source working tree is dirty (${fileCount} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`,
-      { fileCount },
+      `Source working tree is dirty (${files.length} uncommitted file(s): ${files.join(', ')}). Commit, stash, or clean changes before using --worktree.`,
+      { files },
     ),
   branchExists: (branch: string) =>
     error(
       'worktree-branch-exists',
-      `Branch ${branch} already exists. Use --worktree <other-name> or delete the branch first.`,
+      `Branch ${branch} already exists. Use --worktree <other-name>, or run "git worktree prune" then "git branch -D ${branch}" to clear a stale registration.`,
       { branch },
     ),
   notFound: (slug: string) =>
@@ -186,18 +188,103 @@ async function readSessionState(
   return { phase: null, lastUpdated };
 }
 
+type WorktreeSession = {
+  sessionId: string;
+  phase: Phase | null;
+  lastUpdated: string | null;
+};
+
+async function listWorktreeSessionIds(worktreeDir: string): Promise<string[]> {
+  const sessionsDir = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR);
+  if (!existsSync(sessionsDir)) return [];
+  const entries = await readdir(sessionsDir, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+
+// A session is live when its persisted phase is non-terminal AND, when a server
+// lockfile is present, that server is still reachable. TUI-started runs persist
+// state.json but write no lockfile (and no .diptych/active pointer — see F-317),
+// so the absence of a lockfile must not mask their liveness.
+async function isSessionLive(worktreeDir: string, sessionId: string): Promise<boolean> {
+  const { phase } = await readSessionState(worktreeDir, sessionId);
+  if (phase === null || isTerminalPhase(phase)) return false;
+  const sessDir = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const lockfile = await readLockfile(sessDir);
+  if (lockfile === null) return true;
+  const status = await checkServerStatus(sessDir);
+  return status.alive;
+}
+
+async function findLiveWorktreeSession(worktreeDir: string): Promise<WorktreeSession | null> {
+  for (const sessionId of await listWorktreeSessionIds(worktreeDir)) {
+    if (await isSessionLive(worktreeDir, sessionId)) {
+      const { phase, lastUpdated } = await readSessionState(worktreeDir, sessionId);
+      return { sessionId, phase, lastUpdated };
+    }
+  }
+  return null;
+}
+
+const HOOKS_DIR = 'hooks';
+
+const DIPTYCH_GITIGNORE_LINES = new Set([`${DIPTYCH_DIR}/`, `${TREES_DIR}/`]);
+
+async function gitignoreDiffersOnlyByDiptychBookkeeping(projectDir: string): Promise<boolean> {
+  const working = await readGitignoreSafe(join(projectDir, '.gitignore'));
+  if (working === null) return false;
+  const head = (await showFileAtHead(projectDir, '.gitignore')) ?? '';
+  const stripDiptych = (text: string): string[] =>
+    text.split('\n').filter((line) => !DIPTYCH_GITIGNORE_LINES.has(line.trim()));
+  return stripDiptych(working).join('\n') === stripDiptych(head).join('\n');
+}
+
+async function readGitignoreSafe(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+async function propagateDiptychState(projectDir: string, wtPath: string): Promise<void> {
+  const baseConfig = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+  if (existsSync(baseConfig)) {
+    await mkdir(join(wtPath, DIPTYCH_DIR), { recursive: true });
+    await cp(baseConfig, join(wtPath, DIPTYCH_DIR, CONFIG_FILE));
+  }
+  const baseHooks = join(projectDir, DIPTYCH_DIR, HOOKS_DIR);
+  if (existsSync(baseHooks)) {
+    await cp(baseHooks, join(wtPath, DIPTYCH_DIR, HOOKS_DIR), { recursive: true });
+  }
+}
+
+// `git worktree add` does not populate submodules, so a submodule repo's
+// worktree gets empty directories and a clean `git status` that hides the hole.
+// Initialize them explicitly when the repo declares submodules.
+async function initWorktreeSubmodules(
+  projectDir: string,
+  wtPath: string,
+  git: GitClient,
+): Promise<void> {
+  if (!existsSync(join(projectDir, '.gitmodules'))) return;
+  await git.raw(['-C', wtPath, 'submodule', 'update', '--init', '--recursive']);
+}
+
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
   const wtPath = resolveConfinedWorktreePath(projectDir, slug);
   const branch = `diptych/${slug}`;
 
   const status = await git.status();
+  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyByDiptychBookkeeping(projectDir);
   const dirtyFiles = status.files.filter((file) => {
     const path = file.path;
-    return path !== TREES_DIR && !path.startsWith(`${TREES_DIR}/`);
+    if (path === TREES_DIR || path.startsWith(`${TREES_DIR}/`)) return false;
+    if (path === '.gitignore' && gitignoreOnlyBookkeeping) return false;
+    return true;
   });
   if (dirtyFiles.length > 0) {
-    throw worktreeError.sourceDirty(dirtyFiles.length);
+    throw worktreeError.sourceDirty(dirtyFiles.map((file) => file.path));
   }
 
   const branches = await git.branch();
@@ -206,6 +293,8 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
   }
 
   await git.raw(['worktree', 'add', wtPath, '-b', branch]);
+  await initWorktreeSubmodules(projectDir, wtPath, git);
+  await propagateDiptychState(projectDir, wtPath);
   return wtPath;
 }
 
@@ -232,24 +321,27 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
       continue;
     }
 
-    const activeFilePath = join(wtDir, DIPTYCH_DIR, ACTIVE_FILE);
     let sessionId: string | null = null;
     let status: WorktreeStatus = 'none';
     let phase: Phase | null = null;
     let lastUpdated: string | null = null;
 
-    if (existsSync(activeFilePath)) {
-      const content = (await readFile(activeFilePath, 'utf-8')).trim();
-      sessionId = content || null;
-
-      if (sessionId) {
-        const state = await readSessionState(wtDir, sessionId);
-        phase = state.phase;
-        lastUpdated = state.lastUpdated;
-        if (phase !== null && isTerminalPhase(phase)) {
+    const live = await findLiveWorktreeSession(wtDir);
+    if (live) {
+      sessionId = live.sessionId;
+      phase = live.phase;
+      lastUpdated = live.lastUpdated;
+      status = 'active';
+    } else {
+      const activeFilePath = join(wtDir, DIPTYCH_DIR, ACTIVE_FILE);
+      if (existsSync(activeFilePath)) {
+        const content = (await readFile(activeFilePath, 'utf-8')).trim();
+        sessionId = content || null;
+        if (sessionId) {
+          const state = await readSessionState(wtDir, sessionId);
+          phase = state.phase;
+          lastUpdated = state.lastUpdated;
           status = 'idle';
-        } else {
-          status = 'active';
         }
       }
     }
@@ -274,7 +366,15 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
   const branch = `diptych/${slug}`;
 
   if (!existsSync(wtPath)) {
-    throw worktreeError.notFound(slug);
+    const branches = await git.branch();
+    if (!branches.all.includes(branch)) {
+      throw worktreeError.notFound(slug);
+    }
+    await git.raw(['worktree', 'prune']);
+    if (deleteBranch) {
+      await git.raw(['branch', '-D', branch]);
+    }
+    return;
   }
 
   let liveSessionBypassed = false;
@@ -282,25 +382,27 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
   let liveSessionId: string | null = null;
   let uncommittedFileCount = 0;
 
-  const activeFilePath = join(wtPath, DIPTYCH_DIR, ACTIVE_FILE);
-  if (existsSync(activeFilePath)) {
-    const sessionId = (await readFile(activeFilePath, 'utf-8')).trim() || null;
-    if (sessionId) {
-      const { phase } = await readSessionState(wtPath, sessionId);
-      const isLive = phase !== null && !isTerminalPhase(phase);
-      if (isLive) {
-        if (!force) {
-          throw worktreeError.liveSession(slug, sessionId);
-        }
-        liveSessionBypassed = true;
-        liveSessionId = sessionId;
-      }
+  const live = await findLiveWorktreeSession(wtPath);
+  if (live) {
+    if (!force) {
+      throw worktreeError.liveSession(slug, live.sessionId);
     }
+    liveSessionBypassed = true;
+    liveSessionId = live.sessionId;
   }
 
   const porcelain = await git.raw(['-C', wtPath, 'status', '--porcelain']);
-  if (porcelain.trim()) {
-    uncommittedFileCount = porcelain.trim().split('\n').filter(Boolean).length;
+  const porcelainPaths = porcelain
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.slice(line.indexOf(' ') + 1).trim());
+  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyByDiptychBookkeeping(wtPath);
+  const uncommittedPaths = porcelainPaths.filter(
+    (path) => !(path === '.gitignore' && gitignoreOnlyBookkeeping),
+  );
+  if (uncommittedPaths.length > 0) {
+    uncommittedFileCount = uncommittedPaths.length;
     if (!force) {
       throw worktreeError.uncommittedChanges(slug);
     }

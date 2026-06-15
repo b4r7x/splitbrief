@@ -27,13 +27,18 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
 
   let v2: Record<string, unknown>;
   if (version === 3) {
-    return raw;
+    return reconcileLegacyCommitStrategy(obj);
   } else if (version === 2) {
     v2 = obj;
     warnings?.push(
       'config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.',
     );
   } else {
+    if (version === undefined) {
+      warnings?.push(
+        'config.version is missing; diptych assumed version 1 and migrated it in memory, which drops fields added after v1. Run `diptych init --reconfigure` to write a current config.',
+      );
+    }
     v2 = narrowRecord(migrateV1ToV2(obj)) ?? {};
   }
 
@@ -56,15 +61,7 @@ export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unkno
       });
     }
 
-    const topCommit = workflow.commitStrategy;
-    const existingGit = narrowRecord(workflow.git);
-    if (topCommit !== undefined || existingGit) {
-      const git: Record<string, unknown> = { ...(existingGit ?? {}) };
-      if (git.commitStrategy === undefined && topCommit !== undefined) {
-        git.commitStrategy = topCommit;
-      }
-      newWorkflow.git = git;
-    }
+    foldCommitStrategyIntoGit(workflow, newWorkflow);
 
     if (typeof workflow.mode === 'string' && workflow.mode === 'full') {
       newWorkflow.mode = 'speckit';
@@ -74,6 +71,28 @@ export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unkno
   }
 
   return result;
+}
+
+function foldCommitStrategyIntoGit(
+  source: Record<string, unknown>,
+  target: Record<string, unknown>,
+): void {
+  const topCommit = source.commitStrategy;
+  const existingGit = narrowRecord(source.git);
+  if (topCommit === undefined && !existingGit) return;
+  const git: Record<string, unknown> = { ...(existingGit ?? {}) };
+  if (git.commitStrategy === undefined && topCommit !== undefined) {
+    git.commitStrategy = topCommit;
+  }
+  target.git = git;
+}
+
+function reconcileLegacyCommitStrategy(obj: Record<string, unknown>): Record<string, unknown> {
+  const workflow = narrowRecord(obj.workflow);
+  if (!workflow || workflow.commitStrategy === undefined) return obj;
+  const newWorkflow: Record<string, unknown> = { ...workflow };
+  foldCommitStrategyIntoGit(workflow, newWorkflow);
+  return { ...obj, workflow: newWorkflow };
 }
 
 export interface DeriveApproveLevelInput {

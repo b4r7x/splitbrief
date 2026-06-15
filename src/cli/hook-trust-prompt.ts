@@ -9,7 +9,27 @@ export interface HookTrustOptions {
   allowHooks: boolean;
 }
 
-export async function ensureHooksTrusted(opts: HookTrustOptions): Promise<void> {
+export interface PromptStreams {
+  input: NodeJS.ReadableStream;
+  output: NodeJS.WritableStream;
+}
+
+export async function promptHookTrust(
+  question: string,
+  streams: PromptStreams = { input: process.stdin, output: process.stderr },
+): Promise<string> {
+  const rl = createInterface({ input: streams.input, output: streams.output });
+  const eof = Symbol('eof');
+  const closed = new Promise<typeof eof>((resolve) => rl.once('close', () => resolve(eof)));
+  const raw = await Promise.race([rl.question(question), closed]);
+  rl.close();
+  return raw === eof ? '' : raw;
+}
+
+export async function ensureHooksTrusted(
+  opts: HookTrustOptions,
+  promptForTrust: (question: string) => Promise<string> = promptHookTrust,
+): Promise<void> {
   if (!opts.hooks) return;
   if (isHooksConfigTrusted(opts.projectDir, opts.hooks)) return;
   if (opts.allowHooks) {
@@ -26,12 +46,9 @@ export async function ensureHooksTrusted(opts: HookTrustOptions): Promise<void> 
   const summary = formatHookSummary(opts.hooks);
   process.stderr.write(`\n  diptych config defines hooks (untrusted):\n${summary}\n`);
 
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const answer = (await rl.question('Trust these hooks for this project? [y/N] '))
-    .trim()
-    .toLowerCase();
-  rl.close();
+  const raw = await promptForTrust('Trust these hooks for this project? [y/N] ');
 
+  const answer = raw.trim().toLowerCase();
   if (answer !== 'y' && answer !== 'yes') {
     throw cliError(
       'Refusing to run with untrusted hooks. Edit .diptych/config.yaml or re-run and answer y.',

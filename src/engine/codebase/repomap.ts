@@ -2,6 +2,7 @@ import { relative } from 'node:path';
 import { resolveFromProject } from '../../utils/path-patterns.js';
 import { mkdir, stat } from 'node:fs/promises';
 import { warnError } from '../../lib/warn.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
@@ -22,6 +23,7 @@ export interface RepoMapOptions {
   cacheDir?: string;
   include?: string[];
   exclude?: string[];
+  onWarn?: (message: string) => void;
 }
 
 export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}): Promise<string> {
@@ -32,7 +34,9 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     const tokenBudget = opts.tokenBudget ?? 4000;
     const cacheDir = resolveCodebaseCacheDir(projectDir, opts.cacheDir);
     await mkdir(cacheDir, { recursive: true });
-    cache = await createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir));
+    cache = await createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir), {
+      ...(opts.onWarn && { onWarn: opts.onWarn }),
+    });
     const c = cache;
 
     const absFiles = await discoverFiles(projectDir, {
@@ -69,7 +73,11 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
 
     return formatWithBudget(displayNodes, rankingsByRelPath, tokenBudget);
   } catch (err) {
-    warnError('repo-map unavailable', err);
+    if (opts.onWarn) {
+      opts.onWarn(`repo-map unavailable: ${toErrorMessage(err)}`);
+    } else {
+      warnError('repo-map unavailable', err);
+    }
     return '';
   } finally {
     cache?.close();

@@ -75,7 +75,7 @@ export interface RuntimeCommandContext {
   listAttachments: () => Array<{ id: string; path: string }>;
   writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
   listApprovals: () => ApprovalGrant[];
-  clearApprovals: (scope?: 'session' | 'always' | 'all') => number;
+  clearApprovals: () => number;
   getApprovalEnabled: () => boolean;
   setApprovalEnabled: (enabled: boolean) => void;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;

@@ -1,9 +1,19 @@
-import { parseTaskBlocksStrict } from '../../../engine/spec/parser.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { formatTaskId } from '../../../core/schemas/task.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+
+function preservesOrder(tasks: Task[]): boolean {
+  const present = new Set<TaskId>(tasks.map((task) => task.id));
+  const seen = new Set<TaskId>();
+  for (const task of tasks) {
+    for (const dep of task.dependsOn) {
+      if (present.has(dep) && !seen.has(dep)) return false;
+    }
+    seen.add(task.id);
+  }
+  return true;
+}
 
 export function renumberTasks(tasks: Task[]): Task[] {
   const idMap = new Map<TaskId, TaskId>();
@@ -90,7 +100,7 @@ export function mergeWithPrevious(
     title: `${prev.title} + ${curr.title}`,
     file: prev.file,
     action: prev.action === 'modify' || curr.action === 'modify' ? 'modify' : 'create',
-    description: `${prev.description}\n\n---\n\n${curr.description}`,
+    description: `${prev.description}\n\n***\n\n${curr.description}`,
     tests: [...prev.tests, ...curr.tests],
     implementationSteps: [...prev.implementationSteps, ...curr.implementationSteps],
     constraints: [...prev.constraints, ...curr.constraints],
@@ -125,6 +135,7 @@ export function moveTaskDown(tasks: Task[], cursor: number): { tasks: Task[]; cu
   if (!a || !b) return { tasks, cursor };
   result[cursor] = b;
   result[cursor + 1] = a;
+  if (!preservesOrder(result)) return { tasks, cursor };
   return { tasks: renumberTasks(result), cursor: cursor + 1 };
 }
 
@@ -138,29 +149,6 @@ export function moveTaskUp(tasks: Task[], cursor: number): { tasks: Task[]; curs
   if (!a || !b) return { tasks, cursor };
   result[cursor] = b;
   result[cursor - 1] = a;
+  if (!preservesOrder(result)) return { tasks, cursor };
   return { tasks: renumberTasks(result), cursor: cursor - 1 };
-}
-
-export function parseSplitResult(
-  markdown: string,
-  fullTasks: Task[],
-  cursor: number,
-): Task[] | { error: string } {
-  let parsed: Task[];
-  try {
-    parsed = parseTaskBlocksStrict(markdown);
-  } catch (err) {
-    return { error: `split parse failed: ${toErrorMessage(err)}` };
-  }
-  if (parsed.length === 0) {
-    return { error: 'split produced no tasks' };
-  }
-  try {
-    const before = fullTasks.slice(0, cursor);
-    const after = fullTasks.slice(cursor + 1);
-    const pending = parsed.map((task) => ({ ...task, status: 'pending' as const }));
-    return topoSort([...before, ...pending, ...after]);
-  } catch (err) {
-    return { error: `split validation failed: ${toErrorMessage(err)}` };
-  }
 }

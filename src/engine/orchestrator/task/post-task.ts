@@ -27,7 +27,11 @@ export async function absorbAcceptedFiles(opts: {
     isTaskCompleted(completedTask.status) &&
     taskAcceptedFiles.size === 0
   ) {
-    for (const file of await inferTaskAcceptedChangedFiles(projectDir, refreshedTask))
+    for (const file of await inferTaskAcceptedChangedFiles(
+      projectDir,
+      refreshedTask,
+      opts.baseline.head,
+    ))
       taskAcceptedFiles.add(file);
   }
   const absorbedFiles = new Set([...taskAcceptedFiles, ...opts.acknowledgedUserEditFiles]);

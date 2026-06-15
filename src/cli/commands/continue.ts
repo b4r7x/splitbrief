@@ -10,19 +10,25 @@ import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { printCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive, writeActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { addWorkflowOptions, assertModeFlagsExclusive } from '../options.js';
+import { skillsStore } from '../../stores/project/skills.js';
+import {
+  addWorkflowOptions,
+  assertModeFlagsExclusive,
+  assertWorktreeStartOnly,
+} from '../options.js';
 import { maybeMigrateAndReport } from './migrate.js';
 import { renderAttachClient } from './attach.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
 import { findSingleRunningSession } from '../sessions/single-running.js';
-import { assertResumableState } from '../sessions/resolve.js';
+import { assertResumableState, assertSessionExists } from '../sessions/resolve.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 type ResumeTailDeps = Pick<
   ContinueDeps,
@@ -37,6 +43,17 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   setupWorkflow,
 };
 
+function reconcileResumeMode(
+  state: WorkflowState,
+  cliMode: WorkflowMode | undefined,
+): WorkflowState {
+  if (cliMode === undefined || state.mode === undefined || cliMode === state.mode) return state;
+  console.warn(
+    `Overriding saved workflow mode '${state.mode}' with --mode ${cliMode} for this resume.`,
+  );
+  return { ...state, mode: cliMode };
+}
+
 export async function resumeSavedSession(args: {
   projectDir: string;
   sessionId: string;
@@ -44,10 +61,13 @@ export async function resumeSavedSession(args: {
   opts: WorkflowOpts;
   deps?: ResumeTailDeps | undefined;
 }): Promise<void> {
-  const { projectDir, sessionId, state, opts } = args;
+  const { projectDir, sessionId, opts } = args;
   const deps = args.deps ?? defaultResumeTailDeps;
+  const state = reconcileResumeMode(args.state, opts.mode);
 
   assertResumableState(state, sessionId);
+
+  writeActive({ projectDir, sessionId });
 
   if (opts.json) {
     await deps.runHeadless({
@@ -72,6 +92,9 @@ export async function resumeSavedSession(args: {
   const { useFullscreen, useMouse } = await deps.setupWorkflow(opts);
 
   await deps.initStores(projectDir, opts);
+  if (state.selectedSkills && state.selectedSkills.length > 0) {
+    skillsStore.setSelected(new Set(state.selectedSkills));
+  }
   routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
 
   await deps.renderApp(createElement(App), {
@@ -107,7 +130,10 @@ async function resolveTargetSession(
   deps: ContinueDeps,
 ): Promise<string> {
   const resolved = await resolveSessionAlias(sessionInput, projectDir);
-  if (resolved !== undefined) return resolved;
+  if (resolved !== undefined) {
+    assertSessionExists(projectDir, resolved);
+    return resolved;
+  }
 
   // No explicit ID: use the active session pointer (same as resume).
   const active = readActive(projectDir);
@@ -131,6 +157,7 @@ export async function continueCommand(
 ): Promise<void> {
   assertNotWindows();
   assertModeFlagsExclusive(opts);
+  assertWorktreeStartOnly(opts);
 
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
   const sessDir = sessionDir(opts.projectDir, sessionId);
@@ -155,6 +182,13 @@ export async function continueCommand(
     return;
   }
 
+  if (status.processAlive) {
+    throw cliError(
+      `server process ${status.data?.pid} exists but is unresponsive — kill it first`,
+      1,
+    );
+  }
+
   if (status.crashed) {
     await deps.printCrashDiagnostic(sessDir, status);
   }
@@ -165,7 +199,7 @@ export async function continueCommand(
 
   if (!state) {
     throw cliError(
-      `session '${sessionId}' has no saved state and is not running — cannot continue.`,
+      `session '${sessionId}' has no usable saved state and is not running — cannot continue. Start a new workflow with \`diptych start\`.`,
       1,
     );
   }

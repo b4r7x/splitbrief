@@ -13,7 +13,7 @@ import {
   routeTaskForPreview,
   type RoutingDecision,
   type WorkerPacketPreview,
-} from '../../../../engine/facades/routing-preview.js';
+} from '../../../../engine/routing-preview.js';
 import { buildProjectContext } from './project-context.js';
 import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-format.js';
 
@@ -30,14 +30,12 @@ interface UsePacketPreviewOptions {
   selectedTask?: Task | undefined;
   selectedTaskMetadata?: PlanTaskReviewMetadata | undefined;
   projectDir: string;
-  testCommand: string;
   config: Config | null;
   width?: number | undefined;
 }
 
 export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPreview | null {
-  const { isOpen, selectedTask, selectedTaskMetadata, projectDir, testCommand, config, width } =
-    opts;
+  const { isOpen, selectedTask, selectedTaskMetadata, projectDir, config, width } = opts;
   const [packetPreviewRefresh, setPacketPreviewRefresh] = useState<PacketPreviewRefresh | null>(
     null,
   );
@@ -69,7 +67,7 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
 
       let routingDecision: RoutingDecision | undefined;
       if (config) {
-        routingDecision = routeTaskForPreview({ task, config, projectDir, testCommand });
+        routingDecision = routeTaskForPreview({ task, config, projectDir });
       }
 
       if (controller.signal.aborted) return;
@@ -95,7 +93,7 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
     return () => {
       controller.abort();
     };
-  }, [isOpen, selectedTask, projectDir, config, testCommand]);
+  }, [isOpen, selectedTask, projectDir, config]);
 
   const hasPreviewRefresh =
     packetPreviewRefresh !== null &&
@@ -119,7 +117,7 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
   return isOpen
     ? buildWorkerPacketPreview({
         task: previewTask,
-        context: buildProjectContext(projectDir, testCommand),
+        context: buildProjectContext(projectDir),
         ...(previewMetadata !== undefined ? { metadata: previewMetadata } : {}),
         ...(hasPreviewRefresh && packetPreviewRefresh.routingDecision !== undefined
           ? { routingDecision: packetPreviewRefresh.routingDecision }

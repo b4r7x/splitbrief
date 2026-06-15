@@ -40,6 +40,33 @@ function writeSummary(): void {
   );
 }
 
+function writeEvidence(): void {
+  writeFileSync(
+    join(sessionDirectory, 'evidence.json'),
+    JSON.stringify({
+      version: 1,
+      sessionId: 'test-session',
+      feature: 'add auth',
+      generatedAt: '2026-05-04T12:00:00Z',
+      validationSummary: { passed: 1, failed: 0, skipped: 0, escalated: 0 },
+      tasks: [
+        {
+          id: 'T001',
+          title: 'one',
+          file: 'src/one.ts',
+          status: 'done',
+          retries: 0,
+          changedFiles: ['src/one.ts'],
+          validation: [{ stage: 'test', passed: true }],
+          expectedEvidence: ['tests pass'],
+          observedEvidence: ['test passed'],
+          escalated: false,
+        },
+      ],
+    }),
+  );
+}
+
 describe('collectExportData', () => {
   it('reads summary.json and returns ExportData', () => {
     writeSummary();
@@ -119,7 +146,42 @@ describe('collectExportData', () => {
       tasksWithValidationEvidence: 1,
       escalatedTasks: 1,
       failedTasks: 0,
+      href: 'evidence.json',
     });
+  });
+
+  it('computes the evidence href relative to an out path inside the session dir', () => {
+    writeSummary();
+    writeEvidence();
+    mkdirSync(join(sessionDirectory, 'reports'), { recursive: true });
+
+    const result = collectExportData(
+      sessionDirectory,
+      'test-session',
+      join(sessionDirectory, 'reports', 'report.html'),
+    );
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.data.evidence?.href).toBe(join('..', 'evidence.json'));
+  });
+
+  it('falls back to the absolute evidence path when the out path leaves the session dir', () => {
+    writeSummary();
+    writeEvidence();
+    const outsideDir = createTempDir('export-collect-outside');
+
+    const result = collectExportData(
+      sessionDirectory,
+      'test-session',
+      join(outsideDir, 'report.html'),
+    );
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.data.evidence?.href).toBe(join(sessionDirectory, 'evidence.json'));
+
+    cleanupTempDir(outsideDir);
   });
 
   it('omits optional sections when optional artifacts are missing', () => {
@@ -198,6 +260,19 @@ describe('writeSessionHtmlReport', () => {
     expect(readFileSync(join(sessionDirectory, 'report.html'), 'utf-8')).toMatch(
       /^<!DOCTYPE html>/,
     );
+  });
+
+  it('embeds an evidence link relative to a custom out path inside the session dir', () => {
+    writeSummary();
+    writeEvidence();
+    mkdirSync(join(sessionDirectory, 'reports'), { recursive: true });
+    const outPath = join(sessionDirectory, 'reports', 'report.html');
+
+    const result = writeSessionHtmlReport(sessionDirectory, 'test-session', outPath);
+
+    expect(result.status).toBe('ok');
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).toContain(`<a href="${join('..', 'evidence.json')}">`);
   });
 
   it('reports missing when summary.json does not exist', () => {

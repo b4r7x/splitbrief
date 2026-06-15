@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/load/io.js';
-import { isGitRepo } from '../lib/git.js';
+import { isGitRepo, getRepoToplevel } from '../lib/git.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
@@ -13,8 +13,36 @@ export function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());
 }
 
+export async function canonicalizeProjectDir(opts: {
+  project?: string | undefined;
+}): Promise<string> {
+  const resolved = resolveProjectDir(opts.project);
+  const toplevel = await getRepoToplevel(resolved);
+  if (toplevel === null) return resolved;
+
+  // getRepoToplevel returns a realpath-canonicalized path (git resolves
+  // symlinks); resolve() does not, so canonicalize before comparing or a
+  // symlinked path component (e.g. macOS /tmp -> /private/tmp) makes an exact
+  // repo-root invocation look like a subdirectory.
+  const canonical = existsSync(resolved) ? realpathSync(resolved) : resolved;
+  if (toplevel === canonical) return toplevel;
+
+  if (opts.project !== undefined) {
+    console.error(
+      `Warning: --project ${resolved} is inside git repository ${toplevel}; using repository root.`,
+    );
+  }
+  return toplevel;
+}
+
 export function isInteractiveTty(): boolean {
   return Boolean(process.stdout.isTTY) && !process.env['CI'];
+}
+
+export function assertInteractiveTty(): void {
+  if (!process.stdin.isTTY) {
+    throw cliError('interactive mode needs a TTY — use --json or --detach', 1);
+  }
 }
 
 export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConfig> {
@@ -48,7 +76,7 @@ export interface SetupResult {
 }
 
 export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
-  const projectDir = resolveProjectDir(opts.project);
+  const projectDir = await canonicalizeProjectDir(opts);
 
   await assertGitRepo(projectDir);
 
@@ -70,7 +98,6 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
       console.log(NO_CONFIG_MSG);
       initConfig(projectDir);
     } else {
-      initConfig(projectDir);
       return { projectDir, useFullscreen, useMouse, needsSetup: true };
     }
   }

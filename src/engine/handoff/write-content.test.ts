@@ -22,9 +22,7 @@ afterEach(() => {
 });
 
 describe('writeHandoffPack — validation metadata', () => {
-  it('includes enabled typecheck, lint, and test commands in manifest.json', async () => {
-    const sessionId = 'validation-session';
-    writeHandoffWriterSessionState(tmp, sessionId);
+  function writeValidationConfig(): void {
     mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
     writeFileSync(
       join(tmp, DIPTYCH_DIR, 'config.yaml'),
@@ -37,6 +35,12 @@ describe('writeHandoffPack — validation metadata', () => {
         '  test_command: npm run test:unit',
       ].join('\n'),
     );
+  }
+
+  it('omits npm typecheck/lint commands for a non-TS project, keeping the configured test command', async () => {
+    const sessionId = 'validation-session';
+    writeHandoffWriterSessionState(tmp, sessionId);
+    writeValidationConfig();
 
     const outDir = join(tmp, 'handoff', 'validation');
     await writeHandoffPack({
@@ -49,11 +53,28 @@ describe('writeHandoffPack — validation metadata', () => {
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
 
-    expect(manifest.validation).toEqual({
-      typecheck: 'npm run typecheck',
-      lint: 'npm run lint',
-      test: 'npm run test:unit',
+    expect(manifest.validation).toEqual({ test: 'npm run test:unit' });
+  });
+
+  it('emits npx tsc --noEmit for a TypeScript project', async () => {
+    const sessionId = 'validation-ts-session';
+    writeHandoffWriterSessionState(tmp, sessionId);
+    writeValidationConfig();
+    writeFileSync(join(tmp, 'tsconfig.json'), '{}');
+
+    const outDir = join(tmp, 'handoff', 'validation-ts');
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'default',
     });
+
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+
+    expect(manifest.validation.typecheck).toBe('npx tsc --noEmit');
+    expect(manifest.validation.test).toBe('npm run test:unit');
   });
 });
 

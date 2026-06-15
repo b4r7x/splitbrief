@@ -137,7 +137,7 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
     "const { join } = require('node:path');",
     `const marker = ${JSON.stringify(marker)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
-    'const prompt = process.argv[2] ?? "";',
+    'const prompt = process.argv[process.argv.length - 1] ?? "";',
     'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
     'if (!prompt.includes("CLI planner implementer module")) {',
     '  console.error("missing task title in implementer prompt");',

@@ -7,6 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 
 import {
+  createBusTextHandler,
   publishPlannerStatus,
   publishValidation,
   publishError,
@@ -29,6 +30,32 @@ function setupProject(): { projectDir: string; sessionId: string } {
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
+
+describe('createBusTextHandler', () => {
+  it('stamps an implementer role so streamed implementer output is not attributed to the planner', () => {
+    const { bus, events } = makeBusRecorder();
+    const handler = createBusTextHandler({ bus, phase: 'implementing' }, 'implementer');
+
+    handler('writing src/a.ts');
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'planner_text',
+      text: 'writing src/a.ts',
+      role: 'implementer',
+    });
+  });
+
+  it('omits the role when none is supplied so planner output keeps its default attribution', () => {
+    const { bus, events } = makeBusRecorder();
+    const handler = createBusTextHandler({ bus, phase: 'planning' });
+
+    handler('drafting the plan');
+
+    expect(events[0]).toMatchObject({ type: 'planner_text', text: 'drafting the plan' });
+    expect('role' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+});
 
 describe('publishPlannerStatus', () => {
   it('falls back to plannerTool / plannerModel from state when extra is not provided', () => {
@@ -139,6 +166,45 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     );
 
     expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
+  });
+
+  it('a skipped stage is reported via the skipped channel, not as a passing stage', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [
+          { stage: 'typecheck', passed: true },
+          { stage: 'lint', passed: true, skipped: true },
+          { stage: 'test', passed: true },
+        ],
+        startTime: Date.now(),
+      },
+    );
+
+    expect(events[0]).toMatchObject({
+      type: 'validate',
+      passed: true,
+      stages: { typecheck: true, lint: false, test: true },
+      skipped: { lint: true },
+    });
+  });
+
+  it('omits the skipped channel when no stage was skipped', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [{ stage: 'typecheck', passed: true }],
+        startTime: Date.now(),
+      },
+    );
+
+    expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
   });
 });
 

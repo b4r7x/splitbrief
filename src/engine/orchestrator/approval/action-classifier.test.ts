@@ -14,49 +14,53 @@ function make(desc: string, overrides?: Partial<ClassifyInput>): ClassifyInput {
   return { ...baseInput, actionDescription: desc, ...overrides };
 }
 
-describe('classifyAction — destructive', () => {
+describe('classifyAction — package_change via manifest file write', () => {
   it.each([
-    { desc: 'rm -rf dist/', actionClass: 'destructive', tier: 'confirm' },
-    { desc: 'git reset --hard HEAD', actionClass: 'destructive', tier: 'confirm' },
-    { desc: 'git push --force origin main', actionClass: 'destructive', tier: 'confirm' },
-    { desc: 'knex migrate', actionClass: 'destructive', tier: 'confirm' },
-  ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
-    const result = classifyAction(make(desc));
-    expect(result).toEqual({ actionClass, tier });
-  });
-});
-
-describe('classifyAction — network', () => {
-  it.each([
-    { desc: 'npm publish', actionClass: 'network', tier: 'confirm' },
-    { desc: 'curl https://api.example.com/data', actionClass: 'network', tier: 'confirm' },
-  ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
-    const result = classifyAction(make(desc));
-    expect(result).toEqual({ actionClass, tier });
-  });
-});
-
-describe('classifyAction — package_change', () => {
-  it.each([
-    { desc: 'npm install lodash', actionClass: 'package_change', tier: 'confirm' },
     { desc: 'write package.json', actionClass: 'package_change', tier: 'confirm' },
-    {
-      desc: 'npm install lodash then edit src/feature/foo.ts',
-      actionClass: 'package_change',
-      tier: 'confirm',
-    },
+    { desc: 'edit pnpm-lock.yaml', actionClass: 'package_change', tier: 'confirm' },
   ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
     const result = classifyAction(make(desc));
     expect(result).toEqual({ actionClass, tier });
   });
 });
 
-describe('classifyAction — validation', () => {
+describe('classifyAction — command-shaped descriptions are not command-classified', () => {
   it.each([
-    { desc: 'npm run tsc', actionClass: 'validation', tier: 'auto' },
-    { desc: 'npm run typecheck', actionClass: 'validation', tier: 'auto' },
-  ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
-    const result = classifyAction(make(desc));
+    'rm -rf dist/',
+    'git reset --hard HEAD',
+    'git push --force origin main',
+    'knex migrate',
+    'npm publish',
+    'curl https://api.example.com/data',
+    'npm install lodash',
+  ])('%s is never destructive/network/package_change/validation', (desc) => {
+    const { actionClass } = classifyAction(make(desc));
+    expect(['destructive', 'network', 'package_change', 'validation']).not.toContain(actionClass);
+  });
+});
+
+describe('classifyAction — config-file writes are scope-classified, not validation', () => {
+  it.each([
+    {
+      desc: 'modify tsconfig.json',
+      overrides: { taskInBounds: ['src/**'] },
+      actionClass: 'write_out_of_scope',
+      tier: 'sticky',
+    },
+    {
+      desc: 'edit tsconfig.json',
+      overrides: { taskInBounds: ['tsconfig.json'] },
+      actionClass: 'write_in_scope',
+      tier: 'auto',
+    },
+    {
+      desc: 'modify vitest.config.ts',
+      overrides: { taskInBounds: ['src/**'] },
+      actionClass: 'write_out_of_scope',
+      tier: 'sticky',
+    },
+  ])('$desc → $actionClass/$tier', ({ desc, overrides, actionClass, tier }) => {
+    const result = classifyAction(make(desc, overrides));
     expect(result).toEqual({ actionClass, tier });
   });
 });
@@ -96,6 +100,28 @@ describe('classifyAction — write_out_of_scope', () => {
   });
 });
 
+describe('classifyAction — control plane', () => {
+  it.each([
+    { taskFile: '.git/config', desc: 'create .git/config' },
+    { taskFile: '.git/hooks/pre-commit', desc: 'write .git/hooks/pre-commit' },
+    { taskFile: '.diptych/config.yaml', desc: 'modify .diptych/config.yaml' },
+  ])('$taskFile → destructive/confirm, never write_in_scope/auto', ({ taskFile, desc }) => {
+    const result = classifyAction(make(desc, { taskFile, taskInBounds: [taskFile] }));
+    expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
+
+  it('control-plane target stays destructive even when allowedPaths would include it', () => {
+    const result = classifyAction(
+      make('write .git/config', {
+        taskFile: '.git/config',
+        taskInBounds: ['.git/**'],
+        allowedPaths: ['.git/**'],
+      }),
+    );
+    expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
+});
+
 describe('classifyAction — tier overrides', () => {
   it('write_out_of_scope → confirm via tierOverrides', () => {
     const result = classifyAction(make('edit src/unrelated/other.ts'), {
@@ -105,7 +131,7 @@ describe('classifyAction — tier overrides', () => {
   });
 
   it('package_change → sticky via tierOverrides', () => {
-    const result = classifyAction(make('npm install lodash'), {
+    const result = classifyAction(make('write package.json'), {
       package_change: 'sticky',
     });
     expect(result).toEqual({ actionClass: 'package_change', tier: 'sticky' });
@@ -187,10 +213,11 @@ describe('classifyAction — allowedPaths', () => {
     expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'sticky' });
   });
 
-  it('destructive action in allowed path still classified as destructive', () => {
+  it('control-plane write is destructive even when allowedPaths would include it', () => {
     const result = classifyAction(
-      make('rm -rf src/old/', {
-        allowedPaths: ['src/**'],
+      make('write .diptych/config.yaml', {
+        taskFile: '.diptych/config.yaml',
+        allowedPaths: ['.diptych/**'],
       }),
     );
     expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });

@@ -36,7 +36,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
           'diptych.workflow',
           {
             kind: SpanKind.INTERNAL,
-            attributes: { 'diptych.feature': event.feature },
+            attributes: { 'diptych.feature': redactSecrets(event.feature) },
           },
           ROOT_CONTEXT,
         );
@@ -87,8 +87,24 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         }
         return;
       }
+      case 'workflow_resumed': {
+        if (!workflowSpan) {
+          workflowSpan = tracer.startSpan(
+            'diptych.workflow',
+            { kind: SpanKind.INTERNAL },
+            ROOT_CONTEXT,
+          );
+          workflowCtx = trace.setSpan(ROOT_CONTEXT, workflowSpan);
+        }
+        return;
+      }
       case 'planner_status': {
-        if (event.status === 'running' && event.phase !== lastPhase && workflowSpan) {
+        if (
+          event.status === 'running' &&
+          event.phase !== lastPhase &&
+          event.phase !== 'escalating' &&
+          workflowSpan
+        ) {
           if (phaseSpan) phaseSpan.end();
           phaseSpan = tracer.startSpan(
             `diptych.phase.${event.phase}`,
@@ -186,7 +202,21 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'error': {
         if (workflowSpan) {
-          workflowSpan.recordException(new Error(redactSecrets(event.message)));
+          const message = redactSecrets(event.message);
+          workflowSpan.recordException(new Error(message));
+          for (const t of taskSpans.values()) {
+            t.setStatus({ code: SpanStatusCode.ERROR, message });
+            t.end();
+          }
+          taskSpans.clear();
+          if (phaseSpan) {
+            phaseSpan.setStatus({ code: SpanStatusCode.ERROR, message });
+            phaseSpan.end();
+            phaseSpan = null;
+          }
+          workflowSpan.setStatus({ code: SpanStatusCode.ERROR, message });
+          workflowSpan.end();
+          workflowSpan = null;
         }
         return;
       }
@@ -198,7 +228,6 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         }
         return;
       }
-      case 'workflow_resumed':
       case 'paused_external_changes':
       case 'recovery_prompted':
       case 'recovery_action_selected':

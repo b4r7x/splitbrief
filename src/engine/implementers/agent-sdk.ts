@@ -9,6 +9,7 @@ import {
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 import { resolveApiKeyOverride } from '../providers/client.js';
+import { composeAbortSignal } from '../../utils/abort.js';
 
 export function createAgentSdkImplementer(
   config: Config,
@@ -18,6 +19,7 @@ export function createAgentSdkImplementer(
     config.implementer.kind === 'agent-sdk'
       ? resolveApiKeyOverride(config.implementer.apiKey)
       : undefined;
+  const timeout = config.implementer.timeout;
   const effectiveModel =
     resolveAutoModel(config.implementer.model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
@@ -32,12 +34,13 @@ export function createAgentSdkImplementer(
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal } = opts;
+      const effectiveSignal = composeAbortSignal(signal, timeout);
       return backend.invoke({
         prompt,
         projectDir,
         model: effectiveModel,
         onOutput,
-        signal,
+        signal: effectiveSignal,
         env: opts.sandboxEnv,
       });
     },

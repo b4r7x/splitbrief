@@ -27,12 +27,10 @@ import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './features/settings/mode-selector.js';
 import { ToolModelPicker } from './features/runners/picker.js';
-import {
-  interruptWorkflowTurn,
-  renderWorkflowCostDrilldownOverlay,
-  renderWorkflowPlanEditorHelpOverlay,
-  useWorkflowShellMouseScroll,
-} from './features/workflow/app-integration.js';
+import { interruptTurn } from './features/workflow/handlers.js';
+import { CostDrilldownOverlay } from './features/workflow/components/cost/drilldown-overlay.js';
+import { PlanEditorHelpOverlay } from './features/workflow/components/plan-editor/help-overlay.js';
+import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import type { RuntimeCommandDef } from './core/runtime/commands/types.js';
 import type { OverlayType, Screen } from './core/navigation/types.js';
 import { assertNever } from './utils/type-guards.js';
@@ -57,8 +55,8 @@ export function App() {
     });
   };
 
-  useAppKeys({ exit, interruptWorkflow: interruptWorkflowTurn });
-  useWorkflowShellMouseScroll();
+  useAppKeys({ exit, interruptWorkflow: interruptTurn });
+  useMouseScroll();
   useInput((input, key) => logDiptychParsedKey(input, key), {
     isActive: isConfiguredKeyDebugEnabled(),
   });
@@ -159,9 +157,9 @@ function renderOverlay({
     case 'sessions':
       return <SessionsPicker />;
     case 'cost-drilldown':
-      return renderWorkflowCostDrilldownOverlay();
+      return <CostDrilldownOverlay />;
     case 'plan-editor-help':
-      return renderWorkflowPlanEditorHelpOverlay();
+      return <PlanEditorHelpOverlay />;
     default:
       return assertNever(active);
   }

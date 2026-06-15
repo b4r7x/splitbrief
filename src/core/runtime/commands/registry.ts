@@ -6,7 +6,7 @@ import { includes } from '../../../utils/type-guards.js';
 import { canRedoTask, canRevisePlan, canReviseSpec } from '../../phases.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { pluralize } from '../../../utils/pluralize.js';
+import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { formatRejectRunMessage } from './messages.js';
 
 export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
@@ -202,7 +202,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           if (depth === 0) {
             ctx.setFeedbackMessage('Queue is empty');
           } else {
-            ctx.setFeedbackMessage(`Queue: ${depth} ${pluralize(depth, 'message')} pending`);
+            ctx.setFeedbackMessage(`Queue: ${countNoun(depth, 'message')} pending`);
           }
           return;
         }

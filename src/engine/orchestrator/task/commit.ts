@@ -7,9 +7,10 @@ import type { EventBus, EngineEvent } from '../../events/types.js';
 import {
   commitChanges,
   createTaggedStash,
-  stageAll,
-  resetIndex,
-  getCurrentChangedFiles,
+  stageFiles,
+  getStagedFiles,
+  getInProgressGitOp,
+  resetIndexPreservingStaged,
 } from '../../../lib/git.js';
 import {
   publishWarning,
@@ -21,11 +22,15 @@ import {
 import { transitionAndSave } from '../state-ops.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 
+export const RUN_COMMIT_MESSAGE_PREFIX = 'feat(diptych):';
+
 type GitOps = {
-  stageAll: typeof stageAll;
+  stageFiles: typeof stageFiles;
+  getStagedFiles: typeof getStagedFiles;
+  getInProgressGitOp: typeof getInProgressGitOp;
   commitChanges: typeof commitChanges;
   createTaggedStash: typeof createTaggedStash;
-  resetIndex: typeof resetIndex;
+  resetIndexPreservingStaged: typeof resetIndexPreservingStaged;
 };
 
 type ValidateCommitOptions = {
@@ -42,6 +47,7 @@ type ValidateCommitOptions = {
   taskStartTime?: number | undefined;
   retryCount?: number | undefined;
   implementerProfile?: string | undefined;
+  taskChangedFiles?: string[] | undefined;
   gitOps?: Partial<GitOps> | undefined;
 };
 
@@ -64,12 +70,16 @@ export async function validateCommitAndAdvance(
     implementerProfile,
   } = opts;
   const gitOps: GitOps = {
-    stageAll,
+    stageFiles,
+    getStagedFiles,
+    getInProgressGitOp,
     commitChanges,
     createTaggedStash,
-    resetIndex,
+    resetIndexPreservingStaged,
     ...opts.gitOps,
   };
+  const taskChangedFiles = opts.taskChangedFiles ?? [task.file];
+  const usingFallbackFiles = opts.taskChangedFiles === undefined;
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -92,21 +102,38 @@ export async function validateCommitAndAdvance(
 
   const strategy = config.workflow.git?.commitStrategy;
   if (strategy === 'per-task') {
-    const suffix = commitSuffix ? ` (${commitSuffix})` : '';
-    const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;
+    const inProgressOp = await gitOps.getInProgressGitOp(projectDir);
+    if (inProgressOp) {
+      publishWarning(
+        { bus: bus, phase: state.phase },
+        `Skipped per-task commit: a git ${inProgressOp} is in progress. Finish or abort it first.`,
+      );
+      const nextState = transitionAndSave({ projectDir, sessionId }, state, {
+        type: transitionType,
+      });
+      emitTaskComplete(nextState);
+      return { state: nextState, completed: true };
+    }
 
+    if (usingFallbackFiles) {
+      publishWarning(
+        { bus: bus, phase: state.phase },
+        `No attributed file set for ${task.id}; staging and secret scan cover only ${task.file}.`,
+      );
+    }
+
+    const suffix = commitSuffix ? ` (${commitSuffix})` : '';
+    const commitMsg = `${RUN_COMMIT_MESSAGE_PREFIX} ${task.id} - ${task.title}${suffix}`;
+
+    const stagedBefore = await gitOps.getStagedFiles(projectDir);
     try {
-      // Stage before the pre_commit hook so a hook that inspects the git index
-      // (e.g. `git diff --cached`) sees every file this commit will include.
-      await gitOps.stageAll(projectDir);
+      // Stage only the attributed/approved set before the pre_commit hook so a
+      // hook that inspects the git index (e.g. `git diff --cached`) sees every
+      // file this commit will include — and the user's unrelated dirty and
+      // untracked files stay out of authored history.
+      await gitOps.stageFiles(projectDir, taskChangedFiles);
 
       if (config.hooks) {
-        let files: string[] = [task.file];
-        try {
-          files = await getCurrentChangedFiles(projectDir);
-        } catch {
-          // keep task.file as the fallback set
-        }
         const preCommitPayload: EngineEvent = {
           type: 'git_commit',
           ts: Date.now(),
@@ -118,11 +145,11 @@ export async function validateCommitAndAdvance(
         const pre = await runPreHooks(config.hooks, 'pre_commit', preCommitPayload, {
           projectDir,
           sessionId,
-          files,
+          files: taskChangedFiles,
         });
         if (!pre.allow) {
           try {
-            await gitOps.resetIndex(projectDir);
+            await gitOps.resetIndexPreservingStaged(projectDir, stagedBefore);
           } catch {
             // best-effort unstage
           }
@@ -142,7 +169,7 @@ export async function validateCommitAndAdvance(
       publishGitCommit({ bus: bus, phase: state.phase }, task.id, commitMsg, task.file);
     } catch (err) {
       try {
-        await gitOps.resetIndex(projectDir);
+        await gitOps.resetIndexPreservingStaged(projectDir, stagedBefore);
       } catch {
         // best-effort unstage
       }
@@ -153,7 +180,7 @@ export async function validateCommitAndAdvance(
       const tag = await gitOps.createTaggedStash(
         projectDir,
         `diptych checkpoint: ${task.id}`,
-        `diptych/${task.id}`,
+        `diptych/${sessionId}/${task.id}`,
       );
       if (tag) {
         publishGitCheckpoint({ bus: bus, phase: state.phase }, task.id, tag);

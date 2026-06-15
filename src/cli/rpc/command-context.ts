@@ -18,10 +18,12 @@ import { performManualCompaction } from '../../engine/orchestrator/transcript-re
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import {
   readApprovalsStore,
-  writeApprovalsStore,
+  mutateApprovalsStore,
   clearGrantsByScope,
 } from '../../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
+import { writeConfig } from '../../core/config/load/io.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 
 const rpcCommandContextError = {
@@ -54,6 +56,11 @@ export function createRpcCommandContext(opts: {
     projectDir: () => opts.projectDir,
     getConfig: opts.getConfig,
     saveConfig: (config) => {
+      try {
+        writeConfig(opts.projectDir, config);
+      } catch (err) {
+        return { ok: false, errorMessage: `Failed to save config: ${toErrorMessage(err)}` };
+      }
       opts.setConfig(config);
       return { ok: true };
     },
@@ -76,12 +83,14 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const { action } = buildRewindAction(
+      const { action, event } = buildRewindAction(
         request,
         { projectDir: opts.projectDir, sessionId },
         state,
+        { persistEvent: false },
       );
       transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
+      opts.bus.publish(event);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
@@ -89,12 +98,14 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const { action } = buildRewindAction(
+      const { action, event } = buildRewindAction(
         { target: 'task', taskId },
         { projectDir: opts.projectDir, sessionId },
         state,
+        { persistEvent: false },
       );
       transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
+      opts.bus.publish(event);
       opts.abort(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
@@ -123,10 +134,13 @@ export function createRpcCommandContext(opts: {
       }),
     listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
     clearApprovals: (projectDir, scope) => {
-      const before = readApprovalsStore(projectDir);
-      const after = clearGrantsByScope(before, scope);
-      writeApprovalsStore(projectDir, after);
-      return before.grants.length - after.grants.length;
+      let removed = 0;
+      mutateApprovalsStore(projectDir, (before) => {
+        const after = clearGrantsByScope(before, scope);
+        removed = before.grants.length - after.grants.length;
+        return after;
+      });
+      return removed;
     },
     acceptRunSnapshot,
     rejectRunSnapshot,

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
@@ -6,8 +5,14 @@ import { writeSecureFile } from '../../lib/fs.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { getDiptychPath } from '../paths.js';
 import { HookEventSchema, HooksConfigSchema } from '../schemas/hooks.js';
+import {
+  commandTokensAfterInterpreter,
+  isPathLike,
+  isRepoLocal,
+} from '../trust/path-classification.js';
 
 const TRUST_FILE = 'hook-trust.json';
 const TRUST_VERSION = 1;
@@ -30,25 +35,42 @@ export function hashHooksConfig(projectDir: string, hooks: unknown): string {
     moduleDigests: collectModuleDigests(projectDir, hooks),
     commandScriptDigests: collectCommandScriptDigests(projectDir, hooks),
   });
-  const hex = createHash('sha256').update(json, 'utf8').digest('hex');
-  return `sha256:${hex}`;
+  return `sha256:${sha256Hex(json)}`;
 }
 
 const STATIC_IMPORT_RE = /\b(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+const DYNAMIC_LOAD_RE = /\b(?:import|require)\s*\(\s*(['"])([^'"]*)\1\s*\)/g;
+const DYNAMIC_LOAD_HEAD_RE = /\b(?:import|require)\s*\(/g;
 
 const MODULE_EXTENSIONS = ['.js', '.ts', '.mjs', '.cjs', '.mts', '.cts'];
+
+const UNRESOLVABLE_DYNAMIC_DEP = 'unresolvable dynamic dependency';
 
 function isLocalModuleSpecifier(specifier: string): boolean {
   return specifier.startsWith('./') || specifier.startsWith('../');
 }
 
-function parseStaticModuleImports(content: string): string[] {
-  const imports: string[] = [];
+type ModuleImports = {
+  specifiers: string[];
+  hasUnresolvableDynamicDep: boolean;
+};
+
+function parseStaticModuleImports(content: string): ModuleImports {
+  const specifiers: string[] = [];
   for (const match of content.matchAll(STATIC_IMPORT_RE)) {
     const specifier = match[1];
-    if (specifier && isLocalModuleSpecifier(specifier)) imports.push(specifier);
+    if (specifier && isLocalModuleSpecifier(specifier)) specifiers.push(specifier);
   }
-  return imports;
+
+  let literalDynamic = 0;
+  for (const match of content.matchAll(DYNAMIC_LOAD_RE)) {
+    literalDynamic += 1;
+    const specifier = match[2];
+    if (specifier && isLocalModuleSpecifier(specifier)) specifiers.push(specifier);
+  }
+
+  const totalDynamic = [...content.matchAll(DYNAMIC_LOAD_HEAD_RE)].length;
+  return { specifiers, hasUnresolvableDynamicDep: totalDynamic > literalDynamic };
 }
 
 function resolveLocalModulePath(
@@ -89,10 +111,16 @@ function resolveLocalModulePath(
   return null;
 }
 
-function collectModuleDependencyPaths(projectDir: string, entryPath: string): string[] {
+type ModuleDependencies = {
+  paths: string[];
+  unresolvableDynamicDepPaths: string[];
+};
+
+function collectModuleDependencyPaths(projectDir: string, entryPath: string): ModuleDependencies {
   const visited = new Set<string>();
   const queue = [entryPath];
   const paths: string[] = [];
+  const unresolvableDynamicDepPaths: string[] = [];
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -112,13 +140,15 @@ function collectModuleDependencyPaths(projectDir: string, entryPath: string): st
       continue;
     }
 
-    for (const specifier of parseStaticModuleImports(content)) {
+    const { specifiers, hasUnresolvableDynamicDep } = parseStaticModuleImports(content);
+    if (hasUnresolvableDynamicDep) unresolvableDynamicDepPaths.push(current);
+    for (const specifier of specifiers) {
       const resolved = resolveLocalModulePath(projectDir, current, specifier);
       if (resolved && !visited.has(resolved)) queue.push(resolved);
     }
   }
 
-  return paths;
+  return { paths, unresolvableDynamicDepPaths };
 }
 
 function collectModuleDigests(projectDir: string, hooks: unknown): HookFileDigest[] {
@@ -127,59 +157,46 @@ function collectModuleDigests(projectDir: string, hooks: unknown): HookFileDiges
 
   const digests: HookFileDigest[] = [];
   const seen = new Set<string>();
+  const flagged = new Set<string>();
   for (const event of HookEventSchema.options) {
     for (const entry of parsed.data[event] ?? []) {
       if (entry.kind !== 'module') continue;
-      for (const dependencyPath of collectModuleDependencyPaths(projectDir, entry.path)) {
+      const { paths, unresolvableDynamicDepPaths } = collectModuleDependencyPaths(
+        projectDir,
+        entry.path,
+      );
+      for (const dependencyPath of paths) {
         if (seen.has(dependencyPath)) continue;
         seen.add(dependencyPath);
         digests.push(hashHookFile(projectDir, dependencyPath));
+      }
+      for (const dependencyPath of unresolvableDynamicDepPaths) {
+        if (flagged.has(dependencyPath)) continue;
+        flagged.add(dependencyPath);
+        digests.push({ path: dependencyPath, error: UNRESOLVABLE_DYNAMIC_DEP });
       }
     }
   }
   return digests.toSorted((a, b) => a.path.localeCompare(b.path));
 }
 
-const CODE_LOADING_INTERPRETERS = new Set([
-  'node',
-  'nodejs',
-  'python',
-  'python3',
-  'ruby',
-  'perl',
-  'php',
-  'npx',
-  'tsx',
-  'ts-node',
-  'bun',
-  'deno',
-]);
-
-function isPathLike(token: string): boolean {
-  if (token.includes('/') || token.includes('\\')) return true;
-  return /^[a-zA-Z0-9_.-]+[\\/][a-zA-Z0-9_.\\/-]+$/.test(token);
-}
-
-function isRepoLocal(token: string, projectDir: string): boolean {
-  if (token.startsWith('./') || token.startsWith('../')) return true;
-  if (token.startsWith('/')) {
-    return resolve(token).startsWith(resolve(projectDir));
-  }
-  if (isPathLike(token)) return true;
-  return false;
-}
-
 function commandHookScriptPaths(projectDir: string, command: string, args: string[]): string[] {
   const tokens = [command, ...args].filter((token) => token.length > 0);
-  const interpreter = tokens[0] ?? '';
-  const checkTokens =
-    CODE_LOADING_INTERPRETERS.has(interpreter) && tokens.length > 1 ? tokens.slice(1) : tokens;
+  const checkTokens = commandTokensAfterInterpreter(tokens);
   const scripts: string[] = [];
   for (const token of checkTokens) {
-    if (token.startsWith('-')) continue;
-    if (isPathLike(token) && isRepoLocal(token, projectDir)) scripts.push(token);
+    const candidate = token.startsWith('-') ? flagValue(token) : token;
+    if (candidate === null) continue;
+    if (isPathLike(candidate) && isRepoLocal(candidate, projectDir)) scripts.push(candidate);
   }
   return scripts;
+}
+
+function flagValue(token: string): string | null {
+  const eq = token.indexOf('=');
+  if (eq === -1) return null;
+  const value = token.slice(eq + 1);
+  return value.length > 0 ? value : null;
 }
 
 function collectCommandScriptDigests(projectDir: string, hooks: unknown): HookFileDigest[] {
@@ -215,7 +232,7 @@ function hashHookFile(projectDir: string, relativePath: string): HookFileDigest 
     const content = readFileSync(filePath);
     return {
       path: relativePath,
-      sha256: createHash('sha256').update(content).digest('hex'),
+      sha256: sha256Hex(content),
     };
   } catch (err) {
     return { path: relativePath, error: toErrorMessage(err) };

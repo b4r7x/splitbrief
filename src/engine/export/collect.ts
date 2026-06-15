@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { existsSync } from 'node:fs';
 import { SummarySchema } from '../../core/schemas/summary.js';
 import { SessionSchema } from '../../core/schemas/session.js';
@@ -21,7 +21,11 @@ export type WriteSessionHtmlReportResult =
   | { status: 'ok'; path: string }
   | { status: 'error'; error: string };
 
-export function collectExportData(sessionDirectory: string, sessionId: string): CollectResult {
+export function collectExportData(
+  sessionDirectory: string,
+  sessionId: string,
+  outPath = join(sessionDirectory, 'report.html'),
+): CollectResult {
   const summaryPath = join(sessionDirectory, 'summary.json');
   if (!existsSync(summaryPath)) return { status: 'missing' };
 
@@ -33,7 +37,7 @@ export function collectExportData(sessionDirectory: string, sessionId: string): 
   if (!base)
     return { status: 'invalid', reason: 'summary.json does not match the expected schema' };
 
-  const evidence = readEvidenceExport(sessionDirectory);
+  const evidence = readEvidenceExport(sessionDirectory, outPath);
   const drift = readDriftExport(sessionDirectory);
   const briefQuality = readBriefQualityExport(sessionDirectory);
 
@@ -53,7 +57,7 @@ export function writeSessionHtmlReport(
   sessionId: string,
   outPath = join(sessionDirectory, 'report.html'),
 ): WriteSessionHtmlReportResult {
-  const result = collectExportData(sessionDirectory, sessionId);
+  const result = collectExportData(sessionDirectory, sessionId, outPath);
   if (result.status === 'missing')
     return { status: 'error', error: 'No summary.json found for session' };
   if (result.status === 'invalid') return { status: 'error', error: result.reason };
@@ -89,23 +93,31 @@ function readSummaryExport(
   };
 }
 
-function readEvidenceExport(sessionDirectory: string): EvidenceExport | null {
-  const raw = readJsonSafe(join(sessionDirectory, EVIDENCE_FILE));
+function readEvidenceExport(sessionDirectory: string, outPath: string): EvidenceExport | null {
+  const evidencePath = join(sessionDirectory, EVIDENCE_FILE);
+  const raw = readJsonSafe(evidencePath);
   if (raw === null) return null;
 
   const result = EvidenceLedgerSchema.safeParse(raw);
   if (!result.success) return null;
 
-  return evidenceToExport(result.data);
+  return evidenceToExport(result.data, evidenceHref(sessionDirectory, outPath, evidencePath));
 }
 
-function evidenceToExport(ledger: EvidenceLedger): EvidenceExport {
+function evidenceHref(sessionDirectory: string, outPath: string, evidencePath: string): string {
+  const outDir = dirname(outPath);
+  if (relative(sessionDirectory, outDir).startsWith('..')) return evidencePath;
+  return relative(outDir, evidencePath);
+}
+
+function evidenceToExport(ledger: EvidenceLedger, href: string): EvidenceExport {
   const summary = buildEvidenceSummary(ledger);
   return {
     totalTasks: summary.totalTasks,
     tasksWithValidationEvidence: summary.tasksWithValidationEvidence,
     escalatedTasks: summary.escalatedTasks,
     failedTasks: summary.failedTasks,
+    href,
   };
 }
 

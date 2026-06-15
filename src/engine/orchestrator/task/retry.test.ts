@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -15,6 +15,7 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
@@ -95,6 +96,7 @@ describe('retryAndRecord — retry budget', () => {
         }),
     });
     const validator = {
+      primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
     };
 
@@ -257,6 +259,51 @@ describe('retryAndRecord — recovery stop points', () => {
     );
   });
 
+  it('returns without raising recovery when retry or escalation throws an AbortError', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const { bus, events } = makeBusRecorder();
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(abortError),
+    });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      bus,
+      planner,
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { commitStrategy: 'none', maxRetries: 0 },
+      }),
+    });
+
+    const result = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    expect(events.find((e) => e.type === 'recovery_prompted')).toBeUndefined();
+  });
+
   it('adds recovery to the latest persisted retry state when a later retry step throws', async () => {
     const { projectDir, sessionId } = setupProject();
 
@@ -318,5 +365,74 @@ describe('retryAndRecord — recovery stop points', () => {
         taskId: 'T001',
       }),
     );
+  });
+});
+
+describe('retryAndRecord — escalated-intermediate booking identity', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('books the per-task record under the intermediate provider/model, not the primary implementer', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', file: 'src/intermediate.ts', action: 'create' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const code = '```typescript\nexport const fixed = true;\n```';
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeOpenAiSseResponse([
+        { content: code },
+        { usage: { prompt_tokens: 400, completion_tokens: 200 } },
+      ]),
+    );
+
+    // Local retries all fail so escalation reaches the intermediate tier.
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'still broken',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { commitStrategy: 'none', maxRetries: 1 },
+        escalation: {
+          intermediateProvider: 'openrouter',
+          intermediateModel: 'x-ai/grok-4-fast',
+          enabled: true,
+        },
+      }),
+    });
+    const taskBreakdowns: TaskTokenUsage[] = [];
+
+    const res = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'type error',
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns,
+      setTrackedState: vi.fn(),
+    });
+
+    expect(res.completed).toBe(true);
+    const record = taskBreakdowns[0];
+    expect(record?.method).toBe('escalated-intermediate');
+    expect(record?.tool).toBe('openrouter');
+    expect(record?.model).toBe('x-ai/grok-4-fast');
+    expect(record?.implementerTokens).toBeGreaterThanOrEqual(600);
   });
 });

@@ -7,10 +7,11 @@ import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError, publishRecoveryPrompted } from '../events.js';
+import { publishError } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
-import { transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
@@ -78,6 +79,9 @@ export async function retryAndRecord(
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
     }));
   } catch (err) {
+    if (isAbortError(err) || wctx.signal?.aborted) {
+      return { state: opts.state, completed: false };
+    }
     const message = labelError('Retry/escalation failed', err);
     publishError({ bus: wctx.bus, phase: opts.state.phase }, message);
     const recoveryBaseState = loadState(wctx) ?? opts.state;
@@ -97,12 +101,7 @@ export async function retryAndRecord(
       routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
       createdAt: nowIso(),
     });
-    const nextState = transitionAndSave(wctx, recoveryBaseState, {
-      type: 'SET_PENDING_RECOVERY',
-      issue,
-    });
-    publishRecoveryPrompted(wctx.bus, issue);
-    setTrackedState(nextState);
+    const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
     return { state: nextState, completed: false };
   }
   let nextState = state;
@@ -125,12 +124,7 @@ export async function retryAndRecord(
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         createdAt: nowIso(),
       });
-      nextState = transitionAndSave(wctx, nextState, {
-        type: 'SET_PENDING_RECOVERY',
-        issue,
-      });
-      publishRecoveryPrompted(wctx.bus, issue);
-      setTrackedState(nextState);
+      nextState = raisePendingRecovery(wctx, nextState, issue, setTrackedState);
     }
     return { state: nextState, completed: false };
   }
@@ -143,8 +137,8 @@ export async function retryAndRecord(
     state: nextState,
     taskBreakdowns,
     retryCount: result.attempts,
-    tool: nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
-    model: nextState.implementerModel ?? wctx.config.implementer.model,
+    tool: result.tool ?? nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
+    model: result.model ?? nextState.implementerModel ?? wctx.config.implementer.model,
     ...(retryImplementerProfile !== undefined && { implementerProfile: retryImplementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });

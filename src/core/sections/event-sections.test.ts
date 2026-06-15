@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { groupEventsIntoSections, findLatestRenderableDiffEventIndex } from './event-sections.js';
+import {
+  groupEventsIntoSections,
+  findLatestRenderableDiffKey,
+  diffEventKey,
+} from './event-sections.js';
 import type { Section } from './event-sections.js';
 import { taskId } from '../schemas/task.js';
 import {
@@ -47,7 +51,17 @@ describe('groupEventsIntoSections', () => {
     expect(summary.title).toBe('Auth');
     expect(summary.method).toBe('local');
     expect(summary.retries).toBe(1);
-    expect(summary.duration).toBe(8);
+    expect(summary.duration).toBe(8000);
+  });
+
+  it('preserves task-complete duration in milliseconds without unit conversion', () => {
+    const events = [
+      makeTaskStart({ taskId: taskId('T001'), title: 'Auth', index: 0 }),
+      makeTaskComplete({ taskId: taskId('T001'), duration: 1234 }),
+    ];
+    const sections = groupEventsIntoSections(events);
+    const summary = requireSection(sections, 0, 'completed-task').summary;
+    expect(summary.duration).toBe(1234);
   });
 
   it('creates completed-task section for task-start + task-skipped pair', () => {
@@ -117,13 +131,14 @@ describe('groupEventsIntoSections', () => {
   });
 });
 
-describe('findLatestRenderableDiffEventIndex', () => {
-  it('skips completed-task sections and returns the latest live diff', () => {
+describe('findLatestRenderableDiffKey', () => {
+  it('skips completed-task sections and returns the latest live diff key', () => {
+    const live = makeImplementerGenerate({ status: 'done', diff: '+ live', ts: 1234 });
     const sections: Section[] = [
       {
         type: 'events',
         startIndex: 0,
-        items: [makeImplementerGenerate({ status: 'done', diff: '+ old' })],
+        items: [makeImplementerGenerate({ status: 'done', diff: '+ old', ts: 1000 })],
       },
       {
         type: 'completed-task',
@@ -132,10 +147,22 @@ describe('findLatestRenderableDiffEventIndex', () => {
       {
         type: 'active-task',
         startIndex: 2,
-        items: [makeImplementerGenerate({ status: 'done', diff: '+ live' })],
+        items: [live],
       },
     ];
 
-    expect(findLatestRenderableDiffEventIndex(sections)).toBe(2);
+    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(live));
+    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:1234');
+  });
+
+  it('returns a key that is independent of the diff event array position', () => {
+    const diff = makeImplementerGenerate({ status: 'done', diff: '+ d', ts: 42 });
+
+    const atIndexOne: Section[] = [
+      { type: 'events', startIndex: 0, items: [makePlannerText(), diff] },
+    ];
+    const atIndexZero: Section[] = [{ type: 'events', startIndex: 5, items: [diff] }];
+
+    expect(findLatestRenderableDiffKey(atIndexOne)).toBe(findLatestRenderableDiffKey(atIndexZero));
   });
 });

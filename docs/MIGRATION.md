@@ -1,6 +1,6 @@
-# Migration guide — pre-uplift → SOTA uplift (2026-04-20)
+# Migration guide — EventBus architecture (2026-04-20 release)
 
-For post-uplift changes and amendments, see [`docs/CHANGELOG.md`](./CHANGELOG.md).
+For changes and amendments after the 2026-04-20 release, see [`docs/CHANGELOG.md`](./CHANGELOG.md).
 
 ## TL;DR
 
@@ -58,8 +58,8 @@ If you wrap diptych programmatically (not as CLI):
 - **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
   1. Pass `_eventSink: (event: EngineEvent) => void` in the `runWorkflow` config — the sink is subscribed to the internal bus at workflow init and receives every event.
   2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `stdout-json.ts`, `tree-recorder.ts`, and `otel.ts`, then wire it from `orchestrator/run/init.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
-  The existing on-disk append remains available via `sinks/jsonl.ts` and `core/state/persistence.ts:appendEngineEvent(projectDir, sessionId, event)` — the JSONL sink is unchanged by the uplift.
-- **`TuiEvent` and `OrchestratorEvent` are removed.** Use `EngineEvent` from `src/engine/events/types.ts` as the single source of truth. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
+  The existing on-disk append remains available via `sinks/jsonl.ts` and `core/state/persistence.ts:appendEngineEvent(projectDir, sessionId, event)` — the JSONL sink is unchanged by the 2026-04-20 release.
+- **`TuiEvent` and `OrchestratorEvent` are removed.** Import the `EngineEvent` alias from `src/engine/events/types.ts`; its discriminated-union schema (`EngineEventSchema`, the single source of truth) lives in `src/engine/events/schema.ts`. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
 - Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
 - `EngineEvent` variant names are snake_case (e.g. `task_started`, not `task-start`).
 

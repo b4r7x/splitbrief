@@ -284,6 +284,9 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     next = applyApproveOverride(next, level);
   }
   if (overrides.autoApprove !== undefined) {
+    if (overrides.autoApprove && overrides.approve !== undefined && overrides.approve !== 'none') {
+      warnStderr(`--approve ${overrides.approve} is overridden by --auto (approve=none).`);
+    }
     next = {
       ...next,
       workflow: {

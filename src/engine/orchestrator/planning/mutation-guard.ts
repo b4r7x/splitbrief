@@ -16,28 +16,8 @@ export const planningMutationError = {
   isUnexpectedMutations: matches('planning-unexpected-mutations'),
 } as const;
 
-const BLOCKED_EXACT = new Set([
-  '.npmrc',
-  '.netrc',
-  'package.json',
-  'package-lock.json',
-  'pnpm-lock.yaml',
-  'yarn.lock',
-  'bun.lock',
-  'bun.lockb',
-]);
-
-const BLOCKED_PREFIXES = ['.git/', '.env', '.diptych/hooks/', '.diptych-sandbox/'];
-
 export function isAllowedPlanningMutation(file: string, sessionId: string): boolean {
-  const sessionPrefix = `${DIPTYCH_DIR}/sessions/${sessionId}/`;
-  if (file.startsWith(sessionPrefix)) return true;
-  if (file.startsWith(`${DIPTYCH_DIR}/`)) return false;
-  if (BLOCKED_EXACT.has(file)) return false;
-  for (const prefix of BLOCKED_PREFIXES) {
-    if (file === prefix.slice(0, -1) || file.startsWith(prefix)) return false;
-  }
-  return false;
+  return file.startsWith(`${DIPTYCH_DIR}/sessions/${sessionId}/`);
 }
 
 export async function capturePlanningMutationBaseline(

@@ -6,10 +6,7 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
-import {
-  requestWorkflowClearQueue,
-  requestWorkflowRewind,
-} from '../features/workflow/app-integration.js';
+import { requestClearQueue, requestRewind } from '../features/workflow/handlers.js';
 import { refreshDetection } from '../engine/detection/service.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
@@ -22,7 +19,7 @@ import { performManualCompaction } from '../engine/orchestrator/transcript-rebui
 import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import {
   readApprovalsStore,
-  writeApprovalsStore,
+  mutateApprovalsStore,
   clearGrantsByScope,
 } from '../core/approval/store.js';
 import { error } from '../utils/error.js';
@@ -72,10 +69,10 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     },
     refreshProjectFiles: projectFilesStore.requestRefresh,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestRewind: requestWorkflowRewind,
-    requestTaskRedo: (taskId) => requestWorkflowRewind({ target: 'task', taskId }),
+    requestRewind,
+    requestTaskRedo: (taskId) => requestRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: requestWorkflowClearQueue,
+    clearQueue: requestClearQueue,
     rebuildRepomap: async (projectDir, cacheDir) =>
       rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
     attachImage,
@@ -92,10 +89,13 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
       }),
     listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
     clearApprovals: (projectDir, scope) => {
-      const before = readApprovalsStore(projectDir);
-      const after = clearGrantsByScope(before, scope);
-      writeApprovalsStore(projectDir, after);
-      return before.grants.length - after.grants.length;
+      let removed = 0;
+      mutateApprovalsStore(projectDir, (before) => {
+        const after = clearGrantsByScope(before, scope);
+        removed = before.grants.length - after.grants.length;
+        return after;
+      });
+      return removed;
     },
     acceptRunSnapshot,
     rejectRunSnapshot,

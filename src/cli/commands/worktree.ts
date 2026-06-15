@@ -117,12 +117,6 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
         const projectDir = resolveProjectDir(opts.project);
         const git = createGitClient(projectDir);
 
-        const worktrees = await deps.listWorktrees(projectDir);
-        const found = worktrees.some((w) => w.name === name);
-        if (!found) {
-          throw cliError(`Worktree "${name}" not found.`, 1);
-        }
-
         await withCliErrors(() =>
           deps.removeWorktree({
             projectDir,

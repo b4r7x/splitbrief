@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTreeRecorderSink } from './tree-recorder.js';
@@ -285,6 +285,88 @@ describe('createTreeRecorderSink', () => {
     expect(tree).not.toBeNull();
     // root + plan-step (from sink1) + agent-invocation (from sink2) = 3
     expect(tree!.meta.entryCount).toBe(3);
+  });
+
+  it('workflow_resumed does not reset session-tree.jsonl (no duplicate root appended)', () => {
+    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+
+    const sink1 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink1({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
+    sink1({
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'Create a.ts',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
+    });
+
+    const linesBefore = readFileSync(treeJsonlPath(sDir), 'utf-8')
+      .split('\n')
+      .filter((l) => l.trim());
+
+    // A fresh process resuming the same session must not re-initialize the tree.
+    const sink2 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink2({ type: 'workflow_resumed', ts: 3000, phase: 'implementing' });
+
+    const linesAfter = readFileSync(treeJsonlPath(sDir), 'utf-8')
+      .split('\n')
+      .filter((l) => l.trim());
+
+    expect(linesAfter).toEqual(linesBefore);
+    const roots = linesAfter
+      .map((l) => JSON.parse(l) as { parentId: string | null })
+      .filter((e) => e.parentId === null);
+    expect(roots).toHaveLength(1);
+  });
+
+  it('workflow_started does not append a second root when a tree already exists on disk', () => {
+    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+
+    const sink1 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink1({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
+    sink1({
+      type: 'task_started',
+      ts: 2000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'Create a.ts',
+      index: 0,
+      total: 1,
+      file: 'a.ts',
+      action: 'create',
+    });
+
+    // A fresh process that re-emits workflow_started against the same session
+    // must adopt the existing tree, not clobber it with a fresh root.
+    const sink2 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink2({ type: 'workflow_started', ts: 5000, phase: 'researching', feature: 'x' });
+    sink2({
+      type: 'task_completed',
+      ts: 6000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'Create a.ts',
+      method: 'local',
+      retries: 0,
+      duration: 1000,
+    });
+
+    const roots = readFileSync(treeJsonlPath(sDir), 'utf-8')
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as { parentId: string | null })
+      .filter((e) => e.parentId === null);
+    expect(roots).toHaveLength(1);
+
+    const tree = reconstructTree(sDir);
+    expect(tree).not.toBeNull();
+    // root + plan-step (sink1) + agent-invocation (sink2) = 3, no duplicate id minted
+    expect(tree!.meta.entryCount).toBe(3);
+    expect(tree!.entries.size).toBe(3);
   });
 
   it('is a no-op before workflow_started', () => {

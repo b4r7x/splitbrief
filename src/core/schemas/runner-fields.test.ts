@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { GenerationCommonFields, createRunnerConfigSchema } from './runner-fields.js';
+import { PlannerConfigSchema } from './planner-config.js';
+import {
+  GenerationCommonFields,
+  createPlannerConfigSchema,
+  createRunnerConfigSchema,
+} from './runner-fields.js';
 
 describe('createRunnerConfigSchema', () => {
   it('accepts the runner config shapes users can put in config files', () => {
@@ -29,7 +34,6 @@ describe('createRunnerConfigSchema', () => {
       schema.safeParse({
         kind: 'agent',
         command: 'my-agent',
-        capabilities: { supportsEffort: true },
         model: 'agent-default',
       }).success,
       schema.safeParse({
@@ -38,6 +42,88 @@ describe('createRunnerConfigSchema', () => {
         model: 'claude-sonnet-4-5',
       }).success,
     ]).toEqual([true, true, true, true, true]);
+  });
+
+  it('rejects the planner-only capabilities field on shell and agent runners', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        capabilities: { supportsEffort: true },
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        kind: 'agent',
+        command: 'my-agent',
+        model: 'agent-default',
+        capabilities: { supportsSessionResume: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts orchestration-level planner capabilities on shell and agent planner runners', () => {
+    const schema = createPlannerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        capabilities: { supportsHintEscalation: true },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        kind: 'agent',
+        command: 'my-agent',
+        model: 'agent-default',
+        capabilities: { supportsSessionResume: true },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects supportsEffort/supportsImages on shell and agent planners — no command delivery channel', () => {
+    const shellEffort = PlannerConfigSchema.safeParse({
+      kind: 'shell',
+      command: './run',
+      model: 'local-shell',
+      capabilities: { supportsEffort: true },
+    });
+    expect(shellEffort.success).toBe(false);
+    expect(shellEffort.error?.issues[0]?.path).toEqual(['capabilities', 'supportsEffort']);
+
+    expect(
+      PlannerConfigSchema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        capabilities: { supportsImages: true },
+      }).success,
+    ).toBe(false);
+
+    const agentImages = PlannerConfigSchema.safeParse({
+      kind: 'agent',
+      command: 'my-agent',
+      model: 'agent-default',
+      capabilities: { supportsImages: true },
+    });
+    expect(agentImages.success).toBe(false);
+    expect(agentImages.error?.issues[0]?.path).toEqual(['capabilities', 'supportsImages']);
+  });
+
+  it('still accepts supportsEffort/supportsImages flags set to false on shell and agent planners', () => {
+    expect(
+      PlannerConfigSchema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        capabilities: { supportsEffort: false, supportsImages: false },
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects unknown and incomplete runner config payloads', () => {

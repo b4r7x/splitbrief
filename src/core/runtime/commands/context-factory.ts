@@ -126,9 +126,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       });
     },
     listApprovals: () => opts.listApprovals(opts.projectDir()),
-    clearApprovals: (scope = 'all') => {
-      return opts.clearApprovals(opts.projectDir(), scope);
-    },
+    clearApprovals: () => opts.clearApprovals(opts.projectDir(), 'all'),
     getApprovalEnabled: () => opts.getConfig()?.approval?.enabled !== false,
     setApprovalEnabled: (enabled) => {
       if (opts.setApprovalEnabled) {

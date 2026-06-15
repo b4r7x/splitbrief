@@ -1,4 +1,4 @@
-import { readFileSync, lstatSync } from 'node:fs';
+import { readFileSync, lstatSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { CLIOverridesSchema } from '../../core/config/runtime/overrides.js';
@@ -6,7 +6,8 @@ import { WorkflowModeSchema, normalizeLegacyMode } from '../../core/schemas/enum
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { sessionDir } from '../../core/paths.js';
-import { assertSessionConfinement } from './lockfile.js';
+import { assertSessionConfinement } from '../../core/sessions/confinement.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -15,6 +16,8 @@ const IpcServerAttachmentSchema = z.object({
   path: z.string(),
   mimeType: z.string(),
 });
+
+export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;
 
 const IpcServerArgsSchema = z.object({
   sessionId: z.string(),
@@ -105,4 +108,33 @@ export function writeIpcServerArgsFile(sessionDir: string, args: IpcServerArgs):
   const argsFile = join(sessionDir, SERVER_ARGS_FILE);
   writeSecureFile(argsFile, JSON.stringify(args, null, 2));
   return argsFile;
+}
+
+function materializeAttachment(record: IpcServerAttachment): Attachment {
+  let sizeBytes = 1;
+  try {
+    const size = statSync(record.path).size;
+    if (size > 0) sizeBytes = size;
+  } catch {
+    // File may have been removed since spawn; downstream only reads path + mimeType.
+  }
+  return {
+    id: record.id,
+    kind: 'image',
+    path: record.path,
+    mimeType: record.mimeType,
+    sizeBytes,
+  };
+}
+
+export function createServerArgsAttachmentDrain(
+  attachments: IpcServerAttachment[] | undefined,
+): () => Attachment[] {
+  let pending = attachments ?? [];
+  return () => {
+    if (pending.length === 0) return [];
+    const drained = pending.map(materializeAttachment);
+    pending = [];
+    return drained;
+  };
 }

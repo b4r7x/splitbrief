@@ -1,12 +1,28 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { createWorktree, listWorktrees, removeWorktree, detectWorktree } from './worktree.js';
-import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR } from '../core/paths.js';
+import { initConfig } from '../core/config/load/io.js';
+import {
+  createWorktree,
+  listWorktrees,
+  removeWorktree,
+  detectWorktree,
+  validateWorktreeName,
+} from './worktree.js';
+import {
+  DIPTYCH_DIR,
+  ACTIVE_FILE,
+  CONFIG_FILE,
+  STATE_FILE,
+  SESSIONS_DIR,
+  TREES_DIR,
+  LOCKFILE,
+} from '../core/paths.js';
 
 let repoDir: string;
 let git: SimpleGit;
@@ -85,11 +101,25 @@ describe('createWorktree', () => {
     );
   });
 
+  it('hands a git-valid prune remediation when retry-create hits the stale branch (F-392)', async () => {
+    // Out-of-band `rm -rf .trees/feat-stale` leaves the branch behind, so a
+    // retry create trips branchExists. Its remediation must spell out the
+    // prune-then-delete sequence git actually accepts, not a bare `git branch
+    // -D` that git refuses while the worktree registration lingers.
+    await createWorktree({ projectDir: repoDir, slug: 'feat-stale', git });
+    rmSync(join(repoDir, TREES_DIR, 'feat-stale'), { recursive: true, force: true });
+    expect((await git.branch()).all).toContain('diptych/feat-stale');
+
+    await expect(createWorktree({ projectDir: repoDir, slug: 'feat-stale', git })).rejects.toThrow(
+      'git worktree prune" then "git branch -D diptych/feat-stale',
+    );
+  });
+
   it('refuses to create a worktree when the source working tree is dirty', async () => {
     await writeFile(join(repoDir, 'dirty.txt'), 'uncommitted');
 
     await expect(createWorktree({ projectDir: repoDir, slug: 'feat-dirty', git })).rejects.toThrow(
-      'Source working tree is dirty (1 uncommitted file(s))',
+      'Source working tree is dirty (1 uncommitted file(s): dirty.txt)',
     );
 
     expect(existsSync(join(repoDir, TREES_DIR, 'feat-dirty'))).toBe(false);
@@ -103,6 +133,28 @@ describe('createWorktree', () => {
       createWorktree({ projectDir: repoDir, slug: 'feat-second', git }),
     ).resolves.toBeDefined();
     expect(existsSync(join(repoDir, TREES_DIR, 'feat-second'))).toBe(true);
+  });
+
+  it('succeeds on a committed repo whose only dirt is initConfig .gitignore bookkeeping', async () => {
+    // initConfig appends `.diptych/` and `.trees/` to .gitignore (F-432); that
+    // self-authored delta must not trip the source-dirty gate.
+    initConfig(repoDir);
+
+    await expect(
+      createWorktree({ projectDir: repoDir, slug: 'feat-bookkeeping', git }),
+    ).resolves.toBeDefined();
+    expect(existsSync(join(repoDir, TREES_DIR, 'feat-bookkeeping'))).toBe(true);
+  });
+
+  it('still names a user-edited .gitignore beyond the bookkeeping lines as dirty', async () => {
+    initConfig(repoDir);
+    // A real user edit on top of the bookkeeping lines is genuine dirt.
+    await writeFile(join(repoDir, '.gitignore'), '.diptych/\n.trees/\nnode_modules/\n');
+
+    await expect(
+      createWorktree({ projectDir: repoDir, slug: 'feat-user-edit', git }),
+    ).rejects.toThrow('uncommitted file(s): .gitignore');
+    expect(existsSync(join(repoDir, TREES_DIR, 'feat-user-edit'))).toBe(false);
   });
 
   it.each([
@@ -145,6 +197,72 @@ describe('createWorktree', () => {
   ])('accepts a valid worktree name "%s"', async (slug) => {
     await expect(createWorktree({ projectDir: repoDir, slug, git })).resolves.toBeDefined();
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(true);
+  });
+
+  it('carries the base .diptych/config.yaml into the new worktree', async () => {
+    const ignoredRepo = await mkdtemp(join(tmpdir(), 'worktree-config-'));
+    try {
+      createTestGitRepo(ignoredRepo, {
+        'README.md': '# test\n',
+        '.gitignore': '.diptych/\n.trees/\n',
+      });
+      const ignoredGit = simpleGit(ignoredRepo);
+      const configBody = 'version: 3\nimplementer:\n  kind: api\n  provider: ollama\n';
+      await mkdir(join(ignoredRepo, DIPTYCH_DIR), { recursive: true });
+      await writeFile(join(ignoredRepo, DIPTYCH_DIR, CONFIG_FILE), configBody);
+
+      const wtPath = await createWorktree({
+        projectDir: ignoredRepo,
+        slug: 'feat-cfg',
+        git: ignoredGit,
+      });
+
+      const propagated = await readFile(join(wtPath, DIPTYCH_DIR, CONFIG_FILE), 'utf-8');
+      expect(propagated).toBe(configBody);
+    } finally {
+      await rm(ignoredRepo, { recursive: true, force: true });
+    }
+  });
+
+  it('populates submodules in the new worktree instead of leaving empty dirs (F-405)', async () => {
+    // `git worktree add` does not initialize submodules; without an explicit
+    // `submodule update --init`, the worktree's submodule dir is empty and
+    // `git status` stays clean, hiding the hole. Use a real submodule repo so
+    // the populated file is the observable proof.
+    const superRepo = await mkdtemp(join(tmpdir(), 'worktree-super-'));
+    const subRepo = await mkdtemp(join(tmpdir(), 'worktree-sub-'));
+    // Modern git refuses `file://` submodule transports by default. Allow it via
+    // the env var so both the setup commands and the submodule update that
+    // createWorktree runs in the linked worktree inherit the allowance.
+    const prevAllowProtocol = process.env.GIT_ALLOW_PROTOCOL;
+    process.env.GIT_ALLOW_PROTOCOL = 'file';
+    try {
+      const runGit = (cwd: string, args: string[]): void => {
+        execFileSync('git', args, { cwd, stdio: 'pipe' });
+      };
+
+      createTestGitRepo(subRepo, { 'lib.txt': 'submodule content\n' });
+      createTestGitRepo(superRepo, { 'README.md': '# super\n' });
+
+      runGit(superRepo, ['submodule', 'add', subRepo, 'vendor']);
+      runGit(superRepo, ['commit', '-m', 'add submodule']);
+
+      const superGit = simpleGit(superRepo);
+      const wtPath = await createWorktree({
+        projectDir: superRepo,
+        slug: 'feat-sub',
+        git: superGit,
+      });
+
+      const submoduleFile = join(wtPath, 'vendor', 'lib.txt');
+      expect(existsSync(submoduleFile)).toBe(true);
+      expect(await readFile(submoduleFile, 'utf-8')).toBe('submodule content\n');
+    } finally {
+      if (prevAllowProtocol === undefined) delete process.env.GIT_ALLOW_PROTOCOL;
+      else process.env.GIT_ALLOW_PROTOCOL = prevAllowProtocol;
+      await rm(superRepo, { recursive: true, force: true });
+      await rm(subRepo, { recursive: true, force: true });
+    }
   });
 });
 
@@ -206,6 +324,21 @@ describe('listWorktrees', () => {
     expect(entry.phase).toBe('complete');
     expect(entry.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  it('reports status "active" for a non-terminal session with no .diptych/active pointer', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-tui', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-tui');
+    const sessionId = 'tui-session-001';
+    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
+
+    const result = await listWorktrees(repoDir);
+    const entry = result[0]!;
+    expect(entry.status).toBe('active');
+    expect(entry.sessionId).toBe(sessionId);
+    expect(entry.phase).toBe('implementing');
+  });
 });
 
 describe('removeWorktree', () => {
@@ -227,6 +360,23 @@ describe('removeWorktree', () => {
     );
   });
 
+  it('prunes a stale registration and deletes the branch when the dir was removed out-of-band', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-gone', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-gone');
+    // Simulate `rm -rf .trees/feat-gone`: the dir vanishes but git's worktree
+    // registration and the diptych/feat-gone branch persist.
+    rmSync(wtPath, { recursive: true, force: true });
+    const before = await git.raw(['worktree', 'list', '--porcelain']);
+    expect(before).toContain('feat-gone');
+    expect((await git.branch()).all).toContain('diptych/feat-gone');
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-gone', git, deleteBranch: true });
+
+    const after = await git.raw(['worktree', 'list', '--porcelain']);
+    expect(after).not.toContain('feat-gone');
+    expect((await git.branch()).all).not.toContain('diptych/feat-gone');
+  });
+
   it('refuses when a live session exists (without force)', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-i', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-i');
@@ -242,6 +392,46 @@ describe('removeWorktree', () => {
     );
   });
 
+  it('refuses a non-terminal session with no .diptych/active pointer (TUI run)', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-tui-rm', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-tui-rm');
+    const sessionId = 'tui-session-rm';
+    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
+
+    await expect(removeWorktree({ projectDir: repoDir, slug: 'feat-tui-rm', git })).rejects.toThrow(
+      `Worktree ".trees/feat-tui-rm" has a live session ${sessionId}`,
+    );
+    expect(existsSync(wtPath)).toBe(true);
+  });
+
+  it('allows removal when a non-terminal session has an exited server lockfile', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-dead', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-dead');
+    await writeFile(join(wtPath, '.gitignore'), '.diptych/\n.trees/\n');
+    const sessionId = 'feat-dead';
+    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
+    await writeFile(
+      join(sessionDir, LOCKFILE),
+      JSON.stringify({
+        version: 1,
+        pid: process.pid,
+        startTimeMs: Date.now(),
+        lastAliveMs: Date.now(),
+        sessionId,
+        mode: 'standard',
+        feature: 'dead session',
+        exitedAt: Date.now(),
+      }),
+    );
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-dead', git });
+    expect(existsSync(wtPath)).toBe(false);
+  });
+
   it('refuses when uncommitted changes exist (without force)', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-j', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-j');
@@ -250,6 +440,17 @@ describe('removeWorktree', () => {
     await expect(removeWorktree({ projectDir: repoDir, slug: 'feat-j', git })).rejects.toThrow(
       'Worktree ".trees/feat-j" has uncommitted changes',
     );
+  });
+
+  it('removes without --force when the only dirt is in-worktree initConfig bookkeeping', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-bk-rm');
+    // initConfig inside the worktree writes the same `.diptych/` / `.trees/`
+    // bookkeeping (F-432); that delta must not trip the cleanliness gate.
+    initConfig(wtPath);
+
+    await removeWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git });
+    expect(existsSync(wtPath)).toBe(false);
   });
 
   it('proceeds with force=true and logs both bypassed guards to stderr', async () => {
@@ -312,5 +513,15 @@ describe('detectWorktree', () => {
     } finally {
       await rm(nonGitDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('validateWorktreeName', () => {
+  it('rejects a 65-character name with the nameTooLong error', () => {
+    expect(() => validateWorktreeName('a'.repeat(65))).toThrow('is too long (max 64 characters)');
+  });
+
+  it('accepts a 64-character name at the boundary', () => {
+    expect(() => validateWorktreeName('a'.repeat(64))).not.toThrow();
   });
 });

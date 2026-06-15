@@ -1,5 +1,9 @@
+import { warnError } from '../warn.js';
+
 export const terminalSequences = {
+  enterAltBuffer: '\u001b[?1049h',
   exitAltBuffer: '\u001b[?1049l',
+  hideCursor: '\u001b[?25l',
   showCursor: '\u001b[?25h',
   enableMouseTracking: '\u001b[?1000h',
   disableMouseTracking: '\u001b[?1000l',
@@ -7,21 +11,28 @@ export const terminalSequences = {
   disableSgrMouse: '\u001b[?1006l',
   enableBracketedPaste: '\u001b[?2004h',
   disableBracketedPaste: '\u001b[?2004l',
+  popKittyKeyboard: '\u001b[<u',
 } as const;
 
-let stdoutErrorGuardInstalled = false;
+export function kittyPushSequence(bitmask: number): string {
+  return `\u001b[>${bitmask}u`;
+}
+
+let outputErrorGuardInstalled = false;
 
 export function isBrokenOutputError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'EPIPE';
 }
 
 export function installTerminalOutputErrorGuard(): void {
-  if (stdoutErrorGuardInstalled) return;
-  stdoutErrorGuardInstalled = true;
-  process.stdout.on('error', (err: Error) => {
+  if (outputErrorGuardInstalled) return;
+  outputErrorGuardInstalled = true;
+  const guard = (err: Error) => {
     if (isBrokenOutputError(err)) return;
     throw err;
-  });
+  };
+  process.stdout.on('error', guard);
+  process.stderr.on('error', guard);
 }
 
 export function writeTerminalSequence(sequence: string): void {
@@ -29,7 +40,7 @@ export function writeTerminalSequence(sequence: string): void {
   try {
     process.stdout.write(sequence, (err?: Error | null) => {
       if (!err || isBrokenOutputError(err)) return;
-      throw err;
+      warnError('writeTerminalSequence: stdout write failed', err);
     });
   } catch (err) {
     if (isBrokenOutputError(err)) return;
@@ -37,7 +48,8 @@ export function writeTerminalSequence(sequence: string): void {
   }
 }
 
-export function setTerminalInputModes(enabled: boolean): void {
+export function setTerminalInputModes(mode: 'enable' | 'disable'): void {
+  const enabled = mode === 'enable';
   writeTerminalSequence(
     enabled ? terminalSequences.enableMouseTracking : terminalSequences.disableMouseTracking,
   );
@@ -54,7 +66,7 @@ export function restoreTerminalControl(opts: {
   mouse: boolean;
   stdin?: NodeJS.ReadStream | undefined;
 }): void {
-  if (opts.mouse) setTerminalInputModes(false);
+  if (opts.mouse) setTerminalInputModes('disable');
   if (opts.fullscreen) {
     writeTerminalSequence(terminalSequences.exitAltBuffer);
     writeTerminalSequence(terminalSequences.showCursor);

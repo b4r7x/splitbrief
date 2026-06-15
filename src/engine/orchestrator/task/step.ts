@@ -6,11 +6,13 @@ import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { isAbortError } from '../../../utils/abort.js';
 import {
   publishError,
   publishWarning,
   publishWarningFromError,
   publishDriftChainDetected,
+  publishTaskSkipped,
 } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
@@ -19,8 +21,10 @@ import { getRunnerDisplayName } from '../../../core/config/accessors/runner-conf
 import { gateAction, type GateDecision } from '../approval/tiered-approval.js';
 import {
   getChangedFilesSinceSnapshot,
+  restoreDirtyFilesFromSnapshot,
   type ChangedFilesSnapshot,
 } from '../approval/file-snapshots.js';
+import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
 import type { EngineEvent } from '../../events/types.js';
 import {
   readDriftChainState,
@@ -50,7 +54,8 @@ async function runChainAnalysisSafe(opts: {
   const { projectDir, sessionId, bus } = opts.wctx;
   try {
     const taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
-    const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles);
+    const dependsOnFiles = resolveDependsOnFiles(opts.state.tasks, opts.task);
+    const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles, dependsOnFiles);
 
     const existing =
       readDriftChainState(projectDir, sessionId) ?? initialDriftChainState(sessionId);
@@ -67,6 +72,34 @@ async function runChainAnalysisSafe(opts: {
     publishWarningFromError(
       { bus: opts.wctx.bus, phase: opts.state.phase },
       'drift chain analysis failed',
+      err,
+    );
+  }
+}
+
+async function restoreExhaustedTaskFiles(opts: {
+  wctx: WorkflowContext;
+  phase: WorkflowState['phase'];
+  taskChangedFiles: string[];
+  taskStartSnapshot: ChangedFilesSnapshot;
+}): Promise<void> {
+  if (opts.taskChangedFiles.length === 0) return;
+  try {
+    const { restoredFiles } = await restoreDirtyFilesFromSnapshot(
+      opts.wctx.projectDir,
+      opts.taskStartSnapshot,
+      opts.taskChangedFiles,
+    );
+    if (restoredFiles.length > 0) {
+      publishWarning(
+        { bus: opts.wctx.bus, phase: opts.phase },
+        `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
+      );
+    }
+  } catch (err) {
+    publishWarningFromError(
+      { bus: opts.wctx.bus, phase: opts.phase },
+      'Failed to restore failing task changes from the pre-task snapshot',
       err,
     );
   }
@@ -187,6 +220,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       streamingSink: wctx.streamingSink,
     });
   } catch (err) {
+    if (isAbortError(err) || wctx.signal?.aborted) return state;
     publishError({ bus: wctx.bus, phase: state.phase }, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx,
@@ -283,10 +317,27 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       sessionId,
     });
     if (!preVal.allow) {
+      const reason = preVal.reason ?? 'pre_validation hook denied';
       publishWarning(
         { bus: wctx.bus, phase: state.phase },
         `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`,
       );
+      publishTaskSkipped(
+        { bus: wctx.bus, phase: state.phase },
+        { taskId: task.id, title: task.title, reason },
+      );
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'SKIP_TASK',
+        taskId: task.id,
+      });
+      setTrackedState(state);
+      persistTaskEvidence({
+        wctx,
+        state,
+        task,
+        recordKind: 'skipped',
+        details: { status: 'skipped', reason },
+      });
       return state;
     }
   }
@@ -311,6 +362,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     taskStartTime,
     results: validationResults,
     implementerProfile: wctx.implementerProfile,
+    taskChangedFiles,
   });
   if (commitResult.completed) {
     state = commitResult.state;
@@ -352,7 +404,26 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return state;
   }
 
-  const errorText = formatValidationError(validationResults);
+  if (wctx.signal?.aborted) return state;
+
+  const userEdit = await detectValidationFailureUserEdit({
+    projectDir,
+    sessionId,
+    bus: wctx.bus,
+    state,
+    task,
+    taskIndex: index,
+    taskChangedFiles,
+    taskStartSnapshot,
+    setTrackedState,
+  });
+  if (userEdit.diverted) return userEdit.state;
+  state = userEdit.state;
+
+  const errorText = formatValidationError(
+    validationResults,
+    wctx.validator.getBaselineFailingStages?.(),
+  );
   const retry = await retryAndRecord({
     wctx,
     task,
@@ -366,6 +437,14 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     initialValidation: validationResults,
     initialChangedFiles: taskChangedFiles,
   });
+  if (!retry.completed && retry.state.pendingRecovery) {
+    await restoreExhaustedTaskFiles({
+      wctx,
+      phase: retry.state.phase,
+      taskChangedFiles,
+      taskStartSnapshot,
+    });
+  }
   await runChainAnalysisSafe({
     wctx,
     task,

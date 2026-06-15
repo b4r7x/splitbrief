@@ -11,17 +11,34 @@ export function createLineBuffer(
   flush(): void;
 } {
   let buffer = '';
-  let overflowed = false;
+  let skipping = false;
   return {
     push(chunk: string) {
-      if (overflowed) return;
       buffer += chunk;
+      if (skipping) {
+        const newlineIndex = buffer.indexOf('\n');
+        if (newlineIndex === -1) {
+          buffer = '';
+          return;
+        }
+        skipping = false;
+        buffer = buffer.slice(newlineIndex + 1);
+      }
       const maxLineBytes = options.maxLineBytes;
-      if (maxLineBytes !== undefined && Buffer.byteLength(buffer, 'utf8') > maxLineBytes) {
-        overflowed = true;
-        options.onOverflow?.(Buffer.byteLength(buffer, 'utf8'));
-        buffer = '';
-        return;
+      if (maxLineBytes !== undefined) {
+        while (true) {
+          const newlineIndex = buffer.indexOf('\n');
+          const head = newlineIndex === -1 ? buffer : buffer.slice(0, newlineIndex);
+          const headBytes = Buffer.byteLength(head, 'utf8');
+          if (headBytes <= maxLineBytes) break;
+          options.onOverflow?.(headBytes);
+          if (newlineIndex === -1) {
+            skipping = true;
+            buffer = '';
+            return;
+          }
+          buffer = buffer.slice(newlineIndex + 1);
+        }
       }
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';

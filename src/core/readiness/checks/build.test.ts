@@ -19,6 +19,7 @@ function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRea
     },
     repo: {
       isGitRepo: true,
+      hasCommits: true,
       dirtyFiles: [],
       untrackedFiles: [],
     },
@@ -195,6 +196,7 @@ describe('readiness checks', () => {
     const input = baseInput({
       repo: {
         isGitRepo: true,
+        hasCommits: true,
         dirtyFiles: ['src/a.ts'],
         untrackedFiles: ['scratch.txt'],
         activeSession: '2026-04-28-live',

@@ -23,7 +23,9 @@ import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { error } from '../../utils/error.js';
 import { resolveRunConfig } from '../build-overrides.js';
+import { installTerminalOutputErrorGuard } from '../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from './gates.js';
 import { createCommandReader } from './reader.js';
 import { createResponseWriter } from './writer.js';
@@ -51,6 +53,10 @@ export interface RunRpcOptions {
   plannerContext?: string | undefined;
   deps?: RunRpcDeps | undefined;
 }
+
+export const rpcShutdownError = {
+  shuttingDown: (reason: string) => error('rpc-shutting-down', reason, { reason }),
+} as const;
 
 function currentSessionId(projectDir: string, sessionId: string | undefined): string | undefined {
   return sessionId ?? readActive(projectDir) ?? undefined;
@@ -84,6 +90,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     plannerContext,
     deps = {},
   } = options;
+  installTerminalOutputErrorGuard();
   let config = resolveRunConfig({ projectDir, opts, readiness });
   let rpcClosed = false;
 
@@ -108,10 +115,12 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     if (rpcClosed) return;
     rpcClosed = true;
     abortTurnHandler?.();
-    abortController.abort(new Error(reason));
-    approvalGate.reject(new Error(reason));
-    messageGate.reject(new Error(reason));
-    recoveryGate.reject(new Error(reason));
+    abortController.abort(rpcShutdownError.shuttingDown(reason));
+    // biome-ignore-start lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
+    approvalGate.reject(rpcShutdownError.shuttingDown(reason));
+    messageGate.reject(rpcShutdownError.shuttingDown(reason));
+    recoveryGate.reject(rpcShutdownError.shuttingDown(reason));
+    // biome-ignore-end lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
   };
 
   bus.subscribe((event) => {

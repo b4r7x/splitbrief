@@ -10,9 +10,8 @@ Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It bu
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
 2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (instant, quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
-3. `applyPostPlanDrain()` — drains queued user messages that arrived while the planner was working. These get folded into the next planner prompt.
-4. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review.
-5. `saveFinalSession()` (`session-lifecycle.ts`) — persists the summary, updates stats, clears the active-session lock.
+3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review.
+4. `saveFinalSession()` (`session-lifecycle.ts`) — persists the summary, updates stats, clears the active-session lock.
 
 If any step throws, the catch block saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The workflow always produces a summary, even on failure.
 
@@ -20,8 +19,7 @@ If any step throws, the catch block saves state to disk, kills all subprocesses,
 flowchart TD
   A[runWorkflow] --> B[initializeWorkflow]
   B --> C[runPlanningPhases]
-  C --> D[applyPostPlanDrain]
-  D --> E[runTasksAndReview]
+  C --> E[runTasksAndReview]
   E --> F[saveFinalSession]
   B -->|planner unavailable| G[early return with summary]
   E -->|signal aborted| F
@@ -34,8 +32,8 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 
 - **`planning/`** — Mode-specific planner flows. `instant.ts` does one call producing tasks directly; `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
-- **`escalation/`** — Tiered escalation when the implementer fails. `tier.ts` defines the tiers (`INTERMEDIATE_TIER` tries a local code-fix, `HINT_TIER` sends error context to an intermediate model, `FULL_TIER` sends everything to the most capable model).
-- **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry, skip, split the task, abort.
+- **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` defines the tiers (`INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `HINT_TIER` has the planner write a hint that the implementer applies, `FULL_TIER` hands the task to the planner to write the code itself).
+- **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry same worker, route to a bigger worker, skip, pause, or abort.
 - **`approval/`** — Tiered approval system for individual file operations. Classifies actions by risk (in-scope, out-of-scope, destructive, network, package change) and gates them at auto/sticky/confirm tiers.
 - **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates total cost before tasks start; `check.ts` monitors spend during execution.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
@@ -87,7 +85,7 @@ function createEventBus(): EventBus {
 
 ### EngineEvent
 
-`src/engine/events/types.ts`. A discriminated union with a mandatory `type` field (snake_case) and `ts` (epoch millis). Workflow events also carry `phase` when they occur inside a workflow phase; global events such as snapshot restore conflicts and approval-mode changes are phase-less. Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
+`EngineEventSchema` in `src/engine/events/schema.ts` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). A discriminated union with a mandatory `type` field (snake_case) and `ts` (epoch millis). Workflow events also carry `phase` when they occur inside a workflow phase; global events such as snapshot restore conflicts and approval-mode changes are phase-less. Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
 
 Events cover the full workflow lifecycle. A few examples:
 
@@ -137,12 +135,15 @@ Two separate communication mechanisms serve different purposes.
 **Callbacks** — Await-able request/response pairs on `WorkflowContext.callbacks` (`OrchestratorCallbacks` in `src/engine/orchestrator/types.ts`). For moments where the workflow must stop and wait for the user:
 
 - `onApprovalNeeded(type, filePath)` — spec, plan, or briefs review
+- `onUserEditConflict(conflict)` — a user edit collides with in-flight work
 - `onQuestionAsked(question, num, total)` — planner asks a clarification question
+- `onCostApprovalNeeded(prediction)` — predicted spend needs sign-off
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
-- `onBudgetPaused(currentCost, maxBudget)` — spend hit a threshold
 - `onTieredApproval(request)` — implementer wants to do something risky
 - `onTaskReviewNeeded(request)` — task needs human review
 - `onComplete(summary)` — workflow finished
+
+Budget pressure is **not** a gating callback. The engine never calls a budget callback; spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events on the bus, and the actual pause/stop is driven through the recovery channel (`recovery_needed`), not a dedicated budget prompt.
 
 In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and tiered approvals fail closed unless approval config already allows the action. In **IPC mode** (detached server/client), the server publishes a status event and blocks until the client sends a command back.
 
@@ -277,7 +278,7 @@ The summary is the final artifact. It carries enough data to render the summary 
 
 ## Key event shapes
 
-From `src/engine/events/types.ts`. Every event carries `ts: number` (epoch ms); workflow-phase events also carry `phase: Phase`.
+From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `ts: number` (epoch ms); workflow-phase events also carry `phase: Phase`.
 
 ```ts
 // Task lifecycle

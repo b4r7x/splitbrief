@@ -1,7 +1,10 @@
 import { Fzf } from 'fzf';
 import type { RuntimeCommandDef } from './types.js';
 
-function findRuntimeCommand(commands: RuntimeCommandDef[], name: string): RuntimeCommandDef | null {
+export function findRuntimeCommand(
+  commands: RuntimeCommandDef[],
+  name: string,
+): RuntimeCommandDef | null {
   const lower = name.toLowerCase();
   return (
     commands.find(
@@ -21,11 +24,4 @@ export function suggestRuntimeCommand(
   const results = fzf.find(bare);
   const top = results[0];
   return top !== undefined && top.score > 0 ? top.item : null;
-}
-
-export function lookupRuntimeCommand(
-  commands: RuntimeCommandDef[],
-  query: string,
-): RuntimeCommandDef | null {
-  return findRuntimeCommand(commands, query) ?? suggestRuntimeCommand(commands, query);
 }

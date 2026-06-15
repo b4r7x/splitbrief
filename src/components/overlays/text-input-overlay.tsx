@@ -32,6 +32,10 @@ export function TextInputOverlay({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const [value, setValue] = useState(initialValue);
+  const focus = overlayStore.use(
+    (s) =>
+      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
+  );
 
   useEffect(() => {
     overlayStore.setExclusive(true);
@@ -63,6 +67,7 @@ export function TextInputOverlay({
               rows={rows}
               maxRows={maxRows}
               placeholder={placeholder}
+              focus={focus}
               keyBindings={{
                 submit: (key) => key.return,
                 newline: () => false,

@@ -6,10 +6,19 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { BRIEF_QUALITY_FILE, sessionDir, TASKS_FILE } from '../../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  PLAN_FILE,
+  sessionDir,
+  SPEC_FILE,
+  TASKS_FILE,
+} from '../../../core/paths.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
 import { runPlanningPhase } from './run.js';
+import { createPlannerBase } from '../../planners/base.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { PlannerCapabilities } from '../../planners/types.js';
 import {
   TEST_METADATA,
   REAL_TASKS_MD,
@@ -124,6 +133,90 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(regenArgs[0]?.prompt).toContain('spec');
   });
 
+  it('spec gate: editing spec.md on disk then approving regenerates plan and tasks from the edit', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const reviewPrompts: string[] = [];
+    const planner = makePassingPlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: REAL_TASKS_MD, usage: null };
+      },
+    });
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementationOnce(async () => {
+        writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nUser-edited auth.\n', null);
+        return { approved: true };
+      })
+      .mockResolvedValueOnce({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({ workflow: manual('standard') });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(reviewPrompts.some((p) => p.includes('User-edited auth.'))).toBe(true);
+  });
+
+  it('plan gate: editing plan.md on disk then approving regenerates tasks from the edit', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const reviewPrompts: string[] = [];
+    const planner = makePassingPlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: REAL_TASKS_MD, usage: null };
+      },
+    });
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: true })
+      .mockImplementationOnce(async () => {
+        writeSpecFile(
+          { projectDir, sessionId },
+          PLAN_FILE,
+          '# Plan\n\nUser-edited JWT plan.\n',
+          null,
+        );
+        return { approved: true };
+      })
+      .mockResolvedValueOnce({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({ workflow: manual('speckit') });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(reviewPrompts.some((p) => p.includes('User-edited JWT plan.'))).toBe(true);
+  });
+
   it('enters reviewing-briefs phase for invalid briefs in standard mode (user can reject)', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner({
@@ -216,7 +309,6 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
         writeFileSync(tasksPath, REAL_TASKS_MD, 'utf8');
         return { approved: false, action: 'edit' };
@@ -245,6 +337,104 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks[0]?.title).toBe('Add auth');
+  });
+
+  it('warns on the bus when an edited tasks.md has an unknown ### section (F-429 / N399)', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePassingPlanner();
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    const editedWithUnknownSection = `${REAL_TASKS_MD}
+### Hand-Edited Notes
+
+- this heading is outside the canonical grammar and will be dropped
+`;
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementationOnce(async () => {
+        writeFileSync(tasksPath, editedWithUnknownSection, 'utf8');
+        return { approved: false, action: 'edit' };
+      })
+      .mockResolvedValueOnce({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    const warning = events.find(
+      (e) => e.type === 'warning' && e.message.includes('Hand-Edited Notes'),
+    );
+    expect(warning).toBeDefined();
+  });
+
+  it('warns exactly once when generated briefs have an unknown ### section and are plain-approved (F-429 / N399 no double-warn)', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const capabilities: PlannerCapabilities = {
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: false,
+      supportsEffort: false,
+      supportsImages: false,
+      supportsSelfSummarisation: false,
+    };
+    const tasksWithUnknownSection = `${REAL_TASKS_MD}
+### Future Considerations
+
+- this heading is outside the canonical grammar and will be dropped
+`;
+    const planner = createPlannerBase({
+      invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities,
+      readPhaseOutput: (filename) => (filename === TASKS_FILE ? tasksWithUnknownSection : '# doc'),
+    });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+        .mockResolvedValue({ approved: true }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    const warnings = events.filter(
+      (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
+    );
+    expect(warnings).toHaveLength(1);
   });
 
   it('approve rewrites missing tasks.md from current tasks and reparses once', async () => {
@@ -289,7 +479,6 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
         writeFileSync(tasksPath, '', 'utf8');
         return { approved: true };
@@ -364,7 +553,6 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
       },
     });
     const onApprovalNeeded = sequencedApproval([
-      { approved: true },
       { approved: false, comment: 'add scope definitions to all tasks' },
       { approved: true },
     ]);

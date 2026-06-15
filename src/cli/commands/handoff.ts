@@ -1,6 +1,10 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { HANDOFF_TARGETS, validateHandoffTargetName } from '../../core/handoff/targets.js';
+import {
+  HANDOFF_TARGETS,
+  normalizeHandoffTarget,
+  validateHandoffTargetName,
+} from '../../core/handoff/targets.js';
 import { getDiptychPath } from '../../core/paths.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { HANDOFF_WRITE_MODES, writeHandoffPack } from '../../engine/handoff/write.js';
@@ -62,6 +66,8 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
 
           const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
+          const resolvedTarget = normalizeHandoffTarget(target);
+
           const rawMode = opts.mode;
           if (!includes(HANDOFF_WRITE_MODES, rawMode)) {
             throw cliError(
@@ -71,19 +77,19 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
           }
           const mode = rawMode;
 
-          const targetValidation = validateHandoffTargetName(target);
+          const targetValidation = validateHandoffTargetName(resolvedTarget);
           if (!targetValidation.ok) {
-            throw cliError(`Invalid target "${target}": ${targetValidation.reason}`, 1);
+            throw cliError(`Invalid target "${resolvedTarget}": ${targetValidation.reason}`, 1);
           }
 
-          const outDir = opts.out ?? getDiptychPath(projectDir, 'handoffs', target);
+          const outDir = opts.out ?? getDiptychPath(projectDir, 'handoffs', resolvedTarget);
 
           const selectedTaskIds = opts.task ? opts.task.split(',').map((s) => s.trim()) : undefined;
 
           const result = await deps.writeHandoffPack({
             projectDir,
             sessionId,
-            target,
+            target: resolvedTarget,
             outDir,
             ...(selectedTaskIds !== undefined && { selectedTaskIds }),
             mode,

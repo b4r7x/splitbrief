@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { psCommand, type PsDeps } from './ps.js';
@@ -26,6 +26,14 @@ function putSession(
   mkdirSync(sessDir, { recursive: true });
   lockfiles.set(sessDir, data);
   statuses.set(sessDir, status);
+}
+
+function putInteractiveSession(sessionId: string, mtimeMs: number): void {
+  putSession(sessionId, null);
+  const statePath = join(testDir, '.diptych', 'sessions', sessionId, 'state.json');
+  writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
+  const seconds = mtimeMs / 1000;
+  utimesSync(statePath, seconds, seconds);
 }
 
 async function collectPsOutput(): Promise<string[]> {
@@ -135,7 +143,7 @@ describe('psCommand', () => {
     expect(body[1]).toContain('a-older-session');
   });
 
-  it('only displays numeric aliases for sessions the alias resolver can resolve', async () => {
+  it('aliases resolvable sessions but leaves empty session directories unaliased', async () => {
     const nowMs = Date.now();
     const data: LockfileData = {
       version: 1,
@@ -153,6 +161,41 @@ describe('psCommand', () => {
 
     expect(lines.find((line) => line.includes('aliased-session'))?.trimStart()).toMatch(/^1\s/);
     expect(lines.find((line) => line.includes('unknown-session'))?.trimStart()).toMatch(/^-\s/);
+  });
+
+  it('aliases lockfile-less interactive sessions', async () => {
+    putInteractiveSession('interactive-session', Date.now());
+
+    const lines = await collectPsOutput();
+
+    const body = lines.slice(1);
+    expect(body).toHaveLength(1);
+    expect(body[0]?.trimStart()).toMatch(/^1\s/);
+    expect(body[0]).toContain('interactive-session');
+  });
+
+  it('orders a newer interactive session ahead of an older detached one', async () => {
+    const nowMs = Date.now();
+    const detached: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs - 600000,
+      lastAliveMs: nowMs - 600000,
+      sessionId: 'old-detached',
+      mode: 'standard',
+      feature: 'detached feature',
+      exitedAt: nowMs - 500000,
+      exitCode: 0,
+    };
+    putSession('old-detached', detached, { alive: false, crashed: false, data: detached });
+    putInteractiveSession('new-interactive', nowMs);
+
+    const lines = await collectPsOutput();
+
+    const body = lines.slice(1);
+    expect(body).toHaveLength(2);
+    expect(body[0]).toContain('new-interactive');
+    expect(body[1]).toContain('old-detached');
   });
 
   it('ELAPSED column shows correct duration string for exited session', async () => {

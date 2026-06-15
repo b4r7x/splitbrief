@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -329,14 +329,16 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await tick(20);
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    });
     const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
-    const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
-
-    expect(after).toBeGreaterThan(before);
+    await vi.waitFor(() => {
+      const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+      expect(after).toBeGreaterThan(before);
+    });
     ui.unmount();
   });
 
@@ -350,11 +352,11 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
 
     ui.stdin.write(ESC);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain(CURSOR_GLYPH);
-    expect(frame).toContain(HOME_HINT);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).toContain(HOME_HINT);
+    });
     ui.unmount();
   });
 
@@ -368,11 +370,11 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
 
     ui.stdin.write(ARROW_UP);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain(CURSOR_GLYPH);
-    expect(frame).toContain(HOME_HINT);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).toContain(HOME_HINT);
+    });
     ui.unmount();
   });
 
@@ -425,12 +427,15 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await tick(20);
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    });
     ui.stdin.write(ENTER);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message ?? '').toContain('broken feature');
+    });
 
     expect(routerStore.get().screen).toBe('home');
-    expect(feedbackStore.get().message ?? '').toContain('broken feature');
     expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
     ui.unmount();
   });

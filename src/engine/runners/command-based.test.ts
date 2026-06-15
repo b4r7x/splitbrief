@@ -33,6 +33,29 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout.trim()).toBe('substituted text');
   });
 
+  it('keeps $-replacement patterns in the prompt inert', async () => {
+    const prompt = 'a $& b $$ c $` d';
+    const result = await invokeCommandBasedRunner({
+      command: 'printf',
+      args: ['%s', '{prompt}'],
+      supportPromptPlaceholder: true,
+      prompt,
+      projectDir: process.cwd(),
+    });
+    expect(result.stdout.trim()).toBe(prompt);
+  });
+
+  it('substitutes every {prompt} occurrence in an arg', async () => {
+    const result = await invokeCommandBasedRunner({
+      command: 'printf',
+      args: ['%s', '{prompt}-{prompt}'],
+      supportPromptPlaceholder: true,
+      prompt: 'x',
+      projectDir: process.cwd(),
+    });
+    expect(result.stdout.trim()).toBe('x-x');
+  });
+
   it('uses stdin when supportPromptPlaceholder is false', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'cat',
@@ -98,5 +121,40 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
     expect(result.stdout).toContain('output');
+  });
+
+  it('parses stream-json through the format pipeline on the timeout branch', async () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'parsed body' }] },
+    });
+    const result = await invokeCommandBasedRunner({
+      command: 'printf',
+      args: ['%s\\n', line],
+      outputFormat: 'stream-json',
+      timeout: 30_000,
+      prompt: '',
+      projectDir: process.cwd(),
+    });
+    expect(result.stdout).toBe('parsed body');
+    expect(result.stdout).not.toContain('assistant');
+  });
+
+  it('accumulates usage from stream-json on the timeout branch', async () => {
+    const line = JSON.stringify({
+      type: 'result',
+      result: 'done',
+      usage: { input_tokens: 11, output_tokens: 7 },
+    });
+    const result = await invokeCommandBasedRunner({
+      command: 'printf',
+      args: ['%s\\n', line],
+      outputFormat: 'stream-json',
+      timeout: 30_000,
+      prompt: '',
+      projectDir: process.cwd(),
+    });
+    expect(result.stdout).toBe('done');
+    expect(result.usage).toEqual({ inputTokens: 11, outputTokens: 7 });
   });
 });

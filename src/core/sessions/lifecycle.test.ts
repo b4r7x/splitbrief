@@ -64,17 +64,28 @@ describe('readActive', () => {
 });
 
 describe('clearActive', () => {
-  it('deletes the active file', () => {
+  it('deletes the active file when the pointer names the given session', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
     writeActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
-    clearActive(dir);
+    clearActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
     expect(readActive(dir)).toBeNull();
   });
 
   it('is a no-op if active file does not exist', () => {
     const dir = makeTmp();
-    expect(() => clearActive(dir)).not.toThrow();
+    expect(() => clearActive({ projectDir: dir, sessionId: '2026-04-14-feature' })).not.toThrow();
+  });
+
+  it('preserves the pointer when it names a different session (compare-and-clear ownership)', () => {
+    const dir = makeTmp();
+    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    writeActive({ projectDir: dir, sessionId: '2026-04-14-session-b' });
+
+    // A stale cleanup from session A must not delete a pointer now owned by session B.
+    clearActive({ projectDir: dir, sessionId: '2026-04-14-session-a' });
+
+    expect(readActive(dir)).toBe('2026-04-14-session-b');
   });
 });
 
@@ -134,14 +145,14 @@ function mkSessionDir(projectDir: string, id: string): void {
 describe('generateSessionId', () => {
   it('formats date as YYYY-MM-DD with feature slug', () => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00'));
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00Z'));
     expect(id).toBe('2026-04-14-add-email-validator');
   });
 
   it('appends -2 on first collision', () => {
     const dir = makeTmp();
     mkSessionDir(dir, '2026-04-14-add-email-validator');
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00'));
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00Z'));
     expect(id).toBe('2026-04-14-add-email-validator-2');
   });
 
@@ -149,19 +160,25 @@ describe('generateSessionId', () => {
     const dir = makeTmp();
     mkSessionDir(dir, '2026-04-14-add-email-validator');
     mkSessionDir(dir, '2026-04-14-add-email-validator-2');
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00'));
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00Z'));
     expect(id).toBe('2026-04-14-add-email-validator-3');
   });
 
   it('reduces non-alphanumeric characters to hyphens (Polish diacritics)', () => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, 'Dodaj walidację e-mail', new Date('2026-04-14T00:00:00'));
+    const id = generateSessionId(dir, 'Dodaj walidację e-mail', new Date('2026-04-14T00:00:00Z'));
     expect(id).toBe('2026-04-14-dodaj-walidacj-e-mail');
+  });
+
+  it('falls back to slug "unknown" for an all-non-Latin (CJK) feature', () => {
+    const dir = makeTmp();
+    const id = generateSessionId(dir, '機能を追加', new Date('2026-04-14T00:00:00Z'));
+    expect(id).toBe('2026-04-14-unknown');
   });
 
   it('reduces emoji and special chars to hyphens', () => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, '🚀 Launch rocket! 🎉', new Date('2026-04-14T00:00:00'));
+    const id = generateSessionId(dir, '🚀 Launch rocket! 🎉', new Date('2026-04-14T00:00:00Z'));
     expect(id).not.toContain('🚀');
     expect(id).not.toContain('🎉');
     expect(id).toMatch(/^2026-04-14-[a-z0-9-]+$/);
@@ -171,20 +188,32 @@ describe('generateSessionId', () => {
     const dir = makeTmp();
     const longFeature =
       'this is a very long feature description that exceeds fifty characters easily';
-    const id = generateSessionId(dir, longFeature, new Date('2026-04-14T00:00:00'));
+    const id = generateSessionId(dir, longFeature, new Date('2026-04-14T00:00:00Z'));
     const slug = id.slice('2026-04-14-'.length);
     expect(slug.length).toBeLessThanOrEqual(50);
   });
 
   it('collapses multiple non-alphanumeric chars into single hyphen', () => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add--email  validator', new Date('2026-04-14T00:00:00'));
+    const id = generateSessionId(dir, 'Add--email  validator', new Date('2026-04-14T00:00:00Z'));
     expect(id).toBe('2026-04-14-add-email-validator');
   });
 
   it('strips leading and trailing hyphens from slug', () => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, '---feature---', new Date('2026-04-14T00:00:00'));
+    const id = generateSessionId(dir, '---feature---', new Date('2026-04-14T00:00:00Z'));
     expect(id).toBe('2026-04-14-feature');
+  });
+
+  it('stamps the UTC calendar date even when the instant falls on a different local day', () => {
+    const dir = makeTmp();
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-15T02:00:00Z'));
+    expect(id).toBe('2026-04-15-add-email-validator');
+  });
+
+  it('stamps a single-digit month and day with zero padding', () => {
+    const dir = makeTmp();
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-01-05T23:30:00Z'));
+    expect(id).toBe('2026-01-05-add-email-validator');
   });
 });

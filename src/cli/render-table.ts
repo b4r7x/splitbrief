@@ -46,9 +46,9 @@ function shrinkToFit<R>(
   }
 }
 
-function cell(value: string, width: number, truncate: boolean, pad: boolean): string {
-  if (truncate && value.length > width) return value.slice(0, width);
-  return pad ? value.padEnd(width) : value;
+function cell(value: string, width: number, opts: { truncate: boolean; pad: boolean }): string {
+  if (opts.truncate && value.length > width) return `${value.slice(0, Math.max(0, width - 1))}…`;
+  return opts.pad ? value.padEnd(width) : value;
 }
 
 export function renderTable<R>(opts: RenderTableOptions<R>): string[] {
@@ -75,7 +75,10 @@ export function renderTable<R>(opts: RenderTableOptions<R>): string[] {
 
   for (const row of rows) {
     const rowCells = columns.map((column, i) =>
-      cell(column.value(row), widths[i] ?? 0, column.truncate ?? false, i !== lastIndex),
+      cell(column.value(row), widths[i] ?? 0, {
+        truncate: column.truncate ?? false,
+        pad: i !== lastIndex,
+      }),
     );
     lines.push(rowCells.join(separator));
   }

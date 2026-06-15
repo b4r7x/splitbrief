@@ -1,4 +1,5 @@
 import type { Planner, EscalationResult } from './types.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -9,13 +10,15 @@ import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
+import { composeAbortSignal } from '../../utils/abort.js';
 
 export function createClaudeCodePlanner(opts: {
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
+  timeout?: number | undefined;
 }): Planner {
-  const { model, initialSessionId, effort } = opts;
+  const { model, initialSessionId, effort, timeout } = opts;
   const resolvedModel = resolveAutoModel(model, 'claude-code');
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
@@ -33,6 +36,7 @@ export function createClaudeCodePlanner(opts: {
     signal?: AbortSignal | undefined,
   ) {
     const priorId = session.getResumeId();
+    const effectiveSignal = composeAbortSignal(signal, timeout);
     return runWithResumeFallback(
       session,
       (resumeId) =>
@@ -45,7 +49,7 @@ export function createClaudeCodePlanner(opts: {
           model: resolvedModel,
           ...(effort !== undefined && { effort }),
           ...(images && images.length > 0 ? { images } : {}),
-          ...(signal !== undefined && { signal }),
+          ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
         }),
       () => {
         if (priorId) callbacks.onSessionExpired?.(priorId);
@@ -62,23 +66,24 @@ export function createClaudeCodePlanner(opts: {
     },
 
     async invokeEscalate({ prompt, projectDir, callbacks, signal, sandboxEnv }) {
+      const effectiveSignal = composeAbortSignal(signal, timeout);
       return runClaudeOneShot({
         prompt,
         projectDir,
         onOutput: callbacks.onOutput,
         model: resolvedModel,
         ...(effort !== undefined && { effort }),
-        ...(signal !== undefined && { signal }),
+        ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
         ...(sandboxEnv !== undefined && { env: sandboxEnv }),
       });
     },
 
     ...createCommandAvailability('claude'),
 
-    async injectUserTurn(text: string, projectDir: string): Promise<void> {
+    async injectUserTurn(text: string, projectDir: string): Promise<TokenDelta | null> {
       const sessionId = session.getResumeId();
-      if (!sessionId) return;
-      await runClaudePlannerStream({
+      if (!sessionId) return null;
+      const result = await runClaudePlannerStream({
         prompt: text,
         projectDir,
         sessionId,
@@ -86,6 +91,7 @@ export function createClaudeCodePlanner(opts: {
         model: resolvedModel,
         ...(effort !== undefined && { effort }),
       });
+      return result.usage;
     },
 
     capabilities: CONVERSATIONAL_CAPS,

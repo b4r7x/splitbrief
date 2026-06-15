@@ -57,6 +57,7 @@ export interface EstimateDeterministicCostOptions {
   pricingCache?: ModelCacheAccessor | undefined;
   conservativeContextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
+  detectedContextLength?: number | undefined;
 }
 
 interface TaskEstimateInput {
@@ -67,10 +68,12 @@ interface TaskEstimateInput {
   pricingCache?: ModelCacheAccessor | undefined;
   conservativeContextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
+  detectedContextLength?: number | undefined;
 }
 
 function contextConfidence(source: ContextLengthSource | null): EstimateContextConfidence {
   if (source === 'explicit') return 'context-explicit';
+  if (source === 'detected') return 'context-detected';
   if (source === 'models-dev' || source === 'known-catalog') return 'context-known-catalog';
   if (source === 'runtime') return 'context-cached-provider';
   if (source === 'conservative-fallback') return 'context-conservative-fallback';
@@ -137,6 +140,9 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
     }),
     ...(opts.pricingCache !== undefined && { contextCache: opts.pricingCache }),
     ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
+    ...(opts.detectedContextLength !== undefined && {
+      detectedContextLength: opts.detectedContextLength,
+    }),
   });
   const selectedProfile = opts.profiles.find(
     (profile) => profile.name === decision.selectedProfile,
@@ -150,6 +156,7 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
         confidenceProfile,
         opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
         opts.pricingCache,
+        opts.detectedContextLength,
       ).source
     : null;
   const implementerCost = selectedProfile
@@ -243,6 +250,7 @@ function contextConfidenceCounts(
   const counts = countByValue(tasks, (task) => task.contextConfidence);
   return {
     contextExplicit: counts['context-explicit'] ?? 0,
+    contextDetected: counts['context-detected'] ?? 0,
     contextKnownCatalog: counts['context-known-catalog'] ?? 0,
     contextCachedProvider: counts['context-cached-provider'] ?? 0,
     contextConservativeFallback: counts['context-conservative-fallback'] ?? 0,
@@ -282,6 +290,9 @@ export function estimateDeterministicCost(
         conservativeContextLength: opts.conservativeContextLength,
       }),
       ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
+      ...(opts.detectedContextLength !== undefined && {
+        detectedContextLength: opts.detectedContextLength,
+      }),
     }),
   );
 

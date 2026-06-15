@@ -6,30 +6,32 @@ import type {
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { emptyActiveChain } from './chain-state.js';
 import { clamp01 } from '../../../utils/math.js';
+import { matchesGlob } from '../../../utils/path-patterns.js';
 
 export type DriftChainUpdate = {
   state: DriftChainState;
   emitted: EmittedChain | undefined;
 };
 
-export function computePerTaskOutOfBounds(task: Task, taskChangedFiles: string[]): Set<string> {
+export function computePerTaskOutOfBounds(
+  task: Task,
+  taskChangedFiles: string[],
+  dependsOnFiles: string[] = [],
+): Set<string> {
   if (taskChangedFiles.length === 0) return new Set();
 
-  const outOfBoundsPatterns = task.scope?.outOfBounds ?? [];
+  const inBoundsPatterns = task.scope?.inBounds ?? [];
   const approvedPatterns = task.scope?.approvedOutOfBounds ?? [];
+  const dependsOn = new Set(dependsOnFiles);
 
   const result = new Set<string>();
 
   for (const file of taskChangedFiles) {
-    const matchesOutOfBoundsPattern = outOfBoundsPatterns.some((p) => file.includes(p));
-    const isNotOwnFile = file !== task.file;
-
-    if (matchesOutOfBoundsPattern || isNotOwnFile) {
-      const isApproved = approvedPatterns.some((p) => file.includes(p));
-      if (!isApproved) {
-        result.add(file);
-      }
-    }
+    if (file === task.file) continue;
+    if (dependsOn.has(file)) continue;
+    if (inBoundsPatterns.some((p) => matchesGlob(file, p))) continue;
+    if (approvedPatterns.some((p) => file.includes(p))) continue;
+    result.add(file);
   }
 
   return result;
@@ -130,7 +132,6 @@ export function analyzeDriftChain(
       uniqueOutOfBoundsFiles: finalChain.uniqueFiles,
       representativePath: representativePath(finalChain.entries),
       detectedAtTaskId: taskId,
-      ts: Date.now(),
     };
     newEmittedChains = [...state.emittedChains, emitted];
   }

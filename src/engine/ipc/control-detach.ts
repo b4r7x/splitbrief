@@ -1,6 +1,14 @@
 import type { Socket } from 'node:net';
+import { timingSafeEqual } from 'node:crypto';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { IPC_MAX_FRAME_BYTES, parseClientMessage, type ServerMessage } from './protocol.js';
+
+export function tokensMatch(provided: string, expected: string): boolean {
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return timingSafeEqual(providedBuf, expectedBuf);
+}
 
 export function rejectAsAlreadyAttached(
   socket: Socket,
@@ -61,7 +69,7 @@ export function tryControlDetach(opts: ControlDetachOptions): void {
       consumed = true;
       if (timer !== undefined) clearTimeout(timer);
       if (msg.kind === 'authenticate') {
-        if (msg.token !== authToken) {
+        if (!tokensMatch(msg.token, authToken)) {
           writeMessage(socket, {
             kind: 'error',
             code: 'unauthorized',
@@ -88,6 +96,11 @@ export function tryControlDetach(opts: ControlDetachOptions): void {
         const attached = currentSocket();
         if (attached) {
           try {
+            writeMessage(attached, {
+              kind: 'error',
+              code: 'already_attached',
+              message: 'session detached: another client took over this session',
+            });
             attached.destroy();
           } catch {
             /* ignore */
@@ -101,8 +114,9 @@ export function tryControlDetach(opts: ControlDetachOptions): void {
     { maxLineBytes: IPC_MAX_FRAME_BYTES, onOverflow: reject },
   );
 
-  socket.on('data', (chunk: Buffer) => {
-    lineBuffer.push(chunk.toString('utf8'));
+  socket.setEncoding('utf8');
+  socket.on('data', (chunk: string) => {
+    lineBuffer.push(chunk);
   });
 
   socket.on('error', () => {

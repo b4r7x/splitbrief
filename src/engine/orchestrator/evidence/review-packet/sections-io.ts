@@ -7,10 +7,16 @@ import type {
   ReviewPacketFinalReviewStatus,
 } from '../../../../core/schemas/review-packet.js';
 import { REVIEW_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
-import { getCurrentChangedFiles } from '../../../../lib/git.js';
+import {
+  getCommittedFilesSince,
+  getCurrentChangedFiles,
+  getRunStartHead,
+} from '../../../../lib/git.js';
+import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
+import { RUN_COMMIT_MESSAGE_PREFIX } from '../../task/commit.js';
 import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
@@ -21,8 +27,20 @@ export async function resolveChangedFiles(
   missing: string[],
 ): Promise<string[]> {
   if (drift) return uniqueSorted(drift.changedFiles);
+  // No drift report: live `git status` alone is not the run-attributed universe
+  // (per-task commits move changes out of the working tree), so it must be unioned
+  // with files committed since the run-start HEAD; an empty result is unavailable
+  // evidence rather than a confident "nothing changed".
   try {
-    return uniqueSorted(await getCurrentChangedFiles(projectDir));
+    const runStartHead = await getRunStartHead(projectDir, RUN_COMMIT_MESSAGE_PREFIX);
+    const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
+    const committed =
+      runStartHead === null
+        ? []
+        : userVisibleChangedFiles(await getCommittedFilesSince(projectDir, runStartHead));
+    const files = uniqueSorted([...committed, ...status]);
+    if (files.length === 0) addMissing(missing, 'changed files');
+    return files;
   } catch {
     addMissing(missing, 'git status');
     return [];

@@ -13,6 +13,7 @@ const estimate: DeterministicEstimate = {
   taskFitCounts: { fits: 1, tight: 1, overflow: 1, unknown: 0 },
   contextConfidenceCounts: {
     contextExplicit: 2,
+    contextDetected: 0,
     contextKnownCatalog: 0,
     contextCachedProvider: 0,
     contextConservativeFallback: 0,

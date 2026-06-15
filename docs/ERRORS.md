@@ -235,21 +235,25 @@ try {
 
 ## CliError — the top-level exit-code case
 
-CLI subcommands need to map errors to process exit codes. `CliError` is a narrow specialization of the factory pattern — same shape, plus an `exitCode` field.
+CLI subcommands need to map errors to process exit codes. `CliError` is a narrow specialization of the factory pattern — it is built by `error()` like every other domain error, carries `kind: 'cli-error'`, and adds an `exitCode` field (mirrored into `data`) plus a `name` for stack-trace readability.
 
 **File:** `src/cli/errors.ts`
 
 ```ts
-export type CliError = Error & { readonly exitCode: number };
+export type CliError = AppError<'cli-error', { exitCode: number }> & {
+  readonly name: 'CliError';
+  readonly exitCode: number;
+};
+
+const isCliErrorKind = matches('cli-error');
 
 export function cliError(message: string, exitCode = 1): CliError {
-  return Object.assign(new Error(message), { exitCode });
+  const name: CliError['name'] = 'CliError';
+  return Object.assign(error('cli-error', message, { exitCode }), { name, exitCode });
 }
 
 export function isCliError(err: unknown): err is CliError {
-  return err instanceof Error
-    && 'exitCode' in err
-    && typeof (err as { exitCode: unknown }).exitCode === 'number';
+  return isCliErrorKind(err) && isRecord(err) && typeof err.exitCode === 'number';
 }
 ```
 
@@ -263,7 +267,28 @@ if (!(await isGitRepo(projectDir))) {
 
 The top-level catch in `src/cli.ts` checks `isCliError(err)` and calls `process.exit(err.exitCode)`. Every other error becomes exit code 1 with a formatted message.
 
-`CliError` is allowed to differ from the domain-bag shape because its only predicate is `isCliError` — there is no matrix of "kinds" to discriminate. A domain that later needs both kinds and exit codes uses the `kind`+`data` pattern and lets the top-level handler read `err.data.exitCode`.
+`CliError` does not differ from the domain-bag shape — `cliError` goes through `error('cli-error', …)`, so `isCliError` narrows on the `kind` discriminator via `matches('cli-error')` and then confirms the numeric `exitCode`. The `exitCode` is the only extra field a CLI needs over a plain domain error.
+
+### Wrapping arbitrary throws — `rethrowAsCli` and `withCliErrors`
+
+The same file exports two helpers so subcommands never have to hand-classify a caught error:
+
+```ts
+export function rethrowAsCli(err: unknown): never {
+  if (isCliError(err)) throw err;
+  throw cliError(toErrorMessage(err), 1);
+}
+
+export async function withCliErrors<T>(fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    rethrowAsCli(err);
+  }
+}
+```
+
+`rethrowAsCli` passes a `CliError` through untouched and converts anything else into `cliError(message, 1)`. `withCliErrors(fn)` wraps a subcommand body so every escaping error reaches the top-level handler as a `CliError` with a clean message — this is the standard way commands such as `start`, `snapshot`, and `worktree` map failures to exit codes.
 
 ---
 
@@ -280,9 +305,9 @@ Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib
 
 **Why not `Error` subclasses (status quo):** forces a class exception to the zero-class rule with no benefit. `instanceof` is equivalent to `matches('kind')` at runtime, both narrow the type at compile time, and the factory gives us autocomplete on the bag (`processError.` → list of factories).
 
-**Why not `neverthrow` / `Result<T, E>`:** viral type. Every function in the call chain has to declare `Result`. Forty-five `throw cliError(...)` sites today, almost none are branched on — a `Result`-typed call chain would be pure noise at those sites.
+**Why not `neverthrow` / `Result<T, E>`:** viral type. Every function in the call chain has to declare `Result`. Almost none of the `throw cliError(...)` sites are branched on — a `Result`-typed call chain would be pure noise at those sites.
 
-**Why not `effect-ts`:** paradigm shift. Bundle size, learning curve, and dependency footprint are too large for a single-binary CLI that throws in fewer than 50 places.
+**Why not `effect-ts`:** paradigm shift. Bundle size, learning curve, and dependency footprint are too large for a single-binary CLI that throws in a handful of places.
 
 **Why not `ts-pattern`:** pulls in a library for a one-case need. Plain `switch(err.kind)` handles our current matching. Revisit only when we need to match on `data.*` fields.
 

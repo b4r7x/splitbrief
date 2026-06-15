@@ -135,4 +135,29 @@ describe('WorkflowStateSchema recovery compatibility', () => {
 
     expect(result.success).toBe(true);
   });
+
+  it('strips legacy clarifications and analysisResult fields from persisted state', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'planning',
+      feature: 'legacy speckit session',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
+      clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
+      analysisResult: {
+        specTaskCoverage: 1,
+        planTaskCoverage: 1,
+        orphanTasks: [],
+        unaddressedSpecSections: [],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data).not.toHaveProperty('clarifications');
+    expect(result.data).not.toHaveProperty('analysisResult');
+  });
 });

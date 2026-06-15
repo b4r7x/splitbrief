@@ -34,23 +34,23 @@ Each mode has a default. `instant` and `quick` default to `none`. `standard` def
 
 ## Tiered approval
 
-Document approval gates the planning output. Tiered approval gates what the implementer does during execution. Every file write is classified by risk and checked against a three-tier system.
+Document approval gates the planning output. Tiered approval gates the declared file writes the implementer reports during execution. The gate runs over the files the implementer changed; each is classified by risk and checked against a three-tier system.
 
-The classifier lives in `src/engine/orchestrator/approval/action-classifier.ts`. It inspects the action description and the task's scope to assign an action class and a tier.
+The classifier lives in `src/engine/orchestrator/approval/action-classifier.ts`. It inspects the declared file path and the task's scope to assign an action class and a tier. It classifies declared file writes only — it does not parse or gate shell commands.
 
-**Action classes:**
+**Action classes the classifier produces:**
 
 | Class | What triggers it | Default tier |
 |---|---|---|
-| `read` | Reading files, `cat`, `ls`, `grep` | `auto` |
-| `write_in_scope` | Writing to files named in the task brief or its `scope.inBounds` | `auto` |
-| `validation` | Running typecheck, lint, or test commands | `auto` |
-| `write_out_of_scope` | Writing to files not listed in the task brief | `sticky` |
-| `destructive` | `rm -rf`, `git reset --hard`, database migrations | `confirm` |
-| `network` | `curl`, `wget`, `npm publish`, HTTP URLs | `confirm` |
-| `package_change` | `npm install`, `yarn add`, writing to `package.json` | `confirm` |
+| `read` | Action descriptions beginning with `read`/`cat`/`ls`/`find`/`grep`, or anything with no write verb | `auto` |
+| `write_in_scope` | Writing to a file named in the task brief or matching `scope.inBounds` / `approval.allowedPaths` | `auto` |
+| `write_out_of_scope` | Writing to a file not covered by the task's scope | `sticky` |
+| `destructive` | Writing to a control-plane path (`.git`, `.diptych`) | `confirm` |
+| `package_change` | Writing to a package manifest or lockfile (`package.json`, `pnpm-lock.yaml`, …) | `confirm` |
 
-Classification works by pattern matching. The classifier checks the action description against known destructive, network, package, and validation patterns first (in that priority order), then falls back to extracting a file path and checking scope membership. If a write targets a file in the task's `scope.inBounds` or `scope.approvedOutOfBounds`, it's `write_in_scope`. Otherwise it's `write_out_of_scope`. Actions with no recognized pattern default to `read`.
+Classification extracts the target file path from the action description, then checks scope membership. A write to a control-plane path is `destructive`; a write to a package manifest is `package_change`; a write to a file in the task's `scope.inBounds`, `scope.approvedOutOfBounds`, or `approval.allowedPaths` is `write_in_scope`; any other write is `write_out_of_scope`. Anything that is not a write defaults to `read`.
+
+The `validation` and `network` classes remain part of the action-class enum and the default tier map (so `approval.tiers` can still reference them), but the file-write classifier never derives them from a description — they are not produced by gating declared writes.
 
 **Three tiers:**
 
@@ -109,7 +109,9 @@ The report is written to the session folder as `brief-quality.json`. If it passe
 
 When the implementer writes code and validation fails, the escalation system tries progressively more capable approaches before involving the user. The orchestrator calls these tiers in sequence. If any tier succeeds, the task is done.
 
-**Tier 0: local retries** (`src/engine/orchestrator/escalation/local-retries.ts`). The implementer retries with the error message appended to its context. No additional API calls beyond the implementer itself. Runs up to `workflow.maxRetries` times (default 3). Each attempt publishes a `retry` event.
+**Local retries** (`src/engine/orchestrator/escalation/local-retries.ts`). Before any tier, the implementer retries with the error message appended to its context. No additional API calls beyond the implementer itself. Runs up to `workflow.maxRetries` times (default 3). Each attempt publishes a `retry` event. Local retries are not a numbered tier.
+
+**Tier 0: intermediate model** (`INTERMEDIATE_TIER` in `src/engine/orchestrator/escalation/tier.ts`). A paid mid-tier API model (`escalation.intermediateProvider` / `intermediateModel`) retries the task. This tier runs only when an intermediate provider is configured and `escalation.enabled` is not `false`; otherwise it is skipped. Publishes `escalate` with tier 0.
 
 **Tier 1: hint escalation** (`HINT_TIER` in `src/engine/orchestrator/escalation/tier.ts`). The planner analyzes the error and produces a short hint. The hint is appended to the error context (truncated to 4000 chars), and the implementer retries once more with the enriched error. Publishes `escalate` with tier 1.
 
@@ -121,14 +123,16 @@ Every retry step (`src/engine/orchestrator/escalation/step.ts`) follows the same
 
 ```mermaid
 flowchart TD
-    VF[Validation fails] --> T0[Tier 0: local retries<br/>up to maxRetries attempts]
-    T0 -->|success| DONE[task_completed<br/>method: local]
-    T0 -->|exhausted| T1[Tier 1: hint escalation<br/>planner writes hint, implementer retries]
+    VF[Validation fails] --> LR[Local retries<br/>up to maxRetries attempts]
+    LR -->|success| DONE[task_completed<br/>method: local]
+    LR -->|exhausted| T0[Tier 0: intermediate model<br/>paid mid-tier API retry]
+    T0 -->|skipped or fail| T1[Tier 1: hint escalation<br/>planner writes hint, implementer retries]
+    T0 -->|success| DONE0[task_completed<br/>method: escalated-intermediate]
     T1 -->|success| DONE1[task_completed<br/>method: escalated-hint]
     T1 -->|fail| T2[Tier 2: full escalation<br/>planner writes code directly]
     T2 -->|success| DONE2[task_completed<br/>method: escalated-full]
     T2 -->|fail| REC{Recovery}
-    REC --> PROMPT[recovery_prompted<br/>onRecoveryNeeded fires]
+    REC --> PROMPT[pendingRecovery persisted<br/>recovery_prompted published]
     PROMPT --> USER{User picks action}
     USER -->|retry-same-worker| RESET[Reset task, retry from scratch]
     USER -->|route-bigger-worker| BIGGER[Retry with more capable profile]
@@ -144,7 +148,7 @@ flowchart TD
 
 Recovery takes over when escalation is exhausted or when a workflow-level failure occurs that automation cannot resolve. The system lives in `src/engine/orchestrator/recovery/`.
 
-When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` (schema: `src/core/schemas/recovery.ts`) describing the failure, the available actions, and a recommended action. The issue is set as `pendingRecovery` in `state.json` via `SET_PENDING_RECOVERY`. Then `recovery_prompted` publishes and `onRecoveryNeeded` fires, presenting the issue to the user.
+When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` (schema: `src/core/schemas/recovery.ts`) describing the failure, the available actions, and a recommended action. The issue is set as `pendingRecovery` in `state.json` via `SET_PENDING_RECOVERY`, and `recovery_prompted` publishes on the EventBus. There is no `onRecoveryNeeded` callback: the TUI and RPC clients react to the persisted `pendingRecovery` (driving `applyRecoveryAction` in `src/engine/orchestrator/recovery/actions.ts`), while a headless run emits a `recovery_required` JSON line and exits non-zero (`src/cli/headless.ts`).
 
 **Recovery reasons and their available actions:**
 
@@ -161,6 +165,10 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 | `dependency-blocked` | Upstream task failed/skipped | `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
 
 \* Conditional. `retry-same-worker` requires retry budget remaining. `route-bigger-worker` requires a bigger profile in config. `continue` on `budget-paused` requires cost still below the hard cap. `continue` on `user-edit-conflict` requires `safeToContinue`. `skip-current-task` on `budget-paused` requires a next task.
+
+**Validation-failure handling (`src/engine/orchestrator/task/step.ts`).** When validation fails, the orchestrator first short-circuits on an aborted run (returning without raising recovery), then diffs the current changed files against the task-attributed set. If a foreign edit — one outside the task's promoted files that matches the current task or one of its dependencies — is present in the failing universe, it raises a `user-edit-conflict` recovery (`detectValidationFailureUserEdit`) instead of charging the implementer with the retry ladder. Only after both checks does it enter the retry ladder.
+
+**Restore-on-exhaustion.** If the retry ladder exhausts and prompts a `retry-exhausted` recovery for a task that was not diverted out of the ladder, the task's attributed changed files are restored to their pre-task state from `taskStartSnapshot` (via `restoreDirtyFilesFromSnapshot`), so a later task's validation never sees the failing task's leftover edits. A `warning` event discloses which files were restored.
 
 **What each action does in `src/engine/orchestrator/recovery/actions.ts`:**
 
@@ -206,7 +214,7 @@ Score formula: start at 1.0, subtract 0.25 per error, 0.08 per warning, clamped 
 
 The report is written to the session folder as `drift-report.json` and published as a `drift_report` event. The planner sees the drift report in the final review phase, but drift findings don't block the workflow by default.
 
-**Cross-task drift chains** (`src/engine/orchestrator/drift/chain.ts`). Single-task drift can be incidental. Repeated out-of-bounds changes across consecutive tasks suggest a systematic problem. The chain tracker accumulates per-task out-of-bounds files and computes a chain score:
+**Cross-task drift chains** (`src/engine/orchestrator/drift/chain.ts`). Single-task drift can be incidental. Repeated out-of-bounds changes across consecutive tasks suggest a systematic problem. `computePerTaskOutOfBounds` treats a changed file as out-of-bounds only when it is none of the task's own target file, a `dependsOn` task file, an `inBounds` glob match, or an `approvedOutOfBounds` match — the same in-scope contract the approval gate's `isInScope` enforces. The chain tracker accumulates these per-task out-of-bounds files and computes a chain score:
 
 - Length term: `min(chainLength, 5) / 5 * 0.3`
 - Overlap term: `(overlapCount / unionSize) * 0.5` (how much consecutive tasks touch the same out-of-bounds files)
@@ -214,4 +222,4 @@ The report is written to the session folder as `drift-report.json` and published
 
 If a task has zero out-of-bounds files, the chain resets. If the current task's out-of-bounds files overlap with the previous entry's, the chain extends. No overlap starts a new chain.
 
-When the chain score meets or exceeds the configured threshold, `drift_chain_detected` publishes with the chain length, score, and the most frequently touched out-of-bounds file. Chain state is persisted to the session folder as `drift-chains.json` (`src/engine/orchestrator/drift/chain-state.ts`).
+When the chain score meets or exceeds the configured threshold, `drift_chain_detected` publishes with the chain length, score, and the most frequently touched out-of-bounds file. It is telemetry-only: the OTel and tree-recorder sinks consume it, but the conversation UI does not render a row for it. Chain state is persisted to the session folder as `drift-chains.json` (`src/engine/orchestrator/drift/chain-state.ts`).

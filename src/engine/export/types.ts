@@ -16,6 +16,7 @@ export type EvidenceExport = {
   tasksWithValidationEvidence: number;
   escalatedTasks: number;
   failedTasks: number;
+  href: string;
 };
 
 export type DriftExport = {

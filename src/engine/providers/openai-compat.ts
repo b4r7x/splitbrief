@@ -17,7 +17,7 @@ export function createOpenAICompatProvider(opts: {
       defaultBaseURL: opts.defaultBaseURL,
       envKeyName: opts.envKeyName,
       isLocal: false,
-      schema: z.object({ id: z.string() }).passthrough(),
+      schema: z.looseObject({ id: z.string() }),
       fallback: (id) => ({ id }),
       modelsUrl: v1ModelsUrl,
     },

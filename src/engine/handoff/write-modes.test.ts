@@ -124,6 +124,75 @@ describe('writeHandoffPack — mode: append', () => {
 
     expect(manifest.artifacts.tasks).toEqual(['tasks/T001.md', 'tasks/T002.md', 'tasks/T003.md']);
   });
+
+  it('refuses to append when the existing manifest describes a different Task Brief', async () => {
+    const sessionId = 'test-session';
+    writeHandoffWriterSessionState(tmp, sessionId);
+
+    const outDir = join(tmp, 'handoff', 'spec-kit');
+    mkdirSync(join(outDir, 'tasks'), { recursive: true });
+    const staleTask = 'preserved task file from a previous, unrelated export';
+    writeFileSync(join(outDir, 'tasks', 'T001.md'), staleTask);
+    const staleManifest = {
+      packVersion: '1',
+      diptychVersion: '0.0.0',
+      generatedAt: new Date().toISOString(),
+      sessionId,
+      briefHash: 'a'.repeat(64),
+      target: 'spec-kit',
+      mode: 'standard',
+      taskIds: ['T001'],
+      artifacts: { tasks: ['tasks/T001.md'] },
+      validation: {},
+    };
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(staleManifest));
+
+    await expect(
+      writeHandoffPack({
+        projectDir: tmp,
+        sessionId,
+        target: 'spec-kit',
+        outDir,
+        mode: 'append',
+      }),
+    ).rejects.toThrow(/different Task Brief/);
+
+    // The pack is left untouched — neither the stale manifest nor the kept task file changed.
+    expect(readFileSync(join(outDir, 'tasks', 'T001.md'), 'utf-8')).toBe(staleTask);
+    const manifestAfter = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(manifestAfter.briefHash).toBe('a'.repeat(64));
+  });
+
+  it('appends when the existing manifest describes the same Task Brief', async () => {
+    const sessionId = 'test-session';
+    writeHandoffWriterSessionState(tmp, sessionId);
+
+    const outDir = join(tmp, 'handoff', 'spec-kit');
+
+    // First export establishes a manifest with the current session's briefHash.
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'default',
+    });
+
+    const firstManifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+
+    // A second append over the same brief is accepted and the manifest stays coherent.
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'append',
+    });
+
+    const secondManifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(secondManifest.briefHash).toBe(firstManifest.briefHash);
+    expect(secondManifest.taskIds).toEqual(firstManifest.taskIds);
+  });
 });
 
 describe('writeHandoffPack — mode: overwrite', () => {
@@ -218,7 +287,6 @@ describe('writeHandoffPack — mode resolution', () => {
       startedAt: Date.now(),
       completedAt: Date.now(),
       stateVersion: CURRENT_STATE_VERSION,
-      stateFile: null,
       status: 'complete',
       summary: {
         feature: 'Authentication System',

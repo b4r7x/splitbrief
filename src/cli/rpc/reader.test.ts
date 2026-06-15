@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createCommandReader } from './reader.js';
-import type { RpcCommand } from './types.js';
+import { RPC_MAX_FRAME_BYTES, type RpcCommand } from './types.js';
 
 const validCommands: RpcCommand[] = [
   { type: 'approve' },
@@ -59,7 +59,7 @@ describe('createCommandReader', () => {
     expect(errors).toEqual(['Invalid JSON: not json']);
   });
 
-  it('calls onClose when stdin ends', async () => {
+  it('signals close when stdin ends', async () => {
     let closed = false;
     const stream = createReadableInput();
 
@@ -102,5 +102,26 @@ describe('createCommandReader', () => {
     expect(commands).toEqual([]);
     expect(errors).toHaveLength(4);
     expect(errors.every((error) => error.startsWith('Invalid command:'))).toBe(true);
+  });
+
+  it('reports an oversized frame and keeps parsing later commands', async () => {
+    const commands: RpcCommand[] = [];
+    const errors: string[] = [];
+    const stream = createReadableInput();
+
+    createCommandReader({
+      stream,
+      onCommand: (command) => commands.push(command),
+      onError: (error) => errors.push(error),
+    });
+
+    const oversized = `{"type":"message","text":"${'x'.repeat(RPC_MAX_FRAME_BYTES)}"}`;
+    stream.write(`${oversized}\n`);
+    stream.end(`${JSON.stringify({ type: 'approve' })}\n`);
+    await waitForReader();
+
+    expect(commands).toEqual([{ type: 'approve' }]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^RPC frame too large: \d+ bytes$/);
   });
 });

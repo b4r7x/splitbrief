@@ -13,7 +13,10 @@ import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import { beginSession, writeActive } from '../core/sessions/lifecycle.js';
 import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
+import { listSessions } from '../core/sessions/io.js';
+import { DIPTYCH_DIR, CONFIG_FILE, sessionDir } from '../core/paths.js';
+import { readLockfile, checkServerStatus } from '../engine/ipc/lockfile.js';
+import type { LockfileData } from '../engine/ipc/lockfile.js';
 import { runHeadless } from './headless.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
@@ -221,13 +224,18 @@ describe('runHeadless — budget pause behavior', () => {
   it('uses the configured budgetPauseThreshold in the JSON output', async () => {
     const projectDir = setupProject(0.75);
 
-    await runHeadless({
-      feature: 'fix budget behavior',
-      projectDir: projectDir,
-      opts: {},
-      savedState: makeBudgetState(),
-      _planner: planner,
-      _implementer: implementer,
+    await expect(
+      runHeadless({
+        feature: 'fix budget behavior',
+        projectDir: projectDir,
+        opts: {},
+        savedState: makeBudgetState(),
+        _planner: planner,
+        _implementer: implementer,
+      }),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Recovery required'),
     });
 
     const pausedLine = stdoutChunks
@@ -430,5 +438,264 @@ describe('runHeadless — recovery stops', () => {
     expect(jsonLines).toContainEqual(
       expect.objectContaining({ type: 'final_review_failed', sessionId }),
     );
+  });
+});
+
+describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let planner: Planner;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    planner = makePlanner();
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  function makeTwoTaskState(): WorkflowState {
+    return {
+      ...createInitialState('stop me'),
+      phase: 'implementing',
+      tasks: [
+        makeTask({ id: 'T001', file: 'src/one.ts' }),
+        makeTask({ id: 'T002', file: 'src/two.ts' }),
+      ],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
+  }
+
+  function setupSignalProject(): { projectDir: string; sessionId: string } {
+    const projectDir = createTempDir('headless-signal');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeMinimalConfigYaml(projectDir);
+    const sessionId = 'sess-headless-signal';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    saveState({ projectDir, sessionId }, makeTwoTaskState());
+    return { projectDir, sessionId };
+  }
+
+  it('aborts the workflow on SIGINT and records the session as interrupted, not failed', async () => {
+    const { projectDir, sessionId } = setupSignalProject();
+    const implement = vi.fn().mockImplementation(async () => {
+      process.emit('SIGINT');
+      return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
+    });
+    const implementer = makeImplementer({ implement });
+
+    await runHeadless({
+      feature: 'stop me',
+      projectDir,
+      opts: {},
+      savedState: makeTwoTaskState(),
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(implement).toHaveBeenCalledTimes(1);
+    const session = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(session?.status).toBe('interrupted');
+  });
+
+  it('stops the run on SIGTERM the same way', async () => {
+    const { projectDir, sessionId } = setupSignalProject();
+    const implement = vi.fn().mockImplementation(async () => {
+      process.emit('SIGTERM');
+      return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
+    });
+    const implementer = makeImplementer({ implement });
+
+    await runHeadless({
+      feature: 'stop me',
+      projectDir,
+      opts: {},
+      savedState: makeTwoTaskState(),
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(implement).toHaveBeenCalledTimes(1);
+    const session = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(session?.status).toBe('interrupted');
+  });
+
+  it('does not emit retry or escalation events after a mid-run SIGINT (no paid churn)', async () => {
+    const { projectDir, sessionId } = setupSignalProject();
+    const stdoutChunks: string[] = [];
+    stdoutSpy.mockImplementation((chunk: string | Uint8Array) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    const implement = vi.fn().mockImplementation(async () => {
+      process.emit('SIGINT');
+      return { success: false, output: '', error: 'broken code', usage: null };
+    });
+    const implementer = makeImplementer({ implement });
+
+    await runHeadless({
+      feature: 'stop me',
+      projectDir,
+      opts: {},
+      savedState: makeTwoTaskState(),
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(implement).toHaveBeenCalledTimes(1);
+
+    const emittedTypes = stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => (JSON.parse(line) as { type?: string }).type);
+    expect(emittedTypes).not.toContain('task_retry');
+    expect(emittedTypes).not.toContain('task_escalating');
+    expect(emittedTypes).not.toContain('escalate');
+
+    const session = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(session?.status).toBe('interrupted');
+  });
+
+  it('leaves a broken-pipe guard on stdout and stderr so a closed consumer cannot crash the run', async () => {
+    const { projectDir, sessionId } = setupSignalProject();
+    const implement = vi.fn().mockImplementation(async () => {
+      process.emit('SIGINT');
+      return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
+    });
+    const implementer = makeImplementer({ implement });
+
+    await runHeadless({
+      feature: 'stop me',
+      projectDir,
+      opts: {},
+      savedState: makeTwoTaskState(),
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    const epipe: NodeJS.ErrnoException = new Error('write EPIPE');
+    epipe.code = 'EPIPE';
+    expect(() => process.stdout.emit('error', epipe)).not.toThrow();
+    expect(() => process.stderr.emit('error', epipe)).not.toThrow();
+  });
+});
+
+describe('runHeadless — liveness record (F-261)', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let planner: Planner;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    planner = makePlanner();
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  function setupLivenessProject(): { projectDir: string; sessionId: string } {
+    const projectDir = createTempDir('headless-liveness');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeMinimalConfigYaml(projectDir);
+    const sessionId = 'sess-headless-liveness';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    const state: WorkflowState = {
+      ...createInitialState('liveness feature'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
+    saveState({ projectDir, sessionId }, state);
+    return { projectDir, sessionId };
+  }
+
+  it('writes a live liveness record (pid + fresh heartbeat, not exited) while the headless run is in flight', async () => {
+    const { projectDir, sessionId } = setupLivenessProject();
+    const dir = sessionDir(projectDir, sessionId);
+    const before = Date.now();
+    const midRunLocks: Array<LockfileData | null> = [];
+    const implement = vi.fn().mockImplementation(async () => {
+      midRunLocks.push(await readLockfile(dir));
+      return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
+    });
+    const implementer = makeImplementer({ implement });
+
+    await runHeadless({
+      feature: 'liveness feature',
+      projectDir,
+      opts: {},
+      savedState: {
+        ...createInitialState('liveness feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(midRunLocks).toHaveLength(1);
+    const midRunLock = midRunLocks[0];
+    expect(midRunLock).not.toBeNull();
+    expect(midRunLock?.pid).toBe(process.pid);
+    expect(midRunLock?.sessionId).toBe(sessionId);
+    expect(midRunLock?.feature).toBe('liveness feature');
+    expect(midRunLock?.lastAliveMs).toBeGreaterThanOrEqual(before);
+    expect(midRunLock?.exitedAt).toBeUndefined();
+  });
+
+  it('marks the liveness record exited once the headless run finishes so it no longer reads as alive', async () => {
+    const { projectDir, sessionId } = setupLivenessProject();
+    const dir = sessionDir(projectDir, sessionId);
+    const implementer = makeImplementer();
+
+    await runHeadless({
+      feature: 'liveness feature',
+      projectDir,
+      opts: {},
+      savedState: {
+        ...createInitialState('liveness feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    let status = await checkServerStatus(dir);
+    for (let i = 0; i < 50 && status.alive; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      status = await checkServerStatus(dir);
+    }
+    expect(status.alive).toBe(false);
+    const lock = await readLockfile(dir);
+    expect(lock?.exitedAt).toBeDefined();
   });
 });

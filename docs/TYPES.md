@@ -16,7 +16,7 @@ Two kinds of "types" exist in this codebase:
 | **Lives at runtime?** | Yes — emitted to JS, runs in the bundle | No — erased by `tsc` |
 | **Lives where** | `src/core/schemas/` | With its consumer (see three-case rule below) |
 | **Source of truth for data shapes?** | Yes — types are derived via `z.infer<>` | Only for TS-only concepts (functions, generics, branded IDs, discriminated unions of React components) |
-| **Examples** | `Config`, `Task`, `Session`, `WorkflowState`, `ModelsDevCatalog` | `EngineEvent` union, `RunnerRuntime` interface, `OrchestratorCallbacks`, branded `TaskId` nominal type, React prop types |
+| **Examples** | `Config`, `Task`, `Session`, `WorkflowState`, `ModelsDevCatalog`, `EngineEventSchema` (persisted to `session.jsonl`) | `RunnerRuntime` interface, `OrchestratorCallbacks`, branded `TaskId` nominal type, React prop types |
 
 Zod schemas are the primary source of truth for every data shape that crosses a runtime boundary — anything written to disk, sent over HTTP, parsed from LLM output, or exchanged between subprocess and parent. These are not TypeScript types that happen to have validators; they are schemas, and their TypeScript type is a byproduct of calling `z.infer<typeof X>`.
 
@@ -28,6 +28,8 @@ TypeScript types exist for things that cannot be expressed as runtime-checkable 
 - Type-level utilities used only by inference
 
 **`z.infer<>` types live in the same file as the schema.** Do not split `TaskSchema` and `type Task = z.infer<typeof TaskSchema>` across two files. They are one concept.
+
+**Carve-out — `EngineEvent`.** The discriminated-union schema is `EngineEventSchema` in `src/engine/events/schema.ts`; its inferred alias `EngineEvent = z.infer<typeof EngineEventSchema>` is declared one file over in `src/engine/events/types.ts`, alongside the schema-less `EventBus` / `EventSink` ports it travels with. This is the one sanctioned split: the event ports have no Zod backing and over a hundred consumers import the alias and the ports as a single `events/types.js` contract. The alias is still derived from the schema — never hand-written — so the two files cannot drift.
 
 ---
 
@@ -105,8 +107,9 @@ Types should live where their domain meaning is created — not in a central `ty
 
 | Type | Old home | New home | Why |
 |---|---|---|---|
-| `EngineEvent` | n/a (new) | `engine/events/types.ts` | Single source of truth for every engine event; workflow sub-stores and all sinks consume it directly |
-| `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside `EngineEvent`; ports for `createEventBus()` and sink subscribers |
+| `EngineEventSchema` (union) | n/a (new) | `engine/events/schema.ts` | The `z.discriminatedUnion('type', …)` is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
+| `EngineEvent` (alias) | n/a (new) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
+| `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: 18 consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
@@ -119,7 +122,7 @@ Types should live where their domain meaning is created — not in a central `ty
 - ❌ `*-types.ts` suffix when the folder name already implies the domain
 - ❌ A `core/types/app.ts` kitchen-sink grouping unrelated types
 
-**Removed in the 2026-04-19 uplift:**
+**Removed in the 2026-04-19 release:**
 
 | Type | Status |
 |---|---|
@@ -242,7 +245,7 @@ A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import ty
 A: `src/core/schemas/config.ts` (or a new file in `core/schemas/` if the shape is large). Export both `SectionSchema` and `type Section = z.infer<typeof SectionSchema>`.
 
 **Q: I'm adding a 5-arm discriminated union for some new UI event.**
-A: Is it persisted (written to session log, IPC, etc.)? → schema (`core/schemas/`). Is it in-memory only (engine → UI bus)? → TS type. Place per three-case rule.
+A: Is it persisted (written to session log, IPC, etc.)? → schema, with its `z.infer` alias colocated. Is it in-memory only? → TS type, placed per the three-case rule. Note the engine→UI bus union is *not* in-memory only: `EngineEvent` is the `z.infer` of `EngineEventSchema` (`engine/events/schema.ts`) because every event is appended to `session.jsonl` and replayed back through `parseEngineEvent`.
 
 **Q: Can I put `type Foo` and `type Bar` (unrelated) in the same `types.ts` because they are both used across my folder?**
 A: Yes — that is what `types.ts` is for. The folder is the naming context.

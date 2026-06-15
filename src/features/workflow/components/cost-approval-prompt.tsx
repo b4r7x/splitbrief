@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
@@ -6,8 +7,10 @@ import {
   costApprovalStore,
   closeCostApprovalPrompt,
 } from '../../../stores/cost-approval/prompt.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getCostApprovalPromptRowsForPrediction } from '../prompt-rows.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 
 interface CostApprovalPromptProps {
   prediction: CostPrediction;
@@ -20,33 +23,29 @@ export function CostApprovalPrompt({ prediction, onApprove, onReject }: CostAppr
   const cols = terminalSizeStore.use((s) => s.cols);
   const summary = formatCostGateSummary(prediction);
   const promptRows = getCostApprovalPromptRowsForPrediction(prediction, cols);
+  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
+  const graceUntilRef = useRef(Date.now() + PROMPT_TYPEAHEAD_GRACE_MS);
 
-  useInput((input, key) => {
-    if (input === 'y' || input === 'Y' || key.return) {
-      onApprove();
-      return;
-    }
-    if (input === 'n' || input === 'N' || key.escape) {
-      onReject();
-      return;
-    }
-  });
+  useEffect(() => {
+    graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
+  }, [prediction]);
 
-  if (!summary) {
-    return (
-      <Box
-        flexDirection="column"
-        paddingX={2}
-        paddingY={1}
-        height={promptRows}
-        width="100%"
-        overflow="hidden"
-        flexShrink={0}
-      >
-        <Text color={t.textDim}>Cost estimate unavailable. Proceeding automatically.</Text>
-      </Box>
-    );
-  }
+  useInput(
+    (input, key) => {
+      if (Date.now() < graceUntilRef.current) return;
+      if (input === 'y' || input === 'Y' || key.return) {
+        onApprove();
+        return;
+      }
+      if (input === 'n' || input === 'N' || key.escape) {
+        onReject();
+        return;
+      }
+    },
+    { isActive: !hasOverlay },
+  );
+
+  if (!summary) return null;
 
   return (
     <Box

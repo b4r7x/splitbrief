@@ -9,7 +9,7 @@ import { appendMessage } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../lib/warn.js';
 import { nowIso } from '../../utils/format-time.js';
-import type { StateSerializer } from './state-serializer.js';
+import type { WriteSequencer } from './serial-executor.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -65,7 +65,7 @@ export function createQueueHandler(
   opts: QueueHandlerContext & {
     persistTranscript: boolean;
     planner: Planner;
-    serialize: StateSerializer;
+    serialize: WriteSequencer;
   },
 ): (text: string, phase: Phase) => void {
   const { projectDir, sessionId, getState, setState, bus, persistTranscript, planner, serialize } =

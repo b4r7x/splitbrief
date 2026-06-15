@@ -8,6 +8,7 @@ import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
+import { planningError } from './errors.js';
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -47,7 +48,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
 
   if (planResult.tasks.length === 0) {
     return handlePlanningFailure({
-      err: new Error('quick planner returned zero tasks; cannot proceed'),
+      err: planningError.zeroTasks('quick'),
       projectDir,
       sessionId,
       state,
@@ -65,8 +66,9 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   if (!qualityOk) {
     const firstError = firstBriefError(qualityReport);
     return handlePlanningFailure({
-      err: new Error(
-        `brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`,
+      err: planningError.briefQualityGateFailed(
+        firstError?.code ?? 'unknown',
+        String(firstError?.taskId ?? 'unknown'),
       ),
       projectDir,
       sessionId,

@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createConnection } from 'node:net';
-import { SERVER_LOG_FILE, IPC_SOCK_FILE } from '../../core/paths.js';
-import { checkServerStatus, assertSessionConfinement } from './lockfile.js';
+import { SERVER_LOG_FILE, ipcSockPath } from '../../core/paths.js';
+import { fsError } from '../../lib/fs.js';
+import { checkServerStatus } from './lockfile.js';
+import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 import { writeIpcServerArgsFile } from './server-args.js';
+import { readOtelExporterFromArgv } from '../../lib/otel.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
@@ -29,23 +31,45 @@ export type SpawnServerResult =
 
 const POLL_INTERVAL_MS = 200;
 const STARTUP_TIMEOUT_MS = 5000;
+const STARTUP_TIMEOUT_TSX_MS = 20000;
 const CHILD_KILL_WAIT_MS = 500;
 
-function resolveEntryPoint(): { command: string; args: string[] } {
-  const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-  const distEntry = join(projectRoot, 'dist', 'engine', 'ipc', 'server-entry.js');
+export function resolveEntryPoint(
+  moduleDir: string = import.meta.dirname,
+  moduleFile: string = import.meta.filename,
+): {
+  command: string;
+  args: string[];
+  tsx: boolean;
+} {
+  const packageRoot = join(moduleDir, '..', '..', '..');
+  const runningUnderTsx = moduleFile.endsWith('.ts');
 
-  if (existsSync(distEntry)) {
-    return { command: process.execPath, args: [distEntry] };
+  if (runningUnderTsx) {
+    const srcEntry = join(packageRoot, 'src', 'engine', 'ipc', 'server-entry.ts');
+    return { command: 'npx', args: ['tsx', srcEntry], tsx: true };
   }
 
-  // Dev mode: use tsx to run TypeScript directly
-  const srcEntry = join(projectRoot, 'src', 'engine', 'ipc', 'server-entry.ts');
-  return { command: 'npx', args: ['tsx', srcEntry] };
+  const distEntry = join(packageRoot, 'dist', 'engine', 'ipc', 'server-entry.js');
+  if (existsSync(distEntry)) {
+    return { command: process.execPath, args: [distEntry], tsx: false };
+  }
+
+  const srcEntry = join(packageRoot, 'src', 'engine', 'ipc', 'server-entry.ts');
+  return { command: 'npx', args: ['tsx', srcEntry], tsx: true };
 }
 
 export function buildServerArgv(entryArgs: string[], argsFile: string): string[] {
   return [...entryArgs, argsFile];
+}
+
+// The detached child inherits process.env, so OTEL_TRACES_EXPORTER / DIPTYCH_OTEL_EXPORTER
+// already propagate. The `--otel-exporter` CLI flag lives only in the parent's argv, so it
+// must be translated into an env var the child's bootstrapOtel() can read.
+export function buildServerEnv(): NodeJS.ProcessEnv {
+  const exporter = readOtelExporterFromArgv(process.argv);
+  if (exporter === undefined) return process.env;
+  return { ...process.env, DIPTYCH_OTEL_EXPORTER: exporter };
 }
 
 function tryConnect(sockPath: string): Promise<boolean> {
@@ -72,7 +96,17 @@ export function waitForServerReady(
   sessionId: string,
   timeoutMs = STARTUP_TIMEOUT_MS,
 ): Promise<SpawnServerResult> {
-  const sockPath = join(sessionDir, IPC_SOCK_FILE);
+  let sockPath: string;
+  try {
+    sockPath = ipcSockPath(sessionDir);
+  } catch (err) {
+    if (fsError.isSockPathTooLong(err)) {
+      return Promise.resolve({ ok: false, reason: err.message });
+    }
+    throw err;
+  }
+
+  const logPath = join(sessionDir, SERVER_LOG_FILE);
 
   return new Promise<SpawnServerResult>((resolve) => {
     const deadline = Date.now() + timeoutMs;
@@ -84,6 +118,13 @@ export function waitForServerReady(
           resolve({ ok: true, pid: status.data.pid, sessionId });
           return;
         }
+      } else if (status.data?.exitedAt !== undefined) {
+        const cause = status.data.cause ?? status.data.signal ?? 'unknown';
+        resolve({
+          ok: false,
+          reason: `server exited during startup (${cause}); see ${logPath}`,
+        });
+        return;
       }
       if (Date.now() >= deadline) {
         resolve({ ok: false, reason: 'timeout waiting for server to accept connections' });
@@ -111,7 +152,16 @@ async function killChildProcess(childPid: number): Promise<void> {
 }
 
 export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServerResult> {
-  const { command, args: entryArgs } = resolveEntryPoint();
+  try {
+    ipcSockPath(opts.sessionDir);
+  } catch (err) {
+    if (fsError.isSockPathTooLong(err)) {
+      return { ok: false, reason: err.message };
+    }
+    throw err;
+  }
+
+  const { command, args: entryArgs, tsx } = resolveEntryPoint();
 
   const logPath = join(opts.sessionDir, SERVER_LOG_FILE);
   assertSessionConfinement(logPath, opts.sessionDir);
@@ -133,10 +183,25 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
   const child = spawn(command, argv, {
     detached: true,
     stdio: ['ignore', 'ignore', logHandle.fd],
+    env: buildServerEnv(),
   });
+
+  const spawnFailure = new Promise<SpawnServerResult>((resolve) => {
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      resolve({ ok: false, reason: `failed to spawn server (${command}): ${err.message}` });
+    });
+  });
+
   await logHandle.close();
 
-  const result = await waitForServerReady(opts.sessionDir, opts.sessionId);
+  const result = await Promise.race([
+    spawnFailure,
+    waitForServerReady(
+      opts.sessionDir,
+      opts.sessionId,
+      tsx ? STARTUP_TIMEOUT_TSX_MS : STARTUP_TIMEOUT_MS,
+    ),
+  ]);
 
   if (result.ok) {
     child.unref();

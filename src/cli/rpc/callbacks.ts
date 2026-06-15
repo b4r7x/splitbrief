@@ -41,22 +41,6 @@ export function createWorkflowCallbacks(deps: {
     },
     onQuestionAsked: async (question, num, total) =>
       deps.waitForMessage({ pending: 'question', question, num, total }),
-    onBudgetExceeded: async (currentCost, maxBudget) => {
-      const result = await deps.waitForApproval({
-        pending: 'budget_exceeded',
-        currentCost,
-        maxBudget,
-      });
-      return result.approved;
-    },
-    onBudgetPaused: async (currentCost, maxBudget) => {
-      const result = await deps.waitForApproval({
-        pending: 'budget_paused',
-        currentCost,
-        maxBudget,
-      });
-      return result.approved ? 'continue' : 'abort';
-    },
     onCostApprovalNeeded: async (prediction) => {
       const result = await deps.waitForApproval({ pending: 'cost_approval', prediction });
       return result.approved;

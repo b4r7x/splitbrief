@@ -31,16 +31,12 @@ import {
 import { parseTasksStrict } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { buildProjectContextMarkdown } from './context.js';
-import { accumulateUsage } from '../streaming/token-utils.js';
+import { accumulateUsage } from '../streaming/token-usage.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import {
-  formatRepoMapBlock,
-  prepareInvokeArgs,
-  runSinglePhasePlanning,
-} from './planning-helpers.js';
+import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
 import { summarize, summarizeStructured } from './summary.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
@@ -67,6 +63,7 @@ export interface PlannerBaseConfig {
   invokePlan: InternalInvokeFn;
   invokeEscalate: InternalInvokeFn;
   isAvailable: () => Promise<boolean>;
+  unavailabilityReason?: () => string | undefined;
   getVersion?: () => Promise<string | null>;
   capabilities: PlannerCapabilities;
   /**
@@ -102,7 +99,7 @@ export interface PlannerBaseConfig {
    * block to the prompt for the first planning phase.
    */
   consumesPriorMessages?: boolean;
-  injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
+  injectUserTurn?: (text: string, projectDir: string) => Promise<TokenDelta | null>;
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
@@ -200,7 +197,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         TASKS_FILE,
       );
 
-      const tasks = parseTasksStrict(tasksMarkdown);
+      const tasks = parseTasksStrict(tasksMarkdown, callbacks.onWarning);
 
       return { spec, plan, tasks, usage, phases };
     },
@@ -254,7 +251,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       return config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal });
     },
 
-    async summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string> {
+    async summarize(
+      messages: PlannerSummaryMessage[],
+      projectDir?: string,
+    ): Promise<{ text: string; usage: TokenDelta | null }> {
       return summarize(config, messages, projectDir);
     },
 
@@ -262,12 +262,13 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       messages: PlannerSummaryMessage[],
       previousSummary?: StructuredSummary,
       projectDir?: string,
-    ): Promise<{ text: string; structured: StructuredSummary | null }> {
+    ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }> {
       return summarizeStructured(config, messages, previousSummary, projectDir);
     },
 
     ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
+    ...(config.unavailabilityReason && { unavailabilityReason: config.unavailabilityReason }),
     ...(config.getVersion && { getVersion: config.getVersion }),
     ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
     capabilities,

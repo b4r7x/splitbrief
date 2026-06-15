@@ -53,11 +53,7 @@ export function loadPendingRecoveryState(
   fallback: WorkflowState,
 ): PendingRecoveryState {
   const state = loadState(ref) ?? fallback;
-  if (
-    state.pendingRecovery &&
-    state.pendingRecovery.status !== 'applying' &&
-    state.pendingRecovery.status !== 'paused'
-  ) {
+  if (state.pendingRecovery) {
     return { pending: true, state, issue: state.pendingRecovery };
   }
   return { pending: false, state };
