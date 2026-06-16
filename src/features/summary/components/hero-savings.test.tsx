@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { HeroSavings } from './hero-savings.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 
 function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdown {
   return {
@@ -24,12 +26,26 @@ function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdow
 }
 
 describe('HeroSavings', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
   it('renders hero stat when savings are available', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown()} />);
     const output = ui.lastFrame() ?? '';
-    expect(output).toContain('$0.12 actual vs $0.95 implementer-at-planner-rate');
+    expect(output).toContain('$0.12 actual vs $0.95 baseline');
     expect(output).toContain('87% saved');
     expect(output).toContain('Saved $0.83');
+    ui.unmount();
+  });
+
+  it('uses compact savings copy on small terminals', () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 20, isSmall: true });
+    const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown()} />);
+    const output = ui.lastFrame() ?? '';
+    expect(output).toContain('Saved $0.83 (87%)');
+    expect(output).not.toContain('actual vs');
     ui.unmount();
   });
 
@@ -62,6 +78,17 @@ describe('HeroSavings', () => {
       />,
     );
     expect(ui.lastFrame() ?? '').toContain('No savings this run');
+    ui.unmount();
+  });
+
+  it('keeps no-savings copy on one row in a narrow terminal', () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 20, isSmall: true });
+    const ui = renderFeature(
+      <HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: 0, savingsPercentage: 0 })} />,
+    );
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('No savings this run');
+    expect(frame.split('\n').filter((line) => line.includes('No savings')).length).toBe(1);
     ui.unmount();
   });
 });

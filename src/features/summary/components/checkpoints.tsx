@@ -96,25 +96,48 @@ export function SummaryCheckpoints({ checkpointSummary }: SummaryCheckpointsProp
 
   return (
     <Box flexDirection="column" marginTop={isSmall ? 0 : 1}>
-      <Text color={theme.textDim}>
+      <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
         <Text bold color={theme.text}>
           Checkpoints:
         </Text>{' '}
         {summaryText}
       </Text>
-      {isSmall && <Text color={theme.textDim}>latest: {checkpointSummary.latestId ?? 'n/a'}</Text>}
+      {isSmall && (
+        <Text color={theme.textDim} wrap="truncate-end">
+          latest: {checkpointSummary.latestId ?? 'n/a'}
+        </Text>
+      )}
       {isSmall && checkpointSummary.preFinalReviewId && (
-        <Text color={theme.textDim}>pre: {checkpointSummary.preFinalReviewId}</Text>
+        <Text color={theme.textDim} wrap="truncate-end">
+          pre: {checkpointSummary.preFinalReviewId}
+        </Text>
       )}
       {isSmall &&
         checkpointSummary.latestRunCheckpointId &&
         checkpointSummary.latestRunCheckpointId !== checkpointSummary.latestId && (
-          <Text color={theme.textDim}>latest run: {checkpointSummary.latestRunCheckpointId}</Text>
+          <Text color={theme.textDim} wrap="truncate-end">
+            latest run: {checkpointSummary.latestRunCheckpointId}
+          </Text>
         )}
-      {isSmall && runStatus && <Text color={runStatusColor}>run status: {runStatus}</Text>}
-      {diffCommand && <Text color={theme.textDim}>diff: {diffCommand}</Text>}
-      {restoreCommand && <Text color={theme.textDim}>restore: {restoreCommand}</Text>}
-      <Text color={runStatus === 'rejected' ? runStatusColor : theme.textDim}>
+      {isSmall && runStatus && (
+        <Text color={runStatusColor} wrap="truncate-end">
+          run status: {runStatus}
+        </Text>
+      )}
+      {diffCommand && (
+        <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+          diff: {diffCommand}
+        </Text>
+      )}
+      {restoreCommand && (
+        <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+          restore: {restoreCommand}
+        </Text>
+      )}
+      <Text
+        color={runStatus === 'rejected' ? runStatusColor : theme.textDim}
+        wrap={isSmall ? 'truncate-end' : undefined}
+      >
         restore: hash-guarded; conflicts skipped{isSmall ? '' : ' by default'}; --force destructive
         overwrite
       </Text>

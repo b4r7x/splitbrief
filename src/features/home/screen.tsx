@@ -41,7 +41,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [sessionsFocused, setSessionsFocused] = useState(false);
 
-  const layout = getHomeLayout({ cols, rows, isSmall, hasSkills });
+  const layout = getHomeLayout({ cols, rows, isSmall, hasSkills, sessionCount: sessions.length });
   const hasSessions = layout.recentSessionLimit > 0 && sessions.length > 0;
 
   useEffect(() => {
@@ -88,14 +88,19 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
 
             <RecentSessions
               limit={layout.recentSessionLimit}
+              showHiddenCount={layout.showHiddenCount}
               focused={sessionsActive}
               onSelect={(session: Session) => handleSessionSelect(session, projectDir)}
               onClose={closeRecentSessions}
               hasOverlay={hasOverlay}
             />
-            {sessionsActive && selectionError && (
-              <Box>
-                <Text color={theme.error}>{selectionError}</Text>
+            {sessionsActive && (
+              <Box height={1} overflow="hidden">
+                {selectionError && (
+                  <Text color={theme.error} wrap="truncate-end">
+                    {selectionError}
+                  </Text>
+                )}
               </Box>
             )}
           </Box>

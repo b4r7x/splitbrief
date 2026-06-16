@@ -278,7 +278,7 @@ The implementer writes files directly (`writesFiles: 'direct'`). Change detectio
 
 #### Tested CLI version matrix
 
-Each `CLI_TOOLS` entry in `src/engine/runners/cli-tools.ts` carries a `testedVersion` — the upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified against. These tools ship breaking CLI changes with no compatibility guarantee, so `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()` and prints a dimmed stderr warning when the installed **major** version differs from the tested one. The warning is advisory; detection still reports the tool as available.
+Each `CLI_TOOLS` entry in `src/engine/runners/cli-tools.ts` carries a `testedVersion` — the upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified against. These tools ship breaking CLI changes with no compatibility guarantee, so `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()`. When the installed **major** version differs from the tested one, detection still reports the tool as available and includes `compatibility: { kind: 'major-version-mismatch', installedVersion, testedVersion }` on that planner result. It does not print a startup stderr warning for unselected tools.
 
 | `tool` | command | tested version |
 |---|---|---|

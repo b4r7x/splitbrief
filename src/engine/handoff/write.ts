@@ -6,7 +6,7 @@ import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import { taskId } from '../../core/schemas/task.js';
-import { SessionSchema } from '../../core/schemas/session.js';
+import { parsePersistedSession } from '../../core/sessions/summary-parser.js';
 import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
 import { renderHandoffWithCustom } from './render.js';
 import { buildManifest, writeManifest } from './manifest.js';
@@ -161,9 +161,9 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
       const raw = await confinedReadFileAsync(projectDir, summaryRelativePath);
       if (raw !== null) {
         const parsed: unknown = JSON.parse(raw);
-        const result = SessionSchema.safeParse(parsed);
-        if (result.success) {
-          summaryMode = result.data.summary?.mode;
+        const result = parsePersistedSession(parsed);
+        if (result.status === 'ok') {
+          summaryMode = result.session.summary?.mode;
         }
       }
     }

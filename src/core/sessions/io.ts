@@ -4,6 +4,7 @@ import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { SessionSchema } from '../schemas/session.js';
+import { parsePersistedSession } from './summary-parser.js';
 import { sessionDir, sessionsRoot, validateSessionId } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
@@ -15,18 +16,18 @@ function readSummaryFile(filePath: string, sessionId: string): Session | null {
   try {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    const result = SessionSchema.safeParse(parsed);
-    if (!result.success) {
-      warnStderr(`Warning: invalid session ${filePath}: ${result.error.message}`);
+    const result = parsePersistedSession(parsed);
+    if (result.status === 'invalid') {
+      warnStderr(`Warning: invalid session ${filePath}: ${result.error}`);
       return null;
     }
-    if (result.data.id !== sessionId) {
+    if (result.session.id !== sessionId) {
       warnStderr(
-        `Warning: session ${filePath} payload id '${result.data.id}' does not match directory '${sessionId}'; using directory id`,
+        `Warning: session ${filePath} payload id '${result.session.id}' does not match directory '${sessionId}'; using directory id`,
       );
-      return { ...result.data, id: sessionId };
+      return { ...result.session, id: sessionId };
     }
-    return result.data;
+    return result.session;
   } catch (err) {
     if (!isENOENT(err)) {
       warnError(`Failed to read session ${filePath}`, err);

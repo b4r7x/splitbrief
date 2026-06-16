@@ -26,6 +26,8 @@ import { configStore } from '../../stores/project/config.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger.js';
 import { uniqueSorted } from '../../utils/collections.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -72,6 +74,119 @@ function getSummaryHeading(status: Session['status'], theme: ReturnType<typeof u
   }
 }
 
+function formatRouteSummary(summary: Summary, implementerSummary: string | null): string | null {
+  const plannerSummary = summary.plannerTool
+    ? formatToolModel(summary.plannerTool, summary.plannerModel)
+    : null;
+  if (!plannerSummary && !implementerSummary) return null;
+  if (!plannerSummary) return implementerSummary;
+  if (!implementerSummary) return plannerSummary;
+  return `${plannerSummary} -> ${implementerSummary}`;
+}
+
+function compactCount(count: number, noun: string): string {
+  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
+}
+
+function compactPacketPath(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash === -1 ? path : path.slice(slash + 1);
+}
+
+function SummaryCompactRunDetails({
+  summary,
+  routeSummary,
+}: {
+  summary: Summary;
+  routeSummary: string | null;
+}) {
+  const theme = useTheme();
+  const runParts = [
+    summary.mode ?? null,
+    formatTime(summary.totalTime),
+    summary.briefQuality
+      ? formatScoreSummary(summary.briefQuality.score, summary.briefQuality, 'quality')
+      : null,
+    summary.driftSummary
+      ? formatScoreSummary(summary.driftSummary.score, summary.driftSummary)
+      : null,
+  ].filter((part): part is string => part !== null);
+
+  return (
+    <Box flexDirection="column" marginTop={1} overflow="hidden">
+      <Text wrap="truncate-end">Feature: {summary.feature}</Text>
+      <Text color={theme.textDim} wrap="truncate-end">
+        {routeSummary ? `${routeSummary} · ` : ''}
+        {runParts.join(' · ')}
+      </Text>
+    </Box>
+  );
+}
+
+function SummaryCompactLowerSections({
+  summary,
+  ledger,
+}: {
+  summary: Summary;
+  ledger: EvidenceLedger | null;
+}) {
+  const theme = useTheme();
+  const checkpointSummary = summary.checkpointSummary;
+  const reviewPacket = summary.reviewPacket;
+  const evidence = summary.evidenceSummary;
+  if (!evidence && !checkpointSummary && !reviewPacket) return null;
+
+  return (
+    <Box flexDirection="column" marginTop={1} overflow="hidden">
+      {evidence && (
+        <Text color={theme.textDim} wrap="truncate-end">
+          <Text bold color={theme.text}>
+            Evidence:
+          </Text>{' '}
+          {compactPacketPath(evidence.path)} · {evidence.tasksWithValidationEvidence}/
+          {evidence.totalTasks} validated
+          {ledger?.finalReview ? ` · final review: ${ledger.finalReview.status}` : ''}
+        </Text>
+      )}
+      {checkpointSummary && (
+        <Text color={theme.textDim} wrap="truncate-end">
+          <Text bold color={theme.text}>
+            Checkpoints:
+          </Text>{' '}
+          {compactCount(checkpointSummary.count, 'ckpt')} · latest:{' '}
+          {checkpointSummary.latestId ?? 'n/a'}
+          {checkpointSummary.preFinalReviewId
+            ? ` · pre: ${checkpointSummary.preFinalReviewId}`
+            : ''}
+        </Text>
+      )}
+      {reviewPacket && (
+        <>
+          <Text color={theme.textDim} wrap="truncate-end">
+            <Text bold color={theme.text}>
+              Review packet:
+            </Text>
+          </Text>
+          <Text color={theme.textDim} wrap="truncate-end">
+            md: {truncateWithEllipsis(compactPacketPath(reviewPacket.markdownPath), 34)}
+          </Text>
+          <Text color={theme.textDim} wrap="truncate-end">
+            json: {truncateWithEllipsis(compactPacketPath(reviewPacket.jsonPath), 32)}
+          </Text>
+          <Text
+            color={reviewPacket.finalReviewStatus === 'written' ? theme.textDim : theme.warning}
+            wrap="truncate-end"
+          >
+            final review: {reviewPacket.finalReviewStatus} · evidence:{' '}
+            {reviewPacket.evidenceValidatedTasks}/{reviewPacket.evidenceTotalTasks} · missing:{' '}
+            {reviewPacket.missingArtifactCount}
+          </Text>
+        </>
+      )}
+    </Box>
+  );
+}
+
 interface SummaryEvidenceLedgerState {
   key: string;
   ledger: EvidenceLedger | null;
@@ -113,6 +228,8 @@ function useSummaryEvidenceLedger(
 
 export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps) {
   const theme = useTheme();
+  const cols = terminalSizeStore.use((s) => s.cols);
+  const rows = terminalSizeStore.use((s) => s.rows);
   const isSmall = terminalSizeStore.use((s) => s.isSmall);
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
@@ -125,10 +242,17 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const onDone = () => routerStore.navigate({ to: 'home' });
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
-  const labelWidth = isSmall ? 15 : 20;
-  const taskTitleWidth = isSmall ? 20 : 30;
-  const truncateLength = isSmall ? 18 : 28;
+  const contentWidth = getResponsivePanelWidth({
+    cols,
+    size: isSmall ? 'small' : 'large',
+    widths: { small: 64, large: 96 },
+    gutter: 2,
+  });
+  const labelWidth = isSmall ? Math.min(13, Math.max(10, Math.floor(contentWidth / 3))) : 20;
+  const taskTitleWidth = Math.max(8, Math.min(isSmall ? 16 : 30, contentWidth - 24));
+  const truncateLength = Math.max(6, taskTitleWidth - 2);
   const mode = summary.mode;
+  const isShortSmall = isSmall && cols <= 56 && rows <= 28;
   const compiledByPlannerCount = summary.totalTasks;
   const localCount = summary.completedByLocal;
   const escalatedCount = summary.escalatedToPlanner;
@@ -138,122 +262,174 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const briefQualityText = bq ? formatScoreSummary(bq.score, bq, 'quality') : 'quality n/a';
   const driftText = drift ? formatScoreSummary(drift.score, drift) : null;
   const implementerSummary = formatImplementerSummary(summary);
+  const routeSummary = formatRouteSummary(summary, implementerSummary);
   const heading = getSummaryHeading(status, theme);
+  const headingText = isSmall && routeSummary ? `${heading.text} ${routeSummary}` : heading.text;
 
   return (
-    <ScreenShell padding={1}>
-      <Box justifyContent="center" width="100%">
-        <Text bold color={heading.color}>
-          {heading.text}
-        </Text>
-      </Box>
-      <Box justifyContent="center" width="100%">
-        <Text color={theme.textDim}>
-          Planner compiled {compiledByPlannerCount} Task{' '}
-          {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'} · Implementer completed {localCount}{' '}
-          locally{escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
-        </Text>
-      </Box>
-
-      <HeroSavings costBreakdown={summary.costBreakdown} />
-
-      <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-        <LabeledRow label="Feature" labelWidth={labelWidth}>
-          <Text bold>{summary.feature}</Text>
-        </LabeledRow>
-        <LabeledRow label="Time" labelWidth={labelWidth}>
-          <Text>{formatTime(summary.totalTime)}</Text>
-        </LabeledRow>
-        {summary.plannerTool && (
-          <LabeledRow label="Planner" labelWidth={labelWidth}>
-            <Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text>
-          </LabeledRow>
-        )}
-        {implementerSummary && (
-          <LabeledRow label="Implementer" labelWidth={labelWidth}>
-            <Text>{implementerSummary}</Text>
-          </LabeledRow>
-        )}
-        {mode && (
-          <LabeledRow label="Mode" labelWidth={labelWidth}>
-            <Text>{mode}</Text>
-          </LabeledRow>
-        )}
-        <LabeledRow label="Brief quality" labelWidth={labelWidth}>
-          <Text color={bq && !bq.passed ? theme.warning : theme.textDim}>{briefQualityText}</Text>
-        </LabeledRow>
-        {driftText && (
-          <LabeledRow label="Drift" labelWidth={labelWidth}>
-            <Text color={drift && !drift.passed ? theme.warning : theme.textDim}>{driftText}</Text>
-          </LabeledRow>
-        )}
-        {summary.chainDriftSummary && (
-          <Box marginTop={1}>
-            <Text color={theme.textDim}>
-              Drift chain: {summary.chainDriftSummary.chainLength} tasks writing to{' '}
-              {summary.chainDriftSummary.representativePath}, score{' '}
-              {summary.chainDriftSummary.score.toFixed(2)}
-              {summary.chainDriftSummary.emittedChainCount > 1
-                ? ` (${summary.chainDriftSummary.emittedChainCount} chains total)`
-                : ''}
+    <ScreenShell
+      padding={1}
+      alignItems="center"
+      footer={
+        <Box flexDirection="column" width={contentWidth}>
+          <Box justifyContent="center" height={1}>
+            <Text color={theme.textDim}>press enter to continue</Text>
+          </Box>
+          <Composer
+            disabled={hasOverlay}
+            onSubmit={onDone}
+            onEmptySubmit={onDone}
+            onRuntimeCommand={onRuntimeCommand}
+            commands={commands}
+            mode="normal"
+            hint=""
+            currentScreen="summary"
+            width={contentWidth}
+          />
+        </Box>
+      }
+    >
+      <Box
+        flexDirection="column"
+        width={contentWidth}
+        flexGrow={1}
+        minHeight={0}
+        overflowY="hidden"
+      >
+        <Box justifyContent="center" width="100%">
+          <Text bold color={heading.color} wrap="truncate-end">
+            {headingText}
+          </Text>
+        </Box>
+        {routeSummary && !isSmall && (
+          <Box justifyContent="center" width="100%">
+            <Text color={theme.textDim} wrap="truncate-end">
+              {routeSummary}
+              {mode ? ` · ${mode}` : ''} · {formatTime(summary.totalTime)}
             </Text>
           </Box>
         )}
-        {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
-          <LabeledRow label="Saved" labelWidth={labelWidth}>
-            <Text bold color={theme.success}>
-              {summary.estimatedCostSavings}
-            </Text>
-          </LabeledRow>
+        <Box justifyContent="center" width="100%">
+          <Text color={theme.textDim} wrap="truncate-end">
+            Planner compiled {compiledByPlannerCount} Task{' '}
+            {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'}
+          </Text>
+        </Box>
+        <Box justifyContent="center" width="100%">
+          <Text color={theme.textDim} wrap="truncate-end">
+            Implementer completed {localCount} locally
+            {escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
+          </Text>
+        </Box>
+
+        <HeroSavings costBreakdown={summary.costBreakdown} />
+
+        {isShortSmall ? (
+          <SummaryCompactRunDetails summary={summary} routeSummary={routeSummary} />
+        ) : (
+          <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
+            <LabeledRow label="Feature" labelWidth={labelWidth}>
+              <Text bold wrap="truncate-end">
+                {summary.feature}
+              </Text>
+            </LabeledRow>
+            <LabeledRow label="Time" labelWidth={labelWidth}>
+              <Text>{formatTime(summary.totalTime)}</Text>
+            </LabeledRow>
+            {summary.plannerTool && (
+              <LabeledRow label="Planner" labelWidth={labelWidth}>
+                <Text wrap="truncate-end">
+                  {formatToolModel(summary.plannerTool, summary.plannerModel)}
+                </Text>
+              </LabeledRow>
+            )}
+            {implementerSummary && (
+              <LabeledRow label="Implementer" labelWidth={labelWidth}>
+                <Text wrap="truncate-end">{implementerSummary}</Text>
+              </LabeledRow>
+            )}
+            {mode && (
+              <LabeledRow label="Mode" labelWidth={labelWidth}>
+                <Text>{mode}</Text>
+              </LabeledRow>
+            )}
+            <LabeledRow label="Brief quality" labelWidth={labelWidth}>
+              <Text color={bq && !bq.passed ? theme.warning : theme.textDim} wrap="truncate-end">
+                {briefQualityText}
+              </Text>
+            </LabeledRow>
+            {driftText && (
+              <LabeledRow label="Drift" labelWidth={labelWidth}>
+                <Text
+                  color={drift && !drift.passed ? theme.warning : theme.textDim}
+                  wrap="truncate-end"
+                >
+                  {driftText}
+                </Text>
+              </LabeledRow>
+            )}
+            {summary.chainDriftSummary && (
+              <Box marginTop={1} overflow="hidden">
+                <Text color={theme.textDim} wrap="truncate-end">
+                  Drift chain: {summary.chainDriftSummary.chainLength} tasks writing to{' '}
+                  {summary.chainDriftSummary.representativePath}, score{' '}
+                  {summary.chainDriftSummary.score.toFixed(2)}
+                  {summary.chainDriftSummary.emittedChainCount > 1
+                    ? ` (${summary.chainDriftSummary.emittedChainCount} chains total)`
+                    : ''}
+                </Text>
+              </Box>
+            )}
+            {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
+              <LabeledRow label="Saved" labelWidth={labelWidth}>
+                <Text bold color={theme.success} wrap="truncate-end">
+                  {summary.estimatedCostSavings}
+                </Text>
+              </LabeledRow>
+            )}
+          </Box>
         )}
-      </Box>
 
-      <SummaryProgress
-        completed={completed}
-        total={summary.totalTasks}
-        completedByLocal={summary.completedByLocal}
-        escalatedToPlanner={summary.escalatedToPlanner}
-        failed={summary.failed}
-        isSmall={isSmall}
-      />
-
-      {summary.costBreakdown && (
-        <SummaryCostBreakdown
-          costBreakdown={summary.costBreakdown}
-          labelWidth={labelWidth}
+        <SummaryProgress
+          completed={completed}
+          total={summary.totalTasks}
+          completedByLocal={summary.completedByLocal}
+          escalatedToPlanner={summary.escalatedToPlanner}
+          failed={summary.failed}
           isSmall={isSmall}
         />
-      )}
 
-      {summary.taskBreakdown && (
-        <SummaryTaskTable
-          tasks={summary.taskBreakdown}
-          taskTitleWidth={taskTitleWidth}
-          truncateLength={truncateLength}
-        />
-      )}
+        {!isShortSmall && summary.costBreakdown && (
+          <SummaryCostBreakdown
+            costBreakdown={summary.costBreakdown}
+            labelWidth={labelWidth}
+            isSmall={isSmall}
+          />
+        )}
 
-      {summary.evidenceSummary && <SummaryEvidence summary={summary} ledger={evidenceLedger} />}
+        {!isShortSmall && summary.taskBreakdown && (
+          <SummaryTaskTable
+            tasks={summary.taskBreakdown}
+            taskTitleWidth={taskTitleWidth}
+            truncateLength={truncateLength}
+          />
+        )}
 
-      <SummaryCheckpoints checkpointSummary={summary.checkpointSummary} />
+        {isShortSmall ? (
+          <SummaryCompactLowerSections summary={summary} ledger={evidenceLedger} />
+        ) : (
+          <>
+            {summary.evidenceSummary && (
+              <SummaryEvidence summary={summary} ledger={evidenceLedger} />
+            )}
+            <SummaryCheckpoints checkpointSummary={summary.checkpointSummary} />
+            <SummaryReviewPacket summary={summary} sessionId={sessionId} />
+          </>
+        )}
 
-      <SummaryReviewPacket summary={summary} sessionId={sessionId} />
-
-      {summary.phaseTimings && (
-        <SummaryPhaseTiming phaseTimings={summary.phaseTimings} labelWidth={labelWidth} />
-      )}
-
-      <Box marginTop={1}>
-        <Composer
-          disabled={hasOverlay}
-          onSubmit={onDone}
-          onEmptySubmit={onDone}
-          onRuntimeCommand={onRuntimeCommand}
-          commands={commands}
-          mode="normal"
-          hint="press enter to continue"
-          currentScreen="summary"
-        />
+        {!isShortSmall && summary.phaseTimings && (
+          <SummaryPhaseTiming phaseTimings={summary.phaseTimings} labelWidth={labelWidth} />
+        )}
       </Box>
     </ScreenShell>
   );

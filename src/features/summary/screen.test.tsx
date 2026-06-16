@@ -7,7 +7,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Session } from '../../core/schemas/session.js';
-import type { Summary } from '../../core/schemas/summary.js';
+import type { CostBreakdown, Summary } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger.js';
@@ -31,6 +31,10 @@ function showSummaryRoute(opts: {
     sessionId: opts.sessionId,
     status: opts.status ?? 'complete',
   });
+}
+
+function maxLineLength(frame: string): number {
+  return frame.split('\n').reduce((max, line) => Math.max(max, line.length), 0);
 }
 
 describe('SummaryScreen', () => {
@@ -379,6 +383,64 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
+  it('keeps lower summary sections visible on a short narrow terminal', () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 28, isSmall: true });
+    showSummaryRoute({
+      sessionId: 'short-summary-session',
+      summary: makeSummary({
+        feature: 'short terminal lower sections must stay visible',
+        plannerTool: 'codex',
+        implementerTool: 'codex',
+        mode: 'standard',
+        evidenceSummary: {
+          path: 'evidence.json',
+          totalTasks: 3,
+          tasksWithValidationEvidence: 2,
+          escalatedTasks: 1,
+          failedTasks: 0,
+        },
+        checkpointSummary: {
+          count: 4,
+          latestId: 'snap-post-final',
+          latestName: 'post-final',
+          latestKind: 'post-task',
+          latestRunCheckpointId: 'snap-post-final',
+          preFinalReviewId: 'snap-pre-final',
+          accepted: true,
+          rejected: false,
+          diffCommand: 'diptych snapshot diff snap-post-final',
+          restoreCommand: 'diptych snapshot restore snap-post-final',
+        },
+        reviewPacket: {
+          markdownPath: 'review-packet.md',
+          jsonPath: 'review-packet.json',
+          generatedAt: '2026-04-28T10:00:00.000Z',
+          finalReviewStatus: 'written',
+          driftPassed: true,
+          evidenceValidatedTasks: 2,
+          evidenceTotalTasks: 3,
+          missingArtifactCount: 0,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+    const lines = frame.split('\n');
+
+    expect(frame).toContain('Evidence:');
+    expect(frame).toContain('Checkpoints:');
+    expect(frame).toContain('Review packet:');
+    expect(frame).toContain('md: review-packet.md');
+    expect(frame).toContain('json: review-packet.json');
+    expect(frame).toContain('final review: written');
+    const mdLine = lines.find((line) => line.includes('md:')) ?? '';
+    expect(mdLine).not.toContain('json:');
+    expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
+
+    ui.unmount();
+  });
+
   it('does not render "full" mode label anywhere', () => {
     showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
 
@@ -411,6 +473,68 @@ describe('SummaryScreen', () => {
     await tick(20);
 
     expect(routerStore.get().screen).toBe('summary');
+
+    ui.unmount();
+  });
+
+  it('keeps a compact branded summary readable on a narrow terminal', () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 28, isSmall: true });
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 5,
+      actualPlannerCost: 1,
+      actualImplementerCost: 0.5,
+      totalActualCost: 1.5,
+      savingsAmount: 3.5,
+      savingsPercentage: 70,
+      localCompletionRate: 0.75,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+    };
+    showSummaryRoute({
+      summary: makeSummary({
+        feature: 'a narrow summary with enough text to overflow if the screen is not bounded',
+        plannerTool: 'codex',
+        implementerTool: 'codex',
+        mode: 'instant',
+        totalTasks: 2,
+        completedByLocal: 1,
+        escalatedToPlanner: 1,
+        costBreakdown,
+        taskBreakdown: [
+          {
+            taskId: taskId('T001'),
+            taskTitle: 'long task title that must not break the frame',
+            method: 'local',
+            implementerTokens: 10,
+            escalationTokens: 0,
+            retryCount: 0,
+          },
+          {
+            taskId: taskId('T002'),
+            taskTitle: 'another long task title that must stay bounded',
+            method: 'escalated-full',
+            implementerTokens: 10,
+            escalationTokens: 20,
+            retryCount: 1,
+          },
+        ],
+      }),
+      status: 'failed',
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('diptych');
+    expect(frame).toContain('failed');
+    expect(frame).toContain('Codex -> Codex');
+    const continueCount = frame.split('press enter to continue').length - 1;
+    expect(continueCount).toBe(1);
+    expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
 
     ui.unmount();
   });

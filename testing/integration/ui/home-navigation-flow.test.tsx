@@ -130,6 +130,11 @@ describe('home navigation flow (through real App)', () => {
       expect(frame).toContain('completed feature');
     });
 
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('home');
+    });
+
     ui.unmount();
   });
 

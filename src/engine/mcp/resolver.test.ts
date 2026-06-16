@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -9,6 +9,9 @@ import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createResolver } from './resolver.js';
+import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 const SESSION_STUB = {
   id: '',
@@ -61,6 +64,27 @@ function writeCanonicalArtifacts(projectDir: string, sessionId: string): void {
       stateVersion: CURRENT_STATE_VERSION,
       tasks: [taskOne, taskTwo],
     },
+  );
+}
+
+function writeCanonicalArtifactsAtSessionsRoot(sessionsRoot: string, sessionId: string): void {
+  const dir = join(sessionsRoot, sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'summary.json'),
+    `${JSON.stringify(makeCompleteSession(sessionId), null, 2)}\n`,
+  );
+  writeFileSync(
+    join(dir, 'state.json'),
+    `${JSON.stringify(
+      {
+        ...createInitialState('test feature'),
+        stateVersion: CURRENT_STATE_VERSION,
+        tasks: [taskOne, taskTwo],
+      },
+      null,
+      2,
+    )}\n`,
   );
 }
 
@@ -200,6 +224,31 @@ describe('listResources', () => {
 
     expect(uris).not.toContain(`mcp://diptych/sessions/${otherId}/manifest.json`);
   });
+
+  itUnix(
+    'does not advertise concrete session resources when artifacts are only reachable via symlinked sessions root',
+    async () => {
+      const projectDir = createTempDir('resolver-symlink-sessions');
+      dirs.push(projectDir);
+      const outside = createTempDir('resolver-symlink-sessions-outside');
+      const id = 'sess-symlink';
+      try {
+        mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+        writeCanonicalArtifactsAtSessionsRoot(outside, id);
+        symlinkSync(outside, join(projectDir, DIPTYCH_DIR, SESSIONS_DIR), 'dir');
+
+        const resolver = makeResolver(projectDir, id);
+        const uris = (await resolver.listResources()).map((r) => r.uri);
+
+        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
+        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/tasks`);
+        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/summary.json`);
+        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/state.json`);
+      } finally {
+        cleanupTempDir(outside);
+      }
+    },
+  );
 });
 
 describe('readResource - /sessions', () => {
@@ -218,6 +267,30 @@ describe('readResource - /sessions', () => {
     const parsed = JSON.parse(result!.text!);
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0]).toMatchObject({ id, status: 'interrupted' });
+  });
+
+  itUnix('does not read sessions through a symlinked .diptych directory', async () => {
+    const projectDir = createTempDir('resolver-symlink-diptych');
+    dirs.push(projectDir);
+    const outsideDiptych = createTempDir('resolver-symlink-diptych-outside');
+    const id = 'sess-outside';
+    try {
+      writeCanonicalArtifactsAtSessionsRoot(join(outsideDiptych, SESSIONS_DIR), id);
+      symlinkSync(outsideDiptych, join(projectDir, DIPTYCH_DIR), 'dir');
+
+      const resolver = makeResolver(projectDir, id);
+      const resources = await resolver.listResources();
+      const uris = resources.map((r) => r.uri);
+      const result = await resolver.readResource('mcp://diptych/sessions');
+
+      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
+      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/tasks`);
+      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/summary.json`);
+      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/state.json`);
+      expect(JSON.parse(result!.text!)).toEqual([]);
+    } finally {
+      cleanupTempDir(outsideDiptych);
+    }
   });
 });
 

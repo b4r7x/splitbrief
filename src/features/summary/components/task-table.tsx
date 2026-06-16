@@ -21,15 +21,21 @@ export function SummaryTaskTable({ tasks, taskTitleWidth, truncateLength }: Summ
       {tasks.map((task) => {
         const m = getMethodDisplay(task.method, t);
         return (
-          <Box key={task.taskId}>
-            <Box width={6}>
-              <Text color={t.textDim}>{task.taskId}</Text>
+          <Box key={task.taskId} overflow="hidden">
+            <Box width={6} flexShrink={0}>
+              <Text color={t.textDim} wrap="truncate-end">
+                {task.taskId}
+              </Text>
             </Box>
-            <Box width={taskTitleWidth}>
-              <Text>{truncateWithEllipsis(task.taskTitle, truncateLength)}</Text>
+            <Box width={taskTitleWidth} flexShrink={0}>
+              <Text wrap="truncate-end">
+                {truncateWithEllipsis(task.taskTitle, truncateLength)}
+              </Text>
             </Box>
-            <Box width={10}>
-              <Text color={m.color}>{m.text}</Text>
+            <Box width={10} flexShrink={0}>
+              <Text color={m.color} wrap="truncate-end">
+                {m.text}
+              </Text>
             </Box>
             {task.retryCount > 0 && <Text color={t.warning}>{task.retryCount}r</Text>}
             {task.cost != null && task.cost > 0 && (

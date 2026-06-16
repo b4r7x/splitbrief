@@ -24,7 +24,7 @@ export function SummaryEvidence({ summary, ledger }: SummaryEvidenceProps) {
       <Text bold color={theme.text}>
         Evidence
       </Text>
-      <Text color={theme.textDim}>
+      <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
         ledger: {summary.evidenceSummary.path} ·{' '}
         {summary.evidenceSummary.tasksWithValidationEvidence}/{summary.evidenceSummary.totalTasks}{' '}
         validated · {summary.evidenceSummary.escalatedTasks} escalated ·{' '}
@@ -58,19 +58,29 @@ export function SummaryEvidence({ summary, ledger }: SummaryEvidenceProps) {
               <Text> </Text>
               <Text>{truncateWithEllipsis(task.title, isSmall ? 24 : titleWidth - 6)}</Text>
             </Box>
-            <Box flexDirection="column">
-              <Text color={theme.textDim}>passed: {passed}</Text>
-              {retries && <Text color={theme.textDim}>retries: {retries}</Text>}
-              <Text color={theme.textDim}>expected: {expected}</Text>
-              <Text color={theme.textDim}>observed: {observed}</Text>
+            <Box flexDirection="column" overflow={isSmall ? 'hidden' : undefined}>
+              <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+                passed: {passed}
+              </Text>
+              {retries && (
+                <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+                  retries: {retries}
+                </Text>
+              )}
+              <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+                expected: {expected}
+              </Text>
+              <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
+                observed: {observed}
+              </Text>
             </Box>
           </Box>
         );
       })}
 
       {ledger?.finalReview && (
-        <Box marginTop={1}>
-          <Text color={theme.textDim}>
+        <Box marginTop={1} overflow={isSmall ? 'hidden' : undefined}>
+          <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
             final review: {ledger.finalReview.status} ({ledger.finalReview.path})
           </Text>
         </Box>

@@ -11,11 +11,15 @@ export interface LabeledRowProps {
 export function LabeledRow({ label, labelWidth = 14, children }: LabeledRowProps) {
   const t = useTheme();
   return (
-    <Box>
-      <Box width={labelWidth}>
-        <Text color={t.textDim}>{label}</Text>
+    <Box gap={1} overflow="hidden">
+      <Box width={labelWidth} flexShrink={0}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {label}
+        </Text>
       </Box>
-      {children}
+      <Box flexGrow={1} minWidth={0} overflow="hidden">
+        {children}
+      </Box>
     </Box>
   );
 }

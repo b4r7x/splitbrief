@@ -219,10 +219,10 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('shows many sessions on tall terminals', async () => {
+  it('uses all safe vertical space before cutting recent sessions on tall terminals', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       saveSummary(
         { projectDir: projectDir, sessionId: `session-${i}` },
         makeSession({
@@ -237,10 +237,13 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const visibleCount = Array.from({ length: 20 }, (_, i) => `tall feature ${i}`).filter((label) =>
+    const visibleCount = Array.from({ length: 30 }, (_, i) => `tall feature ${i}`).filter((label) =>
       frame.includes(label),
     ).length;
-    expect(visibleCount).toBeGreaterThan(12);
+    expect(visibleCount).toBe(30);
+    expect(frame).not.toMatch(/\+\d+ more/);
+    expect(frame).toContain(HOME_HINT);
+    expect(frame).toContain('>');
     ui.unmount();
   });
 

@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadDetectionCache, saveDetectionCache, invalidateCache } from './cache.js';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
+import { CLI_TOOLS } from '../runners/cli-tools.js';
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 describe('detection cache', () => {
   let tempDir: string;
@@ -76,6 +82,84 @@ describe('detection cache', () => {
     await saveDetectionCache(tempDir, [], []);
     const result = await loadDetectionCache(tempDir, 60_000);
     expect(result).toEqual({ planners: [], implementers: [] });
+  });
+
+  it('roundtrips planner compatibility advisory', async () => {
+    const withCompatibility = [
+      {
+        tool: 'codex' as const,
+        type: 'cli' as const,
+        available: true,
+        version: '9.0.0',
+        compatibility: {
+          kind: 'major-version-mismatch' as const,
+          installedVersion: '9.0.0',
+          testedVersion: CLI_TOOLS.codex.testedVersion,
+        },
+      },
+    ];
+    await saveDetectionCache(tempDir, withCompatibility, implementers);
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result?.planners[0]).toMatchObject({
+      compatibility: {
+        kind: 'major-version-mismatch',
+        installedVersion: '9.0.0',
+        testedVersion: CLI_TOOLS.codex.testedVersion,
+      },
+    });
+  });
+
+  it('roundtrips extended detected model fields', async () => {
+    const withModelFields = [
+      {
+        provider: 'openrouter' as const,
+        available: true,
+        isLocal: false,
+        models: [
+          {
+            id: 'anthropic/claude-3.5-sonnet',
+            contextLength: 200_000,
+            maxOutputTokens: 8_192,
+            pricingInput: 3,
+            pricingOutput: 15,
+            pricingCacheRead: 0.3,
+            pricingCacheWrite: 3.75,
+            isFree: false,
+            supportsTemperature: true,
+            supportsReasoning: false,
+            supportsImages: true,
+            capabilities: ['tools'],
+            releaseDate: '2024-06-20',
+          },
+        ],
+      },
+    ];
+    await saveDetectionCache(tempDir, planners, withModelFields);
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result?.implementers[0]?.models?.[0]).toEqual(withModelFields[0]!.models![0]);
+  });
+
+  itUnix('returns null when .diptych is a symlink outside the project', async () => {
+    const projectDir = createTempDir('cache-symlink-diptych');
+    const outside = createTempDir('cache-symlink-outside');
+    try {
+      mkdirSync(join(outside, 'nested'), { recursive: true });
+      writeFileSync(
+        join(outside, 'detection-cache.json'),
+        JSON.stringify({
+          version: 1,
+          timestamp: Date.now(),
+          planners,
+          implementers,
+        }),
+      );
+      symlinkSync(outside, join(projectDir, DIPTYCH_DIR));
+
+      await expect(loadDetectionCache(projectDir, 60_000)).resolves.toBeNull();
+    } finally {
+      cleanupTempDir(outside);
+      cleanupTempDir(projectDir);
+    }
   });
 
   it('includes version in saved cache', async () => {
