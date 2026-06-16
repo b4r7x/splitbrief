@@ -26,15 +26,21 @@ export function RecentSessions({
   onClose,
   hasOverlay,
 }: RecentSessionsProps) {
-  const [{ sessions }, { projectDir }] = useStores(sessionsStore, configStore);
+  const [{ sessions, allSessions }, { projectDir }] = useStores(sessionsStore, configStore);
   const theme = useTheme();
 
-  const shouldLoad = limit === undefined || limit > 0;
+  const shouldLoad = Boolean(focused) || limit === undefined || limit > 0;
+  const shouldLoadAll = Boolean(focused && onSelect && onClose && shouldLoad);
 
   useEffect(() => {
     if (!shouldLoad) return;
     sessionsStore.load(projectDir);
   }, [projectDir, shouldLoad]);
+
+  useEffect(() => {
+    if (!shouldLoadAll) return;
+    sessionsStore.loadAll(projectDir);
+  }, [projectDir, shouldLoadAll]);
 
   if (!shouldLoad) return null;
 
@@ -50,12 +56,14 @@ export function RecentSessions({
   const hiddenCount = sessions.length - visibleSessions.length;
 
   if (focused && onSelect && onClose) {
+    const focusedSessions = allSessions.length > 0 ? allSessions : sessions;
     return (
       <RecentSessionsList
-        sessions={visibleSessions}
+        sessions={focusedSessions}
         hasOverlay={hasOverlay ?? false}
         onSelect={onSelect}
         onClose={onClose}
+        maxVisible={limit}
       />
     );
   }

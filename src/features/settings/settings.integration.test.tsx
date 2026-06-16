@@ -7,6 +7,17 @@ import { loadConfig } from '../../core/config/load/io.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { CURSOR } from '../../components/pickers/cursor-glyph.js';
+
+const PAGE_DOWN = '\u001b[6~';
+const CURSOR_GLYPH = CURSOR.trimEnd();
+
+function lineContaining(frame: string, text: string): string {
+  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  expect(line).toBeDefined();
+  return line ?? '';
+}
 
 describe('settings overlay integration', () => {
   let dir: string;
@@ -114,6 +125,19 @@ describe('settings overlay integration', () => {
     await tick(20);
 
     expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+    ui.unmount();
+  });
+
+  it('PageDown moves by the visible settings window size', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    overlayStore.open('settings', 'planner.kind');
+    const ui = renderFeature(<SettingsOverlay />);
+    await tick(20);
+
+    ui.stdin.write(PAGE_DOWN);
+    await tick(20);
+
+    expect(lineContaining(ui.lastFrame() ?? '', CURSOR_GLYPH)).toContain('Mode');
     ui.unmount();
   });
 });

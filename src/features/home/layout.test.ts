@@ -52,6 +52,18 @@ describe('getHomeLayout', () => {
     expect(layout.showHiddenCount).toBe(false);
   });
 
+  it('keeps a focused recent-session row on short terminals', () => {
+    const layout = getHomeLayout({
+      cols: 80,
+      rows: 15,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount: 30,
+      sessionsFocused: true,
+    });
+    expect(layout.recentSessionLimit).toBe(1);
+  });
+
   it('reserves a row for +N more when capacity allows more than one session row', () => {
     const layout = getHomeLayout({
       cols: 80,

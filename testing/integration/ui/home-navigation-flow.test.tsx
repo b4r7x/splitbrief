@@ -21,7 +21,7 @@ const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
 const HOME_HINT = 'Ctrl+R recent /help /config /skills Ctrl+K';
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
 // Ink collapses the trailing space of the cursor cell when it abuts the next
 // column, so the rendered frame contains the bare glyph, not the padded cell.
 const CURSOR_GLYPH = CURSOR.trimEnd();

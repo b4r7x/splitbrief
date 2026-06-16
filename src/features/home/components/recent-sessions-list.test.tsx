@@ -94,7 +94,7 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const nonBlank = (ui.lastFrame() ?? '').split('\n').filter((line) => line.trim().length > 0);
-    expect(nonBlank.length).toBeLessThanOrEqual(4);
+    expect(nonBlank.length).toBeLessThanOrEqual(5);
     ui.unmount();
   });
 
@@ -193,7 +193,7 @@ describe('RecentSessionsList', () => {
     ui.unmount();
   });
 
-  it('typed chars are swallowed (browse, not filter): the visible row set and cursor stay put', async () => {
+  it('filters rows by typed text and resets the cursor to the first match', async () => {
     const sessions = makeSessions(['alpha task', 'beta task', 'gamma task']);
     const ui = renderWithOutdentRoom(
       <RecentSessionsList
@@ -207,16 +207,15 @@ describe('RecentSessionsList', () => {
 
     ui.stdin.write(ARROW_DOWN);
     await tick(20);
-    const cursorBefore = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
 
-    ui.stdin.write('a');
+    ui.stdin.write('gamma');
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('alpha task');
-    expect(frame).toContain('beta task');
     expect(frame).toContain('gamma task');
-    expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(cursorBefore);
+    expect(frame).not.toContain('alpha task');
+    expect(frame).not.toContain('beta task');
+    expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(lineIndexContaining(frame, 'gamma task'));
     ui.unmount();
   });
 

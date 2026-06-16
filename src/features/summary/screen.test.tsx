@@ -33,6 +33,10 @@ function showSummaryRoute(opts: {
   });
 }
 
+function visibleTaskIds(frame: string): string[] {
+  return frame.split('\n').flatMap((line) => line.match(/\bT\d{3}\b/g) ?? []);
+}
+
 function maxLineLength(frame: string): number {
   return frame.split('\n').reduce((max, line) => Math.max(max, line.length), 0);
 }
@@ -203,6 +207,41 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('Drift');
     expect(frame).toContain('1 warning');
+
+    ui.unmount();
+  });
+
+  it('renders a quiet zero-task summary instead of a fake progress and no-savings banner', () => {
+    showSummaryRoute({
+      summary: makeSummary({
+        totalTasks: 0,
+        completedByLocal: 0,
+        escalatedToPlanner: 0,
+        costBreakdown: {
+          hypotheticalCost: 0,
+          actualPlannerCost: 0,
+          actualImplementerCost: 0,
+          totalActualCost: 0,
+          savingsAmount: 0,
+          savingsPercentage: 0,
+          localCompletionRate: 0,
+          hasPricedUsage: true,
+          hasSavingsEstimate: true,
+          isActualPlannerCostKnown: true,
+          isActualImplementerCostKnown: true,
+          isTotalActualCostKnown: true,
+          isAllPlannerBaselineKnown: true,
+        },
+      }),
+      status: 'failed',
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('No task briefs compiled');
+    expect(frame).not.toContain('0/0');
+    expect(frame).not.toContain('No savings this run');
 
     ui.unmount();
   });
@@ -535,6 +574,154 @@ describe('SummaryScreen', () => {
     const continueCount = frame.split('press enter to continue').length - 1;
     expect(continueCount).toBe(1);
     expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
+
+    ui.unmount();
+  });
+
+  it('reveals review packet content with paging at 160x24', async () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    const PAGE_DOWN = '\u001b[6~';
+    const END = '\u001b[F';
+    showSummaryRoute({
+      sessionId: 'scroll-summary',
+      summary: makeSummary({
+        costBreakdown: {
+          hypotheticalCost: 1,
+          actualPlannerCost: 0.2,
+          actualImplementerCost: 0.3,
+          totalActualCost: 0.5,
+          savingsAmount: 0.5,
+          savingsPercentage: 50,
+          localCompletionRate: 1,
+          hasPricedUsage: true,
+          hasSavingsEstimate: true,
+          isActualPlannerCostKnown: true,
+          isActualImplementerCostKnown: true,
+          isTotalActualCostKnown: true,
+          isAllPlannerBaselineKnown: true,
+        },
+        checkpointSummary: {
+          count: 1,
+          latestId: 'snap-1',
+          latestName: 'post-task',
+          latestKind: 'post-task',
+          latestRunCheckpointId: 'snap-1',
+          preFinalReviewId: null,
+          accepted: null,
+          rejected: null,
+          diffCommand: null,
+          restoreCommand: null,
+        },
+        reviewPacket: {
+          markdownPath: 'review-packet.md',
+          jsonPath: 'review-packet.json',
+          generatedAt: '2026-04-28T10:00:00.000Z',
+          finalReviewStatus: 'written',
+          driftPassed: true,
+          evidenceValidatedTasks: 1,
+          evidenceTotalTasks: 1,
+          missingArtifactCount: 0,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frames: string[] = [];
+    for (let page = 0; page < 20; page++) {
+      frames.push(ui.lastFrame() ?? '');
+      ui.stdin.write(PAGE_DOWN);
+      await tick(20);
+    }
+    ui.stdin.write(END);
+    await tick(20);
+    frames.push(ui.lastFrame() ?? '');
+
+    expect(frames.some((frame) => frame.includes('Review packet'))).toBe(true);
+    expect(frames.some((frame) => frame.includes('review-packet.md'))).toBe(true);
+
+    ui.unmount();
+  });
+
+  it('pages through single-line task rows without skipping task ids at 160x24', async () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    const PAGE_DOWN = '\u001b[6~';
+    const HOME = '\u001b[H';
+    const END = '\u001b[F';
+    const taskBreakdown = Array.from({ length: 20 }, (_, i) => {
+      const id = `T${String(i + 1).padStart(3, '0')}`;
+      return {
+        taskId: taskId(id),
+        taskTitle: `Task ${id}`,
+        method: 'local' as const,
+        implementerTokens: 10,
+        escalationTokens: 0,
+        retryCount: 0,
+      };
+    });
+    showSummaryRoute({
+      summary: makeSummary({
+        estimatedCostSavings: 'unavailable',
+        taskBreakdown,
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(HOME);
+    await tick(20);
+    expect(visibleTaskIds(ui.lastFrame() ?? '')).toContain('T001');
+
+    const seen = new Set<string>();
+    for (let page = 0; page < 25; page++) {
+      for (const id of visibleTaskIds(ui.lastFrame() ?? '')) {
+        seen.add(id);
+      }
+      ui.stdin.write(PAGE_DOWN);
+      await tick(20);
+    }
+
+    ui.stdin.write(END);
+    await tick(20);
+    for (const id of visibleTaskIds(ui.lastFrame() ?? '')) {
+      seen.add(id);
+    }
+    expect(seen).toEqual(
+      new Set(Array.from({ length: 20 }, (_, i) => `T${String(i + 1).padStart(3, '0')}`)),
+    );
+
+    ui.unmount();
+  });
+
+  it('renders negative persisted savings without success-colored zero savings copy', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    showSummaryRoute({
+      summary: makeSummary({
+        costBreakdown: {
+          hypotheticalCost: 0.1,
+          actualPlannerCost: 0.05,
+          actualImplementerCost: 0.1,
+          totalActualCost: 0.15,
+          savingsAmount: -0.05,
+          savingsPercentage: -50,
+          localCompletionRate: 0.5,
+          hasPricedUsage: true,
+          hasSavingsEstimate: true,
+          isActualPlannerCostKnown: true,
+          isActualImplementerCostKnown: true,
+          isTotalActualCostKnown: true,
+          isAllPlannerBaselineKnown: true,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Extra cost');
+    expect(frame).not.toContain('Saved $0.00 (-50%)');
 
     ui.unmount();
   });

@@ -101,7 +101,7 @@ export function SkillsPicker() {
       width={panelWidth}
       shouldAppendChar={shouldAppendChar}
       customKeys={(input, key, { filtered: current, selectedIndex: currentIndex }) => {
-        if (key.upArrow || key.downArrow) {
+        if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.home || key.end) {
           setNavigating(true);
           return false;
         }
@@ -146,15 +146,18 @@ export function SkillsPicker() {
           <Text color={t.textDim}>{'  No matching skills'}</Text>
         )
       }
-      sectionBy={(skill) => skill.scope}
-      renderSectionHeader={(section, index) => (
-        <Box marginTop={index > 0 ? 1 : 0}>
-          <Text bold color={t.text}>
-            {'  '}
-            {section === 'project' ? 'Project' : 'Global'}
-          </Text>
-        </Box>
-      )}
+      section={{
+        by: (skill) => skill.scope,
+        gapBetweenSections: true,
+        renderHeader: (section, index) => (
+          <Box marginTop={index > 0 ? 1 : 0}>
+            <Text bold color={t.text}>
+              {'  '}
+              {section === 'project' ? 'Project' : 'Global'}
+            </Text>
+          </Box>
+        ),
+      }}
       renderItem={(skill, { isCursor }) => (
         <SkillRow
           skill={skill}

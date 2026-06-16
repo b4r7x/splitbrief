@@ -1,16 +1,39 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
+import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { SummaryReviewPacket } from './review-packet.js';
+import { buildReviewPacketDetailRows } from './review-packet.js';
 
-describe('SummaryReviewPacket', () => {
+function ReviewPacketRows({
+  summary,
+  sessionId,
+  isSmall = false,
+}: {
+  summary: Summary;
+  sessionId?: string;
+  isSmall?: boolean;
+}) {
+  const theme = useTheme();
+  const rows = buildReviewPacketDetailRows(summary, sessionId, isSmall, theme);
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <Box key={row.key}>{row.node}</Box>
+      ))}
+    </Box>
+  );
+}
+
+describe('buildReviewPacketDetailRows', () => {
   afterEach(() => {
     terminalSizeStore.__testReset();
   });
 
   it('renders nothing when no review packet rollup exists', () => {
-    const ui = renderFeature(<SummaryReviewPacket summary={makeSummary()} />);
+    const ui = renderFeature(<ReviewPacketRows summary={makeSummary()} />);
 
     expect(ui.lastFrame() ?? '').toBe('');
 
@@ -21,7 +44,7 @@ describe('SummaryReviewPacket', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(
-      <SummaryReviewPacket
+      <ReviewPacketRows
         summary={makeSummary({
           driftSummary: {
             passed: false,
@@ -63,7 +86,7 @@ describe('SummaryReviewPacket', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(
-      <SummaryReviewPacket
+      <ReviewPacketRows
         sessionId="session-123"
         summary={makeSummary({
           reviewPacket: {
@@ -91,7 +114,7 @@ describe('SummaryReviewPacket', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(
-      <SummaryReviewPacket
+      <ReviewPacketRows
         summary={makeSummary({
           reviewPacket: {
             markdownPath: 'review-packet.md',
@@ -122,7 +145,8 @@ describe('SummaryReviewPacket', () => {
     terminalSizeStore.__testReset({ isSmall: true });
 
     const ui = renderFeature(
-      <SummaryReviewPacket
+      <ReviewPacketRows
+        isSmall
         summary={makeSummary({
           reviewPacket: {
             markdownPath: longMarkdownPath,

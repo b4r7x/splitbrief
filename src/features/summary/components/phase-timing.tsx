@@ -1,28 +1,35 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Text } from 'ink';
 import { capitalize } from '../../../utils/capitalize.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
+import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
+import type { Theme } from '../../../components/theme.js';
 
-interface SummaryPhaseTimingProps {
-  phaseTimings: Record<string, number>;
-  labelWidth: number;
-}
+export function buildPhaseTimingRows(
+  phaseTimings: Record<string, number>,
+  labelWidth: number,
+  theme: Theme,
+): ScrollableDocumentRow[] {
+  const phases = Object.entries(phaseTimings);
+  if (phases.length === 0) return [];
 
-export function SummaryPhaseTiming({ phaseTimings, labelWidth }: SummaryPhaseTimingProps) {
-  const t = useTheme();
-  const entries = Object.entries(phaseTimings);
+  const rows: ScrollableDocumentRow[] = [
+    {
+      key: 'phase-heading',
+      node: <Text bold>Phase Breakdown</Text>,
+    },
+  ];
 
-  if (entries.length === 0) return null;
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text bold>Phase Breakdown</Text>
-      {entries.map(([phase, duration]) => (
-        <LabeledRow key={phase} label={capitalize(phase)} labelWidth={labelWidth}>
-          <Text color={t.textDim}>{formatTime(duration)}</Text>
+  for (const [phase, duration] of phases) {
+    rows.push({
+      key: `phase:${phase}`,
+      node: (
+        <LabeledRow label={capitalize(phase)} labelWidth={labelWidth}>
+          <Text color={theme.textDim}>{formatTime(duration)}</Text>
         </LabeledRow>
-      ))}
-    </Box>
-  );
+      ),
+    });
+  }
+
+  return rows;
 }

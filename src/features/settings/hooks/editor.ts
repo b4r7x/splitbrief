@@ -13,6 +13,7 @@ interface UseSettingsEditorParams {
   focusSetting: string | undefined;
   onClose: () => void;
   onOpenSubPicker: (def: SettingDef) => void;
+  pageSize: number;
 }
 
 interface SettingsEditorState {
@@ -30,6 +31,7 @@ export function useSettingsEditor({
   focusSetting,
   onClose,
   onOpenSubPicker,
+  pageSize,
 }: UseSettingsEditorParams): SettingsEditorState {
   const getValue = (def: SettingDef): unknown =>
     def.readValue ? def.readValue(config) : getConfigValue(config, def.id);
@@ -85,6 +87,7 @@ export function useSettingsEditor({
     isActive: isListActive,
     shouldAppendChar: (c) => c !== ' ',
     initialIndex,
+    pageSize,
   });
 
   useInput(

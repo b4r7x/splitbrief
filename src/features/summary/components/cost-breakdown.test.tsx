@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
-import { SummaryCostBreakdown } from './cost-breakdown.js';
+import { useTheme } from '../../../components/theme.js';
+import { buildCostBreakdownRows } from './cost-breakdown.js';
 
-describe('SummaryCostBreakdown', () => {
+function CostBreakdownRows({ costBreakdown }: { costBreakdown: CostBreakdown }) {
+  const theme = useTheme();
+  const rows = buildCostBreakdownRows({ costBreakdown, labelWidth: 28, theme });
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <Box key={row.key}>{row.node}</Box>
+      ))}
+    </Box>
+  );
+}
+
+describe('buildCostBreakdownRows', () => {
   it('renders actual cost, savings, local rate, and provider costs', () => {
     const costBreakdown: CostBreakdown = {
       hypotheticalCost: 5,
@@ -25,9 +39,7 @@ describe('SummaryCostBreakdown', () => {
       },
     };
 
-    const ui = renderFeature(
-      <SummaryCostBreakdown costBreakdown={costBreakdown} labelWidth={28} isSmall={false} />,
-    );
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Actual cost');
@@ -64,9 +76,7 @@ describe('SummaryCostBreakdown', () => {
       isAllPlannerBaselineKnown: true,
     };
 
-    const ui = renderFeature(
-      <SummaryCostBreakdown costBreakdown={costBreakdown} labelWidth={28} isSmall={false} />,
-    );
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Actual cost');
@@ -78,6 +88,33 @@ describe('SummaryCostBreakdown', () => {
     expect(frame).toContain('Local/cheap rate');
     expect(frame).toContain('100%');
     expect(frame).not.toContain('$0.00');
+
+    ui.unmount();
+  });
+
+  it('renders negative savings as extra cost without clamping to zero', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 0.1,
+      actualPlannerCost: 0.05,
+      actualImplementerCost: 0.1,
+      totalActualCost: 0.15,
+      savingsAmount: -0.05,
+      savingsPercentage: -50,
+      localCompletionRate: 0.5,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Extra cost');
+    expect(frame).toContain('Extra $0.05 (-50%)');
+    expect(frame).not.toContain('Saved $0.00');
 
     ui.unmount();
   });

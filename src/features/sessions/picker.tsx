@@ -1,20 +1,17 @@
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import type { Session } from '../../core/schemas/session.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
-import { filterByFields } from '../../components/pickers/filtering.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { filterSession } from '../../core/sessions/search.js';
 
-const SESSION_PICKER_HINT = '\u2191\u2193 navigate  Enter resume/view  Esc close';
-
-const filterSession = (s: Session, query: string): boolean => filterByFields(s, query, ['feature']);
+const SESSION_PICKER_HINT = '\u2191\u2193 navigate  Type filter  Enter resume/view  Esc close';
 
 export function SessionsPicker() {
   const t = useTheme();
@@ -47,6 +44,7 @@ export function SessionsPicker() {
       hint={hint}
       bordered={false}
       chromeRows={12}
+      listFloor={0}
       maxVisible={5}
       width={panelWidth}
       placeholder={

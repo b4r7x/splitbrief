@@ -1,15 +1,11 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Text } from 'ink';
+import { LabeledRow } from '../../../components/labeled-row.js';
 import type { ReviewPacketSummary, Summary } from '../../../core/schemas/summary.js';
+import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
+import type { Theme } from '../../../components/theme.js';
 import { DIPTYCH_DIR } from '../../../core/paths.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { formatScoreSummary } from '../../../core/formatting.js';
-
-interface SummaryReviewPacketProps {
-  summary: Summary;
-  sessionId?: string | undefined;
-}
 
 function sessionPath(path: string, sessionId: string | undefined): string {
   if (path.includes('/')) return path;
@@ -54,12 +50,14 @@ function finalReviewColor(status: string, warningColor: string, dimColor: string
   return status === 'written' ? dimColor : warningColor;
 }
 
-export function SummaryReviewPacket({ summary, sessionId }: SummaryReviewPacketProps) {
-  const theme = useTheme();
-  const isSmall = terminalSizeStore.use((s) => s.isSmall);
+export function buildReviewPacketDetailRows(
+  summary: Summary,
+  sessionId: string | undefined,
+  isSmall: boolean,
+  theme: Theme,
+): ScrollableDocumentRow[] {
   const packet = summary.reviewPacket;
-
-  if (!packet) return null;
+  if (!packet) return [];
 
   const pathMaxLength = isSmall ? 30 : 88;
   const markdownPath = compactPath(sessionPath(packet.markdownPath, sessionId), pathMaxLength);
@@ -70,39 +68,118 @@ export function SummaryReviewPacket({ summary, sessionId }: SummaryReviewPacketP
   const artifactColor = packet.missingArtifactCount > 0 ? theme.warning : theme.textDim;
 
   if (isSmall) {
-    return (
-      <Box flexDirection="column" marginTop={0}>
-        <Text color={theme.textDim}>
-          <Text bold color={theme.text}>
-            Review packet:
-          </Text>
-        </Text>
-        <Text color={theme.textDim}>md: {markdownPath}</Text>
-        <Text color={theme.textDim}>json: {jsonPath}</Text>
-        <Text color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}>
-          final review: {finalReviewStatus} | drift: {formatCompactDriftStatus(packet)} | evidence:{' '}
-          {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks} | missing:{' '}
-          {packet.missingArtifactCount} | checklist
-        </Text>
-      </Box>
-    );
+    return [
+      {
+        key: 'review-packet-heading',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              Review packet:
+            </Text>
+          </LabeledRow>
+        ),
+      },
+      {
+        key: 'review-packet-md',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              md: {markdownPath}
+            </Text>
+          </LabeledRow>
+        ),
+      },
+      {
+        key: 'review-packet-json',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              json: {jsonPath}
+            </Text>
+          </LabeledRow>
+        ),
+      },
+      {
+        key: 'review-packet-status',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text
+              color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}
+              wrap="truncate-end"
+            >
+              final review: {finalReviewStatus} | drift: {formatCompactDriftStatus(packet)} |
+              evidence: {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks}
+            </Text>
+          </LabeledRow>
+        ),
+      },
+      {
+        key: 'review-packet-artifacts',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={artifactColor} wrap="truncate-end">
+              missing: {packet.missingArtifactCount} | checklist
+            </Text>
+          </LabeledRow>
+        ),
+      },
+    ];
   }
 
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text color={theme.textDim}>
-        <Text bold color={theme.text}>
-          Review packet:
-        </Text>{' '}
-        md: {markdownPath} | json: {jsonPath}
-      </Text>
-      <Text color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}>
-        final review: {finalReviewStatus} | drift: {driftStatus} | evidence:{' '}
-        {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks} validated
-      </Text>
-      <Text color={artifactColor}>
-        missing artifacts: {packet.missingArtifactCount} | next: open packet/checklist
-      </Text>
-    </Box>
-  );
+  return [
+    {
+      key: 'review-packet-heading',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            Review packet:
+          </Text>
+        </LabeledRow>
+      ),
+    },
+    {
+      key: 'review-packet-md',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            md: {markdownPath}
+          </Text>
+        </LabeledRow>
+      ),
+    },
+    {
+      key: 'review-packet-json',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            json: {jsonPath}
+          </Text>
+        </LabeledRow>
+      ),
+    },
+    {
+      key: 'review-packet-status',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text
+            color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}
+            wrap="truncate-end"
+          >
+            final review: {finalReviewStatus} | drift: {driftStatus} | evidence:{' '}
+            {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks} validated
+          </Text>
+        </LabeledRow>
+      ),
+    },
+    {
+      key: 'review-packet-artifacts',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={artifactColor} wrap="truncate-end">
+            missing artifacts: {packet.missingArtifactCount} | next: open packet/checklist
+          </Text>
+        </LabeledRow>
+      ),
+    },
+  ];
 }

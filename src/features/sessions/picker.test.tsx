@@ -10,6 +10,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { Session } from '../../core/schemas/session.js';
 import { SessionsPicker } from './picker.js';
 import { tick } from '#testing/helpers/ink.js';
@@ -29,6 +30,7 @@ beforeEach(() => {
   overlayStore.reset();
   routerStore.reset();
   sessionSelectStore.reset();
+  terminalSizeStore.reset();
   configStore.load(tmp);
 });
 
@@ -39,6 +41,7 @@ afterEach(() => {
   overlayStore.reset();
   routerStore.reset();
   sessionSelectStore.reset();
+  terminalSizeStore.reset();
 });
 
 describe('SessionsPicker', () => {
@@ -86,6 +89,52 @@ describe('SessionsPicker', () => {
     instance.unmount();
   });
 
+  it('filters sessions by status and id as well as feature text', async () => {
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-alpha-visible-id',
+        feature: 'alpha feature',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-beta-hidden-id',
+        feature: 'beta feature',
+        status: 'complete',
+      }),
+    );
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    instance.stdin.write('interrupted');
+    await tick(1);
+
+    let frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('alpha feature');
+    expect(frame).not.toContain('beta feature');
+
+    instance.unmount();
+
+    const byId = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    byId.stdin.write('hidden-id');
+    await tick(1);
+
+    frame = byId.lastFrame() ?? '';
+    expect(frame).toContain('beta feature');
+    expect(frame).not.toContain('alpha feature');
+
+    byId.unmount();
+  });
+
   it('keeps a selection error visible while the picker stays open', async () => {
     writeSessionSummary(
       tmp,
@@ -114,5 +163,60 @@ describe('SessionsPicker', () => {
 
     instance.unmount();
     expect(sessionSelectStore.get().error).toBeNull();
+  });
+
+  it('keeps long filter text visible at 80x18', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-alpha',
+        feature: 'alpha feature',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    instance.stdin.write('alpha-feature-filter');
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('Sessions (1)');
+    expect(frame).toContain('alpha-feature');
+    expect(frame).toContain('navigate');
+
+    instance.unmount();
+  });
+
+  it('keeps title and hint visible when tiny terminals collapse the list', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 6, isSmall: true });
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-alpha',
+        feature: 'alpha feature',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    instance.stdin.write('alpha-feature-filter');
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('Sessions (1)');
+    expect(frame).toContain('navigate');
+    expect(frame).toContain('alpha-feature');
+    expect(frame).not.toContain('No matching sessions');
+
+    instance.unmount();
   });
 });

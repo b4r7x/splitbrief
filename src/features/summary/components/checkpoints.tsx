@@ -1,13 +1,10 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Text } from 'ink';
+import { LabeledRow } from '../../../components/labeled-row.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
+import type { Theme } from '../../../components/theme.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { countNoun } from '../../../utils/pluralize.js';
-
-interface SummaryCheckpointsProps {
-  checkpointSummary: CheckpointSummaryRollup | undefined;
-}
 
 function compactCheckpointCount(count: number): string {
   return count === 1 ? '1 ckpt' : `${count} ckpts`;
@@ -55,29 +52,22 @@ function commandFor(
 function checkpointSummaryText(
   summary: CheckpointSummaryRollup,
   latest: string,
-  runStatus: string | null,
   isSmall: boolean,
 ): string {
   if (isSmall) return compactCheckpointCount(summary.count);
 
-  const parts = [
-    countNoun(summary.count, 'checkpoint'),
-    `latest: ${latest}`,
-    summary.preFinalReviewId ? `pre-final-review: ${summary.preFinalReviewId}` : null,
-    summary.latestRunCheckpointId && summary.latestRunCheckpointId !== summary.latestId
-      ? `latest run: ${summary.latestRunCheckpointId}`
-      : null,
-    runStatus ? `run status: ${runStatus}` : null,
-  ].filter((part): part is string => part !== null);
+  const parts = [countNoun(summary.count, 'checkpoint'), `latest: ${latest}`].filter(
+    (part): part is string => part !== null,
+  );
   return parts.join(' | ');
 }
 
-export function SummaryCheckpoints({ checkpointSummary }: SummaryCheckpointsProps) {
-  const theme = useTheme();
-  const isSmall = terminalSizeStore.use((s) => s.isSmall);
-
-  if (!checkpointSummary) return null;
-
+export function buildCheckpointDetailRows(
+  checkpointSummary: CheckpointSummaryRollup,
+  labelWidth: number,
+  isSmall: boolean,
+  theme: Theme,
+): ScrollableDocumentRow[] {
   const latest = formatLatestCheckpoint(checkpointSummary, 88, isSmall);
   const runStatus = formatRunStatus(checkpointSummary);
   const diffCommand = commandFor(checkpointSummary.diffCommand, 'diff', checkpointSummary.latestId);
@@ -86,7 +76,7 @@ export function SummaryCheckpoints({ checkpointSummary }: SummaryCheckpointsProp
     'restore',
     checkpointSummary.latestId,
   );
-  const summaryText = checkpointSummaryText(checkpointSummary, latest, runStatus, isSmall);
+  const summaryText = checkpointSummaryText(checkpointSummary, latest, isSmall);
   const runStatusColor =
     runStatus === 'rejected'
       ? theme.warning
@@ -94,53 +84,144 @@ export function SummaryCheckpoints({ checkpointSummary }: SummaryCheckpointsProp
         ? theme.success
         : theme.textDim;
 
-  return (
-    <Box flexDirection="column" marginTop={isSmall ? 0 : 1}>
-      <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
-        <Text bold color={theme.text}>
-          Checkpoints:
-        </Text>{' '}
-        {summaryText}
-      </Text>
-      {isSmall && (
-        <Text color={theme.textDim} wrap="truncate-end">
-          latest: {checkpointSummary.latestId ?? 'n/a'}
-        </Text>
-      )}
-      {isSmall && checkpointSummary.preFinalReviewId && (
-        <Text color={theme.textDim} wrap="truncate-end">
-          pre: {checkpointSummary.preFinalReviewId}
-        </Text>
-      )}
-      {isSmall &&
-        checkpointSummary.latestRunCheckpointId &&
-        checkpointSummary.latestRunCheckpointId !== checkpointSummary.latestId && (
+  const rows: ScrollableDocumentRow[] = [
+    {
+      key: 'checkpoints-summary',
+      node: (
+        <LabeledRow label="Checkpoints" labelWidth={labelWidth}>
           <Text color={theme.textDim} wrap="truncate-end">
-            latest run: {checkpointSummary.latestRunCheckpointId}
+            {summaryText}
           </Text>
-        )}
-      {isSmall && runStatus && (
-        <Text color={runStatusColor} wrap="truncate-end">
-          run status: {runStatus}
-        </Text>
-      )}
-      {diffCommand && (
-        <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
-          diff: {diffCommand}
-        </Text>
-      )}
-      {restoreCommand && (
-        <Text color={theme.textDim} wrap={isSmall ? 'truncate-end' : undefined}>
-          restore: {restoreCommand}
-        </Text>
-      )}
-      <Text
-        color={runStatus === 'rejected' ? runStatusColor : theme.textDim}
-        wrap={isSmall ? 'truncate-end' : undefined}
-      >
+        </LabeledRow>
+      ),
+    },
+  ];
+
+  if (isSmall) {
+    rows.push({
+      key: 'checkpoints-latest',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            latest: {checkpointSummary.latestId ?? 'n/a'}
+          </Text>
+        </LabeledRow>
+      ),
+    });
+    if (checkpointSummary.preFinalReviewId) {
+      rows.push({
+        key: 'checkpoints-pre',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              pre: {checkpointSummary.preFinalReviewId}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+    if (
+      checkpointSummary.latestRunCheckpointId &&
+      checkpointSummary.latestRunCheckpointId !== checkpointSummary.latestId
+    ) {
+      rows.push({
+        key: 'checkpoints-latest-run',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              latest run: {checkpointSummary.latestRunCheckpointId}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+    if (runStatus) {
+      rows.push({
+        key: 'checkpoints-run-status',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={runStatusColor} wrap="truncate-end">
+              run status: {runStatus}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+  } else {
+    if (checkpointSummary.preFinalReviewId) {
+      rows.push({
+        key: 'checkpoints-pre',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              pre-final-review: {checkpointSummary.preFinalReviewId}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+    if (
+      checkpointSummary.latestRunCheckpointId &&
+      checkpointSummary.latestRunCheckpointId !== checkpointSummary.latestId
+    ) {
+      rows.push({
+        key: 'checkpoints-latest-run',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={theme.textDim} wrap="truncate-end">
+              latest run: {checkpointSummary.latestRunCheckpointId}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+    if (runStatus) {
+      rows.push({
+        key: 'checkpoints-run-status',
+        node: (
+          <LabeledRow label="" labelWidth={0}>
+            <Text color={runStatusColor} wrap="truncate-end">
+              run status: {runStatus}
+            </Text>
+          </LabeledRow>
+        ),
+      });
+    }
+  }
+
+  if (diffCommand) {
+    rows.push({
+      key: 'checkpoints-diff',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            diff: {diffCommand}
+          </Text>
+        </LabeledRow>
+      ),
+    });
+  }
+  if (restoreCommand) {
+    rows.push({
+      key: 'checkpoints-restore',
+      node: (
+        <LabeledRow label="" labelWidth={0}>
+          <Text color={theme.textDim} wrap="truncate-end">
+            restore: {restoreCommand}
+          </Text>
+        </LabeledRow>
+      ),
+    });
+  }
+  rows.push({
+    key: 'checkpoints-restore-note',
+    node: (
+      <Text color={runStatus === 'rejected' ? runStatusColor : theme.textDim} wrap="truncate-end">
         restore: hash-guarded; conflicts skipped{isSmall ? '' : ' by default'}; --force destructive
         overwrite
       </Text>
-    </Box>
-  );
+    ),
+  });
+
+  return rows;
 }
