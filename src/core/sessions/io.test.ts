@@ -53,6 +53,29 @@ describe('listSessions', () => {
     expect(sessions[0]?.feature).toBe('auth');
   });
 
+  it('uses the directory id when summary payload id differs', () => {
+    tmp = createTempDir('sessions-io-test');
+    writeSessionSubdir(
+      tmp,
+      '2024-01-01-real',
+      makeSession({ id: '2024-01-01-other', feature: 'auth' }),
+    );
+
+    const sessions = listSessions(tmp);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.id).toBe('2024-01-01-real');
+    expect(sessions[0]?.feature).toBe('auth');
+  });
+
+  it('skips session directories with invalid ids', () => {
+    tmp = createTempDir('sessions-io-test');
+    writeSessionSubdir(tmp, '.invalid', makeSession({ id: '.invalid', startedAt: 3000 }));
+    writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
+
+    const sessions = listSessions(tmp);
+    expect(sessions.map((s) => s.id)).toEqual(['2024-01-02-good']);
+  });
+
   it('sorts sessions by startedAt descending', () => {
     tmp = createTempDir('sessions-io-test');
     writeSessionSubdir(

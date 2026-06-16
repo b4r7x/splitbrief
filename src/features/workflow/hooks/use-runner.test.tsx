@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
 import { existsSync, readFileSync } from 'node:fs';
@@ -23,8 +23,8 @@ import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
-import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowCompletion } from './use-runner.js';
 
 // Harness mounts useWorkflowRunner with a bogus planner command so that
 // runWorkflow exits fast via the "planner not available" branch in
@@ -39,7 +39,7 @@ interface RunnerHandle {
 interface HarnessProps {
   feature: string;
   projectDir: string;
-  onComplete: (summary: Summary) => void;
+  onComplete: (completion: WorkflowCompletion) => void;
   initialResumeState?: WorkflowState | undefined;
   sessionId?: string | undefined;
   captureRunner?: { current: RunnerHandle | null };
@@ -138,9 +138,10 @@ describe('useWorkflowRunner', () => {
         initialResumeState={resume}
       />,
     );
-    await flush();
 
-    expect(lifecycleStore.get().phase).toBe('planning');
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('planning');
+    });
     inst.unmount();
   });
 
@@ -161,15 +162,16 @@ describe('useWorkflowRunner', () => {
         initialResumeState={resume}
       />,
     );
-    await flush();
 
     // Stale fields were cleared (reset ran) and the resume phase was applied
     // (reset received the resume state) — proving a single reset carries the
     // resume state correctly without the removed effect-level reset.
-    const lifecycle = lifecycleStore.get();
-    expect(lifecycle.cancelled).toBe(false);
-    expect(lifecycle.queueDepth).toBe(0);
-    expect(lifecycle.phase).toBe('reviewing-spec');
+    await vi.waitFor(() => {
+      const lifecycle = lifecycleStore.get();
+      expect(lifecycle.cancelled).toBe(false);
+      expect(lifecycle.queueDepth).toBe(0);
+      expect(lifecycle.phase).toBe('reviewing-spec');
+    });
     inst.unmount();
   });
 

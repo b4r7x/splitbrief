@@ -143,6 +143,9 @@ type RunSingleTaskOptions = {
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  onTaskStartSnapshot?:
+    | ((state: WorkflowState, snapshot: ChangedFilesSnapshot) => WorkflowState)
+    | undefined;
   onTaskAcceptedFiles?: ((files: string[]) => void) | undefined;
 };
 
@@ -203,6 +206,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (!preTaskResult.proceed) return preTaskResult.state;
   state = preTaskResult.state;
   const taskStartSnapshot = preTaskResult.taskStartSnapshot;
+  if (opts.onTaskStartSnapshot !== undefined) {
+    state = opts.onTaskStartSnapshot(state, taskStartSnapshot);
+  }
 
   const tokensBefore = { ...state.tokenUsage };
   if (wctx.signal?.aborted) return state;

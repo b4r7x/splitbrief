@@ -1,9 +1,44 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/helpers/git.js';
+import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
+import { createInitialState } from '../state/machine.js';
+import { writeActive } from '../sessions/lifecycle.js';
+import { currentProcessStartTimeMs, HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { collectReadiness } from './collect.js';
 import { flattenReadinessChecks } from './status.js';
+
+function writeSessionState(projectDir: string, sessionId: string, phase: string): void {
+  const sDir = sessionDir(projectDir, sessionId);
+  mkdirSync(sDir, { recursive: true });
+  const state = { ...createInitialState('feature'), phase };
+  writeFileSync(join(sDir, STATE_FILE), JSON.stringify(state));
+}
+
+function writeSessionLockfile(
+  projectDir: string,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  const sDir = sessionDir(projectDir, sessionId);
+  mkdirSync(sDir, { recursive: true });
+  writeFileSync(
+    join(sDir, LOCKFILE),
+    JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      startTimeMs: currentProcessStartTimeMs(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'standard',
+      feature: 'feature',
+      ...overrides,
+    }),
+  );
+}
 
 describe('collectReadiness validation probe wiring', () => {
   let tempDir: string;
@@ -110,5 +145,23 @@ describe('collectReadiness git posture', () => {
         (check) => check.id === 'repo.git-identity-missing',
       ),
     ).toBeUndefined();
+  });
+
+  it('reports an active session with a stale heartbeat as stale', async () => {
+    createTestGitRepo(tempDir);
+    const sessionId = '2026-04-18-stale-heartbeat';
+    writeSessionState(tempDir, sessionId, 'implementing');
+    writeSessionLockfile(tempDir, sessionId, {
+      lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
+    });
+    writeActive({ projectDir: tempDir, sessionId });
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const activeSession = flattenReadinessChecks(report.sections).find((check) =>
+      check.id.startsWith('repo.active-session-'),
+    );
+    expect(activeSession?.id).toBe('repo.active-session-stale');
+    expect(activeSession?.metadata).toMatchObject({ sessionId, live: false });
   });
 });

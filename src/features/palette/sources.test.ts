@@ -3,11 +3,14 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
+import type { Screen } from '../../core/navigation/types.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -15,12 +18,13 @@ const noop = () => {};
 function buildCommandSources(
   commands: RuntimeCommandDef[],
   onRuntimeCommand: (raw: string) => void = noop,
+  opts: { screen?: Screen; phase?: Phase } = {},
 ) {
   return buildPaletteSources({
     commands,
-    screen: 'home',
+    screen: opts.screen ?? 'home',
     config: makeConfig(),
-    phase: 'idle',
+    phase: opts.phase ?? 'idle',
     tasks: [],
     sessions: [],
     projectDir: '/tmp/diptych-test',
@@ -102,6 +106,39 @@ describe('buildPaletteSources command items', () => {
 
     expect(calls).toEqual(['/settings']);
   });
+
+  it('excludes phase-guarded commands outside their valid phase', () => {
+    const commands: RuntimeCommandDef[] = [
+      {
+        kind: 'arg',
+        name: '/redo-task',
+        label: 'Redo Task',
+        description: 'Reset a task',
+        validScreens: ['workflow'],
+        phaseGuard: (phase) => phase === 'implementing',
+        handler: noop,
+      },
+      {
+        kind: 'noarg',
+        name: '/visible',
+        label: 'Visible',
+        description: 'Visible command',
+        validScreens: ['workflow'],
+        handler: noop,
+      },
+    ];
+
+    expect(
+      buildCommandSources(commands, noop, { screen: 'workflow', phase: 'planning' }).map(
+        (item) => item.label,
+      ),
+    ).toEqual(['Visible']);
+    expect(
+      buildCommandSources(commands, noop, { screen: 'workflow', phase: 'implementing' }).map(
+        (item) => item.label,
+      ),
+    ).toEqual(['Redo Task', 'Visible']);
+  });
 });
 
 describe('buildPaletteSources session items', () => {
@@ -112,6 +149,7 @@ describe('buildPaletteSources session items', () => {
     overlayStore.reset();
     routerStore.reset();
     feedbackStore.reset();
+    sessionSelectStore.reset();
   });
 
   afterEach(() => {
@@ -119,6 +157,7 @@ describe('buildPaletteSources session items', () => {
     overlayStore.reset();
     routerStore.reset();
     feedbackStore.reset();
+    sessionSelectStore.reset();
   });
 
   it('resumes an interrupted session with its saved state instead of starting fresh', () => {
@@ -155,5 +194,36 @@ describe('buildPaletteSources session items', () => {
       expect(route.resumeState).toEqual(savedState);
       expect(route.sessionId).toBe(session.id);
     }
+  });
+
+  it('surfaces palette-triggered session selection errors through global feedback', () => {
+    const session = makeSession({
+      id: 'sess-missing-state',
+      feature: 'missing state',
+      status: 'interrupted',
+      summary: null,
+    });
+
+    const { sessionItems } = buildPaletteSources({
+      commands: [],
+      screen: 'home',
+      config: makeConfig(),
+      phase: 'idle',
+      tasks: [],
+      sessions: [session],
+      projectDir: tmp,
+      onRuntimeCommand: noop,
+      onWorkflowMode: noop,
+    });
+
+    sessionItems[0]?.action();
+
+    expect(sessionSelectStore.get().error).toBe(
+      'Cannot resume: saved workflow state is missing or invalid',
+    );
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Cannot resume: saved workflow state is missing or invalid',
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -12,6 +13,12 @@ import { CURSOR } from '../../../components/pickers/cursor-glyph.js';
 import { RecentSessions } from './recent-sessions.js';
 
 const CURSOR_GLYPH = CURSOR.trimEnd();
+
+function lineContaining(frame: string, text: string): string {
+  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  expect(line).toBeDefined();
+  return line ?? '';
+}
 
 describe('RecentSessions', () => {
   let projectDir = '';
@@ -51,6 +58,7 @@ describe('RecentSessions', () => {
     expect(frame).toContain('bravo');
     expect(frame).not.toContain(CURSOR_GLYPH);
     expect(frame).not.toContain('Esc back');
+    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
     ui.unmount();
   });
 
@@ -145,13 +153,15 @@ describe('RecentSessions', () => {
     ]);
 
     const ui = renderFeature(
-      <RecentSessions
-        focused
-        limit={2}
-        onSelect={() => {}}
-        onClose={() => {}}
-        hasOverlay={false}
-      />,
+      <Box marginLeft={2}>
+        <RecentSessions
+          focused
+          limit={2}
+          onSelect={() => {}}
+          onClose={() => {}}
+          hasOverlay={false}
+        />
+      </Box>,
     );
     await tick(20);
 

@@ -13,6 +13,7 @@ import { feedbackStore } from '../../src/stores/ui/feedback.js';
 import { inputHistoryStore } from '../../src/stores/ui/input-history.js';
 import { inputHeightStore } from '../../src/stores/ui/input-height.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { sessionSelectStore } from '../../src/stores/navigation/session-select.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { sessionsStore } from '../../src/stores/project/sessions.js';
 import { skillsStore } from '../../src/stores/project/skills.js';
@@ -40,6 +41,7 @@ export function resetAllStores(): void {
   inputHistoryStore.reset();
   inputHeightStore.reset();
   routerStore.reset();
+  sessionSelectStore.reset();
   configStore.reset();
   sessionsStore.reset();
   skillsStore.reset();

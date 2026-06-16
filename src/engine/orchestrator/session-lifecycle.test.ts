@@ -16,7 +16,9 @@ import { readStats } from '../../core/stats/persistence.js';
 import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
+  withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
+import { getChangedFilesSnapshot } from './approval/file-snapshots.js';
 import {
   awaitActiveWorkflowShutdown,
   saveFinalSession,
@@ -242,9 +244,27 @@ describe('shouldPreserveActiveState', () => {
     expect(shouldPreserveActiveState(state)).toBe(true);
   });
 
-  it('preserves a non-terminal phase', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+  it('preserves awaiting-continue state for a non-resumable phase', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      awaitingContinue: true,
+    };
     expect(shouldPreserveActiveState(state)).toBe(true);
+  });
+
+  it.each([
+    'planning',
+    'implementing',
+    'final-review',
+  ] as const)('preserves resumable %s phase', (phase) => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase };
+    expect(shouldPreserveActiveState(state)).toBe(true);
+  });
+
+  it('clears a non-resumable phase without explicit resume state', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'validating-task' };
+    expect(shouldPreserveActiveState(state)).toBe(false);
   });
 
   it('clears a terminal phase with no pending recovery', () => {
@@ -331,6 +351,23 @@ async function stateWithBaseline(projectDir: string, tasks: Task[]): Promise<Wor
   };
 }
 
+async function stateWithActiveTaskSnapshot(
+  projectDir: string,
+  tasks: Task[],
+): Promise<WorkflowState> {
+  const baseline = await captureChangedFilesBaseline(projectDir);
+  const activeTaskSnapshot = await getChangedFilesSnapshot(projectDir);
+  return {
+    ...createInitialState('feat'),
+    phase: 'implementing',
+    tasks,
+    currentTaskIndex: 0,
+    changedFilesBaseline: serializeChangedFilesBaseline(
+      withActiveTaskSnapshot(baseline, activeTaskSnapshot),
+    ),
+  };
+}
+
 describe('shutdownWorkflow — interrupted-task rollback', () => {
   it('discards the whole attributed set, not just task.file, for a multi-file task', async () => {
     const projectDir = createTempDir('session-lifecycle-test');
@@ -363,7 +400,7 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
     expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
   });
 
-  it('preserves a file that was already dirty before the task instead of reverting it to HEAD', async () => {
+  it('restores a pre-dirty attributed file to its exact pre-task content', async () => {
     const projectDir = createTempDir('session-lifecycle-test');
     dirs.push(projectDir);
     createTestGitRepo(projectDir, { 'src/a.ts': 'committed a\n' });
@@ -372,11 +409,17 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
 
     // The user already had uncommitted edits to src/a.ts before the task started.
     writeProjectFile(projectDir, 'src/a.ts', 'user edit a\n');
-    const task = makeTask({ id: 'T001', action: 'modify', file: 'src/a.ts' });
-    const trackedState = await stateWithBaseline(projectDir, [task]);
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/a.ts',
+      scope: { inBounds: ['src/generated.ts'] },
+    });
+    const trackedState = await stateWithActiveTaskSnapshot(projectDir, [task]);
 
     // The implementer further changed the file during the task.
     writeProjectFile(projectDir, 'src/a.ts', 'agent a\n');
+    writeProjectFile(projectDir, 'src/generated.ts', 'agent generated\n');
 
     await shutdownWorkflow(
       projectDir,
@@ -385,8 +428,8 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
       () => ({ file: 'src/a.ts', action: 'modify' }),
     );
 
-    // The pre-run dirty content must NOT be destroyed by a discard-to-HEAD.
-    expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).not.toBe('committed a\n');
+    expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('user edit a\n');
+    expect(existsSync(join(projectDir, 'src/generated.ts'))).toBe(false);
   });
 });
 

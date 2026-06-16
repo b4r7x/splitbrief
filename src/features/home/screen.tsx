@@ -14,14 +14,15 @@ import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import type { Session } from '../../core/schemas/session.js';
-import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { getHomeLayout } from './layout.js';
 import { getLogo } from './logo.js';
 import { useRecentSessionsFocus } from './use-recent-sessions-focus.js';
 
 const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
 const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
+const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 interface HomeScreenProps {
   commands: RuntimeCommandDef[];
@@ -37,6 +38,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
     configStore,
   );
   const hasSkills = skillsStore.use((s) => s.selected.size > 0);
+  const selectionError = sessionSelectStore.use((s) => s.error);
   const [sessionsFocused, setSessionsFocused] = useState(false);
 
   const layout = getHomeLayout({ cols, rows, isSmall, hasSkills });
@@ -47,6 +49,17 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   }, [hasSessions]);
 
   const sessionsActive = sessionsFocused && hasSessions;
+
+  useEffect(() => {
+    if (!sessionsActive || !selectionError) return undefined;
+    const timer = setTimeout(() => sessionSelectStore.clearError(), HOME_SELECTION_ERROR_CLEAR_MS);
+    return () => clearTimeout(timer);
+  }, [sessionsActive, selectionError]);
+
+  const closeRecentSessions = () => {
+    setSessionsFocused(false);
+    sessionSelectStore.clearError();
+  };
 
   useRecentSessionsFocus({
     hasSessions,
@@ -77,9 +90,14 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
               limit={layout.recentSessionLimit}
               focused={sessionsActive}
               onSelect={(session: Session) => handleSessionSelect(session, projectDir)}
-              onClose={() => setSessionsFocused(false)}
+              onClose={closeRecentSessions}
               hasOverlay={hasOverlay}
             />
+            {sessionsActive && selectionError && (
+              <Box>
+                <Text color={theme.error}>{selectionError}</Text>
+              </Box>
+            )}
           </Box>
         </Box>
 

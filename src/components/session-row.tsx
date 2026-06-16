@@ -4,6 +4,13 @@ import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
 import { CursorCell } from './pickers/cursor-cell.js';
 
+export type SessionRowCursor =
+  | { kind: 'none' }
+  | { kind: 'inline'; isCursor: boolean }
+  | { kind: 'outdent'; isCursor: boolean };
+
+const NO_ROW_CURSOR: SessionRowCursor = { kind: 'none' };
+
 function formatRelativeTime(timestamp: number): string {
   if (!Number.isFinite(timestamp)) return 'just now';
   const now = Date.now();
@@ -24,21 +31,34 @@ function formatRelativeTime(timestamp: number): string {
 
 interface SessionRowProps {
   session: Session;
-  showCursor?: boolean;
-  isCursor?: boolean;
+  cursor?: SessionRowCursor;
 }
 
-export function SessionRow({ session, showCursor = false, isCursor = false }: SessionRowProps) {
+function isSelected(cursor: SessionRowCursor): boolean {
+  switch (cursor.kind) {
+    case 'none':
+      return false;
+    case 'inline':
+    case 'outdent':
+      return cursor.isCursor;
+    default: {
+      const _exhaustive: never = cursor;
+      return _exhaustive;
+    }
+  }
+}
+
+export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
   const time = formatRelativeTime(session.startedAt);
-  const selected = showCursor && isCursor;
+  const selected = isSelected(cursor);
   const bg = selected ? t.selectionBg : undefined;
-  return (
+  const row = (
     <Box width="100%" backgroundColor={bg}>
-      {showCursor && (
+      {cursor.kind === 'inline' && (
         <Box flexShrink={0} backgroundColor={bg}>
-          <CursorCell isCursor={isCursor} />
+          <CursorCell isCursor={cursor.isCursor} />
         </Box>
       )}
       <Box flexShrink={0} backgroundColor={bg}>
@@ -52,6 +72,19 @@ export function SessionRow({ session, showCursor = false, isCursor = false }: Se
       <Box flexShrink={0} backgroundColor={bg}>
         <Text color={t.textDim}> {time}</Text>
       </Box>
+    </Box>
+  );
+
+  if (cursor.kind !== 'outdent') return row;
+
+  return (
+    <Box width="100%" backgroundColor={bg}>
+      {cursor.isCursor && (
+        <Box position="absolute" marginLeft={-2} backgroundColor={bg}>
+          <CursorCell isCursor />
+        </Box>
+      )}
+      {row}
     </Box>
   );
 }

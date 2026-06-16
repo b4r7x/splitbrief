@@ -4,14 +4,14 @@ import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { SessionSchema } from '../schemas/session.js';
-import { sessionDir, sessionsRoot } from '../paths.js';
+import { sessionDir, sessionsRoot, validateSessionId } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { loadState } from '../state/persistence.js';
 import { sessionError } from './errors.js';
 import { writeSecureFile } from '../../lib/fs.js';
 
-function readSummaryFile(filePath: string): Session | null {
+function readSummaryFile(filePath: string, sessionId: string): Session | null {
   try {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
@@ -19,6 +19,12 @@ function readSummaryFile(filePath: string): Session | null {
     if (!result.success) {
       warnStderr(`Warning: invalid session ${filePath}: ${result.error.message}`);
       return null;
+    }
+    if (result.data.id !== sessionId) {
+      warnStderr(
+        `Warning: session ${filePath} payload id '${result.data.id}' does not match directory '${sessionId}'; using directory id`,
+      );
+      return { ...result.data, id: sessionId };
     }
     return result.data;
   } catch (err) {
@@ -66,6 +72,16 @@ function recoverSession(projectDir: string, sessionId: string): Session | null {
 // Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.
 const MAX_RECENT_SESSIONS = 30;
 
+function isValidSessionDirectory(sessionId: string): boolean {
+  try {
+    validateSessionId(sessionId);
+    return true;
+  } catch (err) {
+    warnError(`Skipping session directory '${sessionId}'`, err);
+    return false;
+  }
+}
+
 function readSessions(projectDir: string): Session[] {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) return [];
@@ -75,8 +91,10 @@ function readSessions(projectDir: string): Session[] {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (!isValidSessionDirectory(entry.name)) continue;
     const summaryPath = join(root, entry.name, 'summary.json');
-    const session = readSummaryFile(summaryPath) ?? recoverSession(projectDir, entry.name);
+    const session =
+      readSummaryFile(summaryPath, entry.name) ?? recoverSession(projectDir, entry.name);
     if (session) sessions.push(session);
   }
 

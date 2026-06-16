@@ -136,6 +136,30 @@ describe('WorkflowStateSchema recovery compatibility', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a changed-files baseline with an active task snapshot', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'implementing',
+      feature: 'snapshot session',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [task],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
+      changedFilesBaseline: {
+        head: 'abc123',
+        fingerprints: { 'src/a.ts': 'hash-a' },
+        activeTaskSnapshot: {
+          head: 'abc123',
+          files: ['src/a.ts'],
+          dirtyFileContents: { 'src/a.ts': 'user edit a\n' },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('strips legacy clarifications and analysisResult fields from persisted state', () => {
     const result = WorkflowStateSchema.safeParse({
       stateVersion: 3,

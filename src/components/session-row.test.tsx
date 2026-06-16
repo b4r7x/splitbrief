@@ -19,6 +19,12 @@ function nonBlankLines(frame: string): number {
   return frame.split('\n').filter((line) => line.trim().length > 0).length;
 }
 
+function lineContaining(frame: string, text: string): string {
+  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  expect(line).toBeDefined();
+  return line ?? '';
+}
+
 describe('SessionRow', () => {
   beforeEach(() => {
     resetAllStores();
@@ -79,7 +85,10 @@ describe('SessionRow', () => {
     const feature = 'prosze pokaz mi to ze to dziala, po prostu zrob test i nic wiecej i jeszcze';
     const frame = frameOf(
       <Box width={50}>
-        <SessionRow session={makeSession({ feature, startedAt: Date.now() })} showCursor isCursor />
+        <SessionRow
+          session={makeSession({ feature, startedAt: Date.now() })}
+          cursor={{ kind: 'inline', isCursor: true }}
+        />
       </Box>,
     );
     expect(frame).toContain('…');
@@ -92,12 +101,12 @@ describe('SessionRow', () => {
 
     const unselected = frameOf(
       <Box width={72}>
-        <SessionRow session={session} showCursor isCursor={false} />
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: false }} />
       </Box>,
     );
     const selected = frameOf(
       <Box width={72}>
-        <SessionRow session={session} showCursor isCursor />
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} />
       </Box>,
     );
 
@@ -117,16 +126,44 @@ describe('SessionRow', () => {
     ).toContain('✗');
   });
 
-  it('shows the cursor cell only when showCursor && isCursor, and the NO_CURSOR cell otherwise', () => {
+  it('does not reserve a cursor cell when no cursor is requested', () => {
+    const frame = frameOf(<SessionRow session={makeSession({ feature: 'alpha' })} />);
+    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
+  });
+
+  it('shows the inline cursor cell only on the active row, and the NO_CURSOR cell otherwise', () => {
     expect(NO_CURSOR.trim()).toBe('');
 
     const defaults = frameOf(<SessionRow session={makeSession()} />);
     expect(defaults).not.toContain(CURSOR_GLYPH);
 
-    const active = frameOf(<SessionRow session={makeSession()} showCursor isCursor />);
+    const active = frameOf(
+      <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: true }} />,
+    );
     expect(active).toContain(CURSOR_GLYPH);
 
-    const inactive = frameOf(<SessionRow session={makeSession()} showCursor isCursor={false} />);
+    const inactive = frameOf(
+      <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: false }} />,
+    );
     expect(inactive).not.toContain(CURSOR_GLYPH);
+  });
+
+  it('renders an outdented cursor before the row without shifting the feature', () => {
+    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
+    const plain = frameOf(
+      <Box marginLeft={4} width={72}>
+        <SessionRow session={session} />
+      </Box>,
+    );
+    const outdented = frameOf(
+      <Box marginLeft={4} width={72}>
+        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: true }} />
+      </Box>,
+    );
+
+    const plainAlpha = lineContaining(plain, 'alpha').indexOf('alpha');
+    const outdentedLine = lineContaining(outdented, 'alpha');
+    expect(outdentedLine.indexOf('alpha')).toBe(plainAlpha);
+    expect(outdentedLine.indexOf(CURSOR_GLYPH)).toBeLessThan(outdentedLine.indexOf('○ alpha'));
   });
 });

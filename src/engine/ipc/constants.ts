@@ -1,1 +1,1 @@
-export const HEARTBEAT_STALENESS_MS = 8000;
+export { HEARTBEAT_STALENESS_MS } from '../../core/sessions/lockfile-status.js';

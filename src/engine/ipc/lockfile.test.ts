@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -18,6 +18,10 @@ let testDir: string;
 
 function sessionIdFor(dir: string): string {
   return basename(dir);
+}
+
+function writeRawLockfile(data: Record<string, unknown>): void {
+  writeFileSync(join(testDir, 'lockfile.json'), JSON.stringify(data));
 }
 
 beforeEach(() => {
@@ -317,6 +321,32 @@ describe('checkServerStatus', () => {
     expect(status).toEqual({ alive: false, crashed: false, data: null });
   });
 
+  it('returns alive:false crashed:false when the lockfile schema is invalid', async () => {
+    writeRawLockfile({
+      version: 1,
+      sessionId: sessionIdFor(testDir),
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    const status = await checkServerStatus(testDir);
+    expect(status).toEqual({ alive: false, crashed: false, data: null });
+  });
+
+  it('returns alive:false crashed:false when the lockfile names another session', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: Date.now(),
+      sessionId: 'wrong-session-id',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    const status = await checkServerStatus(testDir);
+    expect(status).toEqual({ alive: false, crashed: false, data: null });
+  });
+
   it('returns alive:false crashed:false when lockfile has exitedAt', async () => {
     await writeLockfile(testDir, {
       pid: 99999,
@@ -374,6 +404,21 @@ describe('checkServerStatus', () => {
     expect(
       status as { alive: false; crashed: boolean; processAlive?: boolean; data: unknown },
     ).toMatchObject({ processAlive: true });
+  });
+
+  it('returns alive:false crashed:true when the pid belongs to a different process start time', async () => {
+    writeRawLockfile({
+      version: 1,
+      pid: process.pid,
+      startTimeMs: 1,
+      lastAliveMs: Date.now(),
+      sessionId: sessionIdFor(testDir),
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    const status = await checkServerStatus(testDir);
+    expect(status).toMatchObject({ alive: false, crashed: true, processAlive: false });
   });
 
   it('(integration) returns alive:true for current process PID with fresh lockfile', async () => {

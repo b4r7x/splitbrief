@@ -773,9 +773,9 @@ phase: planning · awaitingContinue
 phase: planning  ← resumes with the message folded in
 ```
 
-`Esc` does **not** abort — it only closes overlays. This is deliberate (avoid accidental aborts).
+`Esc` closes overlays first. On the workflow screen, it follows the same guarded interruption flow: press once to arm the interrupt/cancel action shown in the footer, then press again to fire it.
 
-**Variations:** `diptych resume` re-enters the active saved phase. Use `diptych continue <session-id>` when the active pointer is absent but you know the session id. Phases that aren't safely resumable (`researching`, `specifying`, `planning` without `awaitingContinue`) refuse resume with a clear error.
+**Variations:** `diptych resume` re-enters the active saved phase. Use `diptych continue <session-id>` when the active pointer is absent but you know the session id. Safe resume covers saved `planning`, `implementing`, and `final-review` phases; earlier phases (`researching`, `specifying`) refuse resume with a clear error.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 

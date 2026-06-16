@@ -17,6 +17,7 @@ import { configStore } from '../../stores/project/config.js';
 import { listProjectFiles } from '../../lib/file-listing.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { useStores } from '../../stores/use-stores.js';
+import { wrapHard } from '../../utils/wrap.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -25,6 +26,11 @@ import { attachImage } from '../../stores/workflow/attachments.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
+const ELLIPSIS = '\u2026';
+const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
+const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress \u2014 start it again.';
+const SESSION_FAILED_PREFIX = 'Session "';
+const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
 
 function borderColorForMode(
   mode: InputMode,
@@ -44,6 +50,93 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
 
 const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
 const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
+
+export interface FeedbackMessageParts {
+  prefix: string;
+  title: string;
+  suffix: string;
+}
+
+type FeedbackMessageInput = FeedbackMessageParts | string;
+
+function fitsDisplayWidth(text: string, maxWidth: number): boolean {
+  if (maxWidth <= 0) return text.length === 0;
+  return !wrapHard(text, maxWidth).includes('\n');
+}
+
+function truncateToDisplayWidth(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (fitsDisplayWidth(text, maxWidth)) return text;
+  if (!fitsDisplayWidth(ELLIPSIS, maxWidth)) return '';
+
+  const chars = Array.from(text);
+  let low = 0;
+  let high = chars.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = `${chars.slice(0, mid).join('')}${ELLIPSIS}`;
+    if (fitsDisplayWidth(candidate, maxWidth)) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return `${chars.slice(0, low).join('')}${ELLIPSIS}`;
+}
+
+function matchKnownFeedbackMessage(
+  message: string,
+  prefix: string,
+  suffix: string,
+): FeedbackMessageParts | null {
+  if (!message.startsWith(prefix) || !message.endsWith(suffix)) return null;
+  return {
+    prefix,
+    title: message.slice(prefix.length, message.length - suffix.length),
+    suffix,
+  };
+}
+
+function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
+  return (
+    matchKnownFeedbackMessage(message, RESUME_INTERRUPTED_PREFIX, RESUME_INTERRUPTED_SUFFIX) ??
+    matchKnownFeedbackMessage(message, SESSION_FAILED_PREFIX, SESSION_FAILED_SUFFIX) ??
+    message
+  );
+}
+
+export function fitFeedbackMessage(message: FeedbackMessageInput, width: number): string {
+  const text =
+    typeof message === 'string' ? message : `${message.prefix}${message.title}${message.suffix}`;
+  if (!Number.isFinite(width)) return text;
+
+  const max = Math.max(0, Math.floor(width));
+  if (fitsDisplayWidth(text, max)) return text;
+  if (typeof message === 'string') return truncateToDisplayWidth(message, max);
+
+  const emptyTitle = `${message.prefix}${message.suffix}`;
+  if (!fitsDisplayWidth(emptyTitle, max)) return truncateToDisplayWidth(text, max);
+
+  const ellipsizedTitle = `${message.prefix}${ELLIPSIS}${message.suffix}`;
+  if (!fitsDisplayWidth(ellipsizedTitle, max)) return emptyTitle;
+
+  const chars = Array.from(message.title);
+  let low = 0;
+  let high = chars.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = `${message.prefix}${chars.slice(0, mid).join('')}${ELLIPSIS}${
+      message.suffix
+    }`;
+    if (fitsDisplayWidth(candidate, max)) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return `${message.prefix}${chars.slice(0, low).join('')}${ELLIPSIS}${message.suffix}`;
+}
 
 async function readProjectFiles(projectDir: string): Promise<string[]> {
   if (!projectDir) return [];
@@ -85,6 +178,7 @@ export function Composer({
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir }] = useStores(configStore);
+  const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
   const inputColumns = Math.max(1, (width ?? cols) - 6);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
@@ -177,6 +271,14 @@ export function Composer({
     homeHint !== undefined &&
     !showCommandSuggestions &&
     !showReferenceSuggestions;
+  const showHomeFeedback = showHomeHint && feedbackMessage !== null;
+  const feedbackLine =
+    showHomeFeedback && feedbackMessage !== null
+      ? fitFeedbackMessage(
+          structureKnownFeedbackMessage(feedbackMessage),
+          Math.max(1, width ?? cols),
+        )
+      : null;
 
   useEffect(() => {
     let active = true;
@@ -202,7 +304,15 @@ export function Composer({
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
         <Box justifyContent="center" height={1}>
-          {showHomeHint ? <Text color={theme.textDim}>{homeHint}</Text> : <Text> </Text>}
+          {feedbackLine !== null ? (
+            <Text color={feedbackIsError ? theme.error : theme.info} wrap="truncate-end">
+              {feedbackLine}
+            </Text>
+          ) : showHomeHint ? (
+            <Text color={theme.textDim}>{homeHint}</Text>
+          ) : (
+            <Text> </Text>
+          )}
         </Box>
       )}
       <AttachmentChips />

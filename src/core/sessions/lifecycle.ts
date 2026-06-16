@@ -10,6 +10,8 @@ import {
   SESSIONS_DIR,
 } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
+import { isTerminalPhase } from '../phases.js';
+import { PhaseSchema, type Phase } from '../schemas/enums.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { writeSecureFile, rejectSymlinkTarget } from '../../lib/fs.js';
 import {
@@ -20,6 +22,7 @@ import { slugify } from '../../utils/slugify.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
 import { findUnusedId } from './find-unused-id.js';
+import { checkSessionLockStatus } from './lockfile-status.js';
 
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);
@@ -48,10 +51,10 @@ export function clearActive(ref: SessionRef): void {
   unlinkSync(p);
 }
 
-export function isSessionLive(ref: SessionRef): boolean {
+function readSessionPhase(ref: SessionRef): Phase | null {
   const { projectDir, sessionId } = ref;
   const stateFile = join(sessionDir(projectDir, sessionId), STATE_FILE);
-  if (!existsSync(stateFile)) return false;
+  if (!existsSync(stateFile)) return null;
   try {
     rejectSymlinkTarget(stateFile);
     assertExistingPathConfined(
@@ -59,10 +62,32 @@ export function isSessionLive(ref: SessionRef): boolean {
       projectDir,
     );
     const raw = narrowRecord(JSON.parse(readFileSync(stateFile, 'utf-8')));
-    if (!raw || typeof raw.phase !== 'string') return false;
-    return raw.phase !== 'complete' && raw.phase !== 'idle';
+    if (!raw || typeof raw.phase !== 'string') return null;
+    const parsed = PhaseSchema.safeParse(raw.phase);
+    return parsed.success ? parsed.data : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+export function isSessionLive(ref: SessionRef): boolean {
+  const phase = readSessionPhase(ref);
+  if (phase === null || isTerminalPhase(phase)) return false;
+
+  const lock = checkSessionLockStatus({
+    sessionDir: sessionDir(ref.projectDir, ref.sessionId),
+    expectedSessionId: ref.sessionId,
+  });
+  switch (lock.kind) {
+    case 'missing':
+      return true;
+    case 'invalid':
+    case 'exited':
+    case 'dead':
+    case 'stale':
+      return false;
+    case 'live':
+      return true;
   }
 }
 

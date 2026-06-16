@@ -29,6 +29,16 @@ export const QueuedMessageSchema = z.object({
 export const ChangedFilesBaselineSchema = z.object({
   head: z.string().nullable(),
   fingerprints: z.record(z.string(), z.string()),
+  activeTaskSnapshot: z
+    .object({
+      head: z.string(),
+      files: z.array(z.string()),
+      dirtyFileContents: z.record(z.string(), z.string().nullable()),
+      gitlinks: z.array(z.string()).optional(),
+      baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
+      ignoreProjectDir: z.string().optional(),
+    })
+    .optional(),
 });
 
 const TASK_ACTIVE_PHASES = new Set(['validating-task', 'escalating']);

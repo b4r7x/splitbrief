@@ -4,7 +4,7 @@ import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
@@ -36,7 +36,7 @@ export function buildPaletteSources({
   onWorkflowMode,
 }: BuildPaletteSourcesOptions): PaletteSources {
   return {
-    commandItems: buildCommandItems(commands, screen, onRuntimeCommand),
+    commandItems: buildCommandItems(commands, screen, phase, onRuntimeCommand),
     modeItems: buildModeItems(onWorkflowMode),
     pickerItems: buildPickerItems(),
     taskItems: buildTaskItems(tasks, phase),
@@ -48,10 +48,13 @@ export function buildPaletteSources({
 function buildCommandItems(
   commands: RuntimeCommandDef[],
   screen: Screen,
+  phase: Phase,
   onRuntimeCommand: (raw: string) => unknown,
 ): PaletteSources['commandItems'] {
   return commands
     .filter((cmd): cmd is RuntimeCommandDef & { label: string } => !!cmd.label)
+    .filter((cmd) => cmd.validScreens.includes(screen))
+    .filter((cmd) => cmd.phaseGuard === undefined || cmd.phaseGuard(phase))
     .map((cmd) => ({
       label: cmd.label,
       description: cmd.description,
@@ -60,8 +63,7 @@ function buildCommandItems(
         void onRuntimeCommand(cmd.name);
       },
       availableOn: cmd.validScreens,
-    }))
-    .filter((item) => item.availableOn.includes(screen));
+    }));
 }
 
 function buildModeItems(
@@ -133,6 +135,8 @@ function buildSessionItems(
     status: s.status,
     action: () => {
       handleSessionSelect(s, projectDir);
+      const error = sessionSelectStore.get().error;
+      if (error) feedbackStore.setTransientError(error);
     },
   }));
 }

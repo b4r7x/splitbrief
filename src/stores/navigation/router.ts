@@ -3,6 +3,7 @@ import { publishFeedbackError } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { Session } from '../../core/schemas/session.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 
@@ -20,7 +21,11 @@ type WorkflowPayload = {
   attach?: WorkflowAttach | undefined;
   readiness?: ReadinessReport | undefined;
 };
-type SummaryPayload = { summary: Summary; sessionId?: string | undefined };
+type SummaryPayload = {
+  summary: Summary;
+  sessionId?: string | undefined;
+  status: Session['status'];
+};
 type SetupPayload = {
   onComplete?: 'home' | 'workflow' | undefined;
   feature?: string | undefined;
@@ -34,10 +39,10 @@ export type RouteData =
   | ({ screen: 'setup' } & SetupPayload);
 
 const transitions: Record<Screen, Screen[]> = {
-  home: ['workflow', 'setup'],
+  home: ['workflow', 'summary', 'setup'],
   workflow: ['summary', 'home'],
-  summary: ['home', 'workflow'],
-  setup: ['home', 'workflow'],
+  summary: ['home', 'workflow', 'summary'],
+  setup: ['home', 'workflow', 'summary'],
 };
 
 const initial: RouteData = { screen: 'home' };
@@ -75,7 +80,12 @@ function navigate(args: NavigateArgs) {
       });
       return;
     case 'summary':
-      store.set({ screen: 'summary', summary: args.summary, sessionId: args.sessionId });
+      store.set({
+        screen: 'summary',
+        summary: args.summary,
+        sessionId: args.sessionId,
+        status: args.status,
+      });
       return;
     case 'setup':
       store.set({

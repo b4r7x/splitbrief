@@ -6,9 +6,8 @@ import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { configStore } from '../project/config.js';
 import { overlayStore } from '../ui/overlay.js';
-import { feedbackStore } from '../ui/feedback.js';
 import { routerStore } from './router.js';
-import { handleSessionSelect } from './session-select.js';
+import { handleSessionSelect, sessionSelectStore } from './session-select.js';
 
 let tmp: string;
 
@@ -17,7 +16,7 @@ beforeEach(() => {
   configStore.reset();
   overlayStore.reset();
   routerStore.reset();
-  feedbackStore.reset();
+  sessionSelectStore.reset();
   configStore.load(tmp);
 });
 
@@ -26,15 +25,9 @@ afterEach(() => {
   configStore.reset();
   overlayStore.reset();
   routerStore.reset();
-  feedbackStore.reset();
+  sessionSelectStore.reset();
 });
 
-/**
- * handleSessionSelect is the routing logic triggered by Enter on a session row. We test it by
- * invoking the real function against real stores — no internal mocks. The three branches of the
- * union (interrupted / complete-with-summary / failed-without-summary) are the user-observable
- * decisions the feature makes.
- */
 describe('handleSessionSelect (Enter routing)', () => {
   it('navigates to the workflow screen with saved state for an interrupted session', () => {
     overlayStore.open('sessions');
@@ -57,7 +50,7 @@ describe('handleSessionSelect (Enter routing)', () => {
       expect(route.resumeState).toEqual(savedState);
       expect(route.sessionId).toBe(session.id);
     }
-    expect(feedbackStore.get().message).toBeNull();
+    expect(sessionSelectStore.get().error).toBeNull();
   });
 
   it('refuses to resume an interrupted session whose saved state never reached a resumable phase', () => {
@@ -76,10 +69,9 @@ describe('handleSessionSelect (Enter routing)', () => {
 
     expect(overlayStore.get().active).toBe('sessions');
     expect(routerStore.get().screen).toBe('home');
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
-    expect(feedback.message ?? '').toContain('interrupted before it made progress');
-    expect(feedback.message ?? '').toContain('add auth');
+    const { error } = sessionSelectStore.get();
+    expect(error ?? '').toContain('interrupted before it made progress');
+    expect(error ?? '').toContain('add auth');
   });
 
   it('keeps the picker open and surfaces feedback when an interrupted session has no valid state', () => {
@@ -95,24 +87,77 @@ describe('handleSessionSelect (Enter routing)', () => {
 
     expect(overlayStore.get().active).toBe('sessions');
     expect(routerStore.get().screen).toBe('home');
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
-    expect(feedback.message ?? '').toContain('saved workflow state');
+    expect(sessionSelectStore.get().error ?? '').toContain('saved workflow state');
   });
 
-  it('navigates to the summary screen when the session completed with a summary', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'existing' });
+  it('opens an interrupted session summary when no resumable state is available', () => {
     overlayStore.open('sessions');
-    const summary = makeSummary({ feature: 'refactor payments' });
-    const session = makeSession({ status: 'complete', summary });
+    const summary = makeSummary({ feature: 'partial refactor' });
+    const session = makeSession({
+      id: 'sess-interrupted-summary',
+      feature: 'partial refactor',
+      status: 'interrupted',
+      summary,
+    });
 
     handleSessionSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
     expect(route.screen).toBe('summary');
-    if (route.screen === 'summary') expect(route.summary).toEqual(summary);
-    expect(feedbackStore.get().message).toBeNull();
+    if (route.screen === 'summary') {
+      expect(route.summary).toEqual(summary);
+      expect(route.sessionId).toBe('sess-interrupted-summary');
+      expect(route.status).toBe('interrupted');
+    }
+    expect(sessionSelectStore.get().error).toBeNull();
+  });
+
+  it('navigates from home to the summary screen when the session completed with a summary', () => {
+    overlayStore.open('sessions');
+    const summary = makeSummary({ feature: 'refactor payments' });
+    const session = makeSession({ id: 'sess-complete', status: 'complete', summary });
+
+    handleSessionSelect(session, tmp);
+
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('summary');
+    if (route.screen === 'summary') {
+      expect(route.summary).toEqual(summary);
+      expect(route.sessionId).toBe('sess-complete');
+      expect(route.status).toBe('complete');
+    }
+    expect(sessionSelectStore.get().error).toBeNull();
+  });
+
+  it('replaces an open summary when a failed session has a summary to display', () => {
+    routerStore.init({
+      screen: 'summary',
+      summary: makeSummary({ feature: 'old summary' }),
+      sessionId: 'old-session',
+      status: 'complete',
+    });
+    overlayStore.open('sessions');
+    const summary = makeSummary({ feature: 'failed feature' });
+    const session = makeSession({
+      id: 'failed-summary',
+      feature: 'failed feature',
+      status: 'failed',
+      summary,
+    });
+
+    handleSessionSelect(session, tmp);
+
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('summary');
+    if (route.screen === 'summary') {
+      expect(route.summary).toEqual(summary);
+      expect(route.sessionId).toBe('failed-summary');
+      expect(route.status).toBe('failed');
+    }
+    expect(sessionSelectStore.get().error).toBeNull();
   });
 
   it('keeps the overlay open and surfaces feedback for a failed session without a summary', () => {
@@ -123,7 +168,7 @@ describe('handleSessionSelect (Enter routing)', () => {
 
     expect(overlayStore.get().active).toBe('sessions');
     expect(routerStore.get().screen).toBe('home');
-    expect(feedbackStore.get().message ?? '').toContain('add auth');
+    expect(sessionSelectStore.get().error ?? '').toContain('add auth');
   });
 
   it('surfaces an error and stays on home when loadState throws for an interrupted session with an unsafe id', () => {
@@ -137,10 +182,9 @@ describe('handleSessionSelect (Enter routing)', () => {
 
     handleSessionSelect(session, tmp);
 
-    const fb = feedbackStore.get();
-    expect(fb.isError).toBe(true);
-    expect(fb.message ?? '').toContain('add auth');
-    expect(fb.message ?? '').toContain('Cannot resume');
+    const { error } = sessionSelectStore.get();
+    expect(error ?? '').toContain('add auth');
+    expect(error ?? '').toContain('Cannot resume');
     expect(overlayStore.get().active).toBe('sessions');
     expect(routerStore.get().screen).toBe('home');
   });
