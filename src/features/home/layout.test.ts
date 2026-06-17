@@ -52,16 +52,39 @@ describe('getHomeLayout', () => {
     expect(layout.showHiddenCount).toBe(false);
   });
 
-  it('keeps a focused recent-session row on short terminals', () => {
-    const layout = getHomeLayout({
+  it('accounts focused prompt and selection-error rows before session capacity', () => {
+    const baseRows = 15;
+    const focusedChromeRows = 2;
+    const sessionCount = 30;
+
+    const unfocused = getHomeLayout({
       cols: 80,
-      rows: 15,
+      rows: baseRows,
       isSmall: true,
       hasSkills: false,
-      sessionCount: 30,
+      sessionCount,
+    });
+    const focusedAtSameHeight = getHomeLayout({
+      cols: 80,
+      rows: baseRows,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount,
       sessionsFocused: true,
     });
-    expect(layout.recentSessionLimit).toBe(1);
+    const focusedWithChromeRows = getHomeLayout({
+      cols: 80,
+      rows: baseRows + focusedChromeRows,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount,
+      sessionsFocused: true,
+    });
+
+    expect(focusedAtSameHeight.recentSessionLimit).toBeLessThan(unfocused.recentSessionLimit);
+    expect(focusedAtSameHeight.recentSessionLimit).toBe(0);
+    expect(focusedWithChromeRows.recentSessionLimit).toBe(unfocused.recentSessionLimit);
+    expect(focusedWithChromeRows.showHiddenCount).toBe(false);
   });
 
   it('reserves a row for +N more when capacity allows more than one session row', () => {

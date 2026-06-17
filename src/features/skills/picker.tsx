@@ -9,8 +9,9 @@ import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
+import { truncateTerminalDisplayText } from '../../lib/terminal/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
+import { AlignedOptionRow } from '../../components/pickers/aligned-option-row.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean =>
   filterByFields(s, query, ['name', 'description']);
@@ -32,20 +33,20 @@ function SkillRow({
   descMaxWidth,
   theme: t,
 }: SkillRowProps) {
-  const name = truncateWithEllipsis(skill.name, nameColWidth).padEnd(nameColWidth);
-  const desc = truncateWithEllipsis(skill.description, descMaxWidth);
+  const name = truncateTerminalDisplayText(skill.name, nameColWidth);
+  const desc = truncateTerminalDisplayText(skill.description, descMaxWidth);
   return (
-    <Box>
-      <CursorCell isCursor={isCursor} />
-      <Text color={isChecked ? t.success : t.textDim}>{isChecked ? '[x] ' : '[ ] '}</Text>
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
-        {name}
-      </Text>
-      <Text color={t.textDim}>
-        {'  '}
-        {desc}
-      </Text>
-    </Box>
+    <AlignedOptionRow
+      lead={<CursorCell isCursor={isCursor} />}
+      meta={{ text: isChecked ? '[x]' : '[ ]', width: 3, color: isChecked ? t.success : t.textDim }}
+      metaGap={1}
+      label={name}
+      labelWidth={nameColWidth}
+      labelColor={isCursor ? t.accent : t.text}
+      labelBold={isCursor}
+      detail={`  ${desc}`}
+      detailColor={t.textDim}
+    />
   );
 }
 
@@ -97,7 +98,6 @@ export function SkillsPicker() {
       hint={hintText}
       bordered={false}
       chromeRows={12}
-      maxVisible={5}
       width={panelWidth}
       shouldAppendChar={shouldAppendChar}
       customKeys={(input, key, { filtered: current, selectedIndex: currentIndex }) => {
@@ -149,13 +149,11 @@ export function SkillsPicker() {
       section={{
         by: (skill) => skill.scope,
         gapBetweenSections: true,
-        renderHeader: (section, index) => (
-          <Box marginTop={index > 0 ? 1 : 0}>
-            <Text bold color={t.text}>
-              {'  '}
-              {section === 'project' ? 'Project' : 'Global'}
-            </Text>
-          </Box>
+        renderHeader: (section) => (
+          <Text bold color={t.text}>
+            {'  '}
+            {section === 'project' ? 'Project' : 'Global'}
+          </Text>
         ),
       }}
       renderItem={(skill, { isCursor }) => (

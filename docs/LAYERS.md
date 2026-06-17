@@ -39,7 +39,6 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 - `format-time.ts` — `formatDuration`, `formatTime`, `formatTimeHHMMSS`, `formatEta`
 - `with-timeout.ts` — wrap a promise with a timeout
 - `frontmatter.ts` — generic YAML frontmatter parser
-- `sectioned-list.ts` — group a flat list into sections
 - `diff.ts` — LCS diff algorithm
 
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `lib/`, `cli/`.
@@ -193,6 +192,8 @@ Top-level `src/components/` and `src/hooks/` hold:
 - A hook used by ≥2 features or a UI primitive → `src/hooks/`
 
 Single-feature code stays under `src/features/{f}/`. See [`STRUCTURE.md`](./STRUCTURE.md).
+
+Sectioned picker display belongs to the picker display-window stack: `src/components/pickers/scroll-window.ts` computes header/gap/item slots, and `src/components/pickers/list-viewport.tsx` renders them.
 
 ### Promoting a shared component — the 2-consumer rule
 

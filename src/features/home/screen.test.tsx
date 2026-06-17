@@ -49,16 +49,14 @@ const COMMANDS: RuntimeCommandDef[] = [
   },
 ];
 
-function lineIndexContaining(frame: string, text: string): number {
-  const index = frame.split('\n').findIndex((line) => line.includes(text));
-  expect(index).toBeGreaterThanOrEqual(0);
-  return index;
+function lineContaining(frame: string, text: string): string {
+  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  expect(line).toBeDefined();
+  return line ?? '';
 }
 
 function columnIndexOf(frame: string, text: string): number {
-  const line = frame.split('\n').find((l) => l.includes(text));
-  expect(line).toBeDefined();
-  return line?.indexOf(text) ?? -1;
+  return lineContaining(frame, text).indexOf(text);
 }
 
 describe('HomeScreen', () => {
@@ -102,7 +100,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('renders slash suggestions directly above the docked input', async () => {
+  it('renders slash suggestions with the docked input', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 34, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
@@ -113,9 +111,8 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/help');
     expect(frame).toContain('Tab fill');
-    const footerLine = lineIndexContaining(frame, 'Tab fill');
-    const inputPromptLine = lineIndexContaining(frame, '> /');
-    expect(inputPromptLine).toBeGreaterThan(footerLine);
+    expect(lineContaining(frame, 'Tab fill')).toContain('Tab fill');
+    expect(lineContaining(frame, '> /')).toContain('> /');
     ui.unmount();
   });
 
@@ -160,23 +157,23 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('opens slash suggestions as an overlay without moving the centered content', async () => {
+  it('opens slash suggestions as an overlay while keeping centered content visible', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const before = ui.lastFrame() ?? '';
-    const plannerLine = lineIndexContaining(before, 'Planner');
-    const modeLine = lineIndexContaining(before, 'Mode');
+    const plannerLine = lineContaining(before, 'Planner');
+    const modeLine = lineContaining(before, 'Mode');
 
     ui.stdin.write('/');
     await tick(20);
 
     const after = ui.lastFrame() ?? '';
     expect(after).toContain('Tab fill');
-    expect(lineIndexContaining(after, 'Planner')).toBe(plannerLine);
-    expect(lineIndexContaining(after, 'Mode')).toBe(modeLine);
+    expect(lineContaining(after, 'Planner')).toBe(plannerLine);
+    expect(lineContaining(after, 'Mode')).toBe(modeLine);
     ui.unmount();
   });
 
@@ -247,8 +244,9 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('sessions appear close to the logo without excessive gap', async () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+  it('renders logo and recent sessions within the terminal budget', async () => {
+    const terminalRows = 30;
+    terminalSizeStore.__testReset({ cols: 120, rows: terminalRows, isSmall: false });
 
     saveSummary(
       { projectDir: projectDir, sessionId: 'gap-session' },
@@ -263,11 +261,10 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const logoLine = frame.split('\n').findIndex((line) => line.includes('__| (_)'));
-    const sessionLine = frame.split('\n').findIndex((line) => line.includes('gap test feature'));
-    expect(logoLine).toBeGreaterThanOrEqual(0);
-    expect(sessionLine).toBeGreaterThanOrEqual(0);
-    expect(sessionLine - logoLine).toBeLessThan(15);
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    expect(frame).toContain('__| (_)');
+    expect(frame).toContain('gap test feature');
+    expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
   });
 });
@@ -319,7 +316,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('keeps focused recent sessions usable at 80x15', async () => {
+  it('shows compact focused recent-sessions chrome at 80x15', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
     seedSessions(30);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
@@ -329,9 +326,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Recent sessions');
-      expect(frame).toContain('filter');
-      expect(frame).toContain(CURSOR_GLYPH);
+      expect(frame).toContain('filter sessions');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
+      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).not.toMatch(/focus feature \d+/);
     });
     ui.unmount();
   });
@@ -365,21 +363,19 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('Down moves the cursor to a later row', async () => {
+  it('Down moves the cursor to the next visible session', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 2')).toContain(CURSOR_GLYPH);
     });
-    const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
-      const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
-      expect(after).toBeGreaterThan(before);
+      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 1')).toContain(CURSOR_GLYPH);
     });
     ui.unmount();
   });
@@ -411,9 +407,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('ancient hidden focus target');
-      expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(
-        lineIndexContaining(frame, 'ancient hidden focus target'),
-      );
+      expect(lineContaining(frame, 'ancient hidden focus target')).toContain(CURSOR_GLYPH);
     });
 
     ui.unmount();

@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { FilterInput } from '../../components/filter-input.js';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import {
+  AlignedOptionRow,
+  getAlignedOptionLabelWidth,
+} from '../../components/pickers/aligned-option-row.js';
+import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { windowSlice } from '../../components/pickers/scroll-window.js';
 import { dropLastCodePoint } from '../../components/input/text-editing.js';
 import { buildPaletteResults } from './results.js';
@@ -20,6 +26,10 @@ import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 const MAX_VISIBLE = 8;
+const PALETTE_MAX_WIDTH = 86;
+const SOURCE_WIDTH = 9;
+const MAX_LABEL_WIDTH = 24;
+const LABEL_COLUMN_GAP = 2;
 
 export interface CommandPaletteOverlayProps {
   commands: RuntimeCommandDef[];
@@ -106,15 +116,24 @@ export function CommandPaletteOverlay({
   );
 
   const t = useTheme();
-
-  const { scrollOffset, visibleSlice: visible } = windowSlice(results, cursor, MAX_VISIBLE);
+  const { scrollOffset, visibleSlice: visible } = windowSlice({
+    items: results,
+    selectedIndex: cursor,
+    windowSize: MAX_VISIBLE,
+  });
+  const labelWidth = getAlignedOptionLabelWidth(
+    visible.map((result) => result.label),
+    { gap: LABEL_COLUMN_GAP, maxWidth: MAX_LABEL_WIDTH },
+  );
 
   return (
-    <OverlayPanel title="Command Palette" hint={'↑↓ navigate  Enter select  Esc close'}>
-      <Box marginBottom={1}>
-        <Text color={t.textDim}>{'❯ '}</Text>
-        <Text>{query}</Text>
-        <Text color={t.accent}>{'_'}</Text>
+    <OverlayPanel
+      title="Command Palette"
+      hint={'↑↓ navigate  Enter select  Esc close'}
+      maxWidth={PALETTE_MAX_WIDTH}
+    >
+      <Box marginBottom={1} width="100%">
+        <FilterInput filter={query} placeholder="" variant="prompt" />
       </Box>
 
       <Box flexDirection="column">
@@ -124,35 +143,45 @@ export function CommandPaletteOverlay({
         {visible.map((result, i) => {
           const globalIndex = scrollOffset + i;
           const isCursor = globalIndex === cursor;
-          return <ResultRow key={result.id} result={result} isCursor={isCursor} />;
+          return (
+            <ResultRow
+              key={result.id}
+              result={result}
+              isCursor={isCursor}
+              labelWidth={labelWidth}
+            />
+          );
         })}
       </Box>
     </OverlayPanel>
   );
 }
 
-function ResultRow({ result, isCursor }: { result: PaletteResult; isCursor: boolean }) {
+function ResultRow({
+  result,
+  isCursor,
+  labelWidth,
+}: {
+  result: PaletteResult;
+  isCursor: boolean;
+  labelWidth: number;
+}) {
   const t = useTheme();
+  const details = result.shortcut
+    ? `${result.description} [${result.shortcut}]`
+    : result.description;
+
   return (
-    <Box>
-      <Text color={isCursor ? t.accent : t.text}>{isCursor ? '▸ ' : '  '}</Text>
-      <Text color={t.textDim}>{`[${result.source}]`}</Text>
-      <Text> </Text>
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
-        {result.label}
-      </Text>
-      {result.description ? (
-        <>
-          <Text> </Text>
-          <Text color={t.textDim}>{result.description}</Text>
-        </>
-      ) : null}
-      {result.shortcut ? (
-        <>
-          <Text> </Text>
-          <Text color={t.textDim}>{`[${result.shortcut}]`}</Text>
-        </>
-      ) : null}
-    </Box>
+    <AlignedOptionRow
+      lead={<CursorCell isCursor={isCursor} />}
+      meta={{ text: `[${result.source}]`, width: SOURCE_WIDTH, color: t.textDim }}
+      label={result.label}
+      labelWidth={labelWidth}
+      labelColor={isCursor ? t.accent : t.text}
+      labelBold={isCursor}
+      detail={details}
+      detailColor={t.textDim}
+      detailWrap={result.shortcut ? 'truncate-middle' : 'truncate-end'}
+    />
   );
 }

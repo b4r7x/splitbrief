@@ -3,18 +3,18 @@ import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { computeScrollWindow } from '../../components/pickers/scroll-window.js';
+import { availableRows, computeListDisplayWindow } from '../../components/pickers/scroll-window.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
-import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
+import { ListViewport } from '../../components/pickers/list-viewport.js';
+import type { SettingDef } from '../../core/settings/catalog.js';
+import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
 import { displayValue, valueColor } from './presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
-import { ScrollIndicator } from '../../components/scroll-indicator.js';
 import { FilterInput } from '../../components/filter-input.js';
-import { toSectionedList } from '../../utils/sectioned-list.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
@@ -29,6 +29,17 @@ export function SettingsOverlay() {
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const chrome = BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0);
   const panelWidth = getClampedTerminalWidth({ cols, maxWidth: MAX_PANEL_WIDTH });
+  const rowBudget = availableRows({ rows, chromeRows: chrome });
+  const getSection = (def: SettingDef) => def.section;
+  const getPageSize = ({ filtered, selectedIndex }: PageNavigationContext<SettingDef>) => {
+    const displayWindow = computeListDisplayWindow({
+      items: filtered,
+      selectedIndex,
+      rowBudget,
+      section: { by: getSection, gapBetweenSections: true },
+    });
+    return displayWindow.visibleSlots.filter((slot) => slot.kind === 'item').length;
+  };
 
   const openSubPicker = (def: SettingDef) => {
     overlayStore.setFocus(def.id);
@@ -37,30 +48,14 @@ export function SettingsOverlay() {
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
   };
 
-  const { maxVisible } = computeScrollWindow({
-    items: SETTINGS_DEFS,
-    selectedIndex: 0,
-    terminalRows: rows,
-    chromeRows: chrome,
-  });
-
   const { filter, filtered, effectiveIndex, editingId, editBuffer, selectedDef, getValue } =
     useSettingsEditor({
       config,
       focusSetting,
       onClose,
       onOpenSubPicker: openSubPicker,
-      pageSize: maxVisible,
+      pageSize: getPageSize,
     });
-
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow({
-    items: filtered,
-    selectedIndex: effectiveIndex,
-    terminalRows: rows,
-    chromeRows: chrome,
-  });
-
-  const sectionedVisible = toSectionedList(visibleSlice, (def) => def.section);
 
   const hintText = editingId
     ? 'Enter confirm  Esc cancel'
@@ -70,46 +65,43 @@ export function SettingsOverlay() {
     <OverlayPanel title="Settings" hint={hintText} maxWidth={panelWidth}>
       <FilterInput filter={filter} />
 
-      <ScrollIndicator show={showScrollUp} direction="up" />
-
-      <Box flexDirection="column">
-        {sectionedVisible.map(({ item: def, sectionHeader }, i) => {
-          const globalIndex = scrollOffset + i;
-          const isSelected = globalIndex === effectiveIndex;
+      <ListViewport
+        items={filtered}
+        selectedIndex={effectiveIndex}
+        getKey={(def) => def.id}
+        rowBudget={rowBudget}
+        section={{
+          by: getSection,
+          gapBetweenSections: true,
+          renderHeader: (section) => (
+            <Text bold color={t.text}>
+              {section}
+            </Text>
+          ),
+        }}
+        renderItem={(def, { isCursor }) => {
           const isEditing = editingId === def.id;
           const value = getValue(def);
-          const showSection = sectionHeader !== null;
 
           return (
-            <Box key={def.id} flexDirection="column">
-              {showSection && (
-                <Box marginTop={i > 0 ? 1 : 0}>
-                  <Text bold color={t.text}>
-                    {sectionHeader}
-                  </Text>
-                </Box>
-              )}
-              <Box justifyContent="space-between">
-                <Box>
-                  <CursorCell isCursor={isSelected} dimWhenInactive />
-                  <Text color={!isSelected ? t.textDim : t.text}>{def.label}</Text>
-                </Box>
-
-                {isEditing ? (
-                  <Text color={t.accent}>[{editBuffer}|]</Text>
-                ) : (
-                  <Text color={valueColor(def, value, t)}>
-                    {displayValue(def, value)}
-                    {def.kind === 'picker' ? ' \u2192' : ''}
-                  </Text>
-                )}
+            <Box justifyContent="space-between">
+              <Box>
+                <CursorCell isCursor={isCursor} dimWhenInactive />
+                <Text color={!isCursor ? t.textDim : t.text}>{def.label}</Text>
               </Box>
+
+              {isEditing ? (
+                <Text color={t.accent}>[{editBuffer}|]</Text>
+              ) : (
+                <Text color={valueColor(def, value, t)}>
+                  {displayValue(def, value)}
+                  {def.kind === 'picker' ? ' \u2192' : ''}
+                </Text>
+              )}
             </Box>
           );
-        })}
-      </Box>
-
-      <ScrollIndicator show={showScrollDown} direction="down" />
+        }}
+      />
 
       {filtered.length === 0 && (
         <Box justifyContent="center" marginY={1}>

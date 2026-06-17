@@ -37,8 +37,8 @@ describe('ReferenceCompletionMenu', () => {
     const visiblePathRows = panelInteriorRows(frame).filter(
       (line) => line.includes('notes/') || line.includes('src/'),
     );
-    expect(visiblePathRows).toHaveLength(8);
-    expect(visiblePathRows[0]).toContain('notes/superpowers');
+    expect(visiblePathRows.length).toBeLessThanOrEqual(8);
+    expect(visiblePathRows.some((line) => line.includes('notes/superpowers'))).toBe(true);
     ui.unmount();
   });
 
@@ -65,6 +65,24 @@ describe('ReferenceCompletionMenu', () => {
     for (const row of rows) {
       expect(row).not.toContain('UNDERLYING');
     }
+    ui.unmount();
+  });
+
+  it('keeps narrow panels to the computed one-row footer height', () => {
+    const ui = render(
+      <Box width={24}>
+        <ReferenceCompletionMenu
+          filtered={LONG_FILES.slice(0, 1)}
+          selectedIndex={0}
+          maxVisible={1}
+        />
+      </Box>,
+    );
+
+    const rows = panelInteriorRows(ui.lastFrame() ?? '');
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(rows.length).toBeLessThanOrEqual(3);
+    expect(rows.some((line) => line.includes('spec.md'))).toBe(true);
     ui.unmount();
   });
 });

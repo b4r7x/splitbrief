@@ -722,6 +722,7 @@ src/
 │   ├── overlays/                  overlay-panel, text-input-overlay
 │   ├── pickers/                   cursor-cell, cursor-glyph,
 │   │                              filtering, scroll-window,
+│   │                              list-viewport,
 │   │                              filterable-list, single-column
 │   ├── screen-shell.tsx
 │   ├── scroll-indicator.tsx
@@ -748,9 +749,11 @@ src/
 │
 └── utils/                         Pure helpers (no domain)
     canonical-json, diff, error, format-errors, format-time, frontmatter,
-    fuzzy-match, parse-shell-command, redact, sectioned-list, slugify,
+    fuzzy-match, parse-shell-command, redact, slugify,
     truncate, type-guards, validate-identifier, with-timeout
 ```
+
+Sectioned picker display now lives in the picker display-window/ListViewport path: `src/components/pickers/scroll-window.ts` computes header/gap/item slots, and `src/components/pickers/list-viewport.tsx` renders them.
 
 ---
 

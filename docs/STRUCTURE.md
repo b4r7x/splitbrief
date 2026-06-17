@@ -213,7 +213,6 @@ src/utils/
 ├── format-time.ts     # generic time formatters
 ├── frontmatter.ts     # generic YAML frontmatter parser
 ├── redact.ts          # secret / API-key redaction
-├── sectioned-list.ts  # list grouping helper
 ├── truncate.ts        # text truncation helpers
 ├── type-guards.ts     # assertNever, isRecord, typedEntries
 └── with-timeout.ts    # promise / async-iterable timeout
@@ -357,7 +356,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 

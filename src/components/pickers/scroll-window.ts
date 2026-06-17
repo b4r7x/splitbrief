@@ -1,5 +1,9 @@
-export function availableRows(rows: number, chrome: number, floor = 0): number {
-  return Math.max(rows - chrome, floor);
+export function availableRows(opts: {
+  rows: number;
+  chromeRows: number;
+  floor?: number | undefined;
+}): number {
+  return Math.max(opts.rows - opts.chromeRows, opts.floor ?? 0);
 }
 
 export function computeScrollOffset(opts: {
@@ -13,7 +17,8 @@ export function computeScrollOffset(opts: {
   return Math.max(0, Math.min(index - half, totalItems - windowSize));
 }
 
-export function windowSlice<T>(items: T[], selectedIndex: number, windowSize: number) {
+export function windowSlice<T>(opts: { items: T[]; selectedIndex: number; windowSize: number }) {
+  const { items, selectedIndex, windowSize } = opts;
   const scrollOffset = computeScrollOffset({
     index: selectedIndex,
     windowSize,
@@ -27,92 +32,168 @@ export function windowSlice<T>(items: T[], selectedIndex: number, windowSize: nu
   };
 }
 
-export function computeScrollWindow<T>(opts: {
+export type ListDisplaySlot<T> =
+  | { kind: 'indicator'; direction: 'up' | 'down' }
+  | { kind: 'header'; itemIndex: number; section: string }
+  | { kind: 'gap'; itemIndex: number }
+  | { kind: 'item'; item: T; itemIndex: number; section: string | null };
+
+interface ListSectionOptions<T> {
+  by: (item: T) => string;
+  gapBetweenSections?: boolean | undefined;
+}
+
+interface ListDisplayWindowInput<T> {
   items: T[];
   selectedIndex: number;
-  terminalRows: number;
-  chromeRows: number;
+  rowBudget?: number | undefined;
+  terminalRows?: number | undefined;
+  chromeRows?: number | undefined;
   maxVisible?: number | undefined;
   listFloor?: number | undefined;
-}) {
-  const { items, selectedIndex, terminalRows, chromeRows, maxVisible, listFloor = 0 } = opts;
-  const base = availableRows(terminalRows, chromeRows, listFloor);
-  const visible = maxVisible !== undefined ? Math.min(base, maxVisible) : base;
-  const scrollOffset = computeScrollOffset({
-    index: selectedIndex,
-    windowSize: visible,
-    totalItems: items.length,
-  });
-  const visibleSlice = items.slice(scrollOffset, scrollOffset + visible);
-  const showScrollUp = scrollOffset > 0;
-  const showScrollDown = scrollOffset + visible < items.length;
-  return { maxVisible: visible, scrollOffset, visibleSlice, showScrollUp, showScrollDown };
+  section?: ListSectionOptions<T> | undefined;
 }
 
-export interface SectionedDisplaySlot<T> {
-  kind: 'header' | 'item';
-  item: T;
-  itemIndex: number;
-  section: string | null;
+function clampWindowSize(windowSize: number, totalItems: number): number {
+  if (totalItems <= 0) return 0;
+  return Math.max(1, Math.min(windowSize, totalItems));
 }
 
-export function buildSectionedDisplaySlots<T>(
+function buildListDisplaySlots<T>(
   items: T[],
-  sectionBy: (item: T) => string,
-  sectionGap = false,
-): SectionedDisplaySlot<T>[] {
-  const slots: SectionedDisplaySlot<T>[] = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
+  section: ListSectionOptions<T> | undefined,
+): ListDisplaySlot<T>[] {
+  if (!section) {
+    return items.map((item, itemIndex) => ({ kind: 'item', item, itemIndex, section: null }));
+  }
+
+  const slots: ListDisplaySlot<T>[] = [];
+  for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+    const item = items[itemIndex];
     if (item === undefined) continue;
-    const section = sectionBy(item);
-    const prev = i > 0 ? items[i - 1] : undefined;
-    const prevSection = prev !== undefined ? sectionBy(prev) : null;
-    if (section !== prevSection) {
-      if (sectionGap && slots.length > 0) {
-        slots.push({ kind: 'header', item, itemIndex: i, section: '__gap__' });
+
+    const current = section.by(item);
+    const previous = itemIndex > 0 ? items[itemIndex - 1] : undefined;
+    const previousSection = previous === undefined ? null : section.by(previous);
+    if (current !== previousSection) {
+      if (section.gapBetweenSections && slots.length > 0) {
+        slots.push({ kind: 'gap', itemIndex });
       }
-      slots.push({ kind: 'header', item, itemIndex: i, section });
+      slots.push({ kind: 'header', itemIndex, section: current });
     }
-    slots.push({ kind: 'item', item, itemIndex: i, section });
+    slots.push({ kind: 'item', item, itemIndex, section: current });
   }
   return slots;
 }
 
-export function computeSectionedScrollWindow<T>(opts: {
-  items: T[];
-  selectedIndex: number;
-  terminalRows: number;
-  chromeRows: number;
-  maxVisible?: number | undefined;
-  sectionBy: (item: T) => string;
-  sectionGap?: boolean | undefined;
-  listFloor?: number | undefined;
-}) {
-  const {
-    items,
-    selectedIndex,
-    terminalRows,
+function resolveRowBudget<T>(opts: ListDisplayWindowInput<T>): number {
+  if (opts.rowBudget !== undefined) return Math.max(0, Math.floor(opts.rowBudget));
+
+  const terminalRows = opts.terminalRows ?? 0;
+  const chromeRows = opts.chromeRows ?? 0;
+  const available = availableRows({
+    rows: terminalRows,
     chromeRows,
-    maxVisible,
-    sectionBy,
-    sectionGap = false,
-    listFloor = 0,
-  } = opts;
-  const slots = buildSectionedDisplaySlots(items, sectionBy, sectionGap);
-  const selectedSlotIndex = Math.max(
-    0,
-    slots.findIndex((slot) => slot.kind === 'item' && slot.itemIndex === selectedIndex),
-  );
-  const base = availableRows(terminalRows, chromeRows, listFloor);
-  const visible = maxVisible !== undefined ? Math.min(base, maxVisible) : base;
-  const scrollOffset = computeScrollOffset({
-    index: selectedSlotIndex,
-    windowSize: visible,
-    totalItems: slots.length,
+    floor: opts.listFloor ?? 0,
   });
-  const visibleSlots = slots.slice(scrollOffset, scrollOffset + visible);
-  const showScrollUp = scrollOffset > 0;
-  const showScrollDown = scrollOffset + visible < slots.length;
-  return { maxVisible: visible, scrollOffset, visibleSlots, showScrollUp, showScrollDown };
+  return opts.maxVisible === undefined ? available : Math.min(available, opts.maxVisible);
+}
+
+function selectedDisplaySlotIndex<T>(slots: ListDisplaySlot<T>[], selectedIndex: number): number {
+  const index = slots.findIndex((slot) => slot.kind === 'item' && slot.itemIndex === selectedIndex);
+  return Math.max(0, index);
+}
+
+function computeContentWindow(opts: {
+  totalSlots: number;
+  selectedSlotIndex: number;
+  rowBudget: number;
+}): {
+  contentRows: number;
+  scrollOffset: number;
+  showScrollUp: boolean;
+  showScrollDown: boolean;
+} {
+  const { totalSlots, selectedSlotIndex, rowBudget } = opts;
+  if (totalSlots <= rowBudget) {
+    return { contentRows: totalSlots, scrollOffset: 0, showScrollUp: false, showScrollDown: false };
+  }
+
+  if (rowBudget <= 1) {
+    return {
+      contentRows: clampWindowSize(1, totalSlots),
+      scrollOffset: Math.min(selectedSlotIndex, Math.max(0, totalSlots - 1)),
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
+
+  if (rowBudget === 2) {
+    const scrollOffset = Math.min(selectedSlotIndex, Math.max(0, totalSlots - 1));
+    return {
+      contentRows: 1,
+      scrollOffset,
+      showScrollUp: scrollOffset > 0,
+      showScrollDown: scrollOffset === 0 && totalSlots > 1,
+    };
+  }
+
+  let contentRows = clampWindowSize(rowBudget - 2, totalSlots);
+  let scrollOffset = 0;
+  let showScrollUp = false;
+  let showScrollDown = false;
+
+  for (let i = 0; i < 4; i++) {
+    scrollOffset = computeScrollOffset({
+      index: selectedSlotIndex,
+      windowSize: contentRows,
+      totalItems: totalSlots,
+    });
+    showScrollUp = scrollOffset > 0;
+    showScrollDown = scrollOffset + contentRows < totalSlots;
+
+    const nextContentRows = clampWindowSize(
+      rowBudget - Number(showScrollUp) - Number(showScrollDown),
+      totalSlots,
+    );
+    if (nextContentRows === contentRows) break;
+    contentRows = nextContentRows;
+  }
+
+  return { contentRows, scrollOffset, showScrollUp, showScrollDown };
+}
+
+export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
+  const rowBudget = resolveRowBudget(opts);
+  const slots = buildListDisplaySlots(opts.items, opts.section);
+
+  if (rowBudget <= 0 || slots.length === 0) {
+    return {
+      rowBudget,
+      scrollOffset: 0,
+      visibleSlots: [],
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
+
+  const selectedSlot = selectedDisplaySlotIndex(slots, opts.selectedIndex);
+  const { contentRows, scrollOffset, showScrollUp, showScrollDown } = computeContentWindow({
+    totalSlots: slots.length,
+    selectedSlotIndex: selectedSlot,
+    rowBudget,
+  });
+  const content = slots.slice(scrollOffset, scrollOffset + contentRows);
+  const visibleSlots: ListDisplaySlot<T>[] = [];
+  if (showScrollUp) visibleSlots.push({ kind: 'indicator', direction: 'up' });
+  visibleSlots.push(...content);
+  if (showScrollDown) visibleSlots.push({ kind: 'indicator', direction: 'down' });
+
+  return {
+    rowBudget,
+    scrollOffset,
+    visibleSlots,
+    showScrollUp,
+    showScrollDown,
+  };
 }

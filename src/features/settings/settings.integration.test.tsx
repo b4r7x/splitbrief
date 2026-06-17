@@ -128,7 +128,7 @@ describe('settings overlay integration', () => {
     ui.unmount();
   });
 
-  it('PageDown moves by the visible settings window size', async () => {
+  it('PageDown moves by visible selectable settings without skipping a section', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     overlayStore.open('settings', 'planner.kind');
     const ui = renderFeature(<SettingsOverlay />);
@@ -137,7 +137,21 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await tick(20);
 
-    expect(lineContaining(ui.lastFrame() ?? '', CURSOR_GLYPH)).toContain('Mode');
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Validation');
+    expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type Check');
+    ui.unmount();
+  });
+
+  it('does not show a false more row when sectioned settings fit', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
+    const ui = renderFeature(<SettingsOverlay />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Planner');
+    expect(frame).toContain('Validation');
+    expect(frame).not.toContain('more');
     ui.unmount();
   });
 });

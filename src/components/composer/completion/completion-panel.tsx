@@ -25,18 +25,20 @@ export function CompletionPanel<T>({
     isSelected: boolean;
     rowBg: string;
     panelBg: string;
+    visibleItems: T[];
   }) => ReactNode;
   renderEmpty?: ((panelBg: string) => ReactNode) | undefined;
 }) {
   const t = useTheme();
   if (!(isOpen ?? items.length > 0)) return null;
 
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = windowSlice(
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = windowSlice({
     items,
     selectedIndex,
-    maxVisible,
-  );
+    windowSize: maxVisible,
+  });
   const panelBg = t.suggestionPanelBg;
+  const emptyRow = renderEmpty?.(panelBg);
 
   return (
     <Box
@@ -48,7 +50,7 @@ export function CompletionPanel<T>({
       width="100%"
     >
       {showScrollUp && (
-        <Box width="100%" backgroundColor={panelBg}>
+        <Box width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
           <Text color={t.scrollIndicator}> ↑ more</Text>
           <Box flexGrow={1} backgroundColor={panelBg} />
         </Box>
@@ -58,21 +60,47 @@ export function CompletionPanel<T>({
         const isSelected = globalIndex === selectedIndex;
         const rowBg = isSelected ? t.selectionBg : panelBg;
         return (
-          <Box key={itemKey(item)} width="100%" backgroundColor={rowBg} paddingX={1}>
-            {renderRow({ item, globalIndex, isSelected, rowBg, panelBg })}
+          <Box
+            key={itemKey(item)}
+            width="100%"
+            height={1}
+            overflow="hidden"
+            backgroundColor={rowBg}
+            paddingX={1}
+          >
+            {renderRow({
+              item,
+              globalIndex,
+              isSelected,
+              rowBg,
+              panelBg,
+              visibleItems: visibleSlice,
+            })}
           </Box>
         );
       })}
-      {renderEmpty?.(panelBg)}
+      {emptyRow && (
+        <Box width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
+          {emptyRow}
+        </Box>
+      )}
       {showScrollDown && (
-        <Box width="100%" backgroundColor={panelBg}>
+        <Box width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
           <Text color={t.scrollIndicator}> ↓ more</Text>
           <Box flexGrow={1} backgroundColor={panelBg} />
         </Box>
       )}
       <Box width="100%" height={1} backgroundColor={panelBg} />
-      <Box width="100%" justifyContent="center" backgroundColor={panelBg}>
-        <Text color={t.textDim}>{footer}</Text>
+      <Box
+        width="100%"
+        height={1}
+        overflow="hidden"
+        justifyContent="center"
+        backgroundColor={panelBg}
+      >
+        <Text color={t.textDim} wrap="truncate-end">
+          {footer}
+        </Text>
       </Box>
     </Box>
   );

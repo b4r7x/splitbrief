@@ -154,6 +154,7 @@ describe('composer integration: completions', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('src/app.ts');
       });
+      await tick(20);
 
       ui.stdin.write(TAB);
       await vi.waitFor(() => {

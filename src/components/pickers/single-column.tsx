@@ -43,7 +43,7 @@ export function SingleColumnPicker<T>({
     visibleSlice: slice,
     showScrollUp,
     showScrollDown,
-  } = windowSlice(items, selectedIndex, visibleRows);
+  } = windowSlice({ items, selectedIndex, windowSize: visibleRows });
 
   return (
     <Box

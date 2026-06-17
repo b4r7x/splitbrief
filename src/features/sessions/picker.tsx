@@ -45,7 +45,6 @@ export function SessionsPicker() {
       bordered={false}
       chromeRows={12}
       listFloor={0}
-      maxVisible={5}
       width={panelWidth}
       placeholder={
         <Text color={t.textDim}>

@@ -8,11 +8,11 @@ const SUGGESTION_PANEL_FLOOR = 3;
 export function computeCompletionCap(terminalRows: number, inputVisibleRows: number): number {
   return Math.min(
     SUGGESTION_PANEL_HARD_CAP,
-    availableRows(
-      terminalRows,
-      inputVisibleRows + SUGGESTION_PANEL_CHROME_ROWS + SUGGESTION_PANEL_SAFETY_MARGIN,
-      SUGGESTION_PANEL_FLOOR,
-    ),
+    availableRows({
+      rows: terminalRows,
+      chromeRows: inputVisibleRows + SUGGESTION_PANEL_CHROME_ROWS + SUGGESTION_PANEL_SAFETY_MARGIN,
+      floor: SUGGESTION_PANEL_FLOOR,
+    }),
   );
 }
 

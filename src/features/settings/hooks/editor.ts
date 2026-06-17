@@ -4,7 +4,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
-import { useFilterableList } from '../../../hooks/use-filterable-list.js';
+import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';
 
@@ -13,7 +13,7 @@ interface UseSettingsEditorParams {
   focusSetting: string | undefined;
   onClose: () => void;
   onOpenSubPicker: (def: SettingDef) => void;
-  pageSize: number;
+  pageSize: PageSize<SettingDef>;
 }
 
 interface SettingsEditorState {

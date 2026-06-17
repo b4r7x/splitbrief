@@ -55,7 +55,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const contentMaxWidth = isSmall ? 76 : 110;
   const outerChrome = 6;
   const innerChrome = 6;
-  const maxVisible = Math.min(availableRows(rows, outerChrome + innerChrome), 20);
+  const maxVisible = Math.min(availableRows({ rows, chromeRows: outerChrome + innerChrome }), 20);
   const columnHeight = maxVisible + innerChrome;
   const totalBoxWidth = getResponsivePanelWidth({
     cols,

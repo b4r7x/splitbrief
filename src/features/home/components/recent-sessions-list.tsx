@@ -6,8 +6,6 @@ import { SessionRow } from '../../../components/session-row.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
 import { FilterInput } from '../../../components/filter-input.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
-import { availableRows } from '../../../components/pickers/scroll-window.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { filterSession } from '../../../core/sessions/search.js';
 
 interface RecentSessionsListProps {
@@ -26,9 +24,7 @@ export function RecentSessionsList({
   maxVisible,
 }: RecentSessionsListProps) {
   const theme = useTheme();
-  const rows = terminalSizeStore.use((s) => s.rows);
-  const viewportRows = availableRows(rows, 8);
-  const pageSize = maxVisible === undefined ? viewportRows : Math.min(viewportRows, maxVisible);
+  const pageSize = maxVisible === undefined ? sessions.length : Math.max(0, maxVisible);
   const customKeys = (
     _input: string,
     key: Key,
@@ -54,13 +50,12 @@ export function RecentSessionsList({
 
   return (
     <RecentSessionsShell>
-      <FilterInput filter={filter} variant="inline" placeholder="type to filter sessions" />
+      <FilterInput filter={filter} variant="prompt" placeholder="filter sessions" />
       <ListViewport
         items={filtered}
         selectedIndex={selectedIndex}
         getKey={(session) => session.id}
-        chromeRows={8}
-        {...(maxVisible !== undefined ? { maxVisible } : {})}
+        rowBudget={pageSize}
         placeholder={<Text color={theme.textDim}>No matching sessions</Text>}
         renderItem={(session, { isCursor }) => (
           <SessionRow session={session} cursor={{ kind: 'outdent', isCursor }} />
