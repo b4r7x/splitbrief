@@ -10,6 +10,7 @@ interface UseFilterableListOptions<T> {
   isActive?: boolean | undefined;
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialIndex?: number | undefined;
+  pageSize: number;
   customKeys?: (
     input: string,
     key: Key,
@@ -49,6 +50,7 @@ export function useFilterableList<T>({
   isActive = true,
   shouldAppendChar,
   initialIndex,
+  pageSize,
   customKeys,
 }: UseFilterableListOptions<T>): UseFilterableListResult<T> {
   const [state, setState] = useState<FilterableListState<T>>({
@@ -128,8 +130,38 @@ export function useFilterableList<T>({
         });
         return;
       }
+      if (key.home) {
+        setState((prev) => ({ ...prev, selectedIndex: 0 }));
+        return;
+      }
+      if (key.end) {
+        setState((prev) => {
+          const currentFiltered = getFilteredItems(items, filterFn, prev.filter);
+          return { ...prev, selectedIndex: Math.max(0, currentFiltered.length - 1) };
+        });
+        return;
+      }
+      if (key.pageUp || key.pageDown) {
+        setState((prev) => {
+          const currentFiltered = getFilteredItems(items, filterFn, prev.filter);
+          if (currentFiltered.length === 0) return { ...prev, selectedIndex: 0 };
+          const distance = Math.max(1, pageSize);
+          const nextIndex = key.pageUp
+            ? prev.selectedIndex - distance
+            : prev.selectedIndex + distance;
+          return {
+            ...prev,
+            selectedIndex: clampIndex(nextIndex, currentFiltered.length),
+          };
+        });
+        return;
+      }
       if (key.backspace || key.delete) {
-        setState((prev) => ({ ...prev, filter: prev.filter.slice(0, -1), selectedIndex: 0 }));
+        setState((prev) => ({
+          ...prev,
+          filter: [...prev.filter].slice(0, -1).join(''),
+          selectedIndex: 0,
+        }));
         return;
       }
       if (input && !key.ctrl && !key.meta) {

@@ -1,11 +1,17 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import {
+  ScrollableDocument,
+  type ScrollableDocumentRow,
+} from '../../components/scrollable-document.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 
 const PADDING_BORDER = 6;
+const HELP_CHROME_ROWS = 11;
 
 interface HelpOverlayProps {
   currentScreen: Screen;
@@ -14,47 +20,74 @@ interface HelpOverlayProps {
 
 export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const t = useTheme();
+  const rows = terminalSizeStore.use((s) => s.rows);
+  const visibleCommands = commands.filter((command) =>
+    command.validScreens.includes(currentScreen),
+  );
   const shortcuts = getShortcutsForScreen(currentScreen);
   const labelColWidth =
-    Math.max(...commands.map((c) => c.name.length), ...shortcuts.map((s) => s.key.length)) + 2;
+    Math.max(
+      0,
+      ...visibleCommands.map((c) => c.name.length),
+      ...shortcuts.map((s) => s.key.length),
+    ) + 2;
   const maxDescWidth = Math.max(
-    ...commands.map((c) => c.description.length),
+    0,
+    ...visibleCommands.map((c) => c.description.length),
     ...shortcuts.map((s) => s.description.length),
   );
+  const documentRows: ScrollableDocumentRow[] = [
+    {
+      key: 'commands-heading',
+      node: (
+        <Text bold color={t.text}>
+          Commands
+        </Text>
+      ),
+    },
+    ...visibleCommands.map((cmd) => ({
+      key: `command:${cmd.name}`,
+      node: (
+        <>
+          <Box width={labelColWidth}>
+            <Text color={t.accent}>{cmd.name}</Text>
+          </Box>
+          <Text color={t.textDim}>{cmd.description}</Text>
+        </>
+      ),
+    })),
+    {
+      key: 'shortcuts-heading',
+      node: (
+        <Text bold color={t.text}>
+          Keyboard Shortcuts
+        </Text>
+      ),
+    },
+    ...shortcuts.map((shortcut) => ({
+      key: `shortcut:${shortcut.id}`,
+      node: (
+        <>
+          <Box width={labelColWidth}>
+            <Text color={t.accent}>{shortcut.key}</Text>
+          </Box>
+          <Text color={t.textDim}>{shortcut.description}</Text>
+        </>
+      ),
+    })),
+  ];
 
   return (
     <OverlayPanel
       title="Help"
-      hint="Press Escape to close"
+      hint="↑↓/PgUp/PgDn scroll  Esc close"
       maxWidth={labelColWidth + maxDescWidth + PADDING_BORDER}
     >
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color={t.text}>
-          Commands
-        </Text>
-        {commands.map((cmd) => (
-          <Box key={cmd.name}>
-            <Box width={labelColWidth}>
-              <Text color={t.accent}>{cmd.name}</Text>
-            </Box>
-            <Text color={t.textDim}>{cmd.description}</Text>
-          </Box>
-        ))}
-      </Box>
-
-      <Box flexDirection="column">
-        <Text bold color={t.text}>
-          Keyboard Shortcuts
-        </Text>
-        {shortcuts.map((s) => (
-          <Box key={s.id}>
-            <Box width={labelColWidth}>
-              <Text color={t.accent}>{s.key}</Text>
-            </Box>
-            <Text color={t.textDim}>{s.description}</Text>
-          </Box>
-        ))}
-      </Box>
+      <ScrollableDocument
+        rows={documentRows}
+        height={Math.max(1, rows - HELP_CHROME_ROWS)}
+        keyboardMode="line-and-page"
+      />
     </OverlayPanel>
   );
 }

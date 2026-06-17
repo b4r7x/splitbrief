@@ -7,7 +7,7 @@ import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
-import { registerMigrateCommand } from './migrate.js';
+import { maybeMigrateAndReport, registerMigrateCommand } from './migrate.js';
 
 let tmp: string;
 
@@ -101,6 +101,16 @@ function writeCurrentSummary(sessionId: string): void {
 }
 
 describe('migrate command', () => {
+  it('prints nothing for automatic startup checks when migration and repair are idle', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await maybeMigrateAndReport(tmp, {});
+
+    expect(logSpy.mock.calls).toHaveLength(0);
+    expect(warnSpy.mock.calls).toHaveLength(0);
+  });
+
   it('prints nothing to migrate when migration and repair are both idle', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

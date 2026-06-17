@@ -5,7 +5,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { computeScrollWindow } from '../../components/pickers/scroll-window.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
-import type { SettingDef } from '../../core/settings/catalog.js';
+import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
 import { displayValue, valueColor } from './presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';
@@ -37,12 +37,20 @@ export function SettingsOverlay() {
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
   };
 
+  const { maxVisible } = computeScrollWindow({
+    items: SETTINGS_DEFS,
+    selectedIndex: 0,
+    terminalRows: rows,
+    chromeRows: chrome,
+  });
+
   const { filter, filtered, effectiveIndex, editingId, editBuffer, selectedDef, getValue } =
     useSettingsEditor({
       config,
       focusSetting,
       onClose,
       onOpenSubPicker: openSubPicker,
+      pageSize: maxVisible,
     });
 
   const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow({

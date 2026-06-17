@@ -1,13 +1,12 @@
 import type { ReactNode } from 'react';
-import { Box, type Key } from 'ink';
+import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
 import { FilterInput } from '../filter-input.js';
-import { ScrollIndicator } from '../scroll-indicator.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { computeScrollWindow } from './scroll-window.js';
-import { toSectionedList } from '../../utils/sectioned-list.js';
+import { availableRows } from './scroll-window.js';
+import { ListViewport, type ListSectionConfig } from './list-viewport.js';
 
 interface FilterableListProps<T> {
   items: T[];
@@ -20,6 +19,7 @@ interface FilterableListProps<T> {
   placeholder?: ReactNode;
   chromeRows: number;
   maxVisible?: number;
+  listFloor?: number;
   bordered?: boolean;
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
@@ -28,8 +28,7 @@ interface FilterableListProps<T> {
     key: Key,
     ctx: { filtered: T[]; selectedIndex: number },
   ) => boolean | undefined;
-  sectionBy?: (item: T) => string;
-  renderSectionHeader?: (section: string, index: number) => ReactNode;
+  section?: ListSectionConfig<T>;
 }
 
 export function FilterableList<T>({
@@ -43,63 +42,45 @@ export function FilterableList<T>({
   placeholder,
   chromeRows,
   maxVisible: maxVisibleProp,
+  listFloor = 0,
   bordered,
   width,
   shouldAppendChar,
   customKeys,
-  sectionBy,
-  renderSectionHeader,
+  section,
 }: FilterableListProps<T>) {
   const rows = terminalSizeStore.use((s) => s.rows);
+  const viewportRows = availableRows(rows, chromeRows, listFloor);
+  const pageSize =
+    maxVisibleProp === undefined ? viewportRows : Math.min(viewportRows, maxVisibleProp);
+  const filterVariant = viewportRows <= 0 ? 'inline' : 'bordered';
 
   const list = useFilterableList<T>({
     items,
     filterFn,
     onSelect: (item) => onConfirm?.(item),
     onClose: () => overlayStore.close(),
+    pageSize,
     ...(shouldAppendChar && { shouldAppendChar }),
     ...(customKeys && { customKeys }),
   });
 
   const { filter, filtered, selectedIndex } = list;
 
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = computeScrollWindow({
-    items: filtered,
-    selectedIndex,
-    terminalRows: rows,
-    chromeRows,
-    maxVisible: maxVisibleProp,
-  });
-
-  const useSections = sectionBy && renderSectionHeader;
-  const sectionedSlice = useSections ? toSectionedList(visibleSlice, sectionBy) : null;
-
   return (
     <OverlayPanel title={title} hint={hint} maxWidth={width} bordered={bordered}>
-      <FilterInput filter={filter} />
-      <ScrollIndicator show={showScrollUp} direction="up" />
-      <Box flexDirection="column">
-        {sectionedSlice && renderSectionHeader
-          ? sectionedSlice.map(({ item, sectionHeader }, i) => {
-              const globalIndex = scrollOffset + i;
-              return (
-                <Box key={getKey(item)} flexDirection="column">
-                  {sectionHeader && renderSectionHeader(sectionHeader, i)}
-                  {renderItem(item, { isCursor: globalIndex === selectedIndex, globalIndex })}
-                </Box>
-              );
-            })
-          : visibleSlice.map((item, i) => {
-              const globalIndex = scrollOffset + i;
-              return (
-                <Box key={getKey(item)}>
-                  {renderItem(item, { isCursor: globalIndex === selectedIndex, globalIndex })}
-                </Box>
-              );
-            })}
-        {filtered.length === 0 && placeholder}
-      </Box>
-      <ScrollIndicator show={showScrollDown} direction="down" />
+      <FilterInput filter={filter} variant={filterVariant} />
+      <ListViewport
+        items={filtered}
+        selectedIndex={selectedIndex}
+        getKey={getKey}
+        renderItem={renderItem}
+        chromeRows={chromeRows}
+        listFloor={listFloor}
+        {...(maxVisibleProp !== undefined ? { maxVisible: maxVisibleProp } : {})}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        {...(section !== undefined ? { section } : {})}
+      />
     </OverlayPanel>
   );
 }

@@ -63,32 +63,21 @@ describe('HeroSavings', () => {
     ui.unmount();
   });
 
-  it('renders dim message when savingsAmount is zero', () => {
+  it('renders nothing when savingsAmount is zero', () => {
     const ui = renderFeature(
       <HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: 0, savingsPercentage: 0 })} />,
     );
-    expect(ui.lastFrame() ?? '').toContain('No savings this run');
+    expect(ui.lastFrame() ?? '').toBe('');
     ui.unmount();
   });
 
-  it('renders dim message when savingsAmount is negative', () => {
+  it('renders nothing when savingsAmount is negative', () => {
     const ui = renderFeature(
       <HeroSavings
         costBreakdown={makeCostBreakdown({ savingsAmount: -0.05, savingsPercentage: -5 })}
       />,
     );
-    expect(ui.lastFrame() ?? '').toContain('No savings this run');
-    ui.unmount();
-  });
-
-  it('keeps no-savings copy on one row in a narrow terminal', () => {
-    terminalSizeStore.__testReset({ cols: 48, rows: 20, isSmall: true });
-    const ui = renderFeature(
-      <HeroSavings costBreakdown={makeCostBreakdown({ savingsAmount: 0, savingsPercentage: 0 })} />,
-    );
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('No savings this run');
-    expect(frame.split('\n').filter((line) => line.includes('No savings')).length).toBe(1);
+    expect(ui.lastFrame() ?? '').toBe('');
     ui.unmount();
   });
 });

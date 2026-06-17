@@ -727,7 +727,7 @@ palette:
 
 ### Help overlay (`?`)
 
-**What it does.** Shows key bindings and the full slash command list. Press `?` from any screen.
+**What it does.** Shows key bindings and slash commands valid for the current screen. Press `?` from any screen.
 
 ### Sessions picker
 

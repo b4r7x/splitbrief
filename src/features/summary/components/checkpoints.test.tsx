@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
+import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { SummaryCheckpoints } from './checkpoints.js';
+import { buildCheckpointDetailRows } from './checkpoints.js';
 
 const checkpointSummary: CheckpointSummaryRollup = {
   count: 3,
@@ -17,23 +19,33 @@ const checkpointSummary: CheckpointSummaryRollup = {
   restoreCommand: 'diptych snapshot restore snap-post-2',
 };
 
-describe('SummaryCheckpoints', () => {
+function CheckpointRows({
+  checkpointSummary,
+  isSmall = false,
+}: {
+  checkpointSummary: CheckpointSummaryRollup;
+  isSmall?: boolean;
+}) {
+  const theme = useTheme();
+  const rows = buildCheckpointDetailRows(checkpointSummary, 20, isSmall, theme);
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <Box key={row.key}>{row.node}</Box>
+      ))}
+    </Box>
+  );
+}
+
+describe('buildCheckpointDetailRows', () => {
   afterEach(() => {
     terminalSizeStore.__testReset();
-  });
-
-  it('renders nothing when no checkpoint rollup exists', () => {
-    const ui = renderFeature(<SummaryCheckpoints checkpointSummary={undefined} />);
-
-    expect(ui.lastFrame() ?? '').toBe('');
-
-    ui.unmount();
   });
 
   it('renders checkpoint count, latest checkpoint, pre-final checkpoint, commands, and safety copy', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
-    const ui = renderFeature(<SummaryCheckpoints checkpointSummary={checkpointSummary} />);
+    const ui = renderFeature(<CheckpointRows checkpointSummary={checkpointSummary} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Checkpoints');
@@ -58,7 +70,7 @@ describe('SummaryCheckpoints', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(
-      <SummaryCheckpoints
+      <CheckpointRows
         checkpointSummary={{
           ...checkpointSummary,
           accepted: false,
@@ -76,7 +88,7 @@ describe('SummaryCheckpoints', () => {
 
   it('uses ID-based fallback commands when command rollups are missing', () => {
     const ui = renderFeature(
-      <SummaryCheckpoints
+      <CheckpointRows
         checkpointSummary={{
           ...checkpointSummary,
           diffCommand: null,
@@ -97,7 +109,8 @@ describe('SummaryCheckpoints', () => {
     terminalSizeStore.__testReset({ isSmall: true });
 
     const ui = renderFeature(
-      <SummaryCheckpoints
+      <CheckpointRows
+        isSmall
         checkpointSummary={{
           ...checkpointSummary,
           latestName: longName,

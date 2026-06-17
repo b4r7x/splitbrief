@@ -11,14 +11,11 @@ import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
+import { ScrollableDocument } from '../../components/scrollable-document.js';
 import { SummaryProgress } from './components/progress.js';
-import { SummaryCostBreakdown } from './components/cost-breakdown.js';
-import { SummaryTaskTable } from './components/task-table.js';
-import { SummaryPhaseTiming } from './components/phase-timing.js';
-import { SummaryEvidence } from './components/evidence.js';
-import { SummaryCheckpoints } from './components/checkpoints.js';
-import { SummaryReviewPacket } from './components/review-packet.js';
 import { HeroSavings } from './components/hero-savings.js';
+import { buildSummaryDetailRows } from './detail-rows.js';
+import { getSummaryDetailViewportHeight } from './detail-layout.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -265,6 +262,24 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const routeSummary = formatRouteSummary(summary, implementerSummary);
   const heading = getSummaryHeading(status, theme);
   const headingText = isSmall && routeSummary ? `${heading.text} ${routeSummary}` : heading.text;
+  const detailRows = buildSummaryDetailRows({
+    summary,
+    evidenceLedger,
+    sessionId,
+    labelWidth,
+    taskTitleWidth,
+    truncateLength,
+    theme,
+    isSmall,
+    isShortSmall,
+  });
+  const detailHeight = getSummaryDetailViewportHeight({
+    terminalRows: rows,
+    isSmall,
+    summary,
+    implementerSummary,
+    routeSummary,
+  });
 
   return (
     <ScreenShell
@@ -399,37 +414,13 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           isSmall={isSmall}
         />
 
-        {!isShortSmall && summary.costBreakdown && (
-          <SummaryCostBreakdown
-            costBreakdown={summary.costBreakdown}
-            labelWidth={labelWidth}
-            isSmall={isSmall}
-          />
-        )}
-
-        {!isShortSmall && summary.taskBreakdown && (
-          <SummaryTaskTable
-            tasks={summary.taskBreakdown}
-            taskTitleWidth={taskTitleWidth}
-            truncateLength={truncateLength}
-          />
-        )}
-
         {isShortSmall ? (
           <SummaryCompactLowerSections summary={summary} ledger={evidenceLedger} />
-        ) : (
-          <>
-            {summary.evidenceSummary && (
-              <SummaryEvidence summary={summary} ledger={evidenceLedger} />
-            )}
-            <SummaryCheckpoints checkpointSummary={summary.checkpointSummary} />
-            <SummaryReviewPacket summary={summary} sessionId={sessionId} />
-          </>
-        )}
-
-        {!isShortSmall && summary.phaseTimings && (
-          <SummaryPhaseTiming phaseTimings={summary.phaseTimings} labelWidth={labelWidth} />
-        )}
+        ) : detailRows.length > 0 ? (
+          <Box width={contentWidth}>
+            <ScrollableDocument rows={detailRows} height={detailHeight} isActive={!hasOverlay} />
+          </Box>
+        ) : null}
       </Box>
     </ScreenShell>
   );

@@ -25,7 +25,7 @@ const ESC = '\u001b';
 const ENTER = '\r';
 const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
 const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
 // Ink collapses the trailing space of the cursor cell when it abuts the next
 // column, so the rendered frame contains the bare ▸ glyph, not "▸ ".
 const CURSOR_GLYPH = CURSOR.trimEnd();
@@ -319,6 +319,23 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
+  it('keeps focused recent sessions usable at 80x15', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
+    seedSessions(30);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Recent sessions');
+      expect(frame).toContain('filter');
+      expect(frame).toContain(CURSOR_GLYPH);
+      expect(frame).toContain(RECENT_SESSIONS_HINT);
+    });
+    ui.unmount();
+  });
+
   it('Ctrl+R does not shift the recent-session rows horizontally', async () => {
     seedSessions(3);
     const marker = 'focus feature 1';
@@ -364,6 +381,41 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
       expect(after).toBeGreaterThan(before);
     });
+    ui.unmount();
+  });
+
+  it('Ctrl+R can filter to a session older than the recent preview cap', async () => {
+    for (let i = 0; i < 35; i++) {
+      saveSummary(
+        { projectDir, sessionId: `focus-session-${i}` },
+        makeSession({
+          id: `focus-session-${i}`,
+          feature: i === 0 ? 'ancient hidden focus target' : `focus feature ${i}`,
+          status: 'interrupted',
+          summary: null,
+          startedAt: 1_700_000_000 + i,
+        }),
+      );
+    }
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    expect(ui.lastFrame() ?? '').not.toContain('ancient hidden focus target');
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    });
+    ui.stdin.write('ancient');
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('ancient hidden focus target');
+      expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(
+        lineIndexContaining(frame, 'ancient hidden focus target'),
+      );
+    });
+
     ui.unmount();
   });
 

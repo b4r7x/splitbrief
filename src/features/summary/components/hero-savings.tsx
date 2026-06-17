@@ -14,19 +14,7 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
 
   if (!costBreakdown) return null;
   if (costBreakdown.hasSavingsEstimate === false) return null;
-
-  if (costBreakdown.savingsAmount <= 0) {
-    const message = isSmall
-      ? 'No savings this run'
-      : 'No savings this run (split routing cost equal or higher)';
-    return (
-      <Box justifyContent="center" width="100%" marginTop={1} overflow="hidden">
-        <Text color={t.textDim} wrap="truncate-end">
-          {message}
-        </Text>
-      </Box>
-    );
-  }
+  if (costBreakdown.savingsAmount <= 0) return null;
 
   const actual = formatCost(costBreakdown.totalActualCost);
   const baseline = formatCost(costBreakdown.hypotheticalCost);

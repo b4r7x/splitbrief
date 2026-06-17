@@ -7,6 +7,7 @@ interface HomeLayoutInput {
   isSmall: boolean;
   hasSkills: boolean;
   sessionCount?: number;
+  sessionsFocused?: boolean | undefined;
 }
 
 interface HomeLayout {
@@ -56,12 +57,15 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
   return { recentSessionLimit: Math.max(0, capacity - 1), showHiddenCount: true };
 }
 
+const FOCUSED_SESSIONS_EXTRA_CHROME = 4;
+
 export function getHomeLayout({
   cols,
   rows,
   isSmall,
   hasSkills,
   sessionCount = 0,
+  sessionsFocused = false,
 }: HomeLayoutInput): HomeLayout {
   const inputWidth = getResponsivePanelWidth({
     cols,
@@ -80,13 +84,16 @@ export function getHomeLayout({
     hasSkills,
     sessionCount,
   });
+  const focusedRecentSessionLimit = sessionsFocused
+    ? Math.max(recentSessionLimit > 0 ? 1 : 0, recentSessionLimit - FOCUSED_SESSIONS_EXTRA_CHROME)
+    : recentSessionLimit;
 
   return {
     inputWidth,
     bodyWidth,
     logoTier,
     inputBottomMargin,
-    recentSessionLimit,
+    recentSessionLimit: focusedRecentSessionLimit,
     showHiddenCount,
   };
 }

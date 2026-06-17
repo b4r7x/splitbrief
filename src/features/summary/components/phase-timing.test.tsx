@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
-import { SummaryPhaseTiming } from './phase-timing.js';
+import { useTheme } from '../../../components/theme.js';
+import { buildPhaseTimingRows } from './phase-timing.js';
 
-describe('SummaryPhaseTiming', () => {
+function PhaseTimingRows({ phaseTimings }: { phaseTimings: Record<string, number> }) {
+  const theme = useTheme();
+  const rows = buildPhaseTimingRows(phaseTimings, 16, theme);
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <Box key={row.key}>{row.node}</Box>
+      ))}
+    </Box>
+  );
+}
+
+describe('buildPhaseTimingRows', () => {
   it('capitalizes phase labels in the rendered breakdown', () => {
     const ui = renderFeature(
-      <SummaryPhaseTiming phaseTimings={{ planning: 1200, implementing: 3400 }} labelWidth={16} />,
+      <PhaseTimingRows phaseTimings={{ planning: 1200, implementing: 3400 }} />,
     );
     const frame = ui.lastFrame() ?? '';
 
@@ -18,7 +32,7 @@ describe('SummaryPhaseTiming', () => {
   });
 
   it('renders nothing when there are no phase timings', () => {
-    const ui = renderFeature(<SummaryPhaseTiming phaseTimings={{}} labelWidth={16} />);
+    const ui = renderFeature(<PhaseTimingRows phaseTimings={{}} />);
 
     expect(ui.lastFrame()).toBe('');
 

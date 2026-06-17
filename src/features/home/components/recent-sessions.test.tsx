@@ -143,7 +143,7 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('focused with onSelect+onClose delegates to the browse list and passes only the capped sessions', async () => {
+  it('focused with onSelect+onClose keeps a capped viewport but filters across all sessions', async () => {
     seed([
       { id: 'f-0', feature: 'oldest-focus', startedAt: 1_700_000_000 },
       { id: 'f-1', feature: 'old-focus', startedAt: 1_700_000_001 },
@@ -173,6 +173,13 @@ describe('RecentSessions', () => {
     expect(frame).not.toContain('mid-focus');
     expect(frame).not.toContain('old-focus');
     expect(frame).not.toContain('oldest-focus');
+
+    ui.stdin.write('oldest');
+    await tick(20);
+
+    const filteredFrame = ui.lastFrame() ?? '';
+    expect(filteredFrame).toContain('oldest-focus');
+    expect(filteredFrame).not.toContain('newest-focus');
     ui.unmount();
   });
 

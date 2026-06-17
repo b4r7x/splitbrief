@@ -676,7 +676,7 @@ src/
 │   ├── skills/picker.tsx          Skills selection
 │   ├── summary/                   screen + components (cost-breakdown,
 │   │                              evidence, phase-timing, progress,
-│   │                              task-table)
+│   │                              detail-rows, detail-layout)
 │   ├── runners/                   picker, view, catalog, hooks,
 │   │                              transforms, view-state,
 │   │                              two-column-picker/{picker, keyboard,

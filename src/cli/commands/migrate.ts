@@ -60,9 +60,7 @@ export async function maybeMigrateAndReport(
 ): Promise<void> {
   const { migration, repair } = await maybeMigrateWithSummaryRepair(projectDir);
   if (!opts.json && !opts.rpc) {
-    printMigrationResult(migration, {
-      includeNotNeeded: migration.status === 'not-needed' && !hasRepairActivity(repair),
-    });
+    printMigrationResult(migration);
     printRepairResult(repair);
   }
 }

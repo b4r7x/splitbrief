@@ -21,7 +21,7 @@ import { useRecentSessionsFocus } from './use-recent-sessions-focus.js';
 
 const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
 const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Enter resume/view  Esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 interface HomeScreenProps {
@@ -37,18 +37,31 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
     sessionsStore,
     configStore,
   );
-  const hasSkills = skillsStore.use((s) => s.selected.size > 0);
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [sessionsFocused, setSessionsFocused] = useState(false);
-
-  const layout = getHomeLayout({ cols, rows, isSmall, hasSkills, sessionCount: sessions.length });
-  const hasSessions = layout.recentSessionLimit > 0 && sessions.length > 0;
+  const hasSkills = skillsStore.use((s) => s.selected.size > 0);
+  const preliminaryLayout = getHomeLayout({
+    cols,
+    rows,
+    isSmall,
+    hasSkills,
+    sessionCount: sessions.length,
+    sessionsFocused: false,
+  });
+  const hasSessions = preliminaryLayout.recentSessionLimit > 0 && sessions.length > 0;
+  const sessionsActive = sessionsFocused && hasSessions;
+  const layout = getHomeLayout({
+    cols,
+    rows,
+    isSmall,
+    hasSkills,
+    sessionCount: sessions.length,
+    sessionsFocused: sessionsActive,
+  });
 
   useEffect(() => {
     if (!hasSessions) setSessionsFocused(false);
   }, [hasSessions]);
-
-  const sessionsActive = sessionsFocused && hasSessions;
 
   useEffect(() => {
     if (!sessionsActive || !selectionError) return undefined;
