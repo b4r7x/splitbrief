@@ -40,10 +40,33 @@ describe('getHomeLayout', () => {
     expect(layout.recentSessionLimit).toBeGreaterThan(0);
   });
 
-  it('shows a generous session list on tall terminals without over-allocating (Problem 3)', () => {
+  it('keeps one session row when that is the only safe row before the input', () => {
+    const layout = getHomeLayout({
+      cols: 80,
+      rows: 15,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount: 30,
+    });
+    expect(layout.recentSessionLimit).toBe(1);
+    expect(layout.showHiddenCount).toBe(false);
+  });
+
+  it('reserves a row for +N more when capacity allows more than one session row', () => {
+    const layout = getHomeLayout({
+      cols: 80,
+      rows: 16,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount: 25,
+    });
+    expect(layout.recentSessionLimit).toBeGreaterThan(0);
+    expect(layout.showHiddenCount).toBe(true);
+  });
+
+  it('uses all safe vertical space for recent sessions on tall terminals', () => {
     const layout = getHomeLayout({ cols: 120, rows: 60, isSmall: false, hasSkills: false });
-    expect(layout.recentSessionLimit).toBeGreaterThan(12);
-    expect(layout.recentSessionLimit).toBeLessThanOrEqual(20);
+    expect(layout.recentSessionLimit).toBeGreaterThan(20);
   });
 
   it('grows the session limit monotonically with terminal height', () => {

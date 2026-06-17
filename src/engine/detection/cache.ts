@@ -1,7 +1,7 @@
 import { join, relative } from 'node:path';
 import { z } from 'zod';
-import { readJsonSafeAsync, writeConfinedSecureFileAsync } from '../../lib/fs.js';
-import { confinedUnlinkSync } from '../../lib/confined-fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/confined-fs.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import type {
   DetectedModel,
@@ -18,9 +18,15 @@ const CACHE_VERSION = 1;
 const DetectedModelRawSchema = z.object({
   id: z.string(),
   contextLength: z.number().optional(),
+  maxOutputTokens: z.number().optional(),
   pricingInput: z.number().optional(),
   pricingOutput: z.number().optional(),
+  pricingCacheRead: z.number().optional(),
+  pricingCacheWrite: z.number().optional(),
   isFree: z.boolean().optional(),
+  supportsTemperature: z.boolean().optional(),
+  supportsReasoning: z.boolean().optional(),
+  supportsImages: z.boolean().optional(),
   capabilities: z.array(z.string()).optional(),
   releaseDate: z.string().optional(),
 });
@@ -29,19 +35,32 @@ const DetectedModelSchema = DetectedModelRawSchema.transform(
   (m): DetectedModel => ({
     id: m.id,
     ...(m.contextLength !== undefined && { contextLength: m.contextLength }),
+    ...(m.maxOutputTokens !== undefined && { maxOutputTokens: m.maxOutputTokens }),
     ...(m.pricingInput !== undefined && { pricingInput: m.pricingInput }),
     ...(m.pricingOutput !== undefined && { pricingOutput: m.pricingOutput }),
+    ...(m.pricingCacheRead !== undefined && { pricingCacheRead: m.pricingCacheRead }),
+    ...(m.pricingCacheWrite !== undefined && { pricingCacheWrite: m.pricingCacheWrite }),
     ...(m.isFree !== undefined && { isFree: m.isFree }),
+    ...(m.supportsTemperature !== undefined && { supportsTemperature: m.supportsTemperature }),
+    ...(m.supportsReasoning !== undefined && { supportsReasoning: m.supportsReasoning }),
+    ...(m.supportsImages !== undefined && { supportsImages: m.supportsImages }),
     ...(m.capabilities !== undefined && { capabilities: m.capabilities }),
     ...(m.releaseDate !== undefined && { releaseDate: m.releaseDate }),
   }),
 );
+
+const PlannerCompatibilitySchema = z.object({
+  kind: z.literal('major-version-mismatch'),
+  installedVersion: z.string(),
+  testedVersion: z.string(),
+});
 
 const PlannerDetectionRawSchema = z.object({
   tool: z.enum(PLANNER_TOOL_IDS),
   type: z.enum(['cli', 'api', 'shell']),
   available: z.boolean(),
   version: z.string().optional(),
+  compatibility: PlannerCompatibilitySchema.optional(),
   description: z.string().optional(),
   error: z.string().optional(),
 });
@@ -52,6 +71,7 @@ const PlannerDetectionSchema = PlannerDetectionRawSchema.transform(
     type: p.type,
     available: p.available,
     ...(p.version !== undefined && { version: p.version }),
+    ...(p.compatibility !== undefined && { compatibility: p.compatibility }),
     ...(p.description !== undefined && { description: p.description }),
     ...(p.error !== undefined && { error: p.error }),
   }),
@@ -96,11 +116,23 @@ function parseCache(value: unknown): DetectionCache | null {
   return result.data;
 }
 
+const CACHE_RELATIVE_PATH = join(DIPTYCH_DIR, CACHE_FILENAME);
+
+async function readCacheRaw(projectDir: string): Promise<unknown | null> {
+  try {
+    const raw = await confinedReadFileAsync(projectDir, CACHE_RELATIVE_PATH);
+    if (raw === null) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function loadDetectionCache(
   projectDir: string,
   ttlMs = DEFAULT_TTL_MS,
 ): Promise<{ planners: PlannerDetection[]; implementers: ProviderDetection[] } | null> {
-  const parsed = parseCache(await readJsonSafeAsync(cachePath(projectDir)));
+  const parsed = parseCache(await readCacheRaw(projectDir));
   if (!parsed) return null;
   if (Date.now() - parsed.timestamp >= ttlMs) return null;
   return { planners: parsed.planners, implementers: parsed.implementers };
@@ -128,8 +160,6 @@ export async function saveDetectionCache(
     // Cache write failure is non-critical
   }
 }
-
-const CACHE_RELATIVE_PATH = join(DIPTYCH_DIR, CACHE_FILENAME);
 
 export async function invalidateCache(projectDir: string): Promise<void> {
   try {

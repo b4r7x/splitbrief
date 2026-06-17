@@ -16,12 +16,19 @@ export interface DetectedModel {
   releaseDate?: string;
 }
 
+export type PlannerCompatibility = {
+  kind: 'major-version-mismatch';
+  installedVersion: string;
+  testedVersion: string;
+};
+
 export interface PlannerDetection {
   tool: PlannerToolId;
   // agent-sdk excluded: it's programmatic (not detectable via CLI probe).
   type: 'cli' | 'api' | 'shell';
   available: boolean;
   version?: string;
+  compatibility?: PlannerCompatibility;
   description?: string;
   error?: string;
 }

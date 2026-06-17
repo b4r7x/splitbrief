@@ -51,10 +51,12 @@ export interface CliToolEntry {
   description: string;
   notFoundMessage: string;
   /**
-   * Upstream CLI version diptych's flag/subcommand/JSON contract was last verified against.
-   * `detectAvailablePlanners` warns when the installed major version differs, since these
-   * tools ship breaking CLI changes with no compatibility guarantee. Tested matrix lives in
-   * docs/PLANNERS-AND-IMPLEMENTERS.md.
+   * Upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified
+   * against. These tools ship breaking CLI changes with no compatibility guarantee, so
+   * `detectAvailablePlanners` probes the installed version via `getVersion()`. When the
+   * installed major version differs from the tested one, detection still reports the tool as
+   * available and includes `compatibility: { kind: 'major-version-mismatch', installedVersion,
+   * testedVersion }` on that planner result. Tested matrix lives in docs/PLANNERS-AND-IMPLEMENTERS.md.
    */
   testedVersion: string;
   planner?: CliToolPlanner;

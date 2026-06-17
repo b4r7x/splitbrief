@@ -15,8 +15,11 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { SessionSchema } from '../../../core/schemas/session.js';
-import { SummarySchema, type Summary } from '../../../core/schemas/summary.js';
+import {
+  parsePersistedSession,
+  parsePersistedSummary,
+} from '../../../core/sessions/summary-parser.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import { ReviewPacketSchema, type ReviewPacket } from '../../../core/schemas/review-packet.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 import { readEvents } from '../../../core/sessions/log-reader.js';
@@ -106,10 +109,10 @@ async function readJson(
 async function readSummary(projectDir: string, sessionId: string): Promise<Summary | null> {
   const raw = await readJson(projectDir, sessionId, SUMMARY_FILE);
   if (raw === null) return null;
-  const session = SessionSchema.safeParse(raw);
-  if (session.success) return session.data.summary;
-  const summary = SummarySchema.safeParse(raw);
-  return summary.success ? summary.data : null;
+  const session = parsePersistedSession(raw);
+  if (session.status === 'ok') return session.session.summary;
+  const summary = parsePersistedSummary(raw);
+  return summary.status === 'ok' ? summary.summary : null;
 }
 
 async function readReviewPacket(

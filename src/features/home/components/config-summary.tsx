@@ -24,24 +24,28 @@ export function HomeConfigSummary() {
   const compact = isSmall || rows < CONFIG_SUMMARY_COMPACT_ROWS;
 
   if (compact) {
-    const plannerText = plannerModel
-      ? `${getProviderDisplayName(plannerToolName)} › ${formatModelName(plannerModel)}`
-      : getProviderDisplayName(plannerToolName);
-    const implText = `${getProviderDisplayName(implToolName)} › ${formatModelName(implModel)}`;
     return (
-      <Box marginBottom={1} flexWrap="wrap">
-        <Text color={theme.planner}>{plannerText}</Text>
-        <Text color={theme.textDim}> │ </Text>
-        <Text color={theme.implementer}>{implText}</Text>
-        {isProviderLocal(implToolName) && <Text color={theme.textDim}> (local)</Text>}
-        <Text color={theme.textDim}> │ </Text>
-        <Text color={theme.text}>{mode}</Text>
-        {selectedSkillCount > 0 && (
-          <>
-            <Text color={theme.textDim}> │ </Text>
-            <Text color={theme.accent}>{selectedSkillCount} skills</Text>
-          </>
-        )}
+      <Box marginBottom={1} overflow="hidden">
+        <Text wrap="truncate-end">
+          <Text color={theme.planner}>
+            {plannerModel
+              ? `${getProviderDisplayName(plannerToolName)} › ${formatModelName(plannerModel)}`
+              : getProviderDisplayName(plannerToolName)}
+          </Text>
+          <Text color={theme.textDim}> │ </Text>
+          <Text color={theme.implementer}>
+            {getProviderDisplayName(implToolName)} › {formatModelName(implModel)}
+          </Text>
+          {isProviderLocal(implToolName) && <Text color={theme.textDim}> (local)</Text>}
+          <Text color={theme.textDim}> │ </Text>
+          <Text color={theme.text}>{mode}</Text>
+          {selectedSkillCount > 0 && (
+            <>
+              <Text color={theme.textDim}> │ </Text>
+              <Text color={theme.accent}>{selectedSkillCount} skills</Text>
+            </>
+          )}
+        </Text>
       </Box>
     );
   }

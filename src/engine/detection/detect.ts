@@ -7,7 +7,7 @@ import { detectAvailableProviders, KNOWN_PROVIDERS } from '../providers/registry
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { warnError, warnStderr } from '../../lib/warn.js';
+import { warnError } from '../../lib/warn.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { parseMajorVersion } from '../availability.js';
 import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
@@ -26,13 +26,20 @@ const CLI_PLANNERS: Array<{ tool: PlannerToolId; description: string; testedVers
     testedVersion: meta.testedVersion,
   }));
 
-function warnOnVersionMismatch(tool: PlannerToolId, version: string, testedVersion: string): void {
+function getCompatibility(
+  version: string,
+  testedVersion: string,
+): PlannerDetection['compatibility'] {
   const installedMajor = parseMajorVersion(version);
   const testedMajor = parseMajorVersion(testedVersion);
-  if (installedMajor === null || testedMajor === null || installedMajor === testedMajor) return;
-  warnStderr(
-    `${tool}: installed CLI version ${version} differs in major version from the tested ${testedVersion} — flag/JSON contracts may have changed`,
-  );
+  if (installedMajor === null || testedMajor === null || installedMajor === testedMajor) {
+    return undefined;
+  }
+  return {
+    kind: 'major-version-mismatch',
+    installedVersion: version,
+    testedVersion,
+  };
 }
 
 const API_PLANNERS: { tool: PlannerToolId; description: string }[] = [
@@ -91,11 +98,12 @@ export async function detectAvailablePlanners(
         const planner = await createPlanner(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
         let version: string | undefined;
+        let compatibility: PlannerDetection['compatibility'];
         let error: string | undefined;
         if (available) {
           try {
             version = (await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS)) ?? undefined;
-            if (version) warnOnVersionMismatch(tool, version, testedVersion);
+            if (version) compatibility = getCompatibility(version, testedVersion);
           } catch (err) {
             error = `Version probe failed: ${toErrorMessage(err)}`;
             warnError(`planner.getVersion(${tool})`, err);
@@ -107,6 +115,7 @@ export async function detectAvailablePlanners(
           available,
           description,
           ...(version ? { version } : {}),
+          ...(compatibility ? { compatibility } : {}),
           ...(error ? { error } : {}),
         };
       } catch (err) {

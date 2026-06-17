@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
+import { confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { warnError } from '../../lib/warn.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import {
@@ -13,7 +13,8 @@ import {
   DRIFT_REPORT_FILE,
 } from '../../core/paths.js';
 import { SUMMARY_FILE } from '../../core/paths.js';
-import { listAllSessions } from '../../core/sessions/io.js';
+import { parsePersistedSession } from '../../core/sessions/summary-parser.js';
+import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
 import { parseSimpleYamlFrontmatter } from '../../utils/frontmatter.js';
 import { buildManifest, hasCanonicalManifestArtifacts } from './manifest.js';
@@ -95,16 +96,53 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     return join(DIPTYCH_DIR, SESSIONS_DIR, id, file);
   }
 
-  function sessionFileExists(id: string, file: string): boolean {
+  async function readSessionFile(id: string, file: string): Promise<string | null> {
     try {
-      return confinedExists(projectDir, sessionResourcePath(id, file));
+      return await confinedReadFileAsync(projectDir, sessionResourcePath(id, file));
     } catch {
-      return false;
+      return null;
     }
   }
 
-  async function readSessionFile(id: string, file: string): Promise<string | null> {
-    return confinedReadFileAsync(projectDir, sessionResourcePath(id, file));
+  async function sessionFileExists(id: string, file: string): Promise<boolean> {
+    return (await readSessionFile(id, file)) !== null;
+  }
+
+  async function readSessionDescriptor(id: string): Promise<Record<string, unknown> | null> {
+    const summaryContent = await readSessionFile(id, SUMMARY_FILE);
+    if (summaryContent !== null) {
+      try {
+        const parsed = parsePersistedSession(JSON.parse(summaryContent));
+        if (parsed.status === 'ok') {
+          return {
+            id,
+            title: parsed.session.feature,
+            mode: parsed.session.summary?.mode ?? 'unknown',
+            startedAt: parsed.session.startedAt,
+            status: parsed.session.status,
+          };
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    const stateContent = await readSessionFile(id, STATE_FILE);
+    if (stateContent === null) return null;
+    try {
+      const parsed = WorkflowStateSchema.safeParse(JSON.parse(stateContent));
+      if (!parsed.success) return null;
+      const startedAt = Date.parse(parsed.data.startedAt);
+      return {
+        id,
+        title: parsed.data.feature,
+        mode: 'unknown',
+        startedAt: Number.isNaN(startedAt) ? 0 : startedAt,
+        status: 'interrupted',
+      };
+    } catch {
+      return null;
+    }
   }
 
   async function listResources(): Promise<McpResourceDescriptor[]> {
@@ -117,6 +155,9 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     });
 
     for (const id of sessionIds) {
+      const sessionDescriptor = await readSessionDescriptor(id);
+      const tasksContent = await readSessionFile(id, TASKS_FILE);
+
       if (await hasCanonicalManifestArtifacts(projectDir, id)) {
         descriptors.push({
           uri: `${sessionBase(id)}/manifest.json`,
@@ -125,14 +166,16 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         });
       }
 
-      descriptors.push({
-        uri: `${sessionBase(id)}/tasks`,
-        name: `Task list (${id})`,
-        mimeType: 'application/json',
-      });
+      if (sessionDescriptor !== null || tasksContent !== null) {
+        descriptors.push({
+          uri: `${sessionBase(id)}/tasks`,
+          name: `Task list (${id})`,
+          mimeType: 'application/json',
+        });
+      }
 
       for (const entry of SESSION_RESOURCE_FILES) {
-        if (sessionFileExists(id, entry.file)) {
+        if (await sessionFileExists(id, entry.file)) {
           descriptors.push({
             uri: `${sessionBase(id)}/${entry.key}`,
             name: `${entry.label} (${id})`,
@@ -141,17 +184,14 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         }
       }
 
-      if (sessionFileExists(id, TASKS_FILE)) {
-        const content = await readSessionFile(id, TASKS_FILE);
-        if (content) {
-          const tasks = parseTasksSafe(content);
-          for (const task of tasks) {
-            descriptors.push({
-              uri: `${sessionBase(id)}/tasks/${task.id}`,
-              name: `Task ${task.id} (${id})`,
-              mimeType: 'text/markdown',
-            });
-          }
+      if (tasksContent) {
+        const tasks = parseTasksSafe(tasksContent);
+        for (const task of tasks) {
+          descriptors.push({
+            uri: `${sessionBase(id)}/tasks/${task.id}`,
+            name: `Task ${task.id} (${id})`,
+            mimeType: 'text/markdown',
+          });
         }
       }
     }
@@ -162,15 +202,11 @@ export function createResolver(config: McpResolverConfig): McpResolver {
   async function readResource(uri: string): Promise<McpResourceContent | null> {
     try {
       if (uri === sessionsUri()) {
-        const allSessions = listAllSessions(projectDir);
-        const filtered = allSessions.filter((s) => sessionIds.includes(s.id));
-        const result = filtered.map((s) => ({
-          id: s.id,
-          title: s.feature,
-          mode: s.summary?.mode ?? 'unknown',
-          startedAt: s.startedAt,
-          status: s.status,
-        }));
+        const result = [];
+        for (const id of sessionIds) {
+          const descriptor = await readSessionDescriptor(id);
+          if (descriptor !== null) result.push(descriptor);
+        }
         return { uri, mimeType: 'application/json', text: JSON.stringify(result, null, 2) };
       }
 
@@ -193,9 +229,6 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       if (resource === 'tasks') {
-        if (!sessionFileExists(id, TASKS_FILE)) {
-          return { uri, mimeType: 'application/json', text: '[]' };
-        }
         const content = await readSessionFile(id, TASKS_FILE);
         if (!content) return { uri, mimeType: 'application/json', text: '[]' };
         const tasks = parseTasksSafe(content);

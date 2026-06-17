@@ -1,13 +1,23 @@
 import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import {
-  maybeMigrate,
-  migrateCommand,
+  maybeMigrateWithSummaryRepair,
+  migrateWithSummaryRepair,
   type MigrationResult,
 } from '../../core/migration/executor.js';
+import type { SessionSummaryRepairResult } from '../../core/migration/session-summary-repair.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-export function printMigrationResult(
+function hasRepairActivity(repair: SessionSummaryRepairResult): boolean {
+  return (
+    repair.repaired > 0 ||
+    repair.skippedInvalid > 0 ||
+    repair.skippedUnreadable > 0 ||
+    repair.warnings.length > 0
+  );
+}
+
+function printMigrationResult(
   result: MigrationResult,
   opts: { includeNotNeeded?: boolean } = {},
 ): void {
@@ -29,12 +39,32 @@ export function printMigrationResult(
   }
 }
 
+function printRepairResult(repair: SessionSummaryRepairResult): void {
+  for (const warning of repair.warnings) {
+    console.warn(warning);
+  }
+  if (repair.skippedInvalid > 0) {
+    console.warn(`Skipped ${repair.skippedInvalid} invalid session summary file(s).`);
+  }
+  if (repair.skippedUnreadable > 0) {
+    console.warn(`Skipped ${repair.skippedUnreadable} unreadable session summary file(s).`);
+  }
+  if (repair.repaired > 0) {
+    console.log(`Repaired ${repair.repaired} legacy session summary file(s).`);
+  }
+}
+
 export async function maybeMigrateAndReport(
   projectDir: string,
   opts: { json?: boolean; rpc?: boolean },
 ): Promise<void> {
-  const migration = await maybeMigrate(projectDir);
-  if (!opts.json && !opts.rpc) printMigrationResult(migration);
+  const { migration, repair } = await maybeMigrateWithSummaryRepair(projectDir);
+  if (!opts.json && !opts.rpc) {
+    printMigrationResult(migration, {
+      includeNotNeeded: migration.status === 'not-needed' && !hasRepairActivity(repair),
+    });
+    printRepairResult(repair);
+  }
 }
 
 export function registerMigrateCommand(program: Command): void {
@@ -44,6 +74,10 @@ export function registerMigrateCommand(program: Command): void {
     .option('-p, --project <dir>', 'Project directory', '.')
     .action(async (opts: { project: string }) => {
       const projectDir = resolve(opts.project);
-      printMigrationResult(await migrateCommand(projectDir), { includeNotNeeded: true });
+      const { migration, repair } = await migrateWithSummaryRepair(projectDir);
+      printMigrationResult(migration, {
+        includeNotNeeded: migration.status === 'not-needed' && !hasRepairActivity(repair),
+      });
+      printRepairResult(repair);
     });
 }

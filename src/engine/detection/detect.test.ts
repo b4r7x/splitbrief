@@ -93,7 +93,7 @@ describe('detectAvailablePlanners CLI version matrix', () => {
     });
   }
 
-  it('warns when an installed CLI major version differs from the tested one', async () => {
+  it('records version compatibility without writing startup stderr', async () => {
     const testedMajor = Number(CLI_TOOLS.codex.testedVersion.split('.')[0]);
     const installed = `${testedMajor + 9}.0.0`;
     mockVersionsExcept(CLI_TOOLS.codex.command, `codex ${installed}`);
@@ -104,9 +104,14 @@ describe('detectAvailablePlanners CLI version matrix', () => {
 
     expect(codex).toMatchObject({ available: true, version: installed });
     expect(codex).not.toHaveProperty('error');
-    expect(stderr).toContain('codex');
-    expect(stderr).toContain('differs in major version');
-    expect(stderr).toContain(CLI_TOOLS.codex.testedVersion);
+    expect(codex).toMatchObject({
+      compatibility: {
+        kind: 'major-version-mismatch',
+        installedVersion: installed,
+        testedVersion: CLI_TOOLS.codex.testedVersion,
+      },
+    });
+    expect(stderr).not.toContain('differs in major version');
   });
 
   it('does not warn when the installed CLI major version matches the tested one', async () => {

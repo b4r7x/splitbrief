@@ -11,6 +11,7 @@ import { RecentSessionsShell } from './recent-sessions-shell.js';
 
 interface RecentSessionsProps {
   limit?: number | undefined;
+  showHiddenCount?: boolean | undefined;
   focused?: boolean | undefined;
   onSelect?: ((session: Session) => void) | undefined;
   onClose?: (() => void) | undefined;
@@ -19,6 +20,7 @@ interface RecentSessionsProps {
 
 export function RecentSessions({
   limit,
+  showHiddenCount = true,
   focused,
   onSelect,
   onClose,
@@ -63,7 +65,9 @@ export function RecentSessions({
       {visibleSessions.map((s) => (
         <SessionRow key={s.id} session={s} />
       ))}
-      {hiddenCount > 0 && <Text color={theme.textDim}> +{hiddenCount} more</Text>}
+      {showHiddenCount && hiddenCount > 0 && (
+        <Text color={theme.textDim}> +{hiddenCount} more</Text>
+      )}
     </RecentSessionsShell>
   );
 }

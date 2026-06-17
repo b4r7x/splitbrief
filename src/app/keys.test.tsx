@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore, _lifecycleInternal } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
@@ -378,6 +379,49 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
     expect(exit).not.toHaveBeenCalled();
     expect(abortStore.get().armed).toBe('none');
+    ui.unmount();
+  });
+
+  it('ESC on the summary screen navigates home without exiting', async () => {
+    routerStore.navigate({
+      to: 'summary',
+      summary: makeSummary(),
+      status: 'complete',
+      sessionId: 'summary-session',
+    });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    await tick();
+
+    writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(routerStore.get().screen).toBe('home');
+    expect(exit).not.toHaveBeenCalled();
+    expect(abortStore.get().armed).toBe('none');
+    ui.unmount();
+  });
+
+  it('a split escape sequence on the summary screen does not navigate home', async () => {
+    routerStore.navigate({
+      to: 'summary',
+      summary: makeSummary(),
+      status: 'complete',
+      sessionId: 'summary-session',
+    });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    await tick();
+
+    writeEsc(ui);
+    await tick();
+    writeKey(ui, '[A');
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(routerStore.get().screen).toBe('summary');
+    expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 

@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 
 interface HeroSavingsProps {
   costBreakdown: CostBreakdown | undefined;
@@ -9,14 +10,20 @@ interface HeroSavingsProps {
 
 export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
   const t = useTheme();
+  const isSmall = terminalSizeStore.use((s) => s.isSmall);
 
   if (!costBreakdown) return null;
   if (costBreakdown.hasSavingsEstimate === false) return null;
 
   if (costBreakdown.savingsAmount <= 0) {
+    const message = isSmall
+      ? 'No savings this run'
+      : 'No savings this run (split routing cost equal or higher)';
     return (
-      <Box justifyContent="center" width="100%" marginTop={1}>
-        <Text color={t.textDim}>No savings this run (split routing cost equal or higher)</Text>
+      <Box justifyContent="center" width="100%" marginTop={1} overflow="hidden">
+        <Text color={t.textDim} wrap="truncate-end">
+          {message}
+        </Text>
       </Box>
     );
   }
@@ -24,6 +31,16 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
   const actual = formatCost(costBreakdown.totalActualCost);
   const baseline = formatCost(costBreakdown.hypotheticalCost);
   const pct = Math.round(costBreakdown.savingsPercentage);
+
+  if (isSmall) {
+    return (
+      <Box justifyContent="center" width="100%" marginTop={1} overflow="hidden">
+        <Text bold color={t.success} wrap="truncate-end">
+          Saved {formatCost(costBreakdown.savingsAmount)} ({pct}%)
+        </Text>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -33,12 +50,12 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
       flexDirection="column"
       alignItems="center"
     >
-      <Text bold color={t.success}>
-        {actual} actual vs {baseline} implementer-at-planner-rate — {pct}% saved
+      <Text bold color={t.success} wrap="truncate-end">
+        {actual} actual vs {baseline} baseline, {pct}% saved
       </Text>
-      <Text color={t.textDim}>
+      <Text color={t.textDim} wrap="truncate-end">
         Saved {formatCost(costBreakdown.savingsAmount)} by routing{' '}
-        {Math.round(costBreakdown.localCompletionRate * 100)}% of tasks to cheap implementer
+        {Math.round(costBreakdown.localCompletionRate * 100)}% locally
       </Text>
     </Box>
   );

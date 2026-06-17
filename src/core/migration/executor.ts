@@ -19,6 +19,10 @@ import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
 import { error } from '../../utils/error.js';
+import {
+  repairSessionSummaries,
+  type SessionSummaryRepairResult,
+} from './session-summary-repair.js';
 
 export const migrationError = {
   legacyDirOutsideRoot: (dir: string, root: string) =>
@@ -153,4 +157,25 @@ export async function maybeMigrate(projectDir: string): Promise<MigrationResult>
   return findLegacySourceDir(projectDir) === null
     ? { status: 'not-needed' }
     : migrateCommand(projectDir);
+}
+
+export type MigrateWithSummaryRepairResult = {
+  migration: MigrationResult;
+  repair: SessionSummaryRepairResult;
+};
+
+export async function migrateWithSummaryRepair(
+  projectDir: string,
+): Promise<MigrateWithSummaryRepairResult> {
+  const migration = await migrateCommand(projectDir);
+  const repair = repairSessionSummaries(projectDir);
+  return { migration, repair };
+}
+
+export async function maybeMigrateWithSummaryRepair(
+  projectDir: string,
+): Promise<MigrateWithSummaryRepairResult> {
+  const migration = await maybeMigrate(projectDir);
+  const repair = repairSessionSummaries(projectDir);
+  return { migration, repair };
 }

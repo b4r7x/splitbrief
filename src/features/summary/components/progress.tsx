@@ -30,12 +30,24 @@ export function SummaryProgress({
           {completed}/{total}
         </Text>
       </Box>
-      <Box gap={2}>
-        <Text color={t.success}>{completedByLocal} local</Text>
-        <Text color={t.warning}>{escalatedToPlanner} escalated</Text>
-        {failed > 0 && <Text color={t.error}>{failed} failed</Text>}
+      <Box gap={isSmall ? 1 : 2} overflow="hidden">
+        <Text color={t.success} wrap="truncate-end">
+          {completedByLocal} local
+        </Text>
+        <Text color={t.warning} wrap="truncate-end">
+          {escalatedToPlanner} escalated
+        </Text>
+        {failed > 0 && (
+          <Text color={t.error} wrap="truncate-end">
+            {failed} failed
+          </Text>
+        )}
       </Box>
-      <Text color={t.textDim}>local = cheap implementer, escalated = planner fallback</Text>
+      <Text color={t.textDim} wrap="truncate-end">
+        {isSmall
+          ? 'local = cheap · escalated = planner'
+          : 'local = cheap implementer, escalated = planner fallback'}
+      </Text>
     </Box>
   );
 }

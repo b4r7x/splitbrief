@@ -1,9 +1,11 @@
 import { dirname, join, relative } from 'node:path';
 import { existsSync } from 'node:fs';
-import { SummarySchema } from '../../core/schemas/summary.js';
-import { SessionSchema } from '../../core/schemas/session.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../core/schemas/evidence.js';
 import { BRIEF_QUALITY_FILE, DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../core/paths.js';
+import {
+  parsePersistedSession,
+  parsePersistedSummary,
+} from '../../core/sessions/summary-parser.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { countBySeverity } from '../../utils/collections.js';
 import { isBriefQualityReport } from '../spec/brief-quality.js';
@@ -70,26 +72,26 @@ function readSummaryExport(
   raw: unknown,
   sessionId: string,
 ): Omit<ExportData, 'evidence' | 'drift' | 'briefQuality'> | null {
-  const session = SessionSchema.safeParse(raw);
-  if (session.success && session.data.summary) {
-    const { completedAt } = session.data;
+  const session = parsePersistedSession(raw);
+  if (session.status === 'ok' && session.session.summary) {
+    const { completedAt } = session.session;
     return {
       sessionId,
-      feature: session.data.summary.feature || session.data.feature || 'unknown',
+      feature: session.session.summary.feature || session.session.feature || 'unknown',
       completedAt: completedAt !== null ? new Date(completedAt).toISOString() : null,
       isComplete: completedAt !== null,
-      summary: session.data.summary,
+      summary: session.session.summary,
     };
   }
 
-  const summary = SummarySchema.safeParse(raw);
-  if (!summary.success) return null;
+  const summary = parsePersistedSummary(raw);
+  if (summary.status === 'invalid') return null;
   return {
     sessionId,
-    feature: summary.data.feature || 'unknown',
+    feature: summary.summary.feature || 'unknown',
     completedAt: null,
     isComplete: false,
-    summary: summary.data,
+    summary: summary.summary,
   };
 }
 

@@ -74,6 +74,19 @@ function fireCancel() {
   abortStore.clear();
 }
 
+function isSecondEscapePress(input: string): boolean {
+  return input === '\x1b' || isEscapeActionPending();
+}
+
+function runDeferredEscape(input: string, immediate: () => void, deferred: () => void): void {
+  if (isSecondEscapePress(input)) {
+    cancelEscapeAction();
+    immediate();
+    return;
+  }
+  scheduleEscapeAction(deferred);
+}
+
 export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions) {
   const [route, overlay, approval, cost, completion] = useStores(
     routerStore,
@@ -127,33 +140,23 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
       // armed-fire returns above, so the press that fires the cancel can never also
       // navigate — one physical keypress is at most one semantic action.
       if (lifecycleStore.get().cancelled) {
-        // Defer like the arm path so a split escape sequence (`\x1b` then `[A` over a slow
-        // link) can cancel the navigation via the non-ESC handler before it fires. A batched
-        // double ESC or a second lone ESC while the first is still deferred navigates at once.
-        const secondPress = input === '\x1b' || isEscapeActionPending();
-        if (secondPress) {
-          cancelEscapeAction();
-          routerStore.navigate({ to: 'home' });
-        } else {
-          scheduleEscapeAction(() => routerStore.navigate({ to: 'home' }));
-        }
+        runDeferredEscape(
+          input,
+          () => routerStore.navigate({ to: 'home' }),
+          () => routerStore.navigate({ to: 'home' }),
+        );
         return;
       }
       const target = escapeArmTarget();
       if (target === null) return;
-      // A second ESC fires immediately: either Ink 6.8 batched `\x1b\x1b` into one
-      // event (leftover ESC in `input`), or a fresh lone ESC arrived while the first
-      // press's arm was still deferred — two ESC bytes back to back can only be a real
-      // double-press, never a split escape sequence (those continue with `[`, not ESC).
-      const secondPress = input === '\x1b' || isEscapeActionPending();
-      if (secondPress) {
-        if (target === 'interrupt') fireInterrupt(interruptWorkflow);
-        else fireCancel();
-        return;
-      }
-      // First press: defer arming so a split escape sequence (`\x1b` then `[A`) can
-      // cancel it before the hint appears. Armed-fire paths above react instantly.
-      scheduleEscapeAction(() => abortStore.arm(target));
+      runDeferredEscape(
+        input,
+        () => {
+          if (target === 'interrupt') fireInterrupt(interruptWorkflow);
+          else fireCancel();
+        },
+        () => abortStore.arm(target),
+      );
     },
     {
       isActive:
@@ -163,6 +166,26 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
         !promptPending &&
         !completionOpen &&
         !route.attach,
+    },
+  );
+
+  useInput(
+    (input, key) => {
+      if (!key.escape) return;
+      if (getActiveFilteredStdin()?.isPasteActive()) return;
+      runDeferredEscape(
+        input,
+        () => routerStore.navigate({ to: 'home' }),
+        () => routerStore.navigate({ to: 'home' }),
+      );
+    },
+    {
+      isActive:
+        route.screen === 'summary' &&
+        !isOpen &&
+        !overlayExclusive &&
+        !promptPending &&
+        !completionOpen,
     },
   );
 

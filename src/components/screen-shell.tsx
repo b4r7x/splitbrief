@@ -34,12 +34,18 @@ export function ScreenShell({
       <Box
         flexDirection="column"
         flexGrow={1}
+        minHeight={0}
+        overflow="hidden"
         justifyContent={justifyContent}
         alignItems={alignItems}
       >
         {children}
       </Box>
-      {footer}
+      {footer !== undefined && footer !== null && (
+        <Box flexShrink={0} width="100%">
+          {footer}
+        </Box>
+      )}
     </Box>
   );
 }
