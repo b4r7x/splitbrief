@@ -1,10 +1,12 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 
+export type FilterInputVariant = 'bordered' | 'inline' | 'prompt';
+
 interface FilterInputProps {
   filter: string;
   placeholder?: string;
-  variant?: 'bordered' | 'inline';
+  variant?: FilterInputVariant;
 }
 
 export function FilterInput({
@@ -20,6 +22,21 @@ export function FilterInput({
       <Box height={1} overflow="hidden">
         <Text color={t.accent}>{'filter '}</Text>
         <Text wrap="truncate-end">{value}</Text>
+      </Box>
+    );
+  }
+
+  if (variant === 'prompt') {
+    return (
+      <Box height={1} overflow="hidden">
+        <Text color={t.textDim}>{'❯ '}</Text>
+        <Box flexShrink={1} minWidth={0} overflow="hidden">
+          <Text color={filter ? t.text : t.textDim} wrap="truncate-end">
+            {filter || placeholder}
+          </Text>
+        </Box>
+        <Text color={t.accent}>_</Text>
+        <Box flexGrow={1} />
       </Box>
     );
   }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Box } from 'ink';
+import { Box, Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -11,6 +11,7 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { CURSOR } from '../../../components/pickers/cursor-glyph.js';
 import { RecentSessions } from './recent-sessions.js';
+import { getHomeLayout } from '../layout.js';
 
 const CURSOR_GLYPH = CURSOR.trimEnd();
 
@@ -156,7 +157,7 @@ describe('RecentSessions', () => {
       <Box marginLeft={2}>
         <RecentSessions
           focused
-          limit={2}
+          limit={3}
           onSelect={() => {}}
           onClose={() => {}}
           hasOverlay={false}
@@ -180,6 +181,85 @@ describe('RecentSessions', () => {
     const filteredFrame = ui.lastFrame() ?? '';
     expect(filteredFrame).toContain('oldest-focus');
     expect(filteredFrame).not.toContain('newest-focus');
+    ui.unmount();
+  });
+
+  it('renders the unfocused small-height home budget as one visible session row', async () => {
+    seed([
+      { id: 'small-0', feature: 'oldest-small-home', startedAt: 1_700_000_000 },
+      { id: 'small-1', feature: 'middle-small-home', startedAt: 1_700_000_001 },
+      { id: 'small-2', feature: 'newest-small-home', startedAt: 1_700_000_002 },
+    ]);
+    const terminalRows = 15;
+    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
+    const layout = getHomeLayout({
+      cols: 80,
+      rows: 15,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount: 3,
+      sessionsFocused: false,
+    });
+
+    const ui = renderFeature(
+      <RecentSessions limit={layout.recentSessionLimit} showHiddenCount={layout.showHiddenCount} />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    expect(frame).toContain('Recent sessions');
+    expect(frame).toContain('newest-small-home');
+    expect(frame).not.toContain('middle-small-home');
+    expect(frame).not.toContain('oldest-small-home');
+    expect(frame).not.toContain('filter sessions');
+    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toMatch(/\+\d+ more/);
+    ui.unmount();
+  });
+
+  it('renders the focused small-height home budget with prompt and error rows accounted for', async () => {
+    seed([
+      { id: 'focus-small-0', feature: 'oldest-focused-small-home', startedAt: 1_700_000_000 },
+      { id: 'focus-small-1', feature: 'middle-focused-small-home', startedAt: 1_700_000_001 },
+      { id: 'focus-small-2', feature: 'newest-focused-small-home', startedAt: 1_700_000_002 },
+    ]);
+    const terminalRows = 17;
+    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
+    const layout = getHomeLayout({
+      cols: 80,
+      rows: 17,
+      isSmall: true,
+      hasSkills: false,
+      sessionCount: 3,
+      sessionsFocused: true,
+    });
+
+    const ui = renderFeature(
+      <Box flexDirection="column">
+        <RecentSessions
+          focused
+          limit={layout.recentSessionLimit}
+          showHiddenCount={layout.showHiddenCount}
+          onSelect={() => {}}
+          onClose={() => {}}
+          hasOverlay={false}
+        />
+        <Box height={1} overflow="hidden">
+          <Text>selection failed</Text>
+        </Box>
+      </Box>,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    expect(frame).toContain('filter sessions');
+    expect(frame).toContain('selection failed');
+    expect(frame).toContain('newest-focused-small-home');
+    expect(frame).not.toContain('middle-focused-small-home');
+    expect(frame).not.toContain('oldest-focused-small-home');
+    expect(frame).not.toMatch(/\+\d+ more/);
     ui.unmount();
   });
 

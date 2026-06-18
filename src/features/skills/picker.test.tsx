@@ -48,7 +48,7 @@ describe('SkillsPicker', () => {
 
     ui.stdin.write(ENTER);
     await tick(20);
-    expect([...skillsStore.get().selected]).toEqual(['skill-5']);
+    expect([...skillsStore.get().selected]).toEqual(['skill-7']);
     ui.unmount();
   });
 
@@ -66,6 +66,87 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     expect([...skillsStore.get().selected]).toEqual(['bravo']);
+    ui.unmount();
+  });
+
+  it('shows all skills without a false more row when they fit the terminal', async () => {
+    const skills = Array.from({ length: 6 }, (_, i) => skill(`skill-${i}`));
+    skillsStore.setAvailable(skills);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    for (const item of skills) {
+      expect(frame).toContain(item.name);
+    }
+    expect(frame).not.toContain('more');
+    ui.unmount();
+  });
+
+  it('renders both skill sections within the terminal row budget', async () => {
+    const terminalRows = 18;
+    terminalSizeStore.__testReset({ cols: 100, rows: terminalRows, isSmall: false });
+    skillsStore.setAvailable([
+      skill('project-alpha', 'project'),
+      skill('project-bravo', 'project'),
+      skill('global-charlie', 'global'),
+    ]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    for (const label of ['Project', 'Global', 'project-alpha', 'project-bravo', 'global-charlie']) {
+      expect(frame).toContain(label);
+    }
+    expect(frame).not.toContain('more');
+    ui.unmount();
+  });
+
+  it('keeps rows=6 in a compact filter state when no list rows fit', async () => {
+    const terminalRows = 6;
+    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
+    skillsStore.setAvailable([skill('alpha', 'project')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    ui.stdin.write('alpha-filter');
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    expect(frame).toContain('Planner Skills (0 selected)');
+    expect(frame).toContain('alpha-filter');
+    expect(frame).toContain('Enter confirm');
+    expect(frame).not.toContain('No matching skills');
+    expect(frame).not.toContain('╭');
+    expect(frame).not.toContain('╰');
+    ui.unmount();
+  });
+
+  it('sanitizes terminal controls in skill labels and descriptions', async () => {
+    skillsStore.setAvailable([
+      {
+        id: 'unsafe',
+        name: 'alpha\u001b[31m\nbeta',
+        description: 'safe\u0007\u001b]0;owned\u0007desc\u001b[2K',
+        path: '/tmp/unsafe',
+        scope: 'global',
+      },
+    ]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('alphabeta');
+    expect(frame).toContain('safedesc');
+    expect(frame).not.toContain('owned');
+    expect(frame).not.toContain('\u001b');
+    expect(frame).not.toContain('\u0007');
     ui.unmount();
   });
 

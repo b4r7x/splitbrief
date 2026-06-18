@@ -77,6 +77,32 @@ describe('SessionsPicker', () => {
     instance.unmount();
   });
 
+  it('shows all sessions without a false more row when they fit the terminal', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 32, isSmall: false });
+    for (let i = 0; i < 6; i++) {
+      writeSessionSummary(
+        tmp,
+        makeSession({
+          id: `sess-${i}`,
+          feature: `session feature ${i}`,
+          status: 'complete',
+        }),
+      );
+    }
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    for (let i = 0; i < 6; i++) {
+      expect(frame).toContain(`session feature ${i}`);
+    }
+    expect(frame).not.toContain('more');
+
+    instance.unmount();
+  });
+
   it('shows an empty-state hint when there are no sessions on disk', async () => {
     const instance = render(<SessionsPicker />);
     await tick(1);
@@ -193,7 +219,8 @@ describe('SessionsPicker', () => {
   });
 
   it('keeps title and hint visible when tiny terminals collapse the list', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 6, isSmall: true });
+    const terminalRows = 6;
+    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     writeSessionSummary(
       tmp,
       makeSession({
@@ -212,10 +239,43 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
     expect(frame).toContain('Sessions (1)');
     expect(frame).toContain('navigate');
     expect(frame).toContain('alpha-feature');
     expect(frame).not.toContain('No matching sessions');
+
+    instance.unmount();
+  });
+
+  it('uses compact inline filtering at rows=10 when no list rows fit', async () => {
+    const terminalRows = 10;
+    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
+    writeSessionSummary(
+      tmp,
+      makeSession({
+        id: 'sess-alpha',
+        feature: 'alpha feature',
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    instance.stdin.write('alpha-feature-filter');
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
+    expect(frame).toContain('Sessions (1)');
+    expect(frame).toContain('alpha-feature');
+    expect(frame).toContain('navigate');
+    expect(frame).not.toContain('No matching sessions');
+    expect(frame).not.toContain('╭');
+    expect(frame).not.toContain('╰');
 
     instance.unmount();
   });

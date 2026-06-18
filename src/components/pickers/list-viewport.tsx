@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { ScrollIndicator } from '../scroll-indicator.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { computeScrollWindow, computeSectionedScrollWindow } from './scroll-window.js';
+import { computeListDisplayWindow } from './scroll-window.js';
 
 export interface ListSectionConfig<T> {
   by: (item: T) => string;
@@ -10,61 +9,76 @@ export interface ListSectionConfig<T> {
   gapBetweenSections?: boolean | undefined;
 }
 
-interface ListViewportProps<T> {
+interface ListViewportBaseProps<T> {
   items: T[];
   selectedIndex: number;
   getKey: (item: T) => string;
   renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
-  chromeRows: number;
-  maxVisible?: number | undefined;
-  listFloor?: number | undefined;
   placeholder?: ReactNode;
   section?: ListSectionConfig<T>;
 }
 
-export function ListViewport<T>({
-  items,
-  selectedIndex,
-  getKey,
-  renderItem,
-  chromeRows,
-  maxVisible: maxVisibleProp,
-  listFloor,
-  placeholder,
-  section,
-}: ListViewportProps<T>) {
-  const rows = terminalSizeStore.use((s) => s.rows);
+type ListViewportExplicitBudgetProps = {
+  rowBudget: number;
+  rows?: never;
+  chromeRows?: never;
+  maxVisible?: never;
+  listFloor?: never;
+};
 
-  if (section) {
-    const { maxVisible, visibleSlots, showScrollUp, showScrollDown } = computeSectionedScrollWindow(
-      {
-        items,
-        selectedIndex,
-        terminalRows: rows,
-        chromeRows,
-        maxVisible: maxVisibleProp,
-        sectionBy: section.by,
-        sectionGap: section.gapBetweenSections ?? false,
-        listFloor,
-      },
-    );
-    if (maxVisible <= 0) return null;
+type ListViewportTerminalBudgetProps = {
+  rows: number;
+  chromeRows: number;
+  maxVisible?: number | undefined;
+  listFloor?: number | undefined;
+  rowBudget?: never;
+};
 
-    return (
-      <>
-        <ScrollIndicator show={showScrollUp} direction="up" />
-        <Box flexDirection="column">
-          {visibleSlots.map((slot, i) => {
-            if (slot.kind === 'header') {
-              if (slot.section === '__gap__') {
-                return <Box key={`gap-${slot.itemIndex}-${i}`} />;
-              }
-              return (
-                <Box key={`header-${slot.section}-${slot.itemIndex}`}>
-                  {section.renderHeader(slot.section ?? '', i)}
-                </Box>
-              );
-            }
+type ListViewportProps<T> = ListViewportBaseProps<T> &
+  (ListViewportExplicitBudgetProps | ListViewportTerminalBudgetProps);
+
+export function ListViewport<T>(props: ListViewportProps<T>) {
+  const { items, selectedIndex, getKey, renderItem, placeholder, section } = props;
+  const rowBudgetInput =
+    props.rowBudget !== undefined
+      ? { rowBudget: props.rowBudget }
+      : {
+          terminalRows: props.rows,
+          chromeRows: props.chromeRows,
+          maxVisible: props.maxVisible,
+          listFloor: props.listFloor,
+        };
+  const { rowBudget: resolvedRows, visibleSlots } = computeListDisplayWindow({
+    items,
+    selectedIndex,
+    ...rowBudgetInput,
+    ...(section
+      ? { section: { by: section.by, gapBetweenSections: section.gapBetweenSections } }
+      : {}),
+  });
+  if (resolvedRows <= 0) return null;
+
+  return (
+    <Box flexDirection="column">
+      {visibleSlots.map((slot, i) => {
+        switch (slot.kind) {
+          case 'indicator':
+            return (
+              <ScrollIndicator
+                key={`indicator-${slot.direction}-${i}`}
+                show
+                direction={slot.direction}
+              />
+            );
+          case 'header':
+            return (
+              <Box key={`header-${slot.section}-${slot.itemIndex}`}>
+                {section?.renderHeader(slot.section, i)}
+              </Box>
+            );
+          case 'gap':
+            return <Box key={`gap-${slot.itemIndex}-${i}`} height={1} />;
+          case 'item':
             return (
               <Box key={getKey(slot.item)}>
                 {renderItem(slot.item, {
@@ -73,40 +87,13 @@ export function ListViewport<T>({
                 })}
               </Box>
             );
-          })}
-          {items.length === 0 && placeholder}
-        </Box>
-        <ScrollIndicator show={showScrollDown} direction="down" />
-      </>
-    );
-  }
-
-  const { maxVisible, scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
-    computeScrollWindow({
-      items,
-      selectedIndex,
-      terminalRows: rows,
-      chromeRows,
-      maxVisible: maxVisibleProp,
-      listFloor,
-    });
-  if (maxVisible <= 0) return null;
-
-  return (
-    <>
-      <ScrollIndicator show={showScrollUp} direction="up" />
-      <Box flexDirection="column">
-        {visibleSlice.map((item, i) => {
-          const globalIndex = scrollOffset + i;
-          return (
-            <Box key={getKey(item)}>
-              {renderItem(item, { isCursor: globalIndex === selectedIndex, globalIndex })}
-            </Box>
-          );
-        })}
-        {items.length === 0 && placeholder}
-      </Box>
-      <ScrollIndicator show={showScrollDown} direction="down" />
-    </>
+          default: {
+            const _exhaustive: never = slot;
+            return _exhaustive;
+          }
+        }
+      })}
+      {items.length === 0 && placeholder}
+    </Box>
   );
 }

@@ -1,7 +1,14 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../theme.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
+import {
+  AlignedOptionRow,
+  getAlignedOptionLabelWidth,
+} from '../../../pickers/aligned-option-row.js';
 import { CompletionPanel } from '../completion-panel.js';
+
+const MAX_COMMAND_NAME_WIDTH = 18;
+const COMMAND_NAME_GAP = 2;
 
 interface CommandCompletionMenuProps {
   filtered: RuntimeCommandDef[];
@@ -17,6 +24,7 @@ export function CommandCompletionMenu({
   maxVisible,
 }: CommandCompletionMenuProps) {
   const t = useTheme();
+
   return (
     <CompletionPanel
       items={filtered}
@@ -25,42 +33,66 @@ export function CommandCompletionMenu({
       footer="↑↓ select  Tab fill  Enter run  Esc close"
       isOpen={filtered.length > 0 || fuzzyMatch !== null}
       itemKey={(cmd) => cmd.name}
-      renderRow={({ item: cmd, isSelected, rowBg }) => (
-        <>
-          <Text color={isSelected ? t.accent : t.textDim}>{isSelected ? '▸' : ' '}</Text>
-          <Text> </Text>
-          <Box width={14} backgroundColor={rowBg}>
-            <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
-              {cmd.name}
-            </Text>
-          </Box>
-          <Box flexGrow={1} flexShrink={1} backgroundColor={rowBg}>
-            <Text color={isSelected ? t.text : t.textDim} wrap="truncate-end">
-              {cmd.description}
-              {cmd.shortcut ? ` [${cmd.shortcut}]` : ''}
-            </Text>
-          </Box>
-        </>
-      )}
+      renderRow={({ item: cmd, isSelected, rowBg, visibleItems }) => {
+        const nameWidth = getCommandNameWidth(visibleItems.map((item) => item.name));
+        return <CommandRow cmd={cmd} isSelected={isSelected} rowBg={rowBg} nameWidth={nameWidth} />;
+      }}
       renderEmpty={(panelBg) => {
         if (!fuzzyMatch || filtered.length > 0) return null;
+        const nameWidth = getCommandNameWidth([fuzzyMatch.name]);
         return (
           <Box width="100%" backgroundColor={panelBg} paddingX={1}>
-            <Text color={t.textDim}>{'▸'}</Text>
-            <Text> </Text>
-            <Box width={14} backgroundColor={panelBg}>
-              <Text color={t.textDim} wrap="truncate-end">
-                {fuzzyMatch.name}
-              </Text>
-            </Box>
-            <Box flexGrow={1} flexShrink={1} backgroundColor={panelBg}>
-              <Text color={t.textDim} wrap="truncate-end">
-                {fuzzyMatch.description} (fuzzy)
-              </Text>
-            </Box>
+            <AlignedOptionRow
+              lead={<Text color={t.textDim}>{'▸'}</Text>}
+              leadGap={1}
+              label={fuzzyMatch.name}
+              labelWidth={nameWidth}
+              labelColor={t.textDim}
+              detail={`${fuzzyMatch.description} (fuzzy)`}
+              detailColor={t.textDim}
+              backgroundColor={panelBg}
+            />
           </Box>
         );
       }}
+    />
+  );
+}
+
+function getCommandNameWidth(names: string[]): number {
+  return getAlignedOptionLabelWidth(names, {
+    gap: COMMAND_NAME_GAP,
+    maxWidth: MAX_COMMAND_NAME_WIDTH,
+  });
+}
+
+function CommandRow({
+  cmd,
+  isSelected,
+  rowBg,
+  nameWidth,
+}: {
+  cmd: RuntimeCommandDef;
+  isSelected: boolean;
+  rowBg: string;
+  nameWidth: number;
+}) {
+  const t = useTheme();
+  const shortcut = cmd.shortcut ? `[${cmd.shortcut}]` : null;
+  const details = shortcut ? `${cmd.description} ${shortcut}` : cmd.description;
+
+  return (
+    <AlignedOptionRow
+      lead={<Text color={isSelected ? t.accent : t.textDim}>{isSelected ? '▸' : ' '}</Text>}
+      leadGap={1}
+      label={cmd.name}
+      labelWidth={nameWidth}
+      labelColor={isSelected ? t.accent : t.text}
+      labelBold={isSelected}
+      detail={details}
+      detailColor={t.textDim}
+      detailWrap={shortcut ? 'truncate-middle' : 'truncate-end'}
+      backgroundColor={rowBg}
     />
   );
 }

@@ -2,6 +2,13 @@ import { useEffect, useEffectEvent, useState } from 'react';
 import { useInput, type Key } from 'ink';
 import { clampIndex, navigateIndex } from '../utils/indexing.js';
 
+export interface PageNavigationContext<T> {
+  filtered: T[];
+  selectedIndex: number;
+}
+
+export type PageSize<T> = number | ((ctx: PageNavigationContext<T>) => number);
+
 interface UseFilterableListOptions<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
@@ -10,7 +17,7 @@ interface UseFilterableListOptions<T> {
   isActive?: boolean | undefined;
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialIndex?: number | undefined;
-  pageSize: number;
+  pageSize: PageSize<T>;
   customKeys?: (
     input: string,
     key: Key,
@@ -41,6 +48,10 @@ const getFilteredItems = <T>(
   filterFn: (item: T, query: string) => boolean,
   filter: string,
 ): T[] => (filter ? items.filter((item) => filterFn(item, filter)) : items);
+
+function resolvePageSize<T>(pageSize: PageSize<T>, ctx: PageNavigationContext<T>): number {
+  return Math.max(1, typeof pageSize === 'number' ? pageSize : pageSize(ctx));
+}
 
 export function useFilterableList<T>({
   items,
@@ -145,10 +156,12 @@ export function useFilterableList<T>({
         setState((prev) => {
           const currentFiltered = getFilteredItems(items, filterFn, prev.filter);
           if (currentFiltered.length === 0) return { ...prev, selectedIndex: 0 };
-          const distance = Math.max(1, pageSize);
-          const nextIndex = key.pageUp
-            ? prev.selectedIndex - distance
-            : prev.selectedIndex + distance;
+          const currentIndex = clampIndex(prev.selectedIndex, currentFiltered.length);
+          const distance = resolvePageSize(pageSize, {
+            filtered: currentFiltered,
+            selectedIndex: currentIndex,
+          });
+          const nextIndex = key.pageUp ? currentIndex - distance : currentIndex + distance;
           return {
             ...prev,
             selectedIndex: clampIndex(nextIndex, currentFiltered.length),

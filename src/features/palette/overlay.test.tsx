@@ -12,6 +12,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import type {
@@ -89,6 +90,16 @@ function renderCommandPalette(): ReturnType<typeof render> {
   );
 }
 
+function paletteResultRows(frame: string): string[] {
+  return frame.split('\n').filter((line) => /\[(command|mode|picker|session|task)\]/.test(line));
+}
+
+function rowContaining(rows: string[], text: string): string {
+  const row = rows.find((line) => line.includes(text));
+  expect(row).toBeDefined();
+  return row ?? '';
+}
+
 const DOWN = '\u001b[B';
 const UP = '\u001b[A';
 const ENTER = '\r';
@@ -107,6 +118,7 @@ beforeEach(() => {
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
+  terminalSizeStore.reset();
   overlayStore.open('command-palette');
 });
 
@@ -119,6 +131,7 @@ afterEach(() => {
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
+  terminalSizeStore.reset();
   if (projectDir) cleanupTempDir(projectDir);
   projectDir = '';
 });
@@ -399,6 +412,76 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     const frame = instance.lastFrame() ?? '';
     expect(frame).toMatch(/Settings/);
+    instance.unmount();
+  });
+
+  it('truncates long palette result rows instead of wrapping them', async () => {
+    terminalSizeStore.__testReset({ cols: 50, rows: 24, isSmall: true });
+    const longCommand: RuntimeCommandDef = {
+      kind: 'noarg',
+      name: '/very-long-command-name-for-row-layout',
+      label: 'VeryLongCommandLabelForPaletteRowLayout',
+      description: 'A long command description that must be truncated before TAIL_SENTINEL_PALETTE',
+      validScreens: ['home'],
+      handler: () => {},
+    };
+
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={[longCommand]}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={setWorkflowModeForTest}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame.split('\n').length).toBeLessThanOrEqual(24);
+    const resultLines = frame.split('\n').filter((line) => line.includes('[command]'));
+    expect(resultLines).toHaveLength(1);
+    expect(rowContaining(resultLines, '[command]')).toContain('…');
+    expect(frame).not.toContain('TAIL_SENTINEL_PALETTE');
+
+    instance.unmount();
+  });
+
+  it('shows visible palette actions within the result budget', async () => {
+    terminalSizeStore.__testReset({ cols: 140, rows: 36, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const rows = paletteResultRows(instance.lastFrame() ?? '');
+    expect(rows.length).toBeLessThanOrEqual(8);
+
+    const helpRow = rowContaining(rows, 'Help');
+    const settingsRow = rowContaining(rows, 'Settings');
+    expect(helpRow).toContain('Show help overlay');
+    expect(settingsRow).toContain('Planner');
+    expect(settingsRow).toContain('settings');
+
+    instance.unmount();
+  });
+
+  it('keeps palette command shortcuts visible when descriptions overflow', async () => {
+    terminalSizeStore.__testReset({ cols: 58, rows: 24, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    write(instance, 'Settings');
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    const commandRows = paletteResultRows(frame).filter((line) => line.includes('[command]'));
+    expect(commandRows.length).toBeLessThanOrEqual(8);
+
+    const settingsRow = rowContaining(commandRows, 'Settings');
+    expect(settingsRow).toContain('[Ctrl+,]');
+    expect(frame.split('\n').filter((line) => line.includes('[Ctrl+,]'))).toHaveLength(1);
+
     instance.unmount();
   });
 

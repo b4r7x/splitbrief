@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
-import { FilterInput } from '../filter-input.js';
+import { FilterInput, type FilterInputVariant } from '../filter-input.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -22,6 +22,8 @@ interface FilterableListProps<T> {
   listFloor?: number;
   bordered?: boolean;
   width?: number;
+  filterVariant?: FilterInputVariant | undefined;
+  filterPlaceholder?: string | undefined;
   shouldAppendChar?: (ch: string) => boolean;
   customKeys?: (
     input: string,
@@ -45,15 +47,18 @@ export function FilterableList<T>({
   listFloor = 0,
   bordered,
   width,
+  filterVariant = 'bordered',
+  filterPlaceholder,
   shouldAppendChar,
   customKeys,
   section,
 }: FilterableListProps<T>) {
   const rows = terminalSizeStore.use((s) => s.rows);
-  const viewportRows = availableRows(rows, chromeRows, listFloor);
+  const viewportRows = availableRows({ rows, chromeRows, floor: listFloor });
   const pageSize =
     maxVisibleProp === undefined ? viewportRows : Math.min(viewportRows, maxVisibleProp);
-  const filterVariant = viewportRows <= 0 ? 'inline' : 'bordered';
+  const resolvedFilterVariant =
+    viewportRows <= 0 && filterVariant === 'bordered' ? 'inline' : filterVariant;
 
   const list = useFilterableList<T>({
     items,
@@ -69,12 +74,17 @@ export function FilterableList<T>({
 
   return (
     <OverlayPanel title={title} hint={hint} maxWidth={width} bordered={bordered}>
-      <FilterInput filter={filter} variant={filterVariant} />
+      <FilterInput
+        filter={filter}
+        variant={resolvedFilterVariant}
+        {...(filterPlaceholder !== undefined ? { placeholder: filterPlaceholder } : {})}
+      />
       <ListViewport
         items={filtered}
         selectedIndex={selectedIndex}
         getKey={getKey}
         renderItem={renderItem}
+        rows={rows}
         chromeRows={chromeRows}
         listFloor={listFloor}
         {...(maxVisibleProp !== undefined ? { maxVisible: maxVisibleProp } : {})}
