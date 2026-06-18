@@ -3,7 +3,7 @@ import { collectReadiness } from '../../core/readiness/collect.js';
 import { formatReadinessReport, readinessBlockerMessage } from '../../core/readiness/format.js';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { writeJsonLine } from '../json-line.js';
+import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
 
 interface DoctorOpts {
   project?: string | undefined;
@@ -21,7 +21,7 @@ export function registerDoctorCommand(program: Command): void {
       const { report } = await collectReadiness({ projectDir });
 
       if (opts.json) {
-        writeJsonLine({ type: 'readiness_report', report });
+        writeHeadlessJsonRecord({ type: 'readiness_report', report });
       } else {
         console.log(formatReadinessReport(report));
       }

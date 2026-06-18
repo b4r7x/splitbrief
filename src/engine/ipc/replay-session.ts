@@ -36,7 +36,7 @@ function waitForDrain(socket: Socket): Promise<void> {
 export async function replaySession(opts: ReplaySessionOptions): Promise<EngineEvent[]> {
   const { socket, sessionJsonlPath, writeMessage } = opts;
   const replayStart = Date.now();
-  const { totalEvents } = await summarizeReplayEvents({ sessionJsonlPath });
+  const { totalEvents, diagnostics } = await summarizeReplayEvents({ sessionJsonlPath });
 
   const replayed: EngineEvent[] = [];
   if (
@@ -44,7 +44,13 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<EngineE
       socket,
       {
         kind: 'event',
-        payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents },
+        payload: {
+          type: 'replay_started',
+          ts: Date.now(),
+          phase: 'idle',
+          totalEvents,
+          diagnostics,
+        },
       },
       writeMessage,
     ))
@@ -63,6 +69,7 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<EngineE
     phase: 'idle' as const,
     totalEvents,
     durationMs,
+    diagnostics,
   };
   if (!socket.destroyed) {
     writeMessage(socket, { kind: 'event', payload: completeEvent });

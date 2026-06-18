@@ -7,7 +7,12 @@ import type {
   RetryOptions,
 } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { InvokeResult } from '../runners/types.js';
+import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import {
+  toRunnerCallResult,
+  toTokenDelta,
+  type RunnerCallCompatibleResult,
+} from '../calls/projection.js';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { matches } from '../../utils/error.js';
@@ -43,6 +48,7 @@ import {
 
 const MAX_RETRY_TEMPERATURE = 2;
 const DEFAULT_RETRY_TEMPERATURE = 0.7;
+let implementerCallSequence = 0;
 
 export function extractedCodeApprovalRaceError(file: string): string {
   return `write blocked because ${file} changed during approval`;
@@ -98,13 +104,14 @@ async function processImplementerOutput(opts: {
 
 export interface ImplementerBaseConfig {
   extractsCode: boolean;
+  backendKind?: RunnerCallContext['backendKind'] | undefined;
   /**
    * If false, the backend handles buildSystemPreamble() separately (e.g., as a system message).
    * If true or undefined (default), runPipeline prepends buildSystemPreamble() to the prompt.
    */
   prependSystemPreamble?: boolean;
 
-  invoke(opts: InvokeOpts): Promise<InvokeResult>;
+  invoke(opts: InvokeOpts): Promise<RunnerCallCompatibleResult>;
   buildPrompt?(opts: ImplementerOptions): string;
   buildRetryPrompt?(opts: RetryOptions): string;
 
@@ -127,6 +134,91 @@ function retryTemperature(
 ): number | undefined {
   if (step == null) return undefined;
   return Math.min((base ?? DEFAULT_RETRY_TEMPERATURE) + step * attempt, MAX_RETRY_TEMPERATURE);
+}
+
+function implementerRunnerName(config: ImplementerOptions['config']['implementer']): string {
+  switch (config.kind) {
+    case 'api':
+      return config.provider;
+    case 'cli':
+      return config.tool;
+    case 'shell':
+    case 'agent':
+      return config.command;
+    case 'agent-sdk':
+      return 'agent-sdk';
+    default: {
+      const _exhaustive: never = config;
+      return _exhaustive;
+    }
+  }
+}
+
+function createImplementerCallContext(opts: {
+  config: ImplementerOptions['config'];
+  backendKind?: RunnerCallContext['backendKind'] | undefined;
+  attempt: number;
+}): RunnerCallContext {
+  const implementer = opts.config.implementer;
+  return {
+    callId: `implementer-${++implementerCallSequence}`,
+    role: 'implementer',
+    backendKind: opts.backendKind ?? implementer.kind,
+    runnerName: implementerRunnerName(implementer),
+    model: implementer.model,
+    attempt: opts.attempt,
+  };
+}
+
+function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'completed'>): string {
+  switch (status) {
+    case 'failed':
+      return 'Implementer call failed';
+    case 'truncated':
+      return 'Implementer call was truncated';
+    case 'aborted':
+      return 'Implementer call was aborted';
+    case 'timeout':
+      return 'Implementer call timed out';
+    case 'refused':
+      return 'Implementer refused the request';
+    case 'unsupported_tool':
+      return 'Implementer used an unsupported tool';
+    case 'incomplete':
+      return 'Implementer call was incomplete';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+function runnerCallFailureMessage(
+  result: RunnerCallResult,
+  signal: AbortSignal | undefined,
+): string {
+  if (result.status === 'completed') return 'Implementer call completed';
+  if (result.status === 'aborted' && signal?.aborted) return 'Aborted';
+  return result.error?.message ?? runnerCallStatusMessage(result.status);
+}
+
+function errorData(err: unknown): Record<string, unknown> | null {
+  if (!isRecord(err)) return null;
+  return isRecord(err.data) ? err.data : null;
+}
+
+function errorOutput(err: unknown): string {
+  if (isRecord(err) && typeof err.output === 'string') return err.output;
+  const data = errorData(err);
+  return typeof data?.output === 'string' ? data.output : '';
+}
+
+function typedRunnerCallErrorMessage(err: unknown): string | null {
+  const data = errorData(err);
+  if (!data) return null;
+  const callError = data.error;
+  if (!isRecord(callError)) return null;
+  return typeof callError.message === 'string' ? callError.message : null;
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
@@ -156,6 +248,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
   async function runPipeline(
     opts: ImplementerOptions,
     rawPrompt: string,
+    attempt: number,
     temperature?: number,
   ): Promise<ImplementerResult> {
     const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
@@ -204,10 +297,16 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     if (phase) baseConfig.publisher?.publishRunning({ phase, taskId: task.id, file: task.file });
     const startTime = Date.now();
+    const callContext = createImplementerCallContext({
+      config,
+      backendKind: baseConfig.backendKind,
+      attempt,
+    });
 
-    let invokeResult: InvokeResult;
+    let callResult: RunnerCallResult;
     try {
-      invokeResult = await baseConfig.invoke({
+      const invokeResult = await baseConfig.invoke({
+        callContext,
         prompt,
         task,
         projectDir,
@@ -218,25 +317,47 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         signal: opts.signal,
         sandboxEnv: opts.sandboxEnv,
       });
+      callResult = toRunnerCallResult(callContext, invokeResult);
     } catch (err) {
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
         return { success: false, output: '', error: 'Aborted' };
       }
       if (shouldThrow(err)) throw err;
-      const output = isRecord(err) && typeof err.output === 'string' ? err.output : '';
+      const output = errorOutput(err);
       failTask();
-      return { success: false, output, error: formatErrorWithHint(toErrorMessage(err)) };
+      return {
+        success: false,
+        output,
+        error: formatErrorWithHint(typedRunnerCallErrorMessage(err) ?? toErrorMessage(err)),
+      };
+    }
+
+    const usage = toTokenDelta(callResult.usage);
+    const usageField = usage !== null ? { usage } : {};
+    const outputText = callResult.text;
+
+    if (callResult.status !== 'completed') {
+      if (callResult.status === 'aborted' && opts.signal?.aborted) {
+        implBuffer?.flushInterrupted();
+      } else {
+        implBuffer?.flush();
+      }
+      failTask();
+      return {
+        success: false,
+        output: outputText,
+        error: runnerCallFailureMessage(callResult, opts.signal),
+        ...usageField,
+      };
     }
 
     implBuffer?.flush();
 
-    const usageField = invokeResult.usage ? { usage: invokeResult.usage } : {};
-
     try {
       if (baseConfig.extractsCode) {
         const result = await processImplementerOutput({
-          text: invokeResult.text,
+          text: outputText,
           task,
           projectDir,
           approvedBaselineContent: oldContent,
@@ -244,7 +365,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         });
         if (!result.success) {
           failTask();
-          return { success: false, output: invokeResult.text, error: result.error, ...usageField };
+          return { success: false, output: outputText, error: result.error, ...usageField };
         }
         if (phase) {
           baseConfig.publisher?.publishDone({
@@ -257,7 +378,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
             duration: Date.now() - startTime,
           });
         }
-        return { success: true, output: invokeResult.text, ...usageField };
+        return { success: true, output: outputText, ...usageField };
       }
 
       if (baseConfig.detectChanges && changeBaseline) {
@@ -266,7 +387,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           failTask();
           return {
             success: false,
-            output: invokeResult.text,
+            output: outputText,
             error: changes.output,
             ...usageField,
           };
@@ -276,7 +397,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       failTask();
       return {
         success: false,
-        output: invokeResult.text,
+        output: outputText,
         error: toErrorMessage(err),
         ...usageField,
       };
@@ -292,13 +413,13 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         duration: Date.now() - startTime,
       });
     }
-    return { success: true, output: invokeResult.text, ...usageField };
+    return { success: true, output: outputText, ...usageField };
   }
 
   return {
     async implement(opts: ImplementerOptions): Promise<ImplementerResult> {
       const prompt = opts.continuationPrompt ?? buildPrompt(opts);
-      return runPipeline(opts, prompt);
+      return runPipeline(opts, prompt, 0);
     },
 
     async retry(opts: RetryOptions): Promise<ImplementerResult> {
@@ -311,7 +432,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
               baseConfig.retryTemperatureStep,
               opts.attempt,
             );
-      return runPipeline(opts, prompt, temperature);
+      return runPipeline(opts, prompt, opts.attempt, temperature);
     },
 
     ...DEFAULT_AVAILABILITY,

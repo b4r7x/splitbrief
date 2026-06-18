@@ -66,6 +66,7 @@ export function createAgentSdkPlanner(opts: {
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
+    backendKind: 'agent-sdk',
     isAvailable: () => isAgentSdkAvailable(apiKey),
 
     async injectUserTurn(text: string, projectDir: string): Promise<TokenDelta | null> {

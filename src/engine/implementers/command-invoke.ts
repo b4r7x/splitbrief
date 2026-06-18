@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
+import type { RunnerCallContext } from '../calls/types.js';
 import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
@@ -10,6 +11,7 @@ export interface CommandBasedImplementerOpts {
   initialCommand: string;
   label: string;
   extractsCode: boolean;
+  backendKind?: RunnerCallContext['backendKind'] | undefined;
   supportPromptPlaceholder?: boolean | undefined;
   getRunnerConfig: (config: Config) => {
     command: string;
@@ -29,6 +31,7 @@ export function createCommandBasedImplementer(
 
   return createImplementerBase({
     extractsCode: opts.extractsCode,
+    backendKind: opts.backendKind ?? (opts.extractsCode ? 'shell' : 'agent'),
     publisher: options?.publisher,
 
     async invoke(invokeOpts: InvokeOpts) {

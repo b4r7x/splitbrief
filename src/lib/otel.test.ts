@@ -8,7 +8,7 @@ import {
   type ReadableSpan,
   type SpanExporter,
 } from '@opentelemetry/sdk-trace-base';
-import { flushOtel, readOtelExporterFromArgv } from './otel.js';
+import { flushOtel, isMachineReadableStdout, readOtelExporterFromArgv } from './otel.js';
 
 type ProbeOptions = {
   env?: Record<string, string | undefined>;
@@ -69,6 +69,18 @@ describe('bootstrapOtel', () => {
       'exported:probe-span',
     );
   });
+
+  it('does not export console spans in machine-readable stdout modes', () => {
+    expect(
+      runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'console' }, argv: ['start', '--json'] }),
+    ).toBe('');
+    expect(
+      runSpanExportProbe({
+        env: { DIPTYCH_OTEL_EXPORTER: 'console' },
+        argv: ['start', '--rpc'],
+      }),
+    ).toBe('');
+  });
 });
 
 describe('readOtelExporterFromArgv', () => {
@@ -76,6 +88,14 @@ describe('readOtelExporterFromArgv', () => {
     expect(readOtelExporterFromArgv(['--otel-exporter=console'])).toBe('console');
     expect(readOtelExporterFromArgv(['--otel-exporter', 'otlp'])).toBe('otlp');
     expect(readOtelExporterFromArgv(['start', 'feature'])).toBeUndefined();
+  });
+});
+
+describe('isMachineReadableStdout', () => {
+  it('detects json and rpc output modes', () => {
+    expect(isMachineReadableStdout(['start', '--json'])).toBe(true);
+    expect(isMachineReadableStdout(['start', '--rpc'])).toBe(true);
+    expect(isMachineReadableStdout(['start'])).toBe(false);
   });
 });
 

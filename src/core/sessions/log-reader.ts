@@ -8,9 +8,37 @@ import type {
   SessionLogMessageEntry,
   SessionLogSummaryEntry,
 } from '../schemas/session-log.js';
+import { SESSION_LOG_MAX_ENTRY_BYTES } from '../schemas/session-log.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { SessionLogEntrySchema } from '../schemas/session-log.js';
+
+export interface SessionLogReadDiagnostics {
+  totalLines: number;
+  yieldedEntries: number;
+  skippedBlank: number;
+  skippedMalformed: number;
+  skippedInvalid: number;
+  skippedOversized: number;
+  skippedSymlink: number;
+}
+
+export interface SessionLogReadResult {
+  entries: SessionLogEntry[];
+  diagnostics: SessionLogReadDiagnostics;
+}
+
+function createSessionLogReadDiagnostics(): SessionLogReadDiagnostics {
+  return {
+    totalLines: 0,
+    yieldedEntries: 0,
+    skippedBlank: 0,
+    skippedMalformed: 0,
+    skippedInvalid: 0,
+    skippedOversized: 0,
+    skippedSymlink: 0,
+  };
+}
 
 function isSymlinkedLog(filePath: string): boolean {
   try {
@@ -20,16 +48,39 @@ function isSymlinkedLog(filePath: string): boolean {
   }
 }
 
-async function* readSessionLogFile(file: string): AsyncIterable<SessionLogEntry> {
+async function* readSessionLogFile(
+  file: string,
+  diagnostics: SessionLogReadDiagnostics = createSessionLogReadDiagnostics(),
+): AsyncIterable<SessionLogEntry> {
   if (!existsSync(file)) return;
-  if (isSymlinkedLog(file)) return;
+  if (isSymlinkedLog(file)) {
+    diagnostics.skippedSymlink += 1;
+    return;
+  }
   const stream = createReadStream(file, { encoding: 'utf-8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of rl) {
+    diagnostics.totalLines += 1;
+    if (Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) {
+      diagnostics.skippedOversized += 1;
+      continue;
+    }
     const result = parseJsonlLine(line);
-    if (result.kind !== 'value') continue;
+    if (result.kind === 'blank') {
+      diagnostics.skippedBlank += 1;
+      continue;
+    }
+    if (result.kind === 'corrupt') {
+      diagnostics.skippedMalformed += 1;
+      continue;
+    }
     const parsed = SessionLogEntrySchema.safeParse(result.value);
-    if (parsed.success) yield parsed.data;
+    if (parsed.success) {
+      diagnostics.yieldedEntries += 1;
+      yield parsed.data;
+    } else {
+      diagnostics.skippedInvalid += 1;
+    }
   }
 }
 
@@ -39,6 +90,23 @@ export async function* readSessionLogFromDir(dir: string): AsyncIterable<Session
 
 export async function* readSessionLog(ref: SessionRef): AsyncIterable<SessionLogEntry> {
   yield* readSessionLogFromDir(sessionDir(ref.projectDir, ref.sessionId));
+}
+
+export async function readSessionLogFromDirWithDiagnostics(
+  dir: string,
+): Promise<SessionLogReadResult> {
+  const diagnostics = createSessionLogReadDiagnostics();
+  const entries: SessionLogEntry[] = [];
+  for await (const entry of readSessionLogFile(join(dir, SESSION_LOG_FILE), diagnostics)) {
+    entries.push(entry);
+  }
+  return { entries, diagnostics };
+}
+
+export async function readSessionLogWithDiagnostics(
+  ref: SessionRef,
+): Promise<SessionLogReadResult> {
+  return readSessionLogFromDirWithDiagnostics(sessionDir(ref.projectDir, ref.sessionId));
 }
 
 export async function* readMessages(ref: SessionRef): AsyncIterable<SessionLogMessageEntry> {

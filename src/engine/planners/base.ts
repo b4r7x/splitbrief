@@ -3,6 +3,7 @@ import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
+import { error } from '../../utils/error.js';
 import type {
   Planner,
   PlannerCallbacks,
@@ -38,6 +39,9 @@ import type { Phase } from '../../core/schemas/enums.js';
 import { escalateFull, escalateHint } from './escalation.js';
 import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
 import { summarize, summarizeStructured } from './summary.js';
+import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
+import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
   researching: 'researching',
@@ -56,12 +60,40 @@ type InternalInvokeFn = (opts: {
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
-}) => Promise<InvokeResult>;
+}) => Promise<RunnerCallCompatibleResult>;
+
+const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
+
+let plannerBaseCallSequence = 0;
+
+function createPlannerCallContext(
+  config: Pick<PlannerBaseConfig, 'backendKind'>,
+  role: RunnerCallContext['role'],
+): RunnerCallContext {
+  return {
+    callId: `planner-${++plannerBaseCallSequence}`,
+    role,
+    backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+  };
+}
+
+function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
+  if (result.status === 'completed') return result;
+  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
+    callId: result.callId,
+    role: result.role,
+    backendKind: result.backendKind,
+    status: result.status,
+    partial: result.partial,
+    error: result.error,
+  });
+}
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 export interface PlannerBaseConfig {
   invokePlan: InternalInvokeFn;
   invokeEscalate: InternalInvokeFn;
+  backendKind?: RunnerCallContext['backendKind'];
   isAvailable: () => Promise<boolean>;
   unavailabilityReason?: () => string | undefined;
   getVersion?: () => Promise<string | null>;
@@ -142,23 +174,29 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           consumesPriorMessages: config.consumesPriorMessages,
         });
 
-        const result = await config.invokePlan({
-          prompt: effectivePrompt,
-          projectDir,
-          callbacks: {
-            onOutput: (text) => {
-              callbacks.onOutput(text);
-              buffer.append(text);
-            },
-            onQuestion: callbacks.onQuestion,
-            onSessionId: callbacks.onSessionId,
-            onSessionExpired: callbacks.onSessionExpired,
-          },
-          ...extras,
-          signal: callbacks.signal,
-        });
+        const result = requireCompletedCall(
+          toRunnerCallResult(
+            createPlannerCallContext(config, 'planner'),
+            await config.invokePlan({
+              prompt: effectivePrompt,
+              projectDir,
+              callbacks: {
+                onOutput: (text) => {
+                  callbacks.onOutput(text);
+                  buffer.append(text);
+                },
+                onQuestion: callbacks.onQuestion,
+                onSessionId: callbacks.onSessionId,
+                onSessionExpired: callbacks.onSessionExpired,
+              },
+              ...extras,
+              signal: callbacks.signal,
+            }),
+          ),
+        );
         buffer.flush();
-        if (result.usage) usage = accumulateUsage(usage, result.usage);
+        const usageDelta = toTokenDelta(result.usage);
+        if (usageDelta) usage = accumulateUsage(usage, usageDelta);
         const artifactText = config.readPhaseOutput
           ? config.readPhaseOutput(filename, result.text, projectDir, callbacks.sessionId)
           : result.text;
@@ -226,13 +264,18 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
       const { prompt, projectDir, callbacks } = opts;
-      const result = await config.invokeEscalate({
-        prompt,
-        projectDir,
-        callbacks,
-        signal: callbacks.signal,
-      });
-      return { text: result.text, usage: result.usage };
+      const result = requireCompletedCall(
+        toRunnerCallResult(
+          createPlannerCallContext(config, 'planner'),
+          await config.invokeEscalate({
+            prompt,
+            projectDir,
+            callbacks,
+            signal: callbacks.signal,
+          }),
+        ),
+      );
+      return { text: result.text, usage: toTokenDelta(result.usage) };
     },
 
     async escalateHint(opts: EscalateOptions): Promise<EscalationResult> {
@@ -248,7 +291,13 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       projectDir: string,
       callbacks: PlannerOutputCallbacks,
     ): Promise<{ text: string; usage: TokenDelta | null }> {
-      return config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal });
+      const result = requireCompletedCall(
+        toRunnerCallResult(
+          createPlannerCallContext(config, 'review'),
+          await config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal }),
+        ),
+      );
+      return { text: result.text, usage: toTokenDelta(result.usage) };
     },
 
     async summarize(

@@ -1,4 +1,3 @@
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { InvokeResult } from '../../runners/types.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
@@ -10,9 +9,12 @@ import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
-import { parsePartialUsage } from '../metadata.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { StreamMessage } from '../dispatch-stream.js';
+import { collectRunnerCallResult } from '../../calls/collector.js';
+import { toInvokeResult } from '../../calls/projection.js';
+import { normalizeRunnerCallUsage } from '../../calls/usage.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallUsage } from '../../calls/types.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -73,6 +75,23 @@ interface SseEvent {
   data: string;
 }
 
+interface SseBoundary {
+  index: number;
+  length: number;
+}
+
+let callSequence = 0;
+
+function anthropicCallContext(model: string): RunnerCallContext {
+  return {
+    callId: `anthropic-stream-${++callSequence}`,
+    role: 'planner',
+    backendKind: 'api',
+    runnerName: 'anthropic',
+    model,
+  };
+}
+
 function splitSystemMessages(messages: StreamMessage[]): {
   system: AnthropicSystemBlock[] | undefined;
   conversation: AnthropicMessage[];
@@ -94,16 +113,41 @@ function splitSystemMessages(messages: StreamMessage[]): {
   return { system: systemBlocks, conversation };
 }
 
-function mergeUsage(current: TokenDelta | null, next: Partial<TokenDelta>): TokenDelta | null {
-  const inputTokens = next.inputTokens ?? current?.inputTokens;
-  const outputTokens = next.outputTokens ?? current?.outputTokens;
-  const cacheReadTokens = next.cacheReadTokens ?? current?.cacheReadTokens;
-  const cacheCreateTokens = next.cacheCreateTokens ?? current?.cacheCreateTokens;
+function hasNumericField(record: Record<string, unknown> | null, field: string): boolean {
+  return typeof record?.[field] === 'number';
+}
+
+function mergeUsage(current: RunnerCallUsage | null, raw: unknown): RunnerCallUsage | null {
+  const next = normalizeRunnerCallUsage(raw);
+  if (next === null) return current;
+
+  const record = narrowRecord(raw);
+  const hasInput =
+    hasNumericField(record, 'input_tokens') || hasNumericField(record, 'inputTokens');
+  const hasOutput =
+    hasNumericField(record, 'output_tokens') || hasNumericField(record, 'outputTokens');
+  const hasCacheRead =
+    hasNumericField(record, 'cache_read_input_tokens') ||
+    hasNumericField(record, 'cached_input_tokens') ||
+    hasNumericField(record, 'cacheReadTokens');
+  const hasCacheCreate =
+    hasNumericField(record, 'cache_creation_input_tokens') ||
+    hasNumericField(record, 'cache_write_input_tokens') ||
+    hasNumericField(record, 'cacheCreateTokens') ||
+    hasNumericField(record, 'cacheWriteTokens');
+  const hasReasoning = hasNumericField(record, 'reasoningTokens');
+
+  const inputTokens = hasInput ? next.inputTokens : current?.inputTokens;
+  const outputTokens = hasOutput ? next.outputTokens : current?.outputTokens;
+  const cacheReadTokens = hasCacheRead ? next.cacheReadTokens : current?.cacheReadTokens;
+  const cacheCreateTokens = hasCacheCreate ? next.cacheCreateTokens : current?.cacheCreateTokens;
+  const reasoningTokens = hasReasoning ? next.reasoningTokens : current?.reasoningTokens;
   if (
     inputTokens === undefined &&
     outputTokens === undefined &&
     cacheReadTokens === undefined &&
-    cacheCreateTokens === undefined
+    cacheCreateTokens === undefined &&
+    reasoningTokens === undefined
   ) {
     return current;
   }
@@ -112,6 +156,7 @@ function mergeUsage(current: TokenDelta | null, next: Partial<TokenDelta>): Toke
     outputTokens: outputTokens ?? 0,
     ...(cacheReadTokens !== undefined && { cacheReadTokens }),
     ...(cacheCreateTokens !== undefined && { cacheCreateTokens }),
+    ...(reasoningTokens !== undefined && { reasoningTokens }),
   };
 }
 
@@ -130,6 +175,16 @@ function parseSseEvent(rawEvent: string): SseEvent | null {
   return { data: dataLines.join('\n') };
 }
 
+function findSseBoundary(buffer: string): SseBoundary | null {
+  const lfIndex = buffer.indexOf('\n\n');
+  const crlfIndex = buffer.indexOf('\r\n\r\n');
+
+  if (lfIndex === -1 && crlfIndex === -1) return null;
+  if (lfIndex === -1) return { index: crlfIndex, length: 4 };
+  if (crlfIndex === -1) return { index: lfIndex, length: 2 };
+  return lfIndex < crlfIndex ? { index: lfIndex, length: 2 } : { index: crlfIndex, length: 4 };
+}
+
 async function* readSseEvents(
   stream: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
@@ -146,10 +201,10 @@ async function* readSseEvents(
       buffer += decoder.decode(value, { stream: true });
 
       while (true) {
-        const boundary = buffer.indexOf('\n\n');
-        if (boundary === -1) break;
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
+        const boundary = findSseBoundary(buffer);
+        if (boundary === null) break;
+        const rawEvent = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary.length);
         throwIfAborted(signal);
         const parsed = parseSseEvent(rawEvent);
         if (parsed) yield parsed;
@@ -188,11 +243,6 @@ function getEventType(payload: Record<string, unknown>): AnthropicEventType | nu
   return isAnthropicEventType(t) ? t : null;
 }
 
-function getMessageUsage(payload: Record<string, unknown>): Partial<TokenDelta> {
-  const message = narrowRecord(payload.message);
-  return message ? parsePartialUsage(message.usage) : {};
-}
-
 function getDeltaText(payload: Record<string, unknown>): string | null {
   const delta = narrowRecord(payload.delta);
   if (delta === null) return null;
@@ -210,6 +260,49 @@ function getStopReason(payload: Record<string, unknown>): string | null {
   const delta = narrowRecord(payload.delta);
   if (delta === null) return null;
   return typeof delta.stop_reason === 'string' ? delta.stop_reason : null;
+}
+
+function emitText(events: RunnerCallEvent[], context: RunnerCallContext, text: string): void {
+  events.push({
+    type: 'call_text_delta',
+    ts: Date.now(),
+    ...context,
+    channel: 'assistant',
+    text,
+  });
+}
+
+function emitAnthropicTerminal(
+  events: RunnerCallEvent[],
+  context: RunnerCallContext,
+  stopReason: string | null,
+  sawMessageStop: boolean,
+  usage: RunnerCallUsage | null,
+): void {
+  if (!sawMessageStop) return;
+
+  if (stopReason === 'max_tokens') {
+    events.push({
+      type: 'call_error',
+      ts: Date.now(),
+      ...context,
+      status: 'truncated',
+      error: {
+        code: 'anthropic_stop_reason_max_tokens',
+        message: 'Anthropic response ended because the max token limit was reached',
+      },
+    });
+    return;
+  }
+
+  events.push({
+    type: 'call_completed',
+    ts: Date.now(),
+    ...context,
+    status: 'completed',
+    usage,
+    nativeSessionId: null,
+  });
 }
 
 export async function streamAnthropicCompletion(
@@ -272,8 +365,11 @@ export async function streamAnthropicCompletion(
     throw streamError.emptyResponse('Anthropic');
   }
 
-  let fullResponse = '';
-  let usage: TokenDelta | null = null;
+  let usage: RunnerCallUsage | null = null;
+  let stopReason: string | null = null;
+  let sawMessageStop = false;
+  const context = anthropicCallContext(opts.model);
+  const events: RunnerCallEvent[] = [{ type: 'call_started', ts: Date.now(), ...context }];
 
   try {
     for await (const event of withIdleTimeout(
@@ -291,25 +387,30 @@ export async function streamAnthropicCompletion(
       if (eventType === null) continue;
       switch (eventType) {
         case 'message_start':
-          usage = mergeUsage(usage, getMessageUsage(payload));
+          usage = mergeUsage(usage, narrowRecord(payload.message)?.usage);
           break;
         case 'content_block_delta': {
           const text = getDeltaText(payload);
           if (!text) break;
-          fullResponse += text;
+          emitText(events, context, text);
           opts.onProgress(text);
           break;
         }
-        case 'message_delta':
-          usage = mergeUsage(usage, parsePartialUsage(payload.usage));
-          if (getStopReason(payload) === 'max_tokens') opts.onProgress(TRUNCATION_WARNING);
+        case 'message_delta': {
+          usage = mergeUsage(usage, payload.usage);
+          const nextStopReason = getStopReason(payload);
+          stopReason = nextStopReason ?? stopReason;
+          if (nextStopReason === 'max_tokens') opts.onProgress(TRUNCATION_WARNING);
           break;
+        }
         case 'error':
           throw streamError.apiError('anthropic', getApiErrorMessage(payload));
         case 'content_block_start':
         case 'content_block_stop':
-        case 'message_stop':
         case 'ping':
+          break;
+        case 'message_stop':
+          sawMessageStop = true;
           break;
         default:
           assertNever(eventType);
@@ -326,5 +427,6 @@ export async function streamAnthropicCompletion(
     throwMappedError(err, endpoint);
   }
 
-  return { text: fullResponse, usage };
+  emitAnthropicTerminal(events, context, stopReason, sawMessageStop, usage);
+  return toInvokeResult(collectRunnerCallResult(events));
 }

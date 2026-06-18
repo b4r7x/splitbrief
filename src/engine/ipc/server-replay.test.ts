@@ -224,6 +224,10 @@ describe('startIpcServer replay', () => {
     if (replayStartedMsg.kind === 'event') {
       expect(replayStartedMsg.payload.type).toBe('replay_started');
       expect((replayStartedMsg.payload as { totalEvents: number }).totalEvents).toBe(2);
+      expect(
+        (replayStartedMsg.payload as { diagnostics?: { replayedEvents: number } }).diagnostics
+          ?.replayedEvents,
+      ).toBe(2);
     }
 
     const kinds: string[] = msgs.map((m) => m.kind);

@@ -1,11 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createJsonlSink } from './jsonl.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
 
 describe('jsonlSink', () => {
   let projectDir: string;
@@ -113,5 +114,26 @@ describe('jsonlSink', () => {
     const lines = readLog();
     expect(lines[0]?.['taskId']).toBe('T099');
     expect((lines[0]?.['data'] as Record<string, unknown>)?.['taskId']).toBeUndefined();
+  });
+
+  it('does not persist oversized session-log entries', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
+      sink({
+        type: 'warning',
+        ts: 100,
+        phase: 'idle',
+        message: 'x'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
+      });
+
+      const path = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+      expect(existsSync(path) ? readLog() : []).toEqual([]);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining('failed to persist oversized log entry'),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

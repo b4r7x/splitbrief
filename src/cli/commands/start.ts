@@ -44,6 +44,7 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { buildCLIOverrides, printConfigWarnings } from '../build-overrides.js';
+import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
 
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
@@ -223,7 +224,7 @@ async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<void> {
     assertJson: true,
     defaultAutoApprove: true,
     emitReadiness: (report) => {
-      process.stdout.write(JSON.stringify({ type: 'readiness_report', report }) + '\n');
+      writeHeadlessJsonRecord({ type: 'readiness_report', report });
     },
   });
   await deps.runHeadless({

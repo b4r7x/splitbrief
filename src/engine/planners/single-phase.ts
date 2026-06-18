@@ -3,13 +3,16 @@ import { TASKS_FILE } from '../../core/paths.js';
 import type { PlannerCallbacks, PlanResult, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
+import { error } from '../../utils/error.js';
 import {
   buildProjectLanguageContext,
   type LanguageContext,
 } from '../spec/prompts/language-context.js';
 import { parseTasksStrict } from '../spec/parser.js';
 import { buildProjectContextMarkdown } from './context.js';
-import type { InvokeResult } from '../runners/types.js';
+import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
+import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 type SinglePhaseConfig = {
   invokePlan: (opts: {
@@ -22,7 +25,8 @@ type SinglePhaseConfig = {
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
-  }) => Promise<InvokeResult>;
+  }) => Promise<RunnerCallCompatibleResult>;
+  backendKind?: RunnerCallContext['backendKind'];
   readPhaseOutput?: (
     filename: string,
     resultText: string,
@@ -36,6 +40,30 @@ type InvokeExtras = {
   priorMessages?: PriorMessage[];
   images?: Attachment[];
 };
+
+const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
+
+let singlePhaseCallSequence = 0;
+
+function createSinglePhaseCallContext(config: SinglePhaseConfig): RunnerCallContext {
+  return {
+    callId: `single-phase-${++singlePhaseCallSequence}`,
+    role: 'planner',
+    backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+  };
+}
+
+function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
+  if (result.status === 'completed') return result;
+  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
+    callId: result.callId,
+    role: result.role,
+    backendKind: result.backendKind,
+    status: result.status,
+    partial: result.partial,
+    error: result.error,
+  });
+}
 
 export function formatRepoMapBlock(codebaseContext: string | undefined): string {
   return codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
@@ -92,21 +120,26 @@ export async function runSinglePhasePlanning(
     images: callbacks.attachments,
     consumesPriorMessages: config.consumesPriorMessages,
   });
-  const result = await config.invokePlan({
-    prompt: effectivePrompt,
-    projectDir,
-    callbacks: {
-      onOutput: (text) => {
-        callbacks.onOutput(text);
-        buffer.append(text);
-      },
-      onQuestion: callbacks.onQuestion,
-      onSessionId: callbacks.onSessionId,
-      onSessionExpired: callbacks.onSessionExpired,
-    },
-    ...extras,
-    signal: callbacks.signal,
-  });
+  const result = requireCompletedCall(
+    toRunnerCallResult(
+      createSinglePhaseCallContext(config),
+      await config.invokePlan({
+        prompt: effectivePrompt,
+        projectDir,
+        callbacks: {
+          onOutput: (text) => {
+            callbacks.onOutput(text);
+            buffer.append(text);
+          },
+          onQuestion: callbacks.onQuestion,
+          onSessionId: callbacks.onSessionId,
+          onSessionExpired: callbacks.onSessionExpired,
+        },
+        ...extras,
+        signal: callbacks.signal,
+      }),
+    ),
+  );
   buffer.flush();
 
   const tasksContent = config.readPhaseOutput
@@ -118,7 +151,7 @@ export async function runSinglePhasePlanning(
     spec: '',
     plan: '',
     tasks,
-    usage: result.usage,
+    usage: toTokenDelta(result.usage),
     phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }],
   };
 }

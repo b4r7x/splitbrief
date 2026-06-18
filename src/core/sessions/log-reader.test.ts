@@ -1,9 +1,15 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { readSessionLog, readMessages, readEvents } from './log-reader.js';
+import {
+  readEvents,
+  readMessages,
+  readSessionLog,
+  readSessionLogWithDiagnostics,
+} from './log-reader.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SESSION_LOG_MAX_ENTRY_BYTES } from '../schemas/session-log.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -84,6 +90,30 @@ describe('readSessionLog', () => {
     expect(entries).toHaveLength(2);
   });
 
+  it('reports skipped malformed, invalid, and oversized lines when diagnostics are requested', async () => {
+    const dir = makeTmp();
+    writeFixture(dir, [
+      FIXTURE_LINES[0] ?? '',
+      'NOT VALID JSON{{{',
+      JSON.stringify({ kind: 'message', ts: '2024-01-01T00:00:01.000Z', role: 'robot' }),
+      'x'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
+      '',
+      FIXTURE_LINES[1] ?? '',
+    ]);
+
+    const result = await readSessionLogWithDiagnostics({ projectDir: dir, sessionId: SESSION_ID });
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.diagnostics).toMatchObject({
+      totalLines: 6,
+      yieldedEntries: 2,
+      skippedBlank: 1,
+      skippedMalformed: 1,
+      skippedInvalid: 1,
+      skippedOversized: 1,
+    });
+  });
+
   it('skips blank lines', async () => {
     const dir = makeTmp();
     writeFixture(dir, [FIXTURE_LINES[0] ?? '', '', '   ', FIXTURE_LINES[1] ?? '']);
@@ -109,6 +139,11 @@ describe('readSessionLog', () => {
 
       const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
       expect(entries).toHaveLength(0);
+      const result = await readSessionLogWithDiagnostics({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+      });
+      expect(result.diagnostics.skippedSymlink).toBe(1);
     } finally {
       cleanupTempDir(outside);
     }

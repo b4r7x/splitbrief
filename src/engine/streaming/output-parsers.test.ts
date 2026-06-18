@@ -201,6 +201,7 @@ describe('parseOpencodeLine', () => {
     };
     const result = parseOpencodeLine(JSON.stringify(event));
     expect(result.text).toBe('a.js, err.txt, out.txt\n\ndone');
+    expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
 
   it('parses step_finish usage from part.tokens', () => {
@@ -225,14 +226,20 @@ describe('parseOpencodeLine', () => {
       },
     };
     const result = parseOpencodeLine(JSON.stringify(event));
-    expect(result.usage).toEqual({ inputTokens: 64328, outputTokens: 34 });
+    expect(result.usage).toEqual({
+      inputTokens: 64328,
+      outputTokens: 34,
+      cacheReadTokens: 0,
+      cacheCreateTokens: 0,
+    });
+    expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
 
   it('returns empty for invalid JSON', () => {
     expect(parseOpencodeLine('broken')).toEqual({});
   });
 
-  it('ignores step_start and tool_use envelope events', () => {
+  it('keeps session ids on otherwise ignored step_start events', () => {
     const stepStart = {
       type: 'step_start',
       timestamp: 1781345478338,
@@ -244,10 +251,24 @@ describe('parseOpencodeLine', () => {
         type: 'step-start',
       },
     };
-    expect(parseOpencodeLine(JSON.stringify(stepStart))).toEqual({});
-    expect(parseOpencodeLine(JSON.stringify({ type: 'tool_use', part: { type: 'tool' } }))).toEqual(
-      {},
-    );
+    expect(parseOpencodeLine(JSON.stringify(stepStart))).toEqual({
+      sessionId: 'ses_13f89223effeq85h7RlKmjsV3M',
+    });
+  });
+
+  it('captures tool-use envelopes', () => {
+    expect(
+      parseOpencodeLine(
+        JSON.stringify({
+          type: 'tool_use',
+          sessionID: 'ses_tool',
+          part: { type: 'tool', name: 'read_file', input: { path: 'src/a.ts' } },
+        }),
+      ),
+    ).toEqual({
+      sessionId: 'ses_tool',
+      toolUse: [{ name: 'read_file', input: { path: 'src/a.ts' } }],
+    });
   });
 
   it('ignores the legacy top-level text/usage shapes that opencode never emits', () => {

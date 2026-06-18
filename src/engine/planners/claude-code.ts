@@ -58,6 +58,8 @@ export function createClaudeCodePlanner(opts: {
   }
 
   return createPlannerBase({
+    backendKind: 'cli',
+
     async invokePlan({ prompt, projectDir, callbacks, images, signal }) {
       const result = await invokeWithSessionFallback(prompt, projectDir, callbacks, images, signal);
       session.capture(result.sessionId);

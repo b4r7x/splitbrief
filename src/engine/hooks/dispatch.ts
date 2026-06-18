@@ -7,6 +7,7 @@ import type { HookOutcome, HookContext } from './types.js';
 import { loadHookModule } from './load-module.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
+import { protectConsumerPayload } from '../calls/consumer-policy.js';
 
 type HookResponse = {
   decision?: string;
@@ -35,7 +36,9 @@ async function runCommandHook(
   ctx: HookContext,
 ): Promise<HookOutcome> {
   const args = guardInterpolatedArgs(entry.args, event);
-  const stdin = JSON.stringify({ event, context: ctx });
+  const stdin = JSON.stringify(
+    protectConsumerPayload({ context: 'hooks', payload: { event, context: ctx } }).payload,
+  );
 
   try {
     const result = await spawnWithTimeout({

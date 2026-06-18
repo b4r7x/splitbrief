@@ -4,12 +4,10 @@ import type {
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
 } from 'openai/resources/chat/completions';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
-import { toTokenDelta } from '../streaming/token-usage.js';
 import { throwMappedError } from '../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../constants.js';
 import { TRUNCATION_WARNING } from './constants.js';
@@ -21,6 +19,10 @@ import {
   isOpenAiReasoningModel,
   clampOpenAiEffort,
 } from './capability-inference.js';
+import { collectRunnerCallResult } from '../calls/collector.js';
+import { toInvokeResult } from '../calls/projection.js';
+import { normalizeRunnerCallUsage } from '../calls/usage.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallUsage } from '../calls/types.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -32,8 +34,24 @@ interface StreamCompletionOptions {
   images?: Attachment[] | undefined;
 }
 
+interface StreamFunctionCallDelta {
+  name?: string | undefined;
+  arguments?: string | undefined;
+}
+
+interface StreamToolCallDelta {
+  id?: string | undefined;
+  function?: StreamFunctionCallDelta | undefined;
+}
+
+interface StreamChoiceDelta {
+  content?: string | null | undefined;
+  function_call?: StreamFunctionCallDelta | undefined;
+  tool_calls?: StreamToolCallDelta[] | undefined;
+}
+
 interface StreamChunk {
-  choices: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
+  choices: Array<{ delta?: StreamChoiceDelta; finish_reason?: string | null }>;
   usage?: {
     prompt_tokens?: number | null;
     completion_tokens?: number | null;
@@ -81,6 +99,18 @@ export interface StreamClient {
       ) => Promise<AsyncIterable<StreamChunk>>;
     };
   };
+}
+
+let callSequence = 0;
+
+function openAiCallContext(model: string, endpoint: StreamCompletionOptions['endpoint']) {
+  return {
+    callId: `openai-stream-${++callSequence}`,
+    role: 'planner',
+    backendKind: 'api',
+    runnerName: endpoint?.provider ?? 'openai',
+    model,
+  } satisfies RunnerCallContext;
 }
 
 function textOnlyContent(content: string | OpenAIContentPart[]): string | OpenAITextPart[] {
@@ -190,7 +220,13 @@ function effortField(
 function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
   return {
     choices: chunk.choices.map((choice) => ({
-      delta: choice.delta.content === undefined ? {} : { content: choice.delta.content },
+      delta: {
+        ...(choice.delta.content === undefined ? {} : { content: choice.delta.content }),
+        ...(choice.delta.function_call === undefined
+          ? {}
+          : { function_call: choice.delta.function_call }),
+        ...(choice.delta.tool_calls === undefined ? {} : { tool_calls: choice.delta.tool_calls }),
+      },
       ...(choice.finish_reason != null && { finish_reason: choice.finish_reason }),
     })),
     usage: chunk.usage
@@ -210,6 +246,118 @@ async function* adaptOpenAIStream(
 ): AsyncIterable<StreamChunk> {
   for await (const chunk of stream) {
     yield toStreamChunk(chunk);
+  }
+}
+
+function emitText(events: RunnerCallEvent[], context: RunnerCallContext, text: string): void {
+  events.push({
+    type: 'call_text_delta',
+    ts: Date.now(),
+    ...context,
+    channel: 'assistant',
+    text,
+  });
+}
+
+function emitToolUseDeltas(
+  events: RunnerCallEvent[],
+  context: RunnerCallContext,
+  delta: StreamChoiceDelta | undefined,
+): void {
+  if (delta === undefined) return;
+
+  for (const toolCall of delta.tool_calls ?? []) {
+    events.push({
+      type: 'call_tool_use_delta',
+      ts: Date.now(),
+      ...context,
+      channel: 'tool',
+      toolUseId: toolCall.id ?? null,
+      name: toolCall.function?.name ?? null,
+      inputDelta: toolCall.function?.arguments ?? '',
+    });
+  }
+
+  if (delta.function_call !== undefined) {
+    events.push({
+      type: 'call_tool_use_delta',
+      ts: Date.now(),
+      ...context,
+      channel: 'tool',
+      toolUseId: null,
+      name: delta.function_call.name ?? null,
+      inputDelta: delta.function_call.arguments ?? '',
+    });
+  }
+}
+
+function emitOpenAiTerminal(
+  events: RunnerCallEvent[],
+  context: RunnerCallContext,
+  finishReason: string | null,
+  usage: RunnerCallUsage | null,
+): void {
+  switch (finishReason) {
+    case 'stop':
+      events.push({
+        type: 'call_completed',
+        ts: Date.now(),
+        ...context,
+        status: 'completed',
+        usage,
+        nativeSessionId: null,
+      });
+      return;
+    case 'length':
+      events.push({
+        type: 'call_error',
+        ts: Date.now(),
+        ...context,
+        status: 'truncated',
+        error: {
+          code: 'openai_finish_reason_length',
+          message: 'OpenAI response ended because the max token limit was reached',
+        },
+      });
+      return;
+    case 'content_filter':
+      events.push({
+        type: 'call_error',
+        ts: Date.now(),
+        ...context,
+        status: 'refused',
+        error: {
+          code: 'openai_finish_reason_content_filter',
+          message: 'OpenAI response was blocked by the content filter',
+        },
+      });
+      return;
+    case 'tool_calls':
+    case 'function_call':
+      events.push({
+        type: 'call_error',
+        ts: Date.now(),
+        ...context,
+        status: 'unsupported_tool',
+        error: {
+          code: `openai_finish_reason_${finishReason}`,
+          message: `OpenAI response requested unsupported ${finishReason}`,
+        },
+      });
+      return;
+    case null:
+      return;
+    default:
+      events.push({
+        type: 'call_error',
+        ts: Date.now(),
+        ...context,
+        status: 'failed',
+        error: {
+          code: 'openai_unknown_finish_reason',
+          message: `OpenAI response ended with unknown finish_reason ${finishReason}`,
+        },
+      });
   }
 }
 
@@ -256,8 +404,10 @@ export async function streamCompletion(
     throwMappedError(err, endpoint);
   }
 
-  let fullResponse = '';
-  let usage: TokenDelta | null = null;
+  let usage: RunnerCallUsage | null = null;
+  let finishReason: string | null = null;
+  const context = openAiCallContext(model, endpoint);
+  const events: RunnerCallEvent[] = [{ type: 'call_started', ts: Date.now(), ...context }];
 
   try {
     for await (const chunk of withIdleTimeout(
@@ -266,16 +416,22 @@ export async function streamCompletion(
       STREAM_IDLE_TIMEOUT_MESSAGE,
     )) {
       throwIfAborted(opts.signal);
-      const content = chunk.choices?.[0]?.delta?.content;
+      const choice = chunk.choices?.[0];
+      emitToolUseDeltas(events, context, choice?.delta);
+
+      const content = choice?.delta?.content;
       if (content) {
-        fullResponse += content;
+        emitText(events, context, content);
         onProgress(content);
       }
-      if (chunk.choices?.[0]?.finish_reason === 'length') {
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+      if (choice?.finish_reason === 'length') {
         onProgress(TRUNCATION_WARNING);
       }
       if (chunk.usage) {
-        usage = toTokenDelta(chunk.usage) ?? usage;
+        usage = normalizeRunnerCallUsage(chunk.usage) ?? usage;
       }
     }
   } catch (err: unknown) {
@@ -286,7 +442,8 @@ export async function streamCompletion(
     throwMappedError(err, endpoint);
   }
 
-  return { text: fullResponse, usage };
+  emitOpenAiTerminal(events, context, finishReason, usage);
+  return toInvokeResult(collectRunnerCallResult(events));
 }
 
 export function toStreamClient(client: OpenAI): StreamClient {

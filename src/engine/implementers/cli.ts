@@ -23,10 +23,11 @@ export function createCliImplementer(
 
   return createImplementerBase({
     extractsCode: false,
+    backendKind: 'cli',
     publisher: options?.publisher,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, onOutput, signal } = opts;
+      const { prompt, projectDir, onOutput, signal, callContext } = opts;
       const effectiveModel = resolveAutoModel(config.model, toolName);
       const timeoutSignal = AbortSignal.timeout(timeout);
       const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -60,6 +61,7 @@ export function createCliImplementer(
           parseLine,
           notFoundMessage: tool.notFoundMessage,
           onText: onOutput,
+          callContext,
           signal: composedSignal,
         });
       } catch (err: unknown) {

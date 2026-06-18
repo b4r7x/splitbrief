@@ -10,12 +10,17 @@ import {
 import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
-import { redactSecrets } from '../../../utils/redact.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { protectConsumerPayload } from '../../calls/consumer-policy.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
   serviceName?: string;
+}
+
+function otelString(value: string): string {
+  const payload = protectConsumerPayload({ context: 'otel', payload: value }).payload;
+  return typeof payload === 'string' ? payload : '';
 }
 
 // SDK v2 pattern — context is propagated by passing it explicitly to startSpan, no global registration.
@@ -36,7 +41,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
           'diptych.workflow',
           {
             kind: SpanKind.INTERNAL,
-            attributes: { 'diptych.feature': redactSecrets(event.feature) },
+            attributes: { 'diptych.feature': otelString(event.feature) },
           },
           ROOT_CONTEXT,
         );
@@ -46,12 +51,15 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'workflow_config': {
         if (workflowSpan) {
           workflowSpan.setAttribute('diptych.mode', event.mode);
-          workflowSpan.setAttribute('diptych.planner.tool', event.plannerTool);
+          workflowSpan.setAttribute('diptych.planner.tool', otelString(event.plannerTool));
           if (event.plannerModel)
-            workflowSpan.setAttribute('diptych.planner.model', event.plannerModel);
-          workflowSpan.setAttribute('diptych.implementer.tool', event.implementerTool);
+            workflowSpan.setAttribute('diptych.planner.model', otelString(event.plannerModel));
+          workflowSpan.setAttribute('diptych.implementer.tool', otelString(event.implementerTool));
           if (event.implementerModel)
-            workflowSpan.setAttribute('diptych.implementer.model', event.implementerModel);
+            workflowSpan.setAttribute(
+              'diptych.implementer.model',
+              otelString(event.implementerModel),
+            );
         }
         return;
       }
@@ -131,9 +139,9 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
             {
               attributes: {
                 'diptych.task.id': taskIdToString(event.taskId),
-                'diptych.task.title': event.title,
-                'diptych.task.file': event.file,
-                'diptych.task.action': event.action,
+                'diptych.task.title': otelString(event.title),
+                'diptych.task.file': otelString(event.file),
+                'diptych.task.action': otelString(event.action),
                 'diptych.task.index': event.index,
                 'diptych.task.total': event.total,
               },
@@ -168,7 +176,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'task_skipped': {
         const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
-          span.setAttribute('diptych.task.skip_reason', event.reason);
+          span.setAttribute('diptych.task.skip_reason', otelString(event.reason));
           span.end();
           taskSpans.delete(taskIdToString(event.taskId));
         }
@@ -195,14 +203,14 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
             'diptych.validate.typecheck': event.stages.typecheck,
             'diptych.validate.lint': event.stages.lint,
             'diptych.validate.test': event.stages.test,
-            ...(event.error ? { 'diptych.validate.error': event.error } : {}),
+            ...(event.error ? { 'diptych.validate.error': otelString(event.error) } : {}),
           });
         }
         return;
       }
       case 'error': {
         if (workflowSpan) {
-          const message = redactSecrets(event.message);
+          const message = otelString(event.message);
           workflowSpan.recordException(new Error(message));
           for (const t of taskSpans.values()) {
             t.setStatus({ code: SpanStatusCode.ERROR, message });
@@ -223,7 +231,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'warning': {
         if (workflowSpan) {
           workflowSpan.addEvent('diptych.warning', {
-            'diptych.warning.message': redactSecrets(event.message),
+            'diptych.warning.message': otelString(event.message),
           });
         }
         return;
@@ -291,6 +299,15 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'ipc_reconnect_failed':
       case 'replay_started':
       case 'replay_complete':
+      case 'runner_call_started':
+      case 'runner_call_text_delta':
+      case 'runner_call_usage':
+      case 'runner_call_tool_use':
+      case 'runner_call_session_id':
+      case 'runner_call_artifact':
+      case 'runner_call_warning':
+      case 'runner_call_error':
+      case 'runner_call_completed':
         return;
       default:
         return assertNever(event);

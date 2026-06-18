@@ -402,6 +402,16 @@ export function eventRows(options: {
         labelTone: event.mode === 'yolo' ? 'warning' : 'textDim',
         valueTone: event.mode === 'yolo' ? 'warning' : 'textDim',
       });
+    case 'runner_call_started':
+    case 'runner_call_text_delta':
+    case 'runner_call_usage':
+    case 'runner_call_tool_use':
+    case 'runner_call_session_id':
+    case 'runner_call_artifact':
+    case 'runner_call_warning':
+    case 'runner_call_error':
+    case 'runner_call_completed':
+      return [];
     default:
       return assertNever(event);
   }

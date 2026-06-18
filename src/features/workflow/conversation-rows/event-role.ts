@@ -10,6 +10,16 @@ export function getGutterRole(event: EngineEvent): GutterRole {
       return phaseRole(event.phase);
     case 'planner_text':
       return event.role ?? 'planner';
+    case 'runner_call_text_delta':
+    case 'runner_call_started':
+    case 'runner_call_usage':
+    case 'runner_call_tool_use':
+    case 'runner_call_session_id':
+    case 'runner_call_artifact':
+    case 'runner_call_warning':
+    case 'runner_call_error':
+    case 'runner_call_completed':
+      return event.role === 'implementer' ? 'implementer' : 'planner';
     case 'planner_heartbeat':
     case 'task_started':
     case 'escalate':

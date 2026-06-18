@@ -4,6 +4,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
+import type { RunnerCallContext } from '../calls/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 
@@ -57,6 +58,7 @@ export interface RetryOptions extends ImplementerOptions {
 }
 
 export interface InvokeOpts {
+  callContext: RunnerCallContext;
   prompt: string;
   task: Task;
   projectDir: string;

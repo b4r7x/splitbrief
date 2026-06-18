@@ -110,7 +110,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
-| `--json` | boolean | `false` | Headless: emit each `EngineEvent` as NDJSON to stdout, skip TUI. Requires a `feature`. |
+| `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
 | `--rpc` | boolean | `false` | RPC: bidirectional NDJSON. Reads commands from stdin and writes `ack` / `error` / `status` / wrapped `event` responses to stdout. Requires a `feature`; mutually exclusive with `--json`. |
 | `--otel-exporter <name>` | string | — | Bootstrap an OTel exporter (currently only `console`). Requires `otel.enabled: true` in config. |
 
@@ -1566,7 +1566,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
 | `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
-| `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | NDJSON event stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
+| `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | Public NDJSON record stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
 | `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
 
 ### Where state lives
@@ -1591,7 +1591,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, every `EngineEvent` is emitted as a single-line JSON object on stdout (NDJSON). The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
 
 ### RPC stream (`--rpc`)
 

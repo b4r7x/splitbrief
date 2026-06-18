@@ -174,7 +174,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'`, `'failed'`, `'skipped'`, `'mcp-tool'` |
 
-Missing fields collapse to empty string. Object/array values are JSON-stringified. **No `eval`** — substitution is regex-based.
+Missing fields collapse to empty string. Object/array values are JSON-stringified. Placeholder values are secret-redacted and bounded before substitution; oversized strings are truncated with a placeholder. **No `eval`** — substitution is regex-based.
 
 ### Shell quoting
 
@@ -227,7 +227,7 @@ A single JSON object is written to the child's stdin, then stdin is closed:
 }
 ```
 
-- `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)).
+- `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)). The stdin payload is bounded and secret-redacted before it is written to the child process.
 - `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`instant` / `quick` / `standard` / `speckit`).
 
 ### stdout — optional response

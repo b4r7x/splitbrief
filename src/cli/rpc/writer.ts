@@ -1,4 +1,5 @@
 import type { EngineEvent } from '../../engine/events/types.js';
+import { protectConsumerPayload } from '../../engine/calls/consumer-policy.js';
 import type { RpcResponse } from './types.js';
 
 export function createResponseWriter(deps: {
@@ -22,7 +23,14 @@ export function createResponseWriter(deps: {
   function write(response: RpcResponse): void {
     if (broken) return;
     try {
-      deps.stream.write(`${JSON.stringify(response)}\n`);
+      const protectedResponse = protectConsumerPayload({ context: 'rpc', payload: response });
+      const output = protectedResponse.oversized
+        ? {
+            type: 'error',
+            error: `omitted oversized ${response.type} response exceeding ${protectedResponse.maxBytes} bytes`,
+          }
+        : protectedResponse.payload;
+      deps.stream.write(`${JSON.stringify(output)}\n`);
     } catch {
       broken = true;
       deps.onClose('output stream write failed');

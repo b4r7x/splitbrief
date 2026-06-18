@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createAgentSdkBackend, processStream } from './agent-sdk-backend.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 // The agent-sdk loader uses dynamic import(); stub it so createAgentSdkBackend's
 // invoke path can be exercised without the real optional peer dep installed.
@@ -31,6 +32,30 @@ describe('processStream — session id capture', () => {
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
   });
 
+  it('emits the native session id as soon as it is observed', async () => {
+    const events: RunnerCallEvent[] = [];
+    const stream = asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-event-123' },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 'sess-event-123',
+        result: 'done',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ]);
+
+    await processStream({
+      stream,
+      onOutput: vi.fn(),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(events.find((event) => event.type === 'call_session_id')).toMatchObject({
+      nativeSessionId: 'sess-event-123',
+    });
+  });
+
   it('falls back to the result message session_id when no init message arrives', async () => {
     const onSessionId = vi.fn();
     const stream = asyncIter([
@@ -48,18 +73,103 @@ describe('processStream — session id capture', () => {
     expect(result.sessionId).toBe('sess-result-xyz');
   });
 
+  it('rejects SDK result error subtypes as failed terminal results', async () => {
+    const stream = asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-error' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'partial' }] } },
+      {
+        type: 'result',
+        subtype: 'error_max_turns',
+        session_id: 'sess-error',
+        is_error: true,
+        errors: ['max turns reached'],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      },
+    ]);
+    const chunks: string[] = [];
+    const sessions: string[] = [];
+
+    await expect(
+      processStream({
+        stream,
+        onOutput: (text) => chunks.push(text),
+        onSessionId: (id) => sessions.push(id),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        status: 'truncated',
+        output: 'partial',
+        nativeSessionId: 'sess-error',
+        partial: true,
+        error: { code: 'error_max_turns', message: 'max turns reached' },
+      },
+    });
+
+    expect(sessions).toContain('sess-error');
+    expect(chunks.join('')).toBe('partial');
+  });
+
+  it('rejects streams that end without a result terminal as incomplete', async () => {
+    const stream = asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-incomplete' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'partial' }] } },
+    ]);
+
+    await expect(
+      processStream({
+        stream,
+        onOutput: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        status: 'incomplete',
+        output: 'partial',
+        nativeSessionId: 'sess-incomplete',
+        partial: true,
+        error: { code: 'missing_terminal_event' },
+      },
+    });
+  });
+
   it('stops processing when the abort signal fires', async () => {
     const controller = new AbortController();
     const stream = asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-abort' },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'first' }] } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'second' }] } },
     ]);
+    const sessions: string[] = [];
     const onOutput = vi.fn(() => controller.abort(new Error('cancelled')));
 
-    await expect(processStream({ stream, onOutput, signal: controller.signal })).rejects.toThrow(
-      'cancelled',
-    );
+    await expect(
+      processStream({
+        stream,
+        onOutput,
+        onSessionId: (id) => sessions.push(id),
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('cancelled');
     expect(onOutput).toHaveBeenCalledOnce();
+    expect(sessions).toContain('sess-abort');
+  });
+
+  it('keeps timeout abort reason distinct from user abort', async () => {
+    const controller = new AbortController();
+    const stream = asyncIter([
+      { type: 'system', subtype: 'init', session_id: 'sess-timeout' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'first' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'second' }] } },
+    ]);
+
+    await expect(
+      processStream({
+        stream,
+        onOutput: () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 });
 

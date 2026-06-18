@@ -61,6 +61,16 @@ function installFailingShim(bodyLines: string[], exitCode: number): string {
   return shimPath;
 }
 
+function installSlowShim(bodyLines: string[]): string {
+  const shimPath = join(shimDir, 'claude');
+  const body = bodyLines
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
+  writeFileSync(shimPath, `#!/bin/bash\n${body}\nsleep 5\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return shimPath;
+}
+
 function makeImage(path: string): Attachment {
   return {
     id: path,
@@ -202,7 +212,7 @@ describe('runClaudePlannerStream', () => {
         onOutput: () => {},
         signal: controller.signal,
       }),
-    ).rejects.toMatchObject({ name: 'AbortError' });
+    ).rejects.toThrow('cancelled');
   });
 
   it('surfaces the in-band is_error reason when claude exits 1 with empty stderr', async () => {
@@ -248,6 +258,69 @@ describe('runClaudePlannerStream', () => {
       kind: 'process-output',
       message: expect.stringContaining('Overloaded: please retry'),
     });
+  });
+
+  it('rejects a stream that exits 0 without a result terminal', async () => {
+    installShim(['{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}']);
+
+    const chunks: string[] = [];
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: (text) => chunks.push(text),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('without a terminal event'),
+    });
+
+    expect(chunks.join('')).toContain('partial');
+  });
+
+  it('emits session id and partial output before an interrupted stream rejects', async () => {
+    installSlowShim([
+      '{"type":"system","session_id":"sess-interrupt"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}',
+    ]);
+    const controller = new AbortController();
+    const chunks: string[] = [];
+    const sessions: string[] = [];
+
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: (text) => {
+          chunks.push(text);
+          if (text.includes('partial')) controller.abort(new Error('cancelled'));
+        },
+        onSessionId: (id) => sessions.push(id),
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('cancelled');
+
+    expect(sessions).toContain('sess-interrupt');
+    expect(chunks.join('')).toContain('partial');
+  });
+
+  it('preserves timeout abort reason separately from user abort', async () => {
+    installSlowShim([
+      '{"type":"system","session_id":"sess-timeout"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}',
+    ]);
+
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+        signal: AbortSignal.timeout(20),
+      }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 
   it('embeds image attachments as prompt references in stdin, never as --image argv', async () => {
@@ -384,7 +457,7 @@ describe('runClaudeOneShot', () => {
         onOutput: () => {},
         signal: controller.signal,
       }),
-    ).rejects.toMatchObject({ name: 'AbortError' });
+    ).rejects.toThrow('cancelled');
   });
 
   it('passes effort as an --effort argv flag and leaves stdin as the raw prompt', async () => {
@@ -422,20 +495,23 @@ describe('runClaudeOneShot', () => {
     });
   });
 
-  it('returns empty text + null usage when the stream contains no result event', async () => {
+  it('rejects when the stream contains no result event', async () => {
     installShim([
       '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}',
       // no result event — process exits 0 after assistant event only
     ]);
 
-    const result = await runClaudeOneShot({
-      prompt: 'p',
-      projectDir: shimDir,
-      onOutput: () => {},
+    const chunks: string[] = [];
+    await expect(
+      runClaudeOneShot({
+        prompt: 'p',
+        projectDir: shimDir,
+        onOutput: (text) => chunks.push(text),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('without a terminal event'),
     });
-
-    // The accumulated text from assistant chunks should still surface.
-    expect(result.text).toBe('partial');
-    expect(result.usage).toBeNull();
+    expect(chunks.join('')).toContain('partial');
   });
 });

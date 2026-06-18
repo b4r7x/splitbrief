@@ -129,11 +129,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
-    .option(
-      '--json',
-      'Headless mode: emit each EngineEvent as NDJSON to stdout, skip TUI render',
-      false,
-    )
+    .option('--json', 'Headless mode: emit public NDJSON records to stdout, skip TUI render', false)
     .option('--rpc', 'RPC mode: bidirectional NDJSON on stdin/stdout', false)
     .option(
       '--otel-exporter <name>',

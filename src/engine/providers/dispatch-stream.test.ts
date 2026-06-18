@@ -3,7 +3,9 @@ import { matches } from '../../utils/error.js';
 import { dispatchStreamCompletion } from './dispatch-stream.js';
 import type { StreamClient } from './openai-stream.js';
 
-function makeOpenAIClient(chunks: Array<{ content?: string }>): StreamClient {
+function makeOpenAIClient(
+  chunks: Array<{ content?: string; finishReason?: string | null }>,
+): StreamClient {
   return {
     chat: {
       completions: {
@@ -18,7 +20,12 @@ function makeOpenAIClient(chunks: Array<{ content?: string }>): StreamClient {
                 return {
                   done: false,
                   value: {
-                    choices: [{ delta: { content: chunk.content ?? null } }],
+                    choices: [
+                      {
+                        delta: { content: chunk.content ?? null },
+                        finish_reason: chunk.finishReason ?? null,
+                      },
+                    ],
                     usage: null,
                   },
                 };
@@ -40,7 +47,11 @@ function makeAnthropicSseResponse(events: string[]): Response {
 
 describe('dispatchStreamCompletion', () => {
   it('routes non-anthropic providers through the OpenAI-compatible client', async () => {
-    const client = makeOpenAIClient([{ content: 'Hi ' }, { content: 'there' }]);
+    const client = makeOpenAIClient([
+      { content: 'Hi ' },
+      { content: 'there' },
+      { finishReason: 'stop' },
+    ]);
     const progress: string[] = [];
 
     const result = await dispatchStreamCompletion({

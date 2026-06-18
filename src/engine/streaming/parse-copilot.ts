@@ -32,6 +32,16 @@ const AssistantUsageEvent = z.object({
   }),
 });
 
+const ToolUseEvent = z.object({
+  type: z.enum(['tool.execution_start', 'tool.call', 'tool.use']),
+  data: z.looseObject({
+    name: z.string().optional(),
+    tool: z.string().optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
+    args: z.record(z.string(), z.unknown()).optional(),
+  }),
+});
+
 function extractText(data: z.infer<typeof AssistantMessageEvent>['data']): string | undefined {
   if (data.text) return data.text;
   if (typeof data.content === 'string') return data.content;
@@ -77,6 +87,21 @@ export function parseCopilotLine(line: string): ParsedLine {
   if (usageEvent.success && usageEvent.data.data.usage) {
     const usage = toTokenDelta(usageEvent.data.data.usage);
     if (usage) return { usage };
+  }
+
+  const tool = ToolUseEvent.safeParse(event);
+  if (tool.success) {
+    const name = tool.data.data.name ?? tool.data.data.tool;
+    if (name) {
+      return {
+        toolUse: [
+          {
+            name,
+            input: tool.data.data.input ?? tool.data.data.args ?? {},
+          },
+        ],
+      };
+    }
   }
 
   return {};
