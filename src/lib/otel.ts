@@ -8,6 +8,7 @@ import {
 export function bootstrapOtel(): void {
   const exporterName = resolveOtelExporter();
   if (exporterName !== 'console') return;
+  if (isMachineReadableStdout(process.argv)) return;
   const exporter = new ConsoleSpanExporter();
   const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
   trace.setGlobalTracerProvider(provider);
@@ -27,6 +28,10 @@ export function readOtelExporterFromArgv(argv: readonly string[]): string | unde
     if (arg === '--otel-exporter') return argv[i + 1];
   }
   return undefined;
+}
+
+export function isMachineReadableStdout(argv: readonly string[]): boolean {
+  return argv.includes('--json') || argv.includes('--rpc');
 }
 
 function readMethod(provider: object, name: string): (() => unknown) | null {

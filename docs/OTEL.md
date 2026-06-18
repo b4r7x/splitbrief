@@ -17,16 +17,16 @@ For local debugging, diptych can register a `ConsoleSpanExporter` itself — pic
 
 ```bash
 # OTel-standard env var
-OTEL_TRACES_EXPORTER=console node dist/cli.js start --json --mode quick "otel smoke"
+OTEL_TRACES_EXPORTER=console node dist/cli.js start --mode quick "otel smoke"
 
 # diptych-scoped env var (alias)
-DIPTYCH_OTEL_EXPORTER=console node dist/cli.js start --json --mode quick "otel smoke"
+DIPTYCH_OTEL_EXPORTER=console node dist/cli.js start --mode quick "otel smoke"
 
 # CLI flag (no env var needed)
-node dist/cli.js start --otel-exporter=console --json --mode quick "otel smoke"
+node dist/cli.js start --otel-exporter=console --mode quick "otel smoke"
 ```
 
-You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output.
+Use those examples without `--json` or `--rpc` when you want console spans. You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. The console exporter writes spans with `console.dir`, so diptych disables the console exporter in machine-readable stdout modes (`--json` and `--rpc`) to avoid corrupting NDJSON output.
 
 The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script can miss diptych's `@opentelemetry/api` instance when ESM resolves duplicate module paths. The bootstrap (`src/lib/otel.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache. The detached host (`diptych start --detach`) runs the workflow in a separate process and calls the same bootstrap at the top of `src/engine/ipc/server-entry.ts`; the parent forwards its `--otel-exporter` flag to the child as `DIPTYCH_OTEL_EXPORTER` so console traces work under `--detach` too.
 
@@ -132,6 +132,8 @@ One span per planning phase: `researching`, `specifying`, `planning`, `implement
 ### Task span attributes
 
 One span per implementation task. Attributes: `diptych.task.id`, `diptych.task.title`, `diptych.task.file`, `diptych.task.action` (`create` / `modify`), `diptych.task.index`, `diptych.task.total`. On completion: `diptych.task.method`, `diptych.task.retries`, `diptych.task.duration_ms`. On skip: `diptych.task.skip_reason`. On failure: status `ERROR`.
+
+All user-, planner-, task-, warning-, and error-derived strings attached to spans are secret-redacted and bounded before export. OTel is an external consumer boundary, not a raw transcript channel.
 
 ## Span events
 

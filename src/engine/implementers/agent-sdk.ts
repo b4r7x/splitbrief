@@ -30,6 +30,7 @@ export function createAgentSdkImplementer(
 
   return createImplementerBase({
     extractsCode: false,
+    backendKind: 'agent-sdk',
     publisher: options?.publisher,
 
     async invoke(opts: InvokeOpts) {

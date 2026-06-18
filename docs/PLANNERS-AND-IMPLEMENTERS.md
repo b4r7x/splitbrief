@@ -94,10 +94,12 @@ Each phase:
 - Calls `callbacks.onPhase()` so the UI can update
 - Creates a transcript buffer (16KB, flushed to `session.jsonl`)
 - On resume, injects prior messages into the first phase. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`). CLI backends get a prompt-level prefix.
-- Accumulates token usage via `accumulateUsage()`
+- Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
 - Returns artifact text via `readPhaseOutput()` (backends that write files to disk) or raw stdout
 
 The `quickPlan()` and `instantPlan()` paths skip straight to a single-phase call using `buildQuickPlanPrompt()` or `buildInstantPrompt()` respectively. Same pipeline machinery, one invocation instead of four.
+
+Planner backends may still return the old `{ text, usage }` compatibility shape, but the base layer treats that as a completed `RunnerCallResult`. New adapters should emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, `agent`, or `agent-sdk`).
 
 ---
 
@@ -220,13 +222,15 @@ Wraps a backend-specific `invoke()` with:
 
 1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections. For modify tasks, `currentCode` is resolved through a tiered context strategy.
 2. **Prepend system preamble** -- language context, project conventions. API backends handle this separately as a system message (`prependSystemPreamble: false`).
-3. **Call backend `invoke()`** -- the actual model call.
+3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly.
 4. **Process output:**
    - If `extractsCode`: extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff.
    - If `!extractsCode`: detect file changes via `detectChanges()` (git diff against pre-invocation snapshot).
 5. **Publish result** -- `publishDone` with diff metrics (lines added/removed, duration) or `publishFailed`.
 
 For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Temperature increases by `retryTemperatureStep` per attempt.
+
+The implementer base normalizes backend output into `RunnerCallResult` before processing files. A non-completed status returns a failed `ImplementerResult` with partial output and usage preserved; user aborts, timeouts, truncation, refusals, unsupported tools, and incomplete streams are not collapsed into generic success/failure strings.
 
 ---
 
@@ -243,7 +247,7 @@ type TokenDelta = {
 }
 ```
 
-Deltas are accumulated per planning phase via `accumulateUsage()` (`src/engine/streaming/token-usage.ts`) and published through `cost_update` events.
+Deltas are normalized in `src/engine/calls/usage.ts`. The temporary `src/engine/streaming/token-usage.ts` wrapper exists for compatibility, but new backend code should use the call usage helpers so delta, cumulative, and final samples are handled consistently. Accumulated usage is published through `cost_update` events.
 
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
 

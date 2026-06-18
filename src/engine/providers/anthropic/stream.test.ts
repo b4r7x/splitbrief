@@ -78,6 +78,29 @@ describe('streamAnthropicCompletion', () => {
     expect(chunks).toEqual(['Hello ', 'world']);
   });
 
+  it('parses CRLF-framed Anthropic SSE events', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: message_start\r\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}\r\n\r\n',
+        'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello CRLF"}}\r\n\r\n',
+        'event: message_delta\r\ndata: {"type":"message_delta","usage":{"output_tokens":3}}\r\n\r\n',
+        'event: message_stop\r\ndata: {"type":"message_stop"}\r\n\r\n',
+      ]),
+    );
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: () => {},
+    });
+
+    expect(result.text).toBe('Hello CRLF');
+    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 3 });
+  });
+
   it('parses Anthropic cache usage fields', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
@@ -274,7 +297,7 @@ describe('stream that the model truncates at max_tokens', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns the accumulated text and surfaces a warning when the stop_reason is max_tokens', async () => {
+  it('rejects with truncated status and surfaces a warning when the stop_reason is max_tokens', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
         'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
@@ -285,18 +308,39 @@ describe('stream that the model truncates at max_tokens', () => {
     );
 
     const progress: string[] = [];
-    const result = await streamAnthropicCompletion({
-      apiKey: 'sk-test',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-sonnet-4-6',
-      messages: [{ role: 'user', content: 'hi' }],
-      temperature: 0.3,
-      effort: 'high',
-      onProgress: (text) => progress.push(text),
-    });
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.3,
+        effort: 'high',
+        onProgress: (text) => progress.push(text),
+      }),
+    ).rejects.toMatchObject({ data: { status: 'truncated' } });
 
-    expect(result.text).toBe('cut off here');
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 28096 });
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
+  });
+
+  it('rejects with incomplete status when the stream ends before message_stop', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
+      ]),
+    );
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ data: { status: 'incomplete' } });
   });
 });

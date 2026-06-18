@@ -3,6 +3,9 @@ import { PhaseSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 import { StructuredSummarySchema } from './compaction.js';
 
+export const SESSION_LOG_MAX_ENTRY_BYTES = 512 * 1024;
+export const SESSION_LOG_MAX_STRING_BYTES = 64 * 1024;
+
 const SessionLogTimestampSchema = z.union([
   z.string(),
   z.number().transform((value) => String(value)),

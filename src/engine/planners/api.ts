@@ -126,6 +126,7 @@ export function createApiPlanner(config: Config): Planner {
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
+    backendKind: 'api',
     consumesPriorMessages: true,
 
     async isAvailable() {

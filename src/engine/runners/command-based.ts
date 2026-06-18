@@ -1,9 +1,11 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { ParsedLine } from './types.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { accumulateUsage } from '../streaming/token-usage.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
+import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 
 export interface CommandBasedOptions {
@@ -20,6 +22,20 @@ export interface CommandBasedResult {
   stdout: string;
   stderr: string;
   usage?: TokenDelta | null;
+}
+
+function collectParsedOutput(
+  output: string,
+  parseLine: (line: string) => ParsedLine,
+): { text: string; usage: TokenDelta | null } {
+  let text = '';
+  let usage: TokenDelta | null = null;
+  for (const line of output.split('\n')) {
+    const parsed = parseLine(line);
+    if (parsed.text) text += parsed.text;
+    if (parsed.usage) usage = accumulateUsage(usage, parsed.usage);
+  }
+  return { text, usage };
 }
 
 function substitutePromptPlaceholder(
@@ -69,17 +85,23 @@ export async function invokeCommandBasedRunner(
   let usage: TokenDelta | null = null;
 
   if (opts.timeout !== undefined) {
+    const parseLine = getLineParser(format);
+    const liveOutputBuffer = createLineBuffer((line) => {
+      const parsed = parseLine(line);
+      if (parsed.text) onOutput?.(parsed.text);
+    });
     const result = await spawnWithShellFallback({
       command: finalCommand,
       args: finalArgs,
       cwd: projectDir,
       env: opts.env,
       timeout: opts.timeout,
-      onProgress: onOutput ?? (() => {}),
+      onProgress: (chunk) => liveOutputBuffer.push(chunk),
       stdinInput: useStdin ? prompt : undefined,
       notFoundMessage: opts.notFoundMessage,
       signal,
     });
+    liveOutputBuffer.flush();
 
     if (result.timedOut) {
       throw processError.timeout({
@@ -90,15 +112,10 @@ export async function invokeCommandBasedRunner(
       });
     }
 
-    const parseLine = getLineParser(format);
-    let text = '';
-    for (const line of result.output.split('\n')) {
-      const parsed = parseLine(line);
-      if (parsed.text) text += parsed.text;
-      if (parsed.usage) usage = accumulateUsage(usage, parsed.usage);
-    }
+    const parsedOutput = collectParsedOutput(result.output, parseLine);
 
-    stdout = text;
+    stdout = parsedOutput.text;
+    usage = parsedOutput.usage;
     stderr = result.stderr;
   } else {
     const result = await spawnAndCollect({

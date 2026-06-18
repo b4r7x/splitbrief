@@ -7,10 +7,19 @@ import { createChangeDetector, type ChangeDetector } from '../change-detection.j
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { collectRunnerCallResult } from '../calls/collector.js';
+import type {
+  RunnerCallContext,
+  RunnerCallEvent,
+  RunnerCallResult,
+  RunnerCallStatus,
+} from '../calls/types.js';
 
 export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep'] as const;
 export const PLANNER_PERMISSION_MODE = 'plan' as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
+
+type RunnerCallFailureStatus = Exclude<RunnerCallStatus, 'completed'>;
 
 interface SdkBlock {
   type: string;
@@ -23,6 +32,9 @@ interface SdkMessage {
   session_id?: string;
   message?: { content?: SdkBlock[] };
   result?: string;
+  is_error?: boolean;
+  errors?: string[];
+  terminal_reason?: string | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -107,45 +119,193 @@ export interface ProcessStreamOptions {
   stream: AsyncIterable<SdkMessage>;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext?: RunnerCallContext | undefined;
   signal?: AbortSignal | undefined;
 }
 
+let sdkCallSequence = 0;
+
+function createSdkCallContext(opts: {
+  permissionMode: string;
+  model?: string | undefined;
+}): RunnerCallContext {
+  return {
+    callId: `agent-sdk-${++sdkCallSequence}`,
+    role: opts.permissionMode === PLANNER_PERMISSION_MODE ? 'planner' : 'implementer',
+    backendKind: 'agent-sdk',
+    runnerName: 'Agent SDK',
+    ...(opts.model !== undefined && { model: opts.model }),
+  };
+}
+
+function isSdkResultFailure(message: SdkMessage): boolean {
+  if (message.type !== 'result') return false;
+  if (message.is_error === true) return true;
+  return message.subtype !== undefined && message.subtype !== 'success';
+}
+
+function sdkFailureStatus(message: SdkMessage): RunnerCallFailureStatus {
+  if (
+    message.terminal_reason === 'aborted_streaming' ||
+    message.terminal_reason === 'aborted_tools'
+  ) {
+    return 'aborted';
+  }
+  if (message.subtype === 'error_max_turns') return 'truncated';
+  return 'failed';
+}
+
+function sdkResultErrorMessage(message: SdkMessage): string {
+  if (message.errors && message.errors.length > 0) return message.errors.join('\n');
+  const resultText = extractResultText(message);
+  if (resultText) return resultText;
+  if (message.subtype) return `Agent SDK result subtype ${message.subtype}`;
+  return 'Agent SDK result failed';
+}
+
+function throwForSdkCallFailure(result: RunnerCallResult): never {
+  throw error('runner-call-failed', `Agent SDK runner call ${result.status}`, {
+    callId: result.callId,
+    status: result.status,
+    output: result.text,
+    nativeSessionId: result.nativeSessionId,
+    partial: result.partial,
+    error: result.error,
+  });
+}
+
+function interruptedStatus(signal: AbortSignal | undefined): RunnerCallFailureStatus {
+  if (signal?.reason instanceof DOMException && signal.reason.name === 'TimeoutError') {
+    return 'timeout';
+  }
+  return 'aborted';
+}
+
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
-  const { stream, onOutput, onSessionId, signal } = opts;
+  const { stream, onOutput, onSessionId, onCallEvent, signal } = opts;
+  const context = opts.callContext ?? createSdkCallContext({ permissionMode: 'acceptEdits' });
+  const events: RunnerCallEvent[] = [];
+  const emit = (event: RunnerCallEvent): void => {
+    events.push(event);
+    onCallEvent?.(event);
+  };
   let collectedText = '';
   let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
+  let sawAssistantText = false;
 
-  for await (const message of stream) {
+  emit({ type: 'call_started', ts: Date.now(), ...context });
+
+  try {
     throwIfAborted(signal);
-    if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-      sessionId = message.session_id;
-      onSessionId?.(message.session_id);
-    }
-
-    if (message.type === 'assistant') {
-      const text = extractAssistantText(message);
-      if (text) {
-        collectedText += text;
-        onOutput(text);
-      }
-    }
-
-    if (message.type === 'result') {
-      if (message.session_id) {
+    for await (const message of stream) {
+      throwIfAborted(signal);
+      if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
         sessionId = message.session_id;
         onSessionId?.(message.session_id);
+        emit({
+          type: 'call_session_id',
+          ts: Date.now(),
+          ...context,
+          nativeSessionId: message.session_id,
+        });
       }
-      const delta = toTokenDelta(message.usage);
-      if (delta) {
-        usage = accumulateUsage(usage, delta);
+
+      if (message.type === 'assistant') {
+        const text = extractAssistantText(message);
+        if (text) {
+          collectedText += text;
+          sawAssistantText = true;
+          emit({
+            type: 'call_text_delta',
+            ts: Date.now(),
+            ...context,
+            channel: 'assistant',
+            text,
+          });
+          onOutput(text);
+          throwIfAborted(signal);
+        }
       }
-      const resultText = extractResultText(message);
-      if (resultText) {
-        collectedText = resultText;
+
+      if (message.type === 'result') {
+        if (message.session_id) {
+          sessionId = message.session_id;
+          onSessionId?.(message.session_id);
+          emit({
+            type: 'call_session_id',
+            ts: Date.now(),
+            ...context,
+            nativeSessionId: message.session_id,
+          });
+        }
+        const delta = toTokenDelta(message.usage);
+        if (delta) {
+          usage = accumulateUsage(usage, delta);
+          emit({
+            type: 'call_usage',
+            ts: Date.now(),
+            ...context,
+            usage: delta,
+            semantics: 'final',
+          });
+        }
+        if (isSdkResultFailure(message)) {
+          emit({
+            type: 'call_error',
+            ts: Date.now(),
+            ...context,
+            status: sdkFailureStatus(message),
+            error: {
+              code: message.subtype ?? 'sdk_result_error',
+              message: sdkResultErrorMessage(message),
+            },
+          });
+          continue;
+        }
+        const resultText = extractResultText(message);
+        if (resultText) {
+          if (!sawAssistantText) {
+            emit({
+              type: 'call_text_delta',
+              ts: Date.now(),
+              ...context,
+              channel: 'result',
+              text: resultText,
+            });
+          }
+          collectedText = resultText;
+        }
+        emit({
+          type: 'call_completed',
+          ts: Date.now(),
+          ...context,
+          status: 'completed',
+          usage,
+          nativeSessionId: sessionId,
+        });
       }
     }
+  } catch (err) {
+    if (signal?.aborted) {
+      emit({
+        type: 'call_error',
+        ts: Date.now(),
+        ...context,
+        status: interruptedStatus(signal),
+        error: {
+          code: 'runner_interrupted',
+          message: signal.reason instanceof Error ? signal.reason.message : 'Agent SDK interrupted',
+        },
+      });
+    }
+    collectRunnerCallResult(events);
+    throw err;
   }
+
+  const result = collectRunnerCallResult(events);
+  if (result.status !== 'completed') throwForSdkCallFailure(result);
 
   return { text: collectedText, usage, sessionId };
 }
@@ -179,6 +339,7 @@ export interface AgentSdkInvokeOpts {
   model: string;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   onSessionExpired?: ((previousId: string) => void) | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
@@ -213,6 +374,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       model,
       onOutput,
       onSessionId,
+      onCallEvent,
       onSessionExpired,
       effort,
       images,
@@ -257,6 +419,8 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             stream: query({ prompt: finalPrompt, options }),
             onOutput,
             onSessionId: captureSession,
+            onCallEvent,
+            callContext: createSdkCallContext({ permissionMode, model }),
             signal,
           });
         } finally {

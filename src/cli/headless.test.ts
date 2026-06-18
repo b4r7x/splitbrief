@@ -198,6 +198,12 @@ describe('runHeadless — budget pause behavior', () => {
         (line) =>
           JSON.parse(line) as {
             type?: string;
+            data?: {
+              type?: string;
+              currentCost?: number;
+              maxBudget?: number;
+              threshold?: number;
+            };
             currentCost?: number;
             maxBudget?: number;
             threshold?: number;
@@ -205,7 +211,9 @@ describe('runHeadless — budget pause behavior', () => {
             sessionId?: string;
           },
       );
-    const paused = jsonLines.find((line) => line.type === 'budget_paused');
+    const paused = jsonLines.find(
+      (line) => line.type === 'event' && line.data?.type === 'budget_paused',
+    )?.data;
 
     expect(paused).toBeDefined();
     expect(paused?.currentCost).toBeGreaterThan(17);
@@ -244,8 +252,13 @@ describe('runHeadless — budget pause behavior', () => {
       .split('\n')
       .find((line) => line.includes('"type":"budget_paused"'));
     expect(pausedLine).toBeDefined();
-    const parsed = JSON.parse(pausedLine ?? '{}') as { threshold?: number };
-    expect(parsed.threshold).toBe(0.75);
+    const parsed = JSON.parse(pausedLine ?? '{}') as {
+      type?: string;
+      data?: { type?: string; threshold?: number };
+    };
+    expect(parsed.type).toBe('event');
+    expect(parsed.data?.type).toBe('budget_paused');
+    expect(parsed.data?.threshold).toBe(0.75);
   });
 
   it('rejects interactive task review modes before starting a headless run', async () => {
@@ -560,7 +573,10 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => (JSON.parse(line) as { type?: string }).type);
+      .map((line) => {
+        const parsed = JSON.parse(line) as { type?: string; data?: { type?: string } };
+        return parsed.type === 'event' ? parsed.data?.type : parsed.type;
+      });
     expect(emittedTypes).not.toContain('task_retry');
     expect(emittedTypes).not.toContain('task_escalating');
     expect(emittedTypes).not.toContain('escalate');

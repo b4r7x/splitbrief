@@ -196,6 +196,7 @@ describe('composer integration: completions', () => {
       });
 
       ui.stdin.write(DOWN);
+      await tick(20);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toMatch(/▸\s+src\/components\/composer\/composer\.tsx/);
       });

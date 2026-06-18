@@ -12,6 +12,7 @@ import { resolveRunConfig } from './build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { flushOtel } from '../lib/otel.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
+import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
 
 function buildNoopSinks() {
   return {
@@ -27,19 +28,17 @@ function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | un
   const issue = state?.pendingRecovery;
   if (!issue) return;
   if (issue.status !== 'awaiting-user') return;
-  process.stdout.write(
-    JSON.stringify({
-      type: 'recovery_required',
-      sessionId: recoverySessionId,
-      reason: issue.reason,
-      message: issue.message,
-      taskId: issue.taskId,
-      files: issue.files,
-      affectedTaskIds: issue.affectedTaskIds,
-      availableActions: issue.availableActions,
-      recommendedAction: issue.recommendedAction,
-    }) + '\n',
-  );
+  writeHeadlessJsonRecord({
+    type: 'recovery_required',
+    sessionId: recoverySessionId,
+    reason: issue.reason,
+    message: issue.message,
+    taskId: issue.taskId,
+    files: issue.files,
+    affectedTaskIds: issue.affectedTaskIds,
+    availableActions: issue.availableActions,
+    recommendedAction: issue.recommendedAction,
+  });
   throw cliError(`Recovery required: ${issue.message}`, 1);
 }
 
@@ -48,12 +47,7 @@ function failIfFinalReviewIncomplete(projectDir: string, sessionId: string | und
   if (!reviewSessionId) return;
   const state = loadState({ projectDir, sessionId: reviewSessionId });
   if (state?.phase !== 'final-review') return;
-  process.stdout.write(
-    JSON.stringify({
-      type: 'final_review_failed',
-      sessionId: reviewSessionId,
-    }) + '\n',
-  );
+  writeHeadlessJsonRecord({ type: 'final_review_failed', sessionId: reviewSessionId });
   throw cliError('Final review did not pass — workflow is incomplete.', 1);
 }
 

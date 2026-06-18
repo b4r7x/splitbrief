@@ -21,6 +21,17 @@ import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from './types.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
+import {
+  RunnerCallArtifactSchema,
+  RunnerCallBackendKindSchema,
+  RunnerCallErrorSchema,
+  RunnerCallRoleSchema,
+  RunnerCallStatusSchema,
+  RunnerCallToolUseSchema,
+  RunnerCallUsageSchema,
+  RunnerCallWarningSchema,
+  CallIdSchema,
+} from '../calls/schema.js';
 
 const stringArray = z.array(z.string());
 const taskIdArray = z.array(TaskIdSchema);
@@ -40,6 +51,19 @@ function noPhaseEvent<T extends string>(type: T) {
   });
 }
 
+function strictCallPhaseEvent<T extends string>(type: T) {
+  return z.strictObject({
+    type: z.literal(type),
+    ts: z.number(),
+    phase: PhaseSchema,
+    taskId: TaskIdSchema.optional(),
+    callId: CallIdSchema,
+    role: RunnerCallRoleSchema,
+    backendKind: RunnerCallBackendKindSchema,
+    sequence: z.number().int().nonnegative(),
+  });
+}
+
 const validationStagesSchema = z.object({
   typecheck: z.boolean(),
   lint: z.boolean(),
@@ -50,6 +74,16 @@ const validationStageSkipsSchema = z.object({
   typecheck: z.boolean().optional(),
   lint: z.boolean().optional(),
   test: z.boolean().optional(),
+});
+
+const replayDiagnosticsSchema = z.object({
+  totalLines: z.number().int().nonnegative(),
+  replayedEvents: z.number().int().nonnegative(),
+  skippedBlank: z.number().int().nonnegative(),
+  skippedNonEvent: z.number().int().nonnegative(),
+  skippedMalformed: z.number().int().nonnegative(),
+  skippedUnknown: z.number().int().nonnegative(),
+  skippedOversized: z.number().int().nonnegative(),
 });
 
 export const userEditConflictSchema = z.looseObject({
@@ -179,6 +213,37 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     elapsedMs: z.number(),
     accumulatedTokens: z.number(),
     phaseHint: z.string().optional(),
+  }),
+  strictCallPhaseEvent('runner_call_started'),
+  strictCallPhaseEvent('runner_call_text_delta').extend({
+    text: z.string(),
+  }),
+  strictCallPhaseEvent('runner_call_usage').extend({
+    usage: RunnerCallUsageSchema,
+    semantics: z.enum(['delta', 'cumulative', 'final']),
+  }),
+  strictCallPhaseEvent('runner_call_tool_use').extend({
+    toolUse: RunnerCallToolUseSchema.optional(),
+    toolUseId: z.string().optional(),
+    name: z.string().optional(),
+    inputDelta: z.string().optional(),
+  }),
+  strictCallPhaseEvent('runner_call_session_id').extend({
+    nativeSessionId: z.string(),
+  }),
+  strictCallPhaseEvent('runner_call_artifact').extend({
+    artifact: RunnerCallArtifactSchema,
+  }),
+  strictCallPhaseEvent('runner_call_warning').extend({
+    warning: RunnerCallWarningSchema,
+  }),
+  strictCallPhaseEvent('runner_call_error').extend({
+    status: RunnerCallStatusSchema,
+    error: RunnerCallErrorSchema,
+  }),
+  strictCallPhaseEvent('runner_call_completed').extend({
+    status: RunnerCallStatusSchema,
+    partial: z.boolean(),
   }),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),
@@ -420,10 +485,14 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     maxAttempts: z.number(),
   }),
   phaseEvent('ipc_reconnect_failed'),
-  phaseEvent('replay_started').extend({ totalEvents: z.number() }),
+  phaseEvent('replay_started').extend({
+    totalEvents: z.number(),
+    diagnostics: replayDiagnosticsSchema.optional(),
+  }),
   phaseEvent('replay_complete').extend({
     totalEvents: z.number(),
     durationMs: z.number(),
+    diagnostics: replayDiagnosticsSchema.optional(),
   }),
   phaseEvent('warning').extend({ message: z.string() }),
   phaseEvent('error').extend({ message: z.string() }),

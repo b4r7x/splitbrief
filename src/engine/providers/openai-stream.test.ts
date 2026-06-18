@@ -4,17 +4,24 @@ import { streamCompletion } from './openai-stream.js';
 
 type MockClient = Parameters<typeof streamCompletion>[0];
 type CreateBody = Parameters<MockClient['chat']['completions']['create']>[0];
+type MockStream = Awaited<ReturnType<MockClient['chat']['completions']['create']>>;
 
-function makeMockClient(
-  chunks: Array<{
-    content?: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      prompt_tokens_details?: { cached_tokens?: number };
-    };
-  }>,
-): MockClient {
+interface MockChunk {
+  content?: string;
+  finishReason?: string | null;
+  delta?: {
+    content?: string | null;
+    function_call?: { name?: string; arguments?: string };
+    tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+  };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+}
+
+function makeMockClient(chunks: MockChunk[]): MockClient {
   return {
     chat: {
       completions: {
@@ -27,10 +34,25 @@ function makeMockClient(
                   if (i >= chunks.length) return { done: true, value: undefined };
                   const chunk = chunks[i++];
                   if (!chunk) return { done: true, value: undefined };
+                  if (
+                    chunk.usage &&
+                    chunk.content === undefined &&
+                    chunk.delta === undefined &&
+                    chunk.finishReason === undefined
+                  ) {
+                    return { done: false, value: { choices: [], usage: chunk.usage } };
+                  }
                   return {
                     done: false,
                     value: {
-                      choices: [{ delta: { content: chunk.content ?? null } }],
+                      choices: [
+                        {
+                          delta: chunk.delta ?? { content: chunk.content ?? null },
+                          ...(chunk.finishReason !== undefined && {
+                            finish_reason: chunk.finishReason,
+                          }),
+                        },
+                      ],
                       usage: chunk.usage ?? null,
                     },
                   };
@@ -44,13 +66,26 @@ function makeMockClient(
   };
 }
 
+function emptyStopStream(): MockStream {
+  const finishReason: 'stop' = 'stop';
+  return (async function* () {
+    yield { choices: [{ delta: {}, finish_reason: finishReason }], usage: null };
+  })();
+}
+
+const MINIMAL_ANTHROPIC_SSE = 'event: message_stop\ndata: {"type":"message_stop"}\n\n';
+
 describe('streamCompletion', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('returns concatenated text from stream chunks', async () => {
-    const client = makeMockClient([{ content: 'Hello' }, { content: ' world' }]);
+  it('returns concatenated text when the stream finishes with stop', async () => {
+    const client = makeMockClient([
+      { content: 'Hello' },
+      { content: ' world' },
+      { finishReason: 'stop' },
+    ]);
 
     const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
@@ -61,7 +96,12 @@ describe('streamCompletion', () => {
   });
 
   it('emits a progress update for each streamed chunk', async () => {
-    const client = makeMockClient([{ content: 'a' }, { content: 'b' }, { content: 'c' }]);
+    const client = makeMockClient([
+      { content: 'a' },
+      { content: 'b' },
+      { content: 'c' },
+      { finishReason: 'stop' },
+    ]);
     const progressCalls: string[] = [];
 
     await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
@@ -75,6 +115,7 @@ describe('streamCompletion', () => {
   it('captures usage from final chunk', async () => {
     const client = makeMockClient([
       { content: 'response' },
+      { finishReason: 'stop' },
       { usage: { prompt_tokens: 100, completion_tokens: 50 } },
     ]);
 
@@ -86,42 +127,65 @@ describe('streamCompletion', () => {
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
-  it('surfaces a truncation warning when the finish_reason is length', async () => {
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async () => ({
-            [Symbol.asyncIterator]() {
-              const chunks = [
-                { choices: [{ delta: { content: 'cut off' } }] },
-                { choices: [{ delta: {}, finish_reason: 'length' }] },
-              ];
-              let i = 0;
-              return {
-                async next() {
-                  const chunk = chunks[i++];
-                  if (!chunk) return { done: true, value: undefined };
-                  return { done: false, value: chunk };
-                },
-              };
-            },
-          }),
-        },
-      },
-    };
+  it('rejects with truncated status when the finish_reason is length', async () => {
+    const client = makeMockClient([{ content: 'cut off' }, { finishReason: 'length' }]);
     const progress: string[] = [];
 
-    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: (text) => progress.push(text),
-    });
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: (text) => progress.push(text),
+      }),
+    ).rejects.toMatchObject({ data: { status: 'truncated' } });
 
-    expect(result.text).toBe('cut off');
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
+  });
+
+  it('rejects with refused status when the finish_reason is content_filter', async () => {
+    const client = makeMockClient([{ finishReason: 'content_filter' }]);
+
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ data: { status: 'refused' } });
+  });
+
+  it.each([
+    'tool_calls',
+    'function_call',
+  ] as const)('rejects with unsupported_tool status when the finish_reason is %s', async (finishReason) => {
+    const delta =
+      finishReason === 'tool_calls'
+        ? { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: '{"q":' } }] }
+        : {
+            function_call: { name: 'legacy_search', arguments: '{"q":' },
+          };
+    const client = makeMockClient([{ delta }, { finishReason }]);
+
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ data: { status: 'unsupported_tool' } });
+  });
+
+  it('rejects with incomplete status when the stream ends without a finish_reason', async () => {
+    const client = makeMockClient([{ content: 'partial' }]);
+
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ data: { status: 'incomplete' } });
   });
 
   it('subtracts nested cached prompt tokens from billable input usage', async () => {
     const client = makeMockClient([
+      { finishReason: 'stop' },
       {
         usage: {
           prompt_tokens: 1000,
@@ -210,15 +274,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -242,15 +298,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -274,15 +322,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -309,15 +349,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -340,15 +372,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -370,15 +394,7 @@ describe('streamCompletion', () => {
         completions: {
           create: async (body) => {
             capturedBody = body;
-            return {
-              [Symbol.asyncIterator]() {
-                return {
-                  async next() {
-                    return { done: true, value: undefined };
-                  },
-                };
-              },
-            };
+            return emptyStopStream();
           },
         },
       },
@@ -410,7 +426,7 @@ describe('streamCompletion', () => {
       'fetch',
       vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
         capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response('', { status: 200 });
+        return new Response(MINIMAL_ANTHROPIC_SSE, { status: 200 });
       }),
     );
 
@@ -434,7 +450,7 @@ describe('streamCompletion', () => {
       'fetch',
       vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
         capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response('', { status: 200 });
+        return new Response(MINIMAL_ANTHROPIC_SSE, { status: 200 });
       }),
     );
 

@@ -166,7 +166,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
-  - `sinks/stdout-json.ts` — NDJSON emitter for `diptych start --json` / headless mode
+  - `sinks/stdout-json.ts` — public NDJSON emitter for `diptych start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
   - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
 - `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
 - `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).

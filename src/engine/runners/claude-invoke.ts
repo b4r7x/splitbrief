@@ -8,6 +8,8 @@ import { processError } from '../../lib/process/errors.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
 import type { ToolUseInfo } from './types.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
+import { collectRunnerCallResult } from '../calls/collector.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
 
@@ -53,13 +55,33 @@ interface StreamHandlerState {
   sessionId: string | null;
   usage: TokenDelta | null;
   resultText: string | null;
+  sawResult: boolean;
   isError: boolean;
+  sawAssistantText: boolean;
+  events: RunnerCallEvent[];
 }
 
 interface StreamHandlerCallbacks {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  context: RunnerCallContext;
+}
+
+let claudeCallSequence = 0;
+
+function createClaudeCallContext(opts: {
+  role: RunnerCallContext['role'];
+  model?: string | undefined;
+}): RunnerCallContext {
+  return {
+    callId: `claude-${++claudeCallSequence}`,
+    role: opts.role,
+    backendKind: 'cli',
+    runnerName: 'claude',
+    ...(opts.model !== undefined && { model: opts.model }),
+  };
 }
 
 function createStreamHandler(callbacks: StreamHandlerCallbacks) {
@@ -68,9 +90,18 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     sessionId: null,
     usage: null,
     resultText: null,
+    sawResult: false,
     isError: false,
+    sawAssistantText: false,
+    events: [],
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
+  const emit = (event: RunnerCallEvent): void => {
+    state.events.push(event);
+    callbacks.onCallEvent?.(event);
+  };
+
+  emit({ type: 'call_started', ts: Date.now(), ...callbacks.context });
 
   function handleLine(line: string): void {
     const parsed = parseStreamLine(line);
@@ -78,15 +109,38 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.sessionId) {
       state.sessionId = parsed.sessionId;
       callbacks.onSessionId?.(parsed.sessionId);
+      emit({
+        type: 'call_session_id',
+        ts: Date.now(),
+        ...callbacks.context,
+        nativeSessionId: parsed.sessionId,
+      });
     }
 
     if (parsed.toolUse) {
       const toolLines = parsed.toolUse.map(formatToolUse).join('\n');
       callbacks.onOutput(toolLines + '\n');
+      for (const toolUse of parsed.toolUse) {
+        emit({
+          type: 'call_tool_use_done',
+          ts: Date.now(),
+          ...callbacks.context,
+          channel: 'tool',
+          toolUse: { id: null, name: toolUse.name, input: toolUse.input },
+        });
+      }
     }
 
-    if (parsed.text) {
+    if (parsed.text && !parsed.isResult) {
       state.text += parsed.text;
+      state.sawAssistantText = true;
+      emit({
+        type: 'call_text_delta',
+        ts: Date.now(),
+        ...callbacks.context,
+        channel: 'assistant',
+        text: parsed.text,
+      });
       callbacks.onOutput(parsed.text);
 
       if (callbacks.onQuestion && questionAccumulator) {
@@ -97,32 +151,110 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       }
     }
 
-    if (parsed.isResult && parsed.text) {
-      state.text = parsed.text;
-      state.resultText = parsed.text;
+    if (parsed.isResult) {
+      state.sawResult = true;
+      if (parsed.text) {
+        state.text = parsed.text;
+        state.resultText = parsed.text;
+        if (!state.sawAssistantText) {
+          emit({
+            type: 'call_text_delta',
+            ts: Date.now(),
+            ...callbacks.context,
+            channel: 'result',
+            text: parsed.text,
+          });
+        }
+        callbacks.onOutput(parsed.text);
+      }
     }
 
     if (parsed.isError) {
       state.isError = true;
+      emit({
+        type: 'call_error',
+        ts: Date.now(),
+        ...callbacks.context,
+        status: 'failed',
+        error: {
+          code: 'runner_result_error',
+          message: (state.resultText ?? state.text) || 'Claude result failed',
+        },
+      });
     }
 
     if (parsed.usage) {
       state.usage = parsed.usage;
+      emit({
+        type: 'call_usage',
+        ts: Date.now(),
+        ...callbacks.context,
+        usage: parsed.usage,
+        semantics: parsed.isResult ? 'final' : 'delta',
+      });
     }
   }
 
-  return { state, handleLine };
+  return { state, handleLine, emit };
 }
 
-function throwIfErrorResult(state: StreamHandlerState): void {
-  if (!state.isError) return;
+function throwForClaudeCallFailure(result: RunnerCallResult): never {
   throw processError.exitCode({
     command: 'claude',
     code: 0,
     stderr: '',
-    output: state.resultText ?? state.text,
-    detail: state.resultText ?? state.text,
+    output: result.text,
+    detail: result.error?.message ?? `Claude runner call ended with ${result.status}`,
   });
+}
+
+function finishClaudeStream(
+  state: StreamHandlerState,
+  emit: (event: RunnerCallEvent) => void,
+  context: RunnerCallContext,
+): RunnerCallResult {
+  if (!state.isError && state.sawResult) {
+    emit({
+      type: 'call_completed',
+      ts: Date.now(),
+      ...context,
+      status: 'completed',
+      usage: state.usage,
+      nativeSessionId: state.sessionId,
+    });
+  }
+
+  const result = collectRunnerCallResult(state.events);
+  if (result.status !== 'completed') throwForClaudeCallFailure(result);
+  return result;
+}
+
+function markInterruptedClaudeStream(
+  state: StreamHandlerState,
+  emit: (event: RunnerCallEvent) => void,
+  context: RunnerCallContext,
+  signal: AbortSignal | undefined,
+): void {
+  if (!signal?.aborted) return;
+  emit({
+    type: 'call_error',
+    ts: Date.now(),
+    ...context,
+    status:
+      signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError'
+        ? 'timeout'
+        : 'aborted',
+    error: {
+      code: 'runner_interrupted',
+      message: signal.reason instanceof Error ? signal.reason.message : 'Claude stream interrupted',
+    },
+  });
+  collectRunnerCallResult(state.events);
+}
+
+function interruptedError(signal: AbortSignal | undefined, fallback: unknown): unknown {
+  if (!signal?.aborted) return fallback;
+  return signal.reason instanceof Error ? signal.reason : fallback;
 }
 
 interface BuildArgsOpts {
@@ -160,7 +292,9 @@ export interface ClaudePlannerStreamOpts {
   projectDir: string;
   sessionId: string | null;
   onOutput: (text: string) => void;
+  onSessionId?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
@@ -170,25 +304,48 @@ export interface ClaudePlannerStreamOpts {
 export async function runClaudePlannerStream(
   opts: ClaudePlannerStreamOpts,
 ): Promise<ClaudePlannerStreamResult> {
-  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images, signal } =
-    opts;
+  const {
+    prompt,
+    projectDir,
+    sessionId,
+    onOutput,
+    onSessionId,
+    onQuestion,
+    onCallEvent,
+    model,
+    effort,
+    images,
+    signal,
+  } = opts;
   const args = buildClaudeArgs({ sessionId, model, effort });
 
-  const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
+  const context = createClaudeCallContext({ role: 'planner', model });
+  const { state, handleLine, emit } = createStreamHandler({
+    onOutput,
+    onSessionId,
+    onQuestion,
+    onCallEvent,
+    context,
+  });
   state.sessionId = sessionId;
 
-  await spawnWithStdin({
-    command: 'claude',
-    args,
-    cwd: projectDir,
-    stdin: applyImageRefs(prompt, images),
-    notFoundMessage: CLAUDE_NOT_FOUND,
-    onLine: handleLine,
-    errorDetail: () => state.resultText ?? undefined,
-    signal,
-  });
+  try {
+    await spawnWithStdin({
+      command: 'claude',
+      args,
+      cwd: projectDir,
+      stdin: applyImageRefs(prompt, images),
+      notFoundMessage: CLAUDE_NOT_FOUND,
+      onLine: handleLine,
+      errorDetail: () => state.resultText ?? undefined,
+      signal,
+    });
+  } catch (err) {
+    markInterruptedClaudeStream(state, emit, context, signal);
+    throw interruptedError(signal, err);
+  }
 
-  throwIfErrorResult(state);
+  finishClaudeStream(state, emit, context);
 
   return { text: state.text, sessionId: state.sessionId, usage: state.usage };
 }
@@ -197,6 +354,8 @@ export interface ClaudeOneShotOpts {
   prompt: string;
   projectDir: string;
   onOutput: (text: string) => void;
+  onSessionId?: ((id: string) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
   permissionMode?: 'acceptEdits' | undefined;
@@ -205,23 +364,48 @@ export interface ClaudeOneShotOpts {
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
-  const { prompt, projectDir, onOutput, model, effort, permissionMode, signal, env } = opts;
-  const { state, handleLine } = createStreamHandler({ onOutput });
+  const {
+    prompt,
+    projectDir,
+    onOutput,
+    onSessionId,
+    onCallEvent,
+    model,
+    effort,
+    permissionMode,
+    signal,
+    env,
+  } = opts;
+  const context = createClaudeCallContext({
+    role: permissionMode === 'acceptEdits' ? 'implementer' : 'planner',
+    model,
+  });
+  const { state, handleLine, emit } = createStreamHandler({
+    onOutput,
+    onSessionId,
+    onCallEvent,
+    context,
+  });
   const args = buildClaudeArgs({ model, effort, permissionMode });
 
-  await spawnWithStdin({
-    command: 'claude',
-    args,
-    cwd: projectDir,
-    env,
-    stdin: prompt,
-    notFoundMessage: CLAUDE_NOT_FOUND,
-    onLine: handleLine,
-    errorDetail: () => state.resultText ?? undefined,
-    signal,
-  });
+  try {
+    await spawnWithStdin({
+      command: 'claude',
+      args,
+      cwd: projectDir,
+      env,
+      stdin: prompt,
+      notFoundMessage: CLAUDE_NOT_FOUND,
+      onLine: handleLine,
+      errorDetail: () => state.resultText ?? undefined,
+      signal,
+    });
+  } catch (err) {
+    markInterruptedClaudeStream(state, emit, context, signal);
+    throw interruptedError(signal, err);
+  }
 
-  throwIfErrorResult(state);
+  finishClaudeStream(state, emit, context);
 
   return { text: state.text, usage: state.usage };
 }

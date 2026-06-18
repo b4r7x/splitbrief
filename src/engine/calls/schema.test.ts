@@ -1,0 +1,232 @@
+import { describe, expect, it } from 'vitest';
+import {
+  RunnerCallEventSchema,
+  RunnerCallResultSchema,
+  RunnerCallUsageSchema,
+  UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH,
+} from './schema.js';
+
+const context = {
+  callId: 'call-1',
+  role: 'planner',
+  backendKind: 'cli',
+} as const;
+
+const usage = {
+  inputTokens: 1,
+  outputTokens: 2,
+} as const;
+
+describe('RunnerCallEventSchema', () => {
+  it('accepts the runner call event variants emitted by the call subsystem', () => {
+    const events = [
+      { type: 'call_started', ts: 1, ...context },
+      {
+        type: 'call_text_delta',
+        ts: 1,
+        ...context,
+        channel: 'assistant',
+        text: 'hello',
+      },
+      {
+        type: 'call_stderr_delta',
+        ts: 1,
+        ...context,
+        channel: 'stderr',
+        text: 'warning',
+      },
+      {
+        type: 'call_tool_use_delta',
+        ts: 1,
+        ...context,
+        channel: 'tool',
+        toolUseId: 'tool-1',
+        name: 'read_file',
+        inputDelta: '{"path"',
+      },
+      {
+        type: 'call_tool_use_done',
+        ts: 1,
+        ...context,
+        channel: 'tool',
+        toolUse: { id: 'tool-1', name: 'read_file', input: { path: 'README.md' } },
+      },
+      {
+        type: 'call_usage',
+        ts: 1,
+        ...context,
+        usage,
+        semantics: 'delta',
+      },
+      {
+        type: 'call_session_id',
+        ts: 1,
+        ...context,
+        nativeSessionId: 'session-1',
+      },
+      {
+        type: 'call_artifact',
+        ts: 1,
+        ...context,
+        artifact: {
+          id: 'artifact-1',
+          source: 'file',
+          name: 'plan.md',
+          path: '.diptych/sessions/one/plan.md',
+          mimeType: 'text/markdown',
+          text: null,
+        },
+      },
+      {
+        type: 'call_warning',
+        ts: 1,
+        ...context,
+        warning: { code: 'slow_stream', message: 'stream slowed' },
+      },
+      {
+        type: 'call_error',
+        ts: 1,
+        ...context,
+        status: 'timeout',
+        error: { code: 'timeout', message: 'runner timed out' },
+      },
+      {
+        type: 'call_completed',
+        ts: 1,
+        ...context,
+        status: 'completed',
+        usage,
+        nativeSessionId: null,
+      },
+      {
+        type: 'call_unknown_upstream',
+        ts: 1,
+        ...context,
+        rawPreview: '{"type":"new_event"}',
+        backendMetadata: {
+          backendKind: 'cli',
+          channel: 'stdout',
+          source: 'codex',
+          parser: 'jsonl',
+          upstreamType: 'new_event',
+        },
+      },
+    ];
+
+    expect(events.map((event) => RunnerCallEventSchema.safeParse(event).success)).toEqual(
+      events.map(() => true),
+    );
+  });
+
+  it('rejects unknown fields on known event variants', () => {
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_text_delta',
+        ts: 1,
+        ...context,
+        channel: 'assistant',
+        text: 'hello',
+        upstreamPayload: { type: 'assistant' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('keeps unknown upstream data behind a bounded raw preview and backend metadata', () => {
+    const event = {
+      type: 'call_unknown_upstream',
+      ts: 1,
+      ...context,
+      rawPreview: '{"type":"future"}',
+      backendMetadata: {
+        backendKind: 'cli',
+        channel: 'stdout',
+        source: 'codex',
+      },
+    } as const;
+
+    expect(RunnerCallEventSchema.safeParse(event).success).toBe(true);
+    expect(
+      RunnerCallEventSchema.safeParse({
+        ...event,
+        rawPreview: 'x'.repeat(UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      RunnerCallEventSchema.safeParse({
+        ...event,
+        raw: { type: 'future' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('only treats completed as a successful terminal completion event', () => {
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_completed',
+        ts: 1,
+        ...context,
+        status: 'completed',
+        usage: null,
+        nativeSessionId: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_completed',
+        ts: 1,
+        ...context,
+        status: 'failed',
+        usage: null,
+        nativeSessionId: null,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('RunnerCallUsageSchema', () => {
+  it('rejects negative and fractional token counts', () => {
+    expect(
+      RunnerCallUsageSchema.safeParse({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+        reasoningTokens: 0,
+      }).success,
+    ).toBe(true);
+    expect(RunnerCallUsageSchema.safeParse({ inputTokens: -1, outputTokens: 0 }).success).toBe(
+      false,
+    );
+    expect(RunnerCallUsageSchema.safeParse({ inputTokens: 1.5, outputTokens: 0 }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('RunnerCallResultSchema', () => {
+  it('keeps the aggregate result contract strict', () => {
+    const result = {
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'agent',
+      status: 'completed',
+      text: 'done',
+      usage: null,
+      nativeSessionId: null,
+      toolUses: [],
+      artifacts: [],
+      warnings: [],
+      error: null,
+      partial: false,
+    } as const;
+
+    expect(RunnerCallResultSchema.safeParse(result).success).toBe(true);
+    expect(RunnerCallResultSchema.safeParse({ ...result, extra: true }).success).toBe(false);
+    expect(
+      RunnerCallResultSchema.safeParse({
+        ...result,
+        usage: { inputTokens: 1, outputTokens: -1 },
+      }).success,
+    ).toBe(false);
+  });
+});

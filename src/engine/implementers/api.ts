@@ -28,6 +28,7 @@ export function createApiImplementer(
 
   return createImplementerBase({
     extractsCode: true,
+    backendKind: 'api',
     publisher: options?.publisher,
     // API backends send the system preamble as a separate system message.
     prependSystemPreamble: false,

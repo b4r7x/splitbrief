@@ -69,6 +69,7 @@ export function createCommandBasedPlanner(
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
+    backendKind: 'cli',
     hintSuccessMode: 'files',
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),

@@ -383,6 +383,34 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
     expect(result.usage).toEqual({ inputTokens: 500, outputTokens: 120 });
   });
 
+  it('extracts cache token usage from assistant events', () => {
+    const result = parse({
+      type: 'assistant.usage',
+      data: {
+        usage: {
+          inputTokens: 500,
+          outputTokens: 120,
+          cacheWriteTokens: 30,
+          cacheReadTokens: 20,
+        },
+      },
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 500,
+      outputTokens: 120,
+      cacheReadTokens: 20,
+      cacheCreateTokens: 30,
+    });
+  });
+
+  it('extracts tool-use envelopes', () => {
+    const result = parse({
+      type: 'tool.execution_start',
+      data: { name: 'read_file', input: { path: 'src/a.ts' } },
+    });
+    expect(result.toolUse).toEqual([{ name: 'read_file', input: { path: 'src/a.ts' } }]);
+  });
+
   it('does not misread the codex item.completed shape as copilot output', () => {
     const result = parse({
       type: 'item.completed',
@@ -394,7 +422,7 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
 
   it('returns empty for unknown event types and blank lines', () => {
     expect(copilot.parseLine('')).toEqual({});
-    expect(parse({ type: 'tool.execution_start', data: {} })).toEqual({});
+    expect(parse({ type: 'future.event', data: {} })).toEqual({});
   });
 });
 

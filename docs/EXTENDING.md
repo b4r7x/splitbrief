@@ -81,7 +81,11 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
    - Add a lazy loader: `const loadMyPlanner = lazy(() => import('../planners/<name>.js'));`
    - Add the `case '<kind>':` branch in both `loadPlanner()` and `createImplementer()`
 6. Declare a `capabilities` struct — the orchestrator reads capability flags, never backend identity
-7. Write colocated tests: `src/engine/planners/<name>.test.ts`, `src/engine/implementers/<name>.test.ts`
+7. Set `backendKind` in the base config and normalize backend output through `src/engine/calls/*`
+   - Prefer emitting `RunnerCallEvent` / `RunnerCallResult` directly
+   - If the backend still returns `{ text, usage }`, keep that as a temporary compatibility projection only
+   - Preserve terminal status, partial output, session IDs, tool-use, artifacts, warnings, and usage semantics
+8. Write colocated tests: `src/engine/planners/<name>.test.ts`, `src/engine/implementers/<name>.test.ts`
 
 ---
 

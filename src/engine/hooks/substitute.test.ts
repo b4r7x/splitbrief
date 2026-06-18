@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { substituteEventFields } from './substitute.js';
 import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
+import {
+  CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER,
+  CALL_HOOKS_MAX_PUBLIC_STRING_BYTES,
+} from '../calls/consumer-policy.js';
 
 const S = (s: string) => '$' + `{${s}}`;
 
@@ -66,6 +70,30 @@ describe('substituteEventFields', () => {
     };
     // Value is substituted as-is. Spawn layer (not us) handles argv quoting.
     expect(substituteEventFields(S('event.message'), event)).toBe('$(rm -rf /); echo pwned');
+  });
+
+  it('redacts secret-looking placeholder values', () => {
+    const event: EngineEvent = {
+      type: 'warning',
+      ts: 1,
+      phase: 'idle',
+      message: 'use sk-abcdefghijklmnopqrst',
+    };
+    expect(substituteEventFields(S('event.message'), event)).toBe('use sk-***REDACTED***');
+  });
+
+  it('bounds oversized placeholder values', () => {
+    const event: EngineEvent = {
+      type: 'warning',
+      ts: 1,
+      phase: 'idle',
+      message: 'x'.repeat(CALL_HOOKS_MAX_PUBLIC_STRING_BYTES + 100),
+    };
+    const output = substituteEventFields(S('event.message'), event);
+    expect(Buffer.byteLength(output, 'utf8')).toBeLessThanOrEqual(
+      CALL_HOOKS_MAX_PUBLIC_STRING_BYTES,
+    );
+    expect(output).toContain(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER);
   });
 
   it('handles nested object access via dot path', () => {

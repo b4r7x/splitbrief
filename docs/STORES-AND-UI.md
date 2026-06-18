@@ -49,6 +49,8 @@ The engine publishes events through the EventBus. `createTuiSink()` in `src/feat
 
 This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot or handoff functions — but engine events still flow into render state through stores, not direct component imports.
 
+`runner_call_*` events are part of that same event stream. Today the UI stores keep them in history for replay/debugging, but conversation rows intentionally render them as silent rows and `tokensStore` does not count their usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting while backend adapters finish moving to typed call results.
+
 When the workflow needs a human decision -- approve a spec, answer a question, confirm a cost -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval stores (`src/stores/approval-prompt/`, `src/stores/cost-approval/`) and the `useInputMode` hook manage this.
 
 ---

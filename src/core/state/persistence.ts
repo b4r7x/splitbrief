@@ -1,7 +1,12 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow.js';
-import type { SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
+import {
+  SessionLogEntrySchema,
+  SESSION_LOG_MAX_ENTRY_BYTES,
+  type SessionLogEventEntry,
+  type SessionLogMessageEntry,
+} from '../schemas/session-log.js';
 import { PhaseSchema } from '../schemas/enums.js';
 import { TaskIdSchema } from '../schemas/task.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
@@ -147,8 +152,20 @@ export function createSessionLogAppender(ref: SessionRef): SessionLogAppender {
         confinedEnsureDir(ref.projectDir, sessionRel);
         ensured = true;
       }
+      const parsed = SessionLogEntrySchema.safeParse(entry);
+      if (!parsed.success) {
+        warnStderr('Warning: failed to persist invalid log entry');
+        return;
+      }
+      const line = JSON.stringify(parsed.data) + '\n';
+      if (Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) {
+        warnStderr(
+          `Warning: failed to persist oversized log entry exceeding ${SESSION_LOG_MAX_ENTRY_BYTES} bytes`,
+        );
+        return;
+      }
       rejectSymlinkTarget(logFile);
-      confinedAppendFileSync(ref.projectDir, logRel, JSON.stringify(entry) + '\n');
+      confinedAppendFileSync(ref.projectDir, logRel, line);
     } catch (err) {
       if (fsError.isSymlinkWrite(err)) throw err;
       warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);

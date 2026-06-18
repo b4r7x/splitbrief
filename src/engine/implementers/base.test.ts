@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './base.js';
+import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -12,6 +13,25 @@ import { createChangeDetector } from '../change-detection.js';
 
 let projectDir: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+function makeRunnerCallResult(
+  overrides: Pick<RunnerCallResult, 'status' | 'text'> &
+    Partial<Omit<RunnerCallResult, 'status' | 'text'>>,
+): RunnerCallResult {
+  return {
+    callId: 'call-test',
+    role: 'implementer',
+    backendKind: 'api',
+    usage: null,
+    nativeSessionId: null,
+    toolUses: [],
+    artifacts: [],
+    warnings: [],
+    error: null,
+    partial: false,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   projectDir = createTempDir('impl-base');
@@ -156,6 +176,111 @@ describe('createImplementerBase — language-aware system preamble', () => {
     expect(seenSystemPreamble).toContain('Python code generator');
     expect(seenSystemPreamble).not.toContain('TypeScript');
     expect(seenPrompt).toContain(seenSystemPreamble);
+  });
+});
+
+describe('createImplementerBase — runner call projection', () => {
+  it('passes a fresh runner call context to each invoke attempt', async () => {
+    const contexts: RunnerCallContext[] = [];
+    const invoke = vi.fn().mockImplementation(async (opts: { callContext: RunnerCallContext }) => {
+      contexts.push(opts.callContext);
+      return { text: 'done', usage: null };
+    });
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
+    );
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } });
+    const task = makeTask({ id: 'T001', file: 'src/context.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+    await implementer.retry({
+      task,
+      projectDir,
+      config,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'try again',
+      attempt: 2,
+      kind: 'local',
+    });
+
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toMatchObject({
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      model: 'gpt-5',
+      attempt: 0,
+    });
+    expect(contexts[1]).toMatchObject({ attempt: 2 });
+    expect(contexts[1]?.callId).not.toBe(contexts[0]?.callId);
+  });
+
+  it('returns failure for non-completed runner calls while preserving output and usage', async () => {
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'truncated',
+        text: 'partial implementer output',
+        usage: { inputTokens: 7, outputTokens: 3 },
+        error: { code: 'max_tokens', message: 'output limit reached' },
+        partial: true,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/truncated.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.output).toBe('partial implementer output');
+      expect(result.error).toBe('output limit reached');
+      expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3 });
+    }
+    expect(existsSync(join(projectDir, 'src/truncated.ts'))).toBe(false);
+  });
+
+  it('maps user-aborted runner calls to the existing aborted result shape', async () => {
+    const controller = new AbortController();
+    const invoke = vi.fn().mockImplementation(async () => {
+      controller.abort();
+      return makeRunnerCallResult({
+        status: 'aborted',
+        text: 'partial before abort',
+        usage: { inputTokens: 1, outputTokens: 1 },
+        error: { code: 'runner_interrupted', message: 'stream interrupted' },
+        partial: true,
+      });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      signal: controller.signal,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.output).toBe('partial before abort');
+      expect(result.error).toBe('Aborted');
+      expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1 });
+    }
   });
 });
 

@@ -92,9 +92,20 @@ Events cover the full workflow lifecycle. A few examples:
 - `workflow_started` / `workflow_complete` — session boundaries
 - `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
 - `planner_text` — streaming planner output chunks
+- `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, tool-use, session IDs, artifacts, warnings, errors, and completion
 - `cost_update` — cumulative token usage after each planner or implementer call
 
 The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields.
+
+### Runner call pipeline
+
+Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, Claude Code, and Agent SDK adapters emit `RunnerCallEvent` values. The collector turns the ordered stream into a `RunnerCallResult` with:
+
+- call identity: `callId`, role, backend kind, runner/model metadata
+- lifecycle status: `completed`, `failed`, `truncated`, `aborted`, `timeout`, `refused`, `unsupported_tool`, or `incomplete`
+- text, usage, native session ID, tool-use, artifacts, warnings, error, and `partial`
+
+`InvokeResult` is now a compatibility projection only. `toInvokeResult()` accepts completed calls; non-completed calls stay typed so planner/implementer policy can preserve partial output or fail closed. Public consumers receive bounded/redacted projections, not raw backend payloads.
 
 ---
 
@@ -108,7 +119,7 @@ Up to six sinks can subscribe to the bus. Two are unconditional (JSONL, tree rec
 
 **Tree recorder sink** (`src/engine/events/sinks/tree-recorder.ts`) — maintains a branching session tree on disk. Records plan steps, agent invocations, recovery decisions, and cost checkpoints. Recovery actions that change the execution path (retry, route to bigger worker, planner split) create branches instead of appending linearly.
 
-**Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes NDJSON to stdout, one line per event. Only subscribed in `--json` headless mode.
+**Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
 **Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
 
@@ -184,13 +195,13 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 `session.jsonl` contains three record types interleaved chronologically. Every record is a JSON object with a `kind` discriminant and a `ts` timestamp.
 
-**Event records** (`kind: 'event'`). Written by `jsonlSink` on every `bus.publish()`. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. The replay system (`src/engine/ipc/replay.ts`) reads only these records when an IPC client attaches mid-session.
+**Event records** (`kind: 'event'`). Written by `jsonlSink` on every `bus.publish()`. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay. The replay system (`src/engine/ipc/replay.ts`) reads only these records when an IPC client attaches mid-session and reports skipped blank, non-event, malformed, unknown, and oversized records in replay diagnostics.
 
 **Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes at 16 KB or when the phase ends. If the call is aborted (Ctrl-C during a planner call), `flushInterrupted()` writes the partial text with `interrupted: true`. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
 
 **Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
-All three live in the same file because consumers need chronological ordering. Context rebuild reads message records and, when compaction exists, uses the latest summary record as a synthetic message before loading later messages. A separate file per record type would require merge-sorting at read time.
+All three live in the same file because consumers need chronological ordering. Context rebuild reads message records and, when compaction exists, uses the latest summary record as a synthetic message before loading later messages. A separate file per record type would require merge-sorting at read time. Session-log writes and readers share bounded record-size limits; malformed or oversized lines are skipped with diagnostics rather than being silently treated as valid history.
 
 ---
 
