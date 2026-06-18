@@ -18,15 +18,18 @@ type SinglePhaseConfig = {
   invokePlan: (opts: {
     prompt: string;
     projectDir: string;
+    callContext: RunnerCallContext;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired'
+      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
     >;
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
   }) => Promise<RunnerCallCompatibleResult>;
   backendKind?: RunnerCallContext['backendKind'];
+  runnerName?: string | undefined;
+  model?: string | undefined;
   readPhaseOutput?: (
     filename: string,
     resultText: string,
@@ -50,6 +53,8 @@ function createSinglePhaseCallContext(config: SinglePhaseConfig): RunnerCallCont
     callId: `single-phase-${++singlePhaseCallSequence}`,
     role: 'planner',
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+    ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
+    ...(config.model !== undefined && { model: config.model }),
   };
 }
 
@@ -120,12 +125,14 @@ export async function runSinglePhasePlanning(
     images: callbacks.attachments,
     consumesPriorMessages: config.consumesPriorMessages,
   });
+  const callContext = createSinglePhaseCallContext(config);
   const result = requireCompletedCall(
     toRunnerCallResult(
-      createSinglePhaseCallContext(config),
+      callContext,
       await config.invokePlan({
         prompt: effectivePrompt,
         projectDir,
+        callContext,
         callbacks: {
           onOutput: (text) => {
             callbacks.onOutput(text);
@@ -134,6 +141,7 @@ export async function runSinglePhasePlanning(
           onQuestion: callbacks.onQuestion,
           onSessionId: callbacks.onSessionId,
           onSessionExpired: callbacks.onSessionExpired,
+          onCallEvent: callbacks.onCallEvent,
         },
         ...extras,
         signal: callbacks.signal,

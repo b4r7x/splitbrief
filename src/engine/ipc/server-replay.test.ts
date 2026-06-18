@@ -285,6 +285,47 @@ describe('startIpcServer replay', () => {
     }
   });
 
+  it('protects replayed session events before sending them to clients', async () => {
+    const tmpDir = createTempDir('ipc-test');
+    tmpDirs.push(tmpDir);
+    const sessionJsonlPath = join(tmpDir, 'session.jsonl');
+    writeFileSync(
+      sessionJsonlPath,
+      makeSessionLogLine({
+        type: 'warning',
+        ts: 100,
+        phase: 'idle',
+        message: 'token sk-abcdefghijklmnopqrst \u001b]0;owned\u0007done',
+      }) + '\n',
+    );
+
+    const bus = createEventBus();
+    const srv = await startIpcServer({
+      sessionId: 'protected-replay-test',
+      sessionDir: tmpDir,
+      startedAt: 100,
+      mode: 'quick',
+      feature: 'x',
+      authToken: AUTH_TOKEN,
+      bus,
+      onUserInput: vi.fn(),
+      sessionJsonlPath,
+    });
+    servers.push(srv);
+
+    const socket = await connectAuthenticated(srv.sockPath);
+
+    const msgs = await readLines(socket, 4);
+    const replayed = msgs.find(
+      (m): m is Extract<ServerMessage, { kind: 'event' }> =>
+        m.kind === 'event' && m.payload.type === 'warning',
+    );
+    expect(replayed?.payload).toMatchObject({
+      type: 'warning',
+      message: 'token sk-***REDACTED*** done',
+    });
+  });
+
   it('after replay, new bus events are forwarded to client', async () => {
     const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
@@ -318,6 +359,42 @@ describe('startIpcServer replay', () => {
     expect(liveMsg[0]!.kind).toBe('event');
     if (liveMsg[0]!.kind === 'event') {
       expect(liveMsg[0]!.payload.type).toBe('warning');
+    }
+  });
+
+  it('applies transcript-off policy to live IPC events', async () => {
+    const { srv, bus: testBus } = await makeServer({ persistTranscript: false });
+    const socket = await connectAuthenticated(srv.sockPath);
+
+    await readLines(socket, 1);
+
+    const liveP = readLines(socket, 1);
+    testBus.publish({
+      type: 'runner_call_text_delta',
+      ts: 100,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 1,
+      text: 'hidden transcript',
+    });
+    testBus.publish({
+      type: 'runner_call_usage',
+      ts: 110,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 2,
+      usage: { inputTokens: 1, outputTokens: 2 },
+      semantics: 'delta',
+    });
+
+    const live = await liveP;
+    expect(live[0]!.kind).toBe('event');
+    if (live[0]!.kind === 'event') {
+      expect(live[0]!.payload.type).toBe('runner_call_usage');
     }
   });
 

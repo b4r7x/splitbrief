@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createAgentSdkBackend, processStream } from './agent-sdk-backend.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import {
+  replayRunnerCallEventsIntoOperations,
+  runnerCallErrors,
+  runnerCallTerminals,
+} from '#testing/helpers/runner-call-events.js';
 
 // The agent-sdk loader uses dynamic import(); stub it so createAgentSdkBackend's
 // invoke path can be exercised without the real optional peer dep installed.
@@ -115,11 +120,13 @@ describe('processStream — session id capture', () => {
       { type: 'system', subtype: 'init', session_id: 'sess-incomplete' },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'partial' }] } },
     ]);
+    const events: RunnerCallEvent[] = [];
 
     await expect(
       processStream({
         stream,
         onOutput: vi.fn(),
+        onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
       kind: 'runner-call-failed',
@@ -131,6 +138,75 @@ describe('processStream — session id capture', () => {
         error: { code: 'missing_terminal_event' },
       },
     });
+
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'incomplete',
+      error: { code: 'missing_terminal_event' },
+      nativeSessionId: 'sess-incomplete',
+      partial: true,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: 'Runner call ended without a terminal event',
+      partial: true,
+    });
+  });
+
+  it('emits one failed terminal before rethrowing an async iterator failure', async () => {
+    const stream: AsyncIterable<{
+      type: string;
+      subtype?: string;
+      session_id?: string;
+      message?: { content?: Array<{ type: string; text?: string }> };
+    }> = {
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-stream-error' };
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'partial' }] },
+        };
+        throw new Error('SDK iterator failed');
+      },
+    };
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      processStream({
+        stream,
+        onOutput: vi.fn(),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow('SDK iterator failed');
+
+    const terminals = runnerCallTerminals(events);
+    const errors = runnerCallErrors(events);
+    expect(terminals).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    const [errorEvent] = errors;
+    if (!errorEvent) throw new Error('Expected a runner call error event');
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'call_text_delta', text: 'partial' }),
+    );
+    expect(errorEvent).toMatchObject({
+      status: 'failed',
+      error: { code: 'agent_sdk_stream_error', message: 'SDK iterator failed' },
+      nativeSessionId: 'sess-stream-error',
+      partial: true,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errorEvent.callId,
+      status: 'failed',
+      reason: 'SDK iterator failed',
+      partial: true,
+    });
   });
 
   it('stops processing when the abort signal fires', async () => {
@@ -141,6 +217,7 @@ describe('processStream — session id capture', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'second' }] } },
     ]);
     const sessions: string[] = [];
+    const events: RunnerCallEvent[] = [];
     const onOutput = vi.fn(() => controller.abort(new Error('cancelled')));
 
     await expect(
@@ -148,11 +225,21 @@ describe('processStream — session id capture', () => {
         stream,
         onOutput,
         onSessionId: (id) => sessions.push(id),
+        onCallEvent: (event) => events.push(event),
         signal: controller.signal,
       }),
     ).rejects.toThrow('cancelled');
     expect(onOutput).toHaveBeenCalledOnce();
     expect(sessions).toContain('sess-abort');
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'aborted',
+      error: { code: 'runner_interrupted', message: 'cancelled' },
+      nativeSessionId: 'sess-abort',
+      partial: true,
+    });
   });
 
   it('keeps timeout abort reason distinct from user abort', async () => {
@@ -202,6 +289,7 @@ describe('createAgentSdkBackend — session resume', () => {
     const backend = createAgentSdkBackend({ allowedTools: ['Read'], initialSessionId: 'sess-old' });
     const onSessionId = vi.fn();
     const onSessionExpired = vi.fn();
+    const events: RunnerCallEvent[] = [];
 
     const result = await backend.invoke({
       prompt: 'hi',
@@ -210,6 +298,7 @@ describe('createAgentSdkBackend — session resume', () => {
       onOutput: vi.fn(),
       onSessionId,
       onSessionExpired,
+      onCallEvent: (event) => events.push(event),
     });
 
     // Behaviour: the expired session is reported to the caller, a fresh session
@@ -222,6 +311,13 @@ describe('createAgentSdkBackend — session resume', () => {
     expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
     expect(onSessionId).toHaveBeenCalledWith('sess-new');
     expect(result.text).toBe('fresh reply');
+    const started = events.filter((event) => event.type === 'call_started');
+    expect(started).toHaveLength(2);
+    expect(started[0]).toMatchObject({ attempt: 1 });
+    expect(started[1]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-1$/);
+    expect(started[1]?.callId).toMatch(/-attempt-2$/);
+    expect(started[0]?.callId).not.toBe(started[1]?.callId);
   });
 
   it('omits options.resume and uses projectDir as cwd when no initialSessionId is provided', async () => {

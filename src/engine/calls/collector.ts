@@ -1,5 +1,6 @@
 import { error } from '../../utils/error.js';
-import { isRunnerCallTerminalEvent } from './status.js';
+import { assertNever } from '../../utils/type-guards.js';
+import { boundedRunnerCallMessage, isRunnerCallTerminalEvent } from './status.js';
 import { applyRunnerCallUsageSample } from './usage.js';
 import type {
   RunnerCallContext,
@@ -13,6 +14,9 @@ import type {
 
 interface RunnerCallCollectionState {
   context: RunnerCallContext | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
   text: string;
   usage: RunnerCallUsage | null;
   nativeSessionId: string | null;
@@ -20,12 +24,16 @@ interface RunnerCallCollectionState {
   artifacts: RunnerCallResult['artifacts'];
   warnings: RunnerCallWarning[];
   error: RunnerCallError | null;
+  partial: boolean | null;
   terminalStatus: RunnerCallStatus | null;
 }
 
 export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): RunnerCallResult {
   const state: RunnerCallCollectionState = {
     context: null,
+    startedAt: null,
+    endedAt: null,
+    durationMs: null,
     text: '',
     usage: null,
     nativeSessionId: null,
@@ -33,6 +41,7 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     artifacts: [],
     warnings: [],
     error: null,
+    partial: null,
     terminalStatus: null,
   };
 
@@ -60,24 +69,51 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
   }
 
   const status = state.terminalStatus ?? 'incomplete';
+  const startedAt = state.startedAt ?? 0;
+  const endedAt = state.endedAt ?? Date.now();
+  const durationMs = state.durationMs ?? Math.max(0, endedAt - startedAt);
   const missingTerminal =
     state.terminalStatus === null
       ? { code: 'missing_terminal_event', message: 'Runner call ended without a terminal event' }
       : null;
 
-  return {
+  const common = {
     callId: state.context.callId,
     role: state.context.role,
     backendKind: state.context.backendKind,
+    ...(state.context.runnerName !== undefined && { runnerName: state.context.runnerName }),
+    ...(state.context.model !== undefined && { model: state.context.model }),
+    ...(state.context.attempt !== undefined && { attempt: state.context.attempt }),
     status,
+    startedAt,
+    endedAt,
+    durationMs,
     text: state.text,
     usage: state.usage,
     nativeSessionId: state.nativeSessionId,
     toolUses: state.toolUses,
     artifacts: state.artifacts,
     warnings: state.warnings,
-    error: state.error ?? missingTerminal,
-    partial: status !== 'completed',
+  };
+
+  if (status === 'completed') {
+    return {
+      ...common,
+      status,
+      error: null,
+      partial: false,
+    };
+  }
+
+  return {
+    ...common,
+    status,
+    error: state.error ??
+      missingTerminal ?? {
+        code: 'missing_failure_error',
+        message: `Runner call ended with ${status} status without an error`,
+      },
+    partial: state.partial ?? true,
   };
 }
 
@@ -114,12 +150,13 @@ function assertSameCall(context: RunnerCallContext, event: RunnerCallEvent): voi
 function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCallEvent): void {
   switch (event.type) {
     case 'call_started':
+      state.startedAt = event.ts;
       return;
     case 'call_text_delta':
       state.text += event.text;
       return;
     case 'call_stderr_delta':
-      state.warnings.push({ code: 'stderr', message: event.text });
+      state.warnings.push({ code: 'stderr', message: boundedRunnerCallMessage(event.text) });
       return;
     case 'call_tool_use_delta':
       return;
@@ -139,14 +176,33 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.artifacts.push(event.artifact);
       return;
     case 'call_warning':
-      state.warnings.push(event.warning);
+      state.warnings.push({
+        ...event.warning,
+        message: boundedRunnerCallMessage(event.warning.message),
+      });
       return;
     case 'call_error':
       state.terminalStatus = event.status;
       state.error = event.error;
+      state.partial = event.partial;
+      state.endedAt = event.endedAt;
+      state.durationMs = event.durationMs;
+      if (state.startedAt === null) state.startedAt = event.startedAt;
+      if (event.usage !== null) {
+        state.usage = applyRunnerCallUsageSample(state.usage, {
+          semantics: 'final',
+          usage: event.usage,
+        });
+      }
+      state.nativeSessionId = event.nativeSessionId;
       return;
     case 'call_completed':
       state.terminalStatus = event.status;
+      state.error = event.error;
+      state.partial = event.partial;
+      state.endedAt = event.endedAt;
+      state.durationMs = event.durationMs;
+      if (state.startedAt === null) state.startedAt = event.startedAt;
       if (event.usage !== null) {
         state.usage = applyRunnerCallUsageSample(state.usage, {
           semantics: 'final',
@@ -158,8 +214,10 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     case 'call_unknown_upstream':
       state.warnings.push({
         code: 'unknown_upstream',
-        message: event.rawPreview,
+        message: boundedRunnerCallMessage(event.rawPreview),
       });
       return;
+    default:
+      assertNever(event);
   }
 }

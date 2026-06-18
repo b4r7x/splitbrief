@@ -133,7 +133,10 @@ export async function handleRewindSpec(args: {
       prompt: regenPrompt,
       projectDir,
       callbacks: {
-        onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
+        onOutput: createBusTextHandler(
+          { bus: wctx.bus, phase: state.phase },
+          { content: 'markdown' },
+        ),
         signal,
       },
     });
@@ -223,7 +226,10 @@ export async function handleRewindPlan(args: {
       prompt: regenPrompt,
       projectDir,
       callbacks: {
-        onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
+        onOutput: createBusTextHandler(
+          { bus: wctx.bus, phase: state.phase },
+          { content: 'markdown' },
+        ),
         signal,
       },
     });

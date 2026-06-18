@@ -5,6 +5,8 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { operationsStore } from '../../../stores/workflow/operations.js';
+import { addEvent } from '../../../stores/workflow/actions.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
@@ -29,6 +31,7 @@ function workflowConfig(overrides: WorkflowConfigOverrides = {}): EngineEventOf<
 describe('WorkflowHeader', () => {
   beforeEach(() => {
     resetAllStores();
+    operationsStore.reset();
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
     routerStore.init({ screen: 'workflow', feature: 'test feature' });
     lifecycleStore.__testReset({ phase: 'researching' });
@@ -36,6 +39,7 @@ describe('WorkflowHeader', () => {
 
   afterEach(() => {
     resetAllStores();
+    operationsStore.reset();
   });
 
   it('inlines full config with models when the allocated config column is wide enough', async () => {
@@ -127,25 +131,21 @@ describe('WorkflowHeader', () => {
 
   it('keeps running agent status to one chrome row when heartbeat details are present', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    eventsStore.__testReset({
-      events: [
-        {
-          type: 'planner_status',
-          ts: Date.now(),
-          phase: 'researching',
-          status: 'running',
-          tool: 'codex',
-          model: 'default',
-        },
-        {
-          type: 'planner_heartbeat',
-          ts: Date.now(),
-          phase: 'researching',
-          elapsedMs: 200,
-          accumulatedTokens: 12_300,
-          phaseHint: 'collecting enough context to decide whether the work should be split',
-        },
-      ],
+    addEvent({
+      type: 'planner_status',
+      ts: Date.now(),
+      phase: 'researching',
+      status: 'running',
+      tool: 'codex',
+      model: 'default',
+    });
+    addEvent({
+      type: 'planner_heartbeat',
+      ts: Date.now(),
+      phase: 'researching',
+      elapsedMs: 200,
+      accumulatedTokens: 12_300,
+      phaseHint: 'collecting enough context to decide whether the work should be split',
     });
 
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);

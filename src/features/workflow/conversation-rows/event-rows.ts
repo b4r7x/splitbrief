@@ -1,9 +1,8 @@
 import { formatCost, formatScoreSummary } from '../../../core/formatting.js';
 import { formatModelName } from '../../../core/model-display.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { getGutterRole } from './event-role.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import {
   formatExternalChangesValue,
@@ -11,8 +10,9 @@ import {
   validationRow,
 } from './event-format.js';
 import { implementerDoneRows, runningImplementerRows } from './implementer-rows.js';
-import type { ConversationRow, RowBuildContext } from './types.js';
-import { cardRows, prefixedWrappedRows, row, rowText, wrapRows } from './row-format.js';
+import type { ConversationRow, ConversationRowTone, RowBuildContext } from './types.js';
+import { cardRows, eventWrappedRows, row, rowText, wrapRows } from './row-format.js';
+import { markdownConversationRows } from './markdown-rows.js';
 
 export function eventRows(options: {
   event: EngineEvent;
@@ -22,7 +22,6 @@ export function eventRows(options: {
 }): ConversationRow[] {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
-  const role = getGutterRole(event);
 
   switch (event.type) {
     case 'workflow_started':
@@ -110,13 +109,7 @@ export function eventRows(options: {
         labelTone: 'success',
       });
     case 'planner_text':
-      return prefixedWrappedRows({
-        keyPrefix,
-        text: event.text,
-        width: ctx.width,
-        tone: 'text',
-        role,
-      });
+      return plannerTextRows({ event, keyPrefix, width: ctx.width });
     case 'rewind_to_spec':
       return cardRows({
         keyPrefix,
@@ -177,29 +170,27 @@ export function eventRows(options: {
         ctx.width,
       );
     case 'task_started':
-      return prefixedWrappedRows({
+      return eventWrappedRows({
         keyPrefix,
         text: `T${event.index + 1}: ${event.title}  ${formatTaskStartedValue(event)}`,
         width: ctx.width,
         tone: 'text',
-        role,
         bold: true,
       });
     case 'task_skipped':
       return cardRows({
         keyPrefix,
         label: 'skipped',
-        value: `T${event.taskId} ${event.title}: ${event.reason}`,
+        value: `${event.taskId} ${event.title}: ${event.reason}`,
         width: ctx.width,
         labelTone: 'textDim',
       });
     case 'task_retry':
-      return prefixedWrappedRows({
+      return eventWrappedRows({
         keyPrefix,
         text: `retry  attempt ${event.attempt}/${event.maxRetries}`,
         width: ctx.width,
         tone: 'warning',
-        role,
       });
     case 'task_reset':
       return cardRows({
@@ -211,70 +202,63 @@ export function eventRows(options: {
       });
     case 'implementer_generate_running':
       return runningImplementerRows(keyPrefix, event, ctx.streaming).flatMap((sourceRow, index) =>
-        prefixedWrappedRows({
+        eventWrappedRows({
           keyPrefix: `${sourceRow.key}-${index}`,
           text: rowText(sourceRow),
           width: ctx.width,
           tone: sourceRow.segments[0]?.tone ?? 'text',
-          role,
         }),
       );
     case 'implementer_generate_done':
       return implementerDoneRows(keyPrefix, event, ctx, expanded).flatMap((sourceRow, index) =>
-        prefixedWrappedRows({
+        eventWrappedRows({
           keyPrefix: `${sourceRow.key}-${index}`,
           text: rowText(sourceRow),
           width: ctx.width,
           tone: sourceRow.segments[0]?.tone ?? 'text',
-          role,
         }),
       );
     case 'implementer_generate_failed':
-      return prefixedWrappedRows({
+      return eventWrappedRows({
         keyPrefix,
         text: `${formatModelName(event.model)}  failed`,
         width: ctx.width,
         tone: 'error',
-        role,
       });
     case 'validate': {
-      const rows = prefixedWrappedRows({
+      const rows = eventWrappedRows({
         keyPrefix,
         text: validationRow(event),
         width: ctx.width,
         tone: event.passed ? 'success' : 'validator',
-        role,
       });
       if (event.status === 'done' && !event.passed && event.error) {
         rows.push(
-          ...prefixedWrappedRows({
+          ...eventWrappedRows({
             keyPrefix: `${keyPrefix}-error`,
-            text: `  ${event.error}`,
+            text: `error: ${event.error}`,
             width: ctx.width,
             tone: 'error',
-            role,
           }),
         );
       }
       return rows;
     }
     case 'escalate': {
-      const rows = prefixedWrappedRows({
+      const rows = eventWrappedRows({
         keyPrefix,
         text: `escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`,
         width: ctx.width,
         tone: 'planner',
-        role,
         bold: true,
       });
       if (event.hint)
         rows.push(
-          ...prefixedWrappedRows({
+          ...eventWrappedRows({
             keyPrefix: `${keyPrefix}-hint`,
-            text: `  ${event.hint}`,
+            text: `hint: ${event.hint}`,
             width: ctx.width,
             tone: 'textDim',
-            role,
           }),
         );
       return rows;
@@ -414,5 +398,44 @@ export function eventRows(options: {
       return [];
     default:
       return assertNever(event);
+  }
+}
+
+function plannerTextRows(options: {
+  event: EngineEventOf<'planner_text'>;
+  keyPrefix: string;
+  width: number;
+}): ConversationRow[] {
+  const { event, keyPrefix, width } = options;
+  switch (event.content) {
+    case 'markdown':
+      return markdownConversationRows({
+        keyPrefix,
+        text: event.text,
+        width,
+      });
+    case 'plain':
+    case undefined:
+      return eventWrappedRows({
+        keyPrefix,
+        text: event.text,
+        width,
+        tone: plannerTextTone(event.role),
+      });
+    default:
+      return assertNever(event.content);
+  }
+}
+
+function plannerTextTone(role: EngineEventOf<'planner_text'>['role']): ConversationRowTone {
+  switch (role) {
+    case 'implementer':
+      return 'implementer';
+    case 'planner':
+      return 'planner';
+    case undefined:
+      return 'text';
+    default:
+      return assertNever(role);
   }
 }

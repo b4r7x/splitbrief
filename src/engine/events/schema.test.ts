@@ -67,4 +67,81 @@ describe('parseEngineEvent', () => {
     });
     expect(parsed).toMatchObject({ forwardCompatField: { nested: true } });
   });
+
+  it('accepts only the canonical workflow cancellation reason when present', () => {
+    expect(
+      parseEngineEvent({
+        type: 'workflow_cancelled',
+        ts: 1,
+        phase: 'implementing',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'workflow_cancelled' }));
+    expect(
+      parseEngineEvent({
+        type: 'workflow_cancelled',
+        ts: 1,
+        phase: 'implementing',
+        reason: 'user_cancelled',
+      }),
+    ).toEqual(expect.objectContaining({ reason: 'user_cancelled' }));
+    expect(
+      parseEngineEvent({
+        type: 'workflow_cancelled',
+        ts: 1,
+        phase: 'implementing',
+        reason: 'ctrl_c',
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps runner call terminal variants type-safe', () => {
+    const base = {
+      ts: 1,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'api',
+      sequence: 0,
+      startedAt: 1,
+      endedAt: 11,
+      durationMs: 10,
+      partial: false,
+      usage: null,
+      nativeSessionId: null,
+    } as const;
+
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_completed',
+        ...base,
+        status: 'completed',
+        error: null,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'runner_call_completed' }));
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_completed',
+        ...base,
+        status: 'failed',
+        error: null,
+      }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_error',
+        ...base,
+        status: 'timeout',
+        partial: true,
+        error: { code: 'timeout', message: 'timed out' },
+      }),
+    ).toEqual(expect.objectContaining({ type: 'runner_call_error' }));
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_error',
+        ...base,
+        status: 'completed',
+        error: { code: 'bad', message: 'bad' },
+      }),
+    ).toBeNull();
+  });
 });

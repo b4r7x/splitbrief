@@ -23,7 +23,7 @@ export async function runPlannerReview(
 ): Promise<{ state: WorkflowState; text: string }> {
   const { planner, prompt, projectDir, sessionId, bus, writeTo, metadata } = opts;
   const result = await planner.review(prompt, projectDir, {
-    onOutput: createBusTextHandler({ bus: bus, phase: opts.state.phase }),
+    onOutput: createBusTextHandler({ bus: bus, phase: opts.state.phase }, { content: 'markdown' }),
     signal: opts.signal,
   });
   const state = addUsageAndSave(

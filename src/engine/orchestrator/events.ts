@@ -12,6 +12,7 @@ import type {
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type {
   EngineEvent,
+  EngineEventOf,
   EventBus,
   ValidationStages,
   ValidationStageSkips,
@@ -24,11 +25,30 @@ import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
+import { projectRunnerCallEvent } from '../calls/event-projection.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 type BusContext = {
   bus: EventBus;
   phase: Phase;
 };
+
+type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 'content'>;
+
+let runnerCallEventSequence = 0;
+
+export function publishRunnerCallEvent(
+  ctx: BusContext & { taskId?: TaskId | undefined },
+  event: RunnerCallEvent,
+): void {
+  const projected = projectRunnerCallEvent(event, {
+    phase: ctx.phase,
+    ...(ctx.taskId !== undefined && { taskId: ctx.taskId }),
+    sequence: runnerCallEventSequence,
+  });
+  runnerCallEventSequence += 1;
+  if (projected !== null) ctx.bus.publish(projected);
+}
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
@@ -39,8 +59,9 @@ type ValidationPhase =
 
 export function createBusTextHandler(
   ctx: BusContext,
-  role?: 'planner' | 'implementer',
+  options: PlannerTextOptions = {},
 ): (text: string) => void {
+  const { role, content } = options;
   return (text) =>
     ctx.bus.publish({
       type: 'planner_text',
@@ -48,6 +69,7 @@ export function createBusTextHandler(
       phase: ctx.phase,
       text,
       ...(role !== undefined && { role }),
+      ...(content !== undefined && { content }),
     });
 }
 
@@ -480,6 +502,8 @@ export function createImplementerPublisher(bus: EventBus): ImplementerPublisher 
   return {
     publishRunning: ({ phase, taskId, file }) =>
       publishImplementerGenerateRunning({ bus, phase }, taskId, file),
+    publishCallEvent: ({ phase, taskId, event }) =>
+      publishRunnerCallEvent({ bus, phase, taskId }, event),
     publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone({ bus, phase }, opts),
     publishFailed: ({ phase, taskId, model }) =>
       publishImplementerGenerateFailed({ bus, phase }, taskId, model),

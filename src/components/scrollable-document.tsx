@@ -10,10 +10,12 @@ export interface ScrollableDocumentRow {
 }
 
 interface ScrollableDocumentProps {
-  rows: ScrollableDocumentRow[];
+  rows: readonly ScrollableDocumentRow[];
   height: number;
   isActive?: boolean | undefined;
   keyboardMode?: 'paging' | 'line-and-page' | undefined;
+  scrollOffset?: number | undefined;
+  onScrollOffsetChange?: ((offset: number) => void) | undefined;
   placeholder?: ReactNode;
 }
 
@@ -21,13 +23,21 @@ function rowLineCount(row: ScrollableDocumentRow): number {
   return Math.max(1, row.lines ?? 1);
 }
 
-function totalLineCount(rows: ScrollableDocumentRow[]): number {
+export function getScrollableDocumentLineCount(rows: readonly ScrollableDocumentRow[]): number {
   return rows.reduce((sum, row) => sum + rowLineCount(row), 0);
 }
 
-function clampLineOffset(offset: number, lineCount: number, height: number): number {
-  const maxOffset = Math.max(0, lineCount - height);
-  return Math.max(0, Math.min(offset, maxOffset));
+function normalizeVisibleHeight(height: number): number {
+  return Math.max(1, Math.floor(height));
+}
+
+export function clampScrollableDocumentOffset(
+  offset: number,
+  lineCount: number,
+  height: number,
+): number {
+  const maxOffset = Math.max(0, lineCount - normalizeVisibleHeight(height));
+  return Math.max(0, Math.min(Math.floor(offset), maxOffset));
 }
 
 interface VisibleScrollableDocumentRow {
@@ -37,7 +47,7 @@ interface VisibleScrollableDocumentRow {
 }
 
 function sliceRowsByLineOffset(
-  rows: ScrollableDocumentRow[],
+  rows: readonly ScrollableDocumentRow[],
   lineOffset: number,
   visibleHeight: number,
 ): VisibleScrollableDocumentRow[] {
@@ -63,66 +73,100 @@ function sliceRowsByLineOffset(
   return visible;
 }
 
+interface ScrollableDocumentWindow {
+  lineCount: number;
+  offset: number;
+  visibleHeight: number;
+  visibleRows: VisibleScrollableDocumentRow[];
+  showScrollUp: boolean;
+  showScrollDown: boolean;
+}
+
+function getScrollableDocumentWindow(
+  rows: readonly ScrollableDocumentRow[],
+  requestedOffset: number,
+  height: number,
+): ScrollableDocumentWindow {
+  const visibleHeight = normalizeVisibleHeight(height);
+  const lineCount = getScrollableDocumentLineCount(rows);
+  const offset = clampScrollableDocumentOffset(requestedOffset, lineCount, visibleHeight);
+  return {
+    lineCount,
+    offset,
+    visibleHeight,
+    visibleRows: sliceRowsByLineOffset(rows, offset, visibleHeight),
+    showScrollUp: offset > 0,
+    showScrollDown: offset + visibleHeight < lineCount,
+  };
+}
+
 export function ScrollableDocument({
   rows,
   height,
   isActive = true,
   keyboardMode = 'paging',
+  scrollOffset: controlledScrollOffset,
+  onScrollOffsetChange,
   placeholder,
 }: ScrollableDocumentProps) {
-  const visibleHeight = Math.max(1, Math.floor(height));
-  const lineCount = totalLineCount(rows);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const [internalScrollOffset, setInternalScrollOffset] = useState(0);
+  const requestedOffset = controlledScrollOffset ?? internalScrollOffset;
+  const windowState = getScrollableDocumentWindow(rows, requestedOffset, height);
 
   useEffect(() => {
-    setScrollOffset((current) => clampLineOffset(current, lineCount, visibleHeight));
-  }, [lineCount, visibleHeight]);
+    if (controlledScrollOffset !== undefined) {
+      if (controlledScrollOffset !== windowState.offset) onScrollOffsetChange?.(windowState.offset);
+      return;
+    }
+    if (internalScrollOffset !== windowState.offset) setInternalScrollOffset(windowState.offset);
+  }, [controlledScrollOffset, internalScrollOffset, windowState.offset, onScrollOffsetChange]);
+
+  function setRequestedOffset(offset: number) {
+    const nextOffset = clampScrollableDocumentOffset(
+      offset,
+      windowState.lineCount,
+      windowState.visibleHeight,
+    );
+    if (controlledScrollOffset === undefined) setInternalScrollOffset(nextOffset);
+    onScrollOffsetChange?.(nextOffset);
+  }
 
   useInput(
     (_input, key) => {
       if (key.home) {
-        setScrollOffset(0);
+        setRequestedOffset(0);
         return;
       }
       if (key.end) {
-        setScrollOffset(clampLineOffset(lineCount, lineCount, visibleHeight));
+        setRequestedOffset(windowState.lineCount);
         return;
       }
       if (key.pageUp) {
-        setScrollOffset((current) =>
-          clampLineOffset(current - visibleHeight, lineCount, visibleHeight),
-        );
+        setRequestedOffset(windowState.offset - windowState.visibleHeight);
         return;
       }
       if (key.pageDown) {
-        setScrollOffset((current) =>
-          clampLineOffset(current + visibleHeight, lineCount, visibleHeight),
-        );
+        setRequestedOffset(windowState.offset + windowState.visibleHeight);
         return;
       }
       if (keyboardMode === 'line-and-page' && key.upArrow) {
-        setScrollOffset((current) => clampLineOffset(current - 1, lineCount, visibleHeight));
+        setRequestedOffset(windowState.offset - 1);
         return;
       }
       if (keyboardMode === 'line-and-page' && key.downArrow) {
-        setScrollOffset((current) => clampLineOffset(current + 1, lineCount, visibleHeight));
+        setRequestedOffset(windowState.offset + 1);
       }
     },
     { isActive },
   );
 
-  const offset = clampLineOffset(scrollOffset, lineCount, visibleHeight);
-  const visibleRows = sliceRowsByLineOffset(rows, offset, visibleHeight);
-  const showScrollUp = offset > 0;
-  const showScrollDown = offset + visibleHeight < lineCount;
-
   return (
     <Box flexDirection="column">
       <Box height={1} overflow="hidden">
-        <ScrollIndicator show={showScrollUp} direction="up" />
+        <ScrollIndicator show={windowState.showScrollUp} direction="up" />
       </Box>
-      <Box flexDirection="column" height={visibleHeight} overflow="hidden">
-        {visibleRows.map(({ row, skipLines, visibleLines }) => {
+      <Box flexDirection="column" height={windowState.visibleHeight} overflow="hidden">
+        {windowState.visibleRows.map(({ row, skipLines, visibleLines }) => {
           const lines = rowLineCount(row);
           if (skipLines === 0 && visibleLines === lines && lines === 1) {
             return <Box key={row.key}>{row.node}</Box>;
@@ -138,7 +182,7 @@ export function ScrollableDocument({
         {rows.length === 0 && placeholder}
       </Box>
       <Box height={1} overflow="hidden">
-        <ScrollIndicator show={showScrollDown} direction="down" />
+        <ScrollIndicator show={windowState.showScrollDown} direction="down" />
       </Box>
     </Box>
   );

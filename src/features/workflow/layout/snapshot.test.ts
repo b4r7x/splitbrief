@@ -191,7 +191,7 @@ describe('readReviewContentHeight', () => {
   it('returns a positive height for a normal terminal with content', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
-    reviewStore.setLineCount(50);
+    reviewStore.setRenderedLineCount(50);
 
     const height = readReviewContentHeight();
 
@@ -202,10 +202,10 @@ describe('readReviewContentHeight', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
 
-    reviewStore.setLineCount(1);
+    reviewStore.setRenderedLineCount(1);
     const shortContent = readReviewContentHeight();
 
-    reviewStore.setLineCount(1000);
+    reviewStore.setRenderedLineCount(1000);
     const tallContent = readReviewContentHeight();
 
     expect(tallContent).toBe(shortContent - 1);

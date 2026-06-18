@@ -233,6 +233,62 @@ describe('runSingleTask — happy path', () => {
     expect(events.find((e) => e.type === 'task_skipped')).toBeUndefined();
   });
 
+  it('publishes workflow_cancelled and resets the task when approval returns user_cancelled', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/hello.ts',
+    });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { callbacks } = makeCallbacks({
+      onTieredApproval: vi.fn().mockResolvedValue({
+        decision: 'deny',
+        reason: 'user_cancelled',
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: true,
+            tiers: { write_in_scope: 'sticky' },
+          },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { commitStrategy: 'none', maxRetries: 2 },
+        }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.currentTaskIndex).toBe(0);
+    expect(result.tasks[0]?.status).toBe('pending');
+    expect(loadState({ projectDir, sessionId })?.tasks[0]?.status).toBe('pending');
+    expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
+      type: 'workflow_cancelled',
+      reason: 'user_cancelled',
+    });
+    expect(events.find((event) => event.type === 'error')).toMatchObject({
+      message: 'Task blocked by approval gate: user_cancelled',
+    });
+  });
+
   it('allows actual in-scope changed files to proceed', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({

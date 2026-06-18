@@ -94,6 +94,8 @@ export function createApiImplementer(
         maxTokens,
         signal: effectiveSignal,
         effort: impl.effort,
+        onCallEvent: opts.onCallEvent,
+        callContext: opts.callContext,
       });
     },
 

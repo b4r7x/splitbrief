@@ -1,6 +1,12 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { streamAnthropicCompletion } from './stream.js';
 import type { StreamMessage } from '../dispatch-stream.js';
+import type { RunnerCallEvent } from '../../calls/types.js';
+import {
+  replayRunnerCallEventsIntoOperations,
+  runnerCallErrors,
+  runnerCallTerminals,
+} from '#testing/helpers/runner-call-events.js';
 
 function makeSseResponse(events: string[]): Response {
   return new Response(events.join(''), {
@@ -41,6 +47,23 @@ async function captureRequestBody(
   await streamAnthropicCompletion(opts);
   const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
   return JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+}
+
+function expectOneErrorClosesOperation(
+  events: RunnerCallEvent[],
+): ReturnType<typeof runnerCallErrors>[number] {
+  const terminals = runnerCallTerminals(events);
+  expect(terminals).toHaveLength(1);
+  const [terminal] = runnerCallErrors(events);
+  if (!terminal) throw new Error('Expected a runner call error event');
+
+  const operations = replayRunnerCallEventsIntoOperations(events);
+  expect(operations.active).toBeNull();
+  expect(operations.last).toMatchObject({
+    callId: terminal.callId,
+    reason: terminal.error.message,
+  });
+  return terminal;
 }
 
 describe('streamAnthropicCompletion', () => {
@@ -297,7 +320,7 @@ describe('stream that the model truncates at max_tokens', () => {
     vi.unstubAllGlobals();
   });
 
-  it('rejects with truncated status and surfaces a warning when the stop_reason is max_tokens', async () => {
+  it('returns truncated status and surfaces a warning when the stop_reason is max_tokens', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
         'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
@@ -308,22 +331,27 @@ describe('stream that the model truncates at max_tokens', () => {
     );
 
     const progress: string[] = [];
-    await expect(
-      streamAnthropicCompletion({
-        apiKey: 'sk-test',
-        apiBase: 'https://api.anthropic.com/v1',
-        model: 'claude-sonnet-4-6',
-        messages: [{ role: 'user', content: 'hi' }],
-        temperature: 0.3,
-        effort: 'high',
-        onProgress: (text) => progress.push(text),
-      }),
-    ).rejects.toMatchObject({ data: { status: 'truncated' } });
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.3,
+      effort: 'high',
+      onProgress: (text) => progress.push(text),
+    });
 
+    expect(result).toMatchObject({
+      status: 'truncated',
+      text: 'cut off here',
+      partial: true,
+      usage: { inputTokens: 42, outputTokens: 28096 },
+      error: { code: 'anthropic_stop_reason_max_tokens' },
+    });
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
   });
 
-  it('rejects with incomplete status when the stream ends before message_stop', async () => {
+  it('emits one call_error when the stream ends before message_stop', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
         'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
@@ -331,6 +359,37 @@ describe('stream that the model truncates at max_tokens', () => {
         'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
       ]),
     );
+    const events: RunnerCallEvent[] = [];
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.3,
+      onProgress: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'incomplete',
+      text: 'partial',
+      partial: true,
+      error: { code: 'missing_terminal_event' },
+    });
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'incomplete',
+      error: { code: 'missing_terminal_event' },
+      partial: true,
+    });
+  });
+
+  it('emits one call_error before rethrowing invalid JSON', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse(['event: message_delta\ndata: {"type":\n\n']),
+    );
+    const events: RunnerCallEvent[] = [];
 
     await expect(
       streamAnthropicCompletion({
@@ -340,7 +399,43 @@ describe('stream that the model truncates at max_tokens', () => {
         messages: [{ role: 'user', content: 'hi' }],
         temperature: 0.3,
         onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
       }),
-    ).rejects.toMatchObject({ data: { status: 'incomplete' } });
+    ).rejects.toMatchObject({ kind: 'stream-invalid-payload' });
+
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'failed',
+      error: { code: 'stream-invalid-payload' },
+      partial: false,
+    });
+  });
+
+  it('emits one call_error before rethrowing an Anthropic provider error event', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: error\ndata: {"type":"error","error":{"message":"provider overloaded"}}\n\n',
+      ]),
+    );
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.3,
+        onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({ kind: 'stream-api-error' });
+
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'failed',
+      error: { code: 'stream-api-error', message: expect.stringContaining('provider overloaded') },
+      partial: false,
+    });
   });
 });

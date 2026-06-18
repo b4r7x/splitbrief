@@ -8,7 +8,7 @@ import { useAppKeys } from '../../../src/app/keys.js';
 import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-keys.js';
 import { FeedbackRow } from '../../../src/features/workflow/components/feedback-row.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
-import { lifecycleStore, _lifecycleInternal } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { abortStore } from '../../../src/stores/workflow/abort.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
@@ -58,14 +58,14 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     routerStore.navigate({ to: 'workflow', feature: 'instant feature' });
     // Instant mode runs planning under the 'researching' live phase (init.ts dispatches
     // START before runInstantPlanning, and 'researching' is a live phase).
-    _lifecycleInternal.set({ phase: 'researching', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset({ phase: 'researching' });
   });
 
   afterEach(() => {
     cancelEscapeAction();
     abortStore.clear();
     handlers.clearAllHandlers();
-    _lifecycleInternal.set({ phase: 'idle', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset();
     resetAllStores();
   });
 

@@ -5,7 +5,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { routerStore } from '../stores/navigation/router.js';
-import { lifecycleStore, _lifecycleInternal } from '../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { completionStore } from '../stores/ui/completion.js';
@@ -112,7 +112,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     vi.setSystemTime(1000);
     resetAllStores();
     routerStore.navigate({ to: 'workflow', feature: 'test' });
-    _lifecycleInternal.set({ phase: 'implementing', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset({ phase: 'implementing' });
   });
 
   afterEach(() => {
@@ -256,7 +256,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     vi.setSystemTime(1000);
     resetAllStores();
     routerStore.navigate({ to: 'workflow', feature: 'test' });
-    _lifecycleInternal.set({ phase: 'implementing', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset({ phase: 'implementing' });
   });
 
   afterEach(() => {
@@ -264,7 +264,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     abortStore.clear();
     completionStore.reset();
     handlers.clearAllHandlers();
-    _lifecycleInternal.set({ phase: 'idle', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset();
     vi.useRealTimers();
   });
 
@@ -332,7 +332,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
   });
 
   it('a split escape sequence in the cancelled state does not navigate home', async () => {
-    _lifecycleInternal.set({ phase: 'idle', cancelled: true, queueDepth: 0 });
+    lifecycleStore.__testReset({ cancelled: true });
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();

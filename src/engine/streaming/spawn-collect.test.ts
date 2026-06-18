@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { spawnAndCollect } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import {
+  replayRunnerCallEventsIntoOperations,
+  runnerCallErrors,
+  runnerCallTerminals,
+} from '#testing/helpers/runner-call-events.js';
 
 describe('spawnAndCollect', () => {
   it('collects parsed text from lines', async () => {
@@ -37,6 +43,67 @@ describe('spawnAndCollect', () => {
 
     expect(result.text).toBe('ab');
     expect(result.usage).toEqual({ inputTokens: 30, outputTokens: 15 });
+  });
+
+  it('emits one failed terminal before rethrowing command-not-found', async () => {
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      spawnAndCollect({
+        command: 'nonexistent-command-xyz',
+        args: [],
+        cwd: process.cwd(),
+        notFoundMessage: 'missing command',
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow('missing command');
+
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'failed',
+      error: { code: 'command-not-found', message: 'missing command' },
+      partial: false,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: 'missing command',
+    });
+  });
+
+  it('emits one failed terminal before rethrowing a non-abort process failure', async () => {
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      spawnAndCollect({
+        command: 'node',
+        args: ['-e', 'console.log("partial"); process.exit(2)'],
+        cwd: process.cwd(),
+        parseLine: (line) => (line.trim() ? { text: line } : {}),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({ kind: 'process-output' });
+
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'failed',
+      error: { code: 'process-output', message: expect.stringContaining('exited with code 2') },
+      partial: true,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: expect.stringContaining('exited with code 2'),
+      partial: true,
+    });
   });
 });
 

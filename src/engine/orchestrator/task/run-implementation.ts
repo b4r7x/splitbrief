@@ -37,7 +37,10 @@ export async function runImplementation(opts: {
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase }, 'implementer');
+  const textHandler = createBusTextHandler(
+    { bus: wctx.bus, phase: state.phase },
+    { role: 'implementer' },
+  );
   const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
   const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';

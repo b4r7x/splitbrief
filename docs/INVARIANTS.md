@@ -40,6 +40,16 @@ The runner fails closed: a broken gate command is a failed gate, not a zero-coun
 
 Gates are consolidated here; full rationale for each lives in the linked doc.
 
+### Workflow lifecycle and Markdown invariants
+
+These are architectural invariants enforced by focused tests plus the layer gates above:
+
+- Active operation state comes from normalized `runner_call_*` lifecycle events projected into `operationsStore`. `planner_status` is a legacy/fallback phase span, not the source of truth for `AgentStatusRow`.
+- Terminal operation and workflow states carry frozen `endedAt` / `durationMs`. UI components may display those values, but they must not keep their own lifecycle truth after cancel, abort, timeout, failure, or completion.
+- UI cancel records local intent only for immediate feedback. The canonical audit/history event is engine-published `workflow_cancelled`, and late terminal runner/cost events after cancel remain acceptable.
+- Review and conversation-document scrolling use rendered Markdown row height, not raw newline count. Markdown parsing/layout lives in `src/utils/markdown/*` and is UI-free; Ink rendering lives in `src/components/markdown.tsx` or feature-local row adapters.
+- The engine must not import UI, React/Ink, stores, or Markdown components. If engine/export code needs Markdown logic, use only pure utilities from `src/utils/markdown/*`.
+
 ### Gate 9 / 12c / 19 — overlapping layer enforcement
 
 Gates 9, 12c, and 19 enforce the same one-way layer-direction graph through two independent engines, so a regression that slips past one is caught by the other:

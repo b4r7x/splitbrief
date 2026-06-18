@@ -12,12 +12,19 @@ export type ConversationRowTone =
   | 'success'
   | 'warning'
   | 'error'
-  | 'info';
+  | 'info'
+  | 'markdownHeading'
+  | 'markdownCode'
+  | 'markdownBlockquote'
+  | 'markdownList'
+  | 'markdownRule'
+  | 'reviewFile';
 
 export interface ConversationRowSegment {
   text: string;
   tone?: ConversationRowTone;
   bold?: boolean;
+  italic?: boolean;
 }
 
 export interface ConversationRow {

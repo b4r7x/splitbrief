@@ -7,6 +7,8 @@ import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
+import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../calls/consumer-policy.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
 
 describe('jsonlSink', () => {
   let projectDir: string;
@@ -98,6 +100,88 @@ describe('jsonlSink', () => {
     expect(lines[0]?.['type']).toBe('workflow_started');
   });
 
+  it('protects session-log events before appending them', () => {
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
+    sink({
+      type: 'warning',
+      ts: 100,
+      phase: 'idle',
+      message: 'api key sk-abcdefghijklmnopqrst \u001b[31mred\u001b[0m',
+    });
+
+    const lines = readLog();
+    expect(lines[0]).toMatchObject({
+      type: 'warning',
+      data: { message: 'api key sk-***REDACTED*** red' },
+    });
+  });
+
+  it('omits runner content events but keeps usage when persistTranscript=false', () => {
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
+    sink({
+      type: 'runner_call_text_delta',
+      ts: 100,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 1,
+      text: 'secret transcript',
+    });
+    sink({
+      type: 'runner_call_usage',
+      ts: 110,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 2,
+      usage: { inputTokens: 1, outputTokens: 2 },
+      semantics: 'delta',
+    });
+
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      type: 'runner_call_usage',
+      data: { usage: { inputTokens: 1, outputTokens: 2 } },
+    });
+  });
+
+  it('omits runner error message content while preserving terminal metadata', () => {
+    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
+    sink({
+      type: 'runner_call_error',
+      ts: 120,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 3,
+      status: 'failed',
+      error: { code: 'failed', message: 'raw sk-abcdefghijklmnopqrst' },
+      partial: true,
+      startedAt: 100,
+      endedAt: 120,
+      durationMs: 20,
+      usage: { inputTokens: 3, outputTokens: 4 },
+      nativeSessionId: 'native-1',
+    });
+
+    const lines = readLog();
+    expect(lines[0]).toMatchObject({
+      type: 'runner_call_error',
+      data: {
+        status: 'failed',
+        partial: true,
+        durationMs: 20,
+        usage: { inputTokens: 3, outputTokens: 4 },
+        nativeSessionId: 'native-1',
+        error: { code: 'failed', message: TRANSCRIPT_OMITTED_MESSAGE },
+      },
+    });
+  });
+
   it('serializes taskId outside data when present', () => {
     const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
     sink({
@@ -116,7 +200,7 @@ describe('jsonlSink', () => {
     expect((lines[0]?.['data'] as Record<string, unknown>)?.['taskId']).toBeUndefined();
   });
 
-  it('does not persist oversized session-log entries', () => {
+  it('bounds oversized session-log strings before persisting', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
@@ -128,8 +212,12 @@ describe('jsonlSink', () => {
       });
 
       const path = join(sessionDir(projectDir, sessionId), 'session.jsonl');
-      expect(existsSync(path) ? readLog() : []).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(
+      expect(existsSync(path)).toBe(true);
+      const lines = readLog();
+      expect((lines[0]?.['data'] as Record<string, unknown>)?.['message']).toContain(
+        CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER,
+      );
+      expect(stderr).not.toHaveBeenCalledWith(
         expect.stringContaining('failed to persist oversized log entry'),
       );
     } finally {

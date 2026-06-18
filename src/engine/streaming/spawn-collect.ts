@@ -1,8 +1,8 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import { collectRunnerCallResult } from '../calls/collector.js';
-import { toInvokeResult } from '../calls/projection.js';
-import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
-import type { InvokeResult, ParsedLine } from '../runners/types.js';
+import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import type { ParsedLine } from '../runners/types.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { getLineParser } from './output-parsers.js';
 
@@ -27,7 +27,7 @@ let callSequence = 0;
 
 export async function spawnAndCollect(
   opts: SpawnAndCollectOptions,
-): Promise<InvokeResult & { sessionId?: string | null }> {
+): Promise<RunnerCallResult & { sessionId?: string | null }> {
   const parseLine = opts.parseLine ?? getLineParser(opts.format ?? 'text');
   const context =
     opts.callContext ??
@@ -39,88 +39,73 @@ export async function spawnAndCollect(
     } satisfies RunnerCallContext);
 
   let sessionId: string | null = null;
-  const events: RunnerCallEvent[] = [];
-  const emit = (event: RunnerCallEvent) => {
-    events.push(event);
-    opts.onCallEvent?.(event);
-  };
+  const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
 
-  emit({ type: 'call_started', ts: Date.now(), ...context });
-
-  await spawnWithStdin({
-    command: opts.command,
-    args: opts.args,
-    cwd: opts.cwd,
-    env: opts.env,
-    stdin: opts.stdin,
-    notFoundMessage: opts.notFoundMessage,
-    onStderr: opts.onStderr,
-    signal: opts.signal,
-    onLine(line) {
-      const parsed = parseLine(line);
-      if (parsed.text) {
-        emit({
-          type: 'call_text_delta',
-          ts: Date.now(),
-          ...context,
-          channel: parsed.isResult ? 'result' : 'stdout',
-          text: parsed.text,
-        });
-        opts.onText?.(parsed.text);
-      }
-      if (parsed.usage) {
-        emit({
-          type: 'call_usage',
-          ts: Date.now(),
-          ...context,
-          usage: parsed.usage,
-          semantics: parsed.isResult ? 'final' : 'delta',
-        });
-      }
-      if (parsed.sessionId && parsed.sessionId !== sessionId) {
-        sessionId = parsed.sessionId;
-        emit({
-          type: 'call_session_id',
-          ts: Date.now(),
-          ...context,
-          nativeSessionId: parsed.sessionId,
-        });
-        opts.onSessionId?.(parsed.sessionId);
-      }
-      if (parsed.toolUse) {
-        for (const toolUse of parsed.toolUse) {
-          emit({
-            type: 'call_tool_use_done',
-            ts: Date.now(),
-            ...context,
-            channel: 'tool',
-            toolUse: { id: null, name: toolUse.name, input: toolUse.input },
+  try {
+    await spawnWithStdin({
+      command: opts.command,
+      args: opts.args,
+      cwd: opts.cwd,
+      env: opts.env,
+      stdin: opts.stdin,
+      notFoundMessage: opts.notFoundMessage,
+      onStderr: (chunk) => {
+        recorder.stderr({ text: chunk });
+        opts.onStderr?.(chunk);
+      },
+      signal: opts.signal,
+      onLine(line) {
+        const parsed = parseLine(line);
+        if (parsed.text) {
+          recorder.text({ channel: parsed.isResult ? 'result' : 'stdout', text: parsed.text });
+          opts.onText?.(parsed.text);
+        }
+        if (parsed.usage) {
+          recorder.usage({
+            usage: parsed.usage,
+            semantics: parsed.isResult ? 'final' : 'delta',
           });
         }
-      }
-      if (parsed.isError) {
-        emit({
-          type: 'call_error',
-          ts: Date.now(),
-          ...context,
-          status: 'failed',
-          error: { code: 'runner_result_error', message: parsed.text ?? 'Runner result failed' },
-        });
-      }
-    },
-  });
-
-  if (!events.some((event) => event.type === 'call_error')) {
-    emit({
-      type: 'call_completed',
-      ts: Date.now(),
-      ...context,
-      status: 'completed',
-      usage: null,
-      nativeSessionId: sessionId,
+        if (parsed.sessionId && parsed.sessionId !== sessionId) {
+          sessionId = parsed.sessionId;
+          recorder.sessionId({ nativeSessionId: parsed.sessionId });
+          opts.onSessionId?.(parsed.sessionId);
+        }
+        if (parsed.toolUse) {
+          for (const toolUse of parsed.toolUse) {
+            recorder.toolUseDone({
+              toolUse: { id: null, name: toolUse.name, input: toolUse.input },
+            });
+          }
+        }
+        if (parsed.isError) {
+          recorder.finishFailed({
+            status: 'failed',
+            error: {
+              code: 'runner_result_error',
+              message: parsed.text ?? 'Runner result failed',
+            },
+          });
+        }
+      },
     });
+  } catch (err) {
+    if (!recorder.hasTerminal()) {
+      recorder.finishFailed({
+        status: opts.signal?.aborted ? runnerCallInterruptedStatus(opts.signal) : 'failed',
+        error: runnerCallErrorFromUnknown(
+          err,
+          opts.signal?.aborted ? 'runner_interrupted' : 'runner_process_error',
+        ),
+      });
+    }
+    throw err;
   }
 
-  const result = toInvokeResult(collectRunnerCallResult(events));
+  if (!recorder.hasTerminal()) {
+    recorder.finishCompleted({ nativeSessionId: sessionId });
+  }
+
+  const result = recorder.finalResult();
   return { ...result, sessionId };
 }

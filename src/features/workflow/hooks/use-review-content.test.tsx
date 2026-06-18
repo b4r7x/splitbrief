@@ -29,7 +29,7 @@ describe('useReviewContent', () => {
     cleanupTempDir(tmp);
   });
 
-  it('reads the file and syncs content + lineCount to reviewStore', async () => {
+  it('reads the file without using raw line count as document height', async () => {
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'line one\nline two\nline three\n');
 
@@ -37,7 +37,7 @@ describe('useReviewContent', () => {
 
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('content=line one');
-      expect(reviewStore.get().lineCount).toBe(4); // trailing newline → 4 split segments
+      expect(reviewStore.get().renderedLineCount).toBe(0);
     });
   });
 
@@ -52,8 +52,8 @@ describe('useReviewContent', () => {
     await tick(50);
 
     expect(feedbackStore.get().message).toBeNull();
-    // lineCount stays at its initial value; the resolved branch never ran.
-    expect(reviewStore.get().lineCount).toBe(0);
+    // renderedLineCount stays at its initial value; the resolved branch never ran.
+    expect(reviewStore.get().renderedLineCount).toBe(0);
   });
 
   it('aborts the prior read when filePath changes', async () => {
@@ -68,7 +68,7 @@ describe('useReviewContent', () => {
     // The final resolved read is for fileB — that's what the user sees.
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('content=bbb');
-      expect(reviewStore.get().lineCount).toBe(4);
+      expect(reviewStore.get().renderedLineCount).toBe(0);
       expect(feedbackStore.get().message).toBeNull();
     });
   });

@@ -3,6 +3,7 @@ import type {
   RunnerCallContextSchema,
   RunnerCallErrorSchema,
   RunnerCallEventSchema,
+  RunnerCallFailureStatusSchema,
   RunnerCallResultSchema,
   RunnerCallStatusSchema,
   RunnerCallUsageSchema,
@@ -11,6 +12,7 @@ import type {
 } from './schema.js';
 
 export type RunnerCallStatus = z.infer<typeof RunnerCallStatusSchema>;
+export type RunnerCallFailureStatus = z.infer<typeof RunnerCallFailureStatusSchema>;
 export type RunnerCallUsageSemantics = z.infer<typeof RunnerCallUsageSemanticsSchema>;
 
 export type RunnerCallContext = z.infer<typeof RunnerCallContextSchema>;

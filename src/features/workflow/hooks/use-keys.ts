@@ -60,7 +60,7 @@ function getReviewScrollAction(key: Key): WorkflowKeyAction {
   return handleReviewScroll({
     key,
     reviewScrollOffset: review.scrollOffset,
-    reviewLineCount: review.lineCount,
+    reviewLineCount: review.renderedLineCount,
     visibleHeight: readReviewContentHeight(),
   });
 }

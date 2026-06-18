@@ -7,6 +7,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
+import type { RunnerCallContext } from '../calls/types.js';
 import {
   applyRebuiltContext,
   autoCompactResumeContext,
@@ -177,6 +178,13 @@ describe('autoCompactResumeContext', () => {
     const { projectDir, sessionId } = setupSession(originalEntries);
     const { bus, events } = makeBusRecorder();
     const summarizedBatches: Array<Array<{ role: string; text: string }>> = [];
+    const startedAt = Date.now();
+    const call: RunnerCallContext = {
+      callId: 'compaction-call-test',
+      role: 'compaction',
+      backendKind: 'cli',
+      runnerName: 'summary-planner',
+    };
 
     const nextState = await autoCompactResumeContext({
       projectDir,
@@ -193,8 +201,22 @@ describe('autoCompactResumeContext', () => {
           supportsImages: false,
           supportsSelfSummarisation: true,
         },
-        summarize: async (messages) => {
+        summarize: async (messages, opts) => {
           summarizedBatches.push(messages);
+          opts?.callbacks?.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
+          opts?.callbacks?.onCallEvent?.({
+            type: 'call_completed',
+            ts: startedAt + 1,
+            ...call,
+            status: 'completed',
+            error: null,
+            partial: false,
+            startedAt,
+            endedAt: startedAt + 1,
+            durationMs: 1,
+            usage: { inputTokens: 800, outputTokens: 120 },
+            nativeSessionId: null,
+          });
           return {
             text: '## Summary\nCompacted older work',
             usage: { inputTokens: 800, outputTokens: 120 },
@@ -221,6 +243,48 @@ describe('autoCompactResumeContext', () => {
     expect(nextState.tokenUsage.plannerInput).toBe(800);
     expect(nextState.tokenUsage.plannerOutput).toBe(120);
     expect(events.some((event) => event.type === 'cost_update')).toBe(true);
+    expect(
+      events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
+    ).toEqual(['runner_call_started', 'runner_call_completed']);
+    expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
+      callId: 'compaction-call-test',
+      role: 'compaction',
+    });
+  });
+
+  it('does not compact when the workflow signal is already aborted', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      state: createInitialState('resume'),
+      signal: controller.signal,
+      planner: {
+        capabilities: {
+          supportsConversationalPlanning: false,
+          supportsHintEscalation: true,
+          supportsSessionResume: false,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: true,
+        },
+        summarize: async () => {
+          throw new Error('should not summarize after abort');
+        },
+      },
+    });
+
+    const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+    expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(originalEntries.length);
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+    expect(events.find((event) => event.type.startsWith('runner_call_'))).toBeUndefined();
   });
 
   it('uses structured compaction for api planners in auto mode', async () => {

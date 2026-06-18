@@ -25,6 +25,31 @@ function makePlannerTextBlock(lines: number): Extract<EngineEvent, { type: 'plan
   };
 }
 
+function makeMarkdownPlannerText(): Extract<EngineEvent, { type: 'planner_text' }> {
+  return {
+    type: 'planner_text',
+    ts: 0,
+    phase: 'planning',
+    content: 'markdown',
+    text: [
+      'id: T001',
+      'title: Run no-op validation smoke check',
+      'action: modify',
+      'file: package.json',
+      'depends_on: []',
+      '---',
+      '',
+      '### Description',
+      'Run a quick validation-only smoke check.',
+      '',
+      '### Signature',
+      '```typescript',
+      '// No exported signature.',
+      '```',
+    ].join('\n'),
+  };
+}
+
 function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
   return {
     type: 'task_started',
@@ -68,7 +93,7 @@ function normalizedRows(frame: string): string[] {
 function windowRows(frame: string): string[] {
   return frame
     .split('\n')
-    .map((line) => line.replace(/[│┆]/g, '').trim())
+    .map((line) => line.trim())
     .filter(
       (line) =>
         !line.includes('line above') &&
@@ -87,6 +112,26 @@ describe('ConversationFlow', () => {
   beforeEach(() => {
     conversationScrollStore.reset();
     streamingOutputStore.__testReset();
+  });
+
+  it('renders markdown planner documents without raw markdown control markers', () => {
+    const sections: Section<EngineEvent>[] = [
+      { type: 'events', startIndex: 0, items: [makeMarkdownPlannerText()] },
+    ];
+
+    const ui = renderFeature(<ConversationFlow sections={sections} height={20} width={90} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Description');
+    expect(frame).toContain('Signature');
+    expect(frame).toContain('// No exported signature.');
+    expect(frame).not.toMatch(/[│┆]/);
+    expect(frame).not.toMatch(/─{3,}/);
+    expect(frame).not.toContain('###');
+    expect(frame).not.toContain('```typescript');
+    expect(frame).not.toContain('```');
+
+    ui.unmount();
   });
 
   it('keeps scroll indicators inside the fixed viewport', () => {
@@ -231,6 +276,7 @@ describe('ConversationFlow', () => {
 
     expect(bottomRows).toEqual(['stream-3', 'stream-4', 'stream-5']);
     expect(scrolledRows).toEqual(['stream-2', 'stream-3', 'stream-4']);
+    expect(scrolledFrame).not.toMatch(/[│┆]/);
     expect(scrolledFrame).toContain('1 line below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(5);
 

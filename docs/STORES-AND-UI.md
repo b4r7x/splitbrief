@@ -8,7 +8,7 @@ How state flows from the engine to the screen. Read this before adding a store, 
 
 `src/stores/create-store.ts` creates a store from an initial value or factory function. Each store exposes five methods:
 
-- `get()` -- synchronous read. Used by engine code and actions.
+- `get()` -- synchronous read. Used by non-React UI/CLI glue and store actions.
 - `set(updater)` -- replace state or pass a function `(prev) => next`. Skips notification when the new value is reference-equal (`Object.is`) to the old one, so updaters must return new objects to trigger subscribers.
 - `subscribe(listener)` -- register a callback, returns an unsubscribe function.
 - `use(selector)` -- React hook. Wraps `useSyncExternalStore`. Caches the selected value per render -- if the store state reference and selector function haven't changed, it returns the cached result without re-running the selector.
@@ -32,6 +32,7 @@ flowchart LR
   Tasks["tasksStore"]
   Tokens["tokensStore"]
   Lifecycle["lifecycleStore"]
+  Operations["operationsStore"]
   React["React components"]
 
   Engine -->|"publish(event)"| Sink
@@ -39,17 +40,23 @@ flowchart LR
   Sink --> Tasks
   Sink --> Tokens
   Sink --> Lifecycle
+  Sink --> Operations
   Events -->|"store.use(selector)"| React
   Tasks -->|"store.use(selector)"| React
   Tokens -->|"store.use(selector)"| React
   Lifecycle -->|"store.use(selector)"| React
+  Operations -->|"store.use(selector)"| React
 ```
 
-The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- a function in `src/stores/workflow/actions.ts` that dispatches each event synchronously to four sub-stores in a fixed order: events, tasks, tokens, lifecycle. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
+The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- a function in `src/stores/workflow/actions.ts` that dispatches each event synchronously to workflow sub-stores in a fixed order: events, tasks, tokens, lifecycle, operations. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
 
 This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot or handoff functions — but engine events still flow into render state through stores, not direct component imports.
 
-`runner_call_*` events are part of that same event stream. Today the UI stores keep them in history for replay/debugging, but conversation rows intentionally render them as silent rows and `tokensStore` does not count their usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting while backend adapters finish moving to typed call results.
+Store modules may import engine types with `import type` (`EngineEvent`, detection service types), but they must not import engine values. Engine modules do not import store values; they publish events and receive explicit inputs.
+
+`runner_call_*` events are part of that same event stream. `operationsStore` consumes them as the canonical active-operation lifecycle for the status row: start, terminal status, duration, partial output flag, runner/model metadata, warnings, and usage. Conversation rows intentionally render runner-call events as silent rows, and `tokensStore` does not count their usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting.
+
+Cancellation has the same shape in every path. UI cancel first records a local cancellation intent so the screen stops spinning immediately, then the engine publishes `workflow_cancelled` with a reason such as `user_cancelled`. Both paths terminalize running operations with `endedAt` and `durationMs`; late `runner_call_error(status: aborted)` or final cost events are accepted idempotently.
 
 When the workflow needs a human decision -- approve a spec, answer a question, confirm a cost -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval stores (`src/stores/approval-prompt/`, `src/stores/cost-approval/`) and the `useInputMode` hook manage this.
 
@@ -65,11 +72,12 @@ Runtime state of the active workflow run.
 - **lifecycleStore** -- current phase (`researching`, `reviewing-spec`, `implementing`, etc.), cancellation flag, message queue depth.
 - **tasksStore** -- task map, ordered task list, current/total counts, completion times.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
+- **operationsStore** -- active/last normalized runner operation. This is the source of truth for `AgentStatusRow`; terminal states carry frozen `endedAt` / `durationMs`.
 - **planEditorStore** -- rich brief editor state (flags, cursor, runtime mode toggle).
 - **conversationScrollStore** -- scroll offset for the conversation view.
 - **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
 - **streamingOutputStore** -- live implementer output lines.
-- **reviewStore** -- which file is under review.
+- **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height.
 - **attachmentsStore** -- files attached to the next user message.
 
 ### Navigation -- `src/stores/navigation/`
@@ -143,7 +151,7 @@ The main screen during execution. Key hooks:
 
 Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
 
-Conversation scrolling is row-based. See [`WORKFLOW-CONVERSATION-SCROLL.md`](./WORKFLOW-CONVERSATION-SCROLL.md) for the row renderer, prompt-row budgeting, terminal resize behavior, and scroll-window invariants.
+Conversation scrolling is row-based. `planner_text` events with `content: 'markdown'` are parsed with the pure Markdown block/inline/layout utilities before they become conversation rows; unmarked planner/implementer text stays plain log output. See [`WORKFLOW-CONVERSATION-SCROLL.md`](./WORKFLOW-CONVERSATION-SCROLL.md) for the row renderer, prompt-row budgeting, terminal resize behavior, and scroll-window invariants.
 
 ---
 
@@ -170,15 +178,47 @@ Each type maps to a component in `renderOverlay()` in `src/app.tsx`.
 
 ## Key store shapes
 
-State types from the source files. Use `store.use(selector)` in React, `store.get()` in engine code.
+State types from the source files. Use `store.use(selector)` in React and `store.get()` only in UI/CLI glue or store actions. Engine code publishes events and receives explicit inputs; it does not import stores.
 
 ```ts
 // src/stores/workflow/lifecycle.ts
 interface LifecycleState {
   phase: Phase;          // 'idle' | 'researching' | 'implementing' | ...
+  status: 'idle' | 'running' | 'complete' | 'cancelled';
   cancelled: boolean;
   queueDepth: number;    // pending user messages
+  startedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
+  reason: string | null;
 }
+
+// src/stores/workflow/operations.ts
+type OperationStatus =
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'aborted'
+  | 'timeout';
+
+type ActiveOperation = {
+  callId: string;
+  role: 'planner' | 'implementer' | 'review' | 'summary' | 'compaction' | 'escalation';
+  phase: Phase;
+  taskId?: string;
+  runnerName?: string;
+  model?: string;
+  attempt?: number;
+  status: OperationStatus;
+  startedAt: number;
+  endedAt: number | null;
+  durationMs: number | null;
+  reason: string | null;
+  usage: unknown | null;
+  warnings: readonly string[];
+  partial: boolean;
+};
 
 // src/stores/workflow/tasks.ts
 interface TasksState {
@@ -201,6 +241,13 @@ interface TokensState {
   prediction: CostPrediction | null;
   pricingContext: { plannerTool: string; implementerTool: string;
     plannerModel?: string; implementerModel?: string } | null;
+}
+
+// src/stores/workflow/review.ts
+interface ReviewState {
+  filePath: string | null;
+  scrollOffset: number;
+  renderedLineCount: number;
 }
 
 // src/stores/project/config.ts

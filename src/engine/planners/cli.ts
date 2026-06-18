@@ -5,7 +5,7 @@ import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');
 import type { Config } from '../../core/schemas/config.js';
-import type { InvokeResult } from '../runners/types.js';
+import { toTokenDelta, type RunnerCallCompatibleResult } from '../calls/projection.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
@@ -15,7 +15,11 @@ import { getLineParser } from '../streaming/output-parsers.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
-import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
+import {
+  createSessionAttemptCallContext,
+  createSessionResumeState,
+  runWithResumeFallback,
+} from '../session-expiry.js';
 import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { escapeRegExp } from '../../utils/regexp.js';
@@ -25,6 +29,7 @@ import {
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
 import { composeAbortSignal } from '../../utils/abort.js';
+import type { RunnerCallContext } from '../calls/types.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -97,13 +102,14 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   async function runOnce(opts: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId'>;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent'>;
+    callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
     resumeId: string | null;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<InvokeResult> {
-    const { prompt, projectDir, callbacks, mode, resumeId, signal, sandboxEnv } = opts;
+  }): Promise<RunnerCallCompatibleResult> {
+    const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
       prompt,
@@ -124,6 +130,8 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       notFoundMessage: tool.notFoundMessage,
       parseLine,
       onText: callbacks.onOutput,
+      onCallEvent: callbacks.onCallEvent,
+      callContext,
       onStderr: planner.postProcess
         ? (chunk) => {
             stderrOutput += chunk;
@@ -138,8 +146,10 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       }),
     });
 
-    if (planner.postProcess) return planner.postProcess(result.text, stderrOutput, result.usage);
-    return { text: result.text, usage: result.usage };
+    if (result.status !== 'completed') return result;
+    const usage = toTokenDelta(result.usage);
+    if (planner.postProcess) return planner.postProcess(result.text, stderrOutput, usage);
+    return { text: result.text, usage };
   }
 
   async function invoke(opts: {
@@ -147,19 +157,22 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     projectDir: string;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'sessionId'
+      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
     >;
+    callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<InvokeResult> {
-    const { prompt, projectDir, callbacks, mode, signal, sandboxEnv } = opts;
+  }): Promise<RunnerCallCompatibleResult> {
+    const { prompt, projectDir, callbacks, callContext, mode, signal, sandboxEnv } = opts;
     const planningBaseline =
       mode === 'plan' && callbacks.sessionId
         ? await capturePlanningMutationBaseline(projectDir)
         : null;
 
-    const finish = async (result: InvokeResult): Promise<InvokeResult> => {
+    const finish = async (
+      result: RunnerCallCompatibleResult,
+    ): Promise<RunnerCallCompatibleResult> => {
       if (planningBaseline && callbacks.sessionId) {
         const unexpected = await findUnexpectedPlanningMutations({
           projectDir,
@@ -175,7 +188,16 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
     if (!supportsSessionResume) {
       return finish(
-        await runOnce({ prompt, projectDir, callbacks, mode, resumeId: null, signal, sandboxEnv }),
+        await runOnce({
+          prompt,
+          projectDir,
+          callbacks,
+          callContext,
+          mode,
+          resumeId: null,
+          signal,
+          sandboxEnv,
+        }),
       );
     }
 
@@ -183,11 +205,12 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     return finish(
       await runWithResumeFallback(
         session,
-        (resumeId) =>
+        (resumeId, attempt) =>
           runOnce({
             prompt,
             projectDir,
             callbacks,
+            callContext: createSessionAttemptCallContext(callContext, attempt),
             mode,
             resumeId: resumeId ?? null,
             signal,
@@ -201,10 +224,12 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks, signal }) =>
-      invoke({ prompt, projectDir, callbacks, mode: 'plan', signal }),
-    invokeEscalate: ({ prompt, projectDir, callbacks, signal, sandboxEnv }) =>
-      invoke({ prompt, projectDir, callbacks, mode: 'escalate', signal, sandboxEnv }),
+    invokePlan: ({ prompt, projectDir, callbacks, callContext, signal }) =>
+      invoke({ prompt, projectDir, callbacks, callContext, mode: 'plan', signal }),
+    invokeEscalate: ({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) =>
+      invoke({ prompt, projectDir, callbacks, callContext, mode: 'escalate', signal, sandboxEnv }),
+    runnerName: plannerCfg.tool,
+    ...(resolvedModel !== undefined && { model: resolvedModel }),
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 

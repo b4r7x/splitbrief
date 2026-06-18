@@ -11,6 +11,8 @@ import {
 } from './transcript-rebuild.js';
 import { addUsageAndSave } from './state-ops.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
+import { publishRunnerCallEvent } from './events.js';
+import { isAbortError } from '../../utils/abort.js';
 
 export type ApplyRebuiltContextOpts = {
   projectDir: string;
@@ -28,6 +30,7 @@ export type AutoCompactResumeOpts = {
   config: Pick<Config, 'workflow' | 'planner'>;
   planner: Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
   state: WorkflowState;
+  signal?: AbortSignal | undefined;
 };
 
 export async function autoCompactResumeContext(
@@ -53,6 +56,9 @@ export async function autoCompactResumeContext(
       planner: opts.planner,
       keepRecentCount: keepRecentCountForThreshold(threshold),
       format,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+      onCallEvent: (event) =>
+        publishRunnerCallEvent({ bus: opts.bus, phase: opts.state.phase }, event),
       onFallback: () =>
         publishWarning(
           { bus: opts.bus, phase: 'researching' },
@@ -66,6 +72,7 @@ export async function autoCompactResumeContext(
       result.usage,
     );
   } catch (err) {
+    if (opts.signal?.aborted || isAbortError(err)) return opts.state;
     publishWarningFromError(
       { bus: opts.bus, phase: 'researching' },
       'Transcript auto-compaction failed',

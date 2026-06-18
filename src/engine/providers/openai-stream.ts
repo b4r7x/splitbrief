@@ -4,7 +4,6 @@ import type {
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
 } from 'openai/resources/chat/completions';
-import type { InvokeResult } from '../runners/types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
@@ -19,10 +18,16 @@ import {
   isOpenAiReasoningModel,
   clampOpenAiEffort,
 } from './capability-inference.js';
-import { collectRunnerCallResult } from '../calls/collector.js';
-import { toInvokeResult } from '../calls/projection.js';
+import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
+import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import { normalizeRunnerCallUsage } from '../calls/usage.js';
-import type { RunnerCallContext, RunnerCallEvent, RunnerCallUsage } from '../calls/types.js';
+import type {
+  RunnerCallContext,
+  RunnerCallEvent,
+  RunnerCallResult,
+  RunnerCallUsage,
+} from '../calls/types.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -32,6 +37,8 @@ interface StreamCompletionOptions {
   signal?: AbortSignal | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext?: RunnerCallContext | undefined;
 }
 
 interface StreamFunctionCallDelta {
@@ -249,29 +256,18 @@ async function* adaptOpenAIStream(
   }
 }
 
-function emitText(events: RunnerCallEvent[], context: RunnerCallContext, text: string): void {
-  events.push({
-    type: 'call_text_delta',
-    ts: Date.now(),
-    ...context,
-    channel: 'assistant',
-    text,
-  });
+function emitText(recorder: RunnerCallRecorder, text: string): void {
+  recorder.text({ channel: 'assistant', text });
 }
 
 function emitToolUseDeltas(
-  events: RunnerCallEvent[],
-  context: RunnerCallContext,
+  recorder: RunnerCallRecorder,
   delta: StreamChoiceDelta | undefined,
 ): void {
   if (delta === undefined) return;
 
   for (const toolCall of delta.tool_calls ?? []) {
-    events.push({
-      type: 'call_tool_use_delta',
-      ts: Date.now(),
-      ...context,
-      channel: 'tool',
+    recorder.toolUseDelta({
       toolUseId: toolCall.id ?? null,
       name: toolCall.function?.name ?? null,
       inputDelta: toolCall.function?.arguments ?? '',
@@ -279,11 +275,7 @@ function emitToolUseDeltas(
   }
 
   if (delta.function_call !== undefined) {
-    events.push({
-      type: 'call_tool_use_delta',
-      ts: Date.now(),
-      ...context,
-      channel: 'tool',
+    recorder.toolUseDelta({
       toolUseId: null,
       name: delta.function_call.name ?? null,
       inputDelta: delta.function_call.arguments ?? '',
@@ -292,73 +284,85 @@ function emitToolUseDeltas(
 }
 
 function emitOpenAiTerminal(
-  events: RunnerCallEvent[],
-  context: RunnerCallContext,
+  recorder: RunnerCallRecorder,
   finishReason: string | null,
   usage: RunnerCallUsage | null,
 ): void {
   switch (finishReason) {
     case 'stop':
-      events.push({
-        type: 'call_completed',
-        ts: Date.now(),
-        ...context,
-        status: 'completed',
-        usage,
-        nativeSessionId: null,
-      });
+      recorder.finishCompleted({ usage, nativeSessionId: null });
       return;
     case 'length':
-      events.push({
-        type: 'call_error',
-        ts: Date.now(),
-        ...context,
+      recorder.finishFailed({
         status: 'truncated',
         error: {
           code: 'openai_finish_reason_length',
           message: 'OpenAI response ended because the max token limit was reached',
         },
+        usage,
+        nativeSessionId: null,
       });
       return;
     case 'content_filter':
-      events.push({
-        type: 'call_error',
-        ts: Date.now(),
-        ...context,
+      recorder.finishFailed({
         status: 'refused',
         error: {
           code: 'openai_finish_reason_content_filter',
           message: 'OpenAI response was blocked by the content filter',
         },
+        usage,
+        nativeSessionId: null,
       });
       return;
     case 'tool_calls':
     case 'function_call':
-      events.push({
-        type: 'call_error',
-        ts: Date.now(),
-        ...context,
+      recorder.finishFailed({
         status: 'unsupported_tool',
         error: {
           code: `openai_finish_reason_${finishReason}`,
           message: `OpenAI response requested unsupported ${finishReason}`,
         },
+        usage,
+        nativeSessionId: null,
       });
       return;
     case null:
       return;
     default:
-      events.push({
-        type: 'call_error',
-        ts: Date.now(),
-        ...context,
+      recorder.finishFailed({
         status: 'failed',
         error: {
           code: 'openai_unknown_finish_reason',
           message: `OpenAI response ended with unknown finish_reason ${finishReason}`,
         },
+        usage,
+        nativeSessionId: null,
       });
   }
+}
+
+function mapProviderError(err: unknown, endpoint: StreamCompletionOptions['endpoint']): unknown {
+  try {
+    throwMappedError(err, endpoint);
+  } catch (mapped) {
+    return mapped;
+  }
+}
+
+function finishOpenAiFailure(
+  recorder: RunnerCallRecorder,
+  err: unknown,
+  endpoint: StreamCompletionOptions['endpoint'],
+  usage: RunnerCallUsage | null,
+): never {
+  const mapped = mapProviderError(err, endpoint);
+  recorder.finishFailed({
+    status: 'failed',
+    error: runnerCallErrorFromUnknown(mapped, 'openai_stream_error'),
+    usage,
+    nativeSessionId: null,
+  });
+  throw mapped;
 }
 
 export async function streamCompletion(
@@ -366,7 +370,7 @@ export async function streamCompletion(
   model: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   opts: StreamCompletionOptions,
-): Promise<InvokeResult> {
+): Promise<RunnerCallResult> {
   const { temperature, onProgress, endpoint, maxTokens, signal, effort, images } = opts;
   const baseMessages: ChatMessage[] = messages.map((m) => ({ role: m.role, content: m.content }));
   const finalMessages =
@@ -385,6 +389,8 @@ export async function streamCompletion(
           },
         )
       : baseMessages;
+  const context = opts.callContext ?? openAiCallContext(model, endpoint);
+  const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
   let stream: AsyncIterable<StreamChunk>;
   try {
     stream = await client.chat.completions.create(
@@ -401,13 +407,19 @@ export async function streamCompletion(
       signal ? { signal } : undefined,
     );
   } catch (err: unknown) {
-    throwMappedError(err, endpoint);
+    if (opts.signal?.aborted) {
+      recorder.finishFailed({
+        status: runnerCallInterruptedStatus(opts.signal),
+        error: runnerCallErrorFromUnknown(err, 'runner_interrupted'),
+        nativeSessionId: null,
+      });
+      throwIfAborted(opts.signal);
+    }
+    finishOpenAiFailure(recorder, err, endpoint, null);
   }
 
   let usage: RunnerCallUsage | null = null;
   let finishReason: string | null = null;
-  const context = openAiCallContext(model, endpoint);
-  const events: RunnerCallEvent[] = [{ type: 'call_started', ts: Date.now(), ...context }];
 
   try {
     for await (const chunk of withIdleTimeout(
@@ -417,11 +429,11 @@ export async function streamCompletion(
     )) {
       throwIfAborted(opts.signal);
       const choice = chunk.choices?.[0];
-      emitToolUseDeltas(events, context, choice?.delta);
+      emitToolUseDeltas(recorder, choice?.delta);
 
       const content = choice?.delta?.content;
       if (content) {
-        emitText(events, context, content);
+        emitText(recorder, content);
         onProgress(content);
       }
       if (choice?.finish_reason) {
@@ -436,14 +448,26 @@ export async function streamCompletion(
     }
   } catch (err: unknown) {
     if (opts.signal?.aborted) {
+      recorder.finishFailed({
+        status: runnerCallInterruptedStatus(opts.signal),
+        error: { code: 'runner_interrupted', message: toErrorMessage(err) },
+        nativeSessionId: null,
+      });
       throwIfAborted(opts.signal);
     }
-    if (timeoutError.isIdle(err)) throw err;
-    throwMappedError(err, endpoint);
+    if (timeoutError.isIdle(err)) {
+      recorder.finishFailed({
+        status: 'timeout',
+        error: { code: 'stream_idle_timeout', message: toErrorMessage(err) },
+        nativeSessionId: null,
+      });
+      throw err;
+    }
+    finishOpenAiFailure(recorder, err, endpoint, usage);
   }
 
-  emitOpenAiTerminal(events, context, finishReason, usage);
-  return toInvokeResult(collectRunnerCallResult(events));
+  emitOpenAiTerminal(recorder, finishReason, usage);
+  return recorder.finalResult();
 }
 
 export function toStreamClient(client: OpenAI): StreamClient {

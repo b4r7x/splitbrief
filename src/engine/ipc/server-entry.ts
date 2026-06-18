@@ -87,6 +87,7 @@ export async function main(argv: IpcServerArgs, dir: string) {
     onUserInput: ipcBridge.onUserInput,
     sessionJsonlPath: join(dir, SESSION_LOG_FILE),
     noClientPromptBehavior: config.approval?.headless === true ? 'fail-closed' : 'wait',
+    persistTranscript: config.workflow.persistTranscript,
   });
 
   const onCleanup = async (exitCode: number) => {

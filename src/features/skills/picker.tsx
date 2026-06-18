@@ -9,7 +9,7 @@ import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncateTerminalDisplayText } from '../../lib/terminal/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { AlignedOptionRow } from '../../components/pickers/aligned-option-row.js';
 

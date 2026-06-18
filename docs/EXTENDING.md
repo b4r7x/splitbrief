@@ -140,10 +140,8 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 1. Open `src/features/workflow/conversation-rows/event-rows.ts`
 2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
-3. Add your event type to:
-   - `src/features/workflow/conversation-rows/event-role.ts` when it needs planner/implementer gutter styling
-   - `eventRows()` when it should appear in the scrollable conversation
-4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping, cards, and gutters.
+3. Add your event type to `eventRows()` when it should appear in the scrollable conversation.
+4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping and cards.
 5. Events that should remain silent in the conversation should return `[]`.
 
 The `assertNever(event)` default case ensures the compiler catches missing event types.

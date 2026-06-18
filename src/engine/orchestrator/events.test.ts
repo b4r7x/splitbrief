@@ -34,7 +34,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 describe('createBusTextHandler', () => {
   it('stamps an implementer role so streamed implementer output is not attributed to the planner', () => {
     const { bus, events } = makeBusRecorder();
-    const handler = createBusTextHandler({ bus, phase: 'implementing' }, 'implementer');
+    const handler = createBusTextHandler({ bus, phase: 'implementing' }, { role: 'implementer' });
 
     handler('writing src/a.ts');
 
@@ -43,6 +43,19 @@ describe('createBusTextHandler', () => {
       type: 'planner_text',
       text: 'writing src/a.ts',
       role: 'implementer',
+    });
+  });
+
+  it('marks planner document output as markdown when requested', () => {
+    const { bus, events } = makeBusRecorder();
+    const handler = createBusTextHandler({ bus, phase: 'planning' }, { content: 'markdown' });
+
+    handler('### Plan\n');
+
+    expect(events[0]).toMatchObject({
+      type: 'planner_text',
+      text: '### Plan\n',
+      content: 'markdown',
     });
   });
 

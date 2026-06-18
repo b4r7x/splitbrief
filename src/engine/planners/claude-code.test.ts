@@ -66,3 +66,61 @@ describe('createClaudeCodePlanner escalation', () => {
     expect(readFileSync(envMarkerFile, 'utf8').trim()).toBe('forwarded');
   });
 });
+
+describe('createClaudeCodePlanner planning', () => {
+  it('uses distinct runner call ids for expired-session resume fallback attempts', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Claude fallback task
+action: create
+file: src/claude-fallback.ts
+depends_on: []
+---
+
+### Description
+Create the Claude fallback file.
+
+### Tests
+- fallback attempt succeeds
+`;
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'if printf \'%s\\n\' "$@" | grep -q "^--session-id$"; then',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', is_error: true, session_id: 'sess-old', result: 'session not found: sess-old', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        '  exit 0',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: tasksMarkdown, usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
+    const planner = createClaudeCodePlanner({ initialSessionId: 'sess-old' });
+
+    const result = await planner.quickPlan({
+      feature: 'fallback',
+      projectDir: shimDir,
+      callbacks: {
+        onOutput: () => {},
+        onCallEvent: (event) => {
+          if (event.type === 'call_started' || event.type === 'call_error') events.push(event);
+        },
+      },
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    const started = events.filter((event) => event.type === 'call_started');
+    expect(started).toHaveLength(2);
+    expect(started[0]).toMatchObject({ attempt: 1 });
+    expect(started[1]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-1$/);
+    expect(started[1]?.callId).toMatch(/-attempt-2$/);
+    expect(started[0]?.callId).not.toBe(started[1]?.callId);
+  });
+});

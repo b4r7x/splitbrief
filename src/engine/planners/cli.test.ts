@@ -112,6 +112,64 @@ describe('createCliPlanner', () => {
     expect(onSessionId).toHaveBeenCalledWith('sess-abc');
   });
 
+  it('uses distinct runner call ids for expired-session resume fallback attempts', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Fallback task
+action: create
+file: src/fallback.ts
+depends_on: []
+---
+
+### Description
+Create the fallback file.
+
+### Tests
+- fallback attempt succeeds
+`;
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'if printf \'%s\\n\' "$@" | grep -q "^sess-old$"; then',
+        "  printf '%s\\n' 'session not found: sess-old' >&2",
+        '  exit 1',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      'sess-old',
+    );
+
+    const result = await planner.quickPlan({
+      feature: 'fallback',
+      projectDir,
+      callbacks: {
+        onOutput: vi.fn(),
+        onCallEvent: (event) => {
+          if (event.type === 'call_started' || event.type === 'call_error') events.push(event);
+        },
+      },
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    const started = events.filter((event) => event.type === 'call_started');
+    expect(started).toHaveLength(2);
+    expect(started[0]).toMatchObject({ attempt: 1 });
+    expect(started[1]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-1$/);
+    expect(started[1]?.callId).toMatch(/-attempt-2$/);
+    expect(started[0]?.callId).not.toBe(started[1]?.callId);
+  });
+
   it('applies the aider postProcess hook: pulls usage from stderr when present', async () => {
     // Aider parses stdout as text-lines and uses postProcess to extract token counts from stderr.
     // The shim writes a usage line to stderr; postProcess should find it and populate result.usage.

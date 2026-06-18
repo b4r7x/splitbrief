@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import type { RunnerCallEvent } from './types.js';
 
 const base = {
@@ -7,6 +8,25 @@ const base = {
   callId: 'call-1',
   role: 'planner',
   backendKind: 'cli',
+} as const;
+
+const completedTerminal = {
+  startedAt: 1,
+  endedAt: 20,
+  durationMs: 19,
+  partial: false,
+  error: null,
+  usage: null,
+  nativeSessionId: 'native-1',
+} as const;
+
+const timeoutTerminal = {
+  startedAt: 1,
+  endedAt: 15,
+  durationMs: 14,
+  partial: true,
+  usage: null,
+  nativeSessionId: null,
 } as const;
 
 describe('collectRunnerCallResult', () => {
@@ -51,8 +71,7 @@ describe('collectRunnerCallResult', () => {
         type: 'call_completed',
         ...base,
         status: 'completed',
-        usage: null,
-        nativeSessionId: 'native-1',
+        ...completedTerminal,
       },
     ];
 
@@ -61,6 +80,9 @@ describe('collectRunnerCallResult', () => {
       role: 'planner',
       backendKind: 'cli',
       status: 'completed',
+      startedAt: 1,
+      endedAt: 20,
+      durationMs: 19,
       text: 'hello world',
       usage: { inputTokens: 8, outputTokens: 3 },
       nativeSessionId: 'native-1',
@@ -90,11 +112,15 @@ describe('collectRunnerCallResult', () => {
         ...base,
         status: 'timeout',
         error: { code: 'timeout', message: 'runner timed out' },
+        ...timeoutTerminal,
       },
     ]);
 
     expect(result).toMatchObject({
       status: 'timeout',
+      startedAt: 1,
+      endedAt: 15,
+      durationMs: 14,
       text: 'partial',
       partial: true,
       error: { code: 'timeout', message: 'runner timed out' },
@@ -102,16 +128,42 @@ describe('collectRunnerCallResult', () => {
   });
 
   it('marks streams without terminal events as incomplete', () => {
-    expect(
-      collectRunnerCallResult([
-        { type: 'call_started', ...base },
-        { type: 'call_text_delta', ...base, channel: 'assistant', text: 'partial' },
-      ]),
-    ).toMatchObject({
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'partial' },
+    ]);
+
+    expect(result).toMatchObject({
       status: 'incomplete',
+      startedAt: 1,
       text: 'partial',
       partial: true,
       error: { code: 'missing_terminal_event' },
+    });
+    expect(result.endedAt).toBeGreaterThanOrEqual(result.startedAt);
+    expect(result.durationMs).toBe(result.endedAt - result.startedAt);
+  });
+
+  it('bounds stderr warnings to the schema message limit', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_stderr_delta',
+        ...base,
+        channel: 'stderr',
+        text: 'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH + 100),
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.warnings[0]).toEqual({
+      code: 'stderr',
+      message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
     });
   });
 

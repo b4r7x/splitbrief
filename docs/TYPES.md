@@ -203,7 +203,7 @@ This matters in this project because:
 
 Example from this codebase:
 ```ts
-// features/workflow/components/event-cards/planner-status.tsx renders engine events
+// features/workflow/components/event-cards/operation-status.tsx renders operation state derived from engine events
 import type { EngineEvent } from '../../../../engine/events/types.js';
 ```
 

@@ -18,9 +18,23 @@ import { checkServerStatus, writeLockfile, markExited } from '../../ipc/lockfile
 import { startHeartbeat } from '../../ipc/heartbeat.js';
 import { warnError } from '../../../lib/warn.js';
 
-import type { ResumeContextHolder, WorkflowContext } from '../types.js';
+import type {
+  Planner,
+  PlannerCallbacks,
+  PlannerCallEventCallbacks,
+  PlannerOutputCallbacks,
+  PlannerStructuredSummaryOptions,
+  PlannerSummaryOptions,
+  PlannerUserTurnOptions,
+} from '../../planners/types.js';
+import {
+  WORKFLOW_CANCEL_REASON_USER,
+  workflowCancelledReasonFromSignal,
+  type ResumeContextHolder,
+  type WorkflowContext,
+} from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { publishError, publishWarningFromError } from '../events.js';
+import { publishError, publishRunnerCallEvent, publishWarningFromError } from '../events.js';
 import {
   saveFinalSession,
   shouldPreserveActiveState,
@@ -32,6 +46,141 @@ import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
+
+type PlannerCallPublisherContext = {
+  bus: WorkflowContext['bus'];
+  getPhase: () => WorkflowState['phase'];
+};
+
+function publishPlannerRunnerCall(
+  ctx: PlannerCallPublisherContext,
+  event: Parameters<typeof publishRunnerCallEvent>[1],
+): void {
+  publishRunnerCallEvent({ bus: ctx.bus, phase: ctx.getPhase() }, event);
+}
+
+function withPlannerCallbacks(
+  callbacks: PlannerCallbacks,
+  ctx: PlannerCallPublisherContext,
+): PlannerCallbacks {
+  if (callbacks.onCallEvent !== undefined) return callbacks;
+  return {
+    ...callbacks,
+    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
+  };
+}
+
+function withPlannerOutputCallbacks(
+  callbacks: PlannerOutputCallbacks,
+  ctx: PlannerCallPublisherContext,
+): PlannerOutputCallbacks {
+  if (callbacks.onCallEvent !== undefined) return callbacks;
+  return {
+    ...callbacks,
+    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
+  };
+}
+
+function withPlannerCallEventCallbacks(
+  callbacks: PlannerCallEventCallbacks | undefined,
+  ctx: PlannerCallPublisherContext,
+): PlannerCallEventCallbacks {
+  if (callbacks?.onCallEvent !== undefined) return callbacks;
+  return {
+    ...callbacks,
+    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
+  };
+}
+
+function withPlannerSummaryOptions(
+  opts: PlannerSummaryOptions | undefined,
+  ctx: PlannerCallPublisherContext,
+): PlannerSummaryOptions {
+  return {
+    ...opts,
+    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
+  };
+}
+
+function withPlannerStructuredSummaryOptions(
+  opts: PlannerStructuredSummaryOptions | undefined,
+  ctx: PlannerCallPublisherContext,
+): PlannerStructuredSummaryOptions {
+  return {
+    ...opts,
+    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
+  };
+}
+
+function withPlannerUserTurnOptions(
+  opts: PlannerUserTurnOptions,
+  ctx: PlannerCallPublisherContext,
+): PlannerUserTurnOptions {
+  return {
+    ...opts,
+    callbacks: withPlannerCallEventCallbacks(opts.callbacks, ctx),
+  };
+}
+
+function withPlannerCallPublishing(planner: Planner, ctx: PlannerCallPublisherContext): Planner {
+  const wrapped: Planner = {
+    isAvailable: () => planner.isAvailable(),
+    getVersion: () => planner.getVersion(),
+    capabilities: planner.capabilities,
+    plan: (opts) =>
+      planner.plan({
+        ...opts,
+        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
+      }),
+    quickPlan: (opts) =>
+      planner.quickPlan({
+        ...opts,
+        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
+      }),
+    regenerate: (opts) =>
+      planner.regenerate({
+        ...opts,
+        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
+      }),
+    escalateHint: (opts) =>
+      planner.escalateHint({
+        ...opts,
+        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
+      }),
+    escalateFull: (opts) =>
+      planner.escalateFull({
+        ...opts,
+        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
+      }),
+    review: (prompt, projectDir, callbacks) =>
+      planner.review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+    summarize: (messages, opts) =>
+      planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
+  };
+  const unavailabilityReason = planner.unavailabilityReason;
+  if (unavailabilityReason !== undefined) {
+    wrapped.unavailabilityReason = () => unavailabilityReason.call(planner);
+  }
+  const injectUserTurn = planner.injectUserTurn;
+  if (injectUserTurn !== undefined) {
+    wrapped.injectUserTurn = (opts) =>
+      injectUserTurn.call(planner, withPlannerUserTurnOptions(opts, ctx));
+  }
+  const instantPlan = planner.instantPlan;
+  if (instantPlan !== undefined) {
+    wrapped.instantPlan = (opts) =>
+      instantPlan.call(planner, {
+        ...opts,
+        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
+      });
+  }
+  const summarizeStructured = planner.summarizeStructured;
+  if (summarizeStructured !== undefined) {
+    wrapped.summarizeStructured = (messages, opts) =>
+      summarizeStructured.call(planner, messages, withPlannerStructuredSummaryOptions(opts, ctx));
+  }
+  return wrapped;
+}
 
 function shouldPreserveActiveSession(
   state: WorkflowState | undefined,
@@ -123,6 +272,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
   let wctx: WorkflowContext | undefined;
+  let workflowBus: WorkflowContext['bus'] | undefined;
+  let workflowPhase: WorkflowState['phase'] | undefined;
+  let cancellationPublished = false;
+
+  const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
+    const bus = wctx?.bus ?? workflowBus;
+    if (!bus || cancellationPublished) return;
+    bus.publish({
+      type: 'workflow_cancelled',
+      ts: Date.now(),
+      phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
+      reason,
+    });
+    cancellationPublished = true;
+  };
 
   const releaseLiveness = await acquireLiveness({
     projectDir,
@@ -156,11 +320,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             resumeHolder,
           });
           if (!init.ok) {
+            workflowBus = init.bus;
+            workflowPhase = init.phase;
             result = init.summary;
             return;
           }
 
-          wctx = init.wctx;
+          workflowBus = init.wctx.bus;
+          wctx = {
+            ...init.wctx,
+            planner: withPlannerCallPublishing(init.wctx.planner, {
+              bus: init.wctx.bus,
+              getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
+            }),
+          };
           trackedState = init.state;
           const phaseTimings: Record<string, number> = {};
 
@@ -175,6 +348,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             bus: wctx.bus,
             config,
             planner: wctx.planner,
+            ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
 
           const planning = await runPlanningPhases({
@@ -242,12 +416,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       },
     );
 
-    if (cancelled && wctx) {
-      wctx.bus.publish({
-        type: 'workflow_cancelled',
-        ts: Date.now(),
-        phase: trackedState?.phase ?? createInitialState(feature).phase,
-      });
+    const signalCancellationReason = workflowCancelledReasonFromSignal(opts.signal);
+    if (cancelled || signalCancellationReason !== undefined) {
+      publishWorkflowCancellation(signalCancellationReason ?? WORKFLOW_CANCEL_REASON_USER);
     }
 
     if (!result) {

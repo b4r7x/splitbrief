@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { EngineEventSchema } from '../events/schema.js';
 import { projectRunnerCallEvent } from './event-projection.js';
 import { toInvokeResult, toRunnerCallResult } from './projection.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import { runnerCallEventToSessionLogEntry } from './session-log.js';
 import type { RunnerCallEvent, RunnerCallResult } from './types.js';
 
@@ -9,6 +11,9 @@ const result: RunnerCallResult = {
   role: 'implementer',
   backendKind: 'shell',
   status: 'completed',
+  startedAt: 1,
+  endedAt: 9,
+  durationMs: 8,
   text: 'done',
   usage: { inputTokens: 1, outputTokens: 2 },
   nativeSessionId: null,
@@ -28,26 +33,33 @@ describe('toInvokeResult', () => {
   });
 
   it('rejects non-completed call results', () => {
-    expect(() => toInvokeResult({ ...result, status: 'timeout', partial: true })).toThrow(
-      /Cannot project timeout/,
-    );
+    expect(() =>
+      toInvokeResult({
+        ...result,
+        status: 'timeout',
+        error: { code: 'timeout', message: 'runner timed out' },
+        partial: true,
+      }),
+    ).toThrow(/Cannot project timeout/);
   });
 
   it('normalizes legacy InvokeResult values to completed call results', () => {
-    expect(
-      toRunnerCallResult(
-        { callId: 'planner-1', role: 'planner', backendKind: 'api' },
-        {
-          text: 'planned',
-          usage: { inputTokens: 7, outputTokens: 8, cacheReadTokens: 3 },
-          sessionId: 'native-1',
-        },
-      ),
-    ).toEqual({
+    const projected = toRunnerCallResult(
+      { callId: 'planner-1', role: 'planner', backendKind: 'api' },
+      {
+        text: 'planned',
+        usage: { inputTokens: 7, outputTokens: 8, cacheReadTokens: 3 },
+        sessionId: 'native-1',
+      },
+    );
+    expect(projected).toEqual({
       callId: 'planner-1',
       role: 'planner',
       backendKind: 'api',
       status: 'completed',
+      startedAt: expect.any(Number),
+      endedAt: expect.any(Number),
+      durationMs: 0,
       text: 'planned',
       usage: { inputTokens: 7, outputTokens: 8, cacheReadTokens: 3 },
       nativeSessionId: 'native-1',
@@ -57,6 +69,7 @@ describe('toInvokeResult', () => {
       error: null,
       partial: false,
     });
+    expect(projected.startedAt).toBe(projected.endedAt);
   });
 
   it('passes through typed runner call results', () => {
@@ -88,6 +101,72 @@ describe('projectRunnerCallEvent', () => {
       sequence: 3,
       usage: { inputTokens: 5, outputTokens: 6 },
       semantics: 'delta',
+    });
+  });
+
+  it('projects terminal events with frozen timing and metadata', () => {
+    const event: RunnerCallEvent = {
+      type: 'call_completed',
+      ts: 20,
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'api',
+      runnerName: 'openrouter',
+      model: 'gpt-5',
+      attempt: 1,
+      status: 'completed',
+      error: null,
+      startedAt: 10,
+      endedAt: 20,
+      durationMs: 10,
+      partial: false,
+      usage: { inputTokens: 5, outputTokens: 6 },
+      nativeSessionId: null,
+    };
+
+    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 4 })).toEqual({
+      type: 'runner_call_completed',
+      ts: 20,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'api',
+      runnerName: 'openrouter',
+      model: 'gpt-5',
+      attempt: 1,
+      sequence: 4,
+      status: 'completed',
+      error: null,
+      startedAt: 10,
+      endedAt: 20,
+      durationMs: 10,
+      partial: false,
+      usage: { inputTokens: 5, outputTokens: 6 },
+      nativeSessionId: null,
+    });
+  });
+
+  it('bounds projected stderr warnings to the engine event schema limit', () => {
+    const projected = projectRunnerCallEvent(
+      {
+        type: 'call_stderr_delta',
+        ts: 10,
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'api',
+        channel: 'stderr',
+        text: 'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH + 100),
+      },
+      { phase: 'planning', sequence: 5 },
+    );
+
+    expect(EngineEventSchema.safeParse(projected).success).toBe(true);
+    expect(projected).toMatchObject({
+      type: 'runner_call_warning',
+      warning: {
+        code: 'stderr',
+        message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
+      },
     });
   });
 });

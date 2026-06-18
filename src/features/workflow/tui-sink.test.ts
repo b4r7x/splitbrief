@@ -4,7 +4,7 @@ import { createEventBus } from '../../engine/events/bus.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { resetWorkflow, markCancelled } from '../../stores/workflow/actions.js';
+import { resetWorkflow, markCancellationRequested } from '../../stores/workflow/actions.js';
 import { makePlannerText, makeTaskStart, makeWorkflowCancelled } from '#testing/helpers/events.js';
 
 describe('tuiSink', () => {
@@ -41,11 +41,11 @@ describe('tuiSink', () => {
     expect(last?.type).toBe('workflow_cancelled');
   });
 
-  it('respects the store cancel gate — no events recorded after markCancelled', () => {
+  it('respects the store cancel gate after local cancellation intent', () => {
     const bus = createEventBus();
     bus.subscribe(createTuiSink());
 
-    markCancelled();
+    markCancellationRequested();
     const beforeLen = eventsStore.get().events.length;
 
     bus.publish(makePlannerText({ text: 'post-cancel' }));

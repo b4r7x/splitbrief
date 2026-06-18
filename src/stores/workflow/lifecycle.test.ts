@@ -44,4 +44,22 @@ describe('lifecycleStore', () => {
     addEvent({ type: 'queue_cleared', ts: Date.now(), count: 5, phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(0);
   });
+
+  it('records terminal cancellation timing from workflow_cancelled', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent({
+      type: 'workflow_cancelled',
+      ts: 1_400,
+      phase: 'researching',
+      reason: 'user_cancelled',
+    });
+
+    expect(lifecycleStore.get()).toMatchObject({
+      cancelled: true,
+      status: 'cancelled',
+      endedAt: 1_400,
+      durationMs: 400,
+      reason: 'user_cancelled',
+    });
+  });
 });

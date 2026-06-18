@@ -4,6 +4,12 @@ import { join } from 'node:path';
 import { runClaudePlannerStream, runClaudeOneShot } from './claude-invoke.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import {
+  replayRunnerCallEventsIntoOperations,
+  runnerCallErrors,
+  runnerCallTerminals,
+} from '#testing/helpers/runner-call-events.js';
 
 /**
  * These tests exercise the real subprocess seam. `claude-invoke.ts` hardcodes
@@ -185,6 +191,7 @@ describe('runClaudePlannerStream', () => {
   it('rejects with CLAUDE_NOT_FOUND message when `claude` is not on PATH', async () => {
     // Point PATH at an empty dir that has no `claude` shim.
     process.env['PATH'] = createTempDir('empty-path');
+    const events: RunnerCallEvent[] = [];
     try {
       await expect(
         runClaudePlannerStream({
@@ -192,11 +199,30 @@ describe('runClaudePlannerStream', () => {
           projectDir: shimDir,
           sessionId: null,
           onOutput: () => {},
+          onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toThrow(/Claude Code CLI not found/);
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'failed',
+      error: {
+        code: 'command-not-found',
+        message: expect.stringContaining('Claude Code CLI not found'),
+      },
+      partial: false,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: expect.stringContaining('Claude Code CLI not found'),
+    });
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
@@ -260,16 +286,18 @@ describe('runClaudePlannerStream', () => {
     });
   });
 
-  it('rejects a stream that exits 0 without a result terminal', async () => {
+  it('emits one call_error for a stream that exits 0 without a result terminal', async () => {
     installShim(['{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}']);
 
     const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
         projectDir: shimDir,
         sessionId: null,
         onOutput: (text) => chunks.push(text),
+        onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
       kind: 'process-output',
@@ -277,6 +305,22 @@ describe('runClaudePlannerStream', () => {
     });
 
     expect(chunks.join('')).toContain('partial');
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'incomplete',
+      error: { code: 'missing_terminal_event' },
+      partial: true,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: 'Runner call ended without a terminal event',
+      partial: true,
+    });
   });
 
   it('emits session id and partial output before an interrupted stream rejects', async () => {
@@ -287,6 +331,7 @@ describe('runClaudePlannerStream', () => {
     const controller = new AbortController();
     const chunks: string[] = [];
     const sessions: string[] = [];
+    const events: RunnerCallEvent[] = [];
 
     await expect(
       runClaudePlannerStream({
@@ -298,12 +343,22 @@ describe('runClaudePlannerStream', () => {
           if (text.includes('partial')) controller.abort(new Error('cancelled'));
         },
         onSessionId: (id) => sessions.push(id),
+        onCallEvent: (event) => events.push(event),
         signal: controller.signal,
       }),
     ).rejects.toThrow('cancelled');
 
     expect(sessions).toContain('sess-interrupt');
     expect(chunks.join('')).toContain('partial');
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'aborted',
+      error: { code: 'runner_interrupted', message: 'cancelled' },
+      nativeSessionId: 'sess-interrupt',
+      partial: true,
+    });
   });
 
   it('preserves timeout abort reason separately from user abort', async () => {
@@ -432,17 +487,37 @@ describe('runClaudeOneShot', () => {
 
   it('rejects with CLAUDE_NOT_FOUND when claude binary is missing', async () => {
     process.env['PATH'] = createTempDir('empty-path-2');
+    const events: RunnerCallEvent[] = [];
     try {
       await expect(
         runClaudeOneShot({
           prompt: 'p',
           projectDir: shimDir,
           onOutput: () => {},
+          onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toThrow(/Claude Code CLI not found/);
     } finally {
       cleanupTempDir(process.env['PATH']!);
     }
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'failed',
+      error: {
+        code: 'command-not-found',
+        message: expect.stringContaining('Claude Code CLI not found'),
+      },
+      partial: false,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: expect.stringContaining('Claude Code CLI not found'),
+    });
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
@@ -495,23 +570,41 @@ describe('runClaudeOneShot', () => {
     });
   });
 
-  it('rejects when the stream contains no result event', async () => {
+  it('emits one call_error when the stream contains no result event', async () => {
     installShim([
       '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}',
       // no result event — process exits 0 after assistant event only
     ]);
 
     const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
     await expect(
       runClaudeOneShot({
         prompt: 'p',
         projectDir: shimDir,
         onOutput: (text) => chunks.push(text),
+        onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
       kind: 'process-output',
       message: expect.stringContaining('without a terminal event'),
     });
     expect(chunks.join('')).toContain('partial');
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'incomplete',
+      error: { code: 'missing_terminal_event' },
+      partial: true,
+    });
+    const operations = replayRunnerCallEventsIntoOperations(events);
+    expect(operations.active).toBeNull();
+    expect(operations.last).toMatchObject({
+      callId: errors[0]?.callId,
+      status: 'failed',
+      reason: 'Runner call ended without a terminal event',
+      partial: true,
+    });
   });
 });

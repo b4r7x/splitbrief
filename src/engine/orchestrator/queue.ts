@@ -66,10 +66,20 @@ export function createQueueHandler(
     persistTranscript: boolean;
     planner: Planner;
     serialize: WriteSequencer;
+    signal?: AbortSignal | undefined;
   },
 ): (text: string, phase: Phase) => void {
-  const { projectDir, sessionId, getState, setState, bus, persistTranscript, planner, serialize } =
-    opts;
+  const {
+    projectDir,
+    sessionId,
+    getState,
+    setState,
+    bus,
+    persistTranscript,
+    planner,
+    serialize,
+    signal,
+  } = opts;
   return (text: string, phase: Phase) => {
     let fallbackState: WorkflowState | undefined;
     serialize(() => {
@@ -100,6 +110,7 @@ export function createQueueHandler(
           getState: () => getState() ?? enqueuedState,
           setState,
           bus,
+          ...(signal !== undefined && { signal }),
         });
       })
       .catch((err) => warnError('queue-handler failed', err));

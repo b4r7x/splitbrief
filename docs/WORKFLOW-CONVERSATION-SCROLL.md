@@ -23,7 +23,7 @@ The user-visible symptom was block jumps: scrolling by one offset could reveal o
 The current path first turns the conversation into one-row records:
 
 - `src/features/workflow/conversation-rows/types.ts` defines `ConversationRow`, row segments, tones, and scroll inputs.
-- `src/features/workflow/conversation-rows/row-format.ts` owns wrapping and gutter prefixes.
+- `src/features/workflow/conversation-rows/row-format.ts` owns width-aware wrapping and compact card rows.
 - `src/features/workflow/conversation-rows/event-rows.ts` maps `EngineEvent` values to concrete row records.
 - `src/features/workflow/conversation-rows/build.ts` builds the full row list and renderable-event count.
 - `src/features/workflow/conversation-rows/scroll.ts` computes scroll state from `rows.length`.
@@ -81,7 +81,7 @@ The old estimator-based pipeline was removed:
 - `src/core/layout/viewport-trimming.ts`
 - the obsolete `EventCard` renderer that walked events through `src/features/workflow/components/event-cards/`
 
-The `EventCard` renderer is gone, but `src/features/workflow/components/event-cards/` is not removed: it still hosts live chrome cards — `config.tsx` (`WorkflowConfigCard`, used by `config-line.tsx` and `chrome.tsx`) and `planner-status.tsx` (`PlannerStatusCard`, mounted via `agent-status-row.tsx`). Those cards render fixed chrome rows and are not part of the dynamic conversation row pipeline.
+The `EventCard` renderer is gone, but `src/features/workflow/components/event-cards/` is not removed: it still hosts live chrome cards — `config.tsx` (`WorkflowConfigCard`, used by `config-line.tsx` and `chrome.tsx`) and `operation-status.tsx` (`OperationStatusCard`, mounted via `agent-status-row.tsx`). Those cards render fixed chrome rows and are not part of the dynamic conversation row pipeline.
 
 Keeping both rendering paths would create two sources of truth for event formatting and row height. The row renderer is now the single conversation rendering model.
 

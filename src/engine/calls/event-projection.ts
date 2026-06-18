@@ -2,6 +2,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { EngineEvent } from '../events/types.js';
+import { boundedRunnerCallMessage } from './status.js';
 import type { RunnerCallEvent } from './types.js';
 
 interface RunnerCallEventProjectionOptions {
@@ -24,6 +25,9 @@ function baseProjection(
     role: event.role,
     backendKind: event.backendKind,
     sequence: opts.sequence,
+    ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
+    ...(event.model !== undefined && { model: event.model }),
+    ...(event.attempt !== undefined && { attempt: event.attempt }),
   };
 }
 
@@ -41,7 +45,7 @@ export function projectRunnerCallEvent(
       return {
         type: 'runner_call_warning',
         ...base,
-        warning: { code: 'stderr', message: event.text },
+        warning: { code: 'stderr', message: boundedRunnerCallMessage(event.text) },
       };
     case 'call_tool_use_delta':
       return {
@@ -69,15 +73,39 @@ export function projectRunnerCallEvent(
     case 'call_artifact':
       return { type: 'runner_call_artifact', ...base, artifact: event.artifact };
     case 'call_warning':
-      return { type: 'runner_call_warning', ...base, warning: event.warning };
+      return {
+        type: 'runner_call_warning',
+        ...base,
+        warning: {
+          ...event.warning,
+          message: boundedRunnerCallMessage(event.warning.message),
+        },
+      };
     case 'call_error':
-      return { type: 'runner_call_error', ...base, status: event.status, error: event.error };
+      return {
+        type: 'runner_call_error',
+        ...base,
+        status: event.status,
+        error: event.error,
+        startedAt: event.startedAt,
+        endedAt: event.endedAt,
+        durationMs: event.durationMs,
+        partial: event.partial,
+        usage: event.usage,
+        nativeSessionId: event.nativeSessionId,
+      };
     case 'call_completed':
       return {
         type: 'runner_call_completed',
         ...base,
         status: event.status,
-        partial: false,
+        error: event.error,
+        startedAt: event.startedAt,
+        endedAt: event.endedAt,
+        durationMs: event.durationMs,
+        partial: event.partial,
+        usage: event.usage,
+        nativeSessionId: event.nativeSessionId,
       };
     case 'call_unknown_upstream':
       return {
@@ -85,7 +113,7 @@ export function projectRunnerCallEvent(
         ...base,
         warning: {
           code: 'unknown_upstream',
-          message: event.rawPreview,
+          message: boundedRunnerCallMessage(event.rawPreview),
         },
       };
     default:

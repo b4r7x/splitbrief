@@ -10,7 +10,7 @@ export function useReviewContent(filePath: string | null): string {
   useEffect(() => {
     if (!filePath) {
       setContent('');
-      reviewStore.setLineCount(0);
+      reviewStore.setRenderedLineCount(0);
       return;
     }
 
@@ -18,12 +18,11 @@ export function useReviewContent(filePath: string | null): string {
     fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' })
       .then((data) => {
         setContent(data);
-        reviewStore.setLineCount(data.split('\n').length);
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         setContent('');
-        reviewStore.setLineCount(0);
+        reviewStore.setRenderedLineCount(0);
         feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
       });
 

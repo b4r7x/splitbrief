@@ -26,10 +26,11 @@ const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
 const { planEditorStore } = await import('../../stores/workflow/plan-editor.js');
 const { openApprovalPrompt } = await import('../../stores/approval-prompt/prompt.js');
 const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prompt.js');
-const { createInitialState } = await import('../../core/state/machine.js');
+const { createInitialState, transition } = await import('../../core/state/machine.js');
 const { saveState } = await import('../../core/state/persistence.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
+const ENTER = '\r';
 
 function readyReadiness(projectDir: string): ReadinessReport {
   return {
@@ -64,10 +65,21 @@ function mountWorkflow(rows = 60) {
   return renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
 }
 
+function workflowStateInResearching(feature: string) {
+  return transition(createInitialState(feature), { type: 'START' });
+}
+
+function workflowStateInPlanning(feature: string) {
+  let state = workflowStateInResearching(feature);
+  state = transition(state, { type: 'RESEARCH_DONE' });
+  state = transition(state, { type: 'SPEC_DONE' });
+  return transition(state, { type: 'APPROVE_SPEC' });
+}
+
 describe('WorkflowScreen key arbitration', () => {
   beforeEach(() => {
     resetAllStores();
-    routerStore.navigate({ to: 'home' });
+    routerStore.init({ screen: 'home' });
     runWorkflow.mockReset();
     // The engine never resolves so the screen stays on the live workflow surface for the
     // duration of the test; no real planner/implementer runs.
@@ -76,7 +88,7 @@ describe('WorkflowScreen key arbitration', () => {
 
   afterEach(() => {
     resetAllStores();
-    routerStore.navigate({ to: 'home' });
+    routerStore.init({ screen: 'home' });
   });
 
   it('a pending approval prompt owns the keystroke; the focused composer does not capture it', async () => {
@@ -270,6 +282,85 @@ describe('WorkflowScreen key arbitration', () => {
         expect(route.status).toBe('interrupted');
       }
 
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('does not promise or attempt resume after a non-resumable cancelled state', async () => {
+    const projectDir = createTempDir('workflow-screen-cancel-non-resumable');
+    try {
+      const sessionId = 'cancelled-researching';
+      const saved = workflowStateInResearching('cancel before planning');
+      saveState({ projectDir, sessionId }, saved);
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: saved.feature,
+        resumeState: saved,
+        sessionId,
+        readiness: readyReadiness(projectDir),
+      });
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      await tick(20);
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+
+      lifecycleStore.__testReset({
+        phase: 'researching',
+        status: 'cancelled',
+        cancelled: true,
+        reason: 'user_cancelled',
+      });
+      await tick(20);
+
+      expect(ui.lastFrame() ?? '').not.toContain('Enter to resume');
+
+      ui.stdin.write(ENTER);
+      await tick(40);
+
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('keeps Enter resume available for a cancelled state that is resumable for this session', async () => {
+    const projectDir = createTempDir('workflow-screen-cancel-resumable');
+    try {
+      const sessionId = 'cancelled-planning';
+      const saved = workflowStateInPlanning('cancel during planning');
+      saveState({ projectDir, sessionId }, saved);
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: saved.feature,
+        resumeState: saved,
+        sessionId,
+        readiness: readyReadiness(projectDir),
+      });
+
+      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      await tick(20);
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+
+      lifecycleStore.__testReset({
+        phase: 'planning',
+        status: 'cancelled',
+        cancelled: true,
+        reason: 'user_cancelled',
+      });
+      await tick(20);
+
+      ui.stdin.write(ENTER);
+
+      await vi.waitFor(() => {
+        expect(runWorkflow).toHaveBeenCalledTimes(2);
+      });
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);

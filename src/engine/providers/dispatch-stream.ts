@@ -1,6 +1,6 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
-import type { InvokeResult } from '../runners/types.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { providerError } from './errors.js';
 import { streamCompletion, type StreamClient } from './openai-stream.js';
@@ -23,9 +23,13 @@ interface StreamDispatchOpts {
   signal?: AbortSignal | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext?: RunnerCallContext | undefined;
 }
 
-export async function dispatchStreamCompletion(opts: StreamDispatchOpts): Promise<InvokeResult> {
+export async function dispatchStreamCompletion(
+  opts: StreamDispatchOpts,
+): Promise<RunnerCallResult> {
   const {
     provider,
     client,
@@ -39,6 +43,8 @@ export async function dispatchStreamCompletion(opts: StreamDispatchOpts): Promis
     signal,
     effort,
     images,
+    onCallEvent,
+    callContext,
   } = opts;
 
   if (provider === 'anthropic') {
@@ -53,6 +59,8 @@ export async function dispatchStreamCompletion(opts: StreamDispatchOpts): Promis
       ...(signal !== undefined && { signal }),
       ...(effort !== undefined && { effort }),
       ...(images && images.length > 0 ? { images } : {}),
+      ...(onCallEvent !== undefined && { onCallEvent }),
+      ...(callContext !== undefined && { callContext }),
     });
   }
 
@@ -66,5 +74,7 @@ export async function dispatchStreamCompletion(opts: StreamDispatchOpts): Promis
     ...(signal !== undefined && { signal }),
     ...(effort !== undefined && { effort }),
     ...(images && images.length > 0 ? { images } : {}),
+    ...(onCallEvent !== undefined && { onCallEvent }),
+    ...(callContext !== undefined && { callContext }),
   });
 }

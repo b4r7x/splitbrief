@@ -39,6 +39,7 @@ afterEach(() => {
 function makePublisher(events: PublisherEvent[]): ImplementerPublisher {
   return {
     publishRunning: (event) => events.push({ type: 'implementer_generate_running', ...event }),
+    publishCallEvent: () => {},
     publishDone: (event) => events.push({ type: 'implementer_generate_done', ...event }),
     publishFailed: (event) => events.push({ type: 'implementer_generate_failed', ...event }),
   };

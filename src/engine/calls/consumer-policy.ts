@@ -3,6 +3,7 @@ import {
   SESSION_LOG_MAX_ENTRY_BYTES,
   SESSION_LOG_MAX_STRING_BYTES,
 } from '../../core/schemas/session-log.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 
 export const CALL_IPC_MAX_PUBLIC_PAYLOAD_BYTES = 512 * 1024;
 export const CALL_STDOUT_JSON_MAX_PUBLIC_PAYLOAD_BYTES = 256 * 1024;
@@ -243,9 +244,22 @@ function sanitizeString(value: string, state: PayloadTransformState): string {
   const redacted = redactSecretsWithMetadata(value, { marker: CALL_CONSUMER_REDACTION_MARKER });
   if (redacted.redacted) state.redacted = true;
 
-  const bounded = truncateUtf8String(redacted.text, state.maxStringBytes);
+  const clean = stripPublicStringControls(redacted.text);
+  const bounded = truncateUtf8String(clean, state.maxStringBytes);
   if (bounded.truncated) state.truncated = true;
   return bounded.text;
+}
+
+function stripPublicStringControls(value: string): string {
+  return value
+    .split('\n')
+    .map((line) =>
+      line
+        .split('\t')
+        .map((part) => stripTerminalControls(part))
+        .join('\t'),
+    )
+    .join('\n');
 }
 
 function truncateUtf8String(

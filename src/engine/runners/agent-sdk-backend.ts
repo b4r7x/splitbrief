@@ -4,10 +4,15 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { accumulateUsage, toTokenDelta } from '../streaming/token-usage.js';
 import { createChangeDetector, type ChangeDetector } from '../change-detection.js';
-import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
+import {
+  createSessionAttemptCallContext,
+  createSessionResumeState,
+  runWithResumeFallback,
+} from '../session-expiry.js';
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
-import { collectRunnerCallResult } from '../calls/collector.js';
+import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
@@ -175,27 +180,14 @@ function throwForSdkCallFailure(result: RunnerCallResult): never {
   });
 }
 
-function interruptedStatus(signal: AbortSignal | undefined): RunnerCallFailureStatus {
-  if (signal?.reason instanceof DOMException && signal.reason.name === 'TimeoutError') {
-    return 'timeout';
-  }
-  return 'aborted';
-}
-
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
   const { stream, onOutput, onSessionId, onCallEvent, signal } = opts;
   const context = opts.callContext ?? createSdkCallContext({ permissionMode: 'acceptEdits' });
-  const events: RunnerCallEvent[] = [];
-  const emit = (event: RunnerCallEvent): void => {
-    events.push(event);
-    onCallEvent?.(event);
-  };
+  const recorder = createRunnerCallRecorder({ context, onEvent: onCallEvent });
   let collectedText = '';
   let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
   let sawAssistantText = false;
-
-  emit({ type: 'call_started', ts: Date.now(), ...context });
 
   try {
     throwIfAborted(signal);
@@ -204,12 +196,7 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
       if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
         sessionId = message.session_id;
         onSessionId?.(message.session_id);
-        emit({
-          type: 'call_session_id',
-          ts: Date.now(),
-          ...context,
-          nativeSessionId: message.session_id,
-        });
+        recorder.sessionId({ nativeSessionId: message.session_id });
       }
 
       if (message.type === 'assistant') {
@@ -217,13 +204,7 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         if (text) {
           collectedText += text;
           sawAssistantText = true;
-          emit({
-            type: 'call_text_delta',
-            ts: Date.now(),
-            ...context,
-            channel: 'assistant',
-            text,
-          });
+          recorder.text({ channel: 'assistant', text });
           onOutput(text);
           throwIfAborted(signal);
         }
@@ -233,78 +214,58 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         if (message.session_id) {
           sessionId = message.session_id;
           onSessionId?.(message.session_id);
-          emit({
-            type: 'call_session_id',
-            ts: Date.now(),
-            ...context,
-            nativeSessionId: message.session_id,
-          });
+          recorder.sessionId({ nativeSessionId: message.session_id });
         }
         const delta = toTokenDelta(message.usage);
         if (delta) {
           usage = accumulateUsage(usage, delta);
-          emit({
-            type: 'call_usage',
-            ts: Date.now(),
-            ...context,
-            usage: delta,
-            semantics: 'final',
-          });
+          recorder.usage({ usage: delta, semantics: 'final' });
         }
         if (isSdkResultFailure(message)) {
-          emit({
-            type: 'call_error',
-            ts: Date.now(),
-            ...context,
+          recorder.finishFailed({
             status: sdkFailureStatus(message),
             error: {
               code: message.subtype ?? 'sdk_result_error',
               message: sdkResultErrorMessage(message),
             },
+            usage,
+            nativeSessionId: sessionId,
           });
           continue;
         }
         const resultText = extractResultText(message);
         if (resultText) {
           if (!sawAssistantText) {
-            emit({
-              type: 'call_text_delta',
-              ts: Date.now(),
-              ...context,
-              channel: 'result',
-              text: resultText,
-            });
+            recorder.text({ channel: 'result', text: resultText });
           }
           collectedText = resultText;
         }
-        emit({
-          type: 'call_completed',
-          ts: Date.now(),
-          ...context,
-          status: 'completed',
-          usage,
-          nativeSessionId: sessionId,
-        });
+        recorder.finishCompleted({ usage, nativeSessionId: sessionId });
       }
     }
   } catch (err) {
     if (signal?.aborted) {
-      emit({
-        type: 'call_error',
-        ts: Date.now(),
-        ...context,
-        status: interruptedStatus(signal),
+      recorder.finishFailed({
+        status: runnerCallInterruptedStatus(signal),
         error: {
           code: 'runner_interrupted',
           message: signal.reason instanceof Error ? signal.reason.message : 'Agent SDK interrupted',
         },
+        nativeSessionId: sessionId,
+      });
+    } else if (!recorder.hasTerminal()) {
+      recorder.finishFailed({
+        status: 'failed',
+        error: runnerCallErrorFromUnknown(err, 'agent_sdk_stream_error'),
+        usage,
+        nativeSessionId: sessionId,
       });
     }
-    collectRunnerCallResult(events);
+    recorder.finalResult();
     throw err;
   }
 
-  const result = collectRunnerCallResult(events);
+  const result = recorder.finalResult();
   if (result.status !== 'completed') throwForSdkCallFailure(result);
 
   return { text: collectedText, usage, sessionId };
@@ -344,6 +305,7 @@ export interface AgentSdkInvokeOpts {
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  callContext?: RunnerCallContext | undefined;
   env?: Record<string, string | undefined> | undefined;
 }
 
@@ -379,6 +341,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       effort,
       images,
       signal,
+      callContext,
       env,
     }) {
       throwIfAborted(signal);
@@ -390,8 +353,9 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
         onSessionId?.(id);
       };
       const finalPrompt = buildPromptWithImages(prompt, images);
+      const baseCallContext = callContext ?? createSdkCallContext({ permissionMode, model });
 
-      const runQuery = async (resumeId: string | undefined) => {
+      const runQuery = async (resumeId: string | undefined, attempt: number) => {
         throwIfAborted(signal);
         const forwardedAbort = createForwardedAbortController(signal);
         const options: SdkQueryOptions['options'] = {
@@ -420,7 +384,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             onOutput,
             onSessionId: captureSession,
             onCallEvent,
-            callContext: createSdkCallContext({ permissionMode, model }),
+            callContext: createSessionAttemptCallContext(baseCallContext, attempt),
             signal,
           });
         } finally {
@@ -431,7 +395,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       const priorId = session.getResumeId();
       const result = await runWithResumeFallback(
         session,
-        (resumeId) => runQuery(resumeId),
+        (resumeId, attempt) => runQuery(resumeId, attempt),
         () => {
           if (priorId) onSessionExpired?.(priorId);
         },

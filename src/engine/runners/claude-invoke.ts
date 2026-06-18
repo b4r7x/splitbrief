@@ -8,7 +8,8 @@ import { processError } from '../../lib/process/errors.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
 import type { ToolUseInfo } from './types.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
-import { collectRunnerCallResult } from '../calls/collector.js';
+import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
+import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
@@ -58,7 +59,7 @@ interface StreamHandlerState {
   sawResult: boolean;
   isError: boolean;
   sawAssistantText: boolean;
-  events: RunnerCallEvent[];
+  recorder: RunnerCallRecorder;
 }
 
 interface StreamHandlerCallbacks {
@@ -85,6 +86,10 @@ function createClaudeCallContext(opts: {
 }
 
 function createStreamHandler(callbacks: StreamHandlerCallbacks) {
+  const recorder = createRunnerCallRecorder({
+    context: callbacks.context,
+    onEvent: callbacks.onCallEvent,
+  });
   const state: StreamHandlerState = {
     text: '',
     sessionId: null,
@@ -93,15 +98,9 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     sawResult: false,
     isError: false,
     sawAssistantText: false,
-    events: [],
+    recorder,
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
-  const emit = (event: RunnerCallEvent): void => {
-    state.events.push(event);
-    callbacks.onCallEvent?.(event);
-  };
-
-  emit({ type: 'call_started', ts: Date.now(), ...callbacks.context });
 
   function handleLine(line: string): void {
     const parsed = parseStreamLine(line);
@@ -109,23 +108,14 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.sessionId) {
       state.sessionId = parsed.sessionId;
       callbacks.onSessionId?.(parsed.sessionId);
-      emit({
-        type: 'call_session_id',
-        ts: Date.now(),
-        ...callbacks.context,
-        nativeSessionId: parsed.sessionId,
-      });
+      state.recorder.sessionId({ nativeSessionId: parsed.sessionId });
     }
 
     if (parsed.toolUse) {
       const toolLines = parsed.toolUse.map(formatToolUse).join('\n');
       callbacks.onOutput(toolLines + '\n');
       for (const toolUse of parsed.toolUse) {
-        emit({
-          type: 'call_tool_use_done',
-          ts: Date.now(),
-          ...callbacks.context,
-          channel: 'tool',
+        state.recorder.toolUseDone({
           toolUse: { id: null, name: toolUse.name, input: toolUse.input },
         });
       }
@@ -134,13 +124,7 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.text && !parsed.isResult) {
       state.text += parsed.text;
       state.sawAssistantText = true;
-      emit({
-        type: 'call_text_delta',
-        ts: Date.now(),
-        ...callbacks.context,
-        channel: 'assistant',
-        text: parsed.text,
-      });
+      state.recorder.text({ channel: 'assistant', text: parsed.text });
       callbacks.onOutput(parsed.text);
 
       if (callbacks.onQuestion && questionAccumulator) {
@@ -157,45 +141,34 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
         state.text = parsed.text;
         state.resultText = parsed.text;
         if (!state.sawAssistantText) {
-          emit({
-            type: 'call_text_delta',
-            ts: Date.now(),
-            ...callbacks.context,
-            channel: 'result',
-            text: parsed.text,
-          });
+          state.recorder.text({ channel: 'result', text: parsed.text });
         }
         callbacks.onOutput(parsed.text);
       }
     }
 
+    if (parsed.usage) {
+      state.usage = parsed.usage;
+      state.recorder.usage({
+        usage: parsed.usage,
+        semantics: parsed.isResult ? 'final' : 'delta',
+      });
+    }
+
     if (parsed.isError) {
       state.isError = true;
-      emit({
-        type: 'call_error',
-        ts: Date.now(),
-        ...callbacks.context,
+      state.recorder.finishFailed({
         status: 'failed',
         error: {
           code: 'runner_result_error',
           message: (state.resultText ?? state.text) || 'Claude result failed',
         },
-      });
-    }
-
-    if (parsed.usage) {
-      state.usage = parsed.usage;
-      emit({
-        type: 'call_usage',
-        ts: Date.now(),
-        ...callbacks.context,
-        usage: parsed.usage,
-        semantics: parsed.isResult ? 'final' : 'delta',
+        nativeSessionId: state.sessionId,
       });
     }
   }
 
-  return { state, handleLine, emit };
+  return { state, handleLine };
 }
 
 function throwForClaudeCallFailure(result: RunnerCallResult): never {
@@ -208,48 +181,44 @@ function throwForClaudeCallFailure(result: RunnerCallResult): never {
   });
 }
 
-function finishClaudeStream(
-  state: StreamHandlerState,
-  emit: (event: RunnerCallEvent) => void,
-  context: RunnerCallContext,
-): RunnerCallResult {
+function finishClaudeStream(state: StreamHandlerState): RunnerCallResult {
   if (!state.isError && state.sawResult) {
-    emit({
-      type: 'call_completed',
-      ts: Date.now(),
-      ...context,
-      status: 'completed',
+    state.recorder.finishCompleted({
       usage: state.usage,
       nativeSessionId: state.sessionId,
     });
   }
 
-  const result = collectRunnerCallResult(state.events);
+  const result = state.recorder.finalResult();
   if (result.status !== 'completed') throwForClaudeCallFailure(result);
   return result;
 }
 
 function markInterruptedClaudeStream(
   state: StreamHandlerState,
-  emit: (event: RunnerCallEvent) => void,
-  context: RunnerCallContext,
   signal: AbortSignal | undefined,
 ): void {
   if (!signal?.aborted) return;
-  emit({
-    type: 'call_error',
-    ts: Date.now(),
-    ...context,
-    status:
-      signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError'
-        ? 'timeout'
-        : 'aborted',
+  state.recorder.finishFailed({
+    status: runnerCallInterruptedStatus(signal),
     error: {
       code: 'runner_interrupted',
       message: signal.reason instanceof Error ? signal.reason.message : 'Claude stream interrupted',
     },
+    nativeSessionId: state.sessionId,
   });
-  collectRunnerCallResult(state.events);
+  state.recorder.finalResult();
+}
+
+function markFailedClaudeStream(state: StreamHandlerState, err: unknown): void {
+  if (state.recorder.hasTerminal()) return;
+  state.recorder.finishFailed({
+    status: 'failed',
+    error: runnerCallErrorFromUnknown(err, 'claude_process_error'),
+    usage: state.usage,
+    nativeSessionId: state.sessionId,
+  });
+  state.recorder.finalResult();
 }
 
 function interruptedError(signal: AbortSignal | undefined, fallback: unknown): unknown {
@@ -299,6 +268,7 @@ export interface ClaudePlannerStreamOpts {
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  callContext?: RunnerCallContext | undefined;
 }
 
 export async function runClaudePlannerStream(
@@ -316,11 +286,12 @@ export async function runClaudePlannerStream(
     effort,
     images,
     signal,
+    callContext,
   } = opts;
   const args = buildClaudeArgs({ sessionId, model, effort });
 
-  const context = createClaudeCallContext({ role: 'planner', model });
-  const { state, handleLine, emit } = createStreamHandler({
+  const context = callContext ?? createClaudeCallContext({ role: 'planner', model });
+  const { state, handleLine } = createStreamHandler({
     onOutput,
     onSessionId,
     onQuestion,
@@ -341,11 +312,12 @@ export async function runClaudePlannerStream(
       signal,
     });
   } catch (err) {
-    markInterruptedClaudeStream(state, emit, context, signal);
+    markInterruptedClaudeStream(state, signal);
+    if (!signal?.aborted) markFailedClaudeStream(state, err);
     throw interruptedError(signal, err);
   }
 
-  finishClaudeStream(state, emit, context);
+  finishClaudeStream(state);
 
   return { text: state.text, sessionId: state.sessionId, usage: state.usage };
 }
@@ -360,6 +332,7 @@ export interface ClaudeOneShotOpts {
   effort?: EffortLevel | undefined;
   permissionMode?: 'acceptEdits' | undefined;
   signal?: AbortSignal | undefined;
+  callContext?: RunnerCallContext | undefined;
   env?: NodeJS.ProcessEnv | undefined;
 }
 
@@ -374,13 +347,16 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeR
     effort,
     permissionMode,
     signal,
+    callContext,
     env,
   } = opts;
-  const context = createClaudeCallContext({
-    role: permissionMode === 'acceptEdits' ? 'implementer' : 'planner',
-    model,
-  });
-  const { state, handleLine, emit } = createStreamHandler({
+  const context =
+    callContext ??
+    createClaudeCallContext({
+      role: permissionMode === 'acceptEdits' ? 'implementer' : 'planner',
+      model,
+    });
+  const { state, handleLine } = createStreamHandler({
     onOutput,
     onSessionId,
     onCallEvent,
@@ -401,11 +377,12 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeR
       signal,
     });
   } catch (err) {
-    markInterruptedClaudeStream(state, emit, context, signal);
+    markInterruptedClaudeStream(state, signal);
+    if (!signal?.aborted) markFailedClaudeStream(state, err);
     throw interruptedError(signal, err);
   }
 
-  finishClaudeStream(state, emit, context);
+  finishClaudeStream(state);
 
   return { text: state.text, usage: state.usage };
 }

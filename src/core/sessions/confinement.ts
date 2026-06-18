@@ -1,20 +1,54 @@
 import { realpathSync, lstatSync } from 'node:fs';
-import { resolve, dirname, sep } from 'node:path';
+import { resolve, dirname, sep, isAbsolute, relative } from 'node:path';
 import { isInsideRoot } from '../../lib/path-confinement.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { error, matches } from '../../utils/error.js';
 
+export const SESSION_FILE_PATH_MAX_BYTES = 4096;
+
 export const sessionConfinementError = {
+  invalidPath: (path: string, reason: string) =>
+    error('session-io-invalid-path', `Invalid session path: ${reason}`, { path, reason }),
   symlinkRead: (path: string) =>
     error('session-io-read', `Refusing to read through symlink: ${path}`, { path }),
   escapesRoot: (path: string, root: string) =>
     error('session-io-escape', `Path escapes session root`, { path, root }),
+  isInvalidPath: matches('session-io-invalid-path'),
   isSymlinkRead: matches('session-io-read'),
   isEscapesRoot: matches('session-io-escape'),
 } as const;
 
 function isSessionConfinementError(err: unknown): boolean {
-  return sessionConfinementError.isSymlinkRead(err) || sessionConfinementError.isEscapesRoot(err);
+  return (
+    sessionConfinementError.isInvalidPath(err) ||
+    sessionConfinementError.isSymlinkRead(err) ||
+    sessionConfinementError.isEscapesRoot(err)
+  );
+}
+
+function assertSessionPathInput(filePath: string): void {
+  if (filePath.length === 0) {
+    throw sessionConfinementError.invalidPath(filePath, 'empty path');
+  }
+  if (Buffer.byteLength(filePath, 'utf8') > SESSION_FILE_PATH_MAX_BYTES) {
+    throw sessionConfinementError.invalidPath(filePath, 'path exceeds maximum length');
+  }
+  if (hasControlCharacter(filePath)) {
+    throw sessionConfinementError.invalidPath(filePath, 'path contains control characters');
+  }
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint >= 0x00 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function assertNoSessionPathSymlink(sessionDir: string): void {
@@ -38,8 +72,30 @@ function assertNoSessionPathSymlink(sessionDir: string): void {
   }
 }
 
+function assertNoTargetPathSymlink(filePath: string, sessionDir: string): void {
+  const sessionRoot = resolve(sessionDir);
+  const target = resolve(filePath);
+  if (!isInsideRoot(sessionRoot, target)) return;
+
+  const targetSuffix = relative(sessionRoot, target).split(sep).filter(Boolean);
+  let current = sessionRoot;
+  for (const part of targetSuffix) {
+    current = current.length === 0 || current === sep ? `${sep}${part}` : `${current}${sep}${part}`;
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        throw sessionConfinementError.symlinkRead(current);
+      }
+    } catch (err) {
+      if (isSessionConfinementError(err)) throw err;
+      return;
+    }
+  }
+}
+
 export function assertSessionConfinement(filePath: string, sessionDir: string): void {
+  assertSessionPathInput(filePath);
   assertNoSessionPathSymlink(sessionDir);
+  assertNoTargetPathSymlink(filePath, sessionDir);
   const realSession = realpathSync(sessionDir);
 
   try {
@@ -62,4 +118,11 @@ export function assertSessionConfinement(filePath: string, sessionDir: string): 
       throw sessionConfinementError.escapesRoot(filePath, sessionDir);
     }
   }
+}
+
+export function resolveSessionFilePath(filePath: string, sessionDir: string): string {
+  assertSessionPathInput(filePath);
+  const resolved = isAbsolute(filePath) ? filePath : resolve(sessionDir, filePath);
+  assertSessionConfinement(resolved, sessionDir);
+  return resolved;
 }

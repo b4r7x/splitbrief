@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tokensStore } from './tokens.js';
-import { addEvent, resetWorkflow } from './actions.js';
+import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js';
 import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { EngineEvent } from '../../engine/events/types.js';
@@ -41,6 +41,33 @@ describe('tokensStore — cost-update', () => {
     };
     addEvent(makeCostUpdate({ tokenUsage: updated }));
     expect(tokensStore.get().tokenUsage).toEqual(updated);
+  });
+
+  it('applies final cost_update after local cancellation', () => {
+    markCancellationRequested({ ts: 1_000 });
+
+    addEvent(
+      makeCostUpdate({
+        ts: 1_100,
+        tokenUsage: {
+          plannerInput: 300,
+          plannerOutput: 120,
+          implementerInput: 40,
+          implementerOutput: 20,
+          escalationInput: 0,
+          escalationOutput: 0,
+        },
+      }),
+    );
+
+    expect(tokensStore.get().tokenUsage).toEqual({
+      plannerInput: 300,
+      plannerOutput: 120,
+      implementerInput: 40,
+      implementerOutput: 20,
+      escalationInput: 0,
+      escalationOutput: 0,
+    });
   });
 });
 

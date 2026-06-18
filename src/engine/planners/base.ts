@@ -18,6 +18,9 @@ import type {
   PlannerCapabilities,
   PriorMessage,
   PlannerSummaryMessage,
+  PlannerStructuredSummaryOptions,
+  PlannerSummaryOptions,
+  PlannerUserTurnOptions,
 } from './types.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
@@ -55,7 +58,11 @@ type PlannerArtifactPhase = Phase | 'generating-tasks';
 type InternalInvokeFn = (opts: {
   prompt: string;
   projectDir: string;
-  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired'>;
+  callContext: RunnerCallContext;
+  callbacks: Pick<
+    PlannerCallbacks,
+    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+  >;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
@@ -67,13 +74,15 @@ const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 let plannerBaseCallSequence = 0;
 
 function createPlannerCallContext(
-  config: Pick<PlannerBaseConfig, 'backendKind'>,
+  config: Pick<PlannerBaseConfig, 'backendKind' | 'runnerName' | 'model'>,
   role: RunnerCallContext['role'],
 ): RunnerCallContext {
   return {
     callId: `planner-${++plannerBaseCallSequence}`,
     role,
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+    ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
+    ...(config.model !== undefined && { model: config.model }),
   };
 }
 
@@ -94,6 +103,8 @@ export interface PlannerBaseConfig {
   invokePlan: InternalInvokeFn;
   invokeEscalate: InternalInvokeFn;
   backendKind?: RunnerCallContext['backendKind'];
+  runnerName?: string | undefined;
+  model?: string | undefined;
   isAvailable: () => Promise<boolean>;
   unavailabilityReason?: () => string | undefined;
   getVersion?: () => Promise<string | null>;
@@ -131,7 +142,7 @@ export interface PlannerBaseConfig {
    * block to the prompt for the first planning phase.
    */
   consumesPriorMessages?: boolean;
-  injectUserTurn?: (text: string, projectDir: string) => Promise<TokenDelta | null>;
+  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<TokenDelta | null>;
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
@@ -174,12 +185,14 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           consumesPriorMessages: config.consumesPriorMessages,
         });
 
+        const callContext = createPlannerCallContext(config, 'planner');
         const result = requireCompletedCall(
           toRunnerCallResult(
-            createPlannerCallContext(config, 'planner'),
+            callContext,
             await config.invokePlan({
               prompt: effectivePrompt,
               projectDir,
+              callContext,
               callbacks: {
                 onOutput: (text) => {
                   callbacks.onOutput(text);
@@ -188,6 +201,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
                 onQuestion: callbacks.onQuestion,
                 onSessionId: callbacks.onSessionId,
                 onSessionExpired: callbacks.onSessionExpired,
+                onCallEvent: callbacks.onCallEvent,
               },
               ...extras,
               signal: callbacks.signal,
@@ -264,12 +278,14 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
       const { prompt, projectDir, callbacks } = opts;
+      const callContext = createPlannerCallContext(config, 'planner');
       const result = requireCompletedCall(
         toRunnerCallResult(
-          createPlannerCallContext(config, 'planner'),
+          callContext,
           await config.invokeEscalate({
             prompt,
             projectDir,
+            callContext,
             callbacks,
             signal: callbacks.signal,
           }),
@@ -291,10 +307,17 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       projectDir: string,
       callbacks: PlannerOutputCallbacks,
     ): Promise<{ text: string; usage: TokenDelta | null }> {
+      const callContext = createPlannerCallContext(config, 'review');
       const result = requireCompletedCall(
         toRunnerCallResult(
-          createPlannerCallContext(config, 'review'),
-          await config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal }),
+          callContext,
+          await config.invokeEscalate({
+            prompt,
+            projectDir,
+            callContext,
+            callbacks,
+            signal: callbacks.signal,
+          }),
         ),
       );
       return { text: result.text, usage: toTokenDelta(result.usage) };
@@ -302,17 +325,16 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
     async summarize(
       messages: PlannerSummaryMessage[],
-      projectDir?: string,
+      opts?: PlannerSummaryOptions | undefined,
     ): Promise<{ text: string; usage: TokenDelta | null }> {
-      return summarize(config, messages, projectDir);
+      return summarize(config, messages, opts);
     },
 
     async summarizeStructured(
       messages: PlannerSummaryMessage[],
-      previousSummary?: StructuredSummary,
-      projectDir?: string,
+      opts?: PlannerStructuredSummaryOptions | undefined,
     ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }> {
-      return summarizeStructured(config, messages, previousSummary, projectDir);
+      return summarizeStructured(config, messages, opts);
     },
 
     ...DEFAULT_AVAILABILITY,
