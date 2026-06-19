@@ -3,6 +3,14 @@ import { useTheme } from '../../../../components/theme.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { BriefQualityIssue } from '../../../../engine/spec/brief-quality.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
+import { MultilineInput } from '../../../../components/input/multiline-input.js';
+import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
+import {
+  TASK_BRIEF_SECTIONS,
+  getTaskBriefSectionLabel,
+  getTaskBriefSectionText,
+  type TaskBriefSection,
+} from '../../../../stores/workflow/plan-editor-sections.js';
 import {
   buildTaskDetailParts,
   formatContextFit,
@@ -32,11 +40,16 @@ function DetailList({ label, items }: { label: string; items: string[] }) {
 function TaskEditorDetail({
   task,
   metadata,
+  isCursor,
 }: {
   task: Task;
   metadata?: PlanTaskReviewMetadata | undefined;
+  isCursor: boolean;
 }) {
   const t = useTheme();
+  const focus = planEditorStore.use((s) => s.focus);
+  const sectionCursor = planEditorStore.use((s) => s.sectionCursor);
+  const editing = planEditorStore.use((s) => s.editing);
   const reviewItems = [
     `worker ${metadata?.workerProfile ?? 'auto'}`,
     `cost ${metadata?.selectedCostTier ?? 'pending'}`,
@@ -73,7 +86,77 @@ function TaskEditorDetail({
       <DetailList label="tests" items={task.tests} />
       <DetailList label="escalation" items={task.escalation ?? []} />
       <DetailList label="routing" items={routingItems} />
+      {isCursor && focus !== 'task-list' && (
+        <Box flexDirection="column">
+          <Text color={t.textDim}>sections:</Text>
+          {TASK_BRIEF_SECTIONS.map((section, index) => (
+            <TaskBriefSectionRow
+              key={section}
+              task={task}
+              section={section}
+              selected={sectionCursor === index}
+              editing={editing?.section === section ? editing : null}
+            />
+          ))}
+        </Box>
+      )}
     </Box>
+  );
+}
+
+function TaskBriefSectionRow({
+  task,
+  section,
+  selected,
+  editing,
+}: {
+  task: Task;
+  section: TaskBriefSection;
+  selected: boolean;
+  editing: { value: string } | null;
+}) {
+  const t = useTheme();
+  const label = getTaskBriefSectionLabel(section);
+  const value = getTaskBriefSectionText(task, section);
+  const preview = firstPreviewLine(value);
+  const marker = selected ? '› ' : '  ';
+
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box flexDirection="row">
+        <Text color={selected ? t.accent : t.textDim}>{marker}</Text>
+        <Text color={selected ? t.accent : t.textDim}>{label}: </Text>
+        {editing === null && (
+          <Text color={preview ? t.text : t.textDim} wrap="truncate">
+            {preview || 'empty'}
+          </Text>
+        )}
+      </Box>
+      {editing !== null && (
+        <Box paddingLeft={4}>
+          <MultilineInput
+            value={editing.value}
+            onChange={planEditorStore.updateEditingValue}
+            onSubmit={() => planEditorStore.saveEditingSection()}
+            columns={72}
+            focus
+            keyBindings={{
+              submit: (key) => key.ctrl && key.return,
+              newline: (key) => key.return && !key.ctrl,
+            }}
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function firstPreviewLine(value: string): string {
+  return (
+    value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ''
   );
 }
 
@@ -135,7 +218,7 @@ export function TaskEditorRow({
           {reviewLine}
         </Text>
       </Box>
-      {isExpanded && <TaskEditorDetail task={task} metadata={metadata} />}
+      {isExpanded && <TaskEditorDetail task={task} metadata={metadata} isCursor={isCursor} />}
     </Box>
   );
 }

@@ -3,9 +3,12 @@ import { tokensStore } from './tokens.js';
 import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js';
 import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events.js';
 import { taskId } from '../../core/schemas/task.js';
+import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 
-function makeTaskTokens(overrides?: Partial<EngineEvent & { type: 'task_tokens' }>): EngineEvent {
+type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }> & Partial<TaskTokenUsage>;
+
+function makeTaskTokens(overrides?: Partial<TaskTokensEvent>): EngineEvent {
   return {
     type: 'task_tokens',
     ts: Date.now(),
@@ -76,6 +79,7 @@ describe('tokensStore — task-complete counters', () => {
 
   it.each([
     { method: 'local' as const, localCount: 1, escalatedCount: 0 },
+    { method: 'escalated-intermediate' as const, localCount: 0, escalatedCount: 1 },
     { method: 'escalated-hint' as const, localCount: 0, escalatedCount: 1 },
     { method: 'escalated-full' as const, localCount: 0, escalatedCount: 1 },
     { method: 'failed' as const, localCount: 0, escalatedCount: 0 },
@@ -123,6 +127,62 @@ describe('tokensStore — per-task attempt accumulation', () => {
     expect(record?.attempts).toHaveLength(2);
     expect(record?.attempts?.map((a) => a.tool)).toEqual(['deepseek', 'claude-code']);
     expect(record?.attempts?.map((a) => a.model)).toEqual(['deepseek-chat', 'claude-opus-4-6']);
+  });
+
+  it('preserves routing, context, and cache metadata from task_tokens', () => {
+    addEvent(
+      makeTaskTokens({
+        implementerTokens: 100,
+        escalationTokens: 50,
+        implementerCacheReadTokens: 20,
+        implementerCacheCreateTokens: 5,
+        escalationCacheReadTokens: 10,
+        escalationCacheCreateTokens: 2,
+        implementerProfile: 'cheap-local',
+        contextFit: 'tight',
+        estimatedTokens: 95_000,
+        untruncatedEstimatedTokens: 120_000,
+        contextLength: 100_000,
+        currentCodeTruncated: true,
+        currentCodeContextMode: 'function-level',
+        costPosture: 'unknown-price',
+        routingReason: 'rerouted after context estimate exceeded cheap profile',
+      }),
+    );
+
+    expect(tokensStore.get().perTask['T001']?.attempts?.[0]).toMatchObject({
+      implementerCacheReadTokens: 20,
+      implementerCacheCreateTokens: 5,
+      escalationCacheReadTokens: 10,
+      escalationCacheCreateTokens: 2,
+      implementerProfile: 'cheap-local',
+      contextFit: 'tight',
+      estimatedTokens: 95_000,
+      untruncatedEstimatedTokens: 120_000,
+      contextLength: 100_000,
+      currentCodeTruncated: true,
+      currentCodeContextMode: 'function-level',
+      costPosture: 'unknown-price',
+      routingReason: 'rerouted after context estimate exceeded cheap profile',
+    });
+    expect(tokensStore.get().perTask['T001']?.totalTokens).toBe(187);
+  });
+
+  it('counts cache-only task attempts in task totals', () => {
+    addEvent(
+      makeTaskTokens({
+        implementerTokens: 0,
+        escalationTokens: 0,
+        implementerCacheReadTokens: 1_000_000,
+      }),
+    );
+
+    const record = tokensStore.get().perTask['T001'];
+    expect(record?.totalTokens).toBe(1_000_000);
+    expect(record?.attempts?.[0]).toMatchObject({
+      implementerTokens: 0,
+      implementerCacheReadTokens: 1_000_000,
+    });
   });
 
   it('task_reset undoes the prior completion counters so a redo does not double-count', () => {

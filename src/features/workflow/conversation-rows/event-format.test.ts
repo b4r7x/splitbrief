@@ -40,4 +40,19 @@ describe('validationRow', () => {
     expect(row).toContain('typecheck ✓');
     expect(row).toContain('test ✓');
   });
+
+  it('renders active validation command metadata', () => {
+    const row = validationRow(
+      validateEvent({
+        status: 'running',
+        stages: { typecheck: false, lint: false, test: false },
+        activeStage: 'typecheck',
+        commands: { typecheck: 'npm run typecheck' },
+      }),
+    );
+
+    expect(row).toContain('typecheck (npm run typecheck) …');
+    expect(row).toContain('lint ○');
+    expect(row).toContain('test ○');
+  });
 });

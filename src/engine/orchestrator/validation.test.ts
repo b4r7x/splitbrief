@@ -203,6 +203,51 @@ describe('validation pipeline', () => {
     const testResult = results.find((r) => r.stage === 'test');
     expect(testResult).toBeUndefined();
   });
+
+  it('publishes the active validation command before the stage completes', async () => {
+    const runner = makeCommandRunner({ stdout: '', stderr: '', code: 0 });
+    validator = createValidator({ runCommand: runner });
+    const config = makeConfig({
+      typecheck: true,
+      typecheckCommand: 'npm run typecheck',
+      lint: false,
+      test: false,
+    });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    const results = await validator.runValidation({
+      task: mkTask('src/main.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'validating-task',
+    });
+
+    expect(results[0]).toMatchObject({
+      stage: 'typecheck',
+      command: 'npm run typecheck',
+    });
+    expect(
+      events.find(
+        (event): event is EngineEventOf<'validate'> =>
+          event.type === 'validate' &&
+          event.status === 'running' &&
+          event.activeStage === 'typecheck',
+      ),
+    ).toMatchObject({
+      commands: { typecheck: 'npm run typecheck' },
+    });
+    expect(
+      events.find(
+        (event): event is EngineEventOf<'validate'> =>
+          event.type === 'validate' && event.status === 'done',
+      ),
+    ).toMatchObject({
+      commands: { typecheck: 'npm run typecheck' },
+    });
+  });
 });
 
 describe('layer priority', () => {

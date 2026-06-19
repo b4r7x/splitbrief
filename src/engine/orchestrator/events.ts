@@ -14,6 +14,7 @@ import type {
   EngineEvent,
   EngineEventOf,
   EventBus,
+  ValidationStageCommands,
   ValidationStages,
   ValidationStageSkips,
 } from '../events/types.js';
@@ -25,7 +26,7 @@ import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
-import { projectRunnerCallEvent } from '../calls/event-projection.js';
+import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 type BusContext = {
@@ -41,20 +42,26 @@ export function publishRunnerCallEvent(
   ctx: BusContext & { taskId?: TaskId | undefined },
   event: RunnerCallEvent,
 ): void {
-  const projected = projectRunnerCallEvent(event, {
+  const projected = projectRunnerCallEvents(event, {
     phase: ctx.phase,
     ...(ctx.taskId !== undefined && { taskId: ctx.taskId }),
     sequence: runnerCallEventSequence,
   });
   runnerCallEventSequence += 1;
-  if (projected !== null) ctx.bus.publish(projected);
+  for (const projectedEvent of projected) ctx.bus.publish(projectedEvent);
 }
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
 type ValidationPhase =
-  | { phase: 'start' }
-  | { phase: 'progress'; stages: ValidationStages; startTime: number }
+  | { phase: 'start'; commands?: ValidationStageCommands | undefined }
+  | {
+      phase: 'progress';
+      stages: ValidationStages;
+      startTime: number;
+      activeStage?: ValidationResult['stage'] | undefined;
+      commands?: ValidationStageCommands | undefined;
+    }
   | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
 export function createBusTextHandler(
@@ -156,6 +163,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
       status: 'running',
       passed: false,
       stages: { ...EMPTY_STAGES },
+      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
     });
     return;
   }
@@ -169,6 +177,8 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
       status: 'running',
       passed: false,
       stages: opts.stages,
+      ...(opts.activeStage !== undefined && { activeStage: opts.activeStage }),
+      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
     });
     return;
   }
@@ -177,7 +187,9 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   const skipped: ValidationStageSkips = {};
   let failedError: string | undefined;
   let passed = true;
+  const commands: ValidationStageCommands = {};
   for (const r of opts.results) {
+    if (r.command !== undefined) commands[r.stage] = r.command;
     if (r.skipped) {
       skipped[r.stage] = true;
       continue;
@@ -199,10 +211,16 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     status: 'done',
     passed,
     stages,
+    ...(hasValidationCommands(commands) && { commands }),
     ...(hasSkips && { skipped }),
     ...(failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });
+}
+
+function hasValidationCommands(commands: ValidationStageCommands | undefined): boolean {
+  if (commands === undefined) return false;
+  return Object.values(commands).some((command) => command !== undefined && command.length > 0);
 }
 
 export function publishGitCommit(

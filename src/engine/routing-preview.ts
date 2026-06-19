@@ -15,6 +15,7 @@ import type {
   PlanTaskReviewMetadata,
 } from '../core/plan-review/types.js';
 import { hasNoCapableWorker, hasStaleOrConflict } from '../core/plan-review/predicates.js';
+import { buildRouteTaskOptions } from './orchestrator/context-routing/route-input.js';
 import { routeTaskToImplementerProfile } from './orchestrator/context-routing/route.js';
 import { currentCodeContextMode as inferCurrentCodeContextModeFromPrompt } from './orchestrator/context-routing/headings.js';
 import type { RoutingDecision } from './orchestrator/context-routing/types.js';
@@ -49,6 +50,7 @@ export interface BuildWorkerPacketPreviewOptions {
   contextLength?: number | undefined;
   contextCache?: ModelCacheAccessor | undefined;
   languageContext?: LanguageContext | undefined;
+  detectedContextLength?: number | undefined;
   display?: WorkerPacketPreviewDisplayOptions | undefined;
 }
 
@@ -94,13 +96,18 @@ function routeFromOptions(
   if (!profiles || profiles.length === 0) return undefined;
   const languageContext =
     opts.languageContext ?? buildProjectLanguageContext(opts.context.dir, undefined);
-  return routeTaskToImplementerProfile({
-    task,
-    context: opts.context,
-    profiles,
-    ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
-    languageContext,
-  });
+  return routeTaskToImplementerProfile(
+    buildRouteTaskOptions({
+      task,
+      context: opts.context,
+      profiles,
+      ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
+      languageContext,
+      ...(opts.detectedContextLength !== undefined && {
+        detectedContextLength: opts.detectedContextLength,
+      }),
+    }),
+  );
 }
 
 function promptTaskForPreview(task: Task, metadata: PlanTaskReviewMetadata | undefined): Task {
@@ -332,23 +339,35 @@ export function routeTaskForPreview(opts: {
   config: Config;
   projectDir: string;
   contextCache?: ModelCacheAccessor | undefined;
+  detectedContextLength?: number | undefined;
 }): RoutingDecision {
   const profiles = resolveImplementerProfiles(opts.config).profiles;
-  return routeTaskToImplementerProfile({
-    task: opts.task,
-    context: previewProjectContext(opts.projectDir),
-    profiles,
-    ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
-    languageContext: buildProjectLanguageContext(opts.projectDir, undefined),
-  });
+  return routeTaskToImplementerProfile(
+    buildRouteTaskOptions({
+      task: opts.task,
+      context: previewProjectContext(opts.projectDir),
+      profiles,
+      ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
+      languageContext: buildProjectLanguageContext(opts.projectDir, undefined),
+      ...(opts.detectedContextLength !== undefined && {
+        detectedContextLength: opts.detectedContextLength,
+      }),
+    }),
+  );
 }
 
 export function buildRoutingPreviewMetadata(
   tasks: Task[],
-  opts: { config: Config; projectDir: string; contextCache?: ModelCacheAccessor | undefined },
+  opts: {
+    config: Config;
+    projectDir: string;
+    contextCache?: ModelCacheAccessor | undefined;
+    detectedContextLength?: number | undefined;
+  },
 ): Promise<PlanTaskReviewMetadata[]> {
   const context = previewProjectContext(opts.projectDir);
   const profiles = resolveImplementerProfiles(opts.config).profiles;
+  const languageContext = buildProjectLanguageContext(opts.projectDir, undefined);
 
   return Promise.all(
     tasks.map(async (task) => {
@@ -356,13 +375,18 @@ export function buildRoutingPreviewMetadata(
         task,
         opts.projectDir,
       );
-      const decision = routeTaskToImplementerProfile({
-        task: routingTask,
-        context,
-        profiles,
-        ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
-        languageContext: buildProjectLanguageContext(opts.projectDir, undefined),
-      });
+      const decision = routeTaskToImplementerProfile(
+        buildRouteTaskOptions({
+          task: routingTask,
+          context,
+          profiles,
+          ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
+          languageContext,
+          ...(opts.detectedContextLength !== undefined && {
+            detectedContextLength: opts.detectedContextLength,
+          }),
+        }),
+      );
       const routeBlocked = decision.selectedProfile === undefined;
       const risk: PlanReviewRisk =
         routeBlocked ||

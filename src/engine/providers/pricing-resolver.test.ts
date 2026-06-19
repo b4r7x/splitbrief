@@ -195,6 +195,46 @@ describe('pricing-resolver', () => {
       expect(pricing.source).toBe('models-dev');
     });
 
+    it('carries models.dev context pricing tiers', () => {
+      const cache = makeModelCacheAccessor({
+        catalog: {
+          openai: {
+            id: 'openai',
+            models: {
+              'gpt-5.4': {
+                id: 'gpt-5.4',
+                cost: {
+                  input: 2.5,
+                  output: 15,
+                  cache_read: 0.25,
+                  tiers: [
+                    {
+                      input: 5,
+                      output: 22.5,
+                      cache_read: 0.5,
+                      tier: { type: 'context', size: 272000 },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const pricing = resolvePricing('openai', cache, 'gpt-5.4');
+      expect(pricing.source).toBe('models-dev');
+      expect(pricing.pricingTiers).toEqual([
+        {
+          type: 'context',
+          thresholdTokens: 272000,
+          inputPer1M: 5,
+          outputPer1M: 22.5,
+          cacheReadPer1M: 0.5,
+        },
+      ]);
+    });
+
     it('uses runtime provider metadata when models.dev is unavailable', () => {
       const cache = makeModelCacheAccessor({
         providerModels: {

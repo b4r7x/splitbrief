@@ -75,3 +75,47 @@ describe('createPromptTracker fail-closed', () => {
     expect(rejected.promptKind).toBeUndefined();
   });
 });
+
+describe('createPromptTracker response validation', () => {
+  it('rejects recovery actions that were not advertised by the pending prompt', async () => {
+    const bus = createEventBus();
+    const warnings: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'warning') warnings.push(event.message);
+    });
+    const tracker = createPromptTracker({
+      bus,
+      noClientPromptBehavior: 'wait',
+      currentSocket: () => null,
+      writeMessage: () => undefined,
+    });
+
+    const pending = tracker.requestClientPrompt({
+      kind: 'recovery_needed',
+      issue: {
+        id: 'rec-1',
+        reason: 'retry-exhausted',
+        phase: 'implementing',
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker', 'abort-workflow'],
+        recommendedAction: 'retry-same-worker',
+      },
+    });
+
+    expect(
+      tracker.handleResponse('prompt-1', { kind: 'recovery_needed', action: 'continue' }),
+    ).toBe(false);
+    expect(warnings).toContainEqual(expect.stringContaining('recovery action is not available'));
+    expect(
+      tracker.handleResponse('prompt-1', {
+        kind: 'recovery_needed',
+        action: 'abort-workflow',
+      }),
+    ).toBe(true);
+    await expect(pending).resolves.toEqual({
+      kind: 'recovery_needed',
+      action: 'abort-workflow',
+    });
+  });
+});

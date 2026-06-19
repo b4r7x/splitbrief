@@ -12,6 +12,7 @@ import {
 import { sessionDir } from '../../../core/paths.js';
 import { warnError } from '../../../lib/warn.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
+import { projectEngineEventForTranscriptPolicy } from '../protection.js';
 import type {
   AgentInvocationPayload,
   CostCheckpointPayload,
@@ -23,6 +24,7 @@ import * as typeGuards from '../../../utils/type-guards.js';
 export interface TreeRecorderOptions {
   projectDir: string;
   sessionId: string;
+  persistTranscript?: boolean | undefined;
 }
 
 const BRANCHING_ACTIONS = new Set([
@@ -34,6 +36,7 @@ const BRANCHING_ACTIONS = new Set([
 // All disk I/O is wrapped in try/catch — persistence failures must not crash the workflow.
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
+  const persistTranscript = opts.persistTranscript ?? true;
 
   let tree: SessionTree | null = null;
   const taskStartTimes = new Map<string, number>();
@@ -64,7 +67,10 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     return fresh;
   }
 
-  return (event: EngineEvent) => {
+  return (rawEvent: EngineEvent) => {
+    const event = projectEngineEventForTranscriptPolicy(rawEvent, persistTranscript);
+    if (event === null) return;
+
     switch (event.type) {
       case 'workflow_started': {
         tree = initializeTree(event.ts);
@@ -80,6 +86,26 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
 
       case 'task_started': {
         if (!tree) return;
+        taskStartTimes.set(taskIdToString(event.taskId), event.ts);
+        if (!persistTranscript) {
+          const payload: AgentInvocationPayload = {
+            taskId: event.taskId,
+            role: 'implementer',
+            tool: event.tool ?? 'unknown',
+            ...(event.model !== undefined && { model: event.model }),
+            phase: event.phase,
+            status: 'started',
+          };
+          const result = appendEntry(tree, {
+            type: 'agent-invocation',
+            payload,
+            timestamp: event.ts,
+          });
+          tree = result.tree;
+          persist(result.entry);
+          return;
+        }
+
         const payload: PlanStepPayload = {
           taskId: event.taskId,
           title: event.title,
@@ -96,7 +122,6 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           display: true,
         });
         tree = result.tree;
-        taskStartTimes.set(taskIdToString(event.taskId), event.ts);
         persist(result.entry);
         return;
       }
@@ -280,6 +305,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'runner_call_text_delta':
       case 'runner_call_usage':
       case 'runner_call_tool_use':
+      case 'runner_call_activity':
       case 'runner_call_session_id':
       case 'runner_call_artifact':
       case 'runner_call_warning':

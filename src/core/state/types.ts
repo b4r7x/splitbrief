@@ -44,7 +44,9 @@ export type StateAction =
   | { type: 'RESET_TASK'; taskId: TaskId }
   | { type: 'CLEAR_REWIND_PENDING' }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
+  | { type: 'MARK_INJECTING_NATIVE'; id: string }
   | { type: 'MARK_DELIVERED_NATIVE'; id: string }
+  | { type: 'MARK_NATIVE_DELIVERY_FAILED'; id: string }
   | { type: 'DRAIN_QUEUE' }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }

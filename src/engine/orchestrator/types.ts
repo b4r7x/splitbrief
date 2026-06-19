@@ -20,36 +20,27 @@ import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import {
+  WORKFLOW_CANCEL_REASONS,
+  WORKFLOW_CANCEL_REASON_USER,
+  WORKFLOW_USER_CANCELLED_ABORT_REASON,
+  isWorkflowCancelledAbortReason,
+  workflowCancelledReasonFromSignal,
+} from '../events/workflow-cancel.js';
+import type {
+  WorkflowCancelledAbortReason,
+  WorkflowCancelReason,
+} from '../events/workflow-cancel.js';
 
-export const WORKFLOW_CANCEL_REASONS = ['user_cancelled'] as const;
-export const WORKFLOW_CANCEL_REASON_USER = WORKFLOW_CANCEL_REASONS[0];
-
-export type WorkflowCancelReason = (typeof WORKFLOW_CANCEL_REASONS)[number];
-
-export type WorkflowCancelledAbortReason = {
-  type: 'workflow_cancelled';
-  reason: WorkflowCancelReason;
+export {
+  WORKFLOW_CANCEL_REASONS,
+  WORKFLOW_CANCEL_REASON_USER,
+  WORKFLOW_USER_CANCELLED_ABORT_REASON,
+  isWorkflowCancelledAbortReason,
+  workflowCancelledReasonFromSignal,
 };
 
-export const WORKFLOW_USER_CANCELLED_ABORT_REASON = Object.freeze({
-  type: 'workflow_cancelled',
-  reason: WORKFLOW_CANCEL_REASON_USER,
-} satisfies WorkflowCancelledAbortReason);
-
-export function isWorkflowCancelledAbortReason(
-  value: unknown,
-): value is WorkflowCancelledAbortReason {
-  if (typeof value !== 'object' || value === null) return false;
-  if (!('type' in value) || !('reason' in value)) return false;
-  return value.type === 'workflow_cancelled' && value.reason === WORKFLOW_CANCEL_REASON_USER;
-}
-
-export function workflowCancelledReasonFromSignal(
-  signal: AbortSignal | undefined,
-): WorkflowCancelReason | undefined {
-  if (!signal?.aborted) return undefined;
-  return isWorkflowCancelledAbortReason(signal.reason) ? signal.reason.reason : undefined;
-}
+export type { WorkflowCancelledAbortReason, WorkflowCancelReason };
 
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (
@@ -75,8 +66,19 @@ export interface ResumeContextHolder {
   messages: PriorMessage[];
 }
 
-export type QueueHandler = (text: string, phase: Phase) => void;
-export type ClearQueueHandler = () => number;
+export type QueueSubmissionResult =
+  | { status: 'accepted'; messageId: string; preview?: string | undefined }
+  | { status: 'rejected'; reason: 'queue-full' | 'phase-unavailable'; message: string };
+
+export type QueueClearResult =
+  | { status: 'cleared'; count: number }
+  | { status: 'unavailable'; message: string };
+
+export type QueueHandler = (
+  text: string,
+  phase: Phase,
+) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
+export type ClearQueueHandler = () => QueueClearResult;
 
 export interface WorkflowSinks {
   setAbortHandler: (handler: (() => void) | null) => void;

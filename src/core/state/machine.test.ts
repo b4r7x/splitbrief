@@ -6,10 +6,22 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from './selectors.js';
-import type { WorkflowState } from '../schemas/workflow.js';
+import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
 import { taskId } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+
+function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
+  return {
+    id: 'msg-test',
+    text: 'queued message',
+    queuedAt: '2026-01-01T00:00:00.000Z',
+    phase: 'researching',
+    deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
+    ...overrides,
+  };
+}
 
 describe('createInitialState', () => {
   it('returns idle phase with feature set and empty tasks', () => {
@@ -113,7 +125,24 @@ describe('transition', () => {
     const next = transition(state, { type: 'HINT_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(getCompletedTaskIds(next)).toEqual(['T001']);
+    expect(getCompletedTaskIds(next)).toEqual([]);
+    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
+  });
+
+  it('HINT_SUCCESS is accepted from implementing for escalated retry completions', () => {
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+    };
+    const next = transition(state, { type: 'HINT_SUCCESS' });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.currentTaskIndex).toBe(1);
+    expect(getCompletedTaskIds(next)).toEqual([]);
+    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
 
   it('CANCEL -> idle with tasks cleared and counters reset', () => {
@@ -162,6 +191,25 @@ describe('transition', () => {
     const next = transition(state, { type: 'CONTINUE_TURN' });
     expect(next.awaitingContinue).toBe(false);
     expect(next.phase).toBe('implementing');
+  });
+
+  it('CLEAR_QUEUE removes only messages still pending delivery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      messageQueue: [
+        makeQueuedMessage({ id: 'msg-pending' }),
+        makeQueuedMessage({ id: 'msg-injecting', nativeDeliveryState: 'injecting' }),
+        makeQueuedMessage({ id: 'msg-native', deliveredViaNative: true }),
+        makeQueuedMessage({
+          id: 'msg-drained',
+          drainedAt: '2026-01-01T00:00:01.000Z',
+        }),
+      ],
+    };
+
+    const next = transition(state, { type: 'CLEAR_QUEUE' });
+
+    expect(next.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
   });
 
   it('REJECT_PLAN -> idle', () => {
@@ -288,6 +336,7 @@ describe('transition', () => {
     const next = transition(state, { type: 'HINT_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.attempt).toBe(0);
+    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
 
   it('configurable maxRetries: attempt < custom max stays in implementing', () => {

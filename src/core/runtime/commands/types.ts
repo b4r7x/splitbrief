@@ -37,6 +37,10 @@ export type ExportSessionResult =
   | { status: 'ok'; path: string }
   | { status: 'error'; error: string };
 
+export type QueueClearCommandResult =
+  | { status: 'cleared'; count: number }
+  | { status: 'unavailable'; message: string };
+
 interface RuntimeCommandBase {
   name: string;
   aliases?: string[];
@@ -68,7 +72,7 @@ export interface RuntimeCommandContext {
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
-  clearQueue: () => number;
+  clearQueue: () => QueueClearCommandResult;
   rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;
   attachImage: (input: string) => { ok: true; path: string } | { ok: false; reason: string };
   detachImage: (idOrIndex: string) => boolean;

@@ -14,6 +14,7 @@ import {
   lookupRuntimeModel,
   type ModelCacheAccessor,
 } from './model/resolution.js';
+import type { DetectedPricingTier } from '../../core/discovery/detection.js';
 
 export type PricingMode =
   | 'api-priced'
@@ -27,6 +28,7 @@ export interface ResolvedPricing {
   outputPer1M: number;
   cacheReadPer1M?: number;
   cacheWritePer1M?: number;
+  pricingTiers?: DetectedPricingTier[];
   isLocal: boolean;
   isPriced: boolean;
   pricingMode: PricingMode;
@@ -87,13 +89,15 @@ function makePricedResult(opts: {
   source: ResolvedPricing['source'];
   cacheRead?: number | undefined;
   cacheWrite?: number | undefined;
+  pricingTiers?: DetectedPricingTier[] | undefined;
 }): ResolvedPricing {
-  const { modelId, input, output, source, cacheRead, cacheWrite } = opts;
+  const { modelId, input, output, source, cacheRead, cacheWrite, pricingTiers } = opts;
   return {
     inputPer1M: input,
     outputPer1M: output,
     ...(cacheRead !== undefined && { cacheReadPer1M: cacheRead }),
     ...(cacheWrite !== undefined && { cacheWritePer1M: cacheWrite }),
+    ...(pricingTiers !== undefined && { pricingTiers }),
     isLocal: false,
     isPriced: true,
     pricingMode: 'api-priced',
@@ -127,6 +131,7 @@ export function resolvePricing(
       source: 'models-dev',
       cacheRead: modelsDev.pricingCacheRead ?? bundled?.pricingCacheRead,
       cacheWrite: modelsDev.pricingCacheWrite ?? bundled?.pricingCacheWrite,
+      pricingTiers: modelsDev.pricingTiers,
     });
   }
 
@@ -139,6 +144,7 @@ export function resolvePricing(
       source: 'runtime',
       cacheRead: runtime.pricingCacheRead ?? bundled?.pricingCacheRead,
       cacheWrite: runtime.pricingCacheWrite ?? bundled?.pricingCacheWrite,
+      pricingTiers: runtime.pricingTiers,
     });
   }
 

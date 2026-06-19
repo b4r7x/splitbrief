@@ -1,6 +1,9 @@
 import { groupEventsIntoSections } from '../../core/sections/event-sections.js';
 import type { Section } from '../../core/sections/event-sections.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TaskCompletionMethod } from '../../core/schemas/enums.js';
+import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
+import { formatQueuedMessagePreview } from '../../core/queue-preview.js';
+import { classifyTaskCompletionMethod } from '../../core/task-completion.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
 import { closeApprovalPrompt } from '../approval-prompt/prompt.js';
@@ -16,15 +19,18 @@ import {
 } from './tasks.js';
 import {
   _tokensInternal,
+  taskAttemptTotalTokens,
   tokensStore,
   updateTokens,
   type PerTaskTokens,
+  type TaskAttemptTokens,
   type TokensState,
 } from './tokens.js';
 import {
   _lifecycleInternal,
   lifecycleStore,
   type LifecycleState,
+  type QueuedMessagePreview,
   markLifecycleCancellationRequested,
   updatePhase,
   updateQueueDepth,
@@ -35,7 +41,9 @@ import {
   operationsStore,
   updateOperations,
 } from './operations.js';
+import { _activityInternal, activityStore, updateActivity } from './activity.js';
 import { streamingOutputStore } from './streaming-output.js';
+import { planEditorStore } from './plan-editor.js';
 
 export function addEvent(event: EngineEvent): void {
   // Fast path: cost_update only touches token state, but still needs the
@@ -50,7 +58,7 @@ export function addEvent(event: EngineEvent): void {
   // noise that would restart old phase spans.
   if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
 
-  // Ordering invariant: events → tasks → tokens → lifecycle → operations.
+  // Ordering invariant: events → tasks → tokens → lifecycle → operations → activity.
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
   // consistent commit with all workflow stores updated.
@@ -80,6 +88,7 @@ export function addEvent(event: EngineEvent): void {
   });
 
   _operationsInternal.set((s) => updateOperations(s, event));
+  _activityInternal.set((s) => updateActivity(s, event));
 }
 
 export interface CancellationIntent {
@@ -95,6 +104,7 @@ export function markCancellationRequested(intent: CancellationIntent = {}): bool
     reason: intent.reason ?? 'user_cancelled',
   };
   _operationsInternal.set((s) => markOperationsCancellationRequested(s, cancellation));
+  _activityInternal.set((s) => ({ ...s, items: [] }));
   _lifecycleInternal.set((s) => markLifecycleCancellationRequested(s, cancellation));
   return true;
 }
@@ -109,7 +119,9 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tokensStore.reset();
   lifecycleStore.reset();
   operationsStore.reset();
+  activityStore.reset();
   streamingOutputStore.reset();
+  planEditorStore.resetSessionState();
   cachedEvents = null;
   cachedSections = [];
   if (resume) {
@@ -121,7 +133,9 @@ export function resetWorkflow(resume?: WorkflowState): void {
 
 function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
   const startedAt = timestampFromIso(resume.startedAt);
-  const queueDepth = resume.messageQueue.filter((message) => !message.drainedAt).length;
+  const pendingMessages = pendingQueueMessages(resume.messageQueue);
+  const queueDepth = pendingMessages.length;
+  const queuePreviews = queuePreviewsFromMessages(pendingMessages);
   if (resume.phase === 'complete') {
     const endedAt = startedAt ?? Date.now();
     return {
@@ -129,6 +143,7 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
       status: 'complete',
       cancelled: false,
       queueDepth,
+      queuePreviews,
       startedAt,
       endedAt,
       durationMs: Math.max(0, endedAt - (startedAt ?? endedAt)),
@@ -140,11 +155,31 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
     status: 'running',
     cancelled: false,
     queueDepth,
+    queuePreviews,
     startedAt,
     endedAt: null,
     durationMs: null,
     reason: null,
   };
+}
+
+function pendingQueueMessages(messages: readonly QueuedMessage[]): QueuedMessage[] {
+  return messages.filter(
+    (message) =>
+      !message.drainedAt &&
+      !message.deliveredViaNative &&
+      message.nativeDeliveryState !== 'delivered' &&
+      message.nativeDeliveryState !== 'injecting',
+  );
+}
+
+function queuePreviewsFromMessages(messages: readonly QueuedMessage[]): QueuedMessagePreview[] {
+  const previews: QueuedMessagePreview[] = [];
+  for (const message of messages) {
+    const preview = formatQueuedMessagePreview(message);
+    if (preview.length > 0) previews.push({ id: message.id, preview });
+  }
+  return previews;
 }
 
 function tasksStateFromResume(
@@ -181,9 +216,10 @@ function tokensStateFromResume(
   | 'pricingContext'
   | 'perTask'
 > {
+  const counts = completionCountsFromResume(resume);
   return {
-    localCount: resume.tasks.filter((task) => task.status === 'done').length,
-    escalatedCount: resume.tasks.filter((task) => task.status === 'escalated').length,
+    localCount: counts.local,
+    escalatedCount: counts.escalated,
     completedTaskCount: resume.tasks.filter(
       (task) => task.status !== 'pending' && task.status !== 'in_progress',
     ).length,
@@ -191,6 +227,29 @@ function tokensStateFromResume(
     pricingContext: pricingContextFromResume(resume),
     perTask: perTaskFromResume(resume),
   };
+}
+
+function completionCountsFromResume(resume: WorkflowState): { local: number; escalated: number } {
+  const latestMethodByTask = new Map<string, TaskCompletionMethod>();
+  for (const breakdown of resume.taskBreakdowns ?? []) {
+    latestMethodByTask.set(breakdown.taskId, breakdown.method);
+  }
+
+  let local = 0;
+  let escalated = 0;
+  for (const task of resume.tasks) {
+    if (task.status !== 'done' && task.status !== 'escalated') continue;
+    const method = latestMethodByTask.get(task.id);
+    if (method) {
+      const completionClass = classifyTaskCompletionMethod(method);
+      if (completionClass === 'local') local += 1;
+      else if (completionClass === 'escalated') escalated += 1;
+      continue;
+    }
+    if (task.status === 'done') local += 1;
+    else escalated += 1;
+  }
+  return { local, escalated };
 }
 
 function perTaskFromResume(resume: WorkflowState): Record<string, PerTaskTokens> {
@@ -201,20 +260,49 @@ function perTaskFromResume(resume: WorkflowState): Record<string, PerTaskTokens>
       title: breakdown.taskTitle,
       attempts: [],
     };
-    const attempts = [
-      ...(existing.attempts ?? []),
-      {
-        method: breakdown.method,
-        implementerTokens: breakdown.implementerTokens,
-        escalationTokens: breakdown.escalationTokens,
-        retryCount: breakdown.retryCount,
-        ...(breakdown.tool !== undefined && { tool: breakdown.tool }),
-        ...(breakdown.model !== undefined && { model: breakdown.model }),
-      },
-    ];
+    const attempt: TaskAttemptTokens = {
+      method: breakdown.method,
+      implementerTokens: breakdown.implementerTokens,
+      escalationTokens: breakdown.escalationTokens,
+      retryCount: breakdown.retryCount,
+      ...(breakdown.implementerCacheReadTokens !== undefined && {
+        implementerCacheReadTokens: breakdown.implementerCacheReadTokens,
+      }),
+      ...(breakdown.implementerCacheCreateTokens !== undefined && {
+        implementerCacheCreateTokens: breakdown.implementerCacheCreateTokens,
+      }),
+      ...(breakdown.escalationCacheReadTokens !== undefined && {
+        escalationCacheReadTokens: breakdown.escalationCacheReadTokens,
+      }),
+      ...(breakdown.escalationCacheCreateTokens !== undefined && {
+        escalationCacheCreateTokens: breakdown.escalationCacheCreateTokens,
+      }),
+      ...(breakdown.tool !== undefined && { tool: breakdown.tool }),
+      ...(breakdown.model !== undefined && { model: breakdown.model }),
+      ...(breakdown.implementerProfile !== undefined && {
+        implementerProfile: breakdown.implementerProfile,
+      }),
+      ...(breakdown.contextFit !== undefined && { contextFit: breakdown.contextFit }),
+      ...(breakdown.estimatedTokens !== undefined && {
+        estimatedTokens: breakdown.estimatedTokens,
+      }),
+      ...(breakdown.untruncatedEstimatedTokens !== undefined && {
+        untruncatedEstimatedTokens: breakdown.untruncatedEstimatedTokens,
+      }),
+      ...(breakdown.contextLength !== undefined && { contextLength: breakdown.contextLength }),
+      ...(breakdown.currentCodeTruncated !== undefined && {
+        currentCodeTruncated: breakdown.currentCodeTruncated,
+      }),
+      ...(breakdown.currentCodeContextMode !== undefined && {
+        currentCodeContextMode: breakdown.currentCodeContextMode,
+      }),
+      ...(breakdown.costPosture !== undefined && { costPosture: breakdown.costPosture }),
+      ...(breakdown.routingReason !== undefined && { routingReason: breakdown.routingReason }),
+    };
+    const attempts = [...(existing.attempts ?? []), attempt];
     perTask[breakdown.taskId] = {
       title: breakdown.taskTitle,
-      totalTokens: attempts.reduce((sum, a) => sum + a.implementerTokens + a.escalationTokens, 0),
+      totalTokens: attempts.reduce((sum, a) => sum + taskAttemptTotalTokens(a), 0),
       attempts,
     };
   }
@@ -241,6 +329,8 @@ function acceptsEventAfterCancellation(event: EngineEvent): boolean {
     case 'runner_call_session_id':
     case 'runner_call_artifact':
       return true;
+    case 'runner_call_activity':
+      return event.stage !== 'started' && event.stage !== 'updated';
     default:
       return false;
   }

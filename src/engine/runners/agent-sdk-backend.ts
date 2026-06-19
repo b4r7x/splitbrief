@@ -1,4 +1,3 @@
-import type { InvokeResult } from './types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
@@ -11,6 +10,7 @@ import {
 } from '../session-expiry.js';
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { isRecord } from '../../utils/type-guards.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type {
@@ -28,6 +28,10 @@ type RunnerCallFailureStatus = Exclude<RunnerCallStatus, 'completed'>;
 
 interface SdkBlock {
   type: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
   text?: string;
 }
 
@@ -109,16 +113,33 @@ function extractAssistantText(message: SdkMessage): string {
   return extractTextFromBlocks(message.message?.content);
 }
 
+interface SdkToolUse {
+  id: string | null;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+function extractToolUses(message: SdkMessage): SdkToolUse[] {
+  const blocks = message.message?.content;
+  if (!blocks) return [];
+  const tools: SdkToolUse[] = [];
+  for (const block of blocks) {
+    if (block.type !== 'tool_use' || typeof block.name !== 'string') continue;
+    tools.push({
+      id: block.id ?? block.tool_use_id ?? null,
+      name: block.name,
+      input: isRecord(block.input) ? block.input : {},
+    });
+  }
+  return tools;
+}
+
 function extractResultText(message: SdkMessage): string {
   if (typeof message.result === 'string') return message.result;
   return extractTextFromBlocks(message.message?.content);
 }
 
-interface StreamResult {
-  text: string;
-  usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null;
-  sessionId: string | null;
-}
+type StreamResult = RunnerCallResult & { sessionId?: string | null };
 
 export interface ProcessStreamOptions {
   stream: AsyncIterable<SdkMessage>;
@@ -200,6 +221,9 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
       }
 
       if (message.type === 'assistant') {
+        for (const toolUse of extractToolUses(message)) {
+          recorder.toolUseDone({ toolUse });
+        }
         const text = extractAssistantText(message);
         if (text) {
           collectedText += text;
@@ -268,7 +292,7 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
   const result = recorder.finalResult();
   if (result.status !== 'completed') throwForSdkCallFailure(result);
 
-  return { text: collectedText, usage, sessionId };
+  return { ...result, text: collectedText, sessionId };
 }
 
 function createForwardedAbortController(signal: AbortSignal | undefined): {
@@ -310,7 +334,7 @@ export interface AgentSdkInvokeOpts {
 }
 
 export interface AgentSdkBackend {
-  invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
+  invoke(opts: AgentSdkInvokeOpts): Promise<RunnerCallResult>;
   detectChanges?: ChangeDetector;
 }
 
@@ -400,7 +424,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
           if (priorId) onSessionExpired?.(priorId);
         },
       );
-      return { text: result.text, usage: result.usage };
+      return result;
     },
   };
 

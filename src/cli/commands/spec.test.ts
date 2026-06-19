@@ -81,4 +81,52 @@ describe('spec command', () => {
     const specPath = join(sessionsRoot(), session, SPEC_FILE);
     expect(readFileSync(specPath, 'utf8')).toContain('# Generated Spec');
   });
+
+  it('strips terminal controls from streamed planner output', async () => {
+    const stdoutChunks: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    createPlannerMock.mockResolvedValue(
+      makePlanner({
+        plan: vi.fn().mockImplementation(async ({ callbacks }) => {
+          callbacks.onOutput('\u001b]52;c;clipboard-secret\u0007visible\u009b2K');
+          return {
+            spec: '# Generated Spec',
+            plan: '# Generated Plan',
+            tasks: [],
+            usage: null,
+            phases: [{ text: '# Generated Spec', filename: SPEC_FILE }],
+          };
+        }),
+      }),
+    );
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      const { registerSpecCommand } = await import('./spec.js');
+      registerSpecCommand(program);
+
+      await program.parseAsync([
+        'node',
+        'diptych',
+        'spec',
+        '--project',
+        tmp,
+        '--allow-hooks',
+        'add health endpoint',
+      ]);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+
+    const stdout = stdoutChunks.join('');
+    expect(stdout).toContain('visible');
+    expect(stdout).not.toContain('clipboard-secret');
+    expect(stdout).not.toContain('\u001b');
+    expect(stdout).not.toContain('\u0007');
+    expect(stdout).not.toContain('\u009b');
+  });
 });

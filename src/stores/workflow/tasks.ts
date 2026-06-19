@@ -1,7 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { TaskCompletionMethod, TaskStatus } from '../../core/schemas/enums.js';
-import { assertNever } from '../../utils/type-guards.js';
+import type { TaskStatus } from '../../core/schemas/enums.js';
+import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
 
 export interface WorkflowTask {
   id: string;
@@ -41,24 +41,6 @@ export const tasksStore = {
   __testReset,
 };
 
-function statusFromCompletionMethod(method: TaskCompletionMethod): TaskStatus {
-  switch (method) {
-    case 'failed':
-      return 'failed';
-    case 'skipped':
-      return 'skipped';
-    case 'escalated-full':
-    case 'escalated-hint':
-    case 'escalated-intermediate':
-      return 'escalated';
-    case 'local':
-    case 'mcp-tool':
-      return 'done';
-    default:
-      return assertNever(method);
-  }
-}
-
 export function updateTaskMap(
   taskMap: Map<string, WorkflowTask>,
   event: EngineEvent,
@@ -70,7 +52,7 @@ export function updateTaskMap(
   }
   if (event.type === 'task_completed' || event.type === 'task_skipped') {
     const status =
-      event.type === 'task_completed' ? statusFromCompletionMethod(event.method) : 'skipped';
+      event.type === 'task_completed' ? taskStatusForCompletionMethod(event.method) : 'skipped';
     const existing = taskMap.get(event.taskId);
     if (!existing || existing.status === status) return taskMap;
     const next = new Map(taskMap);

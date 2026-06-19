@@ -14,6 +14,11 @@ function Harness() {
   return <Text>{stats.pricingState}</Text>;
 }
 
+function CostHarness() {
+  const stats = useCostStats();
+  return <Text>{stats.costBreakdown?.totalActualCost.toFixed(2) ?? 'none'}</Text>;
+}
+
 describe('useCostStats', () => {
   beforeEach(() => {
     modelCacheStore.reset();
@@ -57,7 +62,99 @@ describe('useCostStats', () => {
     ]);
     await tick();
 
-    expect(ui.lastFrame()).toBe('mixed');
+    expect(ui.lastFrame()).toBe('priced');
+    ui.unmount();
+  });
+
+  it('preserves task-specific cache tokens when reconstructing task cost breakdowns', async () => {
+    modelCacheStore.setProviderModels('openai', [
+      {
+        id: 'runtime-priced-model',
+        pricingInput: 1,
+        pricingOutput: 1,
+        pricingCacheRead: 0.1,
+      },
+    ]);
+    tokensStore.__testReset({
+      localCount: 1,
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 1_000_000,
+        implementerOutput: 0,
+        implementerCacheRead: 1_000_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      perTask: {
+        T001: {
+          title: 'Use cached context elsewhere',
+          totalTokens: 1_000_000,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 1_000_000,
+              escalationTokens: 0,
+              retryCount: 0,
+              tool: 'openai',
+              model: 'runtime-priced-model',
+              implementerCacheReadTokens: 0,
+            },
+          ],
+        },
+      },
+    });
+
+    const ui = renderFeature(<CostHarness />);
+    await tick();
+
+    expect(ui.lastFrame()).toBe('1.10');
+    ui.unmount();
+  });
+
+  it('includes cache-only task attempts when reconstructing task cost breakdowns', async () => {
+    modelCacheStore.setProviderModels('openai', [
+      {
+        id: 'runtime-priced-model',
+        pricingInput: 1,
+        pricingOutput: 1,
+        pricingCacheRead: 0.1,
+      },
+    ]);
+    tokensStore.__testReset({
+      localCount: 1,
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        implementerCacheRead: 1_000_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      perTask: {
+        T001: {
+          title: 'Use cached context only',
+          totalTokens: 1_000_000,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 0,
+              escalationTokens: 0,
+              retryCount: 0,
+              tool: 'openai',
+              model: 'runtime-priced-model',
+              implementerCacheReadTokens: 1_000_000,
+            },
+          ],
+        },
+      },
+    });
+
+    const ui = renderFeature(<CostHarness />);
+    await tick();
+
+    expect(ui.lastFrame()).toBe('0.10');
     ui.unmount();
   });
 });

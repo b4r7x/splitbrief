@@ -3,6 +3,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { IpcPromptRequest } from '../../engine/ipc/protocol.js';
+import { taskId } from '../../core/schemas/task.js';
 import { SESSION_FILE_PATH_MAX_BYTES } from '../../core/sessions/confinement.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -14,8 +15,14 @@ import {
 } from './ipc-prompt-dispatcher.js';
 
 const budgetPausedIssue = {
+  id: 'rec-budget',
   reason: 'budget-paused' as const,
-  message: 'Budget pause at 87%',
+  phase: 'implementing' as const,
+  taskId: taskId('T001'),
+  taskTitle: 'Finish checkout',
+  files: ['src/checkout.ts'],
+  affectedTaskIds: [taskId('T001')],
+  selectedImplementerProfile: 'local-small',
   availableActions: [
     'continue' as const,
     'skip-current-task' as const,
@@ -23,19 +30,22 @@ const budgetPausedIssue = {
     'abort-workflow' as const,
   ],
   recommendedAction: 'continue' as const,
+  workerProfile: 'local-large',
+  facts: { safeToContinue: true },
 };
 
 const tmpDirs: string[] = [];
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
-function inputModeWith(prompts: string[], answer: string): UseInputModeResult {
+function inputModeWith(prompts: string[], answer: string | string[]): UseInputModeResult {
+  const answers = Array.isArray(answer) ? [...answer] : [answer];
   return {
     mode: 'normal',
     hint: '',
     setReviewMode: async () => ({ approved: false }),
     setQuestionMode: async (prompt: string) => {
       prompts.push(prompt);
-      return answer;
+      return answers.shift() ?? '';
     },
     resolve: () => {},
     resetMode: () => {},
@@ -83,7 +93,10 @@ describe('formatIpcRecoveryPrompt', () => {
   it('presents every available action, not a binary retry/abort', () => {
     const prompt = formatIpcRecoveryPrompt(budgetPausedIssue);
 
-    expect(prompt).toContain('Recovery needed: Budget pause at 87%');
+    expect(prompt).toContain('Recovery needed: budget-paused');
+    expect(prompt).toContain('Task: T001 - Finish checkout');
+    expect(prompt).toContain('Files: src/checkout.ts');
+    expect(prompt).toContain('Worker: local-large');
     expect(prompt).toContain('Recommended: continue');
     expect(prompt).toContain('[c] continue');
     expect(prompt).toContain('[s] skip task');
@@ -101,20 +114,23 @@ describe('parseIpcRecoveryAction', () => {
     expect(parseIpcRecoveryAction('space', budgetPausedIssue)).toBe('pause-run');
   });
 
-  it('falls back to pause for unavailable or unknown answers', () => {
-    expect(parseIpcRecoveryAction('r', budgetPausedIssue)).toBe('pause-run');
-    expect(parseIpcRecoveryAction('wat', budgetPausedIssue)).toBe('pause-run');
+  it('rejects unavailable or unknown answers', () => {
+    expect(parseIpcRecoveryAction('r', budgetPausedIssue)).toBeNull();
+    expect(parseIpcRecoveryAction('wat', budgetPausedIssue)).toBeNull();
     expect(parseIpcRecoveryAction(' ', budgetPausedIssue)).toBe('pause-run');
   });
 
-  it('falls back to the recommended action when pause is not offered', () => {
+  it('rejects unknown answers when pause is not offered', () => {
     const issue = {
+      id: 'rec-budget-exceeded',
       reason: 'budget-exceeded' as const,
-      message: 'Budget exceeded',
+      phase: 'implementing' as const,
+      files: [],
+      affectedTaskIds: [],
       availableActions: ['abort-workflow' as const],
       recommendedAction: 'abort-workflow' as const,
     };
-    expect(parseIpcRecoveryAction('wat', issue)).toBe('abort-workflow');
+    expect(parseIpcRecoveryAction('wat', issue)).toBeNull();
   });
 });
 
@@ -135,9 +151,9 @@ describe('createIpcPromptDispatcher recovery_needed', () => {
     expect(prompts[0]).toContain('[c] continue');
   });
 
-  it('does not coerce a non-retry issue into retry-same-worker', async () => {
+  it('re-prompts instead of coercing an unknown recovery answer', async () => {
     const prompts: string[] = [];
-    const dispatch = createIpcPromptDispatcher(inputModeWith(prompts, ''));
+    const dispatch = createIpcPromptDispatcher(inputModeWith(prompts, ['wat', ' ']));
 
     const response = await dispatch({
       requestId: 'req_2',
@@ -146,6 +162,11 @@ describe('createIpcPromptDispatcher recovery_needed', () => {
     });
 
     expect(response).toEqual({ kind: 'recovery_needed', action: 'pause-run' });
+    expect(prompts).toHaveLength(2);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Unknown recovery action.',
+    });
   });
 });
 

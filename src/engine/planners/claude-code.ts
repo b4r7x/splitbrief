@@ -8,6 +8,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude-invoke.js';
+import { toTokenDelta } from '../calls/projection.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import {
   createSessionAttemptCallContext,
@@ -78,9 +79,12 @@ export function createClaudeCodePlanner(opts: {
         images,
         signal,
       );
-      session.capture(result.sessionId);
-      if (result.sessionId) callbacks.onSessionId?.(result.sessionId);
-      return { text: result.text, usage: result.usage };
+      const nextSessionId = result.sessionId ?? result.nativeSessionId;
+      session.capture(nextSessionId);
+      if (nextSessionId) {
+        callbacks.onSessionId?.(nextSessionId);
+      }
+      return result;
     },
 
     async invokeEscalate({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) {
@@ -119,8 +123,8 @@ export function createClaudeCodePlanner(opts: {
         ...(effort !== undefined && { effort }),
         ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
       });
-      if (result.sessionId) session.capture(result.sessionId);
-      return result.usage;
+      session.capture(result.sessionId ?? result.nativeSessionId);
+      return toTokenDelta(result.usage);
     },
 
     capabilities: CONVERSATIONAL_CAPS,

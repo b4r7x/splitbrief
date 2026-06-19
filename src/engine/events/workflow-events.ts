@@ -1,6 +1,6 @@
 import type { TaskId } from '../../core/schemas/task.js';
+import type { TaskReviewRecovery } from '../../core/schemas/recovery.js';
 import type {
-  RecoveryReason,
   TaskStatus,
   UserEditConflictKind,
   UserEditConflictAction,
@@ -9,6 +9,7 @@ import type {
 } from '../../core/schemas/enums.js';
 import { UserEditConflictActionSchema } from '../../core/schemas/enums.js';
 import type { TokenUsage, TaskTokenUsage } from '../../core/schemas/tokens.js';
+import { includes } from '../../utils/type-guards.js';
 
 export function isUserEditConflictAction(value: string): value is UserEditConflictAction {
   return UserEditConflictActionSchema.safeParse(value).success;
@@ -40,6 +41,10 @@ export const TASK_REVIEW_COMMANDS = [
 ] as const;
 export type TaskReviewCommand = (typeof TASK_REVIEW_COMMANDS)[number];
 export type TaskReviewAction = Exclude<TaskReviewCommand, 'edit-notes'>;
+
+export function isTaskReviewAction(value: unknown): value is TaskReviewAction {
+  return includes(TASK_REVIEW_COMMANDS, value) && value !== 'edit-notes';
+}
 
 export type TaskReviewValidation = {
   passed: boolean | null;
@@ -79,14 +84,7 @@ export type TaskReviewRequest = {
         reason: string;
       }
     | undefined;
-  recovery?:
-    | {
-        reason: RecoveryReason;
-        message: string;
-        availableActions: string[];
-        recommendedAction: string;
-      }
-    | undefined;
+  recovery?: TaskReviewRecovery | undefined;
   availableCommands: TaskReviewCommand[];
 };
 

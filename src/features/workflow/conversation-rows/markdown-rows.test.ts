@@ -78,6 +78,19 @@ describe('markdownConversationRows', () => {
     expect(text).not.toContain('\u0007');
   });
 
+  it('redacts secrets before laying out conversation markdown rows', () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown',
+      text: `planner secret ${secret}`,
+      width: 80,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('REDACTED');
+    expect(text).not.toContain(secret);
+  });
+
   it('wraps CJK, emoji, and combining marks by terminal cells', () => {
     const developerEmoji = '👩‍💻';
     const rows = markdownConversationRows({

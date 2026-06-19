@@ -192,6 +192,28 @@ describe('calculateCostBreakdown', () => {
     });
   });
 
+  it('preserves negative savings when routed execution is more expensive than all-planner', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'deepseek',
+      plannerModel: 'deepseek-chat',
+      implementerTool: 'anthropic',
+      implementerModel: 'claude-sonnet-4-6',
+    });
+
+    expect(result.hasSavingsEstimate).toBe(true);
+    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
+    expect(result.savingsAmount).toBeLessThan(0);
+    expect(result.savingsPercentage).toBeLessThan(0);
+  });
+
   it('all-planner baseline includes planner spend without changing savings amount', () => {
     const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
 
@@ -453,6 +475,69 @@ describe('calculateCostBreakdown', () => {
     expect(deepseek.cost).toBeCloseTo(0.315, 10);
 
     expect(result.actualImplementerCost).toBeCloseTo(4.815, 10);
+  });
+
+  it('includes cache-only task-aware implementer usage', () => {
+    const usage = makeUsage({
+      implementerCacheRead: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'cache-only paid task',
+          method: 'local',
+          implementerTokens: 0,
+          escalationTokens: 0,
+          implementerCacheReadTokens: 1_000_000,
+          implementerCacheCreateTokens: 0,
+          retryCount: 0,
+          tool: 'anthropic',
+          model: 'claude-sonnet-4-6',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.3, 10);
+    expect(result.isActualImplementerCostKnown).toBe(true);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(false);
+    expect(result.providerCosts).toEqual({
+      anthropic: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 1_000_000,
+        cost: result.actualImplementerCost,
+      },
+    });
+  });
+
+  it('does not mark planner-only runs unpriced because the unused implementer is local', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 0,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.actualPlannerCost).toBeGreaterThan(0);
+    expect(result.actualImplementerCost).toBe(0);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(false);
+    expect(result.isTotalActualCostKnown).toBe(true);
   });
 });
 

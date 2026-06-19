@@ -50,6 +50,7 @@ describe('startPlannerHeartbeat', () => {
   it('includes the latest token and phase hint metadata in heartbeat events', () => {
     const bus = createMockBus();
     const handle = startPlannerHeartbeat(bus, 'planning', Date.now());
+    handle.updateCallId('planner-call-1');
     handle.updateTokens(750);
     handle.updatePhaseHint('analyzing repo map');
 
@@ -57,6 +58,7 @@ describe('startPlannerHeartbeat', () => {
     expect(bus.published).toHaveLength(1);
     const event = bus.published[0]!;
     if (event.type === 'planner_heartbeat') {
+      expect(event.callId).toBe('planner-call-1');
       expect(event.accumulatedTokens).toBe(750);
       expect(event.phaseHint).toBe('analyzing repo map');
     }

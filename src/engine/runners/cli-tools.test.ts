@@ -74,8 +74,8 @@ const IMPLEMENTER_SCENARIOS: ImplementerScenario[] = [
   },
   {
     tool: 'opencode',
-    implementerBare: ['run', 'prompt'],
-    implementerWithModel: ['run', '--model', 'claude-sonnet-4-6', 'prompt'],
+    implementerBare: ['run', '--format', 'json', 'prompt'],
+    implementerWithModel: ['run', '--model', 'claude-sonnet-4-6', '--format', 'json', 'prompt'],
   },
   {
     tool: 'aider',

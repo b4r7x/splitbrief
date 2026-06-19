@@ -57,6 +57,7 @@ stateDiagram-v2
     validating_task --> implementing : VALIDATION_FAIL (attempt < max)
     validating_task --> escalating : VALIDATION_FAIL (attempt >= max)
 
+    implementing --> implementing : HINT_SUCCESS (intermediate retry)
     escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS
 
     final_review --> complete : REVIEW_DONE
@@ -96,7 +97,8 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `validating-task` | `VALIDATION_FAIL` (attempt < maxRetries) | `implementing` | Increments `attempt` |
 | `validating-task` | `VALIDATION_FAIL` (attempt >= maxRetries) | `escalating` | — |
 | `validating-task` | `ESCALATE` | `escalating` | — |
-| `escalating` | `HINT_SUCCESS` | `implementing` | Marks task `done`, advances index |
+| `implementing` | `HINT_SUCCESS` | `implementing` | Marks task `escalated`, advances index. Used by successful intermediate-model retry while still in the implementing phase. |
+| `escalating` | `HINT_SUCCESS` | `implementing` | Marks task `escalated`, advances index |
 | `escalating` | `HINT_FAIL` | `escalating` | Falls through to full escalation |
 | `escalating` | `FULL_SUCCESS` | `implementing` | Marks task `escalated`, advances index |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
@@ -119,14 +121,15 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `CONTINUE_TURN` | Sets `awaitingContinue: false`. User pressed Enter. |
 | `SET_PLANNER_SESSION_ID` | Stores backend session handle for resume. |
 | `ENQUEUE_USER_MSG` | Appends message to `messageQueue`. |
-| `MARK_DELIVERED_NATIVE` | Marks a queued message as delivered to the live native session. |
-| `DRAIN_QUEUE` | Timestamps all un-drained messages with `drainedAt`. |
-| `CLEAR_QUEUE` | Removes all drained messages from the queue. |
+| `MARK_INJECTING_NATIVE` | Marks a queued message as currently being delivered to the live native session. |
+| `MARK_DELIVERED_NATIVE` | Marks a queued message as delivered to the live native session and no longer pending. |
+| `MARK_NATIVE_DELIVERY_FAILED` | Moves an injecting message back to pending delivery. |
+| `DRAIN_QUEUE` | Timestamps pending-undelivered messages with `drainedAt`. |
+| `CLEAR_QUEUE` | Removes pending or injecting undelivered messages from the queue. Delivered and already-drained messages remain as history. |
 | `SET_PENDING_RECOVERY` | Sets `pendingRecovery` to the provided `RecoveryIssue`. |
 | `MARK_RECOVERY_APPLYING` | Records selected recovery action and timestamp on `pendingRecovery`. |
 | `PAUSE_PENDING_RECOVERY` | Sets `pendingRecovery.status` to `'paused'`. |
-| `CLEAR_PENDING_RECOVERY` | Removes `pendingRecovery`. |
-| `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` (same effect as clear; semantic distinction). |
+| `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` after the selected recovery path is handled. |
 | `REWIND_TO_SPEC` | Sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`. |
 | `REWIND_TO_PLAN` | Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
 | `CLEAR_REWIND_PENDING` | Removes `rewindPending`. |
@@ -211,16 +214,18 @@ Four user actions during a live phase:
 
 | Action | Trigger | Effect |
 |--------|---------|--------|
-| Queue message | Type + Enter | Appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Drained at next safe-point. |
+| Queue message | Type + Enter | During live planner phases, appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Still-pending delivery entries drain at the next safe-point. |
 | Abort turn | Ctrl-C (single) | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `ABORT_TURN` → `awaitingContinue: true`. |
 | Exit workflow | Ctrl-C twice within 2s | Exits after state is saved. The TUI unmounts; the saved state may be resumable later with `diptych continue <session-id>`. |
 | Continue | Enter (from awaiting-continue) | Dispatches `CONTINUE_TURN` → `awaitingContinue: false`. Next planner call includes queued messages and partial context. |
 
-**Queue scope.** Planner-only. Mid-task interjection at the implementer level is disallowed — small local models lose coherence when their task prompt is perturbed mid-call.
+**Queue scope.** Planner-only across local TUI, attached clients, and RPC. Mid-task interjection at the implementer, validation, or escalation level is rejected instead of being queued or injected into the planner, because small local models lose coherence when their task prompt is perturbed mid-call.
 
 **Abort scope.** Live model-call phases only: `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`. Validation is resumable from saved state, but it is not a live input phase.
 
-**Queue lifecycle.** `ENQUEUE_USER_MSG` appends. `MARK_DELIVERED_NATIVE` flags a message as delivered to the native session. `DRAIN_QUEUE` timestamps all un-drained messages. `CLEAR_QUEUE` removes drained entries. On the next safe-point the orchestrator reads the queue, folds contents into the next prompt as `[user also says: ...]`, and drains.
+**Queue lifecycle.** `ENQUEUE_USER_MSG` appends. Native delivery moves through `MARK_INJECTING_NATIVE` to `MARK_DELIVERED_NATIVE`, or back to pending with `MARK_NATIVE_DELIVERY_FAILED`. `DRAIN_QUEUE` timestamps pending-undelivered messages. `CLEAR_QUEUE` removes pending or injecting undelivered messages. On the next safe-point the orchestrator reads pending-undelivered queue entries, folds contents into the next prompt as `[user also says: ...]`, and drains.
+
+Queue submissions return accepted/rejected results. Rejections include planner-unavailable phases and the 50-message cap; both publish a bounded warning. Local UI shows feedback near the composer, while RPC reports an error/non-ACK. `/queue show` reports pending-undelivered messages. `/queue clear` clears pending or injecting undelivered messages from the live workflow queue when a live clear handler is available; attached/RPC clients route through that handler instead of clearing only local state, and otherwise report unavailable.
 
 **Esc Esc aborts (two-press ladder).** On the workflow screen, the first Esc arms an abort intent — `interrupt` while a live phase runs, or `cancel` while a question prompt is open (`abortStore.arm(...)` in `src/app/keys.ts`); a second Esc fires it, interrupting the step or cancelling the workflow. The armed intent auto-clears after 2 seconds. With an overlay open, Esc closes the topmost overlay instead. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys for the full key map.
 
@@ -289,6 +294,8 @@ Resume uses the capability matrix:
 3. Rebuild from `session.jsonl`: read transcript messages, use latest compact summary entry plus later messages. Pass as initial context to fresh planner call.
 4. If `persistTranscript: false` and step 1 failed → no transcript context is available. `applyRebuiltContext()` publishes a warning and continues with Task Brief transport plus any supporting spec/plan as handoff.
 
+Pending queue entries remain in `state.json` regardless of transcript persistence. Resume excludes still-pending queued user messages from stateless transcript rebuild so they are not duplicated, but `resetWorkflow(resume)` reconstructs queue depth and previews from those pending entries so the footer and `/queue show` still reflect them.
+
 In-flight tasks: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. They are re-run from the Task Brief with refreshed `currentCode`.
 
 ---
@@ -304,6 +311,8 @@ When a task fails validation `maxRetries` times:
 
 Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `budget-paused`, `budget-exceeded`, `dependency-blocked`.
 
+Budget-paused recovery can come from crossing `workflow.budgetPauseThreshold` or from paid/API usage whose model pricing is unknown. Unknown local-only usage does not dollar-pause by itself; it remains visible as local/unpriced.
+
 Recovery actions:
 
 | Action | Effect |
@@ -316,7 +325,7 @@ Recovery actions:
 | `abort-workflow` | Exits through normal shutdown |
 | `planner-split-rebase` | Legacy/manual only; new prompts do not offer it, and old states block with `planner-proposal-required` |
 
-Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `CLEAR_PENDING_RECOVERY` or `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `diptych resume`.
+Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `diptych resume`.
 
 ---
 
@@ -360,9 +369,15 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 12. phase: implementing → BRIEFS_READY → reviewing-briefs
     callbacks.onApprovalNeeded('briefs', tasksPath)
     Approval reads tasks.md from disk, reparses, re-runs quality gate.
+    In simple review, e/edit switches to rich review without opening $EDITOR;
+    E/edit-file explicitly opens tasks.md in $EDITOR.
+    In rich review, tab opens semantic sections for the selected task,
+    e edits a section, Ctrl+Enter saves it, and c copies source text.
 
 13. phase: reviewing-briefs → APPROVE_BRIEFS → implementing
-    Cost prediction published. Cost gate checked.
+    Prompt-input cost prediction published. Cost gate checked. Runtime output,
+    retries, validation reruns, escalation, and unknown paid pricing are tracked
+    as the run proceeds.
 
 14. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
@@ -381,7 +396,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     summary.json written. .diptych/active cleared. Session done.
 ```
 
-During live model-call phases, single Ctrl-C enters `awaitingContinue`; double Ctrl-C exits. Messages typed during live planner phases queue and drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
+During live model-call phases, single Ctrl-C enters `awaitingContinue`; double Ctrl-C exits. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
 
 ---
 
@@ -421,10 +436,10 @@ type QueuedMessage = {
   queuedAt: string                        // ISO 8601
   phase: Phase
   deliveredViaNative: boolean
+  nativeDeliveryState: 'pending' | 'injecting' | 'delivered'
   drainedAt?: string
   origin?: 'user-input' | 'clarification'
   question?: string
-  questionId?: string
 }
 ```
 

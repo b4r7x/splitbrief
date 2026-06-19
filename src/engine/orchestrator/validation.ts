@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Task } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { ValidationStages } from '../events/types.js';
+import type { ValidationStageCommands, ValidationStages } from '../events/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { runCommand } from '../../lib/process/spawn.js';
@@ -19,6 +19,7 @@ import { sanitizeDiscoveredValidation } from './planning/sanitize-discovered-val
 import type { ValidationResult } from './validation-result.js';
 
 const MAX_ERROR_LINES = 20;
+const MAX_VALIDATION_COMMAND_CHARS = 240;
 const DEFAULT_VALIDATION_TIMEOUT_MS = 600_000;
 const MISSING_SUBCOMMAND_EXIT_CODE = 101;
 export type ValidationCommandRunner = typeof runCommand;
@@ -145,6 +146,12 @@ function skippedStage(stage: ValidationResult['stage'], reason: string): Validat
   return { passed: true, stage, skipped: true, output: `skipped ${stage}: ${reason}` };
 }
 
+interface ValidationProgress {
+  stages: ValidationStages;
+  activeStage?: ValidationStage | undefined;
+  commands: ValidationStageCommands;
+}
+
 function typecheckDefaultCommand(projectDir: string): ResolvedCommand | null {
   return isTypeScriptProject(projectDir)
     ? { cmd: 'npx', args: ['tsc', '--noEmit'], source: 'default' }
@@ -170,6 +177,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     ) => {
       if (!resolved) return;
       const args = target !== undefined ? [...resolved.args, '--', target] : resolved.args;
+      const command = formatValidationCommand(resolved.cmd, args);
       const result = await runValidationStep({
         stage,
         cmd: resolved.cmd,
@@ -178,6 +186,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         cwd: projectDir,
         timeout: resolveValidationTimeout(config),
         runCommand: commandRunner,
+        command,
       });
       if (!result.passed) failing.add(stage);
     };
@@ -224,10 +233,11 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     config: Config,
     discovered: DiscoveredValidation | undefined,
     heuristic: DiscoveredValidation | null,
-    onStageComplete?: (stages: ValidationStages) => void,
+    onProgress?: (progress: ValidationProgress) => void,
   ): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
     const stages: ValidationStages = { typecheck: false, lint: false, test: false };
+    const commands: ValidationStageCommands = {};
 
     const runAndRecordStage = async (
       stage: ValidationResult['stage'],
@@ -235,6 +245,9 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       target?: string,
     ): Promise<'continue' | 'stop'> => {
       const args = target !== undefined ? [...resolved.args, '--', target] : resolved.args;
+      const command = formatValidationCommand(resolved.cmd, args);
+      commands[stage] = command;
+      onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
       const result = await runValidationStep({
         stage,
         cmd: resolved.cmd,
@@ -243,11 +256,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         cwd: projectDir,
         timeout: resolveValidationTimeout(config),
         runCommand: commandRunner,
+        command,
       });
       results.push(result);
       if (!result.passed) return 'stop';
       stages[stage] = true;
-      onStageComplete?.(stages);
+      onProgress?.({ stages: { ...stages }, commands: { ...commands } });
       return 'continue';
     };
 
@@ -330,11 +344,13 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       config,
       sanitizedDiscovered,
       heuristic,
-      (stages) => {
+      (progress) => {
         publishValidation({ bus: bus, phase: phase }, taskId, {
           phase: 'progress',
-          stages,
+          stages: progress.stages,
           startTime,
+          ...(progress.activeStage !== undefined && { activeStage: progress.activeStage }),
+          commands: progress.commands,
         });
       },
     );
@@ -360,6 +376,10 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
 const MAX_VALIDATION_OUTPUT_CHARS = 4096;
 const MAX_TEST_FAILURE_TAIL_LINES = 40;
 
+function formatValidationCommand(cmd: string, args: string[]): string {
+  return redactSecrets(truncateByChars([cmd, ...args].join(' '), MAX_VALIDATION_COMMAND_CHARS));
+}
+
 function sanitizeValidationOutput(text: string): string {
   return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
 }
@@ -384,11 +404,12 @@ async function runValidationStep(opts: {
   cwd: string;
   timeout: number;
   runCommand: ValidationCommandRunner;
+  command: string;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, source, cwd, timeout, runCommand } = opts;
+  const { stage, cmd, args, source, cwd, timeout, runCommand, command } = opts;
   try {
     const { stdout } = await runCommand(cmd, args, { cwd, timeout, label: `${stage} validation` });
-    return { passed: true, stage, output: sanitizeValidationOutput(stdout) };
+    return { passed: true, stage, output: sanitizeValidationOutput(stdout), command };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
       if (source === 'config') {
@@ -397,6 +418,7 @@ async function runValidationStep(opts: {
           stage,
           error: `Configured ${stage} command not found: ${cmd}`,
           output: '',
+          command,
         };
       }
       return {
@@ -404,6 +426,7 @@ async function runValidationStep(opts: {
         stage,
         skipped: true,
         output: `${cmd} not found, skipping ${stage}`,
+        command,
       };
     }
     if (processError.isTimeout(err)) {
@@ -412,6 +435,7 @@ async function runValidationStep(opts: {
         stage,
         error: sanitizeValidationOutput(err.message),
         output: '',
+        command,
       };
     }
     if (processError.isExitCode(err)) {
@@ -422,6 +446,7 @@ async function runValidationStep(opts: {
           stage,
           skipped: true,
           output: `${cmd} subcommand unavailable, skipping ${stage}`,
+          command,
         };
       }
       const stdout = String(output ?? '');
@@ -431,6 +456,7 @@ async function runValidationStep(opts: {
         stage,
         output: sanitizeValidationOutput(stdout),
         error: sanitizeValidationOutput(errText),
+        command,
       };
     }
     throw err;

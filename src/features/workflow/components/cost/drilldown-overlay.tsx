@@ -2,15 +2,23 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { tokensStore } from '../../../../stores/workflow/tokens.js';
-import type { PerTaskTokens, PhaseTokens } from '../../../../stores/workflow/tokens.js';
+import type {
+  PerTaskTokens,
+  PhaseTokens,
+  TaskAttemptTokens,
+} from '../../../../stores/workflow/tokens.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache.js';
 import { formatCost, formatTokensShort } from '../../../../core/formatting.js';
 import { formatCacheHitPct } from '../../layout/cost-chrome.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { calculateUsageCost } from '../../../../engine/providers/cost-math.js';
+import {
+  calculateUsageCost,
+  resolveTaskPricingModel,
+} from '../../../../engine/providers/cost-math.js';
 import {
   resolvePricing,
+  type PricingMode,
   type ResolvedPricing,
 } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
@@ -18,10 +26,13 @@ import { PhaseSchema, type Phase } from '../../../../core/schemas/enums.js';
 import { renderMeterBar } from '../../../../utils/meter-bar.js';
 
 type PhaseRowData = PhaseTokens & { phase: Phase };
+type PricingContext = NonNullable<ReturnType<typeof tokensStore.get>['pricingContext']>;
 
 export type PhaseRow = PhaseRowData & { cost: number };
 
-export type TaskRow = { taskId: string } & Pick<PerTaskTokens, 'title'> & { totalTokens: number };
+export type TaskRow = { taskId: string } & Pick<PerTaskTokens, 'title' | 'attempts'> & {
+    totalTokens: number;
+  };
 
 export function buildPhaseRows(
   perPhase: Partial<Record<Phase, PhaseTokens>>,
@@ -41,8 +52,31 @@ export function buildPhaseRows(
 
 export function buildTaskRows(perTask: Record<string, PerTaskTokens>): TaskRow[] {
   return Object.entries(perTask)
-    .map(([taskId, data]) => ({ taskId, title: data.title, totalTokens: data.totalTokens }))
+    .flatMap(([taskId, data]) => {
+      const attempts = data.attempts ?? [];
+      if (data.totalTokens === 0 && !attempts.some(attemptHasTokens)) return [];
+      return [
+        {
+          taskId,
+          title: data.title,
+          totalTokens: data.totalTokens,
+          attempts: data.attempts,
+        },
+      ];
+    })
     .sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
+function attemptHasTokens(attempt: TaskAttemptTokens): boolean {
+  return (
+    attempt.implementerTokens +
+      attempt.escalationTokens +
+      (attempt.implementerCacheReadTokens ?? 0) +
+      (attempt.implementerCacheCreateTokens ?? 0) +
+      (attempt.escalationCacheReadTokens ?? 0) +
+      (attempt.escalationCacheCreateTokens ?? 0) >
+    0
+  );
 }
 
 export function renderBar(options: { value: number; max: number; width: number }): string {
@@ -74,6 +108,87 @@ export function formatTotalTokens(totalTokens: number): string {
     return `${formatTokensShort(totalTokens)} tokens (total)`;
   }
   return `${totalTokens} tokens (total)`;
+}
+
+function formatAttemptFit(attempt: TaskAttemptTokens): string {
+  if (!attempt.contextFit) return '';
+  if (attempt.estimatedTokens !== undefined && attempt.contextLength !== undefined) {
+    return `fit ${attempt.contextFit} ${formatTokensShort(attempt.estimatedTokens)}/${formatTokensShort(attempt.contextLength)}`;
+  }
+  if (attempt.estimatedTokens !== undefined) {
+    return `fit ${attempt.contextFit} ${formatTokensShort(attempt.estimatedTokens)}`;
+  }
+  return `fit ${attempt.contextFit}`;
+}
+
+function formatCostPostureLabel(costPosture: string | undefined): string {
+  if (!costPosture) return '';
+  const lower = costPosture.toLowerCase();
+  if (lower.includes('unknown') && lower.includes('price')) return 'price unknown';
+  if (lower.includes('unknown') && lower.includes('cost')) return 'cost unknown';
+  if (lower.includes('unpriced')) return 'unpriced';
+  if (lower.includes('local')) return 'local';
+  return '';
+}
+
+function pricingModeLabel(mode: PricingMode): string {
+  if (mode === 'unpriced-local') return 'local';
+  if (mode === 'unpriced-cli' || mode === 'unpriced-meta') return 'unpriced';
+  if (mode === 'unpriced-unknown') return 'price unknown';
+  return '';
+}
+
+function formatAttemptPricingLabel(
+  attempt: TaskAttemptTokens,
+  pricingContext: PricingContext | null,
+): string {
+  const posture = formatCostPostureLabel(attempt.costPosture);
+  if (posture) return posture;
+  const implementerUsageTokens =
+    attempt.implementerTokens +
+    (attempt.implementerCacheReadTokens ?? 0) +
+    (attempt.implementerCacheCreateTokens ?? 0);
+  if (!pricingContext || implementerUsageTokens <= 0) return '';
+  const taskTool = attempt.tool ?? pricingContext.implementerTool;
+  const taskModel = resolveTaskPricingModel({
+    taskTool,
+    fallbackTool: pricingContext.implementerTool,
+    taskModel: attempt.model,
+    fallbackModel: pricingContext.implementerModel,
+  });
+  const pricing = resolvePricing(taskTool, modelCacheStore, taskModel);
+  if (
+    pricing.isPriced &&
+    (((attempt.implementerCacheReadTokens ?? 0) > 0 && pricing.cacheReadPer1M === undefined) ||
+      ((attempt.implementerCacheCreateTokens ?? 0) > 0 && pricing.cacheWritePer1M === undefined))
+  ) {
+    return 'price partially unknown';
+  }
+  return pricingModeLabel(pricing.pricingMode);
+}
+
+function formatTaskAttemptMetadata(
+  attempt: TaskAttemptTokens,
+  pricingContext: PricingContext | null,
+): string {
+  const fit = formatAttemptFit(attempt);
+  const pricing = formatAttemptPricingLabel(attempt, pricingContext);
+  const routingReason =
+    attempt.routingReason && shouldShowRoutingReason(attempt, pricing)
+      ? `why ${attempt.routingReason}`
+      : '';
+  const parts = [
+    attempt.implementerProfile ? `profile ${attempt.implementerProfile}` : '',
+    fit,
+    pricing,
+    routingReason,
+  ];
+  return parts.filter(Boolean).join(' · ');
+}
+
+function shouldShowRoutingReason(attempt: TaskAttemptTokens, pricingLabel: string): boolean {
+  if (attempt.contextFit === 'tight' || attempt.contextFit === 'overflow') return true;
+  return pricingLabel.includes('unknown');
 }
 
 export function formatPhaseCost(options: {
@@ -240,6 +355,7 @@ export function CostDrilldownOverlay() {
           const split = hasRoleSplit(row);
           const plannerActive = roleHasTokens(row, 'planner');
           const implementerActive = roleHasTokens(row, 'implementer');
+          const cacheText = formatCacheHitPct(row.cacheReadTokens, row.inputTokens);
           const plannerPriced = plannerActive && (plannerPricing?.isPriced ?? false);
           const implementerPriced = implementerActive && (implementerPricing?.isPriced ?? false);
           const costLabel = split
@@ -274,9 +390,7 @@ export function CostDrilldownOverlay() {
                     outputTokens: row.outputTokens,
                   })}
                 </Text>
-                <Text color={t.textDim}>
-                  {formatCacheHitPct(row.cacheReadTokens, row.inputTokens)}
-                </Text>
+                {cacheText !== 'cache n/a' && <Text color={t.textDim}>{cacheText}</Text>}
                 {row.cacheCreateTokens > 0 && (
                   <Text color={t.textDim}>{formatCacheCreateTokens(row.cacheCreateTokens)}</Text>
                 )}
@@ -289,12 +403,24 @@ export function CostDrilldownOverlay() {
         <Box height={1} />
         <Text color={t.textDim}>— by task —</Text>
         {taskRows.map((row) => (
-          <Box key={row.taskId} gap={1}>
-            <Text color={t.text}>{row.title.slice(0, 20).padEnd(20)}</Text>
-            <Text color={t.accent}>
-              {renderBar({ value: row.totalTokens, max: maxTaskTokens, width: barWidth })}
-            </Text>
-            <Text color={t.textDim}>{formatTotalTokens(row.totalTokens)}</Text>
+          <Box key={row.taskId} flexDirection="column">
+            <Box gap={1}>
+              <Text color={t.text}>{row.title.slice(0, 20).padEnd(20)}</Text>
+              <Text color={t.accent}>
+                {renderBar({ value: row.totalTokens, max: maxTaskTokens, width: barWidth })}
+              </Text>
+              <Text color={t.textDim}>{formatTotalTokens(row.totalTokens)}</Text>
+            </Box>
+            {(row.attempts ?? []).map((attempt, index) => {
+              const metadata = formatTaskAttemptMetadata(attempt, pricingContext);
+              if (!metadata) return null;
+              const prefix = (row.attempts?.length ?? 0) > 1 ? `attempt ${index + 1} · ` : '';
+              return (
+                <Box key={`${row.taskId}-${index}`} marginLeft={2}>
+                  <Text color={t.textDim}>{prefix + metadata}</Text>
+                </Box>
+              );
+            })}
           </Box>
         ))}
         {taskRows.length === 0 && <Text color={t.textDim}>No task data yet.</Text>}

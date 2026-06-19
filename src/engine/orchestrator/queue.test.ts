@@ -45,10 +45,16 @@ function makeSpecifyingState(): WorkflowState {
   return state;
 }
 
-function makeStateWithQueue(messages: Omit<QueuedMessage, 'deliveredViaNative'>[]): WorkflowState {
+function makeStateWithQueue(
+  messages: Omit<QueuedMessage, 'deliveredViaNative' | 'nativeDeliveryState'>[],
+): WorkflowState {
   let state = createInitialState('test-feature');
   state = transition(state, { type: 'START' });
-  const fullMessages: QueuedMessage[] = messages.map((m) => ({ ...m, deliveredViaNative: false }));
+  const fullMessages: QueuedMessage[] = messages.map((m) => ({
+    ...m,
+    deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
+  }));
   return { ...state, messageQueue: fullMessages };
 }
 
@@ -59,6 +65,7 @@ function makeMessage(text = 'test message'): QueuedMessage {
     queuedAt: new Date().toISOString(),
     phase: 'researching',
     deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
   };
 }
 
@@ -82,14 +89,42 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('hello world', 'researching');
-    await new Promise((r) => setTimeout(r, 0));
+    const result = await handler('hello world', 'researching');
 
+    expect(result.status).toBe('accepted');
     expect(state?.messageQueue).toHaveLength(1);
     expect(state?.messageQueue[0]?.text).toBe('hello world');
     expect(state?.messageQueue[0]?.phase).toBe('researching');
     expect(state?.messageQueue[0]?.deliveredViaNative).toBe(false);
     expect(events.find((e) => e.type === 'message_queued')).toBeDefined();
+  });
+
+  it('emits a redacted preview for queued messages', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeResearchingState();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner();
+
+    const handler = createQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
+      bus,
+      persistTranscript: false,
+      planner,
+      serialize: createWriteSequencer(),
+    });
+
+    const result = await handler('token sk-proj-abcdefghijklmnopqrstuvwxyz', 'researching');
+
+    expect(result.status).toBe('accepted');
+    const queued = events.find((event) => event.type === 'message_queued');
+    if (!queued || queued.type !== 'message_queued') throw new Error('message_queued missing');
+    expect(queued.preview).toContain('sk-***REDACTED***');
+    expect(queued.preview).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 
   it('delivers queued input natively when the planner supports injection', async () => {
@@ -125,10 +160,11 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('inject me', 'researching');
+    const result = await handler('inject me', 'researching');
 
     await new Promise((r) => setTimeout(r, 0));
 
+    expect(result.status).toBe('accepted');
     expect(injectedTurns).toHaveLength(1);
     expect(injectedTurns[0]?.text).toBe('inject me');
     expect(injectedTurns[0]?.dir).toBe(projectDir);
@@ -164,9 +200,9 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('no state', 'researching');
-    await new Promise((r) => setTimeout(r, 0));
+    const result = await handler('no state', 'researching');
 
+    expect(result.status).toBe('rejected');
     expect(writtenState).toBeUndefined();
     expect(events.find((e) => e.type === 'message_queued')).toBeUndefined();
   });
@@ -183,6 +219,7 @@ describe('enqueue', () => {
       queuedAt: new Date().toISOString(),
       phase: 'researching' as const,
       deliveredViaNative: false,
+      nativeDeliveryState: 'pending' as const,
     }));
     state = { ...state!, messageQueue: fakeMessages };
 
@@ -199,12 +236,41 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('overflow', 'researching');
-    await new Promise((r) => setTimeout(r, 0));
+    const result = await handler('overflow', 'researching');
 
+    expect(result).toMatchObject({ status: 'rejected', reason: 'queue-full' });
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
     expect(state?.messageQueue).toHaveLength(50);
+  });
+
+  it('rejects input outside planner live phases at the shared queue boundary', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = {
+      ...makeResearchingState(),
+      phase: 'implementing',
+    };
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner();
+
+    const handler = createQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
+      bus,
+      persistTranscript: false,
+      planner,
+      serialize: createWriteSequencer(),
+    });
+
+    const result = await handler('should not queue', 'implementing');
+
+    expect(result).toMatchObject({ status: 'rejected', reason: 'phase-unavailable' });
+    expect(state?.messageQueue).toHaveLength(0);
+    expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
   });
 
   it('persists later messages before a slow native injection resolves', async () => {
@@ -245,10 +311,12 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('first', 'researching');
-    handler('second', 'researching');
+    const first = handler('first', 'researching');
+    const second = handler('second', 'researching');
     await new Promise((r) => setTimeout(r, 0));
 
+    await expect(first).resolves.toMatchObject({ status: 'accepted' });
+    await expect(second).resolves.toMatchObject({ status: 'accepted' });
     expect(state?.messageQueue.map((m) => m.text)).toEqual(['first', 'second']);
     expect(loadState({ projectDir, sessionId })?.messageQueue.map((m) => m.text)).toEqual([
       'first',
@@ -279,12 +347,13 @@ describe('enqueue', () => {
       serialize,
     });
 
-    handler('first', 'researching');
-    handler('second', 'researching');
-    handler('third', 'researching');
+    const results = await Promise.all([
+      handler('first', 'researching'),
+      handler('second', 'researching'),
+      handler('third', 'researching'),
+    ]);
 
-    await new Promise((r) => setTimeout(r, 10));
-
+    expect(results.every((result) => result.status === 'accepted')).toBe(true);
     expect(state?.messageQueue).toHaveLength(3);
     expect(state?.messageQueue.map((m) => m.text)).toEqual(['first', 'second', 'third']);
   });
@@ -313,8 +382,9 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    handler('do not drop me', 'researching');
-    await new Promise((r) => setTimeout(r, 0));
+    await expect(handler('do not drop me', 'researching')).resolves.toMatchObject({
+      status: 'accepted',
+    });
 
     state = transitionAndSave({ projectDir, sessionId }, staleState, { type: 'RESEARCH_DONE' });
 
@@ -342,9 +412,9 @@ describe('clear', () => {
       bus,
     });
 
-    const count = clear();
+    const result = clear();
 
-    expect(count).toBe(1);
+    expect(result).toEqual({ status: 'cleared', count: 1 });
     expect(state?.messageQueue).toEqual([
       expect.objectContaining({ id: 'msg-drained', text: 'drained' }),
     ]);
@@ -355,6 +425,33 @@ describe('clear', () => {
         phase: state?.phase,
       }),
     );
+  });
+
+  it('does not remove messages already delivered through native injection', () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = {
+      ...makeResearchingState(),
+      messageQueue: [
+        makeMessage('pending'),
+        { ...makeMessage('injecting'), id: 'msg-injecting', nativeDeliveryState: 'injecting' },
+        { ...makeMessage('native delivered'), id: 'msg-native', deliveredViaNative: true },
+        { ...makeMessage('drained'), id: 'msg-drained', drainedAt: new Date().toISOString() },
+      ],
+    };
+    const { bus } = makeBusRecorder();
+
+    const clear = createClearQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+    });
+
+    expect(clear()).toEqual({ status: 'cleared', count: 2 });
+    expect(state?.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
   });
 
   it('clears pending messages from persisted state when caller state is stale', () => {
@@ -383,9 +480,9 @@ describe('clear', () => {
       bus,
     });
 
-    const count = clear();
+    const result = clear();
 
-    expect(count).toBe(1);
+    expect(result).toEqual({ status: 'cleared', count: 1 });
     expect(state?.messageQueue).toEqual([
       expect.objectContaining({ id: 'msg-drained', text: 'persisted drained' }),
     ]);
@@ -463,6 +560,46 @@ describe('drain', () => {
     expect(result.messages).toEqual([expect.objectContaining({ text: 'persisted pending' })]);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
   });
+
+  it('does not drain messages while native injection is in flight', () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = {
+      ...makeResearchingState(),
+      messageQueue: [
+        { ...makeMessage('native in flight'), nativeDeliveryState: 'injecting' as const },
+      ],
+    };
+    const { bus } = makeBusRecorder();
+
+    const result = drainQueue(projectDir, sessionId, state, bus);
+
+    expect(result.messages).toEqual([]);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
+  });
+
+  it('normalizes persisted in-flight native delivery back to pending on resume', () => {
+    const { projectDir, sessionId } = setupProject();
+    const staleState = makeResearchingState();
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...makeResearchingState(),
+        messageQueue: [
+          { ...makeMessage('stale in flight'), nativeDeliveryState: 'injecting' as const },
+        ],
+      },
+    );
+    const { bus } = makeBusRecorder();
+
+    expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
+      'pending',
+    );
+
+    const result = drainQueue(projectDir, sessionId, staleState, bus);
+
+    expect(result.messages).toEqual([expect.objectContaining({ text: 'stale in flight' })]);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
+  });
 });
 
 describe('formatMessage', () => {
@@ -473,6 +610,7 @@ describe('formatMessage', () => {
       queuedAt: new Date().toISOString(),
       phase: 'researching',
       deliveredViaNative: false,
+      nativeDeliveryState: 'pending',
     };
     const result = formatMessage(msg);
     expect(result).toContain('[user also says during researching]');
@@ -487,6 +625,7 @@ describe('formatMessage', () => {
       queuedAt: new Date().toISOString(),
       phase: 'specifying',
       deliveredViaNative: false,
+      nativeDeliveryState: 'pending',
       origin: 'clarification',
       question: 'Use JWT?',
     };
@@ -511,6 +650,7 @@ describe('formatDrainedMessages', () => {
         queuedAt: new Date().toISOString(),
         phase: 'researching',
         deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
       },
     ];
 
@@ -528,6 +668,7 @@ describe('formatDrainedMessages', () => {
         queuedAt: new Date().toISOString(),
         phase: 'researching',
         deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
       },
       {
         id: 'msg-2',
@@ -535,6 +676,7 @@ describe('formatDrainedMessages', () => {
         queuedAt: new Date().toISOString(),
         phase: 'specifying',
         deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
       },
     ];
 
@@ -557,7 +699,7 @@ describe('native injection', () => {
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
 
-    await dispatchNativeInjection({
+    const result = await dispatchNativeInjection({
       message: makeMessage(),
       planner,
       projectDir,
@@ -567,6 +709,7 @@ describe('native injection', () => {
       bus,
     });
 
+    expect(result).toEqual({ status: 'not-delivered', reason: 'unsupported' });
     expect(writtenState).toBeUndefined();
   });
 
@@ -595,7 +738,7 @@ describe('native injection', () => {
     });
     const message = makeMessage('inject this');
 
-    await dispatchNativeInjection({
+    const result = await dispatchNativeInjection({
       message,
       planner,
       projectDir,
@@ -605,12 +748,13 @@ describe('native injection', () => {
       bus,
     });
 
+    expect(result).toEqual({ status: 'delivered' });
     expect(injectedTurns).toEqual([{ text: 'inject this', dir: projectDir }]);
     expect(capturedState).toBeDefined();
     expect(events.find((e) => e.type === 'message_injected_native')).toBeDefined();
   });
 
-  it('swallows injectUserTurn errors — state and callbacks untouched', async () => {
+  it('rolls native delivery back to pending when injectUserTurn errors', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
     let writtenState: WorkflowState | undefined;
@@ -642,9 +786,9 @@ describe('native injection', () => {
         setState,
         bus,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ status: 'not-delivered', reason: 'failed' });
 
-    expect(writtenState).toBeUndefined();
+    expect(writtenState).toBeDefined();
     expect(events.find((e) => e.type === 'message_injected_native')).toBeUndefined();
   });
 
@@ -727,7 +871,10 @@ describe('clarifications', () => {
     expect(msg.question).toBe('Use JWT?');
     expect(msg.text).toBe('Yes, use JWT');
 
-    expect(events.find((e) => e.type === 'message_queued')).toBeDefined();
+    const queuedEvent = events.find((e) => e.type === 'message_queued');
+    if (!queuedEvent || queuedEvent.type !== 'message_queued')
+      throw new Error('message_queued missing');
+    expect(queuedEvent.preview).toBe('clarification: Use JWT? -> Yes, use JWT');
 
     await new Promise((r) => setTimeout(r, 0));
     expect(injectedTurns).toHaveLength(1);
@@ -742,7 +889,7 @@ describe('clarifications', () => {
   it('enqueues answer and leaves queue state consistent for a stateless planner', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeSpecifyingState();
-    const { bus } = makeBusRecorder();
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
     const questions = [{ id: 'q2', type: 'input' as const, text: 'Use sessions?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('No sessions');
@@ -764,6 +911,11 @@ describe('clarifications', () => {
     if (!queued) throw new Error('expected a queued message');
     expect(queued.origin).toBe('clarification');
     expect(queued.deliveredViaNative).toBe(false);
+
+    const queuedEvent = events.find((e) => e.type === 'message_queued');
+    if (!queuedEvent || queuedEvent.type !== 'message_queued')
+      throw new Error('message_queued missing');
+    expect(queuedEvent.preview).toBe('clarification: Use sessions? -> No sessions');
   });
 
   it('returns state unchanged and does not enqueue when phase is not researching/specifying', async () => {

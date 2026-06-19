@@ -22,16 +22,16 @@ describe('workflow viewport layout', () => {
     const cols = 120;
 
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(cols);
+    expect(getWorkflowContentWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(cols - 2);
 
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(cols);
+    expect(getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(cols - 2);
 
     const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: false });
     const content = getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: false });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
-    expect(sidebar + content).toBe(cols);
+    expect(sidebar + content).toBe(cols - 2);
   });
 
   it('subtracts chrome + input rows from viewport height and clamps at zero', () => {
@@ -81,10 +81,10 @@ describe('getWorkflowContentRect', () => {
     expect(rect.bottom).toBe(rect.top + rect.height - 1);
 
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
-    expect(rect.left).toBe(sidebarWidth + 1);
+    expect(rect.left).toBe(sidebarWidth + 2);
   });
 
-  it('when the sidebar is hidden the rect starts at column 1 and takes full width', () => {
+  it('when the sidebar is hidden the rect starts after body padding and takes padded width', () => {
     const rect = getWorkflowContentRect({
       cols: 100,
       rows: 30,
@@ -93,8 +93,8 @@ describe('getWorkflowContentRect', () => {
       sidebarVisible: false,
       isSmall: false,
     });
-    expect(rect.left).toBe(1);
-    expect(rect.width).toBe(100);
+    expect(rect.left).toBe(2);
+    expect(rect.width).toBe(98);
   });
 
   it('keeps edges non-inverted when the terminal has no usable content area', () => {

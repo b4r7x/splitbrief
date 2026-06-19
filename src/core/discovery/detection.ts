@@ -1,5 +1,14 @@
 import type { PlannerToolId, ProviderId } from '../schemas/enums.js';
 
+export interface DetectedPricingTier {
+  type: 'context';
+  thresholdTokens: number;
+  inputPer1M?: number;
+  outputPer1M?: number;
+  cacheReadPer1M?: number;
+  cacheWritePer1M?: number;
+}
+
 export interface DetectedModel {
   id: string;
   contextLength?: number;
@@ -8,6 +17,7 @@ export interface DetectedModel {
   pricingOutput?: number;
   pricingCacheRead?: number;
   pricingCacheWrite?: number;
+  pricingTiers?: DetectedPricingTier[];
   isFree?: boolean;
   supportsTemperature?: boolean;
   supportsReasoning?: boolean;

@@ -63,7 +63,7 @@ describe('WorkflowHeader', () => {
           line.includes('instant') &&
           line.includes('(p)') &&
           line.includes('(i)') &&
-          line.includes('spent n/a'),
+          !line.includes('spent n/a'),
       ),
     ).toBe(true);
 

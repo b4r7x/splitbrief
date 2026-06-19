@@ -377,6 +377,7 @@ describe('startIpcServer replay', () => {
       role: 'planner',
       backendKind: 'cli',
       sequence: 1,
+      channel: 'assistant',
       text: 'hidden transcript',
     });
     testBus.publish({

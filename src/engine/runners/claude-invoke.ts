@@ -1,4 +1,3 @@
-import type { InvokeResult } from './types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
@@ -6,50 +5,12 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
-import type { ToolUseInfo } from './types.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
-
-interface ToolFormat {
-  field: string;
-  quoted?: boolean;
-  maxLen?: number;
-}
-
-const TOOL_FORMATS: Record<string, ToolFormat> = {
-  Read: { field: 'file_path' },
-  Write: { field: 'file_path' },
-  Edit: { field: 'file_path' },
-  Glob: { field: 'pattern' },
-  Skill: { field: 'skill' },
-  NotebookEdit: { field: 'file_path' },
-  Grep: { field: 'pattern', quoted: true },
-  WebSearch: { field: 'query', quoted: true },
-  ToolSearch: { field: 'query', quoted: true },
-  Bash: { field: 'command', maxLen: 60 },
-  WebFetch: { field: 'url', maxLen: 80 },
-};
-
-function formatToolUse(tool: ToolUseInfo): string {
-  if (tool.name === 'Agent') {
-    const prefix = tool.input.subagent_type ? `${tool.input.subagent_type}: ` : '';
-    return `→ Agent ${prefix}${String(tool.input.description ?? '').slice(0, 60)}`;
-  }
-
-  const fmt = TOOL_FORMATS[tool.name];
-  if (fmt) {
-    let value = String(tool.input[fmt.field] ?? '');
-    if (fmt.maxLen) value = value.slice(0, fmt.maxLen);
-    return fmt.quoted ? `→ ${tool.name} "${value}"` : `→ ${tool.name} ${value}`;
-  }
-
-  const hint = Object.values(tool.input).find((v) => typeof v === 'string');
-  return `→ ${tool.name}${hint ? ' ' + String(hint).slice(0, 60) : ''}`;
-}
 
 interface StreamHandlerState {
   text: string;
@@ -112,26 +73,58 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
 
     if (parsed.toolUse) {
-      const toolLines = parsed.toolUse.map(formatToolUse).join('\n');
-      callbacks.onOutput(toolLines + '\n');
       for (const toolUse of parsed.toolUse) {
         state.recorder.toolUseDone({
-          toolUse: { id: null, name: toolUse.name, input: toolUse.input },
+          toolUse: {
+            id: toolUse.id ?? null,
+            name: toolUse.name,
+            input: toolUse.input,
+            ...(toolUse.output !== undefined && { output: toolUse.output }),
+          },
+        });
+      }
+    }
+
+    if (parsed.toolUseStart) {
+      for (const toolUse of parsed.toolUseStart) {
+        state.recorder.toolUseDelta({
+          toolUseId: toolUse.id ?? null,
+          name: toolUse.name,
+          inputDelta: JSON.stringify(toolUse.input),
+        });
+      }
+    }
+
+    if (parsed.toolUseDelta) {
+      for (const toolUse of parsed.toolUseDelta) {
+        state.recorder.toolUseDelta({
+          toolUseId: toolUse.id ?? null,
+          name: toolUse.name ?? null,
+          inputDelta: toolUse.inputDelta,
         });
       }
     }
 
     if (parsed.text && !parsed.isResult) {
-      state.text += parsed.text;
-      state.sawAssistantText = true;
-      state.recorder.text({ channel: 'assistant', text: parsed.text });
-      callbacks.onOutput(parsed.text);
+      const channel = parsed.channel ?? 'assistant';
+      state.recorder.text({ channel, text: parsed.text });
+      if (channel === 'assistant' || channel === 'stdout') {
+        state.text += parsed.text;
+        state.sawAssistantText = true;
+        callbacks.onOutput(parsed.text);
 
-      if (callbacks.onQuestion && questionAccumulator) {
-        const newQuestions = questionAccumulator.addChunk(parsed.text);
-        if (newQuestions.length > 0) {
-          callbacks.onQuestion(newQuestions);
+        if (callbacks.onQuestion && questionAccumulator) {
+          const newQuestions = questionAccumulator.addChunk(parsed.text);
+          if (newQuestions.length > 0) {
+            callbacks.onQuestion(newQuestions);
+          }
         }
+      }
+    }
+
+    if (parsed.warning) {
+      for (const warning of parsed.warning) {
+        state.recorder.warning({ warning });
       }
     }
 
@@ -241,7 +234,13 @@ function applyImageRefs(prompt: string, images: Attachment[] | undefined): strin
 
 function buildClaudeArgs(opts: BuildArgsOpts): string[] {
   const { sessionId, model, effort, permissionMode } = opts;
-  const args: string[] = ['-p', '--output-format', 'stream-json', '--verbose'];
+  const args: string[] = [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+  ];
 
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
@@ -250,11 +249,7 @@ function buildClaudeArgs(opts: BuildArgsOpts): string[] {
   return args;
 }
 
-interface ClaudePlannerStreamResult {
-  text: string;
-  sessionId: string | null;
-  usage: TokenDelta | null;
-}
+type ClaudePlannerStreamResult = RunnerCallResult & { sessionId?: string | null };
 
 export interface ClaudePlannerStreamOpts {
   prompt: string;
@@ -317,9 +312,9 @@ export async function runClaudePlannerStream(
     throw interruptedError(signal, err);
   }
 
-  finishClaudeStream(state);
+  const result = finishClaudeStream(state);
 
-  return { text: state.text, sessionId: state.sessionId, usage: state.usage };
+  return { ...result, text: state.text, sessionId: state.sessionId };
 }
 
 export interface ClaudeOneShotOpts {
@@ -336,7 +331,7 @@ export interface ClaudeOneShotOpts {
   env?: NodeJS.ProcessEnv | undefined;
 }
 
-export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
+export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
   const {
     prompt,
     projectDir,
@@ -382,7 +377,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeR
     throw interruptedError(signal, err);
   }
 
-  finishClaudeStream(state);
+  const result = finishClaudeStream(state);
 
-  return { text: state.text, usage: state.usage };
+  return { ...result, text: state.text };
 }

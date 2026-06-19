@@ -55,7 +55,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     requestRewind: () => true,
     requestTaskRedo: () => true,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: () => 0,
+    clearQueue: () => ({ status: 'cleared', count: 0 }),
     rebuildRepomap: async () => ({ deleted: false, files: [] }),
     attachImage: () => ({ ok: false, reason: 'not implemented in test' }),
     detachImage: () => false,

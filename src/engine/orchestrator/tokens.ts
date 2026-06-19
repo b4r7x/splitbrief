@@ -192,17 +192,25 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     routingDecision,
   } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
+  const hasImplementerUsage =
+    delta.implementerTokens > 0 ||
+    delta.implementerCacheReadTokens > 0 ||
+    delta.implementerCacheCreateTokens > 0;
+  const hasEscalationUsage =
+    delta.escalationTokens > 0 ||
+    delta.escalationCacheReadTokens > 0 ||
+    delta.escalationCacheCreateTokens > 0;
   const usage: TaskTokenUsage = {
     taskId: task.id,
     taskTitle: task.title,
     method,
     implementerTokens: delta.implementerTokens,
     escalationTokens: delta.escalationTokens,
-    ...(delta.implementerTokens > 0 && {
+    ...(hasImplementerUsage && {
       implementerCacheReadTokens: delta.implementerCacheReadTokens,
       implementerCacheCreateTokens: delta.implementerCacheCreateTokens,
     }),
-    ...(delta.escalationTokens > 0 && {
+    ...(hasEscalationUsage && {
       escalationCacheReadTokens: delta.escalationCacheReadTokens,
       escalationCacheCreateTokens: delta.escalationCacheCreateTokens,
     }),

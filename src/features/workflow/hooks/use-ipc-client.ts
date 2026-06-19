@@ -147,6 +147,16 @@ export function useIpcClient(opts: {
     }
   }
 
+  function clearQueue() {
+    const s = socketRef.current;
+    if (!s || state.status !== 'connected') return;
+    try {
+      s.write(JSON.stringify({ kind: 'queue_clear' }) + '\n');
+    } catch {
+      // socket may have closed; ignore
+    }
+  }
+
   function detach() {
     isDetachedRef.current = true;
     generationRef.current += 1;
@@ -163,5 +173,5 @@ export function useIpcClient(opts: {
     socketRef.current = null;
   }
 
-  return [state, { sendUserInput, detach }];
+  return [state, { sendUserInput, clearQueue, detach }];
 }

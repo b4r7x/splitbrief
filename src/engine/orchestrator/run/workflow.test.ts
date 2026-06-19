@@ -21,7 +21,11 @@ import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { generateSessionId, readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import {
+  TRANSCRIPT_OMITTED_FEATURE,
+  readActive,
+  writeActive,
+} from '../../../core/sessions/lifecycle.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
@@ -79,7 +83,7 @@ describe('runWorkflow — smoke', () => {
 
     // The entry point produces a Summary even when planner is not available.
     expect(summary).toBeDefined();
-    expect(summary.feature).toBe('add auth');
+    expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
     expect(summary.totalTasks).toBe(0);
 
     // An error event was emitted explaining the missing planner to the user.
@@ -182,7 +186,7 @@ describe('runWorkflow — smoke', () => {
     expect(lock).not.toBeNull();
     expect(lock?.pid).toBe(process.pid);
     expect(lock?.sessionId).toBe('liveness-sid');
-    expect(lock?.feature).toBe('liveness-record');
+    expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
     expect(lock?.lastAliveMs).toBeGreaterThanOrEqual(before);
 
     // releaseLiveness() runs in the finally arm and marks the record exited (best-effort,
@@ -268,7 +272,7 @@ describe('runWorkflow — smoke', () => {
     });
 
     expect(summary).toBeDefined();
-    expect(summary.feature).toBe('aborted-before-start');
+    expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
   });
 
   it('publishes workflow_cancelled with the canonical reason for UI cancellation signals', async () => {
@@ -429,10 +433,6 @@ describe('runWorkflow — smoke', () => {
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
 
     expect(readActive(projectDir)).toBeNull();
-    // runWorkflow generates the id via generateSessionId; computing it here (before any
-    // session dir exists) yields the exact id the producer will write to the pointer.
-    const expectedSessionId = generateSessionId(projectDir, 'pointer from producer');
-
     await runWorkflow({
       feature: 'pointer from producer',
       projectDir,
@@ -442,7 +442,9 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
     });
 
-    expect(readActive(projectDir)).toBe(expectedSessionId);
+    const activeSessionId = readActive(projectDir);
+    expect(activeSessionId).toMatch(/^\d{4}-\d{2}-\d{2}-session-[a-f0-9]{12}$/);
+    expect(activeSessionId).not.toContain('pointer-from-producer');
   });
 
   it('carries the planner-produced tasks straight into the task loop and completes them', async () => {
@@ -656,11 +658,12 @@ describe('runWorkflow — createBranch', () => {
         e.type === 'git_branch_created',
     );
     expect(branchEvent).toBeDefined();
-    expect(branchEvent?.name).toBe('diptych/add-auth');
+    expect(branchEvent?.name).toMatch(/^diptych\/session-[a-f0-9]{12}$/);
+    expect(branchEvent?.name).not.toContain('add-auth');
 
     const g = simpleGit(projectDir);
     const status = await g.status();
-    expect(status.current).toBe('diptych/add-auth');
+    expect(status.current).toBe(branchEvent?.name);
   });
 
   it('does not create a branch when git.createBranch is false', async () => {

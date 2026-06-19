@@ -12,6 +12,7 @@ function makePrediction(overrides: Partial<CostPrediction> = {}): CostPrediction
     plannerTool: 'anthropic',
     implementerTool: 'anthropic',
     deterministic: {
+      estimateScope: 'prompt-input-only',
       taskCount: 12,
       taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
       contextConfidenceCounts: {
@@ -89,17 +90,36 @@ describe('formatCostGateSummary', () => {
     const summary = formatCostGateSummary(makePrediction());
     expect(summary).not.toBeNull();
     expect(summary!.taskCount).toBe(12);
+    expect(summary!.estimateLabel).toBe('Prompt input');
     expect(summary!.estimatedCost).toBe('$0.14');
+    expect(summary!.allPlannerLabel).toBe('All-planner prompt');
     expect(summary!.allPlannerCost).toBe('~$1.20');
+    expect(summary!.savingsLabel).toBe('Prompt saving');
     expect(summary!.estimatedSavings).toBe('$1.06');
     expect(summary!.savingsPercentage).toBe(88);
+    expect(summary!.scopeNote).toBe(
+      'Output, retries, validation reruns, and escalation are tracked at runtime.',
+    );
   });
   it('returns null when deterministic is undefined', () => {
     expect(formatCostGateSummary(makePrediction({ deterministic: undefined }))).toBeNull();
   });
-  it('returns null when knownActualEstimate is null', () => {
+  it('renders the all-planner baseline when knownActualEstimate is null', () => {
     const prediction = makePrediction();
     prediction.deterministic!.totals.knownActualEstimate = null;
+    prediction.deterministic!.totals.estimatedSavings = null;
+    const summary = formatCostGateSummary(prediction);
+    expect(summary).not.toBeNull();
+    expect(summary!.estimatedCost).toBe('n/a');
+    expect(summary!.allPlannerCost).toBe('~$1.20');
+    expect(summary!.estimatedSavings).toBe('n/a');
+    expect(summary!.savingsPercentage).toBe(0);
+  });
+  it('returns null when both deterministic total costs are null', () => {
+    const prediction = makePrediction();
+    prediction.deterministic!.totals.knownActualEstimate = null;
+    prediction.deterministic!.totals.hypotheticalAllPlanner = null;
+    prediction.deterministic!.totals.estimatedSavings = null;
     expect(formatCostGateSummary(prediction)).toBeNull();
   });
   it('handles null hypotheticalAllPlanner', () => {

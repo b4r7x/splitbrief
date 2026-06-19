@@ -21,6 +21,7 @@ export const QueuedMessageSchema = z.object({
   queuedAt: z.string(),
   phase: PhaseSchema,
   deliveredViaNative: z.boolean(),
+  nativeDeliveryState: z.enum(['pending', 'injecting', 'delivered']).default('pending'),
   drainedAt: z.string().optional(),
   origin: z.enum(['user-input', 'clarification']).optional(),
   question: z.string().optional(),

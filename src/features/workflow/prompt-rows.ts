@@ -68,8 +68,13 @@ export function getCostApprovalPromptRowsForPrediction(
 ): number {
   const summary = formatCostGateSummary(prediction);
   if (!summary) return 0;
-  const summaryLine = `${summary.taskCount} tasks | Est. ${summary.estimatedCost} | All-planner: ${summary.allPlannerCost} | Saving: ${summary.estimatedSavings} (${summary.savingsPercentage}%)`;
-  return 8 + wrappedRows(summaryLine, costTextWidth(cols));
+  const width = costTextWidth(cols);
+  const summaryLine = `${summary.taskCount} tasks | ${summary.estimateLabel}: ${summary.estimatedCost} | ${summary.allPlannerLabel}: ${summary.allPlannerCost} | ${summary.savingsLabel}: ${summary.estimatedSavings} (${summary.savingsPercentage}%)`;
+  return (
+    8 +
+    wrappedRows(summaryLine, width) +
+    (summary.scopeNote ? wrappedRows(summary.scopeNote, width) : 0)
+  );
 }
 
 export function getWorkflowPromptRows(

@@ -171,6 +171,38 @@ describe('streamAnthropicCompletion', () => {
       }),
     ).rejects.toThrow('cancelled');
   });
+
+  it('preserves streamed usage when aborted after a message usage update', async () => {
+    const controller = new AbortController();
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"output_tokens":1}}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":17}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    );
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        signal: controller.signal,
+        onProgress: () => controller.abort(new Error('cancelled')),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow('cancelled');
+
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'aborted',
+      usage: { inputTokens: 42, outputTokens: 17 },
+    });
+  });
 });
 
 describe('system message cache control in the request body', () => {

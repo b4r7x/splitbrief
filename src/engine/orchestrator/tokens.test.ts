@@ -125,4 +125,36 @@ describe('recordTaskUsage — explicit cache persistence', () => {
     expect(recorded?.escalationCacheReadTokens).toBeUndefined();
     expect(recorded?.escalationCacheCreateTokens).toBeUndefined();
   });
+
+  it('persists cache-only implementer usage for a local task', () => {
+    const taskBreakdowns: TaskTokenUsage[] = [];
+    const events: unknown[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const tokensBefore = makeUsage();
+    const currentUsage = makeUsage({ implementerCacheRead: 1_000_000 });
+
+    recordTaskUsage({
+      task: makeTask({ id: 'T001' }),
+      method: 'local',
+      tokensBefore,
+      currentUsage,
+      bus,
+      state: baseState(),
+      taskBreakdowns,
+    });
+
+    const recorded = taskBreakdowns.at(0);
+    expect(recorded).toMatchObject({
+      implementerTokens: 0,
+      implementerCacheReadTokens: 1_000_000,
+      implementerCacheCreateTokens: 0,
+    });
+    expect(events[0]).toMatchObject({
+      type: 'task_tokens',
+      implementerTokens: 0,
+      implementerCacheReadTokens: 1_000_000,
+      implementerCacheCreateTokens: 0,
+    });
+  });
 });

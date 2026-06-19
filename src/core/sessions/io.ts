@@ -11,6 +11,8 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { loadState } from '../state/persistence.js';
 import { sessionError } from './errors.js';
 import { writeSecureFile } from '../../lib/fs.js';
+import { TRANSCRIPT_OMITTED_FEATURE, isOpaqueSessionId } from './lifecycle.js';
+import { readSessionLockfileData } from './lockfile-status.js';
 
 function readSummaryFile(filePath: string, sessionId: string): Session | null {
   try {
@@ -51,11 +53,19 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   );
 }
 
-function stateToSession(sessionId: string, state: WorkflowState): Session {
+function recoveredFeature(projectDir: string, sessionId: string, state: WorkflowState): string {
+  const lockfile = readSessionLockfileData({ sessionDir: sessionDir(projectDir, sessionId) });
+  if (lockfile.kind === 'valid' && lockfile.data.feature === TRANSCRIPT_OMITTED_FEATURE) {
+    return TRANSCRIPT_OMITTED_FEATURE;
+  }
+  return isOpaqueSessionId(sessionId) ? TRANSCRIPT_OMITTED_FEATURE : state.feature;
+}
+
+function stateToSession(projectDir: string, sessionId: string, state: WorkflowState): Session {
   const startedAt = Date.parse(state.startedAt);
   return {
     id: sessionId,
-    feature: state.feature,
+    feature: recoveredFeature(projectDir, sessionId, state),
     startedAt: Number.isNaN(startedAt) ? 0 : startedAt,
     completedAt: null,
     stateVersion: state.stateVersion,
@@ -67,7 +77,7 @@ function stateToSession(sessionId: string, state: WorkflowState): Session {
 function recoverSession(projectDir: string, sessionId: string): Session | null {
   const state = loadState({ projectDir, sessionId });
   if (!state) return null;
-  return stateToSession(sessionId, state);
+  return stateToSession(projectDir, sessionId, state);
 }
 
 // Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.

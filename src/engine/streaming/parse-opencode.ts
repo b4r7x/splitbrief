@@ -33,13 +33,18 @@ const OpencodeStepFinishEvent = z.object({
 });
 
 const OpencodeToolEvent = z.object({
-  type: z.enum(['tool_use', 'tool_call', 'tool']),
+  type: z.enum(['tool_use', 'tool_call', 'tool', 'tool_start', 'tool_finish', 'tool_result']),
   part: z.looseObject({
     type: z.string().optional(),
+    id: z.string().optional(),
     name: z.string().optional(),
     tool: z.string().optional(),
+    state: z.string().optional(),
+    status: z.string().optional(),
     input: z.record(z.string(), z.unknown()).optional(),
     args: z.record(z.string(), z.unknown()).optional(),
+    output: z.unknown().optional(),
+    result: z.unknown().optional(),
   }),
 });
 
@@ -63,7 +68,7 @@ export function parseOpencodeLine(line: string): ParsedLine {
   }
 
   const text = OpencodeTextEvent.safeParse(event);
-  if (text.success) return withSession({ text: text.data.part.text }, event);
+  if (text.success) return withSession({ text: text.data.part.text, channel: 'assistant' }, event);
 
   const step = OpencodeStepFinishEvent.safeParse(event);
   if (step.success) {
@@ -85,17 +90,20 @@ export function parseOpencodeLine(line: string): ParsedLine {
   if (tool.success) {
     const name = tool.data.part.name ?? tool.data.part.tool;
     if (name) {
-      return withSession(
-        {
-          toolUse: [
-            {
-              name,
-              input: tool.data.part.input ?? tool.data.part.args ?? {},
-            },
-          ],
-        },
-        event,
-      );
+      const toolUse = {
+        ...(tool.data.part.id !== undefined && { id: tool.data.part.id }),
+        name,
+        input: tool.data.part.input ?? tool.data.part.args ?? {},
+        ...(tool.data.part.output !== undefined && { output: tool.data.part.output }),
+        ...(tool.data.part.result !== undefined && { output: tool.data.part.result }),
+      };
+      const isDone =
+        tool.data.type === 'tool_finish' ||
+        tool.data.type === 'tool_result' ||
+        tool.data.part.state === 'completed' ||
+        tool.data.part.status === 'completed' ||
+        tool.data.part.status === 'done';
+      return withSession(isDone ? { toolUseDone: [toolUse] } : { toolUseStart: [toolUse] }, event);
     }
   }
 

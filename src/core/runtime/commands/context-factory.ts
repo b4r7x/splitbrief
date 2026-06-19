@@ -3,7 +3,11 @@ import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
-import type { RuntimeCommandContext, ExportSessionResult } from './types.js';
+import type {
+  RuntimeCommandContext,
+  ExportSessionResult,
+  QueueClearCommandResult,
+} from './types.js';
 
 type ConfigSaveResult = { ok: true } | { ok: false; errorMessage?: string | undefined };
 type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
@@ -30,7 +34,7 @@ interface CommandContextFactoryOptions {
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
-  clearQueue: () => number;
+  clearQueue: () => QueueClearCommandResult;
   rebuildRepomap: (
     projectDir: string,
     cacheDir: string | undefined,

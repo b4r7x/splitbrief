@@ -11,6 +11,7 @@ import { createEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/l
 import { recordLocalTaskEvidence } from './evidence/task.js';
 import { writeDriftChainState } from './drift/chain-state.js';
 import type { DriftChainState } from '../../core/schemas/drift-chain.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -76,6 +77,36 @@ describe('buildSummary', () => {
     expect(summary.skipped).toBe(1);
     expect(summary.failed).toBe(1);
     expect(summary.escalationRate).toBe(0.25);
+  });
+
+  it('classifies escalated-intermediate task breakdowns as escalated in summaries', () => {
+    const state = makeState({
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
+    });
+
+    const summary = buildSummary({
+      feature: 'intermediate',
+      state,
+      startTime: Date.now(),
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'Intermediate task',
+          method: 'escalated-intermediate',
+          implementerTokens: 150,
+          escalationTokens: 0,
+          retryCount: 1,
+        },
+      ],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary.completedByLocal).toBe(0);
+    expect(summary.escalatedToPlanner).toBe(1);
+    expect(summary.escalationRate).toBe(1);
+    expect(summary.costBreakdown?.localCompletionRate).toBe(0);
   });
 
   it('zero tasks → no division by zero', () => {
@@ -174,6 +205,86 @@ describe('buildSummary', () => {
       costPrediction: prediction,
     });
     expect(summary.costPrediction).toEqual(prediction);
+  });
+
+  it('omits cost prediction prose when transcript persistence is disabled', () => {
+    const sentinel = 'summary-cost-sentinel-83521';
+    const summary = buildSummary({
+      feature: 'cost prediction',
+      state: { tasks: [], tokenUsage: makeUsage() },
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      persistTranscript: false,
+      costPrediction: {
+        estimatedTasks: 1,
+        lowCost: 0.01,
+        expectedCost: 0.02,
+        highCost: 0.03,
+        plannerTool: 'planner',
+        implementerTool: 'worker',
+        deterministic: {
+          estimateScope: 'prompt-input-only',
+          taskCount: 1,
+          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
+          contextConfidenceCounts: {
+            contextExplicit: 1,
+            contextDetected: 0,
+            contextKnownCatalog: 0,
+            contextCachedProvider: 0,
+            contextConservativeFallback: 0,
+            profileUnavailable: 0,
+          },
+          priceConfidenceCounts: {
+            priceKnown: 1,
+            priceUnknown: 0,
+            profileUnavailable: 0,
+          },
+          tasks: [
+            {
+              taskId: taskId('T051'),
+              title: `cost title ${sentinel}`,
+              estimatedPromptTokens: 100,
+              selectedProfileId: 'local-small',
+              contextFit: 'fits',
+              contextConfidence: 'context-explicit',
+              priceConfidence: 'price-known',
+              estimatedImplementerCost: 0.01,
+              hypotheticalPlannerCost: 0.02,
+            },
+          ],
+          totals: {
+            knownActualEstimate: 0.01,
+            hypotheticalAllPlanner: 0.02,
+            estimatedSavings: 0.01,
+            unknownCostReason: [],
+          },
+        },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'completed',
+          classification: 'needs-user-decision',
+          affectedTaskIds: ['T051'],
+          reason: `review reason ${sentinel}`,
+          recommendedUserDecision: `decision ${sentinel}`,
+        },
+      },
+    });
+
+    expect(summary.costPrediction).toMatchObject({
+      estimatedTasks: 1,
+      expectedCost: 0.02,
+      deterministic: {
+        taskCount: 1,
+        tasks: [{ taskId: taskId('T051'), title: TRANSCRIPT_OMITTED_MESSAGE }],
+      },
+      plannerEstimateReview: {
+        affectedTaskIds: ['T051'],
+        reason: TRANSCRIPT_OMITTED_MESSAGE,
+        recommendedUserDecision: TRANSCRIPT_OMITTED_MESSAGE,
+      },
+    });
+    expect(JSON.stringify(summary.costPrediction)).not.toContain(sentinel);
   });
 
   it('includes model fields when provided', () => {
@@ -499,6 +610,23 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerModel: 'deepseek-chat',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
+  });
+
+  it('preserves negative savings in the reliable cost breakdown', () => {
+    const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'deepseek',
+      plannerModel: 'deepseek-chat',
+      implementerTool: 'anthropic',
+      implementerModel: 'claude-sonnet-4-6',
+    });
+
+    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
+    expect(summary.costBreakdown?.savingsAmount).toBeLessThan(0);
+    expect(summary.costBreakdown?.savingsPercentage).toBeLessThan(0);
   });
 });
 

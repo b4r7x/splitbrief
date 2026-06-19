@@ -9,7 +9,7 @@ import { streamError, throwMappedError } from '../../streaming/stream-errors.js'
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import type { StreamMessage } from '../dispatch-stream.js';
+import type { StreamMessage } from '../stream-types.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';
@@ -273,6 +273,18 @@ function emitText(recorder: RunnerCallRecorder, text: string): void {
   recorder.text({ channel: 'assistant', text });
 }
 
+function emitUsageUpdate(
+  recorder: RunnerCallRecorder,
+  current: RunnerCallUsage | null,
+  raw: unknown,
+): RunnerCallUsage | null {
+  const next = mergeUsage(current, raw);
+  if (next !== current && next !== null) {
+    recorder.usage({ usage: next, semantics: 'cumulative' });
+  }
+  return next;
+}
+
 function emitAnthropicTerminal(
   recorder: RunnerCallRecorder,
   stopReason: string | null,
@@ -423,7 +435,7 @@ export async function streamAnthropicCompletion(
       if (eventType === null) continue;
       switch (eventType) {
         case 'message_start':
-          usage = mergeUsage(usage, narrowRecord(payload.message)?.usage);
+          usage = emitUsageUpdate(recorder, usage, narrowRecord(payload.message)?.usage);
           break;
         case 'content_block_delta': {
           const text = getDeltaText(payload);
@@ -433,7 +445,7 @@ export async function streamAnthropicCompletion(
           break;
         }
         case 'message_delta': {
-          usage = mergeUsage(usage, payload.usage);
+          usage = emitUsageUpdate(recorder, usage, payload.usage);
           const nextStopReason = getStopReason(payload);
           stopReason = nextStopReason ?? stopReason;
           if (nextStopReason === 'max_tokens') opts.onProgress(TRUNCATION_WARNING);
@@ -457,6 +469,7 @@ export async function streamAnthropicCompletion(
       recorder.finishFailed({
         status: runnerCallInterruptedStatus(opts.signal),
         error: { code: 'runner_interrupted', message: toErrorMessage(err) },
+        usage,
         nativeSessionId: null,
       });
       throwIfAborted(opts.signal);

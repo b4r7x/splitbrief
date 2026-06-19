@@ -8,11 +8,7 @@ import type {
 } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
-import {
-  toRunnerCallResult,
-  toTokenDelta,
-  type RunnerCallCompatibleResult,
-} from '../calls/projection.js';
+import { toTokenDelta } from '../calls/projection.js';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { matches } from '../../utils/error.js';
@@ -111,7 +107,7 @@ export interface ImplementerBaseConfig {
    */
   prependSystemPreamble?: boolean;
 
-  invoke(opts: InvokeOpts): Promise<RunnerCallCompatibleResult>;
+  invoke(opts: InvokeOpts): Promise<RunnerCallResult>;
   buildPrompt?(opts: ImplementerOptions): string;
   buildRetryPrompt?(opts: RetryOptions): string;
 
@@ -320,7 +316,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         },
         sandboxEnv: opts.sandboxEnv,
       });
-      callResult = toRunnerCallResult(callContext, invokeResult);
+      callResult = invokeResult;
     } catch (err) {
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();

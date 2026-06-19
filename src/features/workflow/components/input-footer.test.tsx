@@ -11,6 +11,8 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { buildInputFooterLayout, InputFooter } from './input-footer.js';
 
 function publishAdvisory(advisory: AdvisorResult): void {
@@ -41,12 +43,13 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: 'advisor: likely instant · trivial edit',
       taskText: 'Task 2/8',
-      queueText: 'queue: 3',
+      queueCountText: 'queue: 3',
+      queuePreviewText: null,
       gitLabel: 'git: branch+task',
     });
 
     expect(layout.left).toBe('Ctrl+C abort');
-    expect(layout.right).toBe('Task 2/8');
+    expect(layout.right).toBe('Task 2/8 · queue: 3');
   });
 
   it('keeps wide footers split between left controls and right status', () => {
@@ -55,7 +58,8 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: 'advisor: likely instant · trivial edit',
       taskText: 'Task 2/8 · 4m left',
-      queueText: 'queue: 3',
+      queueCountText: 'queue: 3',
+      queuePreviewText: null,
       gitLabel: 'git: branch+task',
     });
 
@@ -63,6 +67,39 @@ describe('buildInputFooterLayout', () => {
     expect(layout.left).toContain('Ctrl+C again exit');
     expect(layout.left).toContain('advisor:');
     expect(layout.right).toBe('Task 2/8 · 4m left · queue: 3 · git: branch+task');
+  });
+
+  it('drops queue preview before queue count when compact', () => {
+    const layout = buildInputFooterLayout({
+      cols: 48,
+      isAttachedClient: false,
+      advisoryText: null,
+      taskText: 'Task 2/8',
+      queueCountText: 'queue: 3',
+      queuePreviewText: 'latest pending change',
+      gitLabel: 'git: branch+task',
+    });
+
+    expect(layout.right).toBe('Task 2/8 · queue: 3');
+    expect(layout.right).not.toContain('latest pending change');
+  });
+
+  it('fits wide-character queue previews by terminal cell width', () => {
+    const cols = 64;
+    const layout = buildInputFooterLayout({
+      cols,
+      isAttachedClient: false,
+      advisoryText: null,
+      taskText: 'Task 2/8',
+      queueCountText: 'queue: 3',
+      queuePreviewText: '界語🙂界語🙂界語🙂界語🙂',
+      gitLabel: 'git: branch+task',
+    });
+
+    expect(layout.right).toContain('queue: 3');
+    expect(
+      getTerminalCellWidth(layout.left) + getTerminalCellWidth(layout.right) + 4,
+    ).toBeLessThanOrEqual(getChromeContentWidth(cols));
   });
 });
 
@@ -135,6 +172,26 @@ describe('InputFooter advisory display', () => {
     expect(frame).not.toContain('Local rate');
     expect(frame).not.toContain('Spent:');
     expect(frame).not.toContain('Saved:');
+
+    ui.unmount();
+  });
+
+  it('renders the latest pending queue preview', () => {
+    terminalSizeStore.__testReset({ cols: 140, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'planning',
+      queueDepth: 2,
+      queuePreviews: [
+        { id: 'q1', preview: 'older preview' },
+        { id: 'q2', preview: 'latest redacted preview' },
+      ],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('queue: 2 - latest redacted preview');
+    expect(frame).not.toContain('older preview');
 
     ui.unmount();
   });

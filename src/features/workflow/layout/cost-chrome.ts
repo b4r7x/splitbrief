@@ -48,16 +48,16 @@ function formatProjected(input: ProjectedCostInput): string {
     totalTasks,
     pricingState,
   } = input;
-  if (pricingState !== 'priced' && pricingState !== 'mixed') return 'proj n/a';
+  if (pricingState !== 'priced' && pricingState !== 'mixed') return '';
   if (completedCount > 0) {
     const remainingTasks = Math.max(0, totalTasks - completedCount);
     const projected = totalActualCost + (actualImplementerCost / completedCount) * remainingTasks;
     return `proj ${formatCost(projected)}`;
   }
   if (prediction !== null) {
-    return `proj ${formatCost(prediction.expectedCost)}`;
+    return `proj ${formatCost(prediction.deterministic?.totals.knownActualEstimate ?? prediction.expectedCost)}`;
   }
-  return 'proj n/a';
+  return '';
 }
 
 export function formatBudget(maxBudget: number | undefined): string {
@@ -99,6 +99,11 @@ function formatSavings(costBreakdown: CostBreakdown | null): string {
   return `saved ~${formatCost(costBreakdown.savingsAmount)}`;
 }
 
+function formatStatusSpent(spentText: string): string {
+  if (spentText === '' || spentText === 'n/a') return '';
+  return `spent ${spentText}`;
+}
+
 export function buildCostStatusLineLayout(input: CostStatusLineLayoutInput): CostStatusLineLayout {
   const projText = formatProjected({
     completedCount: input.completedCount,
@@ -118,7 +123,7 @@ export function buildCostStatusLineLayout(input: CostStatusLineLayoutInput): Cos
   const isNarrow = input.renderWidth < NARROW_STATUS_WIDTH;
   const contentWidth = Math.max(1, input.renderWidth - input.paddingX * 2);
   const costParts = [
-    input.spentText ? `spent ${input.spentText}` : '',
+    formatStatusSpent(input.spentText),
     projText,
     !isNarrow && budgetText ? `budget ${budgetText}` : '',
   ];
@@ -147,7 +152,7 @@ export function buildCostStatusLineLayout(input: CostStatusLineLayoutInput): Cos
 }
 
 export function formatCacheHitPct(cacheRead: number | undefined, input: number): string {
-  if (cacheRead === undefined || cacheRead === 0 || input === 0) return 'cache n/a';
+  if (cacheRead === undefined || cacheRead === 0) return 'cache n/a';
   const total = cacheRead + input;
   return `cache ${Math.round((cacheRead / total) * 100)}%`;
 }

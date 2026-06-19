@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
 import type { PlannerCallbacks } from './types.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 
 const taskMarkdown = `---
 id: T001
@@ -30,6 +34,19 @@ const promptBuilder = (feature: string, projectContext: string, languageContext:
   `FEATURE:${feature} LANG:${languageContext.language} CTX:${projectContext.length}`;
 
 let projectDir: string;
+
+function readSessionLog(projectDir: string, sessionId: string): unknown[] {
+  const logPath = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath, 'utf-8')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
+}
+
+function completedRunnerCall(text: string) {
+  return makeRunnerCallResult({ status: 'completed', text });
+}
 
 beforeEach(() => {
   projectDir = createTempDir('single-phase-test');
@@ -90,7 +107,7 @@ describe('runSinglePhasePlanning', () => {
         invokePlan: async ({ prompt, callbacks: invokeCallbacks }) => {
           seenPrompt = prompt;
           invokeCallbacks.onOutput?.('streamed chunk');
-          return { text: taskMarkdown, usage: null };
+          return completedRunnerCall(taskMarkdown);
         },
       },
       promptBuilder,
@@ -116,7 +133,7 @@ describe('runSinglePhasePlanning', () => {
   it('resolves the artifact via readPhaseOutput and retains raw stdout separately', async () => {
     const result = await runSinglePhasePlanning(
       {
-        invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
+        invokePlan: async () => completedRunnerCall('raw stdout noise'),
         readPhaseOutput: () => taskMarkdown,
       },
       promptBuilder,
@@ -129,5 +146,43 @@ describe('runSinglePhasePlanning', () => {
     expect(result.phases?.[0]?.text).toBe(taskMarkdown);
     expect(result.phases?.[0]?.rawOutput).toBe('raw stdout noise');
     expect(result.tasks[0]?.id).toBe('T001');
+  });
+
+  it('flushes interrupted buffered output when planning aborts', async () => {
+    const controller = new AbortController();
+    const sessionId = 'sess-single-phase-abort';
+    const err = new Error('aborted');
+
+    await expect(
+      runSinglePhasePlanning(
+        {
+          invokePlan: async ({ callbacks: invokeCallbacks }) => {
+            invokeCallbacks.onOutput('partial task output');
+            controller.abort();
+            throw err;
+          },
+        },
+        promptBuilder,
+        'add a widget',
+        projectDir,
+        {
+          onOutput: () => {},
+          persistTranscript: true,
+          sessionId,
+          signal: controller.signal,
+        },
+        undefined,
+      ),
+    ).rejects.toBe(err);
+
+    expect(readSessionLog(projectDir, sessionId)).toEqual([
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        phase: 'planning',
+        text: 'partial task output',
+        interrupted: true,
+      }),
+    ]);
   });
 });

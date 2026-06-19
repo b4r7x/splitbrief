@@ -177,20 +177,22 @@ export function Composer({
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
-  const [{ projectDir }] = useStores(configStore);
+  const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
   const inputColumns = Math.max(1, (width ?? cols) - 6);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
+  const persistTranscript = config?.workflow.persistTranscript ?? true;
 
   const refreshEpoch = projectFilesStore.use((s) => s.refreshEpoch);
 
   const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange } = useHistory({
-    currentScreen,
     disabled,
     value,
     setValue,
+    currentScreen,
+    persistTranscript,
   });
 
   const command = useCommandCompletion({
@@ -229,9 +231,7 @@ export function Composer({
       return;
     }
 
-    if (currentScreen === 'home') {
-      inputHistoryStore.push(trimmed);
-    }
+    inputHistoryStore.pushSubmission(trimmed, { currentScreen, persistTranscript });
 
     if (trimmed.startsWith('/')) {
       onRuntimeCommand(trimmed);

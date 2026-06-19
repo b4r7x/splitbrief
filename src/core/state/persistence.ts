@@ -11,6 +11,7 @@ import { PhaseSchema } from '../schemas/enums.js';
 import { TaskIdSchema } from '../schemas/task.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
+import { normalizeLoadedWorkflowState } from '../queue-state.js';
 import type { SessionRef } from '../types/session-ref.js';
 import {
   DIPTYCH_DIR,
@@ -84,7 +85,11 @@ export function saveState(ref: SessionRef, state: WorkflowState): void {
   }
   try {
     const stat = statSync(filePath);
-    cacheState(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, state: parsed.data });
+    cacheState(filePath, {
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      state: normalizeLoadedWorkflowState(parsed.data),
+    });
   } catch {
     stateCache.delete(filePath);
   }
@@ -134,8 +139,9 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     warnStderr('Warning: state file failed schema validation, ignoring');
     return null;
   }
-  cacheState(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, state: result.data });
-  return result.data;
+  const state = normalizeLoadedWorkflowState(result.data);
+  cacheState(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, state });
+  return state;
 }
 
 export type SessionLogAppender = (entry: SessionLogMessageEntry | SessionLogEventEntry) => void;

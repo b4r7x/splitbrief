@@ -82,6 +82,24 @@ function makeRunningImplementer(): Extract<EngineEvent, { type: 'implementer_gen
   };
 }
 
+function makeRunnerActivity(): Extract<EngineEvent, { type: 'runner_call_activity' }> {
+  return {
+    type: 'runner_call_activity',
+    ts: 0,
+    phase: 'researching',
+    callId: 'call-1',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'codex',
+    sequence: 2,
+    activityId: 'call-1:system',
+    stage: 'updated',
+    kind: 'unknown',
+    label: '/bin/zsh -lc "sed -n \'1,260p\' CLAUDE.md"',
+    redacted: false,
+  };
+}
+
 function frameRowCount(frame: string): number {
   return frame.length === 0 ? 0 : frame.split('\n').length;
 }
@@ -130,6 +148,21 @@ describe('ConversationFlow', () => {
     expect(frame).not.toContain('###');
     expect(frame).not.toContain('```typescript');
     expect(frame).not.toContain('```');
+
+    ui.unmount();
+  });
+
+  it('renders safe runner activity as a styled conversation row', () => {
+    const sections: Section<EngineEvent>[] = [
+      { type: 'events', startIndex: 0, items: [makeRunnerActivity()] },
+    ];
+
+    const ui = renderFeature(<ConversationFlow sections={sections} height={5} width={90} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain("run  sed -n '1,260p' CLAUDE.md");
+    expect(frame).not.toContain('/bin/zsh -lc');
+    expect(frame).not.toContain('activity:');
 
     ui.unmount();
   });

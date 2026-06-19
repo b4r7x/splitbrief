@@ -66,20 +66,25 @@ export function CostApprovalPrompt({ prediction, onApprove, onReject }: CostAppr
         <Text>
           <Text bold>{summary.taskCount} tasks</Text>
           <Text color={t.textDim}> | </Text>
-          <Text>Est. </Text>
+          <Text>{summary.estimateLabel}: </Text>
           <Text bold color={t.success}>
             {summary.estimatedCost}
           </Text>
           <Text color={t.textDim}> | </Text>
-          <Text>All-planner: </Text>
+          <Text>{summary.allPlannerLabel}: </Text>
           <Text color={t.warning}>{summary.allPlannerCost}</Text>
           <Text color={t.textDim}> | </Text>
-          <Text>Saving: </Text>
+          <Text>{summary.savingsLabel}: </Text>
           <Text bold color={t.success}>
             {summary.estimatedSavings} ({summary.savingsPercentage}%)
           </Text>
         </Text>
       </Box>
+      {summary.scopeNote ? (
+        <Box marginTop={1}>
+          <Text color={t.textDim}>{summary.scopeNote}</Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <Text color={t.textDim}>Approve? [Y/n] </Text>
       </Box>

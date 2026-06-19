@@ -85,6 +85,7 @@ export async function main(argv: IpcServerArgs, dir: string) {
     authToken,
     bus: ipcBus,
     onUserInput: ipcBridge.onUserInput,
+    onQueueClear: ipcBridge.onQueueClear,
     sessionJsonlPath: join(dir, SESSION_LOG_FILE),
     noClientPromptBehavior: config.approval?.headless === true ? 'fail-closed' : 'wait',
     persistTranscript: config.workflow.persistTranscript,

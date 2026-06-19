@@ -5,9 +5,19 @@ import { join } from 'node:path';
 import type { Config } from '../core/schemas/config.js';
 import type { RoutingDecision } from './orchestrator/context-routing/types.js';
 import type { PlanTaskReviewMetadata } from '../core/plan-review/types.js';
+import { resolveImplementerProfiles } from '../core/config/accessors/implementer-profiles.js';
+import { buildProjectLanguageContext } from './spec/prompts/language-context.js';
+import type { ModelCacheAccessor } from './providers/model/resolution.js';
+import { buildRouteTaskOptions } from './orchestrator/context-routing/route-input.js';
+import { routeTaskToImplementerProfile } from './orchestrator/context-routing/route.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { buildWorkerPacketPreview, refreshTaskForRoutingPreview } from './routing-preview.js';
+import {
+  buildRoutingPreviewMetadata,
+  buildWorkerPacketPreview,
+  refreshTaskForRoutingPreview,
+  routeTaskForPreview,
+} from './routing-preview.js';
 
 describe('buildWorkerPacketPreview', () => {
   it('returns null when no task is selected', () => {
@@ -317,6 +327,88 @@ describe('buildWorkerPacketPreview', () => {
     expect(preview?.estimatedTokens).toBeGreaterThan(0);
     expect(preview?.untruncatedEstimatedTokens).toBeGreaterThan(0);
     expect(preview?.notices.join(' ')).toContain('display-truncated');
+  });
+
+  it('matches live route helper selection when context cache and detected context are provided', async () => {
+    const projectDir = defaultContext.dir;
+    const context = { name: 'unknown', dir: projectDir };
+    const detectedContextLength = 20_000;
+    const task = makeTask({ description: 'large routing input '.repeat(2000) });
+    const config: Config = {
+      ...makeConfig(),
+      implementerProfiles: {
+        default: 'cheap-detected-worker',
+        profiles: {
+          'cheap-detected-worker': {
+            kind: 'agent',
+            command: 'cheap-worker',
+            model: 'cheap-model',
+            costTier: 'cheap',
+          },
+          'standard-cache-worker': {
+            kind: 'api',
+            provider: 'openrouter',
+            apiBase: 'https://openrouter.ai/api/v1',
+            apiKey: 'test-key',
+            model: 'runtime-standard',
+            costTier: 'standard',
+          },
+        },
+      },
+    };
+    const contextCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) =>
+        providerId === 'openrouter'
+          ? [
+              {
+                id: 'runtime-standard',
+                contextLength: 50_000,
+                pricingInput: 1,
+                pricingOutput: 2,
+              },
+            ]
+          : null,
+    };
+    const profiles = resolveImplementerProfiles(config).profiles;
+    const languageContext = buildProjectLanguageContext(projectDir, undefined);
+    const live = routeTaskToImplementerProfile(
+      buildRouteTaskOptions({
+        task,
+        context,
+        profiles,
+        contextCache,
+        languageContext,
+        detectedContextLength,
+      }),
+    );
+
+    const routePreview = routeTaskForPreview({
+      task,
+      config,
+      projectDir,
+      contextCache,
+      detectedContextLength,
+    });
+    const richPreview = buildWorkerPacketPreview({
+      task,
+      context,
+      config,
+      contextCache,
+      detectedContextLength,
+    });
+    const metadata = await buildRoutingPreviewMetadata([task], {
+      config,
+      projectDir,
+      contextCache,
+      detectedContextLength,
+    });
+
+    expect(live.selectedProfile).toBe('cheap-detected-worker');
+    expect(routePreview.selectedProfile).toBe(live.selectedProfile);
+    expect(richPreview?.workerProfile).toBe(live.selectedProfile);
+    expect(metadata[0]?.workerProfile).toBe(live.selectedProfile);
+    expect(metadata[0]?.contextLength).toBe(20_000);
   });
 });
 

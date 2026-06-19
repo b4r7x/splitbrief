@@ -27,6 +27,7 @@ import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hook
 import { error } from '../../../utils/error.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
+import { generateOpaqueSessionSlug } from '../../../core/sessions/lifecycle.js';
 import type {
   OrchestratorCallbacks,
   ResumeContextHolder,
@@ -150,8 +151,19 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       }),
     ),
   );
-  unsubs.push(bus.subscribe(createTreeRecorderSink({ projectDir, sessionId })));
-  if (opts.headless) unsubs.push(bus.subscribe(createStdoutJsonSink()));
+  unsubs.push(
+    bus.subscribe(
+      createTreeRecorderSink({
+        projectDir,
+        sessionId,
+        persistTranscript: config.workflow.persistTranscript,
+      }),
+    ),
+  );
+  if (opts.headless)
+    unsubs.push(
+      bus.subscribe(createStdoutJsonSink({ persistTranscript: config.workflow.persistTranscript })),
+    );
   if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
   if (config.hooks)
     unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
@@ -162,6 +174,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         createOtelSink({
           provider: trace.getTracerProvider(),
           serviceName: config.otel.serviceName,
+          persistTranscript: config.workflow.persistTranscript,
         }),
       ),
     );
@@ -253,7 +266,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     publishUserMessage({ bus: bus, phase: state.phase }, feature);
 
     if (config.workflow.git?.createBranch) {
-      const desired = `diptych/${slugify(feature, 40)}`;
+      const desired = config.workflow.persistTranscript
+        ? `diptych/${slugify(feature, 40)}`
+        : `diptych/${generateOpaqueSessionSlug()}`;
       try {
         const actual = await createBranch(projectDir, desired);
         publishGitBranchCreated({ bus: bus, phase: state.phase }, actual);

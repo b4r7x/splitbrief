@@ -114,9 +114,7 @@ export function useCommandCompletion({
     onReturn: (l) => {
       const command = l.filtered[l.effectiveSelectedIndex]?.name ?? l.fuzzyMatch?.name;
       if (command) {
-        if (l.currentScreen === 'home') {
-          inputHistoryStore.push(command);
-        }
+        inputHistoryStore.push(command);
         onRuntimeCommand(command);
         setValue('');
       }

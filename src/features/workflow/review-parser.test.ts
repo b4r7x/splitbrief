@@ -69,7 +69,7 @@ afterEach(async () => {
 describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => {
   it('sets error feedback when submitting during implementing phase', async () => {
     setPhase('implementing');
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
@@ -83,7 +83,7 @@ describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => 
 
   it('sets error feedback when submitting during validating-task phase', async () => {
     setPhase('validating-task');
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
@@ -96,7 +96,7 @@ describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => 
 
   it('sets error feedback when submitting during escalating phase', async () => {
     setPhase('escalating');
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
@@ -110,7 +110,7 @@ describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => 
 describe('createReviewInputHandler – enqueue during live planner phase (Bug #4)', () => {
   it('queues user input while the planner is researching', async () => {
     setPhase('researching');
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
@@ -121,13 +121,31 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
 
   it('queues user input while the planner is specifying', async () => {
     setPhase('specifying');
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
     await handleInput('make it simpler');
 
     expect(enqueue).toHaveBeenCalledWith('make it simpler', 'specifying');
+  });
+
+  it('shows feedback when the queue handler rejects planner input', async () => {
+    setPhase('researching');
+    const enqueue = vi.fn(() => ({
+      status: 'rejected' as const,
+      reason: 'queue-full' as const,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    }));
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('add error handling');
+
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    });
   });
 
   it('sets error when no queue handler is set', async () => {
@@ -145,7 +163,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
 describe('createReviewInputHandler – idle / other phases', () => {
   it('does nothing when phase is idle and mode is normal', async () => {
     // phase stays as 'idle' (initial state)
-    const enqueue = vi.fn();
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
@@ -180,6 +198,11 @@ describe('parseReviewCommand', () => {
     expect(parseReviewCommand('e')).toEqual({ action: 'edit' });
   });
 
+  it('parses explicit external edit commands', () => {
+    expect(parseReviewCommand('E')).toEqual({ action: 'edit-file' });
+    expect(parseReviewCommand('edit-file')).toEqual({ action: 'edit-file' });
+  });
+
   it('returns null for unknown input', () => {
     expect(parseReviewCommand('unknown command here')).toBeNull();
   });
@@ -189,6 +212,23 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it.each([
     'e',
     'edit',
+  ])('switches to rich brief review without resolving approval for %s', async (command) => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    reviewStore.setReviewFile('/tmp/tasks.md');
+    feedbackStore.setError('stale command error');
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput(command);
+
+    expect(planEditorStore.get().runtimeRichMode).toBe(true);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get().isError).toBe(false);
+  });
+
+  it.each([
+    'E',
+    'edit-file',
   ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
@@ -236,7 +276,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
-    await handleInput('edit');
+    await handleInput('edit-file');
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get().isError).toBe(true);
@@ -273,7 +313,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     }) as typeof process.stdout.write;
     const { handleInput } = createReviewInputHandler(makeInputMode('review'));
     try {
-      await handleInput('edit');
+      await handleInput('edit-file');
     } finally {
       process.stdout.write = originalWrite;
     }

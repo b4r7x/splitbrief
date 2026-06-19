@@ -34,6 +34,7 @@ describe('parseTextLine', () => {
     const result = parseTextLine('Tokens: 1.5k sent');
     expect(result.usage).toBeUndefined();
     expect(result.text).toBe('Tokens: 1.5k sent\n');
+    expect(result.channel).toBe('stdout');
   });
 
   it('handles token line with surrounding whitespace', () => {
@@ -66,6 +67,7 @@ describe('parseJsonlLine', () => {
     };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.text).toBe('hello world');
+    expect(result.channel).toBe('assistant');
   });
 
   it('parses item.completed with item.text string', () => {
@@ -75,6 +77,7 @@ describe('parseJsonlLine', () => {
     };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.text).toBe('fallback text');
+    expect(result.channel).toBe('assistant');
   });
 
   it('parses turn.completed with usage (input_tokens/output_tokens)', () => {
@@ -93,6 +96,7 @@ describe('parseJsonlLine', () => {
     const event = { text: 'some text' };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.text).toBe('some text');
+    expect(result.channel).toBe('assistant');
   });
 
   it('returns text from event.content string field', () => {
@@ -111,10 +115,126 @@ describe('parseJsonlLine', () => {
     expect(result.text).toBe('{"key":"value"}');
   });
 
-  it('ignores item.completed with non-agent_message type', () => {
+  it('parses Codex command item lifecycle events', () => {
+    const started = parseJsonlLine(
+      JSON.stringify({
+        type: 'item.started',
+        item: { id: 'cmd-1', type: 'command_execution', command: 'npm test' },
+      }),
+    );
+    const completed = parseJsonlLine(
+      JSON.stringify({
+        type: 'item.completed',
+        item: {
+          id: 'cmd-1',
+          type: 'command_execution',
+          command: 'npm test',
+          output: 'ok',
+          status: 'completed',
+        },
+      }),
+    );
+
+    expect(started).toEqual({
+      toolUseStart: [
+        {
+          id: 'cmd-1',
+          name: 'npm test',
+          input: { type: 'command_execution', command: 'npm test' },
+        },
+      ],
+    });
+    expect(completed).toEqual({
+      toolUseDone: [
+        {
+          id: 'cmd-1',
+          name: 'npm test',
+          input: { type: 'command_execution', command: 'npm test', status: 'completed' },
+          output: 'ok',
+        },
+      ],
+    });
+  });
+
+  it('parses Codex file, MCP, web, and plan action items', () => {
+    expect(
+      parseJsonlLine(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { id: 'file-1', type: 'file_change', path: 'src/app.ts', status: 'completed' },
+        }),
+      ),
+    ).toEqual({
+      toolUseDone: [
+        {
+          id: 'file-1',
+          name: 'file_change',
+          input: { type: 'file_change', path: 'src/app.ts', status: 'completed' },
+          output: 'completed',
+        },
+      ],
+    });
+    expect(
+      parseJsonlLine(
+        JSON.stringify({
+          type: 'item.completed',
+          item: {
+            id: 'mcp-1',
+            type: 'mcp_tool_call',
+            server: 'github',
+            tool_name: 'list_issues',
+            input: { owner: 'acme' },
+          },
+        }),
+      ),
+    ).toEqual({
+      toolUseDone: [
+        {
+          id: 'mcp-1',
+          name: 'list_issues',
+          input: { owner: 'acme' },
+        },
+      ],
+    });
+    expect(
+      parseJsonlLine(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { id: 'web-1', type: 'web_search', query: 'codex jsonl' },
+        }),
+      ),
+    ).toEqual({
+      toolUseDone: [
+        {
+          id: 'web-1',
+          name: 'web_search',
+          input: { type: 'web_search', query: 'codex jsonl' },
+        },
+      ],
+    });
+    expect(
+      parseJsonlLine(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { id: 'plan-1', type: 'plan_update', text: '1. inspect\n2. edit' },
+        }),
+      ),
+    ).toEqual({
+      toolUseDone: [
+        {
+          id: 'plan-1',
+          name: 'plan_update',
+          input: { type: 'plan_update' },
+          output: '1. inspect\n2. edit',
+        },
+      ],
+    });
+  });
+
+  it('ignores item.completed with unrecognized non-agent_message type', () => {
     const event = {
       type: 'item.completed',
-      item: { type: 'tool_call', content: [{ type: 'text', text: 'should skip' }] },
+      item: { type: '', content: [{ type: 'text', text: 'should skip' }] },
     };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.text).toBeUndefined();
@@ -201,6 +321,7 @@ describe('parseOpencodeLine', () => {
     };
     const result = parseOpencodeLine(JSON.stringify(event));
     expect(result.text).toBe('a.js, err.txt, out.txt\n\ndone');
+    expect(result.channel).toBe('assistant');
     expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
 
@@ -262,12 +383,45 @@ describe('parseOpencodeLine', () => {
         JSON.stringify({
           type: 'tool_use',
           sessionID: 'ses_tool',
-          part: { type: 'tool', name: 'read_file', input: { path: 'src/a.ts' } },
+          part: {
+            type: 'tool',
+            id: 'tool-opencode',
+            name: 'read_file',
+            input: { path: 'src/a.ts' },
+          },
         }),
       ),
     ).toEqual({
       sessionId: 'ses_tool',
-      toolUse: [{ name: 'read_file', input: { path: 'src/a.ts' } }],
+      toolUseStart: [{ id: 'tool-opencode', name: 'read_file', input: { path: 'src/a.ts' } }],
+    });
+  });
+
+  it('captures completed tool envelopes', () => {
+    expect(
+      parseOpencodeLine(
+        JSON.stringify({
+          type: 'tool_result',
+          sessionID: 'ses_tool',
+          part: {
+            type: 'tool',
+            id: 'tool-opencode',
+            name: 'read_file',
+            input: { path: 'src/a.ts' },
+            output: 'contents',
+          },
+        }),
+      ),
+    ).toEqual({
+      sessionId: 'ses_tool',
+      toolUseDone: [
+        {
+          id: 'tool-opencode',
+          name: 'read_file',
+          input: { path: 'src/a.ts' },
+          output: 'contents',
+        },
+      ],
     });
   });
 

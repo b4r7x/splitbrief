@@ -4,6 +4,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation-result.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
+import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import {
   commitChanges,
   createTaggedStash,
@@ -51,6 +52,27 @@ type ValidateCommitOptions = {
   gitOps?: Partial<GitOps> | undefined;
 };
 
+function buildTaskCommitMessage(opts: {
+  task: Pick<Task, 'id' | 'title'>;
+  commitSuffix?: string | undefined;
+  persistTranscript: boolean;
+}): string {
+  const suffix = opts.commitSuffix ? ` (${opts.commitSuffix})` : '';
+  if (!opts.persistTranscript) {
+    return `${RUN_COMMIT_MESSAGE_PREFIX} ${opts.task.id}${suffix}`;
+  }
+  return `${RUN_COMMIT_MESSAGE_PREFIX} ${opts.task.id} - ${opts.task.title}${suffix}`;
+}
+
+function transitionTypeForCompletionMethod(
+  method: TaskCompletionMethod,
+  fallback: ValidateCommitOptions['transitionType'],
+): ValidateCommitOptions['transitionType'] {
+  const completionClass = classifyTaskCompletionMethod(method);
+  if (completionClass !== 'escalated') return fallback;
+  return method === 'escalated-full' ? 'FULL_SUCCESS' : 'HINT_SUCCESS';
+}
+
 export async function validateCommitAndAdvance(
   opts: ValidateCommitOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
@@ -80,6 +102,7 @@ export async function validateCommitAndAdvance(
   };
   const taskChangedFiles = opts.taskChangedFiles ?? [task.file];
   const usingFallbackFiles = opts.taskChangedFiles === undefined;
+  const completionTransitionType = transitionTypeForCompletionMethod(method, transitionType);
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -109,7 +132,7 @@ export async function validateCommitAndAdvance(
         `Skipped per-task commit: a git ${inProgressOp} is in progress. Finish or abort it first.`,
       );
       const nextState = transitionAndSave({ projectDir, sessionId }, state, {
-        type: transitionType,
+        type: completionTransitionType,
       });
       emitTaskComplete(nextState);
       return { state: nextState, completed: true };
@@ -122,8 +145,11 @@ export async function validateCommitAndAdvance(
       );
     }
 
-    const suffix = commitSuffix ? ` (${commitSuffix})` : '';
-    const commitMsg = `${RUN_COMMIT_MESSAGE_PREFIX} ${task.id} - ${task.title}${suffix}`;
+    const commitMsg = buildTaskCommitMessage({
+      task,
+      commitSuffix,
+      persistTranscript: config.workflow.persistTranscript,
+    });
 
     const stagedBefore = await gitOps.getStagedFiles(projectDir);
     try {
@@ -158,7 +184,7 @@ export async function validateCommitAndAdvance(
             `pre_commit blocked: ${pre.reason ?? 'hook denied'}`,
           );
           const nextState = transitionAndSave({ projectDir, sessionId }, state, {
-            type: transitionType,
+            type: completionTransitionType,
           });
           emitTaskComplete(nextState);
           return { state: nextState, completed: true };
@@ -190,7 +216,9 @@ export async function validateCommitAndAdvance(
     }
   }
 
-  const nextState = transitionAndSave({ projectDir, sessionId }, state, { type: transitionType });
+  const nextState = transitionAndSave({ projectDir, sessionId }, state, {
+    type: completionTransitionType,
+  });
   emitTaskComplete(nextState);
 
   return { state: nextState, completed: true };

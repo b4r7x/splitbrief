@@ -4,24 +4,24 @@ import {
   taskReviewRequestFields,
   userEditConflictSchema,
 } from '../events/schema.js';
+import { isTaskReviewAction, type TaskReviewResponse } from '../events/workflow-events.js';
 import type { UserEditConflictAction } from '../../core/schemas/enums.js';
-import { WorkflowModeSchema, ActionClassSchema, PhaseSchema } from '../../core/schemas/enums.js';
+import {
+  WorkflowModeSchema,
+  ActionClassSchema,
+  PhaseSchema,
+  UserEditConflictActionSchema,
+  RecoveryActionSchema,
+  type RecoveryAction,
+} from '../../core/schemas/enums.js';
 import { ClarificationQuestionSchema } from '../../core/schemas/question.js';
 import type { TieredApprovalResponse } from '../../core/approval/types.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
-import { RecoveryReasonSchema, RecoveryActionSchema } from '../../core/schemas/enums.js';
+import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery.js';
 import { isRecord } from '../../utils/type-guards.js';
 
-const IpcRecoveryIssueSchema = z.object({
-  reason: RecoveryReasonSchema,
-  message: z.string(),
-  availableActions: z.array(RecoveryActionSchema).min(1),
-  recommendedAction: RecoveryActionSchema,
-});
-
-const TASK_REVIEW_ACTIONS = new Set<string>(['continue', 'redo-task', 'revise-plan', 'abort']);
 const IPC_MAX_AUTH_TOKEN_BYTES = 512;
 export const IPC_MAX_FRAME_BYTES = 1024 * 1024;
 export const IPC_MAX_TEXT_BYTES = 256 * 1024;
@@ -119,17 +119,15 @@ export type IpcPromptResponse =
   | { kind: 'continuation_needed'; text: string }
   | { kind: 'tiered_approval'; response: TieredApprovalResponse }
   | { kind: 'cost_approval'; approved: boolean }
-  | {
-      kind: 'task_review';
-      response: { action: 'continue' | 'redo-task' | 'revise-plan' | 'abort'; notes?: string };
-    }
-  | { kind: 'recovery_needed'; action: string };
+  | { kind: 'task_review'; response: TaskReviewResponse }
+  | { kind: 'recovery_needed'; action: RecoveryAction };
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 export type ClientMessage =
   | { kind: 'authenticate'; token: string }
   | { kind: 'user_input'; text: string }
+  | { kind: 'queue_clear' }
   | { kind: 'prompt_response'; requestId: string; response: IpcPromptResponse }
   | { kind: 'detach' };
 
@@ -145,17 +143,6 @@ function isTieredApprovalResponse(value: unknown): value is TieredApprovalRespon
     return typeof value.phrase === 'string' && typeof value.reason === 'string';
   }
   return false;
-}
-
-const VALID_USER_EDIT_CONFLICT_ACTIONS = new Set<string>([
-  'continue-unrelated',
-  'pause',
-  'skip-current-task',
-  'abort-workflow',
-]);
-
-function isUserEditConflictActionVal(value: unknown): value is UserEditConflictAction {
-  return typeof value === 'string' && VALID_USER_EDIT_CONFLICT_ACTIONS.has(value);
 }
 
 export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null {
@@ -174,11 +161,12 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
         ...(value.comment !== undefined && { comment: value.comment }),
         ...(value.action !== undefined && { action: value.action }),
       };
-    case 'user_edit_conflict':
-      return typeof value.selectedAction === 'string' &&
-        isUserEditConflictActionVal(value.selectedAction)
-        ? { kind: value.kind, selectedAction: value.selectedAction }
+    case 'user_edit_conflict': {
+      const selectedAction = UserEditConflictActionSchema.safeParse(value.selectedAction);
+      return selectedAction.success
+        ? { kind: value.kind, selectedAction: selectedAction.data }
         : null;
+    }
     case 'question_asked':
       return isBoundedString(value.answer, IPC_MAX_TEXT_BYTES)
         ? { kind: value.kind, answer: value.answer }
@@ -195,24 +183,26 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
       return typeof value.approved === 'boolean'
         ? { kind: value.kind, approved: value.approved }
         : null;
-    case 'task_review':
-      return isRecord(value.response) &&
-        typeof value.response.action === 'string' &&
-        TASK_REVIEW_ACTIONS.has(value.response.action) &&
-        (value.response.notes === undefined ||
-          isBoundedString(value.response.notes, IPC_MAX_TEXT_BYTES))
-        ? {
-            kind: value.kind,
-            response: {
-              action: value.response.action as 'continue' | 'redo-task' | 'revise-plan' | 'abort',
-              ...(value.response.notes !== undefined && { notes: value.response.notes }),
-            },
-          }
-        : null;
-    case 'recovery_needed':
-      return isBoundedString(value.action, IPC_MAX_TEXT_BYTES)
-        ? { kind: value.kind, action: value.action }
-        : null;
+    case 'task_review': {
+      if (!isRecord(value.response) || !isTaskReviewAction(value.response.action)) return null;
+      if (
+        value.response.notes !== undefined &&
+        !isBoundedString(value.response.notes, IPC_MAX_TEXT_BYTES)
+      ) {
+        return null;
+      }
+      return {
+        kind: value.kind,
+        response: {
+          action: value.response.action,
+          ...(value.response.notes !== undefined && { notes: value.response.notes }),
+        },
+      };
+    }
+    case 'recovery_needed': {
+      const action = RecoveryActionSchema.safeParse(value.action);
+      return action.success ? { kind: value.kind, action: action.data } : null;
+    }
     default:
       return null;
   }
@@ -239,6 +229,9 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
     return isBoundedString(value.text, IPC_MAX_TEXT_BYTES)
       ? { kind: value.kind, text: value.text }
       : null;
+  }
+  if (value.kind === 'queue_clear') {
+    return { kind: value.kind };
   }
   if (value.kind === 'prompt_response') {
     if (!isBoundedString(value.requestId, IPC_MAX_TEXT_BYTES)) return null;

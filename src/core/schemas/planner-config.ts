@@ -6,6 +6,13 @@ export const PlannerConfigSchema = createPlannerConfigSchema({
   model: z.string().min(1).optional(),
 }).superRefine((cfg, ctx) => {
   if (cfg.kind !== 'shell' && cfg.kind !== 'agent') return;
+  if (cfg.capabilities?.supportsSessionResume === true) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['capabilities', 'supportsSessionResume'],
+      message: `Runner kind "${cfg.kind}" has no documented command session-handle contract; remove supportsSessionResume or use a cli/api/agent-sdk planner`,
+    });
+  }
   if (cfg.capabilities?.supportsEffort === true) {
     ctx.addIssue({
       code: 'custom',

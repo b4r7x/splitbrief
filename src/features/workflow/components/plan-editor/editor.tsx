@@ -59,6 +59,9 @@ export function PlanEditorComponent({
   const flaggedIds = planEditorStore.use((s) => s.flaggedIds);
   const dirty = planEditorStore.use((s) => s.dirty);
   const saveError = planEditorStore.use((s) => s.saveError);
+  const statusMessage = planEditorStore.use((s) => s.statusMessage);
+  const focus = planEditorStore.use((s) => s.focus);
+  const editing = planEditorStore.use((s) => s.editing);
   const reviewMetadata = planEditorStore.use((s) => s.reviewMetadata);
   const configState = configStore.use((s) => s);
 
@@ -93,7 +96,8 @@ export function PlanEditorComponent({
       ? 1
       : Math.min(8, Math.max(7, Math.floor((height ?? 24) / 3)))
     : 0;
-  const chromeRows = 8 + previewRows + (dirty ? 1 : 0) + (saveError !== null ? 1 : 0);
+  const chromeRows =
+    8 + previewRows + (dirty ? 1 : 0) + (saveError !== null ? 1 : 0) + (statusMessage ? 1 : 0);
   const taskRowBudget = Math.max(1, (height ?? 24) - chromeRows);
   const { scrollOffset, visibleTasks } = getVisibleTaskWindow({
     tasks,
@@ -101,6 +105,8 @@ export function PlanEditorComponent({
     expandedIds,
     metadata: reviewMetadata,
     rowBudget: taskRowBudget,
+    focus,
+    editing,
   });
   const isNarrow = (width ?? 80) < 70;
   const packetPreview = usePacketPreview({
@@ -150,6 +156,11 @@ export function PlanEditorComponent({
       {saveError !== null && (
         <Text color={t.error} wrap="truncate">
           {saveError}
+        </Text>
+      )}
+      {statusMessage !== null && (
+        <Text color={t.textDim} wrap="truncate">
+          {statusMessage}
         </Text>
       )}
       <Box height={1} />

@@ -110,7 +110,8 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EngineEventSchema` (union) | n/a (new) | `engine/events/schema.ts` | The `z.discriminatedUnion('type', …)` is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
 | `EngineEvent` (alias) | n/a (new) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
-| `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, IPC, hooks, OTel, and legacy `InvokeResult` projections |
+| `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/orchestrator/types.ts` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
+| `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, IPC, hooks, OTel, RPC, and explicit `InvokeResult` projections |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: 18 consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
@@ -246,7 +247,7 @@ A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import ty
 A: `src/core/schemas/config.ts` (or a new file in `core/schemas/` if the shape is large). Export both `SectionSchema` and `type Section = z.infer<typeof SectionSchema>`.
 
 **Q: I'm adding a 5-arm discriminated union for some new UI event.**
-A: Is it persisted (written to session log, IPC, etc.)? → schema, with its `z.infer` alias colocated. Is it in-memory only? → TS type, placed per the three-case rule. Note the engine→UI bus union is *not* in-memory only: `EngineEvent` is the `z.infer` of `EngineEventSchema` (`engine/events/schema.ts`) because every event is appended to `session.jsonl` and replayed back through `parseEngineEvent`.
+A: Is it persisted (written to session log, IPC, etc.)? → schema, with its `z.infer` alias colocated. Is it in-memory only? → TS type, placed per the three-case rule. Note the engine→UI bus union is *not* in-memory only: `EngineEvent` is the `z.infer` of `EngineEventSchema` (`engine/events/schema.ts`) because engine events cross protected persistence/replay boundaries such as `session.jsonl`, IPC, stdout JSON, and RPC.
 
 **Q: Can I put `type Foo` and `type Bar` (unrelated) in the same `types.ts` because they are both used across my folder?**
 A: Yes — that is what `types.ts` is for. The folder is the naming context.

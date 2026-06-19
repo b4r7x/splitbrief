@@ -96,15 +96,18 @@ describe('spawnWithTimeout', () => {
   });
 
   it('captures stderr', async () => {
+    const stderrChunks: string[] = [];
     const result = await spawnWithTimeout({
       command: 'node',
       args: ['-e', 'console.error("err")'],
       cwd: process.cwd(),
       timeout: 5000,
       onProgress: () => {},
+      onStderr: (chunk) => stderrChunks.push(chunk),
     });
 
     expect(result.stderr).toContain('err');
+    expect(stderrChunks.join('')).toContain('err');
   });
 
   it('times out long-running processes', async () => {

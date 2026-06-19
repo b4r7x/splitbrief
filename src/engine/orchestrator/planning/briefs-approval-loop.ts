@@ -111,6 +111,7 @@ export async function runBriefsApprovalLoop(
       queuedAt: nowIso(),
       phase: state.phase,
       deliveredViaNative: false as const,
+      nativeDeliveryState: 'pending' as const,
     };
     state = transitionAndSave({ projectDir, sessionId }, state, {
       type: 'ENQUEUE_USER_MSG',

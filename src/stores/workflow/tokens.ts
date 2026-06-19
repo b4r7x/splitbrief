@@ -1,9 +1,10 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TokenUsage } from '../../core/schemas/tokens.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { Phase, TaskCompletionMethod } from '../../core/schemas/enums.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
+import { classifyTaskCompletionMethod } from '../../core/task-completion.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
 export interface PhaseTokens {
@@ -21,14 +22,28 @@ export interface PhaseTokens {
   implementerCacheCreateTokens?: number | undefined;
 }
 
-export interface TaskAttemptTokens {
-  method: TaskCompletionMethod;
-  implementerTokens: number;
-  escalationTokens: number;
-  retryCount: number;
-  tool?: string | undefined;
-  model?: string | undefined;
-}
+export type TaskAttemptTokens = Pick<
+  TaskTokenUsage,
+  | 'method'
+  | 'implementerTokens'
+  | 'escalationTokens'
+  | 'implementerCacheReadTokens'
+  | 'implementerCacheCreateTokens'
+  | 'escalationCacheReadTokens'
+  | 'escalationCacheCreateTokens'
+  | 'retryCount'
+  | 'tool'
+  | 'model'
+  | 'implementerProfile'
+  | 'contextFit'
+  | 'estimatedTokens'
+  | 'untruncatedEstimatedTokens'
+  | 'contextLength'
+  | 'currentCodeTruncated'
+  | 'currentCodeContextMode'
+  | 'costPosture'
+  | 'routingReason'
+>;
 
 export interface PerTaskTokens {
   totalTokens: number;
@@ -106,6 +121,51 @@ function makeEmptyPhaseTokens(): PhaseTokens {
   };
 }
 
+type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }>;
+
+export function taskAttemptTotalTokens(attempt: TaskAttemptTokens): number {
+  return (
+    attempt.implementerTokens +
+    attempt.escalationTokens +
+    (attempt.implementerCacheReadTokens ?? 0) +
+    (attempt.implementerCacheCreateTokens ?? 0) +
+    (attempt.escalationCacheReadTokens ?? 0) +
+    (attempt.escalationCacheCreateTokens ?? 0)
+  );
+}
+
+function preserveTaskAttemptMetadata(event: TaskTokensEvent): Partial<TaskAttemptTokens> {
+  return {
+    ...(event.implementerCacheReadTokens !== undefined && {
+      implementerCacheReadTokens: event.implementerCacheReadTokens,
+    }),
+    ...(event.implementerCacheCreateTokens !== undefined && {
+      implementerCacheCreateTokens: event.implementerCacheCreateTokens,
+    }),
+    ...(event.escalationCacheReadTokens !== undefined && {
+      escalationCacheReadTokens: event.escalationCacheReadTokens,
+    }),
+    ...(event.escalationCacheCreateTokens !== undefined && {
+      escalationCacheCreateTokens: event.escalationCacheCreateTokens,
+    }),
+    ...(event.implementerProfile !== undefined && { implementerProfile: event.implementerProfile }),
+    ...(event.contextFit !== undefined && { contextFit: event.contextFit }),
+    ...(event.estimatedTokens !== undefined && { estimatedTokens: event.estimatedTokens }),
+    ...(event.untruncatedEstimatedTokens !== undefined && {
+      untruncatedEstimatedTokens: event.untruncatedEstimatedTokens,
+    }),
+    ...(event.contextLength !== undefined && { contextLength: event.contextLength }),
+    ...(event.currentCodeTruncated !== undefined && {
+      currentCodeTruncated: event.currentCodeTruncated,
+    }),
+    ...(event.currentCodeContextMode !== undefined && {
+      currentCodeContextMode: event.currentCodeContextMode,
+    }),
+    ...(event.costPosture !== undefined && { costPosture: event.costPosture }),
+    ...(event.routingReason !== undefined && { routingReason: event.routingReason }),
+  };
+}
+
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
   switch (event.type) {
     case 'workflow_config':
@@ -165,12 +225,10 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         retryCount: event.retryCount,
         ...(event.tool !== undefined && { tool: event.tool }),
         ...(event.model !== undefined && { model: event.model }),
+        ...preserveTaskAttemptMetadata(event),
       };
       const attempts = [...(existing.attempts ?? []), attempt];
-      const totalTokens = attempts.reduce(
-        (sum, a) => sum + a.implementerTokens + a.escalationTokens,
-        0,
-      );
+      const totalTokens = attempts.reduce((sum, a) => sum + taskAttemptTotalTokens(a), 0);
       return {
         ...state,
         perTask: { ...state.perTask, [event.taskId]: { ...existing, totalTokens, attempts } },
@@ -187,14 +245,9 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
 
     case 'task_completed': {
       let { localCount, escalatedCount } = state;
-      if (event.method === 'local' || event.method === 'mcp-tool') localCount += 1;
-      else if (
-        event.method === 'escalated-intermediate' ||
-        event.method === 'escalated-hint' ||
-        event.method === 'escalated-full'
-      ) {
-        escalatedCount += 1;
-      }
+      const completionClass = classifyTaskCompletionMethod(event.method);
+      if (completionClass === 'local') localCount += 1;
+      else if (completionClass === 'escalated') escalatedCount += 1;
       return {
         ...state,
         localCount,
@@ -213,14 +266,10 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       const last = attempts.at(-1);
       let { localCount, escalatedCount, completedTaskCount } = state;
       if (last) {
-        if ((last.method === 'local' || last.method === 'mcp-tool') && localCount > 0) {
+        const completionClass = classifyTaskCompletionMethod(last.method);
+        if (completionClass === 'local' && localCount > 0) {
           localCount -= 1;
-        } else if (
-          (last.method === 'escalated-intermediate' ||
-            last.method === 'escalated-hint' ||
-            last.method === 'escalated-full') &&
-          escalatedCount > 0
-        ) {
+        } else if (completionClass === 'escalated' && escalatedCount > 0) {
           escalatedCount -= 1;
         }
         if (completedTaskCount > 0) completedTaskCount -= 1;
@@ -250,6 +299,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_text_delta':
     case 'runner_call_usage':
     case 'runner_call_tool_use':
+    case 'runner_call_activity':
     case 'runner_call_session_id':
     case 'runner_call_artifact':
     case 'runner_call_warning':

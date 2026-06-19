@@ -13,6 +13,7 @@ import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { BriefReviewView } from '../brief-review-view.js';
+import { createSaveHandler } from '../../plan-editor/save.js';
 import { PlanEditorComponent } from './editor.js';
 import { PlanEditorHelpOverlay } from './help-overlay.js';
 
@@ -136,6 +137,45 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
 
     expect(ui.lastFrame() ?? '').toContain('quality n/a');
+  });
+
+  it('renders inline section edits and saves them through the existing validation path', async () => {
+    const projectDir = join(tmpDir, 'project');
+    const sessionDir = join(projectDir, '.diptych', 'sessions', 'inline-edit-session');
+    await mkdir(sessionDir, { recursive: true });
+    const tasks = [completeTask('T001', 'src/a.ts'), completeTask('T002', 'src/b.ts')];
+    await writeFile(join(sessionDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(sessionDir, TASKS_FILE),
+        sessionDirPath: sessionDir,
+        height: 30,
+        width: 120,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Task T001');
+    });
+
+    planEditorStore.toggleExpand('T001');
+    planEditorStore.enterSectionList();
+    planEditorStore.moveSectionCursor('down');
+    planEditorStore.startEditingSection();
+    planEditorStore.updateEditingValue(
+      'Create a hello world module with inline description updates',
+    );
+    planEditorStore.saveEditingSection();
+    await tick(20);
+
+    expect(ui.lastFrame() ?? '').toContain('inline description updates');
+
+    await createSaveHandler(sessionDir)();
+    await vi.waitFor(async () => {
+      expect(await readFile(join(sessionDir, TASKS_FILE), 'utf-8')).toContain(
+        'Create a hello world module with inline description updates',
+      );
+    });
   });
 
   it('renders the plan review scorecard in the rich editor', async () => {
@@ -682,7 +722,36 @@ describe('PlanEditorComponent review metadata', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('p');
-    expect(frame).toContain('Toggle worker packet preview');
+    expect(frame).toContain('preview');
+  });
+
+  it('renders only the current plan editor feedback message', async () => {
+    await writeTasksFile();
+
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 120,
+      }),
+    );
+    await tick(20);
+
+    planEditorStore.setStatusMessage('saved message');
+    planEditorStore.setSaveError('failed message');
+    await tick();
+
+    let frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('failed message');
+    expect(frame).not.toContain('saved message');
+
+    planEditorStore.setStatusMessage('saved again');
+    await tick();
+
+    frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('saved again');
+    expect(frame).not.toContain('failed message');
   });
 
   it('updates packet preview when cursor moves', async () => {

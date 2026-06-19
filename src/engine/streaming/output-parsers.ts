@@ -10,11 +10,15 @@ function wrapStreamParser(line: string): ParsedLine {
   const r = parseStreamLine(line);
   return {
     ...(r.text !== undefined ? { text: r.text } : {}),
+    ...(r.channel !== undefined ? { channel: r.channel } : {}),
     ...(r.usage !== undefined ? { usage: r.usage } : {}),
     ...(r.isResult !== undefined ? { isResult: r.isResult } : {}),
     ...(r.isError !== undefined ? { isError: r.isError } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
     ...(r.toolUse !== undefined ? { toolUse: r.toolUse } : {}),
+    ...(r.toolUseStart !== undefined ? { toolUseStart: r.toolUseStart } : {}),
+    ...(r.toolUseDelta !== undefined ? { toolUseDelta: r.toolUseDelta } : {}),
+    ...(r.warning !== undefined ? { warning: r.warning } : {}),
   };
 }
 

@@ -4,6 +4,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createConnection, type Socket } from 'node:net';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import type { ServerMessage } from './protocol.js';
 
@@ -166,6 +167,24 @@ describe('startIpcServer', () => {
       expect(msg.mode).toBe('standard');
       expect(msg.startedAt).toBe(1000);
     }
+  });
+
+  it('replaces session_meta feature text when transcript persistence is disabled', async () => {
+    const { srv } = await makeServer({
+      persistTranscript: false,
+      feature: 'secret feature prompt',
+    });
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    socket.write(JSON.stringify({ kind: 'authenticate', token: AUTH_TOKEN }) + '\n');
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+
+    expect(msg.kind).toBe('session_meta');
+    if (msg.kind === 'session_meta') {
+      expect(msg.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    }
+    expect(JSON.stringify(msg)).not.toContain('secret feature prompt');
   });
 
   it('rejects authentication with a wrong token and closes the socket', async () => {
@@ -354,7 +373,9 @@ describe('startIpcServer', () => {
     bus.subscribe((e) => events.push(e));
     const socket = await connectAndAuth(srv.sockPath);
 
-    socket.write(JSON.stringify({ kind: 'user_input', text: { value: 'not text' } }) + '\n');
+    socket.write(
+      JSON.stringify({ kind: 'user_input', text: { value: 'secret invalid frame' } }) + '\n',
+    );
     await tick();
     await tick();
 
@@ -362,6 +383,7 @@ describe('startIpcServer', () => {
     expect(
       events.some((e) => e.type === 'warning' && e.message.includes('invalid message structure')),
     ).toBe(true);
+    expect(JSON.stringify(events)).not.toContain('secret invalid frame');
   });
 
   it('sends pending prompt requests when a client attaches and resolves prompt_response', async () => {
@@ -692,11 +714,17 @@ describe('startIpcServer', () => {
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
 
-    socket.write('not valid json\n');
+    socket.write('not valid json with secret feature prompt\n');
     await tick();
     await tick();
 
-    expect(events.some((e) => e.type === 'warning')).toBe(true);
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning?.type).toBe('warning');
+    if (warning?.type === 'warning') {
+      expect(warning.message).toContain('malformed JSON');
+      expect(warning.message).toContain('bytes');
+      expect(warning.message).not.toContain('secret feature prompt');
+    }
     expect(srv.sockPath).toBeTruthy();
     expect(existsSync(srv.sockPath)).toBe(true);
   });

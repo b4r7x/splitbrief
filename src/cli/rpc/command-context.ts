@@ -115,8 +115,13 @@ export function createRpcCommandContext(opts: {
       if (clearLiveQueue) return clearLiveQueue();
       const state = opts.getState();
       const sessionId = opts.getSessionId();
-      if (!state || !sessionId) return 0;
-      return clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count;
+      if (!state || !sessionId) {
+        return { status: 'unavailable', message: 'Cannot clear queue: no active workflow.' };
+      }
+      return {
+        status: 'cleared',
+        count: clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count,
+      };
     },
     rebuildRepomap: async (projectDir, cacheDir) =>
       rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),

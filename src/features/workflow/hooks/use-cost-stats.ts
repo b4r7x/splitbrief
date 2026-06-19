@@ -99,12 +99,7 @@ function reconstructTaskBreakdowns(perTask: Record<string, PerTaskTokens>): Task
       breakdowns.push({
         taskId: taskId(id),
         taskTitle: record.title,
-        method: attempt.method,
-        implementerTokens: attempt.implementerTokens,
-        escalationTokens: attempt.escalationTokens,
-        retryCount: attempt.retryCount,
-        ...(attempt.tool !== undefined && { tool: attempt.tool }),
-        ...(attempt.model !== undefined && { model: attempt.model }),
+        ...attempt,
       });
     }
   }

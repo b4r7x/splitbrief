@@ -9,6 +9,7 @@ function makeState(overrides: Partial<ContextualBindingsInput> = {}): Contextual
     dirty: false,
     flaggedIds: new Set<string>(),
     isPacketPreviewOpen: false,
+    focus: 'task-list',
     ...overrides,
   };
 }
@@ -71,5 +72,20 @@ describe('getContextualBindings', () => {
     const bindings = getContextualBindings(makeState());
     expect(bindings.map((b) => b.key)).toContain('q');
     expect(bindings.map((b) => b.key)).toContain('?');
+  });
+
+  it('shows section and field editing bindings for semantic brief edits', () => {
+    expect(getContextualBindings(makeState({ focus: 'section-list' })).map((b) => b.key)).toEqual([
+      'j/k',
+      'e',
+      'c',
+      'esc',
+      'Y',
+      'q',
+      '?',
+    ]);
+    expect(
+      getContextualBindings(makeState({ focus: 'editing-section' })).map((b) => b.key),
+    ).toEqual(['enter', '^enter', 'esc']);
   });
 });

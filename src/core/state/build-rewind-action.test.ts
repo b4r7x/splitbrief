@@ -95,6 +95,34 @@ describe('buildRewindAction', () => {
     expect(outcome.event).toMatchObject({ type: 'rewind_to_spec', comment: 'redo the spec' });
     expect(existsSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE))).toBe(false);
   });
+
+  it('omits rewind comments from directly appended events when transcript persistence is disabled', () => {
+    const { projectDir, sessionId } = setupSession();
+    const state = makeImplState([makeTask()]);
+
+    const outcome = buildRewindAction(
+      { target: 'spec', comment: 'private rewind feedback' },
+      { projectDir, sessionId },
+      state,
+      { persistTranscript: false },
+    );
+
+    expect(outcome.action).toEqual({
+      type: 'REWIND_TO_SPEC',
+      comment: 'private rewind feedback',
+    });
+    expect(outcome.event).toMatchObject({
+      type: 'rewind_to_spec',
+      comment: 'private rewind feedback',
+    });
+    expect(readSessionEvents(projectDir, sessionId)).toEqual([
+      expect.objectContaining({
+        type: 'rewind_to_spec',
+        phase: state.phase,
+        data: { comment: '[transcript omitted]' },
+      }),
+    ]);
+  });
 });
 
 function setupSession(): { projectDir: string; sessionId: string } {

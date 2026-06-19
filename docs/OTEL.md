@@ -96,7 +96,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 
 | EngineEvent | Span effect |
 |---|---|
-| `workflow_started` | Open root `diptych.workflow`; set `diptych.feature` |
+| `workflow_started` | Open root `diptych.workflow`; set `diptych.feature` only when transcript persistence allows feature text export |
 | `workflow_config` | Set `diptych.mode`, `diptych.planner.{tool,model}`, `diptych.implementer.{tool,model}` on workflow span |
 | `workflow_complete` | Close workflow (status OK) and any open children |
 | `workflow_cancelled` | Close workflow and children with status ERROR (`cancelled`) |
@@ -116,7 +116,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 
 | Attribute | Description |
 |---|---|
-| `diptych.feature` | Feature description passed to diptych |
+| `diptych.feature` | Feature description passed to diptych. Omitted or replaced with a transcript placeholder when `workflow.persistTranscript: false`. |
 | `diptych.mode` | Workflow mode: `instant`, `quick`, `standard`, or `speckit` (legacy `full` alias) |
 | `diptych.planner.tool` | Planner runner identifier |
 | `diptych.planner.model` | Planner model name (if applicable) |
@@ -133,7 +133,7 @@ One span per planning phase: `researching`, `specifying`, `planning`, `implement
 
 One span per implementation task. Attributes: `diptych.task.id`, `diptych.task.title`, `diptych.task.file`, `diptych.task.action` (`create` / `modify`), `diptych.task.index`, `diptych.task.total`. On completion: `diptych.task.method`, `diptych.task.retries`, `diptych.task.duration_ms`. On skip: `diptych.task.skip_reason`. On failure: status `ERROR`.
 
-All user-, planner-, task-, warning-, and error-derived strings attached to spans are secret-redacted and bounded before export. OTel is an external consumer boundary, not a raw transcript channel.
+All user-, planner-, task-, warning-, and error-derived strings attached to spans are secret-redacted and bounded before export. OTel is an external consumer boundary, not a raw transcript channel; when transcript persistence is disabled, prompt-bearing feature/session text is not exported as span attributes.
 
 ## Span events
 

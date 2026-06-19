@@ -9,6 +9,7 @@ import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../utils/markdown/layout.js';
 import type { MarkdownLayoutLine, MarkdownLayoutSegment } from '../../../utils/markdown/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { sanitizeRowDisplayText } from './row-format.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
 
 interface MarkdownConversationRowsInput {
@@ -49,7 +50,7 @@ const FILE_PATH_PATTERN =
   /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+(?::\d+)?/;
 
 export function markdownConversationRows(input: MarkdownConversationRowsInput): ConversationRow[] {
-  const layout = layoutMarkdown(parseMarkdownBlocks(input.text), {
+  const layout = layoutMarkdown(parseMarkdownBlocks(sanitizeRowDisplayText(input.text)), {
     width: input.width,
   });
   const rows: ConversationRow[] = [];

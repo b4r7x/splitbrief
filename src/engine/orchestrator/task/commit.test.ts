@@ -172,6 +172,47 @@ describe('validateCommitAndAdvance', () => {
     ]);
   });
 
+  it('per-task commit omits the task title when transcript persistence is disabled', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const baseState = makeState();
+    const privateTitle = 'private commit title sentinel';
+    const task: Task = { ...firstTask(baseState), title: privateTitle };
+    const state: WorkflowState = { ...baseState, tasks: [task] };
+    const { bus, events } = makeBusRecorder();
+    const commitMessages: string[] = [];
+
+    const result = await validateCommitAndAdvance({
+      task,
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({
+        workflow: { git: { commitStrategy: 'per-task' }, persistTranscript: false },
+      }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [task.file],
+      gitOps: makeGitOps({
+        commitChanges: async (_dir, message) => {
+          commitMessages.push(message);
+          return 'commit-sha';
+        },
+      }),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(commitMessages).toEqual([`feat(diptych): ${task.id}`]);
+    expect(commitMessages[0]).not.toContain(privateTitle);
+
+    const gitEvent = events.find((e) => e.type === 'git_commit');
+    expect(gitEvent).toMatchObject({ type: 'git_commit', taskId: task.id });
+    const eventMessage = gitEvent && 'message' in gitEvent ? gitEvent.message : '';
+    expect(eventMessage).toBe(`feat(diptych): ${task.id}`);
+    expect(eventMessage).not.toContain(privateTitle);
+  });
+
   it('per-task: refuses to commit while a git merge is in progress', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeState();
@@ -408,6 +449,28 @@ describe('validateCommitAndAdvance', () => {
 
     const taskEvent = events.find((e) => e.type === 'task_completed');
     expect(taskEvent).toMatchObject({ type: 'task_completed', retries: 3 });
+  });
+
+  it('stores escalated-intermediate completion as an escalated task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeState();
+    const { bus } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
+      state,
+      bus,
+      method: 'escalated-intermediate',
+      transitionType: 'VALIDATION_PASS',
+      retryCount: 1,
+    });
+
+    expect(result.state.tasks[0]?.status).toBe('escalated');
+    expect(result.state.currentTaskIndex).toBe(1);
   });
 
   it('falls back to state.attempt when retryCount is not provided', async () => {

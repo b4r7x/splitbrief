@@ -15,6 +15,7 @@ import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 import { resolveApiKeyOverride } from '../providers/client.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
+import { toTokenDelta } from '../calls/projection.js';
 
 export function createAgentSdkPlanner(opts: {
   model?: string | undefined;
@@ -91,7 +92,7 @@ export function createAgentSdkPlanner(opts: {
         ...(effort !== undefined && { effort }),
         ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
       });
-      return result.usage;
+      return toTokenDelta(result.usage);
     },
 
     capabilities: CONVERSATIONAL_CAPS,

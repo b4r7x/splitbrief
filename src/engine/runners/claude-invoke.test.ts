@@ -142,24 +142,36 @@ describe('runClaudePlannerStream', () => {
     expect(result.sessionId).toBe('pre-existing-session');
   });
 
-  it('renders tool-use events into a formatted tool summary line', async () => {
+  it('emits tool-use events without writing tool summaries to output text', async () => {
     installShim([
-      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/etc/hosts"}}]}}',
-      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls -la"}}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-read","name":"Read","input":{"file_path":"/etc/hosts"}}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-bash","name":"Bash","input":{"command":"ls -la"}}]}}',
       '{"type":"result","result":""}',
     ]);
 
     const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
     await runClaudePlannerStream({
       prompt: 'p',
       projectDir: shimDir,
       sessionId: null,
       onOutput: (text) => chunks.push(text),
+      onCallEvent: (event) => events.push(event),
     });
 
-    const output = chunks.join('');
-    expect(output).toContain('Read /etc/hosts');
-    expect(output).toContain('Bash ls -la');
+    expect(chunks.join('')).toBe('');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_tool_use_done',
+        toolUse: { id: 'tool-read', name: 'Read', input: { file_path: '/etc/hosts' } },
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_tool_use_done',
+        toolUse: { id: 'tool-bash', name: 'Bash', input: { command: 'ls -la' } },
+      }),
+    );
   });
 
   it('emits questions via onQuestion when the text stream contains question markers', async () => {
@@ -317,7 +329,7 @@ describe('runClaudePlannerStream', () => {
     expect(operations.active).toBeNull();
     expect(operations.last).toMatchObject({
       callId: errors[0]?.callId,
-      status: 'failed',
+      status: 'incomplete',
       reason: 'Runner call ended without a terminal event',
       partial: true,
     });
@@ -602,7 +614,7 @@ describe('runClaudeOneShot', () => {
     expect(operations.active).toBeNull();
     expect(operations.last).toMatchObject({
       callId: errors[0]?.callId,
-      status: 'failed',
+      status: 'incomplete',
       reason: 'Runner call ended without a terminal event',
       partial: true,
     });

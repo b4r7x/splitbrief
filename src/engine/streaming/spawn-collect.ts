@@ -5,6 +5,7 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../ca
 import type { ParsedLine } from '../runners/types.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { getLineParser } from './output-parsers.js';
+import { createParsedLineRecorder } from './parsed-line-recorder.js';
 
 interface SpawnAndCollectOptions {
   command: string;
@@ -38,8 +39,12 @@ export async function spawnAndCollect(
       runnerName: opts.command,
     } satisfies RunnerCallContext);
 
-  let sessionId: string | null = null;
   const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
+  const parsedRecorder = createParsedLineRecorder({
+    recorder,
+    onText: opts.onText,
+    onSessionId: opts.onSessionId,
+  });
 
   try {
     await spawnWithStdin({
@@ -55,38 +60,7 @@ export async function spawnAndCollect(
       },
       signal: opts.signal,
       onLine(line) {
-        const parsed = parseLine(line);
-        if (parsed.text) {
-          recorder.text({ channel: parsed.isResult ? 'result' : 'stdout', text: parsed.text });
-          opts.onText?.(parsed.text);
-        }
-        if (parsed.usage) {
-          recorder.usage({
-            usage: parsed.usage,
-            semantics: parsed.isResult ? 'final' : 'delta',
-          });
-        }
-        if (parsed.sessionId && parsed.sessionId !== sessionId) {
-          sessionId = parsed.sessionId;
-          recorder.sessionId({ nativeSessionId: parsed.sessionId });
-          opts.onSessionId?.(parsed.sessionId);
-        }
-        if (parsed.toolUse) {
-          for (const toolUse of parsed.toolUse) {
-            recorder.toolUseDone({
-              toolUse: { id: null, name: toolUse.name, input: toolUse.input },
-            });
-          }
-        }
-        if (parsed.isError) {
-          recorder.finishFailed({
-            status: 'failed',
-            error: {
-              code: 'runner_result_error',
-              message: parsed.text ?? 'Runner result failed',
-            },
-          });
-        }
+        parsedRecorder.apply(parseLine(line));
       },
     });
   } catch (err) {
@@ -103,9 +77,9 @@ export async function spawnAndCollect(
   }
 
   if (!recorder.hasTerminal()) {
-    recorder.finishCompleted({ nativeSessionId: sessionId });
+    recorder.finishCompleted({ nativeSessionId: parsedRecorder.sessionId });
   }
 
   const result = recorder.finalResult();
-  return { ...result, sessionId };
+  return { ...result, sessionId: parsedRecorder.sessionId };
 }

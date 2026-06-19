@@ -12,10 +12,12 @@ import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { protectConsumerPayload } from '../../calls/consumer-policy.js';
+import { projectEngineEventForTranscriptPolicy } from '../protection.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
   serviceName?: string;
+  persistTranscript?: boolean | undefined;
 }
 
 function otelString(value: string): string {
@@ -26,6 +28,7 @@ function otelString(value: string): string {
 // SDK v2 pattern — context is propagated by passing it explicitly to startSpan, no global registration.
 export function createOtelSink(opts: OtelSinkOptions): EventSink {
   const tracer = opts.provider.getTracer(opts.serviceName ?? 'diptych');
+  const persistTranscript = opts.persistTranscript ?? true;
 
   let workflowSpan: Span | null = null;
   let workflowCtx: Context = ROOT_CONTEXT;
@@ -34,14 +37,19 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
   let lastPhase: string | null = null;
   const taskSpans = new Map<string, Span>();
 
-  return (event: EngineEvent) => {
+  return (rawEvent: EngineEvent) => {
+    const event = projectEngineEventForTranscriptPolicy(rawEvent, persistTranscript);
+    if (event === null) return;
+
     switch (event.type) {
       case 'workflow_started': {
         workflowSpan = tracer.startSpan(
           'diptych.workflow',
           {
             kind: SpanKind.INTERNAL,
-            attributes: { 'diptych.feature': otelString(event.feature) },
+            attributes: {
+              'diptych.feature': otelString(event.feature),
+            },
           },
           ROOT_CONTEXT,
         );
@@ -139,11 +147,15 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
             {
               attributes: {
                 'diptych.task.id': taskIdToString(event.taskId),
-                'diptych.task.title': otelString(event.title),
-                'diptych.task.file': otelString(event.file),
-                'diptych.task.action': otelString(event.action),
                 'diptych.task.index': event.index,
                 'diptych.task.total': event.total,
+                ...(persistTranscript
+                  ? {
+                      'diptych.task.title': otelString(event.title),
+                      'diptych.task.file': otelString(event.file),
+                      'diptych.task.action': otelString(event.action),
+                    }
+                  : {}),
               },
             },
             parentCtx,
@@ -176,7 +188,9 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'task_skipped': {
         const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
-          span.setAttribute('diptych.task.skip_reason', otelString(event.reason));
+          if (persistTranscript) {
+            span.setAttribute('diptych.task.skip_reason', otelString(event.reason));
+          }
           span.end();
           taskSpans.delete(taskIdToString(event.taskId));
         }
@@ -303,6 +317,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'runner_call_text_delta':
       case 'runner_call_usage':
       case 'runner_call_tool_use':
+      case 'runner_call_activity':
       case 'runner_call_session_id':
       case 'runner_call_artifact':
       case 'runner_call_warning':

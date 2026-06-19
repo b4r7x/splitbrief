@@ -14,6 +14,7 @@ import { clearStaleSession } from '../../core/sessions/guards.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { resolveHooksConfig } from '../../engine/hooks/discover.js';
 import { rejectUntrustedRunners } from '../../engine/runners/trust.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 
 type SpecOpts = { project?: string; allowHooks: boolean };
 
@@ -49,7 +50,7 @@ export function registerSpecCommand(program: Command): void {
           projectDir,
           callbacks: {
             onOutput(text: string) {
-              process.stdout.write(text);
+              process.stdout.write(stripTerminalControls(text));
             },
             onPhase(phase: Phase) {
               console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);

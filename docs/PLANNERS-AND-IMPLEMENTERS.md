@@ -99,7 +99,7 @@ Each phase:
 
 The `quickPlan()` and `instantPlan()` paths skip straight to a single-phase call using `buildQuickPlanPrompt()` or `buildInstantPrompt()` respectively. Same pipeline machinery, one invocation instead of four.
 
-Planner backends may still return the old `{ text, usage }` compatibility shape, but the base layer treats that as a completed `RunnerCallResult`. New adapters should emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, `agent`, or `agent-sdk`).
+Planner backend invoke functions return `RunnerCallResult`. Use `toInvokeResult()` only at outer legacy postprocess/extraction boundaries that explicitly need `{ text, usage }`; do not collapse typed call results before they reach the planner base. New adapters must emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, `agent`, or `agent-sdk`).
 
 ---
 

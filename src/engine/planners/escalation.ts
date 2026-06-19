@@ -6,8 +6,7 @@ import { extractCode } from '../parsers/response-extractor.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../spec/prompts/escalation.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import type { EscalateOptions, EscalationResult, PlannerOutputCallbacks } from './types.js';
-import { toInvokeResult, toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
-import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import { toInvokeResult, toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 type PlannerEscalationConfig = {
@@ -18,7 +17,7 @@ type PlannerEscalationConfig = {
     callbacks: PlannerOutputCallbacks;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }) => Promise<RunnerCallCompatibleResult>;
+  }) => Promise<RunnerCallResult>;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
@@ -81,17 +80,14 @@ export async function escalateHint(
     : null;
   const callContext = createEscalationCallContext(config);
   const result = requireCompletedCall(
-    toRunnerCallResult(
+    await config.invokeEscalate({
+      prompt: hintPrompt,
+      projectDir,
       callContext,
-      await config.invokeEscalate({
-        prompt: hintPrompt,
-        projectDir,
-        callContext,
-        callbacks,
-        signal: callbacks.signal,
-        sandboxEnv: opts.sandboxEnv,
-      }),
-    ),
+      callbacks,
+      signal: callbacks.signal,
+      sandboxEnv: opts.sandboxEnv,
+    }),
   );
   const success =
     detect && baseline ? (await detect(projectDir, baseline)).changed : result.text.length > 0;
@@ -117,26 +113,6 @@ export async function escalateFull(
     });
     const callContext = createEscalationCallContext(config);
     const result = requireCompletedCall(
-      toRunnerCallResult(
-        callContext,
-        await config.invokeEscalate({
-          prompt: escalationPrompt,
-          projectDir,
-          callContext,
-          callbacks,
-          signal: callbacks.signal,
-          sandboxEnv: opts.sandboxEnv,
-        }),
-      ),
-    );
-    const { changed } = await detect(projectDir, baseline);
-    return { success: changed, output: result.text, code: null, usage: toTokenDelta(result.usage) };
-  }
-
-  const callContext = createEscalationCallContext(config);
-  const result = requireCompletedCall(
-    toRunnerCallResult(
-      callContext,
       await config.invokeEscalate({
         prompt: escalationPrompt,
         projectDir,
@@ -145,7 +121,21 @@ export async function escalateFull(
         signal: callbacks.signal,
         sandboxEnv: opts.sandboxEnv,
       }),
-    ),
+    );
+    const { changed } = await detect(projectDir, baseline);
+    return { success: changed, output: result.text, code: null, usage: toTokenDelta(result.usage) };
+  }
+
+  const callContext = createEscalationCallContext(config);
+  const result = requireCompletedCall(
+    await config.invokeEscalate({
+      prompt: escalationPrompt,
+      projectDir,
+      callContext,
+      callbacks,
+      signal: callbacks.signal,
+      sandboxEnv: opts.sandboxEnv,
+    }),
   );
 
   const extracted = extractCode(result.text);
