@@ -21,13 +21,23 @@ import {
   type PerTaskTokens,
   type TokensState,
 } from './tokens.js';
-import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth } from './lifecycle.js';
+import {
+  _lifecycleInternal,
+  lifecycleStore,
+  type LifecycleState,
+  markLifecycleCancellationRequested,
+  updatePhase,
+  updateQueueDepth,
+} from './lifecycle.js';
+import {
+  _operationsInternal,
+  markOperationsCancellationRequested,
+  operationsStore,
+  updateOperations,
+} from './operations.js';
 import { streamingOutputStore } from './streaming-output.js';
 
 export function addEvent(event: EngineEvent): void {
-  // Cancelled gate: dispatcher policy — sub-stores are passive containers.
-  if (lifecycleStore.get().cancelled) return;
-
   // Fast path: cost_update only touches token state, but still needs the
   // reducer so per-phase cost/cache telemetry stays in sync.
   if (event.type === 'cost_update') {
@@ -35,10 +45,15 @@ export function addEvent(event: EngineEvent): void {
     return;
   }
 
-  // Ordering invariant: events → tasks → tokens → lifecycle.
+  // Cancelled gate: dispatcher policy — sub-stores are passive containers.
+  // Keep canonical terminal/telemetry events after local cancel, but drop UI
+  // noise that would restart old phase spans.
+  if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
+
+  // Ordering invariant: events → tasks → tokens → lifecycle → operations.
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
-  // consistent commit with all four stores updated.
+  // consistent commit with all workflow stores updated.
   _eventsInternal.set((s) => ({ ...s, events: mergeEvent(s.events, event) }));
 
   _tasksInternal.set((s) => {
@@ -63,24 +78,24 @@ export function addEvent(event: EngineEvent): void {
     const afterPhase = updatePhase(s, event);
     return updateQueueDepth(afterPhase, event);
   });
+
+  _operationsInternal.set((s) => updateOperations(s, event));
 }
 
-export function markCancelled(): boolean {
+export interface CancellationIntent {
+  ts?: number;
+  reason?: string;
+}
+
+export function markCancellationRequested(intent: CancellationIntent = {}): boolean {
   const lifecycle = lifecycleStore.get();
   if (lifecycle.cancelled) return false;
-  const now = Date.now();
-  const phase = lifecycle.phase;
-  _eventsInternal.set((s) => {
-    const rewritten = s.events.map((ev) =>
-      ev.type === 'planner_status' && ev.status === 'running'
-        ? { ...ev, status: 'done' as const }
-        : ev,
-    );
-    return {
-      events: mergeEvent(rewritten, { type: 'workflow_cancelled' as const, ts: now, phase }),
-    };
-  });
-  _lifecycleInternal.set((s) => ({ ...s, cancelled: true }));
+  const cancellation = {
+    ts: intent.ts ?? Date.now(),
+    reason: intent.reason ?? 'user_cancelled',
+  };
+  _operationsInternal.set((s) => markOperationsCancellationRequested(s, cancellation));
+  _lifecycleInternal.set((s) => markLifecycleCancellationRequested(s, cancellation));
   return true;
 }
 
@@ -93,18 +108,43 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tasksStore.reset();
   tokensStore.reset();
   lifecycleStore.reset();
+  operationsStore.reset();
   streamingOutputStore.reset();
   cachedEvents = null;
   cachedSections = [];
   if (resume) {
-    _lifecycleInternal.set((s) => ({
-      ...s,
-      phase: resume.phase,
-      queueDepth: resume.messageQueue.filter((m) => !m.drainedAt).length,
-    }));
+    _lifecycleInternal.set(lifecycleStateFromResume(resume));
     _tasksInternal.set((s) => ({ ...s, ...tasksStateFromResume(resume) }));
     _tokensInternal.set((s) => ({ ...s, ...tokensStateFromResume(resume) }));
   }
+}
+
+function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
+  const startedAt = timestampFromIso(resume.startedAt);
+  const queueDepth = resume.messageQueue.filter((message) => !message.drainedAt).length;
+  if (resume.phase === 'complete') {
+    const endedAt = startedAt ?? Date.now();
+    return {
+      phase: resume.phase,
+      status: 'complete',
+      cancelled: false,
+      queueDepth,
+      startedAt,
+      endedAt,
+      durationMs: Math.max(0, endedAt - (startedAt ?? endedAt)),
+      reason: null,
+    };
+  }
+  return {
+    phase: resume.phase,
+    status: 'running',
+    cancelled: false,
+    queueDepth,
+    startedAt,
+    endedAt: null,
+    durationMs: null,
+    reason: null,
+  };
 }
 
 function tasksStateFromResume(
@@ -189,6 +229,26 @@ function pricingContextFromResume(resume: WorkflowState): TokensState['pricingCo
     plannerModel: resume.plannerModel,
     implementerModel: resume.implementerModel,
   };
+}
+
+function acceptsEventAfterCancellation(event: EngineEvent): boolean {
+  switch (event.type) {
+    case 'workflow_cancelled':
+    case 'runner_call_error':
+    case 'runner_call_completed':
+    case 'runner_call_warning':
+    case 'runner_call_usage':
+    case 'runner_call_session_id':
+    case 'runner_call_artifact':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function timestampFromIso(value: string): number | null {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 let cachedEvents: EngineEvent[] | null = null;

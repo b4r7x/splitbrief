@@ -1,6 +1,12 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { streamCompletion } from './openai-stream.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import {
+  replayRunnerCallEventsIntoOperations,
+  runnerCallErrors,
+  runnerCallTerminals,
+} from '#testing/helpers/runner-call-events.js';
 
 type MockClient = Parameters<typeof streamCompletion>[0];
 type CreateBody = Parameters<MockClient['chat']['completions']['create']>[0];
@@ -75,6 +81,23 @@ function emptyStopStream(): MockStream {
 
 const MINIMAL_ANTHROPIC_SSE = 'event: message_stop\ndata: {"type":"message_stop"}\n\n';
 
+function expectOneErrorClosesOperation(
+  events: RunnerCallEvent[],
+): ReturnType<typeof runnerCallErrors>[number] {
+  const terminals = runnerCallTerminals(events);
+  expect(terminals).toHaveLength(1);
+  const [terminal] = runnerCallErrors(events);
+  if (!terminal) throw new Error('Expected a runner call error event');
+
+  const operations = replayRunnerCallEventsIntoOperations(events);
+  expect(operations.active).toBeNull();
+  expect(operations.last).toMatchObject({
+    callId: terminal.callId,
+    reason: terminal.error.message,
+  });
+  return terminal;
+}
+
 describe('streamCompletion', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -127,35 +150,43 @@ describe('streamCompletion', () => {
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
-  it('rejects with truncated status when the finish_reason is length', async () => {
+  it('returns truncated status when the finish_reason is length', async () => {
     const client = makeMockClient([{ content: 'cut off' }, { finishReason: 'length' }]);
     const progress: string[] = [];
 
-    await expect(
-      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-        temperature: 0.2,
-        onProgress: (text) => progress.push(text),
-      }),
-    ).rejects.toMatchObject({ data: { status: 'truncated' } });
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: (text) => progress.push(text),
+    });
 
+    expect(result).toMatchObject({
+      status: 'truncated',
+      text: 'cut off',
+      partial: true,
+      error: { code: 'openai_finish_reason_length' },
+    });
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
   });
 
-  it('rejects with refused status when the finish_reason is content_filter', async () => {
+  it('returns refused status when the finish_reason is content_filter', async () => {
     const client = makeMockClient([{ finishReason: 'content_filter' }]);
 
-    await expect(
-      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-        temperature: 0.2,
-        onProgress: () => {},
-      }),
-    ).rejects.toMatchObject({ data: { status: 'refused' } });
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: 'refused',
+      partial: false,
+      error: { code: 'openai_finish_reason_content_filter' },
+    });
   });
 
   it.each([
     'tool_calls',
     'function_call',
-  ] as const)('rejects with unsupported_tool status when the finish_reason is %s', async (finishReason) => {
+  ] as const)('returns unsupported_tool status when the finish_reason is %s', async (finishReason) => {
     const delta =
       finishReason === 'tool_calls'
         ? { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: '{"q":' } }] }
@@ -164,23 +195,72 @@ describe('streamCompletion', () => {
           };
     const client = makeMockClient([{ delta }, { finishReason }]);
 
-    await expect(
-      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-        temperature: 0.2,
-        onProgress: () => {},
-      }),
-    ).rejects.toMatchObject({ data: { status: 'unsupported_tool' } });
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: 'unsupported_tool',
+      error: { code: `openai_finish_reason_${finishReason}` },
+    });
   });
 
-  it('rejects with incomplete status when the stream ends without a finish_reason', async () => {
-    const client = makeMockClient([{ content: 'partial' }]);
+  it('emits one call_error when the stream ends with a null finish_reason', async () => {
+    const client = makeMockClient([{ content: 'partial' }, { finishReason: null }]);
+    const events: RunnerCallEvent[] = [];
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'incomplete',
+      text: 'partial',
+      partial: true,
+      error: { code: 'missing_terminal_event' },
+    });
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'incomplete',
+      error: { code: 'missing_terminal_event' },
+      partial: true,
+    });
+  });
+
+  it('emits one call_error before rethrowing a generic stream error', async () => {
+    const events: RunnerCallEvent[] = [];
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () =>
+            (async function* () {
+              yield {
+                choices: [{ delta: { content: 'partial' }, finish_reason: null }],
+                usage: null,
+              };
+              throw new Error('socket closed');
+            })(),
+        },
+      },
+    };
 
     await expect(
       streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
         temperature: 0.2,
         onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
       }),
-    ).rejects.toMatchObject({ data: { status: 'incomplete' } });
+    ).rejects.toThrow('socket closed');
+
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'failed',
+      error: { code: 'openai_stream_error', message: 'socket closed' },
+      partial: true,
+    });
   });
 
   it('subtracts nested cached prompt tokens from billable input usage', async () => {

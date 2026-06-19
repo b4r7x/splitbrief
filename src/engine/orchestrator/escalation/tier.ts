@@ -88,7 +88,10 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
   }
 
   const attempts = priorAttempts + 1;
-  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
+  const textHandler = createBusTextHandler(
+    { bus: ctx.bus, phase: state.phase },
+    { role: 'implementer' },
+  );
 
   const intermediateConfig = resolveIntermediateConfig(ctx, state);
   if (!intermediateConfig) return { state, task: initialTask, lastError, attempts: priorAttempts };
@@ -216,8 +219,14 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
   const { ctx, task: initialTask, lastError, priorAttempts } = input;
   let state = input.state;
   const attempts = priorAttempts + 1;
-  const reviewerHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'planner');
-  const retryHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
+  const reviewerHandler = createBusTextHandler(
+    { bus: ctx.bus, phase: state.phase },
+    { role: 'planner', content: 'markdown' },
+  );
+  const retryHandler = createBusTextHandler(
+    { bus: ctx.bus, phase: state.phase },
+    { role: 'implementer' },
+  );
   if (state.phase === 'implementing') {
     state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
   }

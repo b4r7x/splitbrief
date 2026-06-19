@@ -3,10 +3,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { isResumable } from '../../core/phases.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { createStartReadinessRecord } from '../../core/readiness/format.js';
 import { READINESS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
+import { loadState } from '../../core/state/persistence.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
@@ -61,6 +64,29 @@ function persistTuiReadiness(projectDir: string, report: ReadinessReport): void 
   writeSecureFile(target, JSON.stringify(createStartReadinessRecord(report), null, 2) + '\n');
 }
 
+function hasLoadedResumableStateForSession({
+  projectDir,
+  sessionId,
+  routeSessionId,
+  routeResumeState,
+}: {
+  projectDir: string;
+  sessionId: string;
+  routeSessionId?: string | undefined;
+  routeResumeState?: WorkflowState | undefined;
+}): boolean {
+  if (routeSessionId === sessionId && routeResumeState && isResumable(routeResumeState)) {
+    return true;
+  }
+
+  try {
+    const state = loadState({ projectDir, sessionId });
+    return state ? isResumable(state) : false;
+  } catch {
+    return false;
+  }
+}
+
 export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenProps) {
   const { exit } = useApp();
   const config = configStore.useConfig();
@@ -102,7 +128,9 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     enabled: !isAttachedClient && readinessLoaded && !readinessBlocked,
   });
   const review = createReviewInputHandler(inputMode);
-  const handleIpcPrompt = createIpcPromptDispatcher(inputMode);
+  const handleIpcPrompt = createIpcPromptDispatcher(inputMode, {
+    sessionDirPath: sessionId === undefined ? undefined : sessionDir(projectDir, sessionId),
+  });
   const [ipcState, ipcActions] = useIpcClient({
     sockPath: attach?.sockPath ?? '',
     authToken: attach?.authToken ?? '',
@@ -172,6 +200,18 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     { isActive: isAttachedClient && !hasOverlay },
   );
 
+  const currentSessionId = sessionId ?? runner.sessionId;
+  const canResumeCancelledSession =
+    !isAttachedClient &&
+    cancelled &&
+    currentSessionId !== undefined &&
+    hasLoadedResumableStateForSession({
+      projectDir,
+      sessionId: currentSessionId,
+      routeSessionId: sessionId,
+      routeResumeState: resumeState,
+    });
+
   const handleInput = isAttachedClient
     ? (text: string) => {
         if (ipcState.status !== 'connected') {
@@ -185,13 +225,16 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         ipcActions.sendUserInput(text);
       }
     : cancelled
-      ? runner.handleResume
+      ? canResumeCancelledSession
+        ? runner.handleResume
+        : () => {}
       : review.handleInput;
 
   const inputHint = isAttachedClient
     ? resolveAttachInputHint(ipcState.status)
     : resolveInputHint({
         cancelled,
+        canResumeCancelled: canResumeCancelledSession,
         inputHint: inputMode.hint,
         inputMode: inputMode.mode,
         phase,
@@ -215,7 +258,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
       footer={
         <WorkflowFooter
           handleInput={handleInput}
-          onEmptySubmit={!isAttachedClient && cancelled ? runner.handleResume : undefined}
+          onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
           onRuntimeCommand={onRuntimeCommand}
           commands={commands}
           mode={inputMode.mode}

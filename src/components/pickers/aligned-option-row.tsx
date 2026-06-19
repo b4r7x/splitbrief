@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box, Text, type TextProps } from 'ink';
-import { getTerminalCellWidth, stripTerminalControls } from '../../lib/terminal/display-text.js';
+import { getTerminalCellWidth, stripTerminalControls } from '../../utils/display-text.js';
 
 export interface AlignedOptionLabelWidthOptions {
   gap: number;

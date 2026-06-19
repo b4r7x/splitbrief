@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eventsStore, MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
+import type { EngineEventOf } from '../../engine/events/types.js';
 import {
   makePlannerText,
   makePlannerStatus,
@@ -9,6 +10,22 @@ import {
   makeRetry,
   makeCostUpdate,
 } from '#testing/helpers/events.js';
+
+function makeRunnerTextDelta(
+  overrides?: Partial<EngineEventOf<'runner_call_text_delta'>>,
+): EngineEventOf<'runner_call_text_delta'> {
+  return {
+    type: 'runner_call_text_delta',
+    ts: Date.now(),
+    phase: 'implementing',
+    callId: 'call-1',
+    role: 'planner',
+    backendKind: 'cli',
+    sequence: 1,
+    text: 'hidden telemetry',
+    ...overrides,
+  };
+}
 
 describe('eventsStore — append via addEvent', () => {
   beforeEach(() => resetWorkflow());
@@ -39,6 +56,19 @@ describe('eventsStore — append via addEvent', () => {
     const s = eventsStore.get();
     expect(s.events).toHaveLength(1);
     expect((s.events[0] as { text: string }).text).toBe('hello world');
+  });
+
+  it('omits runner call text deltas and keeps visible planner text coalesced', () => {
+    addEvent(makePlannerText({ text: 'visible ' }));
+    addEvent(makeRunnerTextDelta({ text: 'hidden' }));
+    addEvent(makePlannerText({ text: 'continued' }));
+
+    const events = eventsStore.get().events;
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'planner_text',
+      text: 'visible continued',
+    });
   });
 
   it('stops coalescing when a different event type arrives', () => {
@@ -124,6 +154,15 @@ describe('eventsStore — append via addEvent', () => {
     expect(result).toHaveLength(2);
     expect((result[0] as { text: string }).text).toBe('planner thinking');
     expect(result[1]).toMatchObject({ text: 'implementer writing', role: 'implementer' });
+  });
+
+  it('does not merge planner_text across differing content formats', () => {
+    const base = [makePlannerText({ text: 'plain log' })];
+    const result = mergeEvent(base, makePlannerText({ text: '### Plan', content: 'markdown' }));
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ text: 'plain log' });
+    expect(result[1]).toMatchObject({ text: '### Plan', content: 'markdown' });
   });
 
   describe('planner_heartbeat coalescing', () => {

@@ -1,12 +1,7 @@
 import { wrapHard } from '../../../utils/wrap.js';
-import type { GutterRole } from './event-role.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const MIN_ROW_WIDTH = 1;
-const PLANNER_PREFIX = '│ ';
-const PLANNER_CONTINUATION_PREFIX = '  ';
-const IMPLEMENTER_PREFIX = '  ┆ ';
-const IMPLEMENTER_CONTINUATION_PREFIX = '    ';
 
 export function row(
   key: string,
@@ -33,35 +28,22 @@ function segmentedRow(key: string, segments: ConversationRowSegment[]): Conversa
   return { key, segments };
 }
 
-function rolePrefixes(role: GutterRole): { first: string; continuation: string } {
-  if (role === 'planner')
-    return { first: PLANNER_PREFIX, continuation: PLANNER_CONTINUATION_PREFIX };
-  if (role === 'implementer')
-    return { first: IMPLEMENTER_PREFIX, continuation: IMPLEMENTER_CONTINUATION_PREFIX };
-  return { first: '', continuation: '' };
-}
-
-export interface PrefixedRowsInput {
+export interface EventRowsInput {
   keyPrefix: string;
   text: string;
   width: number;
   tone: ConversationRowTone;
-  role: GutterRole;
   bold?: boolean;
 }
 
-export function prefixedWrappedRows(input: PrefixedRowsInput): ConversationRow[] {
-  const { keyPrefix, text, width, tone, role, bold = false } = input;
-  const prefixes = rolePrefixes(role);
+export function eventWrappedRows(input: EventRowsInput): ConversationRow[] {
+  const { keyPrefix, text, width, tone, bold = false } = input;
   const rows: ConversationRow[] = [];
-  let isFirst = true;
 
   for (const rawLine of text.split('\n')) {
-    const prefix = isFirst ? prefixes.first : prefixes.continuation;
-    const wrapped = wrapText(rawLine, width - prefix.length);
+    const wrapped = wrapText(rawLine, width);
     for (const wrappedLine of wrapped) {
-      rows.push(row(`${keyPrefix}-${rows.length}`, `${prefix}${wrappedLine}`, tone, bold));
-      isFirst = false;
+      rows.push(row(`${keyPrefix}-${rows.length}`, wrappedLine, tone, bold));
     }
   }
 

@@ -4,6 +4,7 @@ import {
   padTerminalDisplayTextEnd,
   stripTerminalControls,
   truncateTerminalDisplayText,
+  truncateTerminalDisplayTextStart,
 } from './display-text.js';
 
 describe('stripTerminalControls', () => {
@@ -53,6 +54,20 @@ describe('truncateTerminalDisplayText', () => {
 
   it('truncates emoji-presentation graphemes by their displayed cell width', () => {
     expect(truncateTerminalDisplayText('ab❤️cd', 5)).toBe('ab❤️…');
+  });
+});
+
+describe('truncateTerminalDisplayTextStart', () => {
+  it('sanitizes before preserving the tail by terminal cell width', () => {
+    expect(truncateTerminalDisplayTextStart('\u001b]52;c;secret\u0007src/界語/path.ts', 12)).toBe(
+      '…語/path.ts',
+    );
+  });
+
+  it('does not split combining marks or emoji grapheme clusters', () => {
+    expect(truncateTerminalDisplayTextStart('src/feature/e\u0301/👩‍💻-file.ts', 12)).toBe(
+      '…/👩‍💻-file.ts',
+    );
   });
 });
 

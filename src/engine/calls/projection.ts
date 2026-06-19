@@ -32,11 +32,18 @@ export function toRunnerCallResult(
 ): RunnerCallResult {
   if (isRunnerCallResult(result)) return result;
 
+  const now = Date.now();
   return {
     callId: context.callId,
     role: context.role,
     backendKind: context.backendKind,
+    ...(context.runnerName !== undefined && { runnerName: context.runnerName }),
+    ...(context.model !== undefined && { model: context.model }),
+    ...(context.attempt !== undefined && { attempt: context.attempt }),
     status: 'completed',
+    startedAt: now,
+    endedAt: now,
+    durationMs: 0,
     text: result.text,
     usage: normalizeRunnerCallUsage(result.usage),
     nativeSessionId: result.sessionId ?? null,

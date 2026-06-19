@@ -41,6 +41,8 @@ export function createAgentSdkImplementer(
         projectDir,
         model: effectiveModel,
         onOutput,
+        onCallEvent: opts.onCallEvent,
+        callContext: opts.callContext,
         signal: effectiveSignal,
         env: opts.sandboxEnv,
       });

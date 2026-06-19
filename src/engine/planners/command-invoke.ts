@@ -1,10 +1,11 @@
-import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
+import type { RunnerCallCompatibleResult } from '../calls/projection.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
+import type { RunnerCallContext } from '../calls/types.js';
 
 export function resolveCapabilities(
   override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined,
@@ -37,13 +38,15 @@ export function createCommandBasedPlanner(
     callbacks,
     signal,
     sandboxEnv,
+    callContext,
   }: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
+    callContext: RunnerCallContext;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<InvokeResult> => {
+  }): Promise<RunnerCallCompatibleResult> => {
     const result = await invokeCommandBasedRunner({
       command: config.command,
       args: config.args ?? [],
@@ -53,6 +56,8 @@ export function createCommandBasedPlanner(
       projectDir,
       env: sandboxEnv,
       onOutput: callbacks.onOutput,
+      onCallEvent: callbacks.onCallEvent,
+      callContext,
       signal,
     });
 
@@ -63,6 +68,7 @@ export function createCommandBasedPlanner(
       }
     }
 
+    if (result.callResult.status !== 'completed') return result.callResult;
     return { text: result.stdout, usage: result.usage ?? null };
   };
 
@@ -70,6 +76,7 @@ export function createCommandBasedPlanner(
     invokePlan: invoke,
     invokeEscalate: invoke,
     backendKind: 'cli',
+    runnerName: config.command,
     hintSuccessMode: 'files',
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),

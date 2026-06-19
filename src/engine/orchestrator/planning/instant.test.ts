@@ -23,7 +23,8 @@ import {
 } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { planningError } from './errors.js';
-import type { Planner, PlanResult } from '../../planners/types.js';
+import type { Planner, PlannerCallbacks, PlanResult } from '../../planners/types.js';
+import type { RunnerCallContext } from '../../calls/types.js';
 
 const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -105,7 +106,10 @@ function invalidPlanResult(overrides?: Partial<PlanResult>): PlanResult {
   };
 }
 
-async function runInstant(plannerOverrides?: Partial<Planner>) {
+async function runInstant(
+  plannerOverrides?: Partial<Planner>,
+  opts?: { signal?: AbortSignal | undefined },
+) {
   const { projectDir, sessionId } = setupProject();
   const planner = makePlanner({
     instantPlan: vi.fn().mockResolvedValue(instantPlanResult()),
@@ -125,6 +129,7 @@ async function runInstant(plannerOverrides?: Partial<Planner>) {
       sessionId,
       bus,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      ...(opts?.signal !== undefined && { signal: opts.signal }),
     },
     planner,
     state,
@@ -225,6 +230,95 @@ describe('runInstantPlanning', () => {
       feature: 'feature',
     });
     expect(result.cancelled).toBe(false);
+  });
+
+  it('passes the workflow signal to instantPlan callbacks', async () => {
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+
+    await runInstant(
+      {
+        instantPlan: async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          capturedSignal = callbacks.signal;
+          return instantPlanResult();
+        },
+      },
+      { signal: controller.signal },
+    );
+
+    expect(capturedSignal).toBe(controller.signal);
+  });
+
+  it('passes the workflow signal to the quickPlan fallback callbacks', async () => {
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+    const quickPlan = vi
+      .fn()
+      .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        capturedSignal = callbacks.signal;
+        return instantPlanResult();
+      });
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({ quickPlan });
+    delete (planner as Partial<Planner>).instantPlan;
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const initial = createInitialState('feature');
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        signal: controller.signal,
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(capturedSignal).toBe(controller.signal);
+  });
+
+  it('projects instant planner runner-call events onto the workflow bus', async () => {
+    const startedAt = Date.now();
+    const call: RunnerCallContext = {
+      callId: 'instant-call-test',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'instant-planner',
+    };
+    const { events } = await runInstant({
+      instantPlan: async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
+        callbacks.onCallEvent?.({
+          type: 'call_completed',
+          ts: startedAt + 1,
+          ...call,
+          status: 'completed',
+          error: null,
+          partial: false,
+          startedAt,
+          endedAt: startedAt + 1,
+          durationMs: 1,
+          usage: null,
+          nativeSessionId: null,
+        });
+        return instantPlanResult();
+      },
+    });
+
+    expect(
+      events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
+    ).toEqual(['runner_call_started', 'runner_call_completed']);
+    expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
+      callId: 'instant-call-test',
+      role: 'planner',
+    });
   });
 
   it('cancels when planner returns zero tasks', async () => {

@@ -32,7 +32,7 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
 
     if (review.filePath) {
       const visibleHeight = readReviewContentHeight();
-      const maxOffset = Math.max(0, review.lineCount - visibleHeight);
+      const maxOffset = Math.max(0, review.renderedLineCount - visibleHeight);
       const nextOffset = Math.min(
         maxOffset,
         Math.max(0, review.scrollOffset + direction * WHEEL_STEP),

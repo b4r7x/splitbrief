@@ -19,7 +19,7 @@ export function implementerDoneRows(
     rows.push(
       row(
         `${keyPrefix}-summary`,
-        `  ${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
+        `${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
         'textDim',
       ),
     );
@@ -31,7 +31,7 @@ export function implementerDoneRows(
     rows.push(
       row(
         `${keyPrefix}-collapsed`,
-        `  ▸ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
+        `▸ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
         'textDim',
       ),
     );
@@ -41,7 +41,7 @@ export function implementerDoneRows(
   rows.push(
     row(
       `${keyPrefix}-expanded`,
-      `  ▾ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
+      `▾ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
       'textDim',
     ),
   );
@@ -51,14 +51,14 @@ export function implementerDoneRows(
     rows.push(
       row(
         `${keyPrefix}-diff-${index}`,
-        `    ${String(index + 1).padStart(3, ' ')} ${line}`,
+        `${String(index + 1).padStart(3, '0')} ${line}`,
         diffLineTone(line),
       ),
     );
   }
   const remaining = diffLines.length - visibleLines.length;
   if (remaining > 0)
-    rows.push(row(`${keyPrefix}-remaining`, `    ...${remaining} more lines`, 'textDim'));
+    rows.push(row(`${keyPrefix}-remaining`, `...${remaining} more lines`, 'textDim'));
   return rows;
 }
 
@@ -71,7 +71,7 @@ export function runningImplementerRows(
   const rows = [row(`${keyPrefix}-running`, fileHint, 'implementer')];
   if (streaming.active && streaming.taskId === event.taskId) {
     for (const [index, line] of streaming.lines.slice(0, 5).entries()) {
-      rows.push(row(`${keyPrefix}-stream-${index}`, `  ${line}`, 'textDim'));
+      rows.push(row(`${keyPrefix}-stream-${index}`, line, 'textDim'));
     }
   }
   return rows;

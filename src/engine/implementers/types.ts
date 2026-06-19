@@ -4,7 +4,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
-import type { RunnerCallContext } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 
@@ -17,6 +17,7 @@ export interface ImplementerResult {
 
 export interface ImplementerPublisher {
   publishRunning(opts: { phase: Phase; taskId: TaskId; file?: string | undefined }): void;
+  publishCallEvent(opts: { phase: Phase; taskId: TaskId; event: RunnerCallEvent }): void;
   publishDone(opts: {
     phase: Phase;
     taskId: TaskId;
@@ -67,6 +68,7 @@ export interface InvokeOpts {
   systemPreamble: string;
   temperature?: number;
   signal?: AbortSignal | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }
 

@@ -315,6 +315,9 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         systemPreamble,
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
+        onCallEvent: (event) => {
+          if (phase) baseConfig.publisher?.publishCallEvent({ phase, taskId: task.id, event });
+        },
         sandboxEnv: opts.sandboxEnv,
       });
       callResult = toRunnerCallResult(callContext, invokeResult);

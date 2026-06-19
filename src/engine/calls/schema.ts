@@ -31,7 +31,7 @@ export const RUNNER_CALL_STATUSES = [
   'incomplete',
 ] as const;
 
-const RUNNER_CALL_FAILURE_STATUSES = [
+export const RUNNER_CALL_FAILURE_STATUSES = [
   'failed',
   'truncated',
   'aborted',
@@ -45,10 +45,11 @@ export const RUNNER_CALL_USAGE_SEMANTICS = ['delta', 'cumulative', 'final'] as c
 export const RUNNER_CALL_ARTIFACT_SOURCES = ['stream', 'file', 'tool', 'derived'] as const;
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
+export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
 
 const boundedName = z.string().min(1).max(256);
 const boundedId = z.string().min(1).max(128);
-const boundedMessage = z.string().max(8192);
+const boundedMessage = z.string().max(RUNNER_CALL_MESSAGE_MAX_LENGTH);
 const nonnegativeInteger = z.number().int().nonnegative();
 const timestampMillis = nonnegativeInteger;
 const nullableSessionId = z.string().min(1).max(512).nullable();
@@ -60,12 +61,12 @@ export const RunnerCallStatusSchema = z.enum(RUNNER_CALL_STATUSES);
 export const RunnerCallUsageSemanticsSchema = z.enum(RUNNER_CALL_USAGE_SEMANTICS);
 export const RunnerCallArtifactSourceSchema = z.enum(RUNNER_CALL_ARTIFACT_SOURCES);
 
-const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
+export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
 const RunnerCallTextChannelSchema = z.enum(['stdout', 'assistant', 'result', 'system']);
 
 export const CallIdSchema = boundedId;
 
-const runnerCallContextFields = {
+export const runnerCallContextFields = {
   callId: CallIdSchema,
   role: RunnerCallRoleSchema,
   backendKind: RunnerCallBackendKindSchema,
@@ -118,6 +119,14 @@ const RunnerCallUnknownUpstreamBackendMetadataSchema = z.strictObject({
   upstreamType: boundedName.optional(),
 });
 
+export const runnerCallTerminalFields = {
+  startedAt: timestampMillis,
+  endedAt: timestampMillis,
+  durationMs: nonnegativeInteger,
+  usage: RunnerCallUsageSchema.nullable(),
+  nativeSessionId: nullableSessionId,
+} as const;
+
 function callEvent<T extends string, S extends z.ZodRawShape>(type: T, shape: S) {
   return z.strictObject({
     type: z.literal(type),
@@ -163,11 +172,14 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   callEvent('call_error', {
     status: RunnerCallFailureStatusSchema,
     error: RunnerCallErrorSchema,
+    partial: z.boolean(),
+    ...runnerCallTerminalFields,
   }),
   callEvent('call_completed', {
     status: z.literal('completed'),
-    usage: RunnerCallUsageSchema.nullable(),
-    nativeSessionId: nullableSessionId,
+    error: z.null(),
+    partial: z.literal(false),
+    ...runnerCallTerminalFields,
   }),
   callEvent('call_unknown_upstream', {
     rawPreview: z.string().max(UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH),
@@ -175,17 +187,40 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-export const RunnerCallResultSchema = z.strictObject({
+const runnerCallResultBaseFields = {
   callId: CallIdSchema,
   role: RunnerCallRoleSchema,
   backendKind: RunnerCallBackendKindSchema,
+  runnerName: boundedName.optional(),
+  model: boundedName.optional(),
+  attempt: nonnegativeInteger.optional(),
   status: RunnerCallStatusSchema,
+  startedAt: timestampMillis,
+  endedAt: timestampMillis,
+  durationMs: nonnegativeInteger,
   text: z.string(),
   usage: RunnerCallUsageSchema.nullable(),
   nativeSessionId: nullableSessionId,
   toolUses: z.array(RunnerCallToolUseSchema),
   artifacts: z.array(RunnerCallArtifactSchema),
   warnings: z.array(RunnerCallWarningSchema),
-  error: RunnerCallErrorSchema.nullable(),
+} as const;
+
+const RunnerCallCompletedResultSchema = z.strictObject({
+  ...runnerCallResultBaseFields,
+  status: z.literal('completed'),
+  error: z.null(),
+  partial: z.literal(false),
+});
+
+const RunnerCallFailureResultSchema = z.strictObject({
+  ...runnerCallResultBaseFields,
+  status: RunnerCallFailureStatusSchema,
+  error: RunnerCallErrorSchema,
   partial: z.boolean(),
 });
+
+export const RunnerCallResultSchema = z.union([
+  RunnerCallCompletedResultSchema,
+  RunnerCallFailureResultSchema,
+]);

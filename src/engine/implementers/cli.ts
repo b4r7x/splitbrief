@@ -39,6 +39,8 @@ export function createCliImplementer(
             prompt,
             projectDir,
             onOutput,
+            onCallEvent: opts.onCallEvent,
+            callContext,
             model: effectiveModel,
             permissionMode: 'acceptEdits',
             signal: composedSignal,
@@ -61,6 +63,7 @@ export function createCliImplementer(
           parseLine,
           notFoundMessage: tool.notFoundMessage,
           onText: onOutput,
+          onCallEvent: opts.onCallEvent,
           callContext,
           signal: composedSignal,
         });

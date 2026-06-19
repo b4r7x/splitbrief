@@ -1,3 +1,5 @@
+import { redactSecrets } from './redact.js';
+
 const ELLIPSIS = '\u2026';
 const ESC = '\\u001b';
 const BEL = '\\u0007';
@@ -37,12 +39,20 @@ export function stripTerminalControls(text: string): string {
     .replace(CONTROL_CHARACTER_PATTERN, '');
 }
 
+export function sanitizeTerminalDisplayText(text: string): string {
+  return redactSecrets(stripTerminalControls(text));
+}
+
 export function getTerminalCellWidth(text: string): number {
   let width = 0;
-  for (const grapheme of graphemes(stripTerminalControls(text))) {
+  for (const grapheme of splitTerminalGraphemes(text)) {
     width += getGraphemeWidth(grapheme);
   }
   return width;
+}
+
+export function splitTerminalGraphemes(text: string): string[] {
+  return graphemes(stripTerminalControls(text));
 }
 
 export function truncateTerminalDisplayText(text: string, maxCells: number): string {
@@ -68,6 +78,19 @@ export function truncateTerminalDisplayText(text: string, maxCells: number): str
   return `${result}${ELLIPSIS}`;
 }
 
+export function truncateTerminalDisplayTextStart(text: string, maxCells: number): string {
+  if (maxCells <= 0) return '';
+
+  const clean = stripTerminalControls(text);
+  if (getTerminalCellWidth(clean) <= maxCells) return clean;
+
+  const ellipsisWidth = getTerminalCellWidth(ELLIPSIS);
+  if (maxCells <= ellipsisWidth) return takeTrailingCells(clean, maxCells) || ELLIPSIS;
+
+  const tail = takeTrailingCells(clean, maxCells - ellipsisWidth);
+  return tail.length > 0 ? `${ELLIPSIS}${tail}` : ELLIPSIS;
+}
+
 export function padTerminalDisplayTextEnd(text: string, width: number): string {
   const clean = stripTerminalControls(text);
   return `${clean}${' '.repeat(Math.max(0, width - getTerminalCellWidth(clean)))}`;
@@ -75,6 +98,23 @@ export function padTerminalDisplayTextEnd(text: string, width: number): string {
 
 function graphemes(text: string): string[] {
   return Array.from(graphemeSegmenter.segment(text), (part) => part.segment);
+}
+
+function takeTrailingCells(text: string, maxCells: number): string {
+  let width = 0;
+  const result: string[] = [];
+  const parts = graphemes(text);
+
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const grapheme = parts[index];
+    if (grapheme === undefined) continue;
+    const graphemeWidth = getGraphemeWidth(grapheme);
+    if (width + graphemeWidth > maxCells) break;
+    result.unshift(grapheme);
+    width += graphemeWidth;
+  }
+
+  return result.join('');
 }
 
 function getGraphemeWidth(grapheme: string): number {

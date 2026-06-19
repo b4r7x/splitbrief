@@ -27,11 +27,14 @@ export const MAX_EVENTS = 10_000;
 export const MAX_MERGED_TEXT_LENGTH = 500_000;
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
+  if (event.type === 'runner_call_text_delta') return events;
+
   const last = events[events.length - 1];
   if (
     event.type === 'planner_text' &&
     last?.type === 'planner_text' &&
-    (last.role ?? 'planner') === (event.role ?? 'planner')
+    (last.role ?? 'planner') === (event.role ?? 'planner') &&
+    (last.content ?? 'plain') === (event.content ?? 'plain')
   ) {
     let mergedText = last.text + event.text;
     if (mergedText.length > MAX_MERGED_TEXT_LENGTH) {

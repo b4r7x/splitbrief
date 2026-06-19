@@ -1,5 +1,10 @@
 import type { PlannerCallbacks, PlanResult } from '../../planners/types.js';
-import { createBusTextHandler, publishPlannerStatus, publishWarning } from '../events.js';
+import {
+  createBusTextHandler,
+  publishPlannerStatus,
+  publishRunnerCallEvent,
+  publishWarning,
+} from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
@@ -23,7 +28,10 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     feature = prefix + feature;
   }
 
-  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
+  const textHandler = createBusTextHandler(
+    { bus: wctx.bus, phase: state.phase },
+    { content: 'markdown' },
+  );
   const buffer = createTranscriptBuffer({
     projectDir,
     sessionId,
@@ -56,6 +64,8 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     }),
     sessionId,
     persistTranscript: config.workflow.persistTranscript,
+    onCallEvent: (event) => publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event),
+    ...(wctx.signal !== undefined && { signal: wctx.signal }),
     ...(priorMessages ? { priorMessages } : {}),
     ...(attachments ? { attachments } : {}),
     ...(state.discoveredValidation !== undefined

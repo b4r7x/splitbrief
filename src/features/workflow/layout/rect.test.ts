@@ -122,14 +122,14 @@ describe('getWorkflowContentRect', () => {
 });
 
 describe('getReviewContentLayout', () => {
-  it('reserves file header and separator rows, plus a footer row when content overflows', () => {
+  it('reserves file header, separator, scroll chrome, and footer when content overflows', () => {
     const fits = getReviewContentLayout(10, 3);
-    expect(fits).toEqual({ contentHeight: 8, showFooter: false });
+    expect(fits).toEqual({ contentHeight: 6, showFooter: false });
 
     const overflows = getReviewContentLayout(10, 12);
-    expect(overflows).toEqual({ contentHeight: 7, showFooter: true });
+    expect(overflows).toEqual({ contentHeight: 5, showFooter: true });
     expect(overflows.contentHeight).toBeLessThan(fits.contentHeight);
-    expect(2 + overflows.contentHeight + 1).toBe(10);
+    expect(2 + 2 + overflows.contentHeight + 1).toBe(10);
   });
 
   it('does not show a footer when the container only has room for review chrome', () => {

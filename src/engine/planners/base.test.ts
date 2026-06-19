@@ -16,6 +16,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { PlannerCapabilities } from './types.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
 
@@ -375,11 +376,9 @@ describe('createPlannerBase — structured summarization', () => {
       capabilities: defaultCapabilities,
     });
 
-    const result = await planner.summarizeStructured?.(
-      [{ role: 'user', text: 'compact this' }],
-      undefined,
+    const result = await planner.summarizeStructured?.([{ role: 'user', text: 'compact this' }], {
       projectDir,
-    );
+    });
 
     expect(result).toEqual({ text: JSON.stringify(structured), structured, usage: null });
   });
@@ -404,15 +403,52 @@ describe('createPlannerBase — structured summarization', () => {
       capabilities: defaultCapabilities,
     });
 
-    await planner.summarizeStructured?.(
-      [{ role: 'assistant', text: 'new work' }],
-      previous,
+    await planner.summarizeStructured?.([{ role: 'assistant', text: 'new work' }], {
+      previousSummary: previous,
       projectDir,
-    );
+    });
 
     expect(prompt).toContain('Previous summary:');
     expect(prompt).toContain(JSON.stringify(previous));
     expect(prompt).toContain('New messages:');
+  });
+
+  it('passes signal and runner-call callbacks to structured summary invocations', async () => {
+    const controller = new AbortController();
+    const events: RunnerCallEvent[] = [];
+    const structured = {
+      goal: 'add compaction',
+      stepsCompleted: ['old step'],
+      currentStep: 'testing',
+      filesModified: ['src/core/schemas/compaction.ts'],
+      constraintsDiscovered: ['return JSON only'],
+      remainingWork: ['run tests'],
+    };
+    let capturedSignal: AbortSignal | undefined;
+    const planner = createPlannerBase({
+      invokePlan: async () => ({ text: '', usage: null }),
+      invokeEscalate: async (opts) => {
+        capturedSignal = opts.signal;
+        opts.callbacks.onCallEvent?.({ type: 'call_started', ts: Date.now(), ...opts.callContext });
+        return { text: JSON.stringify(structured), usage: null };
+      },
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.summarizeStructured?.([{ role: 'user', text: 'compact this' }], {
+      projectDir,
+      signal: controller.signal,
+      callbacks: { onCallEvent: (event) => events.push(event) },
+      role: 'compaction',
+    });
+
+    expect(capturedSignal).toBe(controller.signal);
+    expect(events[0]).toMatchObject({
+      type: 'call_started',
+      role: 'compaction',
+      backendKind: 'cli',
+    });
   });
 });
 

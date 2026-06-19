@@ -1,5 +1,5 @@
 import type { Phase } from '../../core/schemas/enums.js';
-import { addEvent, markCancelled } from '../../stores/workflow/actions.js';
+import { addEvent, markCancellationRequested } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';
 
@@ -38,7 +38,7 @@ export function abortTurn(): boolean {
 }
 
 export function requestCancel(): boolean {
-  const mutated = markCancelled();
+  const mutated = markCancellationRequested();
   if (!mutated) return false;
   handlers.cancel?.();
   return true;

@@ -4,23 +4,20 @@ import {
   type SessionLogAppender,
 } from '../../../core/state/persistence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { EngineEvent, EventSink } from '../types.js';
-
-const TRANSCRIPT_KINDS = new Set<EngineEvent['type']>([
-  'planner_text',
-  'user_message',
-  'clarifications_collected',
-  'clarification_answered',
-  'implementer_generate_done',
-]);
+import { protectEngineEventForConsumer } from '../protection.js';
+import type { EventSink } from '../types.js';
 
 export function createJsonlSink(opts: SessionRef & { persistTranscript: boolean }): EventSink {
   const { projectDir, sessionId, persistTranscript } = opts;
   const ref: SessionRef = { projectDir, sessionId };
   let appender: SessionLogAppender | null = null;
   return (event) => {
-    if (!persistTranscript && TRANSCRIPT_KINDS.has(event.type)) return;
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'session-log',
+      persistTranscript,
+    });
+    if (protectedEvent === null) return;
     if (appender === null) appender = createSessionLogAppender(ref);
-    appender(toEngineEventEntry(event));
+    appender(toEngineEventEntry(protectedEvent));
   };
 }

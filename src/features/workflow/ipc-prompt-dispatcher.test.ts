@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { IpcPromptRequest } from '../../engine/ipc/protocol.js';
+import { SESSION_FILE_PATH_MAX_BYTES } from '../../core/sessions/confinement.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { reviewStore } from '../../stores/workflow/review.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
   createIpcPromptDispatcher,
@@ -19,6 +25,9 @@ const budgetPausedIssue = {
   recommendedAction: 'continue' as const,
 };
 
+const tmpDirs: string[] = [];
+const itUnix = process.platform === 'win32' ? it.skip : it;
+
 function inputModeWith(prompts: string[], answer: string): UseInputModeResult {
   return {
     mode: 'normal',
@@ -32,6 +41,43 @@ function inputModeWith(prompts: string[], answer: string): UseInputModeResult {
     resetMode: () => {},
   };
 }
+
+function reviewInputMode(reviewPaths: string[]): UseInputModeResult {
+  return {
+    mode: 'normal',
+    hint: '',
+    setReviewMode: async () => {
+      reviewPaths.push(reviewStore.get().filePath ?? '');
+      return { approved: true };
+    },
+    setQuestionMode: async () => '',
+    resolve: () => {},
+    resetMode: () => {},
+  };
+}
+
+function makeSessionDir(): string {
+  const root = createTempDir('ipc-prompt-dispatcher');
+  tmpDirs.push(root);
+  const sessionDir = join(root, '.diptych', 'sessions', 'session-1');
+  mkdirSync(sessionDir, { recursive: true });
+  return sessionDir;
+}
+
+function approvalRequest(filePath: string): IpcPromptRequest {
+  return {
+    requestId: 'approval-1',
+    kind: 'approval_needed',
+    approvalType: 'spec',
+    filePath,
+  };
+}
+
+afterEach(() => {
+  reviewStore.clearReview();
+  feedbackStore.reset();
+  for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe('formatIpcRecoveryPrompt', () => {
   it('presents every available action, not a binary retry/abort', () => {
@@ -101,4 +147,83 @@ describe('createIpcPromptDispatcher recovery_needed', () => {
 
     expect(response).toEqual({ kind: 'recovery_needed', action: 'pause-run' });
   });
+});
+
+describe('createIpcPromptDispatcher approval_needed path confinement', () => {
+  it('opens review mode for a valid session-relative artifact path', async () => {
+    const sessionDir = makeSessionDir();
+    const specPath = join(sessionDir, 'spec.md');
+    writeFileSync(specPath, '# spec\n');
+    const calls: string[] = [];
+    const dispatch = createIpcPromptDispatcher(reviewInputMode(calls), {
+      sessionDirPath: sessionDir,
+    });
+
+    const response = await dispatch(approvalRequest('spec.md'));
+
+    expect(response).toEqual({ kind: 'approval_needed', approved: true });
+    expect(calls).toEqual([specPath]);
+    expect(reviewStore.get().filePath).toBeNull();
+  });
+
+  it('rejects escaped, control-character, and oversized approval paths before review state changes', async () => {
+    const sessionDir = makeSessionDir();
+    const outside = join(sessionDir, '..', 'outside.md');
+    writeFileSync(outside, 'outside');
+    const calls: string[] = [];
+    const dispatch = createIpcPromptDispatcher(reviewInputMode(calls), {
+      sessionDirPath: sessionDir,
+    });
+
+    for (const filePath of [
+      '../outside.md',
+      `spec\u001b[31m.md`,
+      `${'x'.repeat(SESSION_FILE_PATH_MAX_BYTES + 1)}.md`,
+    ]) {
+      const response = await dispatch(approvalRequest(filePath));
+      expect(response).toEqual({ kind: 'approval_needed', approved: false });
+      expect(reviewStore.get().filePath).toBeNull();
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  itUnix('rejects symlinked approval paths before review state changes', async () => {
+    const sessionDir = makeSessionDir();
+    const outsideRoot = createTempDir('ipc-prompt-dispatcher-outside');
+    tmpDirs.push(outsideRoot);
+    const outsideFile = join(outsideRoot, 'outside.md');
+    writeFileSync(outsideFile, 'outside');
+    symlinkSync(outsideFile, join(sessionDir, 'spec.md'));
+    const calls: string[] = [];
+    const dispatch = createIpcPromptDispatcher(reviewInputMode(calls), {
+      sessionDirPath: sessionDir,
+    });
+
+    const response = await dispatch(approvalRequest('spec.md'));
+
+    expect(response).toEqual({ kind: 'approval_needed', approved: false });
+    expect(reviewStore.get().filePath).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  itUnix(
+    'rejects approval paths through symlinked directories before review state changes',
+    async () => {
+      const sessionDir = makeSessionDir();
+      const realDir = join(sessionDir, 'real');
+      mkdirSync(realDir);
+      writeFileSync(join(realDir, 'spec.md'), '# spec\n');
+      symlinkSync(realDir, join(sessionDir, 'link'));
+      const calls: string[] = [];
+      const dispatch = createIpcPromptDispatcher(reviewInputMode(calls), {
+        sessionDirPath: sessionDir,
+      });
+
+      const response = await dispatch(approvalRequest('link/spec.md'));
+
+      expect(response).toEqual({ kind: 'approval_needed', approved: false });
+      expect(reviewStore.get().filePath).toBeNull();
+      expect(calls).toHaveLength(0);
+    },
+  );
 });

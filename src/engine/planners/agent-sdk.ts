@@ -14,6 +14,7 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 import { resolveApiKeyOverride } from '../providers/client.js';
 import { composeAbortSignal } from '../../utils/abort.js';
+import type { RunnerCallContext } from '../calls/types.js';
 
 export function createAgentSdkPlanner(opts: {
   model?: string | undefined;
@@ -38,13 +39,16 @@ export function createAgentSdkPlanner(opts: {
     callbacks,
     images,
     signal,
+    callContext,
   }: {
     prompt: string;
     projectDir: string;
+    callContext: RunnerCallContext;
     callbacks: {
       onOutput: (text: string) => void;
       onSessionId?: ((id: string) => void) | undefined;
       onSessionExpired?: ((id: string) => void) | undefined;
+      onCallEvent?: Parameters<typeof backend.invoke>[0]['onCallEvent'];
     };
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
@@ -57,6 +61,8 @@ export function createAgentSdkPlanner(opts: {
       onOutput: callbacks.onOutput,
       onSessionId: callbacks.onSessionId,
       onSessionExpired: callbacks.onSessionExpired,
+      onCallEvent: callbacks.onCallEvent,
+      callContext,
       ...(effort !== undefined && { effort }),
       ...(images && images.length > 0 ? { images } : {}),
       ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
@@ -67,15 +73,23 @@ export function createAgentSdkPlanner(opts: {
     invokePlan: invoke,
     invokeEscalate: invoke,
     backendKind: 'agent-sdk',
+    runnerName: 'agent-sdk',
+    model: effectiveModel,
     isAvailable: () => isAgentSdkAvailable(apiKey),
 
-    async injectUserTurn(text: string, projectDir: string): Promise<TokenDelta | null> {
+    async injectUserTurn(injection): Promise<TokenDelta | null> {
+      const effectiveSignal = composeAbortSignal(injection.signal, timeout);
       const result = await backend.invoke({
-        prompt: text,
-        projectDir,
+        prompt: injection.text,
+        projectDir: injection.projectDir,
         model: effectiveModel,
         onOutput: () => {},
+        ...(injection.callbacks?.onCallEvent !== undefined && {
+          onCallEvent: injection.callbacks.onCallEvent,
+        }),
+        ...(injection.callContext !== undefined && { callContext: injection.callContext }),
         ...(effort !== undefined && { effort }),
+        ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
       });
       return result.usage;
     },

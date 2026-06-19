@@ -7,6 +7,7 @@ import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 
 export type PlannerCapabilities = {
   /** Planner can emit inline clarification questions during planning. */
@@ -53,6 +54,29 @@ export interface PlannerSummaryMessage {
   text: string;
 }
 
+export interface PlannerCallEventCallbacks {
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+}
+
+export type PlannerSummaryOptions = {
+  projectDir?: string | undefined;
+  signal?: AbortSignal | undefined;
+  callbacks?: PlannerCallEventCallbacks | undefined;
+  role?: Extract<RunnerCallContext['role'], 'summary' | 'compaction'> | undefined;
+};
+
+export type PlannerStructuredSummaryOptions = PlannerSummaryOptions & {
+  previousSummary?: StructuredSummary | undefined;
+};
+
+export type PlannerUserTurnOptions = {
+  text: string;
+  projectDir: string;
+  signal?: AbortSignal | undefined;
+  callbacks?: PlannerCallEventCallbacks | undefined;
+  callContext?: RunnerCallContext | undefined;
+};
+
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: Phase) => void) | undefined;
@@ -84,6 +108,8 @@ export interface PlannerCallbacks {
   discoveredValidation?: DiscoveredValidation | undefined;
   /** Abort signal propagated from the continuation loop so backends can cancel in-flight requests. */
   signal?: AbortSignal | undefined;
+  /** Normalized backend call lifecycle events. Orchestrator callbacks bind these to the EventBus. */
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   /** Emitted when a parsed Task Brief contains `###` sections outside the grammar and they are dropped. */
   onWarning?: ((message: string) => void) | undefined;
 }
@@ -91,6 +117,7 @@ export interface PlannerCallbacks {
 export interface PlannerOutputCallbacks {
   onOutput: (text: string) => void;
   signal?: AbortSignal | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 }
 
 /** Result from a single planning phase. */
@@ -182,16 +209,15 @@ export interface Planner extends RunnerRuntime {
 
   summarize(
     messages: PlannerSummaryMessage[],
-    projectDir?: string,
+    opts?: PlannerSummaryOptions | undefined,
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
   summarizeStructured?(
     messages: PlannerSummaryMessage[],
-    previousSummary?: StructuredSummary,
-    projectDir?: string,
+    opts?: PlannerStructuredSummaryOptions | undefined,
   ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>;
 
-  injectUserTurn?: (text: string, projectDir: string) => Promise<TokenDelta | null>;
+  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<TokenDelta | null>;
 
   /**
    * Human-readable cause for the most recent `isAvailable()` returning false

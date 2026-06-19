@@ -9,6 +9,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
@@ -43,6 +45,8 @@ interface HarnessProps {
   initialResumeState?: WorkflowState | undefined;
   sessionId?: string | undefined;
   captureRunner?: { current: RunnerHandle | null };
+  planner?: PlannerConfig | undefined;
+  workflow?: Partial<Config['workflow']> | undefined;
 }
 
 function Harness({
@@ -52,10 +56,13 @@ function Harness({
   initialResumeState,
   sessionId,
   captureRunner,
+  planner,
+  workflow,
 }: HarnessProps) {
   const inputMode = useInputMode();
   const config = makeConfig({
-    planner: { kind: 'agent', command: 'diptych-non-existent-planner-x7q9' },
+    planner: planner ?? { kind: 'agent', command: 'diptych-non-existent-planner-x7q9' },
+    ...(workflow !== undefined && { workflow }),
   });
   const runner = useWorkflowRunner({
     feature,
@@ -238,6 +245,34 @@ describe('useWorkflowRunner', () => {
     const before = eventsStore.get().events.length;
     expect(requestCancel()).toBe(false);
     expect(eventsStore.get().events.length).toBe(before);
+
+    inst.unmount();
+  });
+
+  it('requestCancel aborts the engine signal with the canonical user_cancelled reason', async () => {
+    const sessionId = '2026-06-18-cancel-reason';
+    const inst = render(
+      <Harness
+        feature="cancel reason"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        sessionId={sessionId}
+        planner={{ kind: 'shell', command: 'sleep', args: ['10'] }}
+        workflow={{ mode: 'quick', persistTranscript: false }}
+      />,
+    );
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    await vi.waitFor(() => {
+      expect(existsSync(logPath)).toBe(true);
+    });
+
+    expect(requestCancel()).toBe(true);
+
+    await vi.waitFor(() => {
+      const log = readFileSync(logPath, 'utf-8');
+      expect(log).toContain('"type":"workflow_cancelled"');
+      expect(log).toContain('"reason":"user_cancelled"');
+    });
 
     inst.unmount();
   });

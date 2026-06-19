@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PriorMessage } from './types.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { EffortLevel, ProviderId } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
@@ -50,7 +50,9 @@ async function invokeApi(opts: {
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
-}): Promise<InvokeResult> {
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext: RunnerCallContext;
+}): Promise<RunnerCallResult> {
   const messages = buildMessages(opts.prompt, opts.priorMessages);
   const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
   const maxTokens = clampToMaxOutput(Math.max(opts.contextLength - promptTokens, 1024));
@@ -67,6 +69,8 @@ async function invokeApi(opts: {
     effort: opts.effort,
     images: opts.images,
     signal: opts.signal,
+    onCallEvent: opts.onCallEvent,
+    callContext: opts.callContext,
   });
 }
 
@@ -95,10 +99,15 @@ export function createApiPlanner(config: Config): Planner {
     priorMessages,
     images,
     signal,
+    callContext,
   }: {
     prompt: string;
     projectDir: string;
-    callbacks: { onOutput: (text: string) => void };
+    callContext: RunnerCallContext;
+    callbacks: {
+      onOutput: (text: string) => void;
+      onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+    };
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
@@ -120,6 +129,8 @@ export function createApiPlanner(config: Config): Planner {
       effort: supportsEffort ? effort : undefined,
       images: supportsImages ? images : undefined,
       signal: effectiveSignal,
+      onCallEvent: callbacks.onCallEvent,
+      callContext,
     });
   };
 
@@ -127,6 +138,8 @@ export function createApiPlanner(config: Config): Planner {
     invokePlan: invoke,
     invokeEscalate: invoke,
     backendKind: 'api',
+    runnerName: provider,
+    model,
     consumesPriorMessages: true,
 
     async isAvailable() {

@@ -4,7 +4,13 @@ import {
 } from '../../core/schemas/compaction.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { error } from '../../utils/error.js';
-import type { PlannerSummaryMessage } from './types.js';
+import { throwIfAborted } from '../../utils/abort.js';
+import type {
+  PlannerCallEventCallbacks,
+  PlannerStructuredSummaryOptions,
+  PlannerSummaryMessage,
+  PlannerSummaryOptions,
+} from './types.js';
 import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallCompatibleResult } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
@@ -13,20 +19,29 @@ type PlannerSummaryConfig = {
   invokeEscalate: (opts: {
     prompt: string;
     projectDir: string;
-    callbacks: { onOutput: (text: string) => void };
+    callContext: RunnerCallContext;
+    callbacks: { onOutput: (text: string) => void } & PlannerCallEventCallbacks;
+    signal?: AbortSignal | undefined;
   }) => Promise<RunnerCallCompatibleResult>;
   backendKind?: RunnerCallContext['backendKind'];
+  runnerName?: string | undefined;
+  model?: string | undefined;
 };
 
 const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 
 let summaryCallSequence = 0;
 
-function createSummaryCallContext(config: PlannerSummaryConfig): RunnerCallContext {
+function createSummaryCallContext(
+  config: PlannerSummaryConfig,
+  role: RunnerCallContext['role'],
+): RunnerCallContext {
   return {
     callId: `summary-${++summaryCallSequence}`,
-    role: 'summary',
+    role,
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+    ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
+    ...(config.model !== undefined && { model: config.model }),
   };
 }
 
@@ -84,16 +99,25 @@ function buildStructuredSummaryPrompt(
 export async function summarize(
   config: PlannerSummaryConfig,
   messages: PlannerSummaryMessage[],
-  projectDir?: string,
+  opts: PlannerSummaryOptions = {},
 ): Promise<{ text: string; usage: TokenDelta | null }> {
   if (messages.length === 0) return { text: '', usage: null };
+  throwIfAborted(opts.signal);
+  const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
     toRunnerCallResult(
-      createSummaryCallContext(config),
+      callContext,
       await config.invokeEscalate({
         prompt: buildSummaryPrompt(messages),
-        projectDir: projectDir ?? process.cwd(),
-        callbacks: { onOutput: () => {} },
+        projectDir: opts.projectDir ?? process.cwd(),
+        callContext,
+        callbacks: {
+          onOutput: () => {},
+          ...(opts.callbacks?.onCallEvent !== undefined && {
+            onCallEvent: opts.callbacks.onCallEvent,
+          }),
+        },
+        signal: opts.signal,
       }),
     ),
   );
@@ -103,17 +127,25 @@ export async function summarize(
 export async function summarizeStructured(
   config: PlannerSummaryConfig,
   messages: PlannerSummaryMessage[],
-  previousSummary?: StructuredSummary,
-  projectDir?: string,
+  opts: PlannerStructuredSummaryOptions = {},
 ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }> {
   if (messages.length === 0) return { text: '', structured: null, usage: null };
+  throwIfAborted(opts.signal);
+  const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
     toRunnerCallResult(
-      createSummaryCallContext(config),
+      callContext,
       await config.invokeEscalate({
-        prompt: buildStructuredSummaryPrompt(messages, previousSummary),
-        projectDir: projectDir ?? process.cwd(),
-        callbacks: { onOutput: () => {} },
+        prompt: buildStructuredSummaryPrompt(messages, opts.previousSummary),
+        projectDir: opts.projectDir ?? process.cwd(),
+        callContext,
+        callbacks: {
+          onOutput: () => {},
+          ...(opts.callbacks?.onCallEvent !== undefined && {
+            onCallEvent: opts.callbacks.onCallEvent,
+          }),
+        },
+        signal: opts.signal,
       }),
     ),
   );

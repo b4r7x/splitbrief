@@ -56,6 +56,7 @@ src/stores/
 │   ├── tasks.ts              # Task map + counters
 │   ├── tokens.ts             # Local / escalated token counts
 │   ├── lifecycle.ts          # Phase, cancelled, queue depth
+│   ├── operations.ts         # Active / last runner operation
 │   ├── actions.ts            # Namespace module — composite writes across sub-stores
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── attachments.ts        # Pending prompt attachments
@@ -163,14 +164,14 @@ const [{ projectDir }, { allSessions }, { cols, isSmall }] = useStores(
 Each store snapshot is wrapped in a tracking `Proxy` — only the keys you actually read trigger re-renders. Reading `cols` but not `rows` means a change to `rows` alone will not re-render the component.
 
 **Limitations** (Proxy `get` trap only). Fall back to `store.use(selector)` when:
-- You use a computed / conditional selector: `workflowStore.use(s => hasWorkflowConfig(s.events))`.
+- You use a computed / conditional selector: `eventsStore.use(s => hasWorkflowConfig(s.events))`.
 - You need `Object.keys(x)`, `for...in`, spread (`{...x}`) or rest destructure (`{a, ...r}`) — none are intercepted.
 - You read a field in an event handler or async callback (outside the render phase) — those reads don't register.
 
-### In non-React code: `store.get()`
+### In non-React UI/CLI glue: `store.get()`
 
 ```typescript
-// Synchronous read — used in CLI code, action functions, async handlers
+// Synchronous read — used in CLI code, action functions, async UI handlers
 const { projectDir } = configStore.get();
 ```
 
@@ -179,7 +180,7 @@ const { projectDir } = configStore.get();
 ```typescript
 // Named actions — the only way to mutate state
 overlayStore.open('help');
-workflowStore.addEvent(event);
+addEvent(event);
 routerStore.navigate('workflow', { feature: 'auth' });
 ```
 
@@ -198,10 +199,11 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, cancelled, queueDepth }` | internal writes via `actions.addEvent` |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason }` | internal writes via `actions.addEvent` / local cancel intent |
+| `operationsStore` | `workflow/operations.ts` | `{ active, last, byCallId }` | internal writes via `actions.addEvent` / local cancel intent |
 | `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
-| `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, lineCount }` | `setReviewFile()`, `setScrollOffset()`, `clearReview()` |
+| `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `planEditorStore` | `workflow/plan-editor.ts` | `{ tasks, cursor, expandedIds, dirty, ... }` | `initEditor()`, `moveCursor()`, `setCursor()`, `setTasks()`, `toggleExpand()`, `toggleFlag()` |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
@@ -216,17 +218,16 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 ### Workflow actions module
 
-`workflow/actions.ts` is not a store — it's a namespace module holding composite operations that orchestrate writes across the four workflow sub-stores. All engine and UI code that mutates workflow state goes through this module; direct `.set()` on sub-stores is reserved for test helpers.
+`workflow/actions.ts` is not a store — it's a namespace module holding composite operations that orchestrate writes across workflow sub-stores. The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
 
 | Export | Purpose |
 |---|---|
-| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost_update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
-| `markCancelled(): boolean` | Writes terminal `workflow-cancelled` event to `eventsStore`, sets `lifecycleStore.cancelled`. Idempotent. |
-| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
+| `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
+| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
-| `WorkflowViewState` | Type alias `EventsState & TasksState & TokensState & LifecycleState` — exported for any consumer that needs the flattened shape. |
 
-**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`. They are pure functions and can be tested directly.
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations.ts` exports `updateOperations`. They are pure functions and can be tested directly.
 
 ## Design Decisions
 
@@ -237,7 +238,7 @@ Same core pattern, zero dependencies. We don't use middleware, devtools, persist
 Context re-renders all consumers when any part of the context value changes. External stores with selectors re-render only when the selected slice changes. Also eliminates provider nesting.
 
 **Why module-scoped singletons?**
-The app is a single CLI process. There is exactly one instance of each store, shared between React components and engine code. No need for dependency injection or multiple instances.
+The app is a single CLI process. There is exactly one instance of each store, shared between React components, UI glue, and store actions. No need for dependency injection or multiple instances.
 
 **Why no useMemo / useCallback / React.memo?**
 Store selectors make them unnecessary. Components subscribe to specific slices and only re-render when those slices change. Action functions are module-level closures with stable identity.
@@ -255,7 +256,7 @@ Store selectors make them unnecessary. Components subscribe to specific slices a
 
 ### Cross-module writes within a store group
 
-Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`) are written exclusively by `workflow/actions.ts`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only `actions.ts` imports. Consumers (UI, engine, tests) must go through `addEvent`, `markCancelled`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
+Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`) are written exclusively by `workflow/actions.ts`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only `actions.ts` imports. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
 
 ### Test escape hatches
 
@@ -264,20 +265,20 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 | Symbol | Shape | Who may import |
 |---|---|---|
 | `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
-| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
 
 **Rule.** Production code outside `workflow/actions.ts` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
 
-**Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the single ingress, and it gates on `cancelled` and fan-out order. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets a test (or the dispatcher) write one slice without tripping the fan-out.
+**Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the engine-event ingress, and `markCancellationRequested` is the local-intent ingress. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets the dispatcher write one slice without exposing generic mutation publicly.
 
 **Rejected alternative.** Adding a full `lifecycleStore.setPhase(...)` / generic `set()` action to the public facade. Rejected — it widens the public surface to solve a test-only problem, and makes it trivial for production code to bypass the dispatcher's invariants. The `__` / `_Internal` prefix is the signal that the symbol is off-limits outside tests and the dispatcher.
 
 ## Engine Write Pattern
 
-Since the 2026-04-20 release the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
+Since the 2026-04-20 release the engine no longer writes workflow stores directly or imports `workflow/actions.addEvent`. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React, UI, or store imports):
 
 - Engine code publishes events; sinks write to stores; UI components subscribe reactively and re-render only when their selected slice changes.
-- Non-event cross-cutting writes (abort / queue handler registration) still go through the `sinks` surface on the workflow context; `abortStore` is the one store engine code still reads directly for cancellation status.
-- Engine modules live in `src/engine/` and have zero React/Ink imports — they only touch store singletons, which are plain module-scoped objects with no UI dependencies.
+- Non-event cross-cutting writes (abort / queue handler registration) go through the `sinks` surface on the workflow context. The engine does not import stores to observe cancellation; it receives an `AbortSignal` from the caller.
+- Engine modules live in `src/engine/` and have zero React/Ink/store imports. They publish `EngineEvent` values and return data.
 
-The distinction is one-directional: engine code **writes** to stores; React components **read** from stores. Nothing in `src/engine/` calls `store.use()` (a React hook) — it only calls `store.get()` and `store.set()` / named actions.
+The distinction is one-directional: engine code publishes to the bus; sinks write to stores; React components read from stores. Nothing in `src/engine/` calls `store.use()`, `store.get()`, or store actions.

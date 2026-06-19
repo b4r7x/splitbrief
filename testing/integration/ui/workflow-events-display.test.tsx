@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { WorkflowConfigCard } from '../../../src/features/workflow/components/event-cards/config.js';
-import { PlannerStatusCard } from '../../../src/features/workflow/components/event-cards/planner-status.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';
 
 describe('workflow events display', () => {
@@ -79,25 +78,6 @@ describe('workflow events display', () => {
       expect(frame).toContain('standard · Anthropic → DeepSeek');
       expect(frame).not.toContain('Planner:');
       expect(frame).not.toContain('Implementer:');
-
-      ui.unmount();
-    });
-  });
-
-  describe('PlannerStatusCard', () => {
-    it('shows role and phase with single space when running', () => {
-      const event: EngineEventOf<'planner_status'> = {
-        type: 'planner_status',
-        ts: Date.now(),
-        phase: 'planning',
-        status: 'running',
-      };
-
-      const ui = renderFeature(<PlannerStatusCard event={event} />);
-      const frame = ui.lastFrame() ?? '';
-
-      expect(frame).toContain('planner planning');
-      expect(frame).not.toContain('planner  planning');
 
       ui.unmount();
     });

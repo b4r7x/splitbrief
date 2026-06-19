@@ -20,6 +20,8 @@ import {
   type ResolvedCompactionFormat,
   type StructuredSummary,
 } from '../../core/schemas/compaction.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import { throwIfAborted } from '../../utils/abort.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -55,23 +57,44 @@ export type PlannerCompactionAdapter = {
   ) => Promise<{ text: string; structured: StructuredSummary | null }>;
 };
 
+export type PlannerCompactionAdapterOptions = {
+  projectDir: string;
+  signal?: AbortSignal | undefined;
+  onUsage?: ((usage: TokenDelta | null) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+};
+
 export function bindPlannerToProjectDir(
   planner: Pick<Planner, 'summarize' | 'summarizeStructured'>,
-  projectDir: string,
-  onUsage?: (usage: TokenDelta | null) => void,
+  opts: PlannerCompactionAdapterOptions,
 ): PlannerCompactionAdapter {
   const summarizeStructured = planner.summarizeStructured;
   return {
     summarize: async (messages) => {
-      const result = await planner.summarize(messages, projectDir);
-      onUsage?.(result.usage);
+      throwIfAborted(opts.signal);
+      const result = await planner.summarize(messages, {
+        projectDir: opts.projectDir,
+        role: 'compaction',
+        ...(opts.signal !== undefined && { signal: opts.signal }),
+        ...(opts.onCallEvent !== undefined && { callbacks: { onCallEvent: opts.onCallEvent } }),
+      });
+      opts.onUsage?.(result.usage);
       return result.text;
     },
     ...(summarizeStructured
       ? {
           summarizeStructured: async (messages, previous) => {
-            const result = await summarizeStructured(messages, previous, projectDir);
-            onUsage?.(result.usage);
+            throwIfAborted(opts.signal);
+            const result = await summarizeStructured(messages, {
+              projectDir: opts.projectDir,
+              previousSummary: previous,
+              role: 'compaction',
+              ...(opts.signal !== undefined && { signal: opts.signal }),
+              ...(opts.onCallEvent !== undefined && {
+                callbacks: { onCallEvent: opts.onCallEvent },
+              }),
+            });
+            opts.onUsage?.(result.usage);
             return { text: result.text, structured: result.structured };
           },
         }
@@ -89,12 +112,19 @@ export async function compactResumeTranscript(opts: {
   planner: Pick<Planner, 'summarize' | 'summarizeStructured'>;
   keepRecentCount: number;
   format?: ResolvedCompactionFormat | undefined;
+  signal?: AbortSignal | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   onFallback?: ((text: string) => void | Promise<void>) | undefined;
 }): Promise<ResumeCompactionResult> {
   const { projectDir, sessionId, planner, keepRecentCount, onFallback } = opts;
   let usage: TokenDelta | null = null;
-  const adapter = bindPlannerToProjectDir(planner, projectDir, (delta) => {
-    if (delta) usage = accumulateUsage(usage, delta);
+  const adapter = bindPlannerToProjectDir(planner, {
+    projectDir,
+    ...(opts.signal !== undefined && { signal: opts.signal }),
+    ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
+    onUsage: (delta) => {
+      if (delta) usage = accumulateUsage(usage, delta);
+    },
   });
   const result = await compactTranscript({
     sessionDir: sessionDir(projectDir, sessionId),
@@ -121,8 +151,11 @@ export async function performManualCompaction(
     threshold !== undefined ? keepRecentCountForThreshold(threshold) : DEFAULT_KEEP_RECENT_COUNT;
   const format = resolveCompactionFormat(config.workflow.compactionFormat, config.planner.kind);
   let usage: TokenDelta | null = null;
-  const adapter = bindPlannerToProjectDir(planner, projectDir, (delta) => {
-    if (delta) usage = accumulateUsage(usage, delta);
+  const adapter = bindPlannerToProjectDir(planner, {
+    projectDir,
+    onUsage: (delta) => {
+      if (delta) usage = accumulateUsage(usage, delta);
+    },
   });
   const result = await compactTranscript({
     sessionDir: sessionDir(projectDir, sessionId),

@@ -50,7 +50,7 @@ export function readReviewContentHeight(): number {
     0,
     terminalSizeStore.get().rows - readWorkflowChromeHeight() - readWorkflowPromptRows(),
   );
-  return getReviewContentLayout(viewportHeight, reviewStore.get().lineCount).contentHeight;
+  return getReviewContentLayout(viewportHeight, reviewStore.get().renderedLineCount).contentHeight;
 }
 
 export function readConversationScrollSnapshot(): ConversationScrollSnapshot {

@@ -14,22 +14,73 @@ import { createChangeDetector } from '../change-detection.js';
 let projectDir: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
+type CompletedRunnerCallResult = Extract<RunnerCallResult, { status: 'completed' }>;
+type FailureRunnerCallResult = Exclude<RunnerCallResult, CompletedRunnerCallResult>;
+
 function makeRunnerCallResult(
-  overrides: Pick<RunnerCallResult, 'status' | 'text'> &
-    Partial<Omit<RunnerCallResult, 'status' | 'text'>>,
+  overrides: Pick<CompletedRunnerCallResult, 'status' | 'text'> &
+    Partial<Omit<CompletedRunnerCallResult, 'status' | 'text'>>,
+): CompletedRunnerCallResult;
+function makeRunnerCallResult(
+  overrides: Pick<FailureRunnerCallResult, 'status' | 'text' | 'error'> &
+    Partial<Omit<FailureRunnerCallResult, 'status' | 'text' | 'error'>>,
+): FailureRunnerCallResult;
+function makeRunnerCallResult(
+  overrides:
+    | (Pick<CompletedRunnerCallResult, 'status' | 'text'> &
+        Partial<Omit<CompletedRunnerCallResult, 'status' | 'text'>>)
+    | (Pick<FailureRunnerCallResult, 'status' | 'text' | 'error'> &
+        Partial<Omit<FailureRunnerCallResult, 'status' | 'text' | 'error'>>),
 ): RunnerCallResult {
-  return {
+  const base: Pick<
+    RunnerCallResult,
+    | 'callId'
+    | 'role'
+    | 'backendKind'
+    | 'startedAt'
+    | 'endedAt'
+    | 'durationMs'
+    | 'usage'
+    | 'nativeSessionId'
+    | 'toolUses'
+    | 'artifacts'
+    | 'warnings'
+  > = {
     callId: 'call-test',
     role: 'implementer',
     backendKind: 'api',
+    startedAt: 1,
+    endedAt: 2,
+    durationMs: 1,
     usage: null,
     nativeSessionId: null,
     toolUses: [],
     artifacts: [],
     warnings: [],
-    error: null,
-    partial: false,
+  };
+
+  if (overrides.status === 'completed') {
+    return {
+      ...base,
+      status: 'completed',
+      text: overrides.text,
+      usage: overrides.usage ?? base.usage,
+      nativeSessionId: overrides.nativeSessionId ?? base.nativeSessionId,
+      toolUses: overrides.toolUses ?? base.toolUses,
+      artifacts: overrides.artifacts ?? base.artifacts,
+      warnings: overrides.warnings ?? base.warnings,
+      startedAt: overrides.startedAt ?? base.startedAt,
+      endedAt: overrides.endedAt ?? base.endedAt,
+      durationMs: overrides.durationMs ?? base.durationMs,
+      error: null,
+      partial: false,
+    };
+  }
+
+  return {
+    ...base,
     ...overrides,
+    partial: overrides.partial ?? true,
   };
 }
 

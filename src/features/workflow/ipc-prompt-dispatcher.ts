@@ -1,7 +1,10 @@
 import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
+import { resolveSessionFilePath } from '../../core/sessions/confinement.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
@@ -16,6 +19,10 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 type IpcRecoveryIssue = Extract<IpcPromptRequest, { kind: 'recovery_needed' }>['issue'];
+
+interface IpcPromptDispatcherOptions {
+  sessionDirPath?: string | undefined;
+}
 
 export function formatIpcRecoveryPrompt(issue: IpcRecoveryIssue): string {
   const context = { reason: issue.reason };
@@ -44,10 +51,14 @@ export function parseIpcRecoveryAction(input: string, issue: IpcRecoveryIssue): 
 
 export function createIpcPromptDispatcher(
   inputMode: UseInputModeResult,
+  opts: IpcPromptDispatcherOptions = {},
 ): (request: IpcPromptRequest) => Promise<IpcPromptResponse> {
   return async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
     if (request.kind === 'approval_needed') {
-      reviewStore.setReviewFile(request.filePath);
+      const filePath = resolveApprovalReviewPath(request.filePath, opts.sessionDirPath);
+      if (filePath === null) return { kind: 'approval_needed', approved: false };
+
+      reviewStore.setReviewFile(filePath);
       const hint = request.approvalType === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
       const result = await inputMode.setReviewMode(hint);
       reviewStore.clearReview();
@@ -110,4 +121,21 @@ export function createIpcPromptDispatcher(
 
     return assertNever(request);
   };
+}
+
+function resolveApprovalReviewPath(
+  filePath: string,
+  sessionDirPath: string | undefined,
+): string | null {
+  if (sessionDirPath === undefined) {
+    feedbackStore.setError('IPC approval prompt missing session context.');
+    return null;
+  }
+
+  try {
+    return resolveSessionFilePath(filePath, sessionDirPath);
+  } catch (err) {
+    feedbackStore.setError(`Rejected IPC approval path: ${toErrorMessage(err)}`);
+    return null;
+  }
 }

@@ -1,4 +1,3 @@
-import type { InvokeResult } from '../../runners/types.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
@@ -11,10 +10,16 @@ import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../const
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { StreamMessage } from '../dispatch-stream.js';
-import { collectRunnerCallResult } from '../../calls/collector.js';
-import { toInvokeResult } from '../../calls/projection.js';
+import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
+import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';
-import type { RunnerCallContext, RunnerCallEvent, RunnerCallUsage } from '../../calls/types.js';
+import type {
+  RunnerCallContext,
+  RunnerCallEvent,
+  RunnerCallResult,
+  RunnerCallUsage,
+} from '../../calls/types.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -69,6 +74,8 @@ interface AnthropicStreamOptions {
   signal?: AbortSignal | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext?: RunnerCallContext | undefined;
 }
 
 interface SseEvent {
@@ -262,19 +269,12 @@ function getStopReason(payload: Record<string, unknown>): string | null {
   return typeof delta.stop_reason === 'string' ? delta.stop_reason : null;
 }
 
-function emitText(events: RunnerCallEvent[], context: RunnerCallContext, text: string): void {
-  events.push({
-    type: 'call_text_delta',
-    ts: Date.now(),
-    ...context,
-    channel: 'assistant',
-    text,
-  });
+function emitText(recorder: RunnerCallRecorder, text: string): void {
+  recorder.text({ channel: 'assistant', text });
 }
 
 function emitAnthropicTerminal(
-  events: RunnerCallEvent[],
-  context: RunnerCallContext,
+  recorder: RunnerCallRecorder,
   stopReason: string | null,
   sawMessageStop: boolean,
   usage: RunnerCallUsage | null,
@@ -282,32 +282,48 @@ function emitAnthropicTerminal(
   if (!sawMessageStop) return;
 
   if (stopReason === 'max_tokens') {
-    events.push({
-      type: 'call_error',
-      ts: Date.now(),
-      ...context,
+    recorder.finishFailed({
       status: 'truncated',
       error: {
         code: 'anthropic_stop_reason_max_tokens',
         message: 'Anthropic response ended because the max token limit was reached',
       },
+      usage,
+      nativeSessionId: null,
     });
     return;
   }
 
-  events.push({
-    type: 'call_completed',
-    ts: Date.now(),
-    ...context,
-    status: 'completed',
+  recorder.finishCompleted({ usage, nativeSessionId: null });
+}
+
+function mapProviderError(err: unknown, endpoint: { provider: string; apiBase: string }): unknown {
+  try {
+    throwMappedError(err, endpoint);
+  } catch (mapped) {
+    return mapped;
+  }
+}
+
+function finishAnthropicFailure(
+  recorder: RunnerCallRecorder,
+  err: unknown,
+  endpoint: { provider: string; apiBase: string },
+  usage: RunnerCallUsage | null,
+): never {
+  const mapped = mapProviderError(err, endpoint);
+  recorder.finishFailed({
+    status: 'failed',
+    error: runnerCallErrorFromUnknown(mapped, 'anthropic_stream_error'),
     usage,
     nativeSessionId: null,
   });
+  throw mapped;
 }
 
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
-): Promise<InvokeResult> {
+): Promise<RunnerCallResult> {
   const { system, conversation } = splitSystemMessages(opts.messages);
   const finalConversation =
     opts.images && opts.images.length > 0
@@ -328,6 +344,8 @@ export async function streamAnthropicCompletion(
       : conversation;
   const url = `${stripV1Suffix(opts.apiBase)}/v1/messages`;
   const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };
+  const context = opts.callContext ?? anthropicCallContext(opts.model);
+  const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
 
   let response: Response;
   try {
@@ -353,23 +371,41 @@ export async function streamAnthropicCompletion(
       signal: opts.signal ?? null,
     });
   } catch (err: unknown) {
-    throwMappedError(err, endpoint);
+    if (opts.signal?.aborted) {
+      recorder.finishFailed({
+        status: runnerCallInterruptedStatus(opts.signal),
+        error: runnerCallErrorFromUnknown(err, 'runner_interrupted'),
+        nativeSessionId: null,
+      });
+      throwIfAborted(opts.signal);
+    }
+    finishAnthropicFailure(recorder, err, endpoint, null);
   }
 
   if (!response.ok) {
     const message = await response.text();
-    throw streamError.httpStatus('anthropic', response.status, message);
+    const err = streamError.httpStatus('anthropic', response.status, message);
+    recorder.finishFailed({
+      status: 'failed',
+      error: runnerCallErrorFromUnknown(err, 'anthropic_http_error'),
+      nativeSessionId: null,
+    });
+    throw err;
   }
 
   if (!response.body) {
-    throw streamError.emptyResponse('Anthropic');
+    const err = streamError.emptyResponse('Anthropic');
+    recorder.finishFailed({
+      status: 'failed',
+      error: runnerCallErrorFromUnknown(err, 'anthropic_empty_response'),
+      nativeSessionId: null,
+    });
+    throw err;
   }
 
   let usage: RunnerCallUsage | null = null;
   let stopReason: string | null = null;
   let sawMessageStop = false;
-  const context = anthropicCallContext(opts.model);
-  const events: RunnerCallEvent[] = [{ type: 'call_started', ts: Date.now(), ...context }];
 
   try {
     for await (const event of withIdleTimeout(
@@ -392,7 +428,7 @@ export async function streamAnthropicCompletion(
         case 'content_block_delta': {
           const text = getDeltaText(payload);
           if (!text) break;
-          emitText(events, context, text);
+          emitText(recorder, text);
           opts.onProgress(text);
           break;
         }
@@ -418,15 +454,37 @@ export async function streamAnthropicCompletion(
     }
   } catch (err: unknown) {
     if (opts.signal?.aborted) {
+      recorder.finishFailed({
+        status: runnerCallInterruptedStatus(opts.signal),
+        error: { code: 'runner_interrupted', message: toErrorMessage(err) },
+        nativeSessionId: null,
+      });
       throwIfAborted(opts.signal);
     }
-    if (timeoutError.isIdle(err)) throw err;
-    if (err instanceof SyntaxError) {
-      throw streamError.invalidPayload(`Invalid Anthropic stream payload: ${err.message}`, err);
+    if (timeoutError.isIdle(err)) {
+      recorder.finishFailed({
+        status: 'timeout',
+        error: { code: 'stream_idle_timeout', message: toErrorMessage(err) },
+        nativeSessionId: null,
+      });
+      throw err;
     }
-    throwMappedError(err, endpoint);
+    if (err instanceof SyntaxError) {
+      const mapped = streamError.invalidPayload(
+        `Invalid Anthropic stream payload: ${err.message}`,
+        err,
+      );
+      recorder.finishFailed({
+        status: 'failed',
+        error: runnerCallErrorFromUnknown(mapped, 'anthropic_invalid_payload'),
+        usage,
+        nativeSessionId: null,
+      });
+      throw mapped;
+    }
+    finishAnthropicFailure(recorder, err, endpoint, usage);
   }
 
-  emitAnthropicTerminal(events, context, stopReason, sawMessageStop, usage);
-  return toInvokeResult(collectRunnerCallResult(events));
+  emitAnthropicTerminal(recorder, stopReason, sawMessageStop, usage);
+  return recorder.finalResult();
 }

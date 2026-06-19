@@ -8,7 +8,6 @@ import { formatTimeHHMMSS } from '../../../utils/format-time.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
-import type { Phase } from '../../../core/schemas/enums.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 interface HeaderProps {
@@ -25,19 +24,38 @@ export interface HeaderLayout {
   pipelineGap: number;
 }
 
-function formatElapsed(startedAt: string): string {
-  return formatTimeHHMMSS(Date.now() - new Date(startedAt).getTime());
+function formatElapsed(
+  startedAt: number,
+  endedAt: number | null,
+  durationMs: number | null,
+): string {
+  if (durationMs != null) return formatTimeHHMMSS(durationMs);
+  const end = endedAt ?? Date.now();
+  return formatTimeHHMMSS(end - startedAt);
 }
 
-function ElapsedClock({ startedAt, phase }: { startedAt: string; phase: Phase }) {
+function ElapsedClock({
+  mountedAt,
+  lifecycleStartedAt,
+  endedAt,
+  durationMs,
+}: {
+  mountedAt: string;
+  lifecycleStartedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
+}) {
   const t = useTheme();
-  const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
+  const mountedAtMs = Date.parse(mountedAt);
+  const startedAt = lifecycleStartedAt ?? (Number.isFinite(mountedAtMs) ? mountedAtMs : Date.now());
+  const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt, endedAt, durationMs));
 
   useEffect(() => {
-    if (phase === 'complete') return;
-    const id = setInterval(() => setElapsed(formatElapsed(startedAt)), 1000);
+    setElapsed(formatElapsed(startedAt, endedAt, durationMs));
+    if (endedAt != null || durationMs != null) return;
+    const id = setInterval(() => setElapsed(formatElapsed(startedAt, null, null)), 1000);
     return () => clearInterval(id);
-  }, [startedAt, phase]);
+  }, [startedAt, endedAt, durationMs]);
 
   return <Text color={t.textDim}>{elapsed}</Text>;
 }
@@ -67,7 +85,8 @@ export function getHeaderLayout(cols: number, isSmall: boolean): HeaderLayout {
 }
 
 export function Header({ startedAt }: HeaderProps) {
-  const [{ cols, isSmall }, { phase }] = useStores(terminalSizeStore, lifecycleStore);
+  const [{ cols, isSmall }, lifecycle] = useStores(terminalSizeStore, lifecycleStore);
+  const { phase, startedAt: lifecycleStartedAt, endedAt, durationMs } = lifecycle;
   const t = useTheme();
   const feature = routerStore.use((s) => (s.screen === 'workflow' ? s.feature : ''));
   const worktreeName = routerStore.use((s) =>
@@ -95,7 +114,12 @@ export function Header({ startedAt }: HeaderProps) {
           </Box>
         )}
         <Box width={TIMER_WIDTH} justifyContent="flex-end">
-          <ElapsedClock startedAt={startedAt} phase={phase} />
+          <ElapsedClock
+            mountedAt={startedAt}
+            lifecycleStartedAt={lifecycleStartedAt}
+            endedAt={endedAt}
+            durationMs={durationMs}
+          />
         </Box>
       </Box>
     </Box>

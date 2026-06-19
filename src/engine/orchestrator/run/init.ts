@@ -101,7 +101,7 @@ export type RunWorkflowOptions = {
 
 export type InitResult =
   | { ok: true; state: WorkflowState; wctx: WorkflowContext }
-  | { ok: false; summary: Summary };
+  | { ok: false; summary: Summary; bus: EventBus; phase: WorkflowState['phase'] };
 
 export type InitializeWorkflowArgs = {
   opts: RunWorkflowOptions;
@@ -186,6 +186,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       config,
       planner,
       state: savedState,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
     });
     setTrackedState(savedState);
     if (!planner.capabilities.supportsSessionResume) {
@@ -209,6 +210,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       return {
         ok: false,
         summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }),
+        bus,
+        phase: savedState?.phase ?? 'idle',
       };
     }
   }

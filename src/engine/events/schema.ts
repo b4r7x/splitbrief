@@ -19,18 +19,19 @@ import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
+import { WORKFLOW_CANCEL_REASONS } from '../orchestrator/types.js';
 import type { EngineEvent } from './types.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import {
   RunnerCallArtifactSchema,
-  RunnerCallBackendKindSchema,
   RunnerCallErrorSchema,
-  RunnerCallRoleSchema,
-  RunnerCallStatusSchema,
+  RunnerCallFailureStatusSchema,
   RunnerCallToolUseSchema,
   RunnerCallUsageSchema,
+  RunnerCallUsageSemanticsSchema,
   RunnerCallWarningSchema,
-  CallIdSchema,
+  runnerCallContextFields,
+  runnerCallTerminalFields,
 } from '../calls/schema.js';
 
 const stringArray = z.array(z.string());
@@ -57,9 +58,7 @@ function strictCallPhaseEvent<T extends string>(type: T) {
     ts: z.number(),
     phase: PhaseSchema,
     taskId: TaskIdSchema.optional(),
-    callId: CallIdSchema,
-    role: RunnerCallRoleSchema,
-    backendKind: RunnerCallBackendKindSchema,
+    ...runnerCallContextFields,
     sequence: z.number().int().nonnegative(),
   });
 }
@@ -85,6 +84,8 @@ const replayDiagnosticsSchema = z.object({
   skippedUnknown: z.number().int().nonnegative(),
   skippedOversized: z.number().int().nonnegative(),
 });
+
+export const WorkflowCancelReasonSchema = z.enum(WORKFLOW_CANCEL_REASONS);
 
 export const userEditConflictSchema = z.looseObject({
   kind: UserEditConflictKindSchema,
@@ -159,7 +160,9 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_started').extend({ feature: z.string() }),
   phaseEvent('workflow_resumed'),
   phaseEvent('workflow_complete'),
-  phaseEvent('workflow_cancelled'),
+  phaseEvent('workflow_cancelled').extend({
+    reason: WorkflowCancelReasonSchema.optional(),
+  }),
   phaseEvent('workflow_config').extend({
     mode: WorkflowModeSchema,
     plannerTool: z.string(),
@@ -208,6 +211,7 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('planner_text').extend({
     text: z.string(),
     role: z.enum(['planner', 'implementer']).optional(),
+    content: z.enum(['plain', 'markdown']).optional(),
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),
@@ -220,7 +224,7 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   }),
   strictCallPhaseEvent('runner_call_usage').extend({
     usage: RunnerCallUsageSchema,
-    semantics: z.enum(['delta', 'cumulative', 'final']),
+    semantics: RunnerCallUsageSemanticsSchema,
   }),
   strictCallPhaseEvent('runner_call_tool_use').extend({
     toolUse: RunnerCallToolUseSchema.optional(),
@@ -238,12 +242,16 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     warning: RunnerCallWarningSchema,
   }),
   strictCallPhaseEvent('runner_call_error').extend({
-    status: RunnerCallStatusSchema,
+    status: RunnerCallFailureStatusSchema,
     error: RunnerCallErrorSchema,
+    partial: z.boolean(),
+    ...runnerCallTerminalFields,
   }),
   strictCallPhaseEvent('runner_call_completed').extend({
-    status: RunnerCallStatusSchema,
-    partial: z.boolean(),
+    status: z.literal('completed'),
+    error: z.null(),
+    partial: z.literal(false),
+    ...runnerCallTerminalFields,
   }),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),

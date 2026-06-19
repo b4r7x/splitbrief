@@ -91,7 +91,8 @@ Events cover the full workflow lifecycle. A few examples:
 
 - `workflow_started` / `workflow_complete` — session boundaries
 - `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
-- `planner_text` — streaming planner output chunks
+- `planner_text` — streaming planner output chunks. Planner document chunks set
+  `content: 'markdown'`; plain logs omit it or use `content: 'plain'`.
 - `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, tool-use, session IDs, artifacts, warnings, errors, and completion
 - `cost_update` — cumulative token usage after each planner or implementer call
 
@@ -106,6 +107,10 @@ Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell comm
 - text, usage, native session ID, tool-use, artifacts, warnings, error, and `partial`
 
 `InvokeResult` is now a compatibility projection only. `toInvokeResult()` accepts completed calls; non-completed calls stay typed so planner/implementer policy can preserve partial output or fail closed. Public consumers receive bounded/redacted projections, not raw backend payloads.
+
+Planner and implementer paths publish those call events through `publishRunnerCallEvent()` in `src/engine/orchestrator/events.ts`. The helper attaches workflow phase, optional task id, and a monotonic sequence before publishing the projected `runner_call_*` `EngineEvent` on the EventBus. The engine does not import UI code or stores; the TUI sink projects these events into `operationsStore`.
+
+Terminal runner events always carry frozen timing and outcome fields: `startedAt`, `endedAt`, `durationMs`, `partial`, `error`, `usage`, `nativeSessionId`, runner name/model/attempt, role, backend kind, phase, and optional task id. `runner_call_completed` can only have `status: 'completed'` with `error: null`; `runner_call_error` can only use failure statuses.
 
 ---
 
@@ -168,16 +173,19 @@ The full path from engine to pixel:
 
 1. Engine calls `bus.publish({ type: 'task_completed', ... })`
 2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions.ts`
-3. `addEvent` dispatches to four sub-stores synchronously:
+3. `addEvent` dispatches to workflow sub-stores synchronously:
    - `eventsStore` — appends to the event log
    - `tasksStore` — updates task progress (status, counts)
    - `tokensStore` — updates cost and token usage
-   - `lifecycleStore` — updates phase and queue depth
+   - `lifecycleStore` — updates phase, queue depth, terminal workflow timing
+   - `operationsStore` — updates active/last runner operation from `runner_call_*`
 4. React components using `store.use(s => s.tasks)` re-render when their selector output changes
 
-**Ordering invariant:** events, then tasks, then tokens, then lifecycle. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all four stores updated together.
+**Ordering invariant:** events, then tasks, then tokens, then lifecycle, then operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
 
 `cost_update` events take a fast path: they skip the event log and task store and only update tokens. This avoids growing the event log with high-frequency cost ticks.
+
+`workflow_cancelled` is canonical. UI cancel aborts the run with a recognizable reason, and `runWorkflow()` publishes `workflow_cancelled` for UI aborts as well as OS-signal shutdown. Approval-gate `user_cancelled` follows the same event path. The store projection freezes lifecycle/operation duration immediately and accepts late terminal runner/cost events idempotently.
 
 ---
 
@@ -213,7 +221,7 @@ Ctrl-C fires a SIGINT. The signal handler (registered in `withSignalHandlers`, `
 2. Saves `state.json` from whatever `trackedState` is at the moment of interruption.
 3. If an implementer task was in progress, discards the partial file change (git checkout for tracked files, delete for new files).
 
-The `withShutdownHandlers` wrapper in `session-lifecycle.ts` sets the `cancelled` flag so the run loop knows to stop and return a partial summary.
+The `withShutdownHandlers` wrapper in `session-lifecycle.ts` returns the cancellation state so the run loop knows to stop and return a partial summary. For UI-originated aborts, `runWorkflow()` publishes a `workflow_cancelled` event with the abort reason; the TUI sink then freezes active operations through the store projection.
 
 **Continuation loop.** When a planner call is interrupted (not the whole workflow, just the current call), `withContinuationLoop()` in `src/engine/orchestrator/continuation.ts` handles it. It aborts the in-flight call via a per-call `AbortController`, transitions the state to `awaitingContinue: true`, calls `onContinuationNeeded` to ask the user whether to continue, then rebuilds the prompt with the partial response and loops. The transcript buffer flushes with `interrupted: true` so the JSONL log marks the partial response.
 

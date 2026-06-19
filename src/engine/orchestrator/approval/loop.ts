@@ -95,7 +95,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
         prompt: regenPrompt,
         projectDir,
         callbacks: {
-          onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
+          onOutput: createBusTextHandler({ bus: bus, phase: state.phase }, { content: 'markdown' }),
           signal,
         },
       });

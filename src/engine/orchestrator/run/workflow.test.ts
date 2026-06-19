@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -13,8 +13,11 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import type { RunnerCallContext } from '../../../engine/calls/types.js';
+import type { PlanOptions } from '../../../engine/planners/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -22,6 +25,7 @@ import { generateSessionId, readActive, writeActive } from '../../../core/sessio
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../types.js';
 
 let dirs: string[] = [];
 
@@ -267,6 +271,77 @@ describe('runWorkflow — smoke', () => {
     expect(summary.feature).toBe('aborted-before-start');
   });
 
+  it('publishes workflow_cancelled with the canonical reason for UI cancellation signals', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+    const controller = new AbortController();
+
+    await runWorkflow({
+      feature: 'ui cancel',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _eventSink: (event) => events.push(event),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockImplementation(async () => {
+          controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makeTask()],
+            usage: null,
+          };
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
+      type: 'workflow_cancelled',
+      reason: 'user_cancelled',
+    });
+  });
+
+  it('persists workflow_cancelled when user cancellation reaches the unavailable-planner path', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const sessionId = 'unavailable-cancel-sid';
+    const controller = new AbortController();
+    controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+
+    await runWorkflow({
+      feature: 'cancel before unavailable planner',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+    });
+
+    const log = readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type?: string; data?: { reason?: string } });
+
+    expect(log.find((entry) => entry.type === 'workflow_cancelled')).toMatchObject({
+      type: 'workflow_cancelled',
+      data: { reason: 'user_cancelled' },
+    });
+  });
+
   it('preserves the active session when a rewind-triggered abort finishes the old run', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -416,6 +491,81 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001' });
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);
+  });
+
+  it('forwards planner runner_call lifecycle events through the workflow EventBus', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+    const startedAt = Date.now();
+    const usage = { inputTokens: 3, outputTokens: 5 };
+    const call: RunnerCallContext = {
+      callId: 'planner-call-test',
+      role: 'planner',
+      backendKind: 'shell',
+      runnerName: 'test-planner',
+    };
+
+    await runWorkflow({
+      feature: 'planner call events',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (event) => events.push(event),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+          opts.callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
+          opts.callbacks.onCallEvent?.({
+            type: 'call_usage',
+            ts: startedAt + 1,
+            ...call,
+            usage,
+            semantics: 'delta',
+          });
+          opts.callbacks.onCallEvent?.({
+            type: 'call_completed',
+            ts: startedAt + 2,
+            ...call,
+            status: 'completed',
+            error: null,
+            partial: false,
+            startedAt,
+            endedAt: startedAt + 2,
+            durationMs: 2,
+            usage,
+            nativeSessionId: null,
+          });
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makeTask()],
+            usage: null,
+          };
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(
+      events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
+    ).toEqual(['runner_call_started', 'runner_call_usage', 'runner_call_completed']);
+    expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
+      type: 'runner_call_completed',
+      callId: 'planner-call-test',
+      role: 'planner',
+      status: 'completed',
+      durationMs: 2,
+    });
   });
 
   it('runs auto-discovered pre_task module hooks without hooks config', async () => {

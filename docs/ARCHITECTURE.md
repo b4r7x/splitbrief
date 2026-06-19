@@ -23,7 +23,7 @@ This document has two parts:
 ┌──────────────────────────────────────────────────────────────┐
 │  Stores (useSyncExternalStore, module singletons)            │
 │    src/stores/{project,workflow,navigation,ui,…}             │
-│    — shared state, readable from React and engine alike     │
+│    — shared state, read by React and UI/CLI glue            │
 └──────────────────────────────────────────────────────────────┘
            │                              │
            ▼                              ▼
@@ -48,7 +48,7 @@ This document has two parts:
 - `src/engine/**` must not import from React, Ink, or any `src/features/`, `src/components/`, or `src/hooks/` path. The engine is runnable in a headless test process.
 - `src/features/**` and `src/components/**` must not import from `src/cli/**`. UI is driven by stores, not by command handlers.
 - `src/features/{a}/**` must not import from `src/features/{b}/**`. Cross-feature composition happens at `src/app.tsx` and `src/layout.tsx`; shared behavior lives in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. See [`STRUCTURE.md`](./STRUCTURE.md) and [`HOOKS.md`](./HOOKS.md).
-- `src/stores/**` has no external dependencies — no React, no Ink, no engine imports. Just a store factory + plain data.
+- `src/stores/**` has no React or Ink imports and no engine value imports. Store modules may use `import type` for engine-owned types such as `EngineEvent`.
 
 These rules are what let us run the full workflow under Vitest without bringing up Ink.
 
@@ -431,7 +431,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
-The original layering rules (engine never imports React, features never import each other, stores have no external deps, zero runtime classes, zero barrels, ESM `.js` suffixes everywhere) all still hold.
+The original layering rules still hold: engine never imports React, features never import each other, stores have no React/Ink imports and no engine value imports, zero runtime classes, zero barrels, ESM `.js` suffixes everywhere.
 
 ---
 
@@ -661,7 +661,7 @@ src/
 │   │                              persistence, terminal-size
 │   └── workflow/                  abort, actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
-│                                  plan-editor, review, tasks, tokens
+│                                  operations, plan-editor, review, tasks, tokens
 │
 ├── features/                      TUI features (one folder per business slice)
 │   ├── help/                      overlay (global Ctrl-/ help overlay)
@@ -689,7 +689,7 @@ src/
 │       │                          brief-review-view, config-line,
 │       │                          conversation-flow/,
 │       │                          cost-display/drilldown/footer/status,
-│       │                          event-cards/{planner-status,
+│       │                          event-cards/{operation-status,
 │       │                          config},
 │       │                          feedback-row, header, input-footer,
 │       │                          pipeline-bar, plan-editor +
@@ -767,7 +767,7 @@ Sectioned picker display now lives in the picker display-window/ListViewport pat
 | `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, handoff, providers, mcp, ipc, codebase, parsers, streaming, skills, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
 | `src/features/{X}/` | feature-local screen/picker/overlay + components/hooks/helpers; **never imports another feature** | holds |
 | `src/components/` | shared UI primitives (cross-feature only) | holds |
-| `src/stores/` | `useSyncExternalStore` module-state; **no React, no Ink, no engine imports** | holds |
+| `src/stores/` | `useSyncExternalStore` module-state; **no React, no Ink, no engine value imports**; `import type` from engine is allowed for shared event/detection types | holds |
 | `src/hooks/` | shared React hooks (cross-feature only) | holds |
 | `src/cli/` | commander handlers; bootstrap stores then render `<App/>` | holds |
 | `src/cli.ts` | top-level CLI registration only | holds |
@@ -862,12 +862,11 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 ### Exhaustive switch in conversation row rendering
 
-`src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm. **Two switches** must remain exhaustive:
+`src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm.
 
-1. `getGutterRole(event)` in `src/features/workflow/conversation-rows/event-role.ts` — decides `planner` / `implementer` / `null` gutter color.
-2. `eventRows(event, ...)` — returns one-row conversation records or `[]` for silent events.
+`eventRows(event, ...)` returns one-row conversation records or `[]` for silent events. Role and status are represented by row tones and explicit text, not by persistent left gutters.
 
-Adding a new EngineEvent variant without adding it to **both** switches is a compile error.
+Adding a new EngineEvent variant without adding it to this switch is a compile error.
 
 ### Headless mode
 
@@ -1231,7 +1230,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 7. **Zero runtime classes.** Production source uses functions and module-scoped state; test fixtures may contain class syntax when that is the behavior under test.
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.
 9. **ESM `.js` suffix on every internal import.** `'./foo.js'` not `'./foo'`. Required for Node 22 ESM resolution.
-10. **Conversation row exhaustive switches handle EVERY EngineEvent variant.** Both `getGutterRole` and `eventRows` end with `default: return assertNever(event)`. Adding a variant without updating both is a TypeScript error.
+10. **Conversation row exhaustive switch handles EVERY EngineEvent variant.** `eventRows` ends with `default: return assertNever(event)`. Adding a variant without updating it is a TypeScript error.
 11. **One foreground active session per project directory.** `.diptych/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `diptych worktree` (each worktree has its own `.diptych/`).
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.

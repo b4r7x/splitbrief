@@ -111,7 +111,7 @@ export function fauxPlanner(opts?: {
       return { text: '', usage: null };
     },
 
-    async injectUserTurn(_text, _projectDir) {
+    async injectUserTurn() {
       return null;
     },
 

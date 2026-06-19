@@ -157,7 +157,7 @@ const gates: Gate[] = [
     id: '18',
     description: 'No dead exports/files (knip)',
     command:
-      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --reporter compact | rg . || true; } | wc -l',
+      '{ npx knip --no-progress --no-config-hints --tags=-lintignore --include exports,types,files --reporter compact | rg . || true; } | wc -l',
     expected: 0,
   },
   {

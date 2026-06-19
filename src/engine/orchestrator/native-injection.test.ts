@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { dispatchNativeInjection } from './native-injection.js';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
+import type { RunnerCallContext } from '../calls/types.js';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -48,7 +49,30 @@ describe('dispatchNativeInjection', () => {
 
   it('books the injected turn token usage into planner accumulators and emits a cost update', async () => {
     const { planner } = fauxPlanner();
-    planner.injectUserTurn = async () => ({ inputTokens: 120, outputTokens: 40 });
+    const startedAt = Date.now();
+    const call: RunnerCallContext = {
+      callId: 'native-injection-call',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'native-planner',
+    };
+    planner.injectUserTurn = async (injection) => {
+      injection.callbacks?.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
+      injection.callbacks?.onCallEvent?.({
+        type: 'call_completed',
+        ts: startedAt + 1,
+        ...call,
+        status: 'completed',
+        error: null,
+        partial: false,
+        startedAt,
+        endedAt: startedAt + 1,
+        durationMs: 1,
+        usage: { inputTokens: 120, outputTokens: 40 },
+        nativeSessionId: null,
+      });
+      return { inputTokens: 120, outputTokens: 40 };
+    };
 
     const events: EngineEvent[] = [];
     const bus = createEventBus();
@@ -75,8 +99,42 @@ describe('dispatchNativeInjection', () => {
       expect(state.tokenUsage.plannerOutput).toBe(40);
       expect(events.some((e) => e.type === 'cost_update')).toBe(true);
       expect(events.some((e) => e.type === 'message_injected_native')).toBe(true);
+      expect(
+        events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
+      ).toEqual(['runner_call_started', 'runner_call_completed']);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
+  });
+
+  it('does not inject when the workflow signal is already aborted', async () => {
+    const { planner } = fauxPlanner();
+    let injected = false;
+    planner.injectUserTurn = async () => {
+      injected = true;
+      return null;
+    };
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+    const state = makeImplState([]);
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await dispatchNativeInjection({
+      message,
+      planner,
+      projectDir: '/tmp/does-not-matter',
+      sessionId: 'sess-1',
+      getState: () => state,
+      setState: () => {},
+      bus,
+      signal: controller.signal,
+    });
+
+    expect(injected).toBe(false);
+    expect(events.find((event) => event.type === 'message_injected_native')).toBeUndefined();
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
 });

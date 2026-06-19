@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllHandlers, interruptTurn, setAbortHandler, setCancelHandler } from './handlers.js';
-import { lifecycleStore, _lifecycleInternal } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 
 describe('interruptTurn', () => {
@@ -8,7 +8,7 @@ describe('interruptTurn', () => {
     clearAllHandlers();
     lifecycleStore.reset();
     eventsStore.reset();
-    _lifecycleInternal.set({ phase: 'planning', cancelled: false, queueDepth: 0 });
+    lifecycleStore.__testReset({ phase: 'planning' });
   });
 
   afterEach(() => {
@@ -33,7 +33,7 @@ describe('interruptTurn', () => {
   });
 
   it("returns 'none' when nothing can be stopped (no abort handler, already cancelled)", () => {
-    _lifecycleInternal.set({ phase: 'planning', cancelled: true, queueDepth: 0 });
+    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
 
     expect(interruptTurn()).toBe('none');
   });

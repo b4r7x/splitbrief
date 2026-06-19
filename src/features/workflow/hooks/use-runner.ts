@@ -18,7 +18,10 @@ import {
   runWorkflow,
   WORKFLOW_REWIND_ABORT_REASON,
 } from '../../../engine/orchestrator/run/workflow.js';
-import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
+import {
+  WORKFLOW_USER_CANCELLED_ABORT_REASON,
+  type WorkflowSinks,
+} from '../../../engine/orchestrator/types.js';
 import { createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
@@ -36,6 +39,7 @@ import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { generateSessionId, readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
+import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
@@ -68,6 +72,7 @@ export interface WorkflowCompletion {
 
 interface UseWorkflowRunnerResult {
   startedAt: string;
+  sessionId?: string | undefined;
   handleResume: (injectedText?: string) => void;
 }
 
@@ -121,7 +126,7 @@ export function useWorkflowRunner({
     conversationScrollStore.reset();
     setCancelHandler(() => {
       inputMode.resetMode();
-      controller.abort();
+      controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
     });
     setRewindHandler((request) => {
       inputMode.resetMode();
@@ -255,12 +260,19 @@ export function useWorkflowRunner({
   }, [enabled, feature, projectDir, runId]);
 
   const handleResume = (injectedText?: string) => {
-    const sessionId = initialSessionId ?? readActive(projectDir);
+    const sessionId = sessionIdRef.current ?? readActive(projectDir);
     const saved = sessionId ? loadState({ projectDir, sessionId }) : null;
     if (!saved || !sessionId) {
       feedbackStore.setError('No saved state to resume. Press ESC to return home.');
       return;
     }
+    if (!isResumable(saved)) {
+      feedbackStore.setError(
+        'This cancelled workflow cannot be resumed. Press ESC to return home.',
+      );
+      return;
+    }
+    sessionIdRef.current = sessionId;
     const text = injectedText?.trim();
     let next = saved;
     if (text) {
@@ -279,5 +291,5 @@ export function useWorkflowRunner({
     setRunId((id) => id + 1);
   };
 
-  return { startedAt, handleResume };
+  return { startedAt, sessionId: sessionIdRef.current, handleResume };
 }

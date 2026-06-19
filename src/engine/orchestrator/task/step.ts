@@ -26,6 +26,7 @@ import {
 } from '../approval/file-snapshots.js';
 import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
 import type { EngineEvent } from '../../events/types.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../types.js';
 import {
   readDriftChainState,
   writeDriftChainState,
@@ -191,6 +192,19 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       decision: gateResult,
       message: `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`,
     });
+    if (gateResult.reason === WORKFLOW_CANCEL_REASON_USER) {
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'RESET_TASK',
+        taskId: task.id,
+      });
+      setTrackedState(state);
+      wctx.bus.publish({
+        type: 'workflow_cancelled',
+        ts: Date.now(),
+        phase: state.phase,
+        reason: WORKFLOW_CANCEL_REASON_USER,
+      });
+    }
     return state;
   }
   persistApprovalEvidence({ wctx, state, decision: gateResult, taskId: task.id });

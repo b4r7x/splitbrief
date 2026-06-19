@@ -180,6 +180,7 @@ export type InstallQueueHandlerOpts = {
   bus: EventBus;
   config: Config;
   planner: Planner;
+  signal?: AbortSignal | undefined;
 };
 
 export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
@@ -194,6 +195,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
       persistTranscript: opts.config.workflow.persistTranscript,
       planner: opts.planner,
       serialize,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
     }),
   );
   opts.sinks.setClearQueueHandler?.(

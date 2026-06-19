@@ -17,6 +17,15 @@ const usage = {
   outputTokens: 2,
 } as const;
 
+const terminalFields = {
+  startedAt: 1,
+  endedAt: 11,
+  durationMs: 10,
+  partial: false,
+  usage,
+  nativeSessionId: null,
+} as const;
+
 describe('RunnerCallEventSchema', () => {
   it('accepts the runner call event variants emitted by the call subsystem', () => {
     const events = [
@@ -89,14 +98,16 @@ describe('RunnerCallEventSchema', () => {
         ...context,
         status: 'timeout',
         error: { code: 'timeout', message: 'runner timed out' },
+        ...terminalFields,
+        partial: true,
       },
       {
         type: 'call_completed',
         ts: 1,
         ...context,
         status: 'completed',
-        usage,
-        nativeSessionId: null,
+        error: null,
+        ...terminalFields,
       },
       {
         type: 'call_unknown_upstream',
@@ -166,8 +177,8 @@ describe('RunnerCallEventSchema', () => {
         ts: 1,
         ...context,
         status: 'completed',
-        usage: null,
-        nativeSessionId: null,
+        error: null,
+        ...terminalFields,
       }).success,
     ).toBe(true);
     expect(
@@ -176,8 +187,18 @@ describe('RunnerCallEventSchema', () => {
         ts: 1,
         ...context,
         status: 'failed',
-        usage: null,
-        nativeSessionId: null,
+        error: null,
+        ...terminalFields,
+      }).success,
+    ).toBe(false);
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_error',
+        ts: 1,
+        ...context,
+        status: 'completed',
+        error: { code: 'bad', message: 'bad' },
+        ...terminalFields,
       }).success,
     ).toBe(false);
   });
@@ -210,6 +231,9 @@ describe('RunnerCallResultSchema', () => {
       role: 'implementer',
       backendKind: 'agent',
       status: 'completed',
+      startedAt: 1,
+      endedAt: 11,
+      durationMs: 10,
       text: 'done',
       usage: null,
       nativeSessionId: null,
@@ -228,5 +252,27 @@ describe('RunnerCallResultSchema', () => {
         usage: { inputTokens: 1, outputTokens: -1 },
       }).success,
     ).toBe(false);
+    expect(
+      RunnerCallResultSchema.safeParse({
+        ...result,
+        partial: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      RunnerCallResultSchema.safeParse({
+        ...result,
+        status: 'timeout',
+        error: null,
+        partial: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      RunnerCallResultSchema.safeParse({
+        ...result,
+        status: 'timeout',
+        error: { code: 'timeout', message: 'runner timed out' },
+        partial: true,
+      }).success,
+    ).toBe(true);
   });
 });

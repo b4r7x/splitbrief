@@ -1,29 +1,92 @@
-import { createStore, storeBase } from '../create-store.js';
 import { PhaseSchema, type Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { createStore, storeBase } from '../create-store.js';
 
 function phaseFromEvent(event: EngineEvent): Phase | undefined {
   const result = PhaseSchema.safeParse(event.phase);
   return result.success ? result.data : undefined;
 }
 
-export interface LifecycleState {
-  phase: Phase;
-  cancelled: boolean;
+type RunningPhase = Exclude<Phase, 'complete'>;
+type LifecycleStatus = 'idle' | 'running' | 'complete' | 'cancelled';
+
+interface LifecycleBase {
   queueDepth: number;
+}
+
+interface IdleLifecycleState extends LifecycleBase {
+  phase: 'idle';
+  status: 'idle';
+  cancelled: false;
+  startedAt: null;
+  endedAt: null;
+  durationMs: null;
+  reason: null;
+}
+
+interface RunningLifecycleState extends LifecycleBase {
+  phase: RunningPhase;
+  status: 'running';
+  cancelled: false;
+  startedAt: number | null;
+  endedAt: null;
+  durationMs: null;
+  reason: null;
+}
+
+interface CompleteLifecycleState extends LifecycleBase {
+  phase: Phase;
+  status: 'complete';
+  cancelled: false;
+  startedAt: number | null;
+  endedAt: number;
+  durationMs: number;
+  reason: null;
+}
+
+interface CancelledLifecycleState extends LifecycleBase {
+  phase: Phase;
+  status: 'cancelled';
+  cancelled: true;
+  startedAt: number | null;
+  endedAt: number;
+  durationMs: number;
+  reason: string;
+}
+
+export type LifecycleState =
+  | IdleLifecycleState
+  | RunningLifecycleState
+  | CompleteLifecycleState
+  | CancelledLifecycleState;
+
+interface LifecycleResetState {
+  phase?: Phase | undefined;
+  status?: LifecycleStatus | undefined;
+  cancelled?: boolean | undefined;
+  queueDepth?: number | undefined;
+  startedAt?: number | null | undefined;
+  endedAt?: number | null | undefined;
+  durationMs?: number | null | undefined;
+  reason?: string | null | undefined;
 }
 
 const initial: LifecycleState = {
   phase: 'idle',
+  status: 'idle',
   cancelled: false,
   queueDepth: 0,
+  startedAt: null,
+  endedAt: null,
+  durationMs: null,
+  reason: null,
 };
 
 const store = createStore<LifecycleState>(initial);
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-function __testReset(next?: Partial<LifecycleState>): void {
-  store.set(next ? { ...initial, ...next } : initial);
+function __testReset(next?: LifecycleResetState): void {
+  store.set(next ? lifecycleStateFromReset(next) : initial);
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
@@ -37,10 +100,39 @@ export const lifecycleStore = {
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
   const phase = phaseFromEvent(event);
-  if (phase && state.phase !== phase) {
-    return { ...state, phase };
+
+  if (event.type === 'workflow_started') {
+    return runningLifecycleState({
+      phase: phase ?? state.phase,
+      queueDepth: state.queueDepth,
+      startedAt: event.ts,
+    });
   }
-  return state;
+
+  if (event.type === 'workflow_resumed') {
+    return runningLifecycleState({
+      phase: phase ?? state.phase,
+      queueDepth: state.queueDepth,
+      startedAt: state.startedAt ?? event.ts,
+    });
+  }
+
+  if (event.type === 'workflow_complete') {
+    return markLifecycleComplete(state, event.ts, phase);
+  }
+
+  if (event.type === 'workflow_cancelled') {
+    return markLifecycleCancellationRequested(
+      state,
+      {
+        ts: event.ts,
+        reason: event.reason ?? 'workflow_cancelled',
+      },
+      phase,
+    );
+  }
+
+  return applyRunningPhase(state, phase, event.ts);
 }
 
 export function updateQueueDepth(state: LifecycleState, event: EngineEvent): LifecycleState {
@@ -57,4 +149,123 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
     return { ...state, queueDepth: next };
   }
   return state;
+}
+
+export function markLifecycleCancellationRequested(
+  state: LifecycleState,
+  cancellation: { ts: number; reason: string },
+  phase?: Phase,
+): LifecycleState {
+  if (state.cancelled) return state;
+  return {
+    phase: phase ?? state.phase,
+    status: 'cancelled',
+    cancelled: true,
+    queueDepth: state.queueDepth,
+    startedAt: state.startedAt,
+    endedAt: cancellation.ts,
+    durationMs: durationFromStart(state.startedAt, cancellation.ts),
+    reason: cancellation.reason,
+  };
+}
+
+function markLifecycleComplete(
+  state: LifecycleState,
+  endedAt: number,
+  phase?: Phase,
+): LifecycleState {
+  if (state.status === 'complete' && (phase === undefined || state.phase === phase)) return state;
+  return {
+    phase: phase ?? state.phase,
+    status: 'complete',
+    cancelled: false,
+    queueDepth: state.queueDepth,
+    startedAt: state.startedAt,
+    endedAt,
+    durationMs: durationFromStart(state.startedAt, endedAt),
+    reason: null,
+  };
+}
+
+function durationFromStart(startedAt: number | null, endedAt: number): number {
+  return Math.max(0, endedAt - (startedAt ?? endedAt));
+}
+
+function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
+  const phase = next.phase ?? initial.phase;
+  const queueDepth = next.queueDepth ?? initial.queueDepth;
+  const startedAt = next.startedAt ?? null;
+
+  if (next.status === 'complete') {
+    const endedAt = next.endedAt ?? startedAt ?? 0;
+    return {
+      phase,
+      status: 'complete',
+      cancelled: false,
+      queueDepth,
+      startedAt,
+      endedAt,
+      durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
+      reason: null,
+    };
+  }
+
+  if (next.cancelled || next.status === 'cancelled') {
+    const endedAt = next.endedAt ?? startedAt ?? 0;
+    return {
+      phase,
+      status: 'cancelled',
+      cancelled: true,
+      queueDepth,
+      startedAt,
+      endedAt,
+      durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
+      reason: next.reason ?? 'user_cancelled',
+    };
+  }
+
+  if (next.status === 'running' || phase !== 'idle') {
+    return runningLifecycleState({ phase, queueDepth, startedAt });
+  }
+
+  return {
+    ...initial,
+    queueDepth,
+  };
+}
+
+function applyRunningPhase(
+  state: LifecycleState,
+  phase: Phase | undefined,
+  ts: number,
+): LifecycleState {
+  if (phase === undefined || state.phase === phase) return state;
+  if (state.status === 'idle') {
+    return runningLifecycleState({ phase, queueDepth: state.queueDepth, startedAt: ts });
+  }
+  if (state.status === 'running') {
+    return { ...state, phase: runningPhase(phase) };
+  }
+  return { ...state, phase };
+}
+
+function runningLifecycleState(input: {
+  phase: Phase;
+  queueDepth: number;
+  startedAt: number | null;
+}): RunningLifecycleState {
+  return {
+    phase: runningPhase(input.phase),
+    status: 'running',
+    cancelled: false,
+    queueDepth: input.queueDepth,
+    startedAt: input.startedAt,
+    endedAt: null,
+    durationMs: null,
+    reason: null,
+  };
+}
+
+function runningPhase(phase: Phase): RunningPhase {
+  return phase === 'complete' ? 'idle' : phase;
 }

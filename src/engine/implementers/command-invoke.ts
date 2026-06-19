@@ -49,9 +49,12 @@ export function createCommandBasedImplementer(
         projectDir,
         env: invokeOpts.sandboxEnv,
         onOutput,
+        onCallEvent: invokeOpts.onCallEvent,
+        callContext: invokeOpts.callContext,
         signal,
       });
 
+      if (result.callResult.status !== 'completed') return result.callResult;
       return { text: result.stdout, usage: result.usage ?? null };
     },
 

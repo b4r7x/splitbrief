@@ -70,36 +70,36 @@ export function costPredictionRows(
   rows.push(
     row(
       `${keyPrefix}-totals`,
-      `   Implementer: ${formatNullableCost(deterministic.totals.knownActualEstimate)} All planner: ${formatNullableCost(deterministic.totals.hypotheticalAllPlanner)} Savings: ${formatNullableCost(deterministic.totals.estimatedSavings)}`,
+      `Implementer: ${formatNullableCost(deterministic.totals.knownActualEstimate)} All planner: ${formatNullableCost(deterministic.totals.hypotheticalAllPlanner)} Savings: ${formatNullableCost(deterministic.totals.estimatedSavings)}`,
       'textDim',
     ),
   );
   rows.push(
     row(
       `${keyPrefix}-fits`,
-      `   ${deterministic.taskFitCounts.fits} fit · ${deterministic.taskFitCounts.tight} tight · ${deterministic.taskFitCounts.overflow} overflow · ${deterministic.taskFitCounts.unknown} unknown (${deterministic.taskCount} tasks)`,
+      `${deterministic.taskFitCounts.fits} fit · ${deterministic.taskFitCounts.tight} tight · ${deterministic.taskFitCounts.overflow} overflow · ${deterministic.taskFitCounts.unknown} unknown (${deterministic.taskCount} tasks)`,
       'textDim',
     ),
   );
   rows.push(
     row(
       `${keyPrefix}-context`,
-      `   Context explicit ${deterministic.contextConfidenceCounts.contextExplicit} · detected ${deterministic.contextConfidenceCounts.contextDetected} · catalog ${deterministic.contextConfidenceCounts.contextKnownCatalog} · cached ${deterministic.contextConfidenceCounts.contextCachedProvider} · fallback ${deterministic.contextConfidenceCounts.contextConservativeFallback}`,
+      `Context explicit ${deterministic.contextConfidenceCounts.contextExplicit} · detected ${deterministic.contextConfidenceCounts.contextDetected} · catalog ${deterministic.contextConfidenceCounts.contextKnownCatalog} · cached ${deterministic.contextConfidenceCounts.contextCachedProvider} · fallback ${deterministic.contextConfidenceCounts.contextConservativeFallback}`,
       'textDim',
     ),
   );
   rows.push(
     row(
       `${keyPrefix}-price`,
-      `   Price known ${deterministic.priceConfidenceCounts.priceKnown} · unknown ${deterministic.priceConfidenceCounts.priceUnknown} · profile n/a ${deterministic.priceConfidenceCounts.profileUnavailable}`,
+      `Price known ${deterministic.priceConfidenceCounts.priceKnown} · unknown ${deterministic.priceConfidenceCounts.priceUnknown} · profile n/a ${deterministic.priceConfidenceCounts.profileUnavailable}`,
       'textDim',
     ),
   );
-  if (unknownReasons) rows.push(row(`${keyPrefix}-unknown`, `   ${unknownReasons}`, 'warning'));
+  if (unknownReasons) rows.push(row(`${keyPrefix}-unknown`, unknownReasons, 'warning'));
   rows.push(
     row(
       `${keyPrefix}-tools`,
-      `   Planner: ${getProviderDisplayName(prediction.plannerTool)} Implementer: ${getProviderDisplayName(prediction.implementerTool)}`,
+      `Planner: ${getProviderDisplayName(prediction.plannerTool)} Implementer: ${getProviderDisplayName(prediction.implementerTool)}`,
       'textDim',
     ),
   );
@@ -107,13 +107,13 @@ export function costPredictionRows(
     rows.push(
       row(
         `${keyPrefix}-review`,
-        `   ${reviewLine}`,
+        reviewLine,
         prediction.plannerEstimateReview?.status === 'unavailable' ? 'warning' : 'planner',
       ),
     );
   const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
   if (recommendation)
-    rows.push(row(`${keyPrefix}-recommendation`, `   Recommended: ${recommendation}`, 'planner'));
+    rows.push(row(`${keyPrefix}-recommendation`, `Recommended: ${recommendation}`, 'planner'));
   return wrapRows(rows, width);
 }
 

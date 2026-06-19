@@ -40,6 +40,7 @@ export interface WorkflowContentRectInput {
 
 const REVIEW_HEADER_ROWS = 2;
 const REVIEW_FOOTER_ROWS = 1;
+const REVIEW_SCROLL_CHROME_ROWS = 2;
 
 function getWorkflowMiddleRows(
   rows: number,
@@ -100,12 +101,18 @@ export interface ReviewContentLayout {
 
 export function getReviewContentLayout(
   containerHeight: number,
-  lineCount: number,
+  renderedLineCount: number,
 ): ReviewContentLayout {
-  const baseContentHeight = Math.max(0, containerHeight - REVIEW_HEADER_ROWS);
-  const showFooter = lineCount > baseContentHeight && baseContentHeight >= REVIEW_FOOTER_ROWS;
+  const availableRows = Math.max(0, containerHeight - REVIEW_HEADER_ROWS);
+  const contentWithoutFooter = Math.max(0, availableRows - REVIEW_SCROLL_CHROME_ROWS);
+  const showFooter =
+    renderedLineCount > contentWithoutFooter &&
+    availableRows >= REVIEW_SCROLL_CHROME_ROWS + REVIEW_FOOTER_ROWS;
   return {
-    contentHeight: Math.max(0, baseContentHeight - (showFooter ? REVIEW_FOOTER_ROWS : 0)),
+    contentHeight: Math.max(
+      0,
+      availableRows - REVIEW_SCROLL_CHROME_ROWS - (showFooter ? REVIEW_FOOTER_ROWS : 0),
+    ),
     showFooter,
   };
 }

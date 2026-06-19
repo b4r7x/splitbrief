@@ -19,7 +19,10 @@ export async function runLocalRetries(
   let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase }, 'implementer');
+  const textHandler = createBusTextHandler(
+    { bus: ctx.bus, phase: state.phase },
+    { role: 'implementer' },
+  );
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     if (ctx.signal?.aborted) break;

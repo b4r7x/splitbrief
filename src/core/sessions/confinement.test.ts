@@ -2,7 +2,11 @@ import { afterEach, describe, it, expect } from 'vitest';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { assertSessionConfinement } from './confinement.js';
+import {
+  assertSessionConfinement,
+  resolveSessionFilePath,
+  SESSION_FILE_PATH_MAX_BYTES,
+} from './confinement.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];
@@ -35,6 +39,27 @@ describe('assertSessionConfinement', () => {
     expect(() => assertSessionConfinement(filePath, sessionDir)).not.toThrow();
   });
 
+  it('rejects empty, control-character, and oversized paths', () => {
+    const sessionDir = makeSessionDir('session-conf-invalid');
+
+    for (const filePath of [
+      '',
+      join(sessionDir, 'bad\u001b[31m.md'),
+      join(sessionDir, `${'x'.repeat(SESSION_FILE_PATH_MAX_BYTES + 1)}.md`),
+    ]) {
+      expect(() => assertSessionConfinement(filePath, sessionDir)).toThrow();
+    }
+  });
+
+  it('resolves session-relative paths before enforcing confinement', () => {
+    const sessionDir = makeSessionDir('session-conf-relative');
+    const filePath = join(sessionDir, 'spec.md');
+    writeFileSync(filePath, '# spec\n');
+
+    expect(resolveSessionFilePath('spec.md', sessionDir)).toBe(filePath);
+    expect(() => resolveSessionFilePath('../outside.md', sessionDir)).toThrow();
+  });
+
   itUnix('rejects a symlinked target file', () => {
     const sessionDir = makeSessionDir('session-conf-symlink');
     const outside = createTempDir('session-conf-outside');
@@ -64,6 +89,22 @@ describe('assertSessionConfinement', () => {
       assertSessionConfinement(filePath, sessionDir);
     } catch (err) {
       expect((err as { kind?: string }).kind).toMatch(/^session-io-/);
+    }
+  });
+
+  itUnix('rejects a path through a symlinked directory inside the session root', () => {
+    const sessionDir = makeSessionDir('session-conf-linkdir-inside');
+    const realDir = join(sessionDir, 'real');
+    mkdirSync(realDir);
+    writeFileSync(join(realDir, 'spec.md'), '# spec\n');
+    symlinkSync(realDir, join(sessionDir, 'link'));
+    const filePath = join(sessionDir, 'link', 'spec.md');
+
+    expect(() => resolveSessionFilePath('link/spec.md', sessionDir)).toThrow();
+    try {
+      assertSessionConfinement(filePath, sessionDir);
+    } catch (err) {
+      expect((err as { kind?: string }).kind).toBe('session-io-read');
     }
   });
 

@@ -106,8 +106,8 @@ describe('enqueue', () => {
         supportsImages: false,
         supportsSelfSummarisation: false,
       },
-      injectUserTurn: async (text: string, dir: string) => {
-        injectedTurns.push({ text, dir });
+      injectUserTurn: async (injection) => {
+        injectedTurns.push({ text: injection.text, dir: injection.projectDir });
         return null;
       },
     });
@@ -588,8 +588,8 @@ describe('native injection', () => {
         supportsImages: false,
         supportsSelfSummarisation: false,
       },
-      injectUserTurn: async (text: string, dir: string) => {
-        injectedTurns.push({ text, dir });
+      injectUserTurn: async (injection) => {
+        injectedTurns.push({ text: injection.text, dir: injection.projectDir });
         return null;
       },
     });
@@ -700,8 +700,8 @@ describe('clarifications', () => {
         supportsImages: false,
         supportsSelfSummarisation: false,
       },
-      injectUserTurn: async (text: string, dir: string) => {
-        injectedTurns.push({ text, dir });
+      injectUserTurn: async (injection) => {
+        injectedTurns.push({ text: injection.text, dir: injection.projectDir });
         return null;
       },
     });

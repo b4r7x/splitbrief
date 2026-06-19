@@ -8,6 +8,7 @@ import {
   IPC_MAX_FRAME_BYTES,
   type IpcPromptRequestInput,
   type IpcPromptResponse,
+  type ServerMessage,
 } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
@@ -29,6 +30,7 @@ export type IpcServerOptions = {
   onUserInput: (text: string) => void;
   sessionJsonlPath?: string;
   noClientPromptBehavior?: 'wait' | 'fail-closed';
+  persistTranscript?: boolean | undefined;
 };
 
 export type IpcServer = {
@@ -60,8 +62,11 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     onUserInput,
     sessionJsonlPath,
     noClientPromptBehavior = 'wait',
+    persistTranscript = true,
   } = opts;
   const sockPath = ipcSockPath(sessionDir);
+  const writeMessage = (socket: Socket, msg: ServerMessage) =>
+    writeServerMessage(socket, msg, { persistTranscript });
 
   if (existsSync(sockPath)) {
     try {
@@ -81,7 +86,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     bus,
     noClientPromptBehavior,
     currentSocket: () => currentClient?.socket ?? null,
-    writeMessage: writeServerMessage,
+    writeMessage,
   });
 
   async function handleConnection(socket: Socket): Promise<void> {
@@ -91,8 +96,8 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         authToken,
         currentSocket: () => currentClient?.socket ?? null,
         rejectAsAlreadyAttached: (rejectSocket) =>
-          rejectAsAlreadyAttached(rejectSocket, writeServerMessage),
-        writeMessage: writeServerMessage,
+          rejectAsAlreadyAttached(rejectSocket, writeMessage),
+        writeMessage,
       });
       return;
     }
@@ -109,7 +114,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     };
 
     function writeEvent(event: EngineEvent): void {
-      writeServerMessage(socket, { kind: 'event', payload: event });
+      writeMessage(socket, { kind: 'event', payload: event });
     }
 
     function detachClient() {
@@ -126,7 +131,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       replayStarted = true;
 
       if (currentClient !== null) {
-        rejectAsAlreadyAttached(socket, writeServerMessage);
+        rejectAsAlreadyAttached(socket, writeMessage);
         socket.destroy();
         detached = true;
         return;
@@ -134,7 +139,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
       currentClient = client;
 
-      writeServerMessage(socket, {
+      writeMessage(socket, {
         kind: 'session_meta',
         sessionId,
         startedAt,
@@ -173,7 +178,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           const replayed = await replaySession({
             socket,
             sessionJsonlPath,
-            writeMessage: writeServerMessage,
+            writeMessage,
           });
           for (const event of replayed) replayedIdentities.add(eventIdentity(event));
         } catch (err) {
@@ -226,7 +231,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
         if (msg.kind === 'authenticate') {
           if (!tokensMatch(msg.token, authToken)) {
-            writeServerMessage(socket, {
+            writeMessage(socket, {
               kind: 'error',
               code: 'unauthorized',
               message: 'IPC: invalid auth token',
@@ -241,7 +246,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         }
 
         if (!authenticated) {
-          writeServerMessage(socket, {
+          writeMessage(socket, {
             kind: 'error',
             code: 'unauthorized',
             message: 'IPC: authenticate before sending commands',
@@ -333,7 +338,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       if (currentClient) {
         try {
           if (!currentClient.socket.destroyed) {
-            writeServerMessage(currentClient.socket, { kind: 'server_complete' });
+            writeMessage(currentClient.socket, { kind: 'server_complete' });
           }
         } catch {
           /* ignore */

@@ -1,4 +1,4 @@
-import { createBusTextHandler, publishWarning } from '../events.js';
+import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
@@ -26,7 +26,10 @@ export async function runPlannerCallInContinuationLoop(
   } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
-  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
+  const textHandler = createBusTextHandler(
+    { bus: wctx.bus, phase: state.phase },
+    { content: 'markdown' },
+  );
   const conversational = planner.capabilities.supportsConversationalPlanning;
   let attachmentsConsumed = false;
 
@@ -77,6 +80,8 @@ export async function runPlannerCallInContinuationLoop(
               sessionId: id,
             });
           },
+          onCallEvent: (event) =>
+            publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event),
           onSessionExpired: createSessionExpiredHandler({
             projectDir,
             sessionId,
