@@ -22,6 +22,7 @@ function makeRunnerTextDelta(
     role: 'planner',
     backendKind: 'cli',
     sequence: 1,
+    channel: 'assistant',
     text: 'hidden telemetry',
     ...overrides,
   };

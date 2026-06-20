@@ -11,6 +11,7 @@ import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -36,31 +37,39 @@ export function WorkflowBody({
   return (
     <Box flexDirection="row" flexGrow={1}>
       {showSidebar && <Sidebar width={sidebarWidth} />}
-      {inputMode.mode === 'review' &&
-      reviewFilePath &&
-      phase === 'reviewing-briefs' &&
-      useRichEditor ? (
-        <PlanEditorComponent
-          filePath={reviewFilePath}
-          height={contentHeight}
-          width={contentWidth}
-          sessionDirPath={dirname(reviewFilePath)}
-          onApprove={() => inputMode.resolve({ approved: true })}
-          onRegenerateFlagged={async () => {
-            const flagged = planEditorStore.getFlaggedTasks();
-            if (flagged.length === 0) return;
-            const comment = buildTargetedRejectionComment(flagged);
-            planEditorStore.clearFlags();
-            inputMode.resolve({ approved: true, comment });
-          }}
-        />
-      ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
-        <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />
-      ) : inputMode.mode === 'review' && reviewFilePath ? (
-        <ReviewView height={contentHeight} width={contentWidth} />
-      ) : (
-        <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />
-      )}
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        minWidth={0}
+        overflow="hidden"
+        paddingX={WORKFLOW_CONTENT_PADDING_X}
+      >
+        {inputMode.mode === 'review' &&
+        reviewFilePath &&
+        phase === 'reviewing-briefs' &&
+        useRichEditor ? (
+          <PlanEditorComponent
+            filePath={reviewFilePath}
+            height={contentHeight}
+            width={contentWidth}
+            sessionDirPath={dirname(reviewFilePath)}
+            onApprove={() => inputMode.resolve({ approved: true })}
+            onRegenerateFlagged={async () => {
+              const flagged = planEditorStore.getFlaggedTasks();
+              if (flagged.length === 0) return;
+              const comment = buildTargetedRejectionComment(flagged);
+              planEditorStore.clearFlags();
+              inputMode.resolve({ approved: true, comment });
+            }}
+          />
+        ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
+          <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />
+        ) : inputMode.mode === 'review' && reviewFilePath ? (
+          <ReviewView height={contentHeight} width={contentWidth} />
+        ) : (
+          <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />
+        )}
+      </Box>
     </Box>
   );
 }

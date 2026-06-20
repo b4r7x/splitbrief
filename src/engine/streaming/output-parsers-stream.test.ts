@@ -20,7 +20,7 @@ describe('parseStreamLine', () => {
           ],
         },
       }),
-      { text: 'Hello world more text', sessionId: 'sess-1' },
+      { text: 'Hello world more text', channel: 'assistant', sessionId: 'sess-1' },
     ],
     [
       'result text, usage, and session',
@@ -32,6 +32,7 @@ describe('parseStreamLine', () => {
       }),
       {
         text: 'Final answer here',
+        channel: 'result',
         sessionId: 'sess-2',
         isResult: true,
         usage: { inputTokens: 1000, outputTokens: 500 },
@@ -48,10 +49,20 @@ describe('parseStreamLine', () => {
         type: 'assistant',
         session_id: 'sess-tool',
         message: {
-          content: [{ type: 'tool_use', name: 'read_file', input: { path: '/tmp/test.ts' } }],
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-1',
+              name: 'read_file',
+              input: { path: '/tmp/test.ts' },
+            },
+          ],
         },
       }),
-      { sessionId: 'sess-tool', toolUse: [{ name: 'read_file', input: { path: '/tmp/test.ts' } }] },
+      {
+        sessionId: 'sess-tool',
+        toolUse: [{ id: 'tool-1', name: 'read_file', input: { path: '/tmp/test.ts' } }],
+      },
     ],
     [
       'assistant mixed text and tool_use',
@@ -71,6 +82,7 @@ describe('parseStreamLine', () => {
       }),
       {
         text: 'Let me read that file.',
+        channel: 'assistant',
         sessionId: 'sess-mixed',
         toolUse: [{ name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } }],
       },
@@ -95,11 +107,50 @@ describe('parseStreamLine', () => {
           ],
         },
       }),
-      { text: 'visible text', toolUse: [{ name: 'read_file', input: {} }] },
+      { text: 'visible text', channel: 'assistant', toolUse: [{ name: 'read_file', input: {} }] },
     ],
     ['malformed JSON', 'not valid json {{{', {}],
     ['empty line', '', {}],
     ['whitespace-only line', '   \t  ', {}],
+    [
+      'stream_event text delta',
+      jsonLine({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'live' } },
+      }),
+      { text: 'live', channel: 'assistant' },
+    ],
+    [
+      'stream_event tool start',
+      jsonLine({
+        type: 'stream_event',
+        session_id: 'sess-live',
+        event: {
+          type: 'content_block_start',
+          content_block: { type: 'tool_use', id: 'tool-live', name: 'Read', input: {} },
+        },
+      }),
+      { sessionId: 'sess-live', toolUseStart: [{ id: 'tool-live', name: 'Read', input: {} }] },
+    ],
+    [
+      'stream_event tool input delta',
+      jsonLine({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: { type: 'input_json_delta', partial_json: '{"file_path":"src/app.ts"}' },
+        },
+      }),
+      {
+        toolUseDelta: [{ id: 'content-block-1', inputDelta: '{"file_path":"src/app.ts"}' }],
+      },
+    ],
+    [
+      'Claude retry progress',
+      jsonLine({ type: 'api_retry', session_id: 'sess-retry' }),
+      { text: 'api_retry', channel: 'system', sessionId: 'sess-retry' },
+    ],
   ] as const)('parses %s', (_name, line, expected) => {
     expect(parseStreamLine(line)).toEqual(expected);
   });
@@ -114,6 +165,7 @@ describe('parseStreamLine', () => {
 
     expect(parseStreamLine(line)).toEqual({
       text: 'Final answer survives',
+      channel: 'result',
       sessionId: 'sess-bad-usage',
       isResult: true,
     });
@@ -146,17 +198,26 @@ describe('getLineParser("stream-json")', () => {
           ],
         },
       }),
-      { text: 'doing something', toolUse: [{ name: 'write_file', input: { path: 'out.ts' } }] },
+      {
+        text: 'doing something',
+        channel: 'assistant',
+        toolUse: [{ name: 'write_file', input: { path: 'out.ts' } }],
+      },
     ],
     [
       'plain text event',
       jsonLine({ type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } }),
-      { text: 'hello' },
+      { text: 'hello', channel: 'assistant' },
     ],
     [
       'result event',
       jsonLine({ type: 'result', result: 'done', usage: { input_tokens: 10, output_tokens: 5 } }),
-      { text: 'done', usage: { inputTokens: 10, outputTokens: 5 }, isResult: true },
+      {
+        text: 'done',
+        channel: 'result',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        isResult: true,
+      },
     ],
   ] as const)('wraps %s', (_name, line, expected) => {
     expect(parse(line)).toEqual(expected);

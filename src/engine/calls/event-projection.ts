@@ -2,6 +2,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { EngineEvent } from '../events/types.js';
+import { projectRunnerCallActivity } from './activity.js';
 import { boundedRunnerCallMessage } from './status.js';
 import type { RunnerCallEvent } from './types.js';
 
@@ -12,6 +13,7 @@ interface RunnerCallEventProjectionOptions {
 }
 
 type ProjectedRunnerCallEvent = Extract<EngineEvent, { type: `runner_call_${string}` }>;
+type RunnerCallActivityEvent = Extract<ProjectedRunnerCallEvent, { type: 'runner_call_activity' }>;
 
 function baseProjection(
   event: RunnerCallEvent,
@@ -40,7 +42,12 @@ export function projectRunnerCallEvent(
     case 'call_started':
       return { type: 'runner_call_started', ...base };
     case 'call_text_delta':
-      return { type: 'runner_call_text_delta', ...base, text: event.text };
+      return {
+        type: 'runner_call_text_delta',
+        ...base,
+        channel: event.channel,
+        text: event.text,
+      };
     case 'call_stderr_delta':
       return {
         type: 'runner_call_warning',
@@ -51,12 +58,13 @@ export function projectRunnerCallEvent(
       return {
         type: 'runner_call_tool_use',
         ...base,
-        ...(event.toolUseId !== null && { toolUseId: event.toolUseId }),
+        stage: 'delta',
+        toolUseId: event.toolUseId,
         ...(event.name !== null && { name: event.name }),
         inputDelta: event.inputDelta,
       };
     case 'call_tool_use_done':
-      return { type: 'runner_call_tool_use', ...base, toolUse: event.toolUse };
+      return { type: 'runner_call_tool_use', ...base, stage: 'done', toolUse: event.toolUse };
     case 'call_usage':
       return {
         type: 'runner_call_usage',
@@ -119,4 +127,26 @@ export function projectRunnerCallEvent(
     default:
       return assertNever(event);
   }
+}
+
+export function projectRunnerCallEvents(
+  event: RunnerCallEvent,
+  opts: RunnerCallEventProjectionOptions,
+): ProjectedRunnerCallEvent[] {
+  const projected = projectRunnerCallEvent(event, opts);
+  const activity = projectRunnerCallActivityEvent(event, opts);
+  return [projected, activity].filter((item): item is ProjectedRunnerCallEvent => item !== null);
+}
+
+function projectRunnerCallActivityEvent(
+  event: RunnerCallEvent,
+  opts: RunnerCallEventProjectionOptions,
+): RunnerCallActivityEvent | null {
+  const activity = projectRunnerCallActivity(event, opts.sequence);
+  if (activity === null) return null;
+  return {
+    type: 'runner_call_activity',
+    ...baseProjection(event, opts),
+    ...activity,
+  };
 }

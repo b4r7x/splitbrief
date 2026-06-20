@@ -27,6 +27,7 @@ import {
 import { flushOtel } from '../lib/otel.js';
 import { awaitActiveWorkflowShutdown } from '../engine/orchestrator/session-lifecycle.js';
 import { toErrorMessage } from '../utils/format-errors.js';
+import { teardownStores } from './init-stores.js';
 
 interface RenderOptions {
   fullscreen: boolean;
@@ -196,7 +197,11 @@ export async function renderApp(
 
   const reapAndRestore = () => {
     try {
-      killAllProcesses();
+      try {
+        teardownStores();
+      } finally {
+        killAllProcesses();
+      }
     } finally {
       cleanupTerminal();
     }
@@ -304,6 +309,7 @@ export async function renderApp(
     process.off('SIGCONT', onResume);
     process.off('uncaughtException', onCrash);
     process.off('unhandledRejection', onCrash);
+    teardownStores();
     cleanupTerminal();
     await flushOtel();
   }

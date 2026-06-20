@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
@@ -13,7 +14,7 @@ import {
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
-export const BRIEFS_REVIEW_HINT = 'approve | e/edit | comment <text> | reject';
+export const BRIEFS_REVIEW_HINT = 'approve | e/edit | E/edit-file | comment <text> | reject';
 
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 const QUIT_ALIASES = new Set(['quit', 'reject', 'no', 'n']);
@@ -22,12 +23,15 @@ export type ReviewAction =
   | { action: 'approve'; comment?: string }
   | { action: 'quit' }
   | { action: 'edit' }
+  | { action: 'edit-file' }
   | null;
 
 export function parseReviewCommand(text: string): ReviewAction {
-  const cmd = text.toLowerCase().trim();
+  const raw = text.trim();
+  const cmd = raw.toLowerCase();
   if (APPROVE_ALIASES.has(cmd)) return { action: 'approve' };
   if (QUIT_ALIASES.has(cmd)) return { action: 'quit' };
+  if (cmd === 'edit-file' || raw === 'E') return { action: 'edit-file' };
   if (cmd === 'edit' || cmd === 'e') return { action: 'edit' };
   if (cmd.startsWith('comment ')) {
     const trimmed = text.trim();
@@ -76,8 +80,11 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
       if (isLivePhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
-          if (!requestEnqueue(trimmed, phase)) {
+          const result = await requestEnqueue(trimmed, phase);
+          if (!result) {
             feedbackStore.setError('Cannot queue message: no active workflow.');
+          } else if (result.status === 'rejected') {
+            feedbackStore.setError(result.message);
           }
         }
       }
@@ -95,6 +102,21 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
       } else if (parsed.action === 'quit') {
         inputMode.resolve({ approved: false });
       } else if (parsed.action === 'edit') {
+        const phase = lifecycleStore.get().phase;
+        if (phase === 'reviewing-briefs') {
+          planEditorStore.setRuntimeRichMode(true);
+          feedbackStore.setError(null);
+          return;
+        }
+        const filePath = reviewStore.get().filePath;
+        if (filePath) {
+          try {
+            await openInEditor(filePath);
+          } catch (err) {
+            feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
+          }
+        }
+      } else if (parsed.action === 'edit-file') {
         const filePath = reviewStore.get().filePath;
         if (filePath) {
           try {

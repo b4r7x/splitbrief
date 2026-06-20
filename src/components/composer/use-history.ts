@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { getInputHistoryEntries, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { useStores } from '../../stores/use-stores.js';
-import type { Screen } from '../../core/navigation/types.js';
 import { INITIAL_INPUT_HISTORY_NAVIGATION_STATE, stepInputHistory } from './history.js';
+import type { Screen } from '../../core/navigation/types.js';
 
 interface UseHistoryParams {
-  currentScreen: Screen;
   disabled: boolean | undefined;
   value: string;
   setValue: (value: string) => void;
+  currentScreen: Screen;
+  persistTranscript: boolean;
 }
 
 interface ComposerHistory {
@@ -20,14 +21,16 @@ interface ComposerHistory {
 }
 
 export function useHistory({
-  currentScreen,
   disabled,
   value,
   setValue,
+  currentScreen,
+  persistTranscript,
 }: UseHistoryParams): ComposerHistory {
-  const [{ entries: homeHistory }] = useStores(inputHistoryStore);
+  const [history] = useStores(inputHistoryStore);
   const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);
+  const entries = getInputHistoryEntries(history, { currentScreen, persistTranscript });
 
   const onChange = (nextValue: string) => {
     setValue(nextValue);
@@ -37,12 +40,12 @@ export function useHistory({
   };
 
   const handleBoundaryNavigate = (direction: 'up' | 'down') => {
-    if (currentScreen !== 'home' || disabled) {
+    if (disabled) {
       return false;
     }
 
     const result = stepInputHistory({
-      entries: homeHistory,
+      entries,
       state: historyState,
       direction,
       currentValue: value,

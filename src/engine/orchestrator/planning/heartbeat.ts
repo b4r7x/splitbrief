@@ -7,11 +7,13 @@ export const HEARTBEAT_THRESHOLD_MS = 5000;
 interface HeartbeatState {
   accumulatedTokens: number;
   phaseHint: string | undefined;
+  callId: string | undefined;
 }
 
 interface HeartbeatHandle {
   updateTokens(tokens: number): void;
   updatePhaseHint(hint: string): void;
+  updateCallId(callId: string): void;
   stop(): void;
 }
 
@@ -20,15 +22,21 @@ export function startPlannerHeartbeat(
   phase: Phase,
   startTime: number,
 ): HeartbeatHandle {
-  const state: HeartbeatState = { accumulatedTokens: 0, phaseHint: undefined };
+  const state: HeartbeatState = {
+    accumulatedTokens: 0,
+    phaseHint: undefined,
+    callId: undefined,
+  };
   let timer: ReturnType<typeof setInterval> | null = null;
   const publish = () => {
+    const now = Date.now();
     bus.publish({
       type: 'planner_heartbeat',
-      ts: Date.now(),
+      ts: now,
       phase,
-      elapsedMs: Date.now() - startTime,
+      elapsedMs: now - startTime,
       accumulatedTokens: state.accumulatedTokens,
+      ...(state.callId !== undefined ? { callId: state.callId } : {}),
       ...(state.phaseHint !== undefined ? { phaseHint: state.phaseHint } : {}),
     });
   };
@@ -44,6 +52,9 @@ export function startPlannerHeartbeat(
     },
     updatePhaseHint(hint: string): void {
       state.phaseHint = hint;
+    },
+    updateCallId(callId: string): void {
+      state.callId = callId;
     },
     stop(): void {
       clearTimeout(threshold);

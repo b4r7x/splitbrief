@@ -61,6 +61,48 @@ describe('processStream — session id capture', () => {
     });
   });
 
+  it('emits SDK tool-use blocks as structured call events without output text', async () => {
+    const events: RunnerCallEvent[] = [];
+    const output: string[] = [];
+    const stream = asyncIter([
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tool-read', name: 'Read', input: { file_path: 'src/a.ts' } },
+            { type: 'tool_use', id: 'tool-bash', name: 'Bash', input: { command: 'npm test' } },
+          ],
+        },
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        result: '',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ]);
+
+    await processStream({
+      stream,
+      onOutput: (text) => output.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(output).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_tool_use_done',
+        toolUse: { id: 'tool-read', name: 'Read', input: { file_path: 'src/a.ts' } },
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_tool_use_done',
+        toolUse: { id: 'tool-bash', name: 'Bash', input: { command: 'npm test' } },
+      }),
+    );
+  });
+
   it('falls back to the result message session_id when no init message arrives', async () => {
     const onSessionId = vi.fn();
     const stream = asyncIter([
@@ -152,7 +194,7 @@ describe('processStream — session id capture', () => {
     expect(operations.active).toBeNull();
     expect(operations.last).toMatchObject({
       callId: errors[0]?.callId,
-      status: 'failed',
+      status: 'incomplete',
       reason: 'Runner call ended without a terminal event',
       partial: true,
     });

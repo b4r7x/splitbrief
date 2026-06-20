@@ -11,8 +11,7 @@ import type {
   PlannerSummaryMessage,
   PlannerSummaryOptions,
 } from './types.js';
-import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
-import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 type PlannerSummaryConfig = {
@@ -22,7 +21,7 @@ type PlannerSummaryConfig = {
     callContext: RunnerCallContext;
     callbacks: { onOutput: (text: string) => void } & PlannerCallEventCallbacks;
     signal?: AbortSignal | undefined;
-  }) => Promise<RunnerCallCompatibleResult>;
+  }) => Promise<RunnerCallResult>;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
@@ -105,21 +104,18 @@ export async function summarize(
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
-    toRunnerCallResult(
+    await config.invokeEscalate({
+      prompt: buildSummaryPrompt(messages),
+      projectDir: opts.projectDir ?? process.cwd(),
       callContext,
-      await config.invokeEscalate({
-        prompt: buildSummaryPrompt(messages),
-        projectDir: opts.projectDir ?? process.cwd(),
-        callContext,
-        callbacks: {
-          onOutput: () => {},
-          ...(opts.callbacks?.onCallEvent !== undefined && {
-            onCallEvent: opts.callbacks.onCallEvent,
-          }),
-        },
-        signal: opts.signal,
-      }),
-    ),
+      callbacks: {
+        onOutput: () => {},
+        ...(opts.callbacks?.onCallEvent !== undefined && {
+          onCallEvent: opts.callbacks.onCallEvent,
+        }),
+      },
+      signal: opts.signal,
+    }),
   );
   return { text: result.text.trim(), usage: toTokenDelta(result.usage) };
 }
@@ -133,21 +129,18 @@ export async function summarizeStructured(
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
-    toRunnerCallResult(
+    await config.invokeEscalate({
+      prompt: buildStructuredSummaryPrompt(messages, opts.previousSummary),
+      projectDir: opts.projectDir ?? process.cwd(),
       callContext,
-      await config.invokeEscalate({
-        prompt: buildStructuredSummaryPrompt(messages, opts.previousSummary),
-        projectDir: opts.projectDir ?? process.cwd(),
-        callContext,
-        callbacks: {
-          onOutput: () => {},
-          ...(opts.callbacks?.onCallEvent !== undefined && {
-            onCallEvent: opts.callbacks.onCallEvent,
-          }),
-        },
-        signal: opts.signal,
-      }),
-    ),
+      callbacks: {
+        onOutput: () => {},
+        ...(opts.callbacks?.onCallEvent !== undefined && {
+          onCallEvent: opts.callbacks.onCallEvent,
+        }),
+      },
+      signal: opts.signal,
+    }),
   );
   const text = result.text.trim();
   return { text, structured: tryParseStructuredSummary(text), usage: toTokenDelta(result.usage) };

@@ -456,6 +456,45 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
+  it('enqueues injected resume text while resuming an implementing phase', async () => {
+    const sessionId = '2024-01-01-implementing-inject';
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'implementing',
+    };
+    saveState({ projectDir, sessionId }, saved);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        sessionId={sessionId}
+        captureRunner={captureRunner}
+      />,
+    );
+    await flush();
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume('carry this into implementation');
+    await flush();
+
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    expect(persisted.messageQueue).toEqual([
+      expect.objectContaining({
+        text: 'carry this into implementation',
+        phase: 'implementing',
+      }),
+    ]);
+    expect(feedbackStore.get().isError).toBe(false);
+
+    inst.unmount();
+  });
+
   it('resumes without queuing when no injected text is provided', async () => {
     const sessionId = '2024-01-01-empty-continue';
     ensureSessionDir(projectDir, sessionId);

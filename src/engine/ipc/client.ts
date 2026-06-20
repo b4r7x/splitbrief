@@ -14,6 +14,7 @@ export type IpcClientState = {
 
 export type IpcClientActions = {
   sendUserInput(text: string): void;
+  clearQueue(): void;
   detach(): void;
 };
 

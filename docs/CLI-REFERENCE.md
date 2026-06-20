@@ -102,7 +102,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
-| `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow stops when exceeded. |
+| `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
 | `--yolo` | boolean | `false` | Disable action-level tiered approval prompts for the session. Workflow review gates still follow `--approve` / mode policy. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
@@ -187,6 +187,8 @@ diptych spec <feature> [options]
 ```
 
 Run only the planner. Produces `spec.md`, `plan.md`, and `tasks.md` for the feature in a fresh session folder, then exits without invoking the implementer. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
+
+Planner stream output is stripped of terminal control sequences before writing to stdout.
 
 ### Usage
 
@@ -461,7 +463,8 @@ diptych explain --session 2026-04-29-add-auth --json
 
 - Output is intentionally compact: task routes are summarized and artifact paths are referenced instead of embedding full plans, Task Briefs, logs, diffs, or source code.
 - Cost confidence is marked `partial` when pricing is unknown, a profile is unavailable, usage is unpriced, or the all-planner baseline cannot be fully priced.
-- Context fallback is shown from deterministic estimate metadata when available, and from routing reasons on completed task artifacts.
+- Cost prediction data is prompt-input scoped; runtime output, retries, validation reruns, and escalation are explained from recorded usage and warnings.
+- Context fallback is shown from deterministic estimate metadata when available, and from routing reasons on completed task artifacts. Task-start rows show concise routing reasons during the run; explain/drilldown surfaces richer context and per-task routing metadata.
 - Task review gates are inferred from `task_review_needed` events in `session.jsonl`; final review status comes from `review-packet.json` or `review.md`.
 - Missing optional artifacts are reported as missing instead of causing a model call or artifact regeneration.
 
@@ -722,7 +725,7 @@ Last updated: 2026-05-13T08:00:00.000Z
 
 - `.diptych/stats.json` is updated atomically by `saveFinalSession()` for any saved summary with eligible cost data.
 - When no stats file exists, prints a message indicating no sessions have completed yet.
-- The all-planner estimate uses the same pricing model as the per-run hero savings stat on the summary screen.
+- The all-planner baseline uses the same pricing model as the per-run hero savings stat on the summary screen. Deterministic pre-run estimates are prompt-input scoped; runtime stats use recorded usage.
 
 ---
 
@@ -1591,7 +1594,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, recovery pauses such as unknown paid pricing exit non-zero, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
 
 ### RPC stream (`--rpc`)
 

@@ -22,6 +22,8 @@ import {
 } from '../../core/schemas/compaction.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -35,12 +37,34 @@ function toResumeMessage(message: SessionLogMessageEntry): ResumeMessage {
   return { role: message.role, content };
 }
 
-async function readCompactedResumeMessages(
+function pendingQueueEntries(projectDir: string, sessionId: string): WorkflowState['messageQueue'] {
+  return (
+    loadState({ projectDir, sessionId })?.messageQueue.filter(isQueuedMessagePendingDelivery) ?? []
+  );
+}
+
+function isStillPendingQueuedTranscriptMessage(
+  message: SessionLogMessageEntry,
+  pendingQueue: WorkflowState['messageQueue'],
+): boolean {
+  if (message.role !== 'user') return false;
+  if (message.queueMessageId !== undefined) {
+    return pendingQueue.some((queued) => queued.id === message.queueMessageId);
+  }
+  if (message.queuedAt === undefined || message.phase === undefined) return false;
+  return pendingQueue.some(
+    (queued) =>
+      queued.queuedAt === message.queuedAt &&
+      queued.phase === message.phase &&
+      queued.text === message.text,
+  );
+}
+
+async function readCompactedResumeEntries(
   projectDir: string,
   sessionId: string,
-): Promise<ResumeMessage[]> {
-  const messages = await readCompactedMessages(sessionDir(projectDir, sessionId));
-  return messages.map(toResumeMessage);
+): Promise<SessionLogMessageEntry[]> {
+  return readCompactedMessages(sessionDir(projectDir, sessionId));
 }
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
@@ -186,11 +210,18 @@ export async function buildResumeContext(
   if (!persistTranscript) {
     return { messages: [], warning: 'transcript-unavailable' };
   }
+  const pendingQueue = pendingQueueEntries(projectDir, sessionId);
   try {
-    return { messages: await readCompactedResumeMessages(projectDir, sessionId) };
+    const entries = await readCompactedResumeEntries(projectDir, sessionId);
+    return {
+      messages: entries
+        .filter((message) => !isStillPendingQueuedTranscriptMessage(message, pendingQueue))
+        .map(toResumeMessage),
+    };
   } catch {
     const messages: ResumeMessage[] = [];
     for await (const m of readMessages({ projectDir: projectDir, sessionId: sessionId })) {
+      if (isStillPendingQueuedTranscriptMessage(m, pendingQueue)) continue;
       messages.push(toResumeMessage(m));
     }
     return { messages };

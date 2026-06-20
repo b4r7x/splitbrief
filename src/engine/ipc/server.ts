@@ -18,6 +18,7 @@ import { error } from '../../utils/error.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { replaySession } from './replay-session.js';
 import { writeServerMessage } from './write-message.js';
+import { protectEngineEventForConsumer } from '../events/protection.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -28,6 +29,7 @@ export type IpcServerOptions = {
   authToken: string;
   bus: EventBus;
   onUserInput: (text: string) => void;
+  onQueueClear?: (() => void) | undefined;
   sessionJsonlPath?: string;
   noClientPromptBehavior?: 'wait' | 'fail-closed';
   persistTranscript?: boolean | undefined;
@@ -41,8 +43,12 @@ export type IpcServer = {
 
 const MAX_LIVE_BACKLOG_EVENTS = 1000;
 
-function eventIdentity(event: EngineEvent): string {
-  return canonicalJSON(event);
+function eventIdentity(event: EngineEvent, persistTranscript: boolean): string | null {
+  const protectedEvent = protectEngineEventForConsumer(event, {
+    context: 'ipc',
+    persistTranscript,
+  });
+  return protectedEvent === null ? null : canonicalJSON(protectedEvent);
 }
 
 export const ipcServerError = {
@@ -60,6 +66,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     authToken,
     bus,
     onUserInput,
+    onQueueClear,
     sessionJsonlPath,
     noClientPromptBehavior = 'wait',
     persistTranscript = true,
@@ -180,7 +187,10 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
             sessionJsonlPath,
             writeMessage,
           });
-          for (const event of replayed) replayedIdentities.add(eventIdentity(event));
+          for (const event of replayed) {
+            const identity = eventIdentity(event, persistTranscript);
+            if (identity !== null) replayedIdentities.add(identity);
+          }
         } catch (err) {
           bus.publish({
             type: 'warning',
@@ -197,7 +207,8 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
       replaying = false;
       for (const event of liveBacklog.splice(0)) {
-        if (replayedIdentities.delete(eventIdentity(event))) continue;
+        const identity = eventIdentity(event, persistTranscript);
+        if (identity !== null && replayedIdentities.delete(identity)) continue;
         writeEvent(event);
       }
     }
@@ -211,20 +222,22 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           const parsed: unknown = JSON.parse(trimmed);
           msg = parseClientMessage(parsed);
           if (!msg) {
+            const byteLength = Buffer.byteLength(trimmed, 'utf8');
             bus.publish({
               type: 'warning',
               ts: Date.now(),
               phase: 'idle',
-              message: `IPC: invalid message structure from client: ${trimmed}`,
+              message: `IPC: invalid message structure from client (${byteLength} bytes)`,
             });
             return;
           }
         } catch {
+          const byteLength = Buffer.byteLength(trimmed, 'utf8');
           bus.publish({
             type: 'warning',
             ts: Date.now(),
             phase: 'idle',
-            message: `IPC: malformed JSON from client: ${trimmed}`,
+            message: `IPC: malformed JSON from client (${byteLength} bytes)`,
           });
           return;
         }
@@ -265,6 +278,26 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
               ts: Date.now(),
               phase: 'idle',
               message: `IPC: onUserInput threw: ${toErrorMessage(err)}`,
+            });
+          }
+        } else if (msg.kind === 'queue_clear') {
+          if (!onQueueClear) {
+            bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: 'IPC: queue clear is not available for this workflow',
+            });
+            return;
+          }
+          try {
+            onQueueClear();
+          } catch (err) {
+            bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: `IPC: onQueueClear threw: ${toErrorMessage(err)}`,
             });
           }
         } else if (msg.kind === 'prompt_response') {

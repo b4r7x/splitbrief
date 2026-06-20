@@ -80,6 +80,12 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (only the 60s stream-idle guard, see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option (the levels match diptych's enum); other providers and runner kinds may ignore it. |
 
+### Pricing metadata
+
+Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced.
+
+If an API-billed or otherwise paid runner has unknown model pricing and `workflow.maxBudget` is set, runtime budget tracking pauses instead of treating that usage as `$0`. Continue only after acknowledging unknown spend or configuring pricing.
+
 ### `kind: cli`
 
 Subprocess of a known coding-agent CLI. The wrapper handles auth, model selection, and output parsing.
@@ -320,6 +326,8 @@ implementerProfiles:
 
 If `implementerProfiles.default` is omitted, diptych resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
+Task-start rows show the concrete routing reason when a worker is selected, and cost drilldown / `diptych explain` include richer routing and context data for post-run inspection.
+
 When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the cheapest-capable routing choice.
 
 ---
@@ -453,14 +461,14 @@ workflow: {
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
-| `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` from the simple view to opt into rich for the current session. |
+| `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` / `edit` from simple brief review to enter rich review for the current session; use `E` / `edit-file` when you explicitly want `$EDITOR` on `tasks.md`. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
-| `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), and stops at the hard cap. |
+| `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
 | `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
-| `costGate` | boolean | `true` | Pause for cost approval before implementation when a deterministic cost estimate is available. Set `false` to skip the gate. The gate is always skipped in `instant`/`quick` modes and when no deterministic estimate exists. |
+| `costGate` | boolean | `true` | Pause for cost approval before implementation when a deterministic prompt-input estimate is available. Set `false` to skip the gate. The gate is always skipped in `instant`/`quick` modes and when no deterministic estimate exists. Output, retries, validation reruns, and escalation are tracked at runtime. |
 | `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
-| `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit and `/compact-transcript`. |
+| `persistTranscript` | boolean | `true` | Persist planner/user transcript text to `session.jsonl` for replay/audit, stateless resume context, and `/compact-transcript`. Set `false` to protect external consumer surfaces from prompt, answer, task prose, comments, retry errors, and feature text; see the transcript policy notes below. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` and `agent-sdk` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
 
@@ -476,6 +484,14 @@ workflow: {
 `approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
 
 `briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). For `speckit` runs, `rich` is recommended; set it explicitly in config or press `e` from the simple view to opt in for the current session.
+
+### Transcript persistence policy
+
+`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. Per-task git commit subjects also use task ids and control metadata only.
+
+The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queue previews, and cost-prediction task prose are replaced with `[transcript omitted]` or removed.
+
+The workflow still writes product artifacts such as `research.md`, `spec.md`, `plan.md`, `tasks.md`, `brief-quality.json`, validation outputs, changed source files, and evidence files when those phases produce them. Those files are intentionally review artifacts and can contain the requested work; `persistTranscript:false` does not redact project outputs or make the working tree private.
 
 ### YAML examples
 
@@ -521,9 +537,10 @@ workflow:
 - `git.createBranch: true` — when running diptych in CI or against `main` and you don't want the changes landing on the current branch.
 - `git.commitStrategy: none` — the default and recommended setting for manual review; diptych leaves changes unstaged so you can review and commit them yourself.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
-- `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling.
-- `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
-- `persistTranscript: true` — keep this enabled if you want resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
+- `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
+- `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed. In rich review, `tab` enters the section list, `e` edits the selected semantic section, `Ctrl+Enter` saves the field, `Esc` cancels/goes back, and `c` copies the selected task or section source text to the clipboard/fallback file.
+- `persistTranscript: true` — keep this enabled if you want stateless resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
+- `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, diptych input history, session names, and generated commit messages must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queue previews are stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/effort` runtime overrides). Workflow approval level is set with `--approve` or `workflow.approve`.
 
@@ -905,7 +922,7 @@ These are top-level fields (siblings of `workflow`, not nested under it).
 |---|---|---|---|
 | `theme` | enum | `terminal` | `terminal` (uses your terminal's color scheme) \| `mono` (no color) |
 | `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.diptych`. |
-| `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
+| `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task prompt-input estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
 | `autoSplitOverflow` | boolean | `false` | After the cost gate, automatically split tasks that overflow the implementer's context budget (or that the planner review flags as too large) into smaller child tasks before implementation. Splits that would drop acceptance criteria, dependencies, or produce too many children are skipped with a warning. |
 
 ```yaml
@@ -968,7 +985,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--auto` | Alias for `--approve none` | start, resume, continue, last, spec |
+| `--auto` | Alias for `--approve none` | start, resume, continue, last |
 | `--approve <level>` | `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
 | `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last |
 | `--budget <amount>` | Dollar ceiling | start, resume, continue, last |

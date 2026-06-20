@@ -4,6 +4,7 @@ import type { EventBus } from '../events/types.js';
 import { addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { publishRunnerCallEvent, publishWarningFromError } from './events.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
+import { formatQueuedMessagePreview } from '../../core/queue-preview.js';
 
 export type DispatchNativeInjectionOptions = {
   message: QueuedMessage;
@@ -16,12 +17,24 @@ export type DispatchNativeInjectionOptions = {
   signal?: AbortSignal | undefined;
 };
 
-export async function dispatchNativeInjection(opts: DispatchNativeInjectionOptions): Promise<void> {
+export type NativeInjectionResult =
+  | { status: 'delivered' }
+  | { status: 'not-delivered'; reason: 'unsupported' | 'aborted' | 'failed' };
+
+export async function dispatchNativeInjection(
+  opts: DispatchNativeInjectionOptions,
+): Promise<NativeInjectionResult> {
   const { message, planner, projectDir, sessionId, getState, setState, bus, signal } = opts;
-  if (!planner.injectUserTurn) return;
+  if (!planner.injectUserTurn) return { status: 'not-delivered', reason: 'unsupported' };
+  if (signal?.aborted) return { status: 'not-delivered', reason: 'aborted' };
 
   try {
     throwIfAborted(signal);
+    const injecting = transitionAndSave({ projectDir, sessionId }, getState(), {
+      type: 'MARK_INJECTING_NATIVE',
+      id: message.id,
+    });
+    setState(injecting);
     const injectionText =
       message.origin === 'clarification' && message.question
         ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
@@ -40,14 +53,23 @@ export async function dispatchNativeInjection(opts: DispatchNativeInjectionOptio
       id: message.id,
     });
     setState(next);
+    const preview = formatQueuedMessagePreview(message);
     bus.publish({
       type: 'message_injected_native',
       ts: Date.now(),
       phase: next.phase,
       id: message.id,
+      ...(preview.length > 0 && { preview }),
     });
+    return { status: 'delivered' };
   } catch (err) {
-    if (signal?.aborted || isAbortError(err)) return;
+    const next = transitionAndSave({ projectDir, sessionId }, getState(), {
+      type: 'MARK_NATIVE_DELIVERY_FAILED',
+      id: message.id,
+    });
+    setState(next);
+    if (signal?.aborted || isAbortError(err)) return { status: 'not-delivered', reason: 'aborted' };
     publishWarningFromError({ bus, phase: getState().phase }, 'native injection failed', err);
+    return { status: 'not-delivered', reason: 'failed' };
   }
 }

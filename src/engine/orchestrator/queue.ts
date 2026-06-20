@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
+import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { mergePersistedMessageQueue, transitionAndSave } from './state-ops.js';
 import { publishWarning } from './events.js';
-import { appendMessage } from '../../core/state/persistence.js';
+import { appendMessage, saveState } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../lib/warn.js';
 import { nowIso } from '../../utils/format-time.js';
 import type { WriteSequencer } from './serial-executor.js';
+import { formatQueuedMessagePreview } from '../../core/queue-preview.js';
+import {
+  isQueuedMessageClearable,
+  isQueuedMessagePendingDelivery,
+} from '../../core/queue-state.js';
+import type { QueueClearResult, QueueSubmissionResult } from './types.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -21,15 +28,20 @@ export function enqueueUserMessage(
   phase: Phase,
   bus: EventBus,
   persistTranscript: boolean,
-): { state: WorkflowState; queued: boolean; message?: QueuedMessage | undefined } {
+  opts: { enforcePhasePolicy?: boolean | undefined } = {},
+): { state: WorkflowState; result: QueueSubmissionResult; message?: QueuedMessage | undefined } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
+  if (opts.enforcePhasePolicy !== false && !canQueueInPhase(phase)) {
+    const message = `Queue is only available while the planner is running; current phase is ${phase}.`;
+    publishWarning({ bus, phase }, message);
+    return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
+  }
+
+  const pending = base.messageQueue.filter(isQueuedMessagePendingDelivery);
   if (pending.length >= MAX_QUEUE_SIZE) {
-    publishWarning(
-      { bus: bus, phase: phase },
-      `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`,
-    );
-    return { state: base, queued: false };
+    const message = `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`;
+    publishWarning({ bus, phase }, message);
+    return { state: base, result: { status: 'rejected', reason: 'queue-full', message } };
   }
 
   const message: QueuedMessage = {
@@ -38,6 +50,8 @@ export function enqueueUserMessage(
     queuedAt: nowIso(),
     phase,
     deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
+    origin: 'user-input',
   };
 
   const next = transitionAndSave({ projectDir, sessionId }, base, {
@@ -46,11 +60,22 @@ export function enqueueUserMessage(
   });
   appendMessage(
     { projectDir, sessionId },
-    { role: 'user', phase, text, queuedAt: message.queuedAt },
+    { role: 'user', phase, text, queuedAt: message.queuedAt, queueMessageId: message.id },
     persistTranscript,
   );
-  bus.publish({ type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
-  return { state: next, queued: true, message };
+  const preview = formatQueuedMessagePreview(message);
+  bus.publish({
+    type: 'message_queued',
+    ts: Date.now(),
+    phase: next.phase,
+    id: message.id,
+    ...(preview.length > 0 && { preview }),
+  });
+  return {
+    state: next,
+    result: { status: 'accepted', messageId: message.id, ...(preview.length > 0 && { preview }) },
+    message,
+  };
 }
 
 export type QueueHandlerContext = {
@@ -68,7 +93,7 @@ export function createQueueHandler(
     serialize: WriteSequencer;
     signal?: AbortSignal | undefined;
   },
-): (text: string, phase: Phase) => void {
+): (text: string, phase: Phase) => Promise<QueueSubmissionResult> {
   const {
     projectDir,
     sessionId,
@@ -80,30 +105,42 @@ export function createQueueHandler(
     serialize,
     signal,
   } = opts;
-  return (text: string, phase: Phase) => {
-    let fallbackState: WorkflowState | undefined;
-    serialize(() => {
-      const state = getState();
-      if (!state) return undefined;
+  return async (text: string, phase: Phase) => {
+    try {
+      const submitted = await serialize(
+        (): {
+          result: QueueSubmissionResult;
+          message?: QueuedMessage | undefined;
+          state?: WorkflowState | undefined;
+        } => {
+          const state = getState();
+          if (!state) {
+            return {
+              result: {
+                status: 'rejected',
+                reason: 'phase-unavailable',
+                message: 'Cannot queue message: no active workflow.',
+              } satisfies QueueSubmissionResult,
+            };
+          }
 
-      const result = enqueueUserMessage(
-        projectDir,
-        sessionId,
-        state,
-        text,
-        phase,
-        bus,
-        persistTranscript,
+          const result = enqueueUserMessage(
+            projectDir,
+            sessionId,
+            state,
+            text,
+            phase,
+            bus,
+            persistTranscript,
+          );
+          setState(result.state);
+          return { result: result.result, message: result.message, state: result.state };
+        },
       );
-      setState(result.state);
-      fallbackState = result.state;
-      return result.message;
-    })
-      .then((message) => {
-        if (!message || fallbackState === undefined) return;
-        const enqueuedState = fallbackState;
-        return dispatchNativeInjection({
-          message,
+      if (submitted.result.status === 'accepted' && submitted.message && submitted.state) {
+        const enqueuedState = submitted.state;
+        void dispatchNativeInjection({
+          message: submitted.message,
           planner,
           projectDir,
           sessionId,
@@ -111,9 +148,17 @@ export function createQueueHandler(
           setState,
           bus,
           ...(signal !== undefined && { signal }),
-        });
-      })
-      .catch((err) => warnError('queue-handler failed', err));
+        }).catch((err) => warnError('queue-handler failed', err));
+      }
+      return submitted.result;
+    } catch (err) {
+      warnError('queue-handler failed', err);
+      return {
+        status: 'rejected',
+        reason: 'phase-unavailable',
+        message: 'Cannot queue message: workflow queue failed.',
+      };
+    }
   };
 }
 
@@ -124,23 +169,33 @@ export function clearPendingQueue(
   bus: EventBus,
 ): { state: WorkflowState; count: number } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
+  const pending = base.messageQueue.filter(isQueuedMessageClearable);
   if (pending.length === 0) return { state: base, count: 0 };
 
-  const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'CLEAR_QUEUE' });
+  const next = {
+    ...base,
+    messageQueue: base.messageQueue.filter((message) => !isQueuedMessageClearable(message)),
+  };
+  saveState({ projectDir, sessionId }, next);
   bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: next.phase, count: pending.length });
   return { state: next, count: pending.length };
 }
 
-export function createClearQueueHandler(ctx: QueueHandlerContext): () => number {
+function canQueueInPhase(phase: Phase): boolean {
+  return isLivePhase(phase) && !isImplementerPhase(phase);
+}
+
+export function createClearQueueHandler(ctx: QueueHandlerContext): () => QueueClearResult {
   const { projectDir, sessionId, getState, setState, bus } = ctx;
   return () => {
     const state = getState();
-    if (!state) return 0;
+    if (!state) {
+      return { status: 'unavailable', message: 'Cannot clear queue: no active workflow.' };
+    }
 
     const result = clearPendingQueue(projectDir, sessionId, state, bus);
     setState(result.state);
-    return result.count;
+    return { status: 'cleared', count: result.count };
   };
 }
 
@@ -151,7 +206,7 @@ export function drainQueue(
   bus: EventBus,
 ): { state: WorkflowState; messages: QueuedMessage[] } {
   const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
-  const pending = base.messageQueue.filter((m) => !m.drainedAt && !m.deliveredViaNative);
+  const pending = base.messageQueue.filter(isQueuedMessagePendingDelivery);
   if (pending.length === 0) return { state: base, messages: [] };
 
   const next = transitionAndSave({ projectDir, sessionId }, base, { type: 'DRAIN_QUEUE' });

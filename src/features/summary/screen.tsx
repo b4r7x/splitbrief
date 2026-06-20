@@ -25,6 +25,7 @@ import { uniqueSorted } from '../../utils/collections.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -86,8 +87,9 @@ function compactCount(count: number, noun: string): string {
 }
 
 function compactPacketPath(path: string): string {
-  const slash = path.lastIndexOf('/');
-  return slash === -1 ? path : path.slice(slash + 1);
+  const clean = stripTerminalControls(path);
+  const slash = clean.lastIndexOf('/');
+  return slash === -1 ? clean : clean.slice(slash + 1);
 }
 
 function SummaryCompactRunDetails({

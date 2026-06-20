@@ -13,6 +13,7 @@ import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { flushOtel } from '../lib/otel.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../engine/events/protection.js';
 
 function buildNoopSinks() {
   return {
@@ -21,25 +22,34 @@ function buildNoopSinks() {
   };
 }
 
-function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | undefined): void {
+function emitRecoveryAndFailIfPending(
+  projectDir: string,
+  sessionId: string | undefined,
+  persistTranscript: boolean,
+): void {
   const recoverySessionId = sessionId ?? readActive(projectDir);
   if (!recoverySessionId) return;
   const state = loadState({ projectDir, sessionId: recoverySessionId });
   const issue = state?.pendingRecovery;
   if (!issue) return;
   if (issue.status !== 'awaiting-user') return;
-  writeHeadlessJsonRecord({
-    type: 'recovery_required',
-    sessionId: recoverySessionId,
-    reason: issue.reason,
-    message: issue.message,
-    taskId: issue.taskId,
-    files: issue.files,
-    affectedTaskIds: issue.affectedTaskIds,
-    availableActions: issue.availableActions,
-    recommendedAction: issue.recommendedAction,
-  });
-  throw cliError(`Recovery required: ${issue.message}`, 1);
+  writeHeadlessJsonRecord(
+    {
+      type: 'recovery_required',
+      sessionId: recoverySessionId,
+      reason: issue.reason,
+      message: issue.message,
+      taskId: issue.taskId,
+      files: issue.files,
+      affectedTaskIds: issue.affectedTaskIds,
+      availableActions: issue.availableActions,
+      recommendedAction: issue.recommendedAction,
+    },
+    process.stdout,
+    { persistTranscript },
+  );
+  const message = persistTranscript ? issue.message : TRANSCRIPT_OMITTED_MESSAGE;
+  throw cliError(`Recovery required: ${message}`, 1);
 }
 
 function failIfFinalReviewIncomplete(projectDir: string, sessionId: string | undefined): void {
@@ -125,6 +135,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   if (abortController.signal.aborted) return;
 
-  emitRecoveryAndFailIfPending(projectDir, sessionId);
+  emitRecoveryAndFailIfPending(projectDir, sessionId, config.workflow.persistTranscript);
   failIfFinalReviewIncomplete(projectDir, sessionId);
 }

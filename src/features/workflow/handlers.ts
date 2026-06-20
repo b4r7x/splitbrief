@@ -1,7 +1,7 @@
 import type { Phase } from '../../core/schemas/enums.js';
-import { addEvent, markCancellationRequested } from '../../stores/workflow/actions.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { markCancellationRequested } from '../../stores/workflow/actions.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';
+import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
 
 export type { RewindTarget };
 
@@ -9,8 +9,8 @@ interface Handlers {
   abort: () => void;
   cancel: () => void;
   rewind: (request: RewindTarget) => void;
-  queue: (text: string, phase: Phase) => void;
-  clearQueue: () => number;
+  queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
+  clearQueue: () => QueueClearResult;
 }
 
 const handlers: Partial<Handlers> = {};
@@ -58,22 +58,19 @@ export function requestRewind(request: RewindTarget): boolean {
   return true;
 }
 
-export function requestEnqueue(text: string, phase: Phase): boolean {
-  if (!handlers.queue) return false;
-  handlers.queue(text, phase);
-  return true;
+export async function requestEnqueue(
+  text: string,
+  phase: Phase,
+): Promise<QueueSubmissionResult | null> {
+  if (!handlers.queue) return null;
+  return handlers.queue(text, phase);
 }
 
-export function requestClearQueue(): number {
-  if (handlers.clearQueue) return handlers.clearQueue();
-  const depth = lifecycleStore.get().queueDepth;
-  if (depth > 0) {
-    addEvent({
-      type: 'queue_cleared',
-      ts: Date.now(),
-      phase: lifecycleStore.get().phase,
-      count: depth,
-    });
-  }
-  return depth;
+export function requestClearQueue(): QueueClearResult {
+  return (
+    handlers.clearQueue?.() ?? {
+      status: 'unavailable',
+      message: 'Queue clear is not available for this workflow.',
+    }
+  );
 }

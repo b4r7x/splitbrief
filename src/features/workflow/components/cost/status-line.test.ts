@@ -85,7 +85,7 @@ describe('CostStatusLine', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('spent local');
-    expect(frame).toContain('proj n/a');
+    expect(frame).not.toContain('proj n/a');
     expect(frame).not.toContain('spent $0.00');
     ui.unmount();
   });
@@ -119,7 +119,7 @@ describe('CostStatusLine', () => {
     ui.unmount();
   });
 
-  it('renders n/a when no token cost breakdown exists yet', () => {
+  it('omits unavailable spend and projection before cost data exists', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({ workflow: { mode: 'standard' } }),
@@ -129,8 +129,82 @@ describe('CostStatusLine', () => {
     const ui = render(createElement(CostStatusLine));
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('spent n/a');
+    expect(frame).not.toContain('spent n/a');
+    expect(frame).not.toContain('proj n/a');
     expect(frame).not.toContain('spent $0.00');
+    ui.unmount();
+  });
+
+  it('renders deterministic known actual prediction instead of legacy expected cost', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-4-6',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-4-6',
+        },
+        workflow: { mode: 'standard' },
+      }),
+    });
+    terminalSizeStore.__testReset({ cols: 120 });
+    tasksStore.__testReset({ totalTasks: 4 });
+    tokensStore.__testReset({
+      tokenUsage: {
+        plannerInput: 1,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      prediction: {
+        estimatedTasks: 4,
+        lowCost: 1,
+        expectedCost: 3.5,
+        highCost: 6,
+        plannerTool: 'anthropic',
+        implementerTool: 'anthropic',
+        deterministic: {
+          estimateScope: 'prompt-input-only',
+          taskCount: 4,
+          taskFitCounts: { fits: 4, tight: 0, overflow: 0, unknown: 0 },
+          contextConfidenceCounts: {
+            contextExplicit: 4,
+            contextDetected: 0,
+            contextKnownCatalog: 0,
+            contextCachedProvider: 0,
+            contextConservativeFallback: 0,
+            profileUnavailable: 0,
+          },
+          priceConfidenceCounts: {
+            priceKnown: 4,
+            priceUnknown: 0,
+            profileUnavailable: 0,
+          },
+          tasks: [],
+          totals: {
+            knownActualEstimate: 0.42,
+            hypotheticalAllPlanner: 2.5,
+            estimatedSavings: 2.08,
+            unknownCostReason: [],
+          },
+        },
+      },
+    });
+
+    const ui = render(createElement(CostStatusLine));
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('proj $0.42');
+    expect(frame).not.toContain('proj $3.50');
     ui.unmount();
   });
 

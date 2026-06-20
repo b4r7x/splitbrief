@@ -2,24 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
-
-const HELP_ROWS: Array<[string, string]> = [
-  ['j / ↓', 'Move cursor down'],
-  ['k / ↑', 'Move cursor up'],
-  ['<c-j> / <c-n>', 'Move task down'],
-  ['<c-k> / <c-p>', 'Move task up'],
-  ['d', 'Delete task'],
-  ['x', 'Toggle flagged for regeneration'],
-  ['m', 'Merge with previous task'],
-  ['p', 'Toggle worker packet preview'],
-  ['s', 'Split task (opens $EDITOR)'],
-  ['e', 'Edit task in $EDITOR'],
-  ['R', 'Regenerate flagged tasks'],
-  ['<enter>', 'Expand / collapse task body'],
-  ['Y', 'Save changes and proceed'],
-  ['q', 'Discard changes and return'],
-  ['?', 'Show / hide this help'],
-];
+import { getPlanEditorHelpRows } from './footer.js';
 
 export function PlanEditorHelpOverlay() {
   const t = useTheme();
@@ -29,10 +12,11 @@ export function PlanEditorHelpOverlay() {
   return (
     <OverlayPanel title="Plan Editor Keys" hint="press any key to dismiss" width="auto">
       <Box flexDirection="column">
-        {HELP_ROWS.map(([key, desc]) => (
-          <Box key={key} gap={2}>
-            <Text color={t.accent}>{key.padEnd(16)}</Text>
-            <Text color={t.text}>{desc}</Text>
+        {getPlanEditorHelpRows().map((row) => (
+          <Box key={`${row.context}:${row.key}:${row.label}`} gap={2}>
+            <Text color={t.textDim}>{row.context.padEnd(8)}</Text>
+            <Text color={t.accent}>{row.key.padEnd(16)}</Text>
+            <Text color={t.text}>{row.label}</Text>
           </Box>
         ))}
       </Box>

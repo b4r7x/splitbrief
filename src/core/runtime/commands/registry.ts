@@ -3,7 +3,7 @@ import { EFFORT_LEVELS, WORKFLOW_MODES } from '../../schemas/enums.js';
 import type { RuntimeCommandDef, RuntimeCommandContext } from './types.js';
 import { getShortcutKey } from '../../keybindings/registry.js';
 import { includes } from '../../../utils/type-guards.js';
-import { canRedoTask, canRevisePlan, canReviseSpec } from '../../phases.js';
+import { canRedoTask, canRevisePlan, canReviseSpec, isLivePhase } from '../../phases.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
@@ -207,9 +207,15 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           return;
         }
         if (sub === 'clear') {
-          const cleared = ctx.clearQueue();
-          if (cleared > 0) {
-            ctx.setFeedbackMessage(`Cleared ${cleared} queued ${pluralize(cleared, 'message')}`);
+          const result = ctx.clearQueue();
+          if (result.status === 'unavailable') {
+            ctx.setFeedbackError(result.message);
+            return;
+          }
+          if (result.count > 0) {
+            ctx.setFeedbackMessage(
+              `Cleared ${result.count} queued ${pluralize(result.count, 'message')}`,
+            );
           } else {
             ctx.setFeedbackMessage('Queue is already empty');
           }
@@ -405,6 +411,10 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       handler: async (args) => {
         if (args?.trim().toLowerCase() !== 'confirm') {
           ctx.setFeedbackError('Usage: /reject-run confirm');
+          return;
+        }
+        if (isLivePhase(ctx.getCurrentPhase())) {
+          ctx.setFeedbackError('Run rejection is unavailable while work is active.');
           return;
         }
         try {

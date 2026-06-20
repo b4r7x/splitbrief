@@ -1,19 +1,24 @@
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const MIN_ROW_WIDTH = 1;
+const LINE_BREAK_PLACEHOLDER_PREFIX = '\ue000diptych-line-break';
 
-export function row(
-  key: string,
-  text: string,
-  tone: ConversationRowTone = 'text',
-  bold = false,
-): ConversationRow {
-  return { key, segments: [{ text, tone, bold }] };
+export interface RowInput {
+  key: string;
+  text: string;
+  tone?: ConversationRowTone;
+  bold?: boolean;
+}
+
+export function row(input: RowInput): ConversationRow {
+  const { key, text, tone = 'text', bold = false } = input;
+  return { key, segments: [{ text: sanitizeRowDisplayText(text), tone, bold }] };
 }
 
 export function blankRow(key: string): ConversationRow {
-  return row(key, '');
+  return row({ key, text: '' });
 }
 
 export function rowText(rowValue: ConversationRow): string {
@@ -21,11 +26,37 @@ export function rowText(rowValue: ConversationRow): string {
 }
 
 function wrapText(text: string, width: number): string[] {
-  return wrapHard(text, Math.max(MIN_ROW_WIDTH, width)).split('\n');
+  return wrapHard(sanitizeRowDisplayText(text), Math.max(MIN_ROW_WIDTH, width)).split('\n');
 }
 
 function segmentedRow(key: string, segments: ConversationRowSegment[]): ConversationRow {
-  return { key, segments };
+  return {
+    key,
+    segments: segments.map((segment) => ({
+      ...segment,
+      text: sanitizeRowDisplayText(segment.text),
+    })),
+  };
+}
+
+export function sanitizeRowDisplayText(text: string): string {
+  if (!text.includes('\n')) return sanitizeTerminalDisplayText(text);
+
+  const placeholder = unusedLineBreakPlaceholder(text);
+  return sanitizeTerminalDisplayText(text.replaceAll('\n', placeholder)).replaceAll(
+    placeholder,
+    '\n',
+  );
+}
+
+function unusedLineBreakPlaceholder(text: string): string {
+  let index = 0;
+  let placeholder = `${LINE_BREAK_PLACEHOLDER_PREFIX}-${index}\ue000`;
+  while (text.includes(placeholder)) {
+    index += 1;
+    placeholder = `${LINE_BREAK_PLACEHOLDER_PREFIX}-${index}\ue000`;
+  }
+  return placeholder;
 }
 
 export interface EventRowsInput {
@@ -39,11 +70,12 @@ export interface EventRowsInput {
 export function eventWrappedRows(input: EventRowsInput): ConversationRow[] {
   const { keyPrefix, text, width, tone, bold = false } = input;
   const rows: ConversationRow[] = [];
+  const cleanText = sanitizeRowDisplayText(text);
 
-  for (const rawLine of text.split('\n')) {
+  for (const rawLine of cleanText.split('\n')) {
     const wrapped = wrapText(rawLine, width);
     for (const wrappedLine of wrapped) {
-      rows.push(row(`${keyPrefix}-${rows.length}`, wrappedLine, tone, bold));
+      rows.push(row({ key: `${keyPrefix}-${rows.length}`, text: wrappedLine, tone, bold }));
     }
   }
 
@@ -61,12 +93,18 @@ export interface CardRowsInput {
 
 export function cardRows(input: CardRowsInput): ConversationRow[] {
   const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim' } = input;
-  const labelText = value ? `${label}  ` : label;
-  const text = `${labelText}${value ?? ''}`;
+  const cleanLabel = sanitizeRowDisplayText(label);
+  const cleanValue = value === undefined ? undefined : sanitizeRowDisplayText(value);
+  const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
+  const text = `${labelText}${cleanValue ?? ''}`;
   const wrapped = wrapText(text, width);
   return wrapped.map((line, index) => {
-    if (index > 0 || !value) {
-      return row(`${keyPrefix}-${index}`, line, index > 0 ? valueTone : labelTone);
+    if (index > 0 || !cleanValue) {
+      return row({
+        key: `${keyPrefix}-${index}`,
+        text: line,
+        tone: index > 0 ? valueTone : labelTone,
+      });
     }
     return segmentedRow(`${keyPrefix}-${index}`, [
       { text: labelText, tone: labelTone },
@@ -82,12 +120,12 @@ export function wrapRows(rows: ConversationRow[], width: number): ConversationRo
     const wrapped = wrapText(text, width);
     for (const line of wrapped) {
       next.push(
-        row(
-          `${sourceRow.key}-${next.length}`,
-          line,
-          sourceRow.segments[0]?.tone ?? 'text',
-          sourceRow.segments[0]?.bold ?? false,
-        ),
+        row({
+          key: `${sourceRow.key}-${next.length}`,
+          text: line,
+          tone: sourceRow.segments[0]?.tone ?? 'text',
+          bold: sourceRow.segments[0]?.bold ?? false,
+        }),
       );
     }
   }

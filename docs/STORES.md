@@ -55,8 +55,9 @@ src/stores/
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
 │   ├── tasks.ts              # Task map + counters
 │   ├── tokens.ts             # Local / escalated token counts
-│   ├── lifecycle.ts          # Phase, cancelled, queue depth
-│   ├── operations.ts         # Active / last runner operation
+│   ├── lifecycle.ts          # Phase, cancelled, queue depth/previews
+│   ├── operations.ts         # Active / last runner operation for compact status
+│   ├── activity.ts           # Bounded runner/tool activity state
 │   ├── actions.ts            # Namespace module — composite writes across sub-stores
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── attachments.ts        # Pending prompt attachments
@@ -199,8 +200,9 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason }` | internal writes via `actions.addEvent` / local cancel intent |
-| `operationsStore` | `workflow/operations.ts` | `{ active, last, byCallId }` | internal writes via `actions.addEvent` / local cancel intent |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, queuePreviews, startedAt, endedAt, durationMs, reason }` | internal writes via `actions.addEvent` / local cancel intent |
+| `operationsStore` | `workflow/operations.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
+| `activityStore` | `workflow/activity.ts` | `{ items }` bounded safe runner/tool activity labels | internal writes via `actions.addEvent` |
 | `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
@@ -222,12 +224,18 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 | Export | Purpose |
 |---|---|
-| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations → activity. Strictly synchronous. |
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
 | `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
 **Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations.ts` exports `updateOperations`. They are pure functions and can be tested directly.
+
+`lifecycle.ts` owns queue display state. `message_queued` increments `queueDepth` and appends a sanitized bounded preview when present; `message_injected_native`, `queue_drained`, and `queue_cleared` remove pending previews alongside the depth update. `resetWorkflow(resume)` reconstructs depth and previews from undrained, non-native queue entries so resumed sessions show the same pending queue near the composer.
+
+`operations.ts` owns compact runner lifecycle for `AgentStatusRow`: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome.
+
+`activity.ts` owns bounded live runner/tool activity state. It consumes safe `runner_call_activity` events that the engine already redacted, bounded, and keyed by stable `activityId`. Conversation rows render those safe activity events as batched per-call activity blocks with the latest distinct items; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads are transcript-bearing and must not update status chrome.
 
 ## Design Decisions
 

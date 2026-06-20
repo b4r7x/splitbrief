@@ -137,10 +137,11 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     },
     implementer: {
       buildArgs: ({ prompt, model }) => {
-        const args = ['run', clampPromptForArgv(prompt)];
+        const args = ['run', '--format', 'json', clampPromptForArgv(prompt)];
         if (model) args.splice(1, 0, '--model', model);
         return args;
       },
+      parseLine: parseOpencodeLine,
     },
   },
   aider: {

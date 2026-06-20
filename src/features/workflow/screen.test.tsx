@@ -385,4 +385,21 @@ describe('WorkflowScreen key arbitration', () => {
 
     ui.unmount();
   });
+
+  it('does not carry runtime rich brief-review mode into the next workflow', async () => {
+    planEditorStore.setRuntimeRichMode(true);
+    const ui = mountWorkflow();
+    await tick(20);
+
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    await tick(20);
+
+    ui.stdin.write('j');
+    await tick(20);
+
+    expect(planEditorStore.get().runtimeRichMode).toBe(false);
+    expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
+
+    ui.unmount();
+  });
 });

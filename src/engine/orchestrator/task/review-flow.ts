@@ -18,12 +18,14 @@ function applyTaskReviewRewind(
   state: WorkflowState,
   request: TaskReviewRequest,
   response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined },
+  persistTranscript: boolean,
 ): WorkflowState {
   if (response.action === 'redo-task') {
     const { action } = buildRewindAction(
       { target: 'task', taskId: request.taskId },
       { projectDir, sessionId },
       state,
+      { persistTranscript },
     );
     let next = transitionAndSave({ projectDir, sessionId }, state, action);
     if (next.pendingRecovery?.taskId === request.taskId) {
@@ -41,6 +43,7 @@ function applyTaskReviewRewind(
     },
     { projectDir, sessionId },
     state,
+    { persistTranscript },
   );
   return transitionAndSave({ projectDir, sessionId }, state, action);
 }
@@ -93,6 +96,7 @@ export async function reviewTaskIfNeeded(opts: {
         action: 'redo-task',
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
+      opts.wctx.config.workflow.persistTranscript,
     );
     opts.setTrackedState(next);
     return { state: next, decision: 'redo-task' };
@@ -107,6 +111,7 @@ export async function reviewTaskIfNeeded(opts: {
         action: 'revise-plan',
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
+      opts.wctx.config.workflow.persistTranscript,
     );
     opts.setTrackedState(next);
     return { state: next, decision: 'stop' };
@@ -124,6 +129,7 @@ export async function reviewTaskIfNeeded(opts: {
     opts.state.phase,
     opts.wctx.bus,
     opts.wctx.config.workflow.persistTranscript,
+    { enforcePhasePolicy: false },
   );
   opts.setTrackedState(queued.state);
   return { state: queued.state, decision: 'continue' };

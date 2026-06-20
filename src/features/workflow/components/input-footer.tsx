@@ -10,9 +10,10 @@ import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 
 const FOOTER_SEPARATOR = ' · ';
+const FOOTER_GAP_CELLS = 4;
 const FOOTER_COMPACT_CONTENT_WIDTH = 88;
 
 interface InputFooterLayoutInput {
@@ -20,7 +21,8 @@ interface InputFooterLayoutInput {
   isAttachedClient: boolean;
   advisoryText: string | null;
   taskText: string;
-  queueText: string | null;
+  queueCountText: string | null;
+  queuePreviewText: string | null;
   gitLabel: string;
 }
 
@@ -35,48 +37,99 @@ function joinFooterParts(parts: readonly (string | null | undefined)[]): string 
     .join(FOOTER_SEPARATOR);
 }
 
+function footerCellWidth(text: string): number {
+  return getTerminalCellWidth(text);
+}
+
+function fitsFooterCells(text: string, maxCells: number): boolean {
+  return footerCellWidth(text) <= maxCells;
+}
+
+function truncateFooterText(text: string, maxCells: number): string {
+  return truncateTerminalDisplayText(text, maxCells);
+}
+
+function buildQueueText(
+  queueCountText: string | null,
+  queuePreviewText: string | null,
+  isCompact: boolean,
+): string | null {
+  if (!queueCountText) return null;
+  if (isCompact || !queuePreviewText) return queueCountText;
+  return `${queueCountText} - ${queuePreviewText}`;
+}
+
+function buildRightStatus(input: InputFooterLayoutInput, contentWidth: number): string {
+  const isCompact = contentWidth < FOOTER_COMPACT_CONTENT_WIDTH;
+  const queueText = buildQueueText(input.queueCountText, input.queuePreviewText, isCompact);
+  const full = joinFooterParts([input.taskText, queueText, isCompact ? null : input.gitLabel]);
+  if (fitsFooterCells(full, contentWidth)) return full;
+
+  if (input.queueCountText) {
+    const compactQueue = joinFooterParts([input.taskText, input.queueCountText]);
+    if (fitsFooterCells(compactQueue, contentWidth)) return compactQueue;
+
+    const separatorWidth = footerCellWidth(FOOTER_SEPARATOR);
+    const queueWidth = footerCellWidth(input.queueCountText);
+    if (queueWidth <= contentWidth) {
+      const taskBudget = contentWidth - queueWidth - separatorWidth;
+      if (taskBudget > 1) {
+        return joinFooterParts([
+          truncateFooterText(input.taskText, taskBudget),
+          input.queueCountText,
+        ]);
+      }
+      return input.queueCountText;
+    }
+
+    return truncateFooterText(input.queueCountText, contentWidth);
+  }
+
+  return truncateFooterText(full, contentWidth);
+}
+
 export function buildInputFooterLayout(input: InputFooterLayoutInput): InputFooterLayout {
   const contentWidth = getChromeContentWidth(input.cols);
   const isCompact = contentWidth < FOOTER_COMPACT_CONTENT_WIDTH;
   const controlParts = input.isAttachedClient
     ? ['Ctrl+D detach']
     : ['Ctrl+C abort', isCompact ? null : 'Ctrl+C again exit'];
-  const right = joinFooterParts([
-    input.taskText,
-    isCompact ? null : input.queueText,
-    isCompact ? null : input.gitLabel,
-  ]);
+  const right = buildRightStatus(input, contentWidth);
   const baseLeft = joinFooterParts(controlParts);
-  const gap = right ? 4 : 0;
+  const gap = right ? FOOTER_GAP_CELLS : 0;
+  const baseLeftWidth = footerCellWidth(baseLeft);
+  const rightWidth = footerCellWidth(right);
   const advisoryBudget =
-    contentWidth - baseLeft.length - right.length - gap - FOOTER_SEPARATOR.length;
+    contentWidth - baseLeftWidth - rightWidth - gap - footerCellWidth(FOOTER_SEPARATOR);
   const advisoryText =
     input.advisoryText && contentWidth >= 60 && advisoryBudget >= 12
-      ? truncateWithEllipsis(input.advisoryText, advisoryBudget)
+      ? truncateFooterText(input.advisoryText, advisoryBudget)
       : null;
   const left = joinFooterParts([...controlParts, advisoryText]);
-  const leftBudget = right ? Math.max(1, contentWidth - right.length - gap) : contentWidth;
+  const leftBudget = right ? Math.max(0, contentWidth - rightWidth - gap) : contentWidth;
 
-  const fittedLeft = left.length <= leftBudget ? left : truncateWithEllipsis(left, leftBudget);
+  const fittedLeft = fitsFooterCells(left, leftBudget)
+    ? left
+    : truncateFooterText(left, leftBudget);
 
-  if (!right || fittedLeft.length + right.length + gap <= contentWidth) {
+  if (!right || footerCellWidth(fittedLeft) + rightWidth + gap <= contentWidth) {
     return { left: fittedLeft, right };
   }
 
   const rightBudget = Math.max(
     1,
-    contentWidth - Math.min(fittedLeft.length, Math.floor(contentWidth / 2)) - gap,
+    contentWidth - Math.min(footerCellWidth(fittedLeft), Math.floor(contentWidth / 2)) - gap,
   );
-  const fittedRight = truncateWithEllipsis(right, rightBudget);
+  const fittedRight = truncateFooterText(right, rightBudget);
   return {
-    left: truncateWithEllipsis(left, Math.max(1, contentWidth - fittedRight.length - gap)),
+    left: truncateFooterText(left, Math.max(0, contentWidth - footerCellWidth(fittedRight) - gap)),
     right: fittedRight,
   };
 }
 
 export function InputFooter() {
   const t = useTheme();
-  const [{ queueDepth }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
+  const [{ queueDepth, queuePreviews }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const isAttachedClient = routerStore.use(
     (s) => s.screen === 'workflow' && s.attach !== undefined,
   );
@@ -88,13 +141,17 @@ export function InputFooter() {
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
   const taskText = `Task ${currentTask}/${totalTasks}${etaText ? ` · ${etaText}` : ''}`;
+  const latestQueuePreview =
+    queuePreviews.length > 0 ? (queuePreviews[queuePreviews.length - 1]?.preview ?? null) : null;
+  const queueCountText = queueDepth > 0 ? `queue: ${queueDepth}` : null;
   const layout = buildInputFooterLayout({
     cols,
     isAttachedClient,
     advisoryText:
       advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
     taskText,
-    queueText: queueDepth > 0 ? `queue: ${queueDepth}` : null,
+    queueCountText,
+    queuePreviewText: latestQueuePreview,
     gitLabel,
   });
 

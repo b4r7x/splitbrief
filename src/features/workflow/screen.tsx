@@ -230,6 +230,21 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         : () => {}
       : review.handleInput;
 
+  const handleRuntimeCommand = isAttachedClient
+    ? (command: string) => {
+        if (command.trim().toLowerCase() === '/queue clear') {
+          if (ipcState.status !== 'connected') {
+            feedbackStore.setError('Cannot clear queue: not connected to server.');
+            return;
+          }
+          ipcActions.clearQueue();
+          feedbackStore.setMessage('Queue clear requested');
+          return;
+        }
+        onRuntimeCommand(command);
+      }
+    : onRuntimeCommand;
+
   const inputHint = isAttachedClient
     ? resolveAttachInputHint(ipcState.status)
     : resolveInputHint({
@@ -259,7 +274,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         <WorkflowFooter
           handleInput={handleInput}
           onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
-          onRuntimeCommand={onRuntimeCommand}
+          onRuntimeCommand={handleRuntimeCommand}
           commands={commands}
           mode={inputMode.mode}
           inputHint={inputHint}

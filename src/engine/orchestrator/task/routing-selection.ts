@@ -7,6 +7,7 @@ import type { ResolvedImplementerProfile } from '../../../core/config/accessors/
 import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { publishError } from '../events.js';
+import { buildRouteTaskOptions } from '../context-routing/route-input.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
@@ -61,13 +62,21 @@ export async function selectRoutingProfile(opts: {
     return { ok: false, state };
   }
 
-  const routingDecision = routeTaskToImplementerProfile({
-    task,
-    context: wctx.context,
-    profiles: routingProfiles,
-    ...(wctx.modelCache !== undefined && { contextCache: wctx.modelCache }),
-    languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
-  });
+  const routingDecision = routeTaskToImplementerProfile(
+    buildRouteTaskOptions({
+      task,
+      context: wctx.context,
+      profiles: routingProfiles,
+      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+      languageContext: buildProjectLanguageContext(
+        projectDir,
+        state.discoveredValidation?.language,
+      ),
+      ...(wctx.detectedContextLength !== undefined && {
+        detectedContextLength: wctx.detectedContextLength,
+      }),
+    }),
+  );
   const selectedProfile = selectedProfileFromDecision(resolvedProfiles, routingDecision);
   const selectedModel = selectedProfile
     ? opts.getRunnerModelName(selectedProfile.config)

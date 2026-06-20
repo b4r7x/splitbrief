@@ -295,7 +295,12 @@ describe('SummaryScreen', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'summary-screen-evidence-'));
     const sessionId = 'summary-evidence-session';
     try {
-      const task = makeTask({ id: 'T001', title: 'Evidence detail', file: 'src/evidence.ts' });
+      const task = makeTask({
+        id: 'T001',
+        title: 'Evidence \u001b]52;c;clipboard-title\u0007detail',
+        file: 'src/evidence.ts',
+        tests: ['visible expected \u001b]52;c;clipboard-expected\u0007'],
+      });
       let ledger = createEvidenceLedger({
         sessionId,
         feature: 'demo',
@@ -309,7 +314,25 @@ describe('SummaryScreen', () => {
         method: 'local',
         validation: [{ passed: true, stage: 'test' }],
       });
-      ledger = recordFinalReviewEvidence({ ledger, status: 'written' });
+      ledger = {
+        ...ledger,
+        tasks: ledger.tasks.map((entry) =>
+          entry.id === task.id
+            ? {
+                ...entry,
+                observedEvidence: [
+                  'observed visible \u001b]52;c;clipboard-observed\u0007',
+                  ...entry.observedEvidence,
+                ],
+              }
+            : entry,
+        ),
+      };
+      ledger = recordFinalReviewEvidence({
+        ledger,
+        status: 'written',
+        path: 'review\u001b]52;c;clipboard-path\u0007.md',
+      });
       writeEvidenceLedger(projectDir, sessionId, ledger);
 
       terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
@@ -318,7 +341,7 @@ describe('SummaryScreen', () => {
         sessionId,
         summary: makeSummary({
           evidenceSummary: {
-            path: 'evidence.json',
+            path: 'evidence\u001b]52;c;clipboard-ledger\u0007.json',
             totalTasks: 1,
             tasksWithValidationEvidence: 1,
             escalatedTasks: 0,
@@ -335,9 +358,17 @@ describe('SummaryScreen', () => {
       expect(frame).toContain('1/1 validated');
       expect(frame).toContain('T001');
       expect(frame).toContain('Evidence detail');
+      expect(frame).toContain('visible expected');
+      expect(frame).toContain('observed visible');
+      expect(frame).toContain('review.md');
       expect(frame).toContain('passed: test');
       expect(frame).toContain('task reached done');
       expect(frame).toContain('final review: written');
+      expect(frame).not.toContain('clipboard-title');
+      expect(frame).not.toContain('clipboard-expected');
+      expect(frame).not.toContain('clipboard-observed');
+      expect(frame).not.toContain('clipboard-path');
+      expect(frame).not.toContain('clipboard-ledger');
 
       ui.unmount();
     } finally {
@@ -432,7 +463,7 @@ describe('SummaryScreen', () => {
         implementerTool: 'codex',
         mode: 'standard',
         evidenceSummary: {
-          path: 'evidence.json',
+          path: 'evidence\u001b]52;c;clipboard-compact-ledger\u0007.json',
           totalTasks: 3,
           tasksWithValidationEvidence: 2,
           escalatedTasks: 1,
@@ -468,6 +499,8 @@ describe('SummaryScreen', () => {
     const lines = frame.split('\n');
 
     expect(frame).toContain('Evidence:');
+    expect(frame).toContain('evidence.json');
+    expect(frame).not.toContain('clipboard-compact-ledger');
     expect(frame).toContain('Checkpoints:');
     expect(frame).toContain('Review packet:');
     expect(frame).toContain('md: review-packet.md');

@@ -8,6 +8,7 @@ import type {
 } from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatTruncatedList } from '../../../core/formatting.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 
 export function formatTaskStartedValue(
   event: Extract<EngineEvent, { type: 'task_started' }>,
@@ -24,7 +25,8 @@ export function formatTaskStartedValue(
   if (event.currentCodeContextMode && event.currentCodeContextMode !== 'none') {
     parts.push(`code ${event.currentCodeContextMode}`);
   }
-  if (event.costPosture) parts.push(`cost ${event.costPosture}`);
+  if (event.routingReason) parts.push(`why ${event.routingReason}`);
+  else if (event.costPosture) parts.push(`cost ${event.costPosture}`);
   return parts.join(' · ');
 }
 
@@ -49,7 +51,7 @@ export function formatExternalChangesValue(
 
 export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>): string {
   const stageText = ValidationStageSchema.options
-    .map((stage) => `${stage} ${validationStageSymbol(event.stages, stage, event.skipped)}`)
+    .map((stage) => validationStageText(event, stage))
     .join(' ');
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
   return `validate ${stageText}${dur}`;
@@ -60,6 +62,7 @@ function formatEventContextFit(
   estimatedTokens: number | undefined,
   contextLength: number | undefined,
 ): string {
+  if (contextFit === 'fits') return contextFit;
   const tokenLabel =
     contextLength === undefined
       ? `${estimatedTokens ?? '?'} tok`
@@ -74,4 +77,15 @@ function validationStageSymbol(
 ): string {
   if (skipped?.[stage]) return '–';
   return stages[stage] ? '✓' : '○';
+}
+
+function validationStageText(
+  event: Extract<EngineEvent, { type: 'validate' }>,
+  stage: ValidationStage,
+): string {
+  const command = event.commands?.[stage];
+  const label =
+    command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
+  if (event.status === 'running' && event.activeStage === stage) return `${label} …`;
+  return `${label} ${validationStageSymbol(event.stages, stage, event.skipped)}`;
 }

@@ -144,6 +144,44 @@ describe('collectRunnerCallResult', () => {
     expect(result.durationMs).toBe(result.endedAt - result.startedAt);
   });
 
+  it('keeps system progress out of aggregate result text', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'system', text: 'running checks' },
+      { type: 'call_text_delta', ...base, channel: 'stdout', text: 'raw runner answer' },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.text).toBe('raw runner answer');
+  });
+
+  it('replaces draft text when a final result text event arrives', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'draft text' },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'result',
+        text: 'final text',
+        semantics: 'final',
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.text).toBe('final text');
+  });
+
   it('bounds stderr warnings to the schema message limit', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },

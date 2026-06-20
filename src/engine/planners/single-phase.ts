@@ -10,8 +10,7 @@ import {
 } from '../spec/prompts/language-context.js';
 import { parseTasksStrict } from '../spec/parser.js';
 import { buildProjectContextMarkdown } from './context.js';
-import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
-import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 type SinglePhaseConfig = {
@@ -26,7 +25,7 @@ type SinglePhaseConfig = {
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
-  }) => Promise<RunnerCallCompatibleResult>;
+  }) => Promise<RunnerCallResult>;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
@@ -126,9 +125,9 @@ export async function runSinglePhasePlanning(
     consumesPriorMessages: config.consumesPriorMessages,
   });
   const callContext = createSinglePhaseCallContext(config);
-  const result = requireCompletedCall(
-    toRunnerCallResult(
-      callContext,
+  let result: RunnerCallResult;
+  try {
+    result = requireCompletedCall(
       await config.invokePlan({
         prompt: effectivePrompt,
         projectDir,
@@ -146,8 +145,15 @@ export async function runSinglePhasePlanning(
         ...extras,
         signal: callbacks.signal,
       }),
-    ),
-  );
+    );
+  } catch (err) {
+    if (callbacks.signal?.aborted) {
+      buffer.flushInterrupted();
+    } else {
+      buffer.flush();
+    }
+    throw err;
+  }
   buffer.flush();
 
   const tasksContent = config.readPhaseOutput

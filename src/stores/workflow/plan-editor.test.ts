@@ -72,6 +72,23 @@ describe('planEditorStore', () => {
     expect(planEditorStore.get().dirty).toBe(false);
   });
 
+  it('keeps success and error feedback mutually exclusive', () => {
+    planEditorStore.setStatusMessage('saved');
+    planEditorStore.setSaveError('failed');
+
+    expect(planEditorStore.get()).toMatchObject({
+      saveError: 'failed',
+      statusMessage: null,
+    });
+
+    planEditorStore.setStatusMessage('saved again');
+
+    expect(planEditorStore.get()).toMatchObject({
+      saveError: null,
+      statusMessage: 'saved again',
+    });
+  });
+
   it('clears review metadata when renumbered tasks reuse IDs for different work', () => {
     const first = makeTask({ id: 'T001', title: 'First task', file: 'src/first.ts' });
     const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
@@ -114,11 +131,13 @@ describe('planEditorStore', () => {
     const revision = planEditorStore.get().revision;
 
     planEditorStore.setTasks([{ ...task, title: 'Edited again' }]);
+    planEditorStore.setStatusMessage('updated Description');
 
     expect(planEditorStore.markSavedIfRevision(revision)).toBe(false);
     expect(planEditorStore.get()).toMatchObject({
       dirty: true,
       saveError: 'Plan changed during save. Save again to persist the latest edits.',
+      statusMessage: null,
     });
   });
 
@@ -283,5 +302,62 @@ describe('planEditorStore', () => {
     planEditorStore.initEditor([{ ...task, title: 'Changed' }]);
 
     expect(planEditorStore.get().flaggedIds.size).toBe(0);
+  });
+
+  it('moves between task and section focus for the selected expanded task', () => {
+    const task = makeTask({ id: 'T001' });
+    planEditorStore.initEditor([task]);
+
+    planEditorStore.enterSectionList();
+    planEditorStore.moveSectionCursor('down');
+
+    expect(planEditorStore.get().focus).toBe('section-list');
+    expect(planEditorStore.get().expandedIds.has('T001')).toBe(true);
+    expect(planEditorStore.get().sectionCursor).toBe(1);
+
+    planEditorStore.leaveSectionList();
+
+    expect(planEditorStore.get().focus).toBe('task-list');
+    expect(planEditorStore.get().sectionCursor).toBe(0);
+  });
+
+  it('edits a selected section as a dirty typed task update and clears stale metadata', () => {
+    const task = makeTask({ id: 'T001', description: 'Original description' });
+    planEditorStore.initEditor([task]);
+    planEditorStore.setReviewMetadata([
+      { taskId: taskId('T001'), workerProfile: 'cheap-cloud', contextFit: 'fits' },
+    ]);
+
+    planEditorStore.enterSectionList();
+    planEditorStore.moveSectionCursor('down');
+    planEditorStore.startEditingSection();
+    planEditorStore.updateEditingValue('Edited description');
+    planEditorStore.saveEditingSection();
+
+    expect(planEditorStore.get()).toMatchObject({
+      focus: 'section-list',
+      dirty: true,
+      statusMessage: 'updated Description',
+    });
+    expect(planEditorStore.get().tasks[0]?.description).toBe('Edited description');
+    expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+    expect(planEditorStore.get().expandedIds.has('T001')).toBe(true);
+  });
+
+  it('cancels section editing without dirtying the task', () => {
+    const task = makeTask({ id: 'T001', title: 'Original title' });
+    planEditorStore.initEditor([task]);
+
+    planEditorStore.enterSectionList();
+    planEditorStore.startEditingSection();
+    planEditorStore.updateEditingValue('Edited title');
+    planEditorStore.cancelEditingSection();
+
+    expect(planEditorStore.get()).toMatchObject({
+      focus: 'section-list',
+      editing: null,
+      dirty: false,
+    });
+    expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
   });
 });

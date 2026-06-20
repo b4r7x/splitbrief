@@ -26,7 +26,12 @@ export interface RunnerCallRecorder {
   readonly context: RunnerCallContext;
   readonly startedAt: number;
   hasTerminal: () => boolean;
-  text: (opts: { channel: RunnerCallTextChannel; text: string; ts?: number | undefined }) => void;
+  text: (opts: {
+    channel: RunnerCallTextChannel;
+    text: string;
+    semantics?: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['semantics'];
+    ts?: number | undefined;
+  }) => void;
   stderr: (opts: { text: string; ts?: number | undefined }) => void;
   toolUseDelta: (opts: {
     toolUseId: string | null;
@@ -175,6 +180,7 @@ export function createRunnerCallRecorder(opts: {
         ...opts.context,
         channel: eventOpts.channel,
         text: eventOpts.text,
+        ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
       }),
     stderr: (eventOpts) =>
       emit({

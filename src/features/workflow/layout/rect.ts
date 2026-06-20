@@ -1,5 +1,7 @@
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
+export const WORKFLOW_CONTENT_PADDING_X = 1;
+
 export function hasWorkflowConfig(events: readonly { type: string }[]): boolean {
   return events.some((event) => event.type === 'workflow_config');
 }
@@ -15,8 +17,12 @@ export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
   return sidebarVisible && !isSmall ? Math.max(0, Math.floor(cols * 0.25)) : 0;
 }
 
-export function getWorkflowContentWidth(input: SidebarWidthInput): number {
+function getWorkflowContentPaneWidth(input: SidebarWidthInput): number {
   return Math.max(0, input.cols - getWorkflowSidebarWidth(input));
+}
+
+export function getWorkflowContentWidth(input: SidebarWidthInput): number {
+  return Math.max(0, getWorkflowContentPaneWidth(input) - WORKFLOW_CONTENT_PADDING_X * 2);
 }
 
 export interface WorkflowContentRect {
@@ -80,7 +86,7 @@ export function getWorkflowContentRect(input: WorkflowContentRectInput): Workflo
   const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
   const width = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
   const height = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows, cols);
-  const left = sidebarWidth > 0 ? sidebarWidth + 1 : 1;
+  const left = sidebarWidth + WORKFLOW_CONTENT_PADDING_X + 1;
   const top = getContentTopRow(hasConfig, cols);
   const right = width > 0 ? left + width - 1 : left;
   const bottom = height > 0 ? top + height - 1 : top;

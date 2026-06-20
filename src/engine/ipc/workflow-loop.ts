@@ -11,6 +11,7 @@ import { loadState, saveState } from '../../core/state/persistence.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import { RecoveryActionSchema } from '../../core/schemas/enums.js';
+import { projectIpcRecoveryIssue } from '../../core/schemas/recovery.js';
 import { DEFAULT_WORKFLOW_MODE, type Config } from '../../core/schemas/config.js';
 import { applyRecoveryAction } from '../orchestrator/recovery/actions.js';
 import {
@@ -206,30 +207,26 @@ async function resolveDetachedPendingRecovery(
 
   publishRecoveryPrompted(bus, pending.issue);
 
-  let blockedNote: string | undefined;
   while (true) {
     const response = assertPromptResponse(
       await ipcServer.requestClientPrompt({
         kind: 'recovery_needed',
-        issue: {
-          reason: pending.issue.reason,
-          message: blockedNote
-            ? `${pending.issue.message} (${blockedNote})`
-            : pending.issue.message,
-          availableActions: pending.issue.availableActions,
-          recommendedAction: pending.issue.recommendedAction,
-        },
+        issue: projectIpcRecoveryIssue(pending.issue),
       }),
       'recovery_needed',
     );
     const parsed = RecoveryActionSchema.safeParse(response.action);
-    if (!parsed.success) {
-      blockedNote = `Unrecognized recovery action "${response.action}".`;
+    if (!parsed.success || !pending.issue.availableActions.includes(parsed.data)) {
       continue;
     }
     const outcome = applyAction(parsed.data);
     if (!outcome.ok) {
-      blockedNote = outcome.blockedMessage;
+      bus.publish({
+        type: 'warning',
+        ts: Date.now(),
+        phase: pending.issue.phase,
+        message: outcome.blockedMessage,
+      });
       continue;
     }
     return outcome.resolution;
@@ -334,8 +331,11 @@ export async function runWorkflowLoop(
       await ipcServer.requestClientPrompt({
         kind: 'recovery_needed',
         issue: {
+          id: 'workflow-failure',
           reason: 'implementation-error' as const,
-          message: `Workflow exited with ${summary.failed} failures${isIncomplete ? ` and ${summary.totalTasks - completedTasks} incomplete tasks` : ''}`,
+          phase: stateForRun?.phase ?? 'complete',
+          files: [],
+          affectedTaskIds: [],
           availableActions: ['retry-same-worker' as const, 'abort-workflow' as const],
           recommendedAction: 'retry-same-worker' as const,
         },

@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { getPlanEditorHelpRows } from './footer.js';
 
 describe('PlanEditorHelpOverlay', () => {
-  it('documents flag and regenerate keys implemented by handlePlanEditorInput', () => {
-    const source = readFileSync(join(import.meta.dirname, 'help-overlay.tsx'), 'utf-8');
-    expect(source).toContain("['x',");
-    expect(source).toContain("['R',");
+  it('documents plan editor keys from the contextual footer binding source', () => {
+    const rows = getPlanEditorHelpRows();
+
+    expect(rows).toContainEqual({ context: 'Tasks', key: 'E', label: 'raw edit' });
+    expect(rows).toContainEqual({ context: 'Tasks', key: 'c', label: 'copy' });
+    expect(rows).toContainEqual({ context: 'Sections', key: 'j/k', label: 'section' });
+    expect(rows).toContainEqual({ context: 'Sections', key: 'e', label: 'edit section' });
+    expect(rows).toContainEqual({ context: 'Sections', key: 'c', label: 'copy section' });
+    expect(rows).toContainEqual({ context: 'Editing', key: 'Ctrl+Enter', label: 'save field' });
   });
 });

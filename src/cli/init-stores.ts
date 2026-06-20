@@ -20,6 +20,8 @@ import { ensureHooksTrusted } from './hook-trust-prompt.js';
 import { resolveHooksConfig } from '../engine/hooks/discover.js';
 import { buildCLIOverrides } from './build-overrides.js';
 
+let historyPersistenceTeardown: (() => void) | null = null;
+
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   initUIChrome();
   loadProjectState(projectDir, opts);
@@ -31,6 +33,11 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
     allowHooks: opts.allowHooks ?? false,
   });
   await loadDiscovery(projectDir);
+}
+
+export function teardownStores(): void {
+  historyPersistenceTeardown?.();
+  historyPersistenceTeardown = null;
 }
 
 function initUIChrome(): void {
@@ -47,7 +54,7 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   sessionsStore.load(projectDir);
-  installHistoryPersistence();
+  historyPersistenceTeardown = installHistoryPersistence();
 }
 
 async function loadDiscovery(projectDir: string): Promise<void> {

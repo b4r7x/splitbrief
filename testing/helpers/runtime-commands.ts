@@ -84,7 +84,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
     getQueueDepth: () => 0,
-    clearQueue: () => 0,
+    clearQueue: () => ({ status: 'cleared', count: 0 }),
     rebuildRepomap: async () => ({ deleted: false, files: [] }),
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,

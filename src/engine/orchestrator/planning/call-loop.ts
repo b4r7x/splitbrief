@@ -80,8 +80,10 @@ export async function runPlannerCallInContinuationLoop(
               sessionId: id,
             });
           },
-          onCallEvent: (event) =>
-            publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event),
+          onCallEvent: (event) => {
+            if (event.type === 'call_started') heartbeat.updateCallId(event.callId);
+            publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event);
+          },
           onSessionExpired: createSessionExpiredHandler({
             projectDir,
             sessionId,

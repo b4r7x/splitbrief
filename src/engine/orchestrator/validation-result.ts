@@ -4,4 +4,5 @@ export interface ValidationResult {
   skipped?: boolean | undefined;
   error?: string | undefined;
   output?: string | undefined;
+  command?: string | undefined;
 }

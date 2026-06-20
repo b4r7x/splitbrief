@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -20,6 +21,7 @@ import {
 } from '../../lib/path-confinement.js';
 import { slugify } from '../../utils/slugify.js';
 import type { SessionRef } from '../types/session-ref.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../transcript-policy.js';
 import { sessionError } from './errors.js';
 import { findUnusedId } from './find-unused-id.js';
 import { checkSessionLockStatus } from './lockfile-status.js';
@@ -93,6 +95,13 @@ export function isSessionLive(ref: SessionRef): boolean {
 
 export const MAX_SLUG_LENGTH = 50;
 const MAX_COLLISION_ATTEMPTS = 999;
+const OPAQUE_ID_LENGTH = 12;
+const OPAQUE_SESSION_PATTERN = /^\d{4}-\d{2}-\d{2}-session-[a-f0-9]{12}(?:-\d+)?$/;
+export const TRANSCRIPT_OMITTED_FEATURE = TRANSCRIPT_OMITTED_MESSAGE;
+
+export interface SessionIdOptions {
+  persistTranscript?: boolean | undefined;
+}
 
 function findUniqueId(projectDir: string, base: string): string {
   const root = sessionsRoot(projectDir);
@@ -110,18 +119,38 @@ export function generateSessionId(
   projectDir: string,
   feature: string,
   now: Date = new Date(),
+  opts: SessionIdOptions = {},
 ): string {
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   const day = String(now.getUTCDate()).padStart(2, '0');
   const date = `${year}-${month}-${day}`;
+  if (opts.persistTranscript === false) {
+    return findUniqueId(projectDir, `${date}-${generateOpaqueSessionSlug()}`);
+  }
   const slug = slugify(feature, MAX_SLUG_LENGTH) || 'unknown';
   const base = `${date}-${slug}`;
   return findUniqueId(projectDir, base);
 }
 
-export function beginSession(projectDir: string, feature: string): string {
-  const sessionId = generateSessionId(projectDir, feature);
+export function generateOpaqueSessionSlug(): string {
+  return `session-${randomUUID().replaceAll('-', '').slice(0, OPAQUE_ID_LENGTH)}`;
+}
+
+export function isOpaqueSessionId(sessionId: string): boolean {
+  return OPAQUE_SESSION_PATTERN.test(sessionId);
+}
+
+export function featureForTranscriptPolicy(feature: string, persistTranscript: boolean): string {
+  return persistTranscript ? feature : TRANSCRIPT_OMITTED_FEATURE;
+}
+
+export function beginSession(
+  projectDir: string,
+  feature: string,
+  opts: SessionIdOptions = {},
+): string {
+  const sessionId = generateSessionId(projectDir, feature, new Date(), opts);
   ensureSessionDir(projectDir, sessionId);
   writeActive({ projectDir, sessionId });
   return sessionId;

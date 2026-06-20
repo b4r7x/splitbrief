@@ -164,6 +164,36 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     });
   });
 
+  it('forwards validation command metadata on progress and result events', () => {
+    const { bus, events } = makeBusRecorder();
+    const taskId = 'T001' as import('../../core/schemas/task.js').TaskId;
+
+    publishValidation({ bus: bus, phase: 'implementing' }, taskId, {
+      phase: 'progress',
+      stages: { typecheck: false, lint: false, test: false },
+      activeStage: 'typecheck',
+      commands: { typecheck: 'npm run typecheck' },
+      startTime: Date.now(),
+    });
+    publishValidation({ bus: bus, phase: 'implementing' }, taskId, {
+      phase: 'result',
+      results: [{ stage: 'typecheck', passed: true, command: 'npm run typecheck' }],
+      startTime: Date.now(),
+    });
+
+    expect(events[0]).toMatchObject({
+      type: 'validate',
+      status: 'running',
+      activeStage: 'typecheck',
+      commands: { typecheck: 'npm run typecheck' },
+    });
+    expect(events[1]).toMatchObject({
+      type: 'validate',
+      status: 'done',
+      commands: { typecheck: 'npm run typecheck' },
+    });
+  });
+
   it('duration is measured from startTime', () => {
     const { bus, events } = makeBusRecorder();
     const startTime = Date.now() - 500;

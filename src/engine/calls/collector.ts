@@ -153,7 +153,9 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.startedAt = event.ts;
       return;
     case 'call_text_delta':
-      state.text += event.text;
+      if (contributesToResultText(event.channel)) {
+        state.text = event.semantics === 'final' ? event.text : state.text + event.text;
+      }
       return;
     case 'call_stderr_delta':
       state.warnings.push({ code: 'stderr', message: boundedRunnerCallMessage(event.text) });
@@ -220,4 +222,10 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     default:
       assertNever(event);
   }
+}
+
+function contributesToResultText(
+  channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
+): boolean {
+  return channel === 'assistant' || channel === 'result' || channel === 'stdout';
 }

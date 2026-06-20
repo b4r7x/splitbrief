@@ -21,6 +21,7 @@ import { detectionStore } from '../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { planEditorStore } from '../../src/stores/workflow/plan-editor.js';
+import { activityStore } from '../../src/stores/workflow/activity.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
@@ -49,6 +50,7 @@ export function resetAllStores(): void {
   modelCacheStore.reset();
   streamingOutputStore.reset();
   planEditorStore.reset();
+  activityStore.reset();
   approvalPromptStore.reset();
   costApprovalStore.reset();
   commandPaletteMruStore.reset();

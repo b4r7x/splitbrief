@@ -4,13 +4,9 @@ import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { createStore, storeBase } from '../create-store.js';
 
-export type OperationStatus =
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'aborted'
-  | 'timeout';
+type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
+
+export type OperationStatus = 'running' | 'completed' | 'cancelled' | RunnerCallFailureStatus;
 
 type TerminalOperationStatus = Exclude<OperationStatus, 'running'>;
 
@@ -328,33 +324,49 @@ function replaceOperation(state: OperationsState, operation: ActiveOperation): O
   const byCallId = new Map(state.byCallId);
   byCallId.set(operation.callId, operation);
   const active =
-    operation.status === 'running' ? operation : currentActiveAfterTerminal(state, operation);
+    operation.status === 'running'
+      ? operation
+      : currentActiveAfterTerminal(state.active, operation.callId, byCallId);
   const last = operation.status === 'running' ? state.last : operation;
   return { ...state, active, last, byCallId };
 }
 
 function currentActiveAfterTerminal(
-  state: OperationsState,
-  operation: ActiveOperation,
+  previousActive: ActiveOperation | null,
+  terminalCallId: string,
+  byCallId: Map<string, ActiveOperation>,
 ): ActiveOperation | null {
-  if (state.active?.callId === operation.callId) return null;
-  return state.active;
+  if (
+    previousActive &&
+    previousActive.callId !== terminalCallId &&
+    previousActive.status === 'running'
+  ) {
+    return previousActive;
+  }
+  return newestRunningOperation(byCallId);
+}
+
+function newestRunningOperation(byCallId: Map<string, ActiveOperation>): RunningOperation | null {
+  let newest: RunningOperation | null = null;
+  for (const operation of byCallId.values()) {
+    if (operation.status !== 'running') continue;
+    if (!newest || operation.startedAt >= newest.startedAt) newest = operation;
+  }
+  return newest;
 }
 
 function operationStatusFromFailure(
   status: EngineEventOf<'runner_call_error'>['status'],
 ): TerminalOperationStatus {
   switch (status) {
-    case 'aborted':
-      return 'aborted';
-    case 'timeout':
-      return 'timeout';
     case 'failed':
     case 'truncated':
+    case 'aborted':
+    case 'timeout':
     case 'refused':
     case 'unsupported_tool':
     case 'incomplete':
-      return 'failed';
+      return status;
     default:
       return assertNever(status);
   }

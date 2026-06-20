@@ -1,11 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
+import {
+  cleanupTaskProjects,
+  makeTaskWorkflowContext,
+} from '#testing/helpers/orchestrator-task-context.js';
+import { selectRoutingProfile } from '../task/routing-selection.js';
 import { estimateDeterministicCost } from './estimate.js';
 
 const context: ProjectContext = {
@@ -17,6 +25,8 @@ const nullCache: ModelCacheAccessor = {
   getModelsDevCatalog: () => null,
   getProviderModels: () => null,
 };
+
+afterEach(cleanupTaskProjects);
 
 function withProfiles(config: Config, profiles: Config['implementerProfiles']): Config {
   return {
@@ -71,6 +81,7 @@ describe('estimateDeterministicCost', () => {
       contextFit: 'fits',
       contextConfidence: 'context-explicit',
     });
+    expect(first.estimateScope).toBe('prompt-input-only');
   });
 
   it('labels a boot-detected context length as detected rather than explicit', () => {
@@ -166,6 +177,80 @@ describe('estimateDeterministicCost', () => {
     expect(estimate.totals.hypotheticalAllPlanner).toBe(task?.hypotheticalPlannerCost);
     expect(estimate.totals.estimatedSavings).toBeGreaterThan(0);
     expect(estimate.totals.unknownCostReason).toEqual([]);
+  });
+
+  it('uses context pricing tiers for prompt-input estimates', () => {
+    const pricingCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-5.4': {
+              id: 'gpt-5.4',
+              cost: {
+                input: 2.5,
+                output: 15,
+                tiers: [
+                  {
+                    input: 5,
+                    output: 22.5,
+                    tier: { type: 'context', size: 1000 },
+                  },
+                ],
+              },
+              limit: { context: 400_000 },
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+    };
+    const config = withProfiles(
+      makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'openai',
+          apiBase: 'https://api.openai.com/v1',
+          model: 'gpt-5.4',
+        },
+      }),
+      {
+        default: 'gpt-worker',
+        profiles: {
+          'gpt-worker': {
+            kind: 'api',
+            provider: 'openai',
+            apiBase: 'https://api.openai.com/v1',
+            apiKey: 'test-key',
+            model: 'gpt-5.4',
+            contextLength: 400_000,
+            costTier: 'standard',
+          },
+        },
+      },
+    );
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'x'.repeat(10_000),
+    });
+
+    const estimate = estimateDeterministicCost({
+      tasks: [task],
+      context,
+      config,
+      pricingCache,
+    });
+    const taskEstimate = estimate.tasks[0];
+    if (!taskEstimate?.estimatedImplementerCost || !taskEstimate.hypotheticalPlannerCost) {
+      throw new Error('expected priced estimate');
+    }
+
+    expect(taskEstimate.estimatedPromptTokens).toBeGreaterThan(1000);
+    expect(taskEstimate.estimatedImplementerCost).toBeCloseTo(
+      (taskEstimate.estimatedPromptTokens * 5) / 1_000_000,
+      12,
+    );
+    expect(taskEstimate.hypotheticalPlannerCost).toBe(taskEstimate.estimatedImplementerCost);
   });
 
   it('marks unknown implementer prices without reporting fake zero cost', () => {
@@ -307,6 +392,64 @@ describe('estimateDeterministicCost', () => {
     });
     expect(live.selectedProfile).toBe('runtime-worker');
     expect(live.contextLength).toBe(12_000);
+  });
+
+  it('matches live routing when estimate and dispatch receive identical detected-context inputs', async () => {
+    const config = withProfiles(makeConfig(), {
+      default: 'cheap-detected-worker',
+      profiles: {
+        'cheap-detected-worker': {
+          kind: 'agent',
+          command: 'cheap-worker',
+          model: 'cheap-model',
+          costTier: 'cheap',
+        },
+        'standard-worker': {
+          kind: 'agent',
+          command: 'standard-worker',
+          model: 'standard-model',
+          contextLength: 50_000,
+          costTier: 'standard',
+        },
+      },
+    });
+    const task = makeTask({ description: 'large routing input '.repeat(2000) });
+    const wctx = makeTaskWorkflowContext({ config, detectedContextLength: 20_000 });
+    const state = makeImplStateWithMetadata([task]);
+    const languageContext = buildProjectLanguageContext(
+      wctx.projectDir,
+      state.discoveredValidation?.language,
+    );
+
+    const estimate = estimateDeterministicCost({
+      tasks: [task],
+      context: wctx.context,
+      config,
+      pricingCache: nullCache,
+      languageContext,
+      detectedContextLength: wctx.detectedContextLength,
+    });
+    const profiles = resolveImplementerProfiles(config).profiles;
+    const live = await selectRoutingProfile({
+      wctx,
+      state,
+      setTrackedState: () => {},
+      task,
+      taskIndex: 0,
+      resolvedProfiles: profiles,
+      taskBreakdowns: [],
+      getRunnerModelName,
+    });
+
+    expect(live.ok).toBe(true);
+    if (!live.ok) return;
+    expect(estimate.tasks[0]).toMatchObject({
+      selectedProfileId: live.routingDecision.selectedProfile,
+      contextFit: live.routingDecision.fit,
+      estimatedPromptTokens: live.routingDecision.estimatedTokens,
+    });
+    expect(live.routingDecision.selectedProfile).toBe('cheap-detected-worker');
+    expect(live.routingDecision.contextLength).toBe(20_000);
   });
 
   it('uses the conservative context fallback when no context length metadata is available', () => {

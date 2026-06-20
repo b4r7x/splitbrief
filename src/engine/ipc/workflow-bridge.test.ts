@@ -10,6 +10,7 @@ describe('createIpcWorkflowBridge', () => {
     const calls: Array<[string, Phase]> = [];
     const queue = (text: string, phase: Phase) => {
       calls.push([text, phase]);
+      return { status: 'accepted' as const, messageId: 'msg-1' };
     };
 
     bridge.sinks.setQueueHandler(queue);
@@ -27,6 +28,7 @@ describe('createIpcWorkflowBridge', () => {
     const calls: Array<[string, Phase]> = [];
     const queue = (text: string, phase: Phase) => {
       calls.push([text, phase]);
+      return { status: 'accepted' as const, messageId: 'msg-1' };
     };
 
     bridge.sinks.setQueueHandler(queue);
@@ -61,19 +63,39 @@ describe('createIpcWorkflowBridge', () => {
     bridge.close();
   });
 
-  it('truncates long buffered input in the warning with a single ellipsis glyph', () => {
+  it('clears buffered input before the queue handler is installed', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+    const events: Array<{ type: string; count?: number }> = [];
+    const calls: Array<[string, Phase]> = [];
+    bus.subscribe((event) => events.push(event));
+
+    bridge.onUserInput('buffered before clear');
+    bridge.onQueueClear();
+    bridge.sinks.setQueueHandler((text, phase) => {
+      calls.push([text, phase]);
+      return { status: 'accepted' as const, messageId: 'msg-1' };
+    });
+
+    expect(calls).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'queue_cleared', count: 1 }));
+    bridge.close();
+  });
+
+  it('reports buffered input count and byte length without including the input text', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
     const events: Array<{ type: string; message?: string }> = [];
     bus.subscribe((event) => events.push(event));
 
-    const longInput = 'x'.repeat(80);
+    const longInput = 'secret buffered input';
     bridge.onUserInput(longInput);
 
     const warning = events.find((event) => event.type === 'warning');
     expect(warning?.message).toBe(
-      `IPC input buffered (queue not ready): ${longInput.slice(0, 39)}…`,
+      `IPC input buffered (queue not ready): 1 pending input, ${Buffer.byteLength(longInput, 'utf8')} bytes`,
     );
+    expect(warning?.message).not.toContain(longInput);
     bridge.close();
   });
 

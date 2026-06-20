@@ -57,14 +57,16 @@ export interface StatsUpdateInput {
 }
 
 function accumulateSession(stats: Stats, input: StatsUpdateInput): Stats {
+  const sessionSavings =
+    input.costBreakdown.hasSavingsEstimate === false
+      ? 0
+      : Math.max(0, input.costBreakdown.savingsAmount);
   const next: Stats = {
     version: 1,
     updatedAt: nowIso(),
     totalSessions: stats.totalSessions + 1,
     totalCost: stats.totalCost + input.costBreakdown.totalActualCost,
-    totalSavings:
-      stats.totalSavings +
-      (input.costBreakdown.hasSavingsEstimate === false ? 0 : input.costBreakdown.savingsAmount),
+    totalSavings: stats.totalSavings + sessionSavings,
     totalHypotheticalCost:
       stats.totalHypotheticalCost +
       (input.costBreakdown.hasSavingsEstimate === false ? 0 : input.costBreakdown.hypotheticalCost),

@@ -5,6 +5,8 @@ import { tasksStore } from './tasks.js';
 import { tokensStore } from './tokens.js';
 import { lifecycleStore } from './lifecycle.js';
 import { abortStore } from './abort.js';
+import { activityStore } from './activity.js';
+import { planEditorStore } from './plan-editor.js';
 import { approvalPromptStore, openApprovalPrompt } from '../approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../cost-approval/prompt.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -145,9 +147,21 @@ describe('resetWorkflow', () => {
     expect(abortStore.get().armed).toBe('none');
   });
 
-  it('resets all four sub-stores to initial state', () => {
+  it('resets workflow sub-stores to initial state', () => {
     addEvent(makeTaskStart({ index: 1, total: 3 }));
     addEvent(makePlannerStatus({ phase: 'implementing', status: 'running' }));
+    addEvent({
+      type: 'runner_call_tool_use',
+      ts: Date.now(),
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+      stage: 'delta',
+      name: 'Bash',
+      inputDelta: '{"command":"npm run typecheck"}',
+    });
     addEvent(makeTaskComplete({ method: 'local' }));
 
     resetWorkflow();
@@ -159,6 +173,21 @@ describe('resetWorkflow', () => {
     expect(lifecycleStore.get().phase).toBe('idle');
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(activityStore.get().items).toEqual([]);
+  });
+
+  it('clears session-scoped plan editor state', () => {
+    planEditorStore.setRuntimeRichMode(true);
+    planEditorStore.setStatusMessage('updated title');
+    planEditorStore.setSaveError('failed save');
+
+    resetWorkflow();
+
+    expect(planEditorStore.get()).toMatchObject({
+      runtimeRichMode: false,
+      saveError: null,
+      statusMessage: null,
+    });
   });
 
   it('restores observable workflow state from a persisted resume snapshot', () => {
@@ -195,6 +224,7 @@ describe('resetWorkflow', () => {
           queuedAt: new Date().toISOString(),
           phase: 'implementing',
           deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
         },
       ],
     });
@@ -225,6 +255,180 @@ describe('resetWorkflow', () => {
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
     });
+  });
+
+  it('reconstructs resumed task attempts with cache, context, and routing metadata', () => {
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 1,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        implementerCacheRead: 1_000_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'openai',
+      implementerModel: 'runtime-priced-model',
+      awaitingContinue: false,
+      messageQueue: [],
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'Use cached context',
+          method: 'local',
+          implementerTokens: 0,
+          escalationTokens: 0,
+          implementerCacheReadTokens: 1_000_000,
+          implementerCacheCreateTokens: 0,
+          retryCount: 0,
+          tool: 'openai',
+          model: 'runtime-priced-model',
+          implementerProfile: 'cheap-cloud',
+          contextFit: 'tight',
+          estimatedTokens: 95_000,
+          untruncatedEstimatedTokens: 120_000,
+          contextLength: 100_000,
+          currentCodeTruncated: true,
+          currentCodeContextMode: 'function-level',
+          costPosture: 'price-known',
+          routingReason: 'selected cheapest capable profile',
+        },
+      ],
+    });
+
+    const record = tokensStore.get().perTask['T001'];
+    expect(record?.totalTokens).toBe(1_000_000);
+    expect(record?.attempts?.[0]).toMatchObject({
+      implementerCacheReadTokens: 1_000_000,
+      implementerCacheCreateTokens: 0,
+      tool: 'openai',
+      model: 'runtime-priced-model',
+      implementerProfile: 'cheap-cloud',
+      contextFit: 'tight',
+      estimatedTokens: 95_000,
+      untruncatedEstimatedTokens: 120_000,
+      contextLength: 100_000,
+      currentCodeTruncated: true,
+      currentCodeContextMode: 'function-level',
+      costPosture: 'price-known',
+      routingReason: 'selected cheapest capable profile',
+    });
+    expect(tokensStore.get().localCount).toBe(1);
+    expect(tokensStore.get().escalatedCount).toBe(0);
+  });
+
+  it('classifies resumed escalated-intermediate methods as escalated even with legacy done status', () => {
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 1,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 100,
+        implementerOutput: 50,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      awaitingContinue: false,
+      messageQueue: [],
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'Intermediate task',
+          method: 'escalated-intermediate',
+          implementerTokens: 150,
+          escalationTokens: 0,
+          retryCount: 1,
+        },
+      ],
+    });
+
+    expect(tokensStore.get().localCount).toBe(0);
+    expect(tokensStore.get().escalatedCount).toBe(1);
+  });
+
+  it('reconstructs pending queue depth and previews from undrained non-native messages on resume', () => {
+    const queuedAt = new Date().toISOString();
+
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'planning',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      plannerSessionId: null,
+      startedAt: queuedAt,
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      awaitingContinue: false,
+      messageQueue: [
+        {
+          id: 'pending',
+          text: 'token sk-proj-abcdefghijklmnopqrstuvwxyz',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+        },
+        {
+          id: 'native',
+          text: 'already delivered',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: true,
+          nativeDeliveryState: 'delivered',
+        },
+        {
+          id: 'drained',
+          text: 'already drained',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          drainedAt: queuedAt,
+        },
+        {
+          id: 'clarification',
+          text: 'Use GraphQL',
+          queuedAt,
+          phase: 'specifying',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          origin: 'clarification',
+          question: 'Which API style?',
+        },
+      ],
+    });
+
+    expect(lifecycleStore.get().queueDepth).toBe(2);
+    expect(lifecycleStore.get().queuePreviews).toEqual([
+      { id: 'pending', preview: 'token sk-***REDACTED***' },
+      { id: 'clarification', preview: 'clarification: Which API style? -> Use GraphQL' },
+    ]);
   });
 
   it('uses resumed token usage as the baseline for the next cumulative cost update', () => {

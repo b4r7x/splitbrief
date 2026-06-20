@@ -1,6 +1,7 @@
 import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import { resolveSessionFilePath } from '../../core/sessions/confinement.js';
+import { formatTruncatedList } from '../../core/formatting.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -27,7 +28,8 @@ interface IpcPromptDispatcherOptions {
 export function formatIpcRecoveryPrompt(issue: IpcRecoveryIssue): string {
   const context = { reason: issue.reason };
   const lines = [
-    `Recovery needed: ${issue.message}`,
+    `Recovery needed: ${issue.reason}`,
+    ...formatIpcRecoverySubjectLines(issue),
     `Recommended: ${formatRecoveryActionText(issue.recommendedAction, context)}`,
     '',
     ...issue.availableActions.map((action) => formatRecoveryActionChoice(action, context)),
@@ -35,7 +37,26 @@ export function formatIpcRecoveryPrompt(issue: IpcRecoveryIssue): string {
   return lines.join('\n').trimEnd();
 }
 
-export function parseIpcRecoveryAction(input: string, issue: IpcRecoveryIssue): RecoveryAction {
+function formatIpcRecoverySubjectLines(issue: IpcRecoveryIssue): string[] {
+  const lines: string[] = [];
+  if (issue.taskId !== undefined && issue.taskTitle !== undefined) {
+    lines.push(`Task: ${issue.taskId} - ${issue.taskTitle}`);
+  } else if (issue.taskId !== undefined) {
+    lines.push(`Task: ${issue.taskId}`);
+  }
+  if (issue.files.length > 0) lines.push(`Files: ${formatTruncatedList(issue.files, 3)}`);
+  if (issue.affectedTaskIds.length > 0) {
+    lines.push(`Affected tasks: ${formatTruncatedList(issue.affectedTaskIds, 3)}`);
+  }
+  const worker = issue.workerProfile ?? issue.selectedImplementerProfile;
+  if (worker !== undefined) lines.push(`Worker: ${worker}`);
+  return lines;
+}
+
+export function parseIpcRecoveryAction(
+  input: string,
+  issue: IpcRecoveryIssue,
+): RecoveryAction | null {
   const available = new Set(issue.availableActions);
   const isWhitespaceOnly = input.length > 0 && input.trim().length === 0;
   if (isWhitespaceOnly && available.has('pause-run')) return 'pause-run';
@@ -44,9 +65,7 @@ export function parseIpcRecoveryAction(input: string, issue: IpcRecoveryIssue): 
   for (const action of issue.availableActions) {
     if (ACTION_ALIASES[action].includes(normalized)) return action;
   }
-  if (available.has('pause-run')) return 'pause-run';
-  if (available.has(issue.recommendedAction)) return issue.recommendedAction;
-  return issue.availableActions[0] ?? 'pause-run';
+  return null;
 }
 
 export function createIpcPromptDispatcher(
@@ -112,11 +131,12 @@ export function createIpcPromptDispatcher(
     }
 
     if (request.kind === 'recovery_needed') {
-      const answer = await inputMode.setQuestionMode(formatIpcRecoveryPrompt(request.issue));
-      return {
-        kind: 'recovery_needed',
-        action: parseIpcRecoveryAction(answer, request.issue),
-      };
+      while (true) {
+        const answer = await inputMode.setQuestionMode(formatIpcRecoveryPrompt(request.issue));
+        const action = parseIpcRecoveryAction(answer, request.issue);
+        if (action !== null) return { kind: 'recovery_needed', action };
+        feedbackStore.setError('Unknown recovery action.');
+      }
     }
 
     return assertNever(request);

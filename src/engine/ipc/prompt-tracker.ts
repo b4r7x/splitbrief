@@ -60,6 +60,15 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
         });
         return false;
       }
+      if (!responseAllowedForRequest(response, pending.request)) {
+        opts.bus.publish({
+          type: 'warning',
+          ts: Date.now(),
+          phase: 'idle',
+          message: `IPC: response rejected for ${requestId}: recovery action is not available`,
+        });
+        return false;
+      }
 
       pendingPrompts.delete(requestId);
       pending.resolve(response);
@@ -110,4 +119,12 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
       pendingPrompts.clear();
     },
   };
+}
+
+function responseAllowedForRequest(
+  response: IpcPromptResponse,
+  request: IpcPromptRequest,
+): boolean {
+  if (response.kind !== 'recovery_needed' || request.kind !== 'recovery_needed') return true;
+  return request.issue.availableActions.includes(response.action);
 }

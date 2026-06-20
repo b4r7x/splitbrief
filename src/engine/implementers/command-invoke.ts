@@ -54,8 +54,7 @@ export function createCommandBasedImplementer(
         signal,
       });
 
-      if (result.callResult.status !== 'completed') return result.callResult;
-      return { text: result.stdout, usage: result.usage ?? null };
+      return result.callResult;
     },
 
     ...(opts.detectChanges && { detectChanges: opts.detectChanges }),

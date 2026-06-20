@@ -109,8 +109,8 @@ function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: s
     'mkdirSync(process.env.TMPDIR, { recursive: true });',
     "writeFileSync(join(process.env.TMPDIR, 'temp.txt'), 'temp', 'utf-8');",
     "writeFileSync('src/loop.ts', 'export const loop = \"' + marker + '\";\\n', 'utf-8');",
-    "console.log('implemented src/loop.ts via fake opencode');",
-    "console.log('Tokens: 77 sent, 22 received');",
+    'console.log(JSON.stringify({ type: "text", part: { type: "text", text: "implemented src/loop.ts via fake opencode" } }));',
+    'console.log(JSON.stringify({ type: "step_finish", part: { type: "step-finish", tokens: { input: 77, output: 22 } } }));',
   ].join('\n');
   writeFileSync(executablePath, script + '\n', 'utf-8');
   chmodSync(executablePath, 0o755);
@@ -353,8 +353,8 @@ describe('full workflow validation retry loop', { timeout: 30_000 }, () => {
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(hintImplementation);
     expect(summary).toMatchObject({
       totalTasks: 1,
-      completedByLocal: 1,
-      escalatedToPlanner: 0,
+      completedByLocal: 0,
+      escalatedToPlanner: 1,
       failed: 0,
     });
     expect(events.find((event) => event.type === 'escalate' && event.tier === 1)).toBeDefined();

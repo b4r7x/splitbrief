@@ -1,8 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -46,6 +45,9 @@ import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
+import { enqueueUserMessage } from '../../../engine/orchestrator/queue.js';
+import { createEventBus } from '../../../engine/events/bus.js';
+import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
   return controller.signal.aborted || ref.current;
@@ -113,7 +115,11 @@ export function useWorkflowRunner({
       ? (readActive(projectDir) ?? undefined)
       : undefined;
     const sessionIdForRun =
-      sessionIdRef.current ?? pendingRecoverySessionId ?? generateSessionId(projectDir, feature);
+      sessionIdRef.current ??
+      pendingRecoverySessionId ??
+      generateSessionId(projectDir, feature, new Date(), {
+        persistTranscript: config.workflow.persistTranscript,
+      });
     sessionIdRef.current = sessionIdForRun;
     let activeSessionId = sessionIdForRun;
     let recoveryPromptAlreadyPublished = false;
@@ -134,7 +140,9 @@ export function useWorkflowRunner({
       const current = loadState(ref);
       if (!current) return;
 
-      const { action, event } = buildRewindAction(request, ref, current);
+      const { action, event } = buildRewindAction(request, ref, current, {
+        persistTranscript: config.workflow.persistTranscript,
+      });
       let next = transition(current, action);
       if (request.target === 'task' && next.pendingRecovery?.taskId === request.taskId) {
         next = transition(next, { type: 'RESOLVE_PENDING_RECOVERY' });
@@ -276,16 +284,31 @@ export function useWorkflowRunner({
     const text = injectedText?.trim();
     let next = saved;
     if (text) {
-      const message: QueuedMessage = {
-        id: randomUUID(),
+      const bus = createEventBus();
+      bus.subscribe(
+        createJsonlSink({
+          projectDir,
+          sessionId,
+          persistTranscript: config.workflow.persistTranscript,
+        }),
+      );
+      bus.subscribe(addEvent);
+      const queued = enqueueUserMessage(
+        projectDir,
+        sessionId,
+        saved,
         text,
-        queuedAt: nowIso(),
-        phase: saved.phase,
-        deliveredViaNative: false,
-        origin: 'user-input',
-      };
-      next = transition(saved, { type: 'ENQUEUE_USER_MSG', message });
-      saveState({ projectDir, sessionId }, next);
+        saved.phase,
+        bus,
+        config.workflow.persistTranscript !== false,
+        { enforcePhasePolicy: false },
+      );
+      next = queued.state;
+      if (queued.result.status === 'rejected') {
+        feedbackStore.setError(queued.result.message);
+        setInlineResume(next);
+        return;
+      }
     }
     setInlineResume(next);
     setRunId((id) => id + 1);

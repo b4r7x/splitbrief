@@ -171,6 +171,25 @@ describe('stats persistence', () => {
     expect(stats.averageSavingsPercentage).toBeCloseTo(expectedRate);
   });
 
+  it('does not add negative savings to the positive savings aggregate', () => {
+    updateStats(testDir, {
+      costBreakdown: makeCostBreakdown({
+        hypotheticalCost: 0.1,
+        totalActualCost: 0.15,
+        savingsAmount: -0.05,
+        savingsPercentage: -50,
+      }),
+      totalTasks: 1,
+      completedByLocal: 1,
+      escalatedToPlanner: 0,
+    });
+
+    const stats = readStats(testDir);
+    expect(stats.totalSavings).toBe(0);
+    expect(stats.totalHypotheticalCost).toBeCloseTo(0.1);
+    expect(stats.averageSavingsPercentage).toBe(0);
+  });
+
   it('updateStats accumulates across multiple calls', () => {
     const input = {
       costBreakdown: makeCostBreakdown(),

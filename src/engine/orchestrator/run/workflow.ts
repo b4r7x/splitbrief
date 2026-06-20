@@ -7,7 +7,11 @@ import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
-import { generateSessionId, writeActive } from '../../../core/sessions/lifecycle.js';
+import {
+  featureForTranscriptPolicy,
+  generateSessionId,
+  writeActive,
+} from '../../../core/sessions/lifecycle.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -199,6 +203,7 @@ async function acquireLiveness(opts: {
   sessionId: string;
   feature: string;
   mode: WorkflowMode;
+  persistTranscript: boolean;
   signal?: AbortSignal | undefined;
 }): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
@@ -213,7 +218,7 @@ async function acquireLiveness(opts: {
       lastAliveMs: now,
       sessionId: opts.sessionId,
       mode: opts.mode,
-      feature: opts.feature,
+      feature: featureForTranscriptPolicy(opts.feature, opts.persistTranscript),
     });
     const stopHeartbeat = startHeartbeat(dir);
     return async () => {
@@ -241,7 +246,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, savedState, selectedSkills } = opts;
   const startTime = resolveSessionStart(savedState);
   const ident = runPricingIdentity(config);
-  const sessionId = opts.sessionId ?? generateSessionId(projectDir, feature);
+  const persistTranscript = config.workflow.persistTranscript;
+  const sessionId =
+    opts.sessionId ?? generateSessionId(projectDir, feature, new Date(), { persistTranscript });
   const plannerTool = savedState?.plannerTool ?? ident.plannerTool;
   const plannerModel = savedState?.plannerModel ?? ident.plannerModel;
   const implementerTool = savedState?.implementerTool ?? ident.implementerTool;
@@ -256,6 +263,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir,
     sessionId,
+    persistTranscript,
     ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
   };
 
@@ -293,6 +301,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     sessionId,
     feature,
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    persistTranscript,
     signal: opts.signal,
   });
 
@@ -430,7 +439,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         saveFinalSession({
           projectDir,
           sessionId,
-          feature,
+          feature: featureForTranscriptPolicy(feature, persistTranscript),
           startTime,
           status: sessionStatus,
           summary,
@@ -443,7 +452,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     saveFinalSession({
       projectDir,
       sessionId,
-      feature,
+      feature: featureForTranscriptPolicy(feature, persistTranscript),
       startTime,
       status: sessionStatus,
       summary: result,

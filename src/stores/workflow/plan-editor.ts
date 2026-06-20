@@ -3,6 +3,21 @@ import type { Task } from '../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { deepEqual } from '../../utils/deep-equal.js';
 import { clampIndex } from '../../utils/indexing.js';
+import {
+  TASK_BRIEF_SECTIONS,
+  getTaskBriefSectionLabel,
+  getTaskBriefSectionText,
+  updateTaskBriefSection,
+  type TaskBriefSection,
+} from './plan-editor-sections.js';
+
+export type PlanEditorFocus = 'task-list' | 'section-list' | 'editing-section';
+
+export interface PlanEditorSectionEdit {
+  taskId: string;
+  section: TaskBriefSection;
+  value: string;
+}
 
 export interface PlanEditorState {
   tasks: Task[];
@@ -31,6 +46,10 @@ export interface PlanEditorState {
    */
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   flaggedIds: ReadonlySet<string>;
+  focus: PlanEditorFocus;
+  sectionCursor: number;
+  editing: PlanEditorSectionEdit | null;
+  statusMessage: string | null;
 }
 
 export const PLAN_EDITOR_STALE_SAVE_ERROR =
@@ -48,6 +67,10 @@ function makeInitialState(): PlanEditorState {
     saveError: null,
     reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
     flaggedIds: new Set<string>(),
+    focus: 'task-list',
+    sectionCursor: 0,
+    editing: null,
+    statusMessage: null,
   };
 }
 
@@ -87,6 +110,7 @@ function __testReset(next?: Partial<PlanEditorState>): void {
       ? cloneReviewMetadataMap(next.reviewMetadata)
       : base.reviewMetadata,
     flaggedIds: next.flaggedIds ? new Set(next.flaggedIds) : base.flaggedIds,
+    editing: next.editing ? { ...next.editing } : base.editing,
   });
 }
 
@@ -100,6 +124,10 @@ function initEditor(tasks: Task[]): void {
     cursor: 0,
     revision: sameTasks(s.tasks, nextTasks) && !s.dirty ? s.revision : s.revision + 1,
     expandedIds: new Set<string>(),
+    focus: 'task-list',
+    sectionCursor: 0,
+    editing: null,
+    statusMessage: null,
     dirty: false,
     saveError: null,
     reviewMetadata: sameTasks(s.tasks, nextTasks)
@@ -115,7 +143,7 @@ function moveCursor(direction: 'up' | 'down'): void {
     const next =
       direction === 'down' ? Math.min(s.cursor + 1, s.tasks.length - 1) : Math.max(s.cursor - 1, 0);
     if (next === s.cursor) return s;
-    return { ...s, cursor: next };
+    return { ...s, cursor: next, sectionCursor: 0 };
   });
 }
 
@@ -156,6 +184,8 @@ function setTasks(tasks: Task[]): void {
       revision: s.revision + 1,
       dirty: true,
       saveError: null,
+      statusMessage: null,
+      focus: s.editing ? 'editing-section' : s.focus,
       expandedIds: stableTaskIds(s.tasks, nextTasks, s.expandedIds),
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
       flaggedIds: stableTaskIds(s.tasks, nextTasks, s.flaggedIds),
@@ -175,6 +205,89 @@ function toggleExpand(taskId: string): void {
   });
 }
 
+function enterSectionList(): void {
+  store.set((s) => {
+    const task = s.tasks[s.cursor];
+    if (!task) return s;
+    const nextExpanded = new Set(s.expandedIds);
+    nextExpanded.add(task.id);
+    return {
+      ...s,
+      expandedIds: nextExpanded,
+      focus: 'section-list',
+      sectionCursor: clampIndex(s.sectionCursor, TASK_BRIEF_SECTIONS.length),
+      editing: null,
+    };
+  });
+}
+
+function leaveSectionList(): void {
+  store.set((s) =>
+    s.focus === 'task-list' ? s : { ...s, focus: 'task-list', sectionCursor: 0, editing: null },
+  );
+}
+
+function moveSectionCursor(direction: 'up' | 'down'): void {
+  store.set((s) => {
+    if (s.focus !== 'section-list') return s;
+    const next =
+      direction === 'down'
+        ? Math.min(s.sectionCursor + 1, TASK_BRIEF_SECTIONS.length - 1)
+        : Math.max(s.sectionCursor - 1, 0);
+    if (next === s.sectionCursor) return s;
+    return { ...s, sectionCursor: next };
+  });
+}
+
+function startEditingSection(): void {
+  store.set((s) => {
+    const task = s.tasks[s.cursor];
+    const section = TASK_BRIEF_SECTIONS[s.sectionCursor];
+    if (!task || !section) return s;
+    return {
+      ...s,
+      focus: 'editing-section',
+      editing: {
+        taskId: task.id,
+        section,
+        value: getTaskBriefSectionText(task, section),
+      },
+      saveError: null,
+      statusMessage: null,
+    };
+  });
+}
+
+function updateEditingValue(value: string): void {
+  store.set((s) => {
+    if (!s.editing) return s;
+    return { ...s, editing: { ...s.editing, value } };
+  });
+}
+
+function saveEditingSection(): void {
+  const state = store.get();
+  const edit = state.editing;
+  if (!edit) return;
+  const nextTasks = state.tasks.map((task) =>
+    task.id === edit.taskId ? updateTaskBriefSection(task, edit.section, edit.value) : task,
+  );
+  setTasks(nextTasks);
+  store.set((s) => ({
+    ...s,
+    focus: 'section-list',
+    expandedIds: new Set([...s.expandedIds, edit.taskId]),
+    editing: null,
+    statusMessage: `updated ${getTaskBriefSectionLabel(edit.section)}`,
+  }));
+}
+
+function cancelEditingSection(): void {
+  store.set((s) =>
+    s.editing ? { ...s, focus: 'section-list', editing: null, statusMessage: null } : s,
+  );
+}
+
 function setRuntimeRichMode(value: boolean): void {
   store.set((s) => (s.runtimeRichMode === value ? s : { ...s, runtimeRichMode: value }));
 }
@@ -188,7 +301,19 @@ function setCursor(n: number): void {
 }
 
 function setSaveError(message: string | null): void {
-  store.set((s) => (s.saveError === message ? s : { ...s, saveError: message }));
+  store.set((s) => {
+    const nextStatusMessage = message === null ? s.statusMessage : null;
+    if (s.saveError === message && s.statusMessage === nextStatusMessage) return s;
+    return { ...s, saveError: message, statusMessage: nextStatusMessage };
+  });
+}
+
+function setStatusMessage(message: string | null): void {
+  store.set((s) => {
+    const nextSaveError = message === null ? s.saveError : null;
+    if (s.statusMessage === message && s.saveError === nextSaveError) return s;
+    return { ...s, statusMessage: message, saveError: nextSaveError };
+  });
 }
 
 function toggleFlag(taskId: string): void {
@@ -270,7 +395,7 @@ function markSavedIfRevision(revision: number): boolean {
     if (s.revision !== revision) {
       return s.saveError === PLAN_EDITOR_STALE_SAVE_ERROR
         ? s
-        : { ...s, saveError: PLAN_EDITOR_STALE_SAVE_ERROR };
+        : { ...s, saveError: PLAN_EDITOR_STALE_SAVE_ERROR, statusMessage: null };
     }
     saved = true;
     if (!s.dirty && s.saveError === null && sameTasks(s.savedTasks, s.tasks)) return s;
@@ -292,25 +417,42 @@ function discardEdits(): void {
       dirty: false,
       runtimeRichMode: false,
       saveError: null,
+      statusMessage: null,
+      focus: 'task-list',
+      sectionCursor: 0,
+      editing: null,
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
       flaggedIds: new Set<string>(),
     };
   });
 }
 
+function resetSessionState(): void {
+  store.set(makeInitialState());
+}
+
 export const planEditorStore = {
   ...storeBase(store),
   __testReset,
+  resetSessionState,
   initEditor,
   moveCursor,
   setCursor,
   setTasks,
   toggleExpand,
+  enterSectionList,
+  leaveSectionList,
+  moveSectionCursor,
+  startEditingSection,
+  updateEditingValue,
+  saveEditingSection,
+  cancelEditingSection,
   toggleFlag,
   clearFlags,
   getFlaggedTasks,
   setRuntimeRichMode,
   setSaveError,
+  setStatusMessage,
   setReviewMetadata,
   upsertTaskReviewMetadata,
   markSaved,

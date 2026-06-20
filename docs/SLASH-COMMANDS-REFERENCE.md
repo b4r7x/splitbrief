@@ -27,7 +27,7 @@ There are 26 slash commands in total. They cover overlays, workflow mode/tool se
 
 ## Workflow control
 
-Commands that mutate the active workflow: rewind to an earlier phase, re-run a task, or drain the message queue. Most are restricted to the `workflow` screen, and the rewind family additionally gates on the current `Phase`. Run accept/reject commands are available from workflow and summary run-state screens.
+Commands that mutate the active workflow: rewind to an earlier phase, re-run a task, or clear pending-undelivered queue messages. Most are restricted to the `workflow` screen, and the rewind family additionally gates on the current `Phase`. Run accept/reject commands are available from workflow and summary run-state screens.
 
 ### `/revise-spec [comment]`
 
@@ -64,11 +64,11 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 
 ### `/queue [show|clear]`
 
-- **Purpose**: Inspect or drain the planner message queue. Messages typed during a planner call are queued and replayed on the next planner turn; `/queue` lets you see how many are pending and discard them if you change your mind.
+- **Purpose**: Inspect or clear the planner message queue. Messages typed during a planner call are queued and replayed on the next planner turn if they are still pending delivery; `/queue` lets you see how many are pending and discard pending-undelivered entries if you change your mind.
 - **Screens**: `workflow`.
 - **Args**: `show` (default when no argument is given) or `clear`. Any other value prints `"Unknown queue command: <sub>. Use: /queue show or /queue clear"`.
 - **Example**: `/queue`, `/queue show`, `/queue clear`.
-- **Behavior**: `show` prints `"Queue is empty"` or `"Queue: N message(s) pending"`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`.
+- **Behavior**: `show` prints `"Queue is empty"` or `"Queue: N message(s) pending"`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`. Delivered native messages and already-drained history are not cleared.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; depth read from `lifecycleStore.get().queueDepth` in `src/app/command-context.ts`; clearing routes through `requestClearQueue()` in `src/features/workflow/handlers.ts`.
 - **See also**: `/handoff`.
 
@@ -400,6 +400,36 @@ When the review pane has a `filePath` set (e.g. inspecting a spec or plan), thes
 | `↑` | Scroll review pane up one line | `keyboard.ts` `handleReviewScroll` |
 | `↓` | Scroll review pane down one line | `keyboard.ts` `handleReviewScroll` |
 | `End` | Jump to bottom of review pane | `keyboard.ts` `handleReviewScroll` |
+
+### Brief review and rich editor
+
+During simple Task Brief review, typed commands use `src/features/workflow/review-parser.ts`:
+
+| Command | Action |
+|---|---|
+| `approve` / `y` | Approve briefs |
+| `e` / `edit` | Enter rich brief review for the current session |
+| `E` / `edit-file` | Open `tasks.md` in `$EDITOR` |
+| `comment <text>` | Approve with a comment |
+| `reject` / `q` / `quit` | Reject briefs |
+
+Once the rich editor is open, keys are handled by `src/features/workflow/hooks/use-plan-editor-keys.ts`:
+
+| Key | Action |
+|---|---|
+| `j` / `k` or arrows | Move task or section cursor |
+| `Enter` | Expand/collapse the selected task |
+| `Tab` | Enter the selected task's semantic section list |
+| `e` | Edit the selected section |
+| `Ctrl+Enter` | Save the active section field |
+| `Esc` | Cancel section edit or return from sections to tasks |
+| `c` | Copy selected task or section source text; fallback writes `selection.txt` in the session directory |
+| `E` | Raw external edit for the selected task |
+| `s` | Split selected task through the external editor |
+| `x` / `R` | Flag a task / regenerate flagged tasks |
+| `Y` | Save changes or approve when clean |
+| `q` | Discard |
+| `?` | Open rich editor help |
 
 ### Summary screen
 

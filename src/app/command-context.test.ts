@@ -40,9 +40,12 @@ describe('buildCommandContext', () => {
   });
 
   it('delegates queue clearing to the live workflow handler', () => {
-    setClearQueueHandler(() => 2);
+    setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
 
-    expect(buildCommandContext({ exit: () => {} }).clearQueue()).toBe(2);
+    expect(buildCommandContext({ exit: () => {} }).clearQueue()).toEqual({
+      status: 'cleared',
+      count: 2,
+    });
   });
 
   it('routes rewind requests to the live workflow handler', () => {

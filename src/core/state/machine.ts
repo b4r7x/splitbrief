@@ -3,6 +3,8 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import type { TokenUsage } from '../schemas/tokens.js';
+import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
+import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
@@ -36,7 +38,9 @@ const anytimeActions = [
   'REWIND_TO_PLAN',
   'CLEAR_REWIND_PENDING',
   'ENQUEUE_USER_MSG',
+  'MARK_INJECTING_NATIVE',
   'MARK_DELIVERED_NATIVE',
+  'MARK_NATIVE_DELIVERY_FAILED',
   'DRAIN_QUEUE',
   'CLEAR_QUEUE',
   'SET_PENDING_RECOVERY',
@@ -70,6 +74,7 @@ const phaseActions = {
     'CLEAR_TASK_CODE',
     'TASK_SENT',
     'VALIDATION_PASS',
+    'HINT_SUCCESS',
     'SKIP_TASK',
     'RESET_TASK',
     'BRIEFS_READY',
@@ -279,7 +284,7 @@ export function transition(
     }
 
     case 'VALIDATION_PASS':
-      return advanceTask(state, 'done');
+      return advanceTask(state, taskStatusForCompletionMethod('local'));
 
     case 'VALIDATION_FAIL':
       if (state.attempt < maxRetries) {
@@ -291,13 +296,13 @@ export function transition(
       return { ...state, phase: 'escalating' };
 
     case 'HINT_SUCCESS':
-      return advanceTask(state, 'done');
+      return advanceTask(state, taskStatusForCompletionMethod('escalated-hint'));
 
     case 'HINT_FAIL':
       return { ...state, phase: 'escalating' };
 
     case 'FULL_SUCCESS':
-      return advanceTask(state, 'escalated');
+      return advanceTask(state, taskStatusForCompletionMethod('escalated-full'));
 
     case 'SKIP_TASK': {
       const withStatus = setTaskStatus(state, action.taskId, 'skipped');
@@ -370,11 +375,31 @@ export function transition(
     case 'ENQUEUE_USER_MSG':
       return { ...state, messageQueue: [...state.messageQueue, action.message] };
 
+    case 'MARK_INJECTING_NATIVE':
+      return {
+        ...state,
+        messageQueue: state.messageQueue.map((m) =>
+          m.id === action.id ? { ...m, nativeDeliveryState: 'injecting' } : m,
+        ),
+      };
+
     case 'MARK_DELIVERED_NATIVE':
       return {
         ...state,
         messageQueue: state.messageQueue.map((m) =>
-          m.id === action.id ? { ...m, deliveredViaNative: true } : m,
+          m.id === action.id
+            ? { ...m, deliveredViaNative: true, nativeDeliveryState: 'delivered' }
+            : m,
+        ),
+      };
+
+    case 'MARK_NATIVE_DELIVERY_FAILED':
+      return {
+        ...state,
+        messageQueue: state.messageQueue.map((m) =>
+          m.id === action.id && m.nativeDeliveryState === 'injecting'
+            ? { ...m, nativeDeliveryState: 'pending' }
+            : m,
         ),
       };
 
@@ -382,12 +407,17 @@ export function transition(
       const ts = now.toISOString();
       return {
         ...state,
-        messageQueue: state.messageQueue.map((m) => (m.drainedAt ? m : { ...m, drainedAt: ts })),
+        messageQueue: state.messageQueue.map((m) =>
+          isQueuedMessagePendingDelivery(m) ? { ...m, drainedAt: ts } : m,
+        ),
       };
     }
 
     case 'CLEAR_QUEUE':
-      return { ...state, messageQueue: state.messageQueue.filter((m) => m.drainedAt) };
+      return {
+        ...state,
+        messageQueue: state.messageQueue.filter((message) => !isQueuedMessageClearable(message)),
+      };
 
     case 'SET_PENDING_RECOVERY':
       return { ...state, pendingRecovery: action.issue };

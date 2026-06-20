@@ -42,8 +42,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import { escalateFull, escalateHint } from './escalation.js';
 import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
 import { summarize, summarizeStructured } from './summary.js';
-import { toRunnerCallResult, toTokenDelta } from '../calls/projection.js';
-import type { RunnerCallCompatibleResult } from '../calls/projection.js';
+import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
@@ -67,7 +66,7 @@ type InternalInvokeFn = (opts: {
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
-}) => Promise<RunnerCallCompatibleResult>;
+}) => Promise<RunnerCallResult>;
 
 const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 
@@ -186,9 +185,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         });
 
         const callContext = createPlannerCallContext(config, 'planner');
-        const result = requireCompletedCall(
-          toRunnerCallResult(
-            callContext,
+        let result: RunnerCallResult;
+        try {
+          result = requireCompletedCall(
             await config.invokePlan({
               prompt: effectivePrompt,
               projectDir,
@@ -206,8 +205,15 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
               ...extras,
               signal: callbacks.signal,
             }),
-          ),
-        );
+          );
+        } catch (err) {
+          if (callbacks.signal?.aborted) {
+            buffer.flushInterrupted();
+          } else {
+            buffer.flush();
+          }
+          throw err;
+        }
         buffer.flush();
         const usageDelta = toTokenDelta(result.usage);
         if (usageDelta) usage = accumulateUsage(usage, usageDelta);
@@ -280,16 +286,13 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       const { prompt, projectDir, callbacks } = opts;
       const callContext = createPlannerCallContext(config, 'planner');
       const result = requireCompletedCall(
-        toRunnerCallResult(
+        await config.invokeEscalate({
+          prompt,
+          projectDir,
           callContext,
-          await config.invokeEscalate({
-            prompt,
-            projectDir,
-            callContext,
-            callbacks,
-            signal: callbacks.signal,
-          }),
-        ),
+          callbacks,
+          signal: callbacks.signal,
+        }),
       );
       return { text: result.text, usage: toTokenDelta(result.usage) };
     },
@@ -309,16 +312,13 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ): Promise<{ text: string; usage: TokenDelta | null }> {
       const callContext = createPlannerCallContext(config, 'review');
       const result = requireCompletedCall(
-        toRunnerCallResult(
+        await config.invokeEscalate({
+          prompt,
+          projectDir,
           callContext,
-          await config.invokeEscalate({
-            prompt,
-            projectDir,
-            callContext,
-            callbacks,
-            signal: callbacks.signal,
-          }),
-        ),
+          callbacks,
+          signal: callbacks.signal,
+        }),
       );
       return { text: result.text, usage: toTokenDelta(result.usage) };
     },

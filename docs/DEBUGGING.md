@@ -32,7 +32,7 @@ jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.s
 jq 'select(.type == "cost_update")' .diptych/sessions/<id>/session.jsonl
 ```
 
-The transcript events (`planner_text`) are suppressed when `workflow.persistTranscript: false` in config.
+When `workflow.persistTranscript: false`, transcript-like events (`planner_text`, `user_message`, clarification text, implementer output, and raw runner text/tool/artifact payloads) are omitted from protected consumers. Safe `runner_call_activity` labels, queue depth, lifecycle, cost, and compact runner status remain visible; prompt-bearing previews, RPC state, task prose, comments, retry errors, summary/session feature text, and generated commit messages are stripped or replaced. Product artifacts such as `spec.md`, `plan.md`, `tasks.md`, source changes, validation output, and evidence files remain review artifacts and are not redacted by this setting.
 
 ### Active session pointer
 
@@ -46,7 +46,7 @@ For CI or programmatic inspection, bypass the Ink TUI entirely and emit NDJSON `
 diptych start --json "feature description" 2>/dev/null | jq .
 ```
 
-Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log.
+Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log. With `workflow.persistTranscript: false`, stdout JSON applies the same transcript protection as session logs, IPC, RPC, summaries, and telemetry: transcript events are omitted, queue previews are stripped, runner payload events are omitted, safe runner activity is kept, and feature prompt metadata is replaced or omitted.
 
 `--json` requires a feature argument on `start`. `resume`, `continue`, and `last` rehydrate interrupted sessions from saved state.
 
@@ -56,12 +56,12 @@ For a timeline view with span hierarchy (workflow → phase → task), opt into 
 
 ```bash
 # One of:
-OTEL_TRACES_EXPORTER=console diptych start --json --mode quick "…"
-DIPTYCH_OTEL_EXPORTER=console diptych start --json --mode quick "…"
-diptych start --otel-exporter console --json --mode quick "…"
+OTEL_TRACES_EXPORTER=console diptych start --mode quick "…"
+DIPTYCH_OTEL_EXPORTER=console diptych start --mode quick "…"
+diptych start --otel-exporter console --mode quick "…"
 ```
 
-Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output. Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/lib/otel.ts`.
+Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so diptych disables the console exporter in machine-readable stdout modes (`--json` and `--rpc`). Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/lib/otel.ts`.
 
 ### Debug environment variables
 

@@ -32,6 +32,8 @@ const noKey: Key = {
 };
 
 describe('handlePlanEditorInput', () => {
+  beforeEach(() => planEditorStore.__testReset());
+
   it.each<{
     label: string;
     input: string;
@@ -80,7 +82,9 @@ describe('handlePlanEditorInput', () => {
     { label: 'm', input: 'm', expected: { type: 'merge-task' } },
     { label: 'p', input: 'p', expected: { type: 'toggle-packet-preview' } },
     { label: 's', input: 's', expected: { type: 'open-editor', mode: 'split' } },
-    { label: 'e', input: 'e', expected: { type: 'open-editor', mode: 'edit' } },
+    { label: 'E', input: 'E', expected: { type: 'open-editor', mode: 'edit' } },
+    { label: 'c', input: 'c', expected: { type: 'copy-selection' } },
+    { label: 'tab', input: '', key: { tab: true }, expected: { type: 'enter-section-list' } },
     { label: 'return', input: '', key: { return: true }, expected: { type: 'toggle-expand' } },
     { label: '?', input: '?', expected: { type: 'open-help' } },
     { label: 'Y', input: 'Y', expected: { type: 'save' } },
@@ -91,6 +95,51 @@ describe('handlePlanEditorInput', () => {
     { label: 'unrecognized input', input: 'z', expected: { type: 'none' } },
     { label: 'empty input', input: '', expected: { type: 'none' } },
   ])('$label maps to $expected.type', ({ input, key, expected }) => {
+    expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
+  });
+
+  it.each<{
+    label: string;
+    input: string;
+    key?: Partial<Key>;
+    expected: PlanEditorAction;
+  }>([
+    { label: 'j', input: 'j', expected: { type: 'move-section-cursor', direction: 'down' } },
+    { label: 'k', input: 'k', expected: { type: 'move-section-cursor', direction: 'up' } },
+    { label: 'e', input: 'e', expected: { type: 'start-section-edit' } },
+    { label: 'c', input: 'c', expected: { type: 'copy-selection' } },
+    { label: 'esc', input: '', key: { escape: true }, expected: { type: 'leave-section-list' } },
+  ])('section-list $label maps to $expected.type', ({ input, key, expected }) => {
+    planEditorStore.__testReset({ focus: 'section-list' });
+
+    expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
+  });
+
+  it.each<{
+    label: string;
+    input: string;
+    key?: Partial<Key>;
+    expected: PlanEditorAction;
+  }>([
+    {
+      label: 'ctrl+enter',
+      input: '',
+      key: { ctrl: true, return: true },
+      expected: { type: 'save-section-edit' },
+    },
+    {
+      label: 'esc',
+      input: '',
+      key: { escape: true },
+      expected: { type: 'cancel-section-edit' },
+    },
+    { label: 'plain c', input: 'c', expected: { type: 'none' } },
+  ])('editing-section $label maps to $expected.type', ({ input, key, expected }) => {
+    planEditorStore.__testReset({
+      focus: 'editing-section',
+      editing: { taskId: 'T001', section: 'title', value: 'Draft' },
+    });
+
     expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
   });
 });
@@ -136,5 +185,21 @@ describe('applyPlanEditorAction', () => {
     expect(planEditorStore.get().dirty).toBe(false);
     expect(planEditorStore.get().cursor).toBe(5);
     expect(planEditorStore.get().tasks).toEqual(tasks);
+  });
+
+  it('applies section focus and edit actions through the store', () => {
+    const task = makeTask({ id: 'T001', title: 'Original title' });
+    planEditorStore.initEditor([task]);
+
+    applyPlanEditorAction({ type: 'enter-section-list' }, () => Promise.resolve());
+    applyPlanEditorAction({ type: 'start-section-edit' }, () => Promise.resolve());
+    planEditorStore.updateEditingValue('Edited title');
+    applyPlanEditorAction({ type: 'save-section-edit' }, () => Promise.resolve());
+
+    expect(planEditorStore.get()).toMatchObject({
+      focus: 'section-list',
+      dirty: true,
+    });
+    expect(planEditorStore.get().tasks[0]?.title).toBe('Edited title');
   });
 });

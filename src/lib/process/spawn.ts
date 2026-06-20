@@ -179,6 +179,7 @@ export interface SpawnOptions {
   env?: NodeJS.ProcessEnv | undefined;
   timeout: number;
   onProgress: (text: string) => void;
+  onStderr?: ((chunk: string) => void) | undefined;
   stdinInput?: string | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
@@ -212,6 +213,7 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     },
     onStderr: (chunk) => {
       stderrOutput += chunk;
+      opts.onStderr?.(chunk);
     },
     onClose: (code) => {
       if (timeoutSignal.aborted) {

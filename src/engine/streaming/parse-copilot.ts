@@ -36,6 +36,7 @@ const ToolUseEvent = z.object({
   type: z.enum(['tool.execution_start', 'tool.call', 'tool.use']),
   data: z.looseObject({
     name: z.string().optional(),
+    id: z.string().optional(),
     tool: z.string().optional(),
     input: z.record(z.string(), z.unknown()).optional(),
     args: z.record(z.string(), z.unknown()).optional(),
@@ -78,8 +79,8 @@ export function parseCopilotLine(line: string): ParsedLine {
   if (message.success) {
     const text = extractText(message.data.data);
     const usage = message.data.data.usage ? toTokenDelta(message.data.data.usage) : null;
-    if (text !== undefined && usage) return { text, usage };
-    if (text !== undefined) return { text };
+    if (text !== undefined && usage) return { text, channel: 'assistant', usage };
+    if (text !== undefined) return { text, channel: 'assistant' };
     if (usage) return { usage };
   }
 
@@ -96,6 +97,7 @@ export function parseCopilotLine(line: string): ParsedLine {
       return {
         toolUse: [
           {
+            ...(tool.data.data.id !== undefined && { id: tool.data.data.id }),
             name,
             input: tool.data.data.input ?? tool.data.data.args ?? {},
           },

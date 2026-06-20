@@ -7,6 +7,7 @@ import { statusGlyph } from '../../components/task-status-glyph.js';
 import { formatCost } from '../../core/formatting.js';
 import { getMethodDisplay } from '../../core/sessions/display.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 import { buildCostBreakdownRows } from './components/cost-breakdown.js';
 import { buildPhaseTimingRows } from './components/phase-timing.js';
 import { buildCheckpointDetailRows } from './components/checkpoints.js';
@@ -123,7 +124,7 @@ function buildEvidenceDetailRows(
       key: 'evidence-summary',
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          ledger: {summary.evidenceSummary.path} ·{' '}
+          ledger: {stripTerminalControls(summary.evidenceSummary.path)} ·{' '}
           {summary.evidenceSummary.tasksWithValidationEvidence}/{summary.evidenceSummary.totalTasks}{' '}
           validated · {summary.evidenceSummary.escalatedTasks} escalated ·{' '}
           {summary.evidenceSummary.failedTasks} failed
@@ -145,11 +146,11 @@ function buildEvidenceDetailRows(
       .join(',');
     const expected =
       task.expectedEvidence.length > 0
-        ? truncateWithEllipsis(task.expectedEvidence.join('; '), truncateLen)
+        ? truncateWithEllipsis(stripTerminalControls(task.expectedEvidence.join('; ')), truncateLen)
         : '—';
     const observed =
       task.observedEvidence.length > 0
-        ? truncateWithEllipsis(task.observedEvidence.join('; '), truncateLen)
+        ? truncateWithEllipsis(stripTerminalControls(task.observedEvidence.join('; ')), truncateLen)
         : '—';
 
     rows.push({
@@ -159,7 +160,9 @@ function buildEvidenceDetailRows(
           <Text color={theme.textDim}>
             {statusGlyph(task.escalated ? 'escalated' : task.status)} {task.id}{' '}
           </Text>
-          <Text>{truncateWithEllipsis(task.title, isSmall ? 24 : titleWidth - 6)}</Text>
+          <Text>
+            {truncateWithEllipsis(stripTerminalControls(task.title), isSmall ? 24 : titleWidth - 6)}
+          </Text>
         </Text>
       ),
     });
@@ -204,7 +207,8 @@ function buildEvidenceDetailRows(
       key: 'evidence-final-review',
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          final review: {ledger.finalReview.status} ({ledger.finalReview.path})
+          final review: {ledger.finalReview.status} (
+          {stripTerminalControls(ledger.finalReview.path)})
         </Text>
       ),
     });

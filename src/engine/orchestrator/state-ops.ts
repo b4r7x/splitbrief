@@ -15,6 +15,18 @@ import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
 
+function mergeNativeDeliveryState(
+  persisted: WorkflowState['messageQueue'][number],
+  current: WorkflowState['messageQueue'][number],
+): WorkflowState['messageQueue'][number]['nativeDeliveryState'] {
+  if (persisted.deliveredViaNative || current.deliveredViaNative) return 'delivered';
+  if (persisted.nativeDeliveryState === 'delivered' || current.nativeDeliveryState === 'delivered')
+    return 'delivered';
+  if (persisted.nativeDeliveryState === 'injecting' || current.nativeDeliveryState === 'injecting')
+    return 'injecting';
+  return 'pending';
+}
+
 export function mergePersistedMessageQueue(ref: SessionRef, state: WorkflowState): WorkflowState {
   const persisted = loadState(ref);
   if (!persisted) return state;
@@ -29,6 +41,7 @@ export function mergePersistedMessageQueue(ref: SessionRef, state: WorkflowState
             ...persistedMessage,
             ...current,
             deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
+            nativeDeliveryState: mergeNativeDeliveryState(persistedMessage, current),
             drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
           }
         : current,

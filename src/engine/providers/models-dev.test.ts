@@ -71,6 +71,24 @@ const FIXTURE: ModelsDevCatalog = {
         cost: { input: 2.5, output: 10 },
         limit: { context: 128000 },
       },
+      'gpt-5.4': {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        cost: {
+          input: 2.5,
+          output: 15,
+          cache_read: 0.25,
+          tiers: [
+            {
+              input: 5,
+              output: 22.5,
+              cache_read: 0.5,
+              tier: { type: 'context', size: 272000 },
+            },
+          ],
+        },
+        limit: { context: 400000 },
+      },
     },
   },
   'github-copilot': {
@@ -132,6 +150,68 @@ describe('getModelsForProvider', () => {
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.pricingInput).toBe(3);
     expect(sonnet?.pricingOutput).toBe(15);
+  });
+
+  it('preserves models.dev context pricing tiers', () => {
+    const models = getModelsForProvider(FIXTURE, 'openai');
+    const gpt = models.find((m) => m.id === 'gpt-5.4');
+    expect(gpt?.pricingTiers).toEqual([
+      {
+        type: 'context',
+        thresholdTokens: 272000,
+        inputPer1M: 5,
+        outputPer1M: 22.5,
+        cacheReadPer1M: 0.5,
+      },
+    ]);
+  });
+
+  it('normalizes legacy context_over_200k when no equivalent explicit tier exists', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          legacy: {
+            id: 'legacy',
+            cost: {
+              input: 1,
+              output: 2,
+              context_over_200k: { input: 3, output: 4, cache_read: 0.3 },
+            },
+          },
+        },
+      },
+    };
+    const models = getModelsForProvider(catalog, 'openai');
+    expect(models.at(0)?.pricingTiers).toEqual([
+      {
+        type: 'context',
+        thresholdTokens: 200000,
+        inputPer1M: 3,
+        outputPer1M: 4,
+        cacheReadPer1M: 0.3,
+      },
+    ]);
+  });
+
+  it('ignores unsupported pricing tier shapes', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          odd: {
+            id: 'odd',
+            cost: {
+              input: 1,
+              output: 2,
+              tiers: [{ input: 9, tier: { type: 'time', size: 'large' } }],
+            },
+          },
+        },
+      },
+    };
+    const models = getModelsForProvider(catalog, 'openai');
+    expect(models.at(0)?.pricingTiers).toBeUndefined();
   });
 
   it('carries models.dev cache_read/cache_write through to detected pricing fields', () => {

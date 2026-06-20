@@ -8,6 +8,7 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 
 type PublisherEvent =
   | {
@@ -50,10 +51,13 @@ describe('createImplementerBase — bus events', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'old content\n');
 
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nexport const hello = () => "world";\n```',
-      usage: { inputTokens: 10, outputTokens: 20 },
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const hello = () => "world";\n```',
+        usage: { inputTokens: 10, outputTokens: 20 },
+      }),
+    );
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(

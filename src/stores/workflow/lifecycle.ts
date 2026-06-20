@@ -7,11 +7,30 @@ function phaseFromEvent(event: EngineEvent): Phase | undefined {
   return result.success ? result.data : undefined;
 }
 
+const INFRASTRUCTURE_PHASE_EVENT_TYPES = new Set<EngineEvent['type']>([
+  'ipc_client_attached',
+  'ipc_client_detached',
+  'ipc_reconnect_attempt',
+  'ipc_reconnect_failed',
+  'replay_started',
+  'replay_complete',
+]);
+
+function isInfrastructurePhaseEvent(event: EngineEvent): boolean {
+  return INFRASTRUCTURE_PHASE_EVENT_TYPES.has(event.type);
+}
+
 type RunningPhase = Exclude<Phase, 'complete'>;
 type LifecycleStatus = 'idle' | 'running' | 'complete' | 'cancelled';
 
 interface LifecycleBase {
   queueDepth: number;
+  queuePreviews: readonly QueuedMessagePreview[];
+}
+
+export interface QueuedMessagePreview {
+  id: string;
+  preview: string;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -65,6 +84,7 @@ interface LifecycleResetState {
   status?: LifecycleStatus | undefined;
   cancelled?: boolean | undefined;
   queueDepth?: number | undefined;
+  queuePreviews?: readonly QueuedMessagePreview[] | undefined;
   startedAt?: number | null | undefined;
   endedAt?: number | null | undefined;
   durationMs?: number | null | undefined;
@@ -76,6 +96,7 @@ const initial: LifecycleState = {
   status: 'idle',
   cancelled: false,
   queueDepth: 0,
+  queuePreviews: [],
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -99,12 +120,14 @@ export const lifecycleStore = {
 };
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
+  if (isInfrastructurePhaseEvent(event)) return state;
   const phase = phaseFromEvent(event);
 
   if (event.type === 'workflow_started') {
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
+      queuePreviews: state.queuePreviews,
       startedAt: event.ts,
     });
   }
@@ -113,6 +136,7 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
+      queuePreviews: state.queuePreviews,
       startedAt: state.startedAt ?? event.ts,
     });
   }
@@ -137,16 +161,36 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
 
 export function updateQueueDepth(state: LifecycleState, event: EngineEvent): LifecycleState {
   if (event.type === 'message_queued') {
-    return { ...state, queueDepth: state.queueDepth + 1 };
+    return {
+      ...state,
+      queueDepth: state.queueDepth + 1,
+      queuePreviews: event.preview
+        ? [...state.queuePreviews, { id: event.id, preview: event.preview }]
+        : state.queuePreviews,
+    };
+  }
+  if (event.type === 'message_injected_native') {
+    return {
+      ...state,
+      queueDepth: Math.max(0, state.queueDepth - 1),
+      queuePreviews: state.queuePreviews.filter((entry) => entry.id !== event.id),
+    };
   }
   if (event.type === 'queue_drained') {
     if (state.queueDepth === 0) return state;
-    return { ...state, queueDepth: 0 };
+    return { ...state, queueDepth: 0, queuePreviews: [] };
   }
   if (event.type === 'queue_cleared') {
     const next = Math.max(0, state.queueDepth - event.count);
     if (next === state.queueDepth) return state;
-    return { ...state, queueDepth: next };
+    return {
+      ...state,
+      queueDepth: next,
+      queuePreviews:
+        next === 0
+          ? []
+          : state.queuePreviews.slice(Math.min(event.count, state.queuePreviews.length)),
+    };
   }
   return state;
 }
@@ -162,6 +206,7 @@ export function markLifecycleCancellationRequested(
     status: 'cancelled',
     cancelled: true,
     queueDepth: state.queueDepth,
+    queuePreviews: state.queuePreviews,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: durationFromStart(state.startedAt, cancellation.ts),
@@ -180,6 +225,7 @@ function markLifecycleComplete(
     status: 'complete',
     cancelled: false,
     queueDepth: state.queueDepth,
+    queuePreviews: state.queuePreviews,
     startedAt: state.startedAt,
     endedAt,
     durationMs: durationFromStart(state.startedAt, endedAt),
@@ -194,6 +240,7 @@ function durationFromStart(startedAt: number | null, endedAt: number): number {
 function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   const phase = next.phase ?? initial.phase;
   const queueDepth = next.queueDepth ?? initial.queueDepth;
+  const queuePreviews = next.queuePreviews ?? initial.queuePreviews;
   const startedAt = next.startedAt ?? null;
 
   if (next.status === 'complete') {
@@ -203,6 +250,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'complete',
       cancelled: false,
       queueDepth,
+      queuePreviews,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -217,6 +265,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'cancelled',
       cancelled: true,
       queueDepth,
+      queuePreviews,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -225,12 +274,13 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   }
 
   if (next.status === 'running' || phase !== 'idle') {
-    return runningLifecycleState({ phase, queueDepth, startedAt });
+    return runningLifecycleState({ phase, queueDepth, queuePreviews, startedAt });
   }
 
   return {
     ...initial,
     queueDepth,
+    queuePreviews,
   };
 }
 
@@ -241,7 +291,12 @@ function applyRunningPhase(
 ): LifecycleState {
   if (phase === undefined || state.phase === phase) return state;
   if (state.status === 'idle') {
-    return runningLifecycleState({ phase, queueDepth: state.queueDepth, startedAt: ts });
+    return runningLifecycleState({
+      phase,
+      queueDepth: state.queueDepth,
+      queuePreviews: state.queuePreviews,
+      startedAt: ts,
+    });
   }
   if (state.status === 'running') {
     return { ...state, phase: runningPhase(phase) };
@@ -252,6 +307,7 @@ function applyRunningPhase(
 function runningLifecycleState(input: {
   phase: Phase;
   queueDepth: number;
+  queuePreviews: readonly QueuedMessagePreview[];
   startedAt: number | null;
 }): RunningLifecycleState {
   return {
@@ -259,6 +315,7 @@ function runningLifecycleState(input: {
     status: 'running',
     cancelled: false,
     queueDepth: input.queueDepth,
+    queuePreviews: input.queuePreviews,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

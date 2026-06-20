@@ -5,6 +5,18 @@ import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js
 import { operationsStore } from './operations.js';
 import { makePlannerStatus } from '#testing/helpers/events.js';
 
+type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
+
+const runnerCallFailureStatuses: readonly RunnerCallFailureStatus[] = [
+  'failed',
+  'truncated',
+  'aborted',
+  'timeout',
+  'refused',
+  'unsupported_tool',
+  'incomplete',
+];
+
 function runnerStarted(
   overrides?: Partial<EngineEventOf<'runner_call_started'>>,
 ): EngineEventOf<'runner_call_started'> {
@@ -51,6 +63,33 @@ function runnerAborted(
   };
 }
 
+function runnerCompleted(
+  overrides?: Partial<EngineEventOf<'runner_call_completed'>>,
+): EngineEventOf<'runner_call_completed'> {
+  return {
+    type: 'runner_call_completed',
+    ts: 1_900,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    callId: 'call-1',
+    role: 'implementer',
+    backendKind: 'cli',
+    runnerName: 'codex',
+    model: 'xhigh',
+    attempt: 0,
+    sequence: 2,
+    status: 'completed',
+    error: null,
+    partial: false,
+    startedAt: 1_000,
+    endedAt: 1_900,
+    durationMs: 900,
+    usage: null,
+    nativeSessionId: null,
+    ...overrides,
+  };
+}
+
 describe('operationsStore', () => {
   beforeEach(() => resetWorkflow());
 
@@ -65,6 +104,54 @@ describe('operationsStore', () => {
       startedAt: 1_000,
       runnerName: 'codex',
       model: 'xhigh',
+    });
+  });
+
+  it('restores the newest still-running operation when the active call completes', () => {
+    addEvent(
+      runnerStarted({
+        ts: 1_000,
+        callId: 'planner-parent',
+        role: 'planner',
+        phase: 'planning',
+        sequence: 1,
+      }),
+    );
+    addEvent(
+      runnerStarted({
+        ts: 1_100,
+        callId: 'native-injection',
+        role: 'planner',
+        phase: 'planning',
+        sequence: 2,
+      }),
+    );
+
+    expect(operationsStore.get().active).toMatchObject({
+      callId: 'native-injection',
+      status: 'running',
+    });
+
+    addEvent(
+      runnerCompleted({
+        ts: 1_150,
+        callId: 'native-injection',
+        role: 'planner',
+        phase: 'planning',
+        sequence: 3,
+        startedAt: 1_100,
+        endedAt: 1_150,
+        durationMs: 50,
+      }),
+    );
+
+    expect(operationsStore.get().active).toMatchObject({
+      callId: 'planner-parent',
+      status: 'running',
+    });
+    expect(operationsStore.get().last).toMatchObject({
+      callId: 'native-injection',
+      status: 'completed',
     });
   });
 
@@ -110,7 +197,25 @@ describe('operationsStore', () => {
     });
   });
 
-  it('sanitizes operation labels, tool metadata, warnings, and reasons', () => {
+  it.each(runnerCallFailureStatuses)('preserves runner_call_error status %s', (status) => {
+    addEvent(runnerStarted());
+    addEvent(
+      runnerAborted({
+        status,
+        error: { code: status, message: 'runner stopped' },
+      }),
+    );
+
+    expect(operationsStore.get().last).toMatchObject({
+      callId: 'call-1',
+      status,
+      reason: 'runner stopped',
+      partial: true,
+    });
+    expect(operationsStore.get().byCallId.get('call-1')?.status).toBe(status);
+  });
+
+  it('sanitizes operation labels, runner metadata, warnings, and reasons', () => {
     addEvent(
       runnerStarted({
         runnerName: 'codex\u001b]0;owned\u0007 sk-abcdefghijklmnopqrst',

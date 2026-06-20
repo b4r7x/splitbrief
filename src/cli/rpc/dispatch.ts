@@ -9,6 +9,23 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';
 import type { RpcCommand } from './types.js';
 
+function ackCommandName(raw: string): string {
+  const trimmed = raw.trim();
+  const firstWhitespace = trimmed.search(/\s/);
+  return firstWhitespace === -1 ? trimmed : trimmed.slice(0, firstWhitespace);
+}
+
+function slashAckData(
+  raw: string,
+  messages: string[],
+  persistTranscript: boolean,
+): { command: string; messages: string[] } {
+  return {
+    command: persistTranscript ? raw : ackCommandName(raw),
+    messages,
+  };
+}
+
 export function createCommandHandler(deps: {
   projectDir: string;
   getSessionId: () => string | undefined;
@@ -22,7 +39,7 @@ export function createCommandHandler(deps: {
   bus: EventBus;
   approvalGate: { handle: (cmd: RpcCommand) => boolean };
   messageGate: { resolve: (value: string) => boolean };
-  receiveRecoveryAction: (action: string) => void;
+  receiveRecoveryAction: (action: string) => boolean;
   writeStatus: () => void;
   writer: {
     ack: (command: string, data?: unknown) => void;
@@ -59,7 +76,10 @@ export function createCommandHandler(deps: {
       for (const error of errors) deps.writer.error(error);
       return;
     }
-    deps.writer.ack('slash', { command: raw, messages });
+    deps.writer.ack(
+      'slash',
+      slashAckData(raw, messages, deps.getConfig().workflow.persistTranscript),
+    );
   };
 
   return (cmd: RpcCommand) => {
@@ -82,14 +102,24 @@ export function createCommandHandler(deps: {
         deps.writer.error('Workflow queue is not ready.');
         return;
       }
-      handler(cmd.text, deps.getPhase());
-      deps.writer.ack('message');
+      void Promise.resolve(handler(cmd.text, deps.getPhase()))
+        .then((result) => {
+          if (result.status === 'rejected') {
+            deps.writer.error(result.message);
+            return;
+          }
+          deps.writer.ack('message');
+        })
+        .catch((err) => {
+          deps.writer.error(toErrorMessage(err));
+        });
       return;
     }
 
     if (cmd.type === 'recovery') {
-      deps.receiveRecoveryAction(cmd.action);
-      deps.writer.ack('recovery', { action: cmd.action, queued: true });
+      if (deps.receiveRecoveryAction(cmd.action)) {
+        deps.writer.ack('recovery', { action: cmd.action, queued: true });
+      }
       return;
     }
 

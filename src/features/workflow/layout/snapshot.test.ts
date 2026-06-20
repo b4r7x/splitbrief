@@ -74,7 +74,7 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    expect(snap.contentRect.width).toBe(160);
+    expect(snap.contentRect.width).toBe(158);
     expect(snap.viewportHeight).toBeGreaterThan(0);
     expect(snap.viewportHeight).toBeLessThan(40);
   });

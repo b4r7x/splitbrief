@@ -79,7 +79,7 @@ describe('projected cost via buildCostStatusLineLayout', () => {
   });
 
   it('falls back to the prediction when no task cost is available', () => {
-    const prediction = {
+    const prediction: NonNullable<CostStatusLineLayoutInput['prediction']> = {
       estimatedTasks: 4,
       lowCost: 1,
       expectedCost: 3.5,
@@ -98,6 +98,51 @@ describe('projected cost via buildCostStatusLineLayout', () => {
     ).toBe('proj $3.50');
   });
 
+  it('prefers deterministic known actual estimate over legacy expected prediction', () => {
+    const prediction: NonNullable<CostStatusLineLayoutInput['prediction']> = {
+      estimatedTasks: 4,
+      lowCost: 1,
+      expectedCost: 3.5,
+      highCost: 6,
+      plannerTool: 'x',
+      implementerTool: 'y',
+      deterministic: {
+        estimateScope: 'prompt-input-only',
+        taskCount: 4,
+        taskFitCounts: { fits: 4, tight: 0, overflow: 0, unknown: 0 },
+        contextConfidenceCounts: {
+          contextExplicit: 4,
+          contextDetected: 0,
+          contextKnownCatalog: 0,
+          contextCachedProvider: 0,
+          contextConservativeFallback: 0,
+          profileUnavailable: 0,
+        },
+        priceConfidenceCounts: {
+          priceKnown: 4,
+          priceUnknown: 0,
+          profileUnavailable: 0,
+        },
+        tasks: [],
+        totals: {
+          knownActualEstimate: 0.42,
+          hypotheticalAllPlanner: 2.5,
+          estimatedSavings: 2.08,
+          unknownCostReason: [],
+        },
+      },
+    };
+    expect(
+      projectedText({
+        completedCount: 0,
+        totalActualCost: 0,
+        costBreakdown: null,
+        prediction,
+        totalTasks: 4,
+      }),
+    ).toBe('proj $0.42');
+  });
+
   it('reports unavailable projection when neither source exists', () => {
     expect(
       projectedText({
@@ -107,7 +152,31 @@ describe('projected cost via buildCostStatusLineLayout', () => {
         prediction: null,
         totalTasks: 4,
       }),
-    ).toBe('proj n/a');
+    ).toBe('');
+  });
+
+  it('omits unavailable spend and projection labels from the status line', () => {
+    const layout = buildCostStatusLineLayout({
+      renderWidth: 120,
+      paddingX: 0,
+      spentText: 'n/a',
+      completedCount: 0,
+      totalActualCost: 0,
+      prediction: null,
+      totalTasks: 4,
+      pricingState: 'n/a',
+      maxBudget: undefined,
+      plannerInput: 0,
+      totalInput: 0,
+      totalCacheRead: 0,
+      localRate: 0,
+      routedTasks: 0,
+      costBreakdown: null,
+    });
+    const text = layout.kind === 'single' ? layout.line : `${layout.left} ${layout.right}`;
+
+    expect(text).not.toContain('spent n/a');
+    expect(text).not.toContain('proj n/a');
   });
 });
 
@@ -124,6 +193,7 @@ describe('formatCacheHitPct', () => {
     [undefined, 1000, 'cache n/a'],
     [0, 0, 'cache n/a'],
     [0, 1000, 'cache n/a'],
+    [500, 0, 'cache 100%'],
     [1, 2, 'cache 33%'],
     [500, 500, 'cache 50%'],
   ] as const)('formats cache read %s with input %i as %s', (cacheRead, input, expected) => {

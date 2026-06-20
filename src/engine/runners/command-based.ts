@@ -1,13 +1,12 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { ParsedLine } from './types.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
-import { accumulateUsage } from '../streaming/token-usage.js';
+import { createParsedLineRecorder } from '../streaming/parsed-line-recorder.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
@@ -46,20 +45,6 @@ function createCommandCallContext(opts: {
   );
 }
 
-function collectParsedOutput(
-  output: string,
-  parseLine: (line: string) => ParsedLine,
-): { text: string; usage: TokenDelta | null } {
-  let text = '';
-  let usage: TokenDelta | null = null;
-  for (const line of output.split('\n')) {
-    const parsed = parseLine(line);
-    if (parsed.text) text += parsed.text;
-    if (parsed.usage) usage = accumulateUsage(usage, parsed.usage);
-  }
-  return { text, usage };
-}
-
 function substitutePromptPlaceholder(
   command: string,
   args: string[],
@@ -84,6 +69,7 @@ export async function invokeCommandBasedRunner(
     prompt: string;
     projectDir: string;
     onOutput?: ((chunk: string) => void) | undefined;
+    onSessionId?: ((id: string) => void) | undefined;
     onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
     callContext?: RunnerCallContext | undefined;
     signal?: AbortSignal | undefined;
@@ -116,27 +102,13 @@ export async function invokeCommandBasedRunner(
   if (opts.timeout !== undefined) {
     const parseLine = getLineParser(format);
     const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
+    const parsedRecorder = createParsedLineRecorder({
+      recorder,
+      onText: onOutput,
+      onSessionId: opts.onSessionId,
+    });
     const liveOutputBuffer = createLineBuffer((line) => {
-      const parsed = parseLine(line);
-      if (parsed.text) {
-        recorder.text({ channel: parsed.isResult ? 'result' : 'stdout', text: parsed.text });
-        onOutput?.(parsed.text);
-      }
-      if (parsed.usage) {
-        recorder.usage({
-          usage: parsed.usage,
-          semantics: parsed.isResult ? 'final' : 'delta',
-        });
-      }
-      if (parsed.isError) {
-        recorder.finishFailed({
-          status: 'failed',
-          error: {
-            code: 'runner_result_error',
-            message: parsed.text ?? 'Runner result failed',
-          },
-        });
-      }
+      parsedRecorder.apply(parseLine(line));
     });
     try {
       const result = await spawnWithShellFallback({
@@ -146,6 +118,7 @@ export async function invokeCommandBasedRunner(
         env: opts.env,
         timeout: opts.timeout,
         onProgress: (chunk) => liveOutputBuffer.push(chunk),
+        onStderr: (chunk) => recorder.stderr({ text: chunk }),
         stdinInput: useStdin ? prompt : undefined,
         notFoundMessage: opts.notFoundMessage,
         signal,
@@ -168,9 +141,8 @@ export async function invokeCommandBasedRunner(
         });
       }
 
-      const parsedOutput = collectParsedOutput(result.output, parseLine);
-      stdout = parsedOutput.text;
-      usage = parsedOutput.usage;
+      stdout = parsedRecorder.text;
+      usage = parsedRecorder.usage;
       stderr = result.stderr;
       if (!recorder.hasTerminal()) recorder.finishCompleted();
       callResult = recorder.finalResult();
@@ -194,6 +166,7 @@ export async function invokeCommandBasedRunner(
       format,
       notFoundMessage: opts.notFoundMessage,
       onText: onOutput,
+      onSessionId: opts.onSessionId,
       onCallEvent: opts.onCallEvent,
       callContext: context,
       signal,

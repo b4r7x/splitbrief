@@ -1,5 +1,5 @@
-// Header (1) + meta row (1) + AgentStatusRow (1) + spacer (1) = 4 rows.
-export const TOP_FIXED_CHROME_ROWS = 4;
+// Header (1) + meta row (1) + AgentStatusRow (1) = 3 rows.
+export const TOP_FIXED_CHROME_ROWS = 3;
 // ConfigLine is optional and tracked separately from the fixed top chrome.
 export const CONFIG_CHROME_ROWS = 1;
 export const BOTTOM_FIXED_CHROME_ROWS = 2;

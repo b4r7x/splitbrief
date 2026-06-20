@@ -4,6 +4,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   makeCallbacks,
   makeBusRecorder,
@@ -12,8 +13,9 @@ import {
 import { setupProject, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';
 import { createInitialState } from '../../core/state/machine.js';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { PlannerCapabilities } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -52,6 +54,19 @@ Create an example file.
 - Follow project conventions
 `;
 
+function readSessionLog(projectDir: string, sessionId: string): unknown[] {
+  const logPath = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath, 'utf-8')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
+}
+
+function completedRunnerCall(text: string) {
+  return makeRunnerCallResult({ status: 'completed', text });
+}
+
 beforeEach(() => {
   projectDir = createTempDir('planner-base-test');
   createTestGitRepo(projectDir);
@@ -64,8 +79,8 @@ afterEach(() => {
 describe('createPlannerBase — phase artifact content', () => {
   it('phases[].text contains resolved artifact when readPhaseOutput is provided', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall('raw stdout noise'),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       readPhaseOutput: (_filename, _resultText, _projectDir) => '# Resolved artifact content',
@@ -84,8 +99,8 @@ describe('createPlannerBase — phase artifact content', () => {
 
   it('phases[].text equals stdout when no readPhaseOutput hook is provided', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '# Direct stdout content', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall('# Direct stdout content'),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -103,8 +118,8 @@ describe('createPlannerBase — phase artifact content', () => {
 
   it('quickPlan phases[].text contains resolved artifact from readPhaseOutput', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: 'raw quick output', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall('raw quick output'),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       readPhaseOutput: (_filename, _resultText, _projectDir) => `---
@@ -138,8 +153,8 @@ A test task.
   it('instantPlan emits the instant-planning phase', async () => {
     const onPhase = () => {};
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -172,9 +187,9 @@ A test task.
     const planner = createPlannerBase({
       invokePlan: async ({ prompt }) => {
         captured.push(prompt);
-        return { text: outputs[captured.length - 1] ?? '', usage: null };
+        return completedRunnerCall(outputs[captured.length - 1] ?? '');
       },
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -194,9 +209,9 @@ A test task.
     const planner = createPlannerBase({
       invokePlan: async ({ prompt }) => {
         captured = prompt;
-        return { text: taskMarkdown, usage: null };
+        return completedRunnerCall(taskMarkdown);
       },
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -207,16 +222,55 @@ A test task.
     expect(captured).toContain('file: src/path/to/file.py');
     expect(captured).not.toMatch(/TypeScript|```typescript|file\.ts/);
   });
+
+  it('flushes interrupted buffered output when a standard planner phase aborts', async () => {
+    const controller = new AbortController();
+    const sessionId = 'sess-planner-base-abort';
+    const err = new Error('aborted');
+    const planner = createPlannerBase({
+      invokePlan: async ({ callbacks }) => {
+        callbacks.onOutput('partial research output');
+        controller.abort();
+        throw err;
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await expect(
+      planner.plan({
+        feature: 'feature',
+        projectDir,
+        callbacks: {
+          onOutput: () => {},
+          persistTranscript: true,
+          sessionId,
+          signal: controller.signal,
+        },
+      }),
+    ).rejects.toBe(err);
+
+    expect(readSessionLog(projectDir, sessionId)).toEqual([
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        phase: 'researching',
+        text: 'partial research output',
+        interrupted: true,
+      }),
+    ]);
+  });
 });
 
 describe('createPlannerBase — hintSuccessMode', () => {
   it('hintSuccessMode: "files" — succeeds when files are written', async () => {
     const outFile = join(projectDir, 'hint-out.ts');
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async () => {
         writeFileSync(outFile, '// written by escalation');
-        return { text: '', usage: null };
+        return completedRunnerCall('');
       },
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
@@ -234,8 +288,8 @@ describe('createPlannerBase — hintSuccessMode', () => {
 
   it('hintSuccessMode: "files" — fails when no files are written', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
@@ -252,8 +306,8 @@ describe('createPlannerBase — hintSuccessMode', () => {
 
   it('hintSuccessMode: "text" (default) — succeeds when text is non-empty', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: 'some hint output', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall('some hint output'),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -269,8 +323,8 @@ describe('createPlannerBase — hintSuccessMode', () => {
 
   it('hintSuccessMode: "text" (default) — fails when text is empty', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -286,8 +340,8 @@ describe('createPlannerBase — hintSuccessMode', () => {
 
   it('capabilities.supportsHintEscalation: false — always returns success: false', async () => {
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: 'lots of output', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall('lots of output'),
       isAvailable: async () => true,
       capabilities: {
         supportsConversationalPlanning: false,
@@ -316,10 +370,10 @@ describe('createPlannerBase — hintSuccessMode', () => {
     // Escalation writes a NEW file only
     const newFile = join(projectDir, 'new-from-hint.ts');
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async () => {
         writeFileSync(newFile, '// written by hint');
-        return { text: '', usage: null };
+        return completedRunnerCall('');
       },
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
@@ -342,8 +396,8 @@ describe('createPlannerBase — hintSuccessMode', () => {
     writeFileSync(preExisting, '// dirty before escalation');
 
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
@@ -370,8 +424,8 @@ describe('createPlannerBase — structured summarization', () => {
       remainingWork: ['run tests'],
     };
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
-      invokeEscalate: async () => ({ text: JSON.stringify(structured), usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(JSON.stringify(structured)),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -394,10 +448,10 @@ describe('createPlannerBase — structured summarization', () => {
     };
     let prompt = '';
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async (opts) => {
         prompt = opts.prompt;
-        return { text: JSON.stringify(previous), usage: null };
+        return completedRunnerCall(JSON.stringify(previous));
       },
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
@@ -426,11 +480,11 @@ describe('createPlannerBase — structured summarization', () => {
     };
     let capturedSignal: AbortSignal | undefined;
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async (opts) => {
         capturedSignal = opts.signal;
         opts.callbacks.onCallEvent?.({ type: 'call_started', ts: Date.now(), ...opts.callContext });
-        return { text: JSON.stringify(structured), usage: null };
+        return completedRunnerCall(JSON.stringify(structured));
       },
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
@@ -458,9 +512,9 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
     const planner = createPlannerBase({
       invokePlan: async ({ prompt }) => {
         captured.push(prompt);
-        return { text: 'ok', usage: null };
+        return completedRunnerCall('ok');
       },
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -495,9 +549,9 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
       invokePlan: async ({ prompt, priorMessages }) => {
         captured.push(prompt);
         if (priorMessages) seenPriorMessages = priorMessages;
-        return { text: 'ok', usage: null };
+        return completedRunnerCall('ok');
       },
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       consumesPriorMessages: true,
@@ -538,9 +592,9 @@ describe('createPlannerBase — attachments capability gate (F-123 seam)', () =>
     const planner = createPlannerBase({
       invokePlan: async ({ images }) => {
         seenImages = images;
-        return { text: 'raw stdout noise', usage: null };
+        return completedRunnerCall('raw stdout noise');
       },
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: { ...defaultCapabilities, supportsImages },
       readPhaseOutput: () => REAL_TASKS_MD,
@@ -602,8 +656,8 @@ describe('createPlannerBase — unknown Task Brief section warning (F-429 / N399
   it('emits a warning event when planner-generated briefs contain an unknown ### section', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall('raw stdout noise'),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       readPhaseOutput: () => tasksWithUnknownSection,

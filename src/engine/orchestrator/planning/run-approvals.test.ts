@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -39,6 +40,10 @@ afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
+
+function completedRunnerCall(text: string) {
+  return makeRunnerCallResult({ status: 'completed', text });
+}
 
 function runPhase(opts: RunOpts = {}) {
   return runPhaseHelper(dirs, opts);
@@ -399,8 +404,8 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 - this heading is outside the canonical grammar and will be dropped
 `;
     const planner = createPlannerBase({
-      invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
-      invokeEscalate: async () => ({ text: '', usage: null }),
+      invokePlan: async () => completedRunnerCall('raw stdout noise'),
+      invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities,
       readPhaseOutput: (filename) => (filename === TASKS_FILE ? tasksWithUnknownSection : '# doc'),

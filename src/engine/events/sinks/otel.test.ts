@@ -7,6 +7,7 @@ import {
 import { SpanStatusCode } from '@opentelemetry/api';
 import { createOtelSink } from './otel.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
 
 describe('createOtelSink', () => {
   let exporter: InMemorySpanExporter;
@@ -44,6 +45,21 @@ describe('createOtelSink', () => {
       'sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa',
     );
     expect(workflow?.attributes['diptych.feature']).toContain('***REDACTED***');
+  });
+
+  it('replaces the feature span attribute when transcript persistence is disabled', () => {
+    const sink = createOtelSink({ provider, persistTranscript: false });
+    sink({
+      type: 'workflow_started',
+      ts: 1,
+      phase: 'researching',
+      feature: 'secret feature prompt',
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
+    expect(workflow?.attributes['diptych.feature']).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(JSON.stringify(workflow?.attributes)).not.toContain('secret feature prompt');
   });
 
   it('sets workflow_config attributes on the workflow span', () => {
@@ -245,6 +261,43 @@ describe('createOtelSink', () => {
 
     const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
     expect(task?.attributes['diptych.task.skip_reason']).toBe('already done');
+  });
+
+  it('omits task prose attributes when transcript persistence is disabled', () => {
+    const sentinel = 'otel-task-sentinel-34918';
+    const sink = createOtelSink({ provider, persistTranscript: false });
+    sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
+    sink({
+      type: 'task_started',
+      ts: 10,
+      phase: 'implementing',
+      taskId: taskId('T303'),
+      title: `title ${sentinel}`,
+      index: 0,
+      total: 1,
+      file: `src/${sentinel}.ts`,
+      action: 'modify',
+      routingReason: `route ${sentinel}`,
+    });
+    sink({
+      type: 'task_skipped',
+      ts: 30,
+      phase: 'implementing',
+      taskId: taskId('T303'),
+      title: `skip ${sentinel}`,
+      reason: `reason ${sentinel}`,
+    });
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
+    expect(task?.attributes['diptych.task.id']).toBe('T303');
+    expect(task?.attributes['diptych.task.index']).toBe(0);
+    expect(task?.attributes['diptych.task.total']).toBe(1);
+    expect(task?.attributes['diptych.task.title']).toBeUndefined();
+    expect(task?.attributes['diptych.task.file']).toBeUndefined();
+    expect(task?.attributes['diptych.task.action']).toBeUndefined();
+    expect(task?.attributes['diptych.task.skip_reason']).toBeUndefined();
+    expect(JSON.stringify(task?.attributes)).not.toContain(sentinel);
   });
 
   it('records workflow_cancelled with ERROR status on all open spans', () => {

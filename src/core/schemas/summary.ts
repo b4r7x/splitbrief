@@ -53,6 +53,8 @@ export const ProviderCostSchema = z.object({
   inputTokens: z.number().nonnegative(),
   outputTokens: z.number().nonnegative(),
   cost: z.number().nonnegative(),
+  cacheReadTokens: z.number().nonnegative().optional(),
+  cacheCreateTokens: z.number().nonnegative().optional(),
 });
 
 export const CostBreakdownSchema = z.object({
@@ -102,6 +104,7 @@ export const CostPredictionSchema = z.object({
   implementerTool: z.string(),
   deterministic: z
     .object({
+      estimateScope: z.literal('prompt-input-only').optional(),
       taskCount: z.number().int().nonnegative(),
       taskFitCounts: z.object({
         fits: z.number().int().nonnegative(),

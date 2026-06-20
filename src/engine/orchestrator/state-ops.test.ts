@@ -28,6 +28,7 @@ function makeQueuedMessage(): QueuedMessage {
     queuedAt: '2026-05-27T04:00:00.000Z',
     phase: 'researching',
     deliveredViaNative: false,
+    nativeDeliveryState: 'pending',
   };
 }
 

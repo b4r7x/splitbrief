@@ -12,12 +12,8 @@ import {
 } from '../providers/cost.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import { formatCost } from '../../core/formatting.js';
-import {
-  getCompletedTaskIds,
-  getEscalatedTaskIds,
-  getFailedTaskIds,
-  getSkippedTaskIds,
-} from '../../core/state/selectors.js';
+import { getFailedTaskIds, getSkippedTaskIds } from '../../core/state/selectors.js';
+import { classifyTaskCompletionMethod } from '../../core/task-completion.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger.js';
 import { buildEvidenceSummary } from './evidence/reporting.js';
 import { readDriftReport } from './drift/io.js';
@@ -32,6 +28,8 @@ import {
 import { isBriefQualityReport, type BriefQualityReport } from '../spec/brief-quality.js';
 import { readJsonSafe } from '../../lib/fs.js';
 import { countBySeverity } from '../../utils/collections.js';
+import { projectCostPredictionForTranscriptPolicy } from '../events/protection.js';
+import { featureForTranscriptPolicy } from '../../core/sessions/lifecycle.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
@@ -47,6 +45,7 @@ export type SummaryBase = {
   sessionId?: string;
   costPrediction?: CostPrediction | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
+  persistTranscript?: boolean | undefined;
 };
 
 type BuildSummaryOptions = SummaryBase & {
@@ -104,6 +103,32 @@ function checkpointKindLabel(checkpoint: ReviewPacketCheckpoint | null): string 
     : checkpoint.kind;
 }
 
+function countLocalAndEscalatedTasks(
+  state: BuildSummaryState,
+  taskBreakdowns: TaskTokenUsage[] | undefined,
+): { local: number; escalated: number } {
+  const latestMethodByTask = new Map<string, TaskTokenUsage['method']>();
+  for (const breakdown of taskBreakdowns ?? []) {
+    latestMethodByTask.set(breakdown.taskId, breakdown.method);
+  }
+
+  let local = 0;
+  let escalated = 0;
+  for (const task of state.tasks) {
+    if (task.status !== 'done' && task.status !== 'escalated') continue;
+    const method = latestMethodByTask.get(task.id);
+    if (method) {
+      const completionClass = classifyTaskCompletionMethod(method);
+      if (completionClass === 'local') local += 1;
+      else if (completionClass === 'escalated') escalated += 1;
+      continue;
+    }
+    if (task.status === 'done') local += 1;
+    else escalated += 1;
+  }
+  return { local, escalated };
+}
+
 export function buildSummary(opts: BuildSummaryOptions): Summary {
   const {
     feature,
@@ -120,10 +145,12 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     sessionId,
     costPrediction,
     pricingCache,
+    persistTranscript = true,
   } = opts;
   const totalTasks = state.tasks.length;
-  const completedByLocal = getCompletedTaskIds(state).length;
-  const escalatedToPlanner = getEscalatedTaskIds(state).length;
+  const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
+  const completedByLocal = completionCounts.local;
+  const escalatedToPlanner = completionCounts.escalated;
   const skipped = getSkippedTaskIds(state).length;
   const failed = getFailedTaskIds(state).length;
   const totalTime = Date.now() - startTime;
@@ -226,7 +253,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   }
 
   return {
-    feature,
+    feature: featureForTranscriptPolicy(feature, persistTranscript),
     totalTasks,
     completedByLocal,
     escalatedToPlanner,
@@ -248,7 +275,9 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),
     ...(chainDriftSummary && { chainDriftSummary }),
-    ...(costPrediction !== undefined && { costPrediction }),
+    ...(costPrediction !== undefined && {
+      costPrediction: projectCostPredictionForTranscriptPolicy(costPrediction, persistTranscript),
+    }),
     ...(checkpointSummary && { checkpointSummary }),
     ...(reviewPacket && { reviewPacket }),
   };

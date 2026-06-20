@@ -1,6 +1,7 @@
 import type { Readable, Writable } from 'node:stream';
 import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
 import { RecoveryActionSchema, type Phase } from '../../core/schemas/enums.js';
+import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
@@ -13,7 +14,7 @@ import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import { loadState } from '../../core/state/persistence.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { createEventBus } from '../../engine/events/bus.js';
-import { eventPhase } from '../../engine/events/schema.js';
+import { eventPhase, isInfrastructurePhaseEvent } from '../../engine/events/schema.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import {
   finalizeRecoveryResult,
@@ -63,7 +64,7 @@ function currentSessionId(projectDir: string, sessionId: string | undefined): st
 }
 
 function pendingQueueDepth(state: WorkflowState | null): number {
-  return state?.messageQueue.filter((message) => !message.drainedAt).length ?? 0;
+  return state?.messageQueue.filter(isQueuedMessagePendingDelivery).length ?? 0;
 }
 
 function pendingGateType(
@@ -97,6 +98,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const writer = createResponseWriter({
     stream: deps.output ?? process.stdout,
     onClose: (reason) => shutdownRpc(reason),
+    getPersistTranscript: () => config.workflow.persistTranscript,
   });
 
   const bus = createEventBus();
@@ -124,8 +126,10 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   };
 
   bus.subscribe((event) => {
-    const phase = eventPhase(event);
-    if (phase) currentPhase = phase;
+    if (!isInfrastructurePhaseEvent(event)) {
+      const phase = eventPhase(event);
+      if (phase) currentPhase = phase;
+    }
     writer.event(event);
   });
 
@@ -152,14 +156,31 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     return recoveryGate.wait();
   };
 
-  const receiveRecoveryAction = (action: string) => {
+  const receiveRecoveryAction = (action: string): boolean => {
     if (!recoveryGate.isPending()) {
       writer.error(`No pending recovery prompt for action: ${action}`);
-      return;
+      return false;
+    }
+    const state = readCurrentState();
+    const issue = state?.pendingRecovery;
+    if (!issue) {
+      writer.error('No pending recovery issue is available.');
+      return false;
+    }
+    const parsed = RecoveryActionSchema.safeParse(action);
+    if (!parsed.success) {
+      writer.error(`Invalid recovery action: ${action}`);
+      return false;
+    }
+    if (!issue.availableActions.includes(parsed.data)) {
+      writer.error(`Recovery action is not available for this issue: ${action}`);
+      return false;
     }
     if (!recoveryGate.resolve(action)) {
       writer.error(`Recovery action already resolved: ${action}`);
+      return false;
     }
+    return true;
   };
 
   const waitForApproval = async (data: unknown) => {
@@ -327,6 +348,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         reportError: (message) => writer.error(message),
         abort: triggerAbort,
       });
+      const latestState = readCurrentState();
+      if (latestState) stateForRun = latestState;
 
       await runWorkflowImpl({
         feature,

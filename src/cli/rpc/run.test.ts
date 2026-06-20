@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -50,6 +51,41 @@ function setupProject(): string {
   dirs.push(projectDir);
   writeConfig(projectDir);
   return projectDir;
+}
+
+function makeStateWithMixedQueue(feature: string): WorkflowState {
+  const queuedAt = '2026-01-01T00:00:00.000Z';
+  return {
+    ...createInitialState(feature),
+    phase: 'planning',
+    messageQueue: [
+      {
+        id: 'msg-pending',
+        text: 'still pending',
+        queuedAt,
+        phase: 'planning',
+        deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
+      },
+      {
+        id: 'msg-native',
+        text: 'already delivered natively',
+        queuedAt,
+        phase: 'planning',
+        deliveredViaNative: true,
+        nativeDeliveryState: 'delivered',
+      },
+      {
+        id: 'msg-drained',
+        text: 'already drained',
+        queuedAt,
+        phase: 'planning',
+        deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
+        drainedAt: '2026-01-01T00:00:01.000Z',
+      },
+    ],
+  };
 }
 
 function captureWritable(): { chunks: string[]; output: Writable } {
@@ -201,10 +237,83 @@ describe('runRpc', () => {
         'sessionId' in line.data &&
         line.data.sessionId === sessionId &&
         'state' in line.data &&
-        typeof line.data.state === 'object' &&
-        line.data.state !== null &&
-        'feature' in line.data.state &&
-        line.data.state.feature === 'status feature',
+        line.data.state === null &&
+        'phase' in line.data &&
+        line.data.phase === 'planning',
+    );
+
+    finishWorkflow?.();
+    await run;
+  });
+
+  it('reports only undrained messages that were not delivered natively as queued', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-status-queue-session';
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, makeStateWithMixedQueue('status queue feature'));
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async () => workflowDone;
+
+    const run = runRpc({
+      feature: 'status queue feature',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    input.write('{"type":"status"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'queueDepth' in line.data &&
+        line.data.queueDepth === 1,
+    );
+
+    finishWorkflow?.();
+    await run;
+  });
+
+  it('uses the same pending queue depth for /queue show', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-slash-queue-session';
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, makeStateWithMixedQueue('slash queue feature'));
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async () => workflowDone;
+
+    const run = runRpc({
+      feature: 'slash queue feature',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    input.write('{"type":"slash","command":"/queue show"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'messages' in line.data &&
+        Array.isArray(line.data.messages) &&
+        line.data.messages.includes('Queue: 1 message pending'),
     );
 
     finishWorkflow?.();
@@ -357,8 +466,9 @@ describe('runRpc', () => {
         reason: 'implementation-error' as const,
         phase: 'implementing' as const,
         status: 'awaiting-user' as const,
-        message: 'Task failed',
-        details: ['Something went wrong'],
+        taskTitle: 'rpc-run-recovery-title-secret-54017',
+        message: 'rpc-run-recovery-message-secret-54017',
+        details: ['rpc-run-recovery-detail-secret-54017'],
         files: [],
         affectedTaskIds: [],
         availableActions: [
@@ -395,6 +505,27 @@ describe('runRpc', () => {
         'pending' in line.data &&
         line.data.pending === 'recovery',
     );
+    const statusLines = parseLines(chunks);
+    expect(statusLines).toContainEqual(
+      expect.objectContaining({
+        type: 'status',
+        data: expect.objectContaining({
+          pending: 'recovery',
+          issue: expect.objectContaining({
+            id: 'rec-1',
+            reason: 'implementation-error',
+            taskTitle: '[transcript omitted]',
+            message: '[transcript omitted]',
+            details: ['[transcript omitted]'],
+            availableActions: ['abort-workflow', 'retry-same-worker', 'skip-current-task'],
+            recommendedAction: 'abort-workflow',
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(statusLines)).not.toContain('rpc-run-recovery-title-secret-54017');
+    expect(JSON.stringify(statusLines)).not.toContain('rpc-run-recovery-message-secret-54017');
+    expect(JSON.stringify(statusLines)).not.toContain('rpc-run-recovery-detail-secret-54017');
 
     input.write('{"type":"recovery","action":"abort-workflow"}\n');
     await run;
@@ -402,6 +533,189 @@ describe('runRpc', () => {
     expect(parseLines(chunks)).toContainEqual(
       expect.objectContaining({ type: 'ack', command: 'recovery' }),
     );
+  });
+
+  it('does not acknowledge recovery commands when no recovery prompt is pending', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async () => workflowDone;
+
+    const run = runRpc({
+      feature: 'no recovery prompt',
+      projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-no-recovery-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    input.write('{"type":"recovery","action":"abort-workflow"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' &&
+        typeof line.error === 'string' &&
+        line.error.includes('No pending recovery prompt'),
+    );
+
+    finishWorkflow?.();
+    await run;
+
+    expect(parseLines(chunks)).not.toContainEqual(
+      expect.objectContaining({ type: 'ack', command: 'recovery' }),
+    );
+  });
+
+  it('does not acknowledge invalid or unavailable recovery actions', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-invalid-recovery-session';
+    ensureSessionDir(projectDir, sessionId);
+    const stateWithRecovery: WorkflowState = {
+      ...createInitialState('invalid recovery feature'),
+      phase: 'implementing',
+      pendingRecovery: {
+        id: 'rec-invalid',
+        reason: 'retry-exhausted',
+        phase: 'implementing',
+        status: 'awaiting-user',
+        message: 'Recovery required',
+        details: [],
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker', 'abort-workflow'],
+        recommendedAction: 'retry-same-worker',
+        createdAt: new Date().toISOString(),
+      },
+    };
+    saveState({ projectDir, sessionId }, stateWithRecovery);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const run = runRpc({
+      feature: 'invalid recovery feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: stateWithRecovery,
+      sessionId,
+      deps: { input, output, runWorkflow: async () => {} },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'recovery',
+    );
+
+    input.write('{"type":"recovery","action":"not-real"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' &&
+        typeof line.error === 'string' &&
+        line.error.includes('Invalid recovery action'),
+    );
+    input.write('{"type":"recovery","action":"continue"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' &&
+        typeof line.error === 'string' &&
+        line.error.includes('not available'),
+    );
+    input.write('{"type":"recovery","action":"abort-workflow"}\n');
+    await run;
+
+    const lines = parseLines(chunks);
+    expect(lines).not.toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'recovery',
+        data: expect.objectContaining({ action: 'not-real' }),
+      }),
+    );
+    expect(lines).not.toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'recovery',
+        data: expect.objectContaining({ action: 'continue' }),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'recovery',
+        data: expect.objectContaining({ action: 'abort-workflow' }),
+      }),
+    );
+  });
+
+  it('does not send a second queued recovery ACK after the prompt is resolved', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-double-recovery-session';
+    ensureSessionDir(projectDir, sessionId);
+    const stateWithRecovery: WorkflowState = {
+      ...createInitialState('double recovery feature'),
+      phase: 'implementing',
+      pendingRecovery: {
+        id: 'rec-double',
+        reason: 'retry-exhausted',
+        phase: 'implementing',
+        status: 'awaiting-user',
+        message: 'Recovery required',
+        details: [],
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['abort-workflow'],
+        recommendedAction: 'abort-workflow',
+        createdAt: new Date().toISOString(),
+      },
+    };
+    saveState({ projectDir, sessionId }, stateWithRecovery);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const run = runRpc({
+      feature: 'double recovery feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: stateWithRecovery,
+      sessionId,
+      deps: { input, output, runWorkflow: async () => {} },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'recovery',
+    );
+
+    input.write(
+      '{"type":"recovery","action":"abort-workflow"}\n{"type":"recovery","action":"abort-workflow"}\n',
+    );
+    await run;
+
+    const queuedAcks = parseLines(chunks).filter(
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'recovery' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'queued' in line.data &&
+        line.data.queued === true,
+    );
+    expect(queuedAcks).toHaveLength(1);
   });
 
   it('executes slash commands without crashing', async () => {
@@ -429,6 +743,61 @@ describe('runRpc', () => {
     await run;
   });
 
+  it('does not echo raw revise slash command comments when transcript persistence is disabled', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-revise-session';
+    const sentinel = 'rpc-raw-revise-secret-81427';
+    const state: WorkflowState = {
+      ...createInitialState('revise rpc feature'),
+      phase: 'reviewing-plan',
+    };
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, state);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      await new Promise<void>((resolve) => {
+        workflowOpts.signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+    };
+
+    const run = runRpc({
+      feature: 'revise rpc feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: state,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    input.write(`{"type":"slash","command":"/revise-plan ${sentinel}"}\n`);
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/revise-plan',
+    );
+    await run;
+
+    const lines = parseLines(chunks);
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        data: expect.objectContaining({
+          type: 'rewind_to_plan',
+          comment: '[transcript omitted]',
+        }),
+      }),
+    );
+    expect(JSON.stringify(lines)).not.toContain(sentinel);
+    expect(JSON.stringify(lines)).not.toContain(`/revise-plan ${sentinel}`);
+  });
+
   it('clears the live workflow queue from slash commands', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();
@@ -442,7 +811,7 @@ describe('runRpc', () => {
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
       workflowOpts.sinks.setClearQueueHandler?.(() => {
         clearCalls += 1;
-        return 2;
+        return { status: 'cleared', count: 2 };
       });
       clearHandlerInstalled = true;
       await workflowDone;

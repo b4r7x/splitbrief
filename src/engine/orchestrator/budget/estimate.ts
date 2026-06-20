@@ -26,6 +26,7 @@ import {
   DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
   resolveProfileContextLength,
 } from '../context-routing/context-length.js';
+import { buildRouteTaskOptions } from '../context-routing/route-input.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource } from '../context-routing/types.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
@@ -96,7 +97,7 @@ function estimatePromptOnlyCost(
 ): number | null {
   const pricing = resolvePricing(tool, cache, model);
   if (!pricing.isPriced) return null;
-  return calculateCost(tokens, 0, pricing);
+  return calculateCost(tokens, 0, pricing, tokens);
 }
 
 function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
@@ -131,19 +132,20 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
     };
   }
 
-  const decision = routeTaskToImplementerProfile({
+  const routeOptions = buildRouteTaskOptions({
     task: opts.task,
     context: opts.context,
     profiles: opts.profiles,
+    ...(opts.pricingCache !== undefined && { modelCache: opts.pricingCache }),
     ...(opts.conservativeContextLength !== undefined && {
       conservativeContextLength: opts.conservativeContextLength,
     }),
-    ...(opts.pricingCache !== undefined && { contextCache: opts.pricingCache }),
     ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
     ...(opts.detectedContextLength !== undefined && {
       detectedContextLength: opts.detectedContextLength,
     }),
   });
+  const decision = routeTaskToImplementerProfile(routeOptions);
   const selectedProfile = opts.profiles.find(
     (profile) => profile.name === decision.selectedProfile,
   );
@@ -154,7 +156,7 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
   const contextSource = confidenceProfile
     ? resolveProfileContextLength(
         confidenceProfile,
-        opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
+        routeOptions.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
         opts.pricingCache,
         opts.detectedContextLength,
       ).source
@@ -297,6 +299,7 @@ export function estimateDeterministicCost(
   );
 
   return {
+    estimateScope: 'prompt-input-only',
     taskCount: tasks.length,
     taskFitCounts: fitCounts(tasks),
     contextConfidenceCounts: contextConfidenceCounts(tasks),

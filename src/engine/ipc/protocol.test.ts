@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest';
+import { USER_EDIT_CONFLICT_ACTIONS } from '../../core/schemas/enums.js';
+import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseClientMessage, parseIpcPromptResponse, parseServerMessage } from './protocol.js';
+
+function taskReviewRequest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    taskId: 'T001',
+    taskTitle: 'Review task',
+    status: 'recovery-required',
+    filesTouched: ['src/task.ts'],
+    validation: { passed: false, summary: 'validation failed', stages: [] },
+    evidence: { summary: 'needs review', expected: [], observed: [] },
+    cost: {
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+    },
+    availableCommands: [...TASK_REVIEW_COMMANDS],
+    ...overrides,
+  };
+}
+
+function taskReviewEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    type: 'task_review_needed',
+    ts: 1,
+    phase: 'implementing',
+    ...taskReviewRequest(overrides),
+  };
+}
 
 describe('parseClientMessage', () => {
   it('parses detach', () => {
@@ -38,6 +72,15 @@ describe('parseIpcPromptResponse — cost_approval', () => {
 });
 
 describe('parseIpcPromptResponse — task_review', () => {
+  it.each(
+    TASK_REVIEW_COMMANDS.filter((command) => command !== 'edit-notes'),
+  )('parses task_review response action %s from the shared command contract', (action) => {
+    expect(parseIpcPromptResponse({ kind: 'task_review', response: { action } })).toEqual({
+      kind: 'task_review',
+      response: { action },
+    });
+  });
+
   it('parses valid task_review response with continue action', () => {
     const result = parseIpcPromptResponse({
       kind: 'task_review',
@@ -69,6 +112,15 @@ describe('parseIpcPromptResponse — task_review', () => {
     ).toBeNull();
   });
 
+  it('rejects edit-notes as a prompt command, not a response action', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'task_review',
+        response: { action: 'edit-notes' },
+      }),
+    ).toBeNull();
+  });
+
   it('rejects task_review with non-object response', () => {
     expect(
       parseIpcPromptResponse({
@@ -89,6 +141,15 @@ describe('parseIpcPromptResponse — task_review', () => {
 });
 
 describe('parseIpcPromptResponse — user_edit_conflict', () => {
+  it.each(
+    USER_EDIT_CONFLICT_ACTIONS,
+  )('parses conflict action %s from the shared schema', (action) => {
+    expect(parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: action })).toEqual({
+      kind: 'user_edit_conflict',
+      selectedAction: action,
+    });
+  });
+
   it('parses a valid conflict action', () => {
     expect(
       parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: 'continue-unrelated' }),
@@ -141,6 +202,54 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage(msg)).toEqual(msg);
   });
 
+  it('parses task_review events with legal recovery metadata', () => {
+    const msg = {
+      kind: 'event',
+      payload: taskReviewEvent({
+        recovery: {
+          reason: 'budget-exceeded',
+          message: 'Budget exceeded',
+          availableActions: ['pause-run', 'abort-workflow'],
+          recommendedAction: 'pause-run',
+        },
+      }),
+    };
+
+    expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('rejects task_review events with recovery actions illegal for the reason', () => {
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: taskReviewEvent({
+          recovery: {
+            reason: 'budget-exceeded',
+            message: 'Budget exceeded',
+            availableActions: ['continue'],
+            recommendedAction: 'continue',
+          },
+        }),
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects task_review events with a recommended recovery action not advertised', () => {
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: taskReviewEvent({
+          recovery: {
+            reason: 'validation-failed',
+            message: 'Validation failed',
+            availableActions: ['retry-same-worker'],
+            recommendedAction: 'route-bigger-worker',
+          },
+        }),
+      }),
+    ).toBeNull();
+  });
+
   it('rejects event with unknown payload type', () => {
     expect(
       parseServerMessage({
@@ -177,6 +286,125 @@ describe('parseServerMessage', () => {
       request: { requestId: 'req-1', kind: 'approval_needed', approvalType: 'spec', filePath: 's' },
     };
     expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('parses recovery prompt requests with IPC-safe context fields only', () => {
+    const msg = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'req-recovery',
+        kind: 'recovery_needed',
+        issue: {
+          id: 'rec-1',
+          reason: 'retry-exhausted',
+          phase: 'implementing',
+          taskId: 'T001',
+          taskTitle: 'Fix auth',
+          files: ['src/auth.ts'],
+          affectedTaskIds: ['T001'],
+          selectedImplementerProfile: 'local-small',
+          availableActions: ['retry-same-worker', 'route-bigger-worker', 'abort-workflow'],
+          recommendedAction: 'route-bigger-worker',
+          workerProfile: 'local-large',
+          facts: { safeToContinue: false },
+        },
+      },
+    };
+
+    expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('rejects recovery prompt requests with prose message or details', () => {
+    const baseIssue = {
+      id: 'rec-1',
+      reason: 'retry-exhausted',
+      phase: 'implementing',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'abort-workflow'],
+      recommendedAction: 'retry-same-worker',
+    };
+
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-recovery',
+          kind: 'recovery_needed',
+          issue: { ...baseIssue, message: 'freeform prose' },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-recovery',
+          kind: 'recovery_needed',
+          issue: { ...baseIssue, details: ['freeform prose'] },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('parses task_review prompt requests with legal recovery metadata', () => {
+    const msg = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'req-review',
+        kind: 'task_review',
+        request: taskReviewRequest({
+          recovery: {
+            reason: 'budget-exceeded',
+            message: 'Budget exceeded',
+            availableActions: ['pause-run', 'abort-workflow'],
+            recommendedAction: 'pause-run',
+          },
+        }),
+      },
+    };
+
+    expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('rejects task_review prompt requests with recovery actions illegal for the reason', () => {
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-review',
+          kind: 'task_review',
+          request: taskReviewRequest({
+            recovery: {
+              reason: 'budget-exceeded',
+              message: 'Budget exceeded',
+              availableActions: ['continue'],
+              recommendedAction: 'continue',
+            },
+          }),
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects task_review prompt requests with a recommended recovery action not advertised', () => {
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-review',
+          kind: 'task_review',
+          request: taskReviewRequest({
+            recovery: {
+              reason: 'validation-failed',
+              message: 'Validation failed',
+              availableActions: ['retry-same-worker'],
+              recommendedAction: 'route-bigger-worker',
+            },
+          }),
+        },
+      }),
+    ).toBeNull();
   });
 
   it('rejects prompt_request with missing requestId', () => {

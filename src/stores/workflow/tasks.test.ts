@@ -50,6 +50,14 @@ describe('tasksStore — via addEvent', () => {
     addEvent(makeTaskComplete({ taskId: taskId('T002'), method: 'escalated-full' }));
     expect(tasksStore.get().taskMap.get('T002')!.status).toBe('escalated');
 
+    addEvent(makeTaskStart({ taskId: taskId('T004'), title: 'Intermediate task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T004'), method: 'escalated-intermediate' }));
+    expect(tasksStore.get().taskMap.get('T004')!.status).toBe('escalated');
+
+    addEvent(makeTaskStart({ taskId: taskId('T005'), title: 'Hint task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T005'), method: 'escalated-hint' }));
+    expect(tasksStore.get().taskMap.get('T005')!.status).toBe('escalated');
+
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Tool task' }));
     addEvent(makeTaskComplete({ taskId: taskId('T003'), method: 'mcp-tool' }));
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');

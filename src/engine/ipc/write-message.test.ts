@@ -104,6 +104,35 @@ describe('writeServerMessage', () => {
     expect(frames[0]).toEqual(msg);
   });
 
+  it('replaces session metadata feature text when transcript persistence is disabled', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+
+    writeServerMessage(
+      server,
+      {
+        kind: 'session_meta',
+        sessionId: 'session-1',
+        startedAt: 1,
+        mode: 'quick',
+        feature: 'secret feature prompt',
+      },
+      { persistTranscript: false },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
+    expect(frames).toEqual([
+      {
+        kind: 'session_meta',
+        sessionId: 'session-1',
+        startedAt: 1,
+        mode: 'quick',
+        feature: TRANSCRIPT_OMITTED_MESSAGE,
+      },
+    ]);
+  });
+
   it('redacts secrets and strips terminal controls before writing event frames', async () => {
     const { server, client } = await connectedPair();
     const received = collectLines(client);
@@ -148,6 +177,7 @@ describe('writeServerMessage', () => {
           role: 'planner',
           backendKind: 'cli',
           sequence: 1,
+          channel: 'assistant',
           text: 'hidden transcript',
         },
       },
@@ -158,7 +188,239 @@ describe('writeServerMessage', () => {
     expect(received.lines).toEqual([]);
   });
 
-  it('protects oversized warning events before frame-size handling when transcript persistence is disabled', async () => {
+  it('keeps safe runner activity frames when transcript persistence is disabled', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+
+    writeServerMessage(
+      server,
+      {
+        kind: 'event',
+        payload: {
+          type: 'runner_call_activity',
+          ts: 2,
+          phase: 'planning',
+          callId: 'call-1',
+          role: 'planner',
+          backendKind: 'cli',
+          sequence: 2,
+          activityId: 'call-1:tool:tool-1',
+          stage: 'completed',
+          kind: 'command',
+          label: 'running echo sk-***REDACTED***',
+          target: 'echo sk-***REDACTED***',
+          redacted: true,
+        },
+      },
+      { persistTranscript: false },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
+    expect(frames).toEqual([
+      {
+        kind: 'event',
+        payload: expect.objectContaining({
+          type: 'runner_call_activity',
+          label: TRANSCRIPT_OMITTED_MESSAGE,
+          target: TRANSCRIPT_OMITTED_MESSAGE,
+        }),
+      },
+    ]);
+  });
+
+  it('projects prompt requests when transcript persistence is disabled', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+
+    writeServerMessage(
+      server,
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-question-1',
+          kind: 'question_asked',
+          question: {
+            id: 'question-1',
+            type: 'choice',
+            text: 'ipc-question-secret-41802',
+            options: ['ipc-choice-secret-41802'],
+            default: 'ipc-default-secret-41802',
+          },
+          num: 1,
+          total: 1,
+        },
+      },
+      { persistTranscript: false },
+    );
+    writeServerMessage(
+      server,
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-recovery-1',
+          kind: 'recovery_needed',
+          issue: {
+            id: 'recovery-1',
+            reason: 'retry-exhausted',
+            phase: 'implementing',
+            taskId: taskId('T001'),
+            taskTitle: 'ipc-recovery-task-context',
+            files: ['src/task.ts'],
+            affectedTaskIds: [taskId('T001')],
+            selectedImplementerProfile: 'small-worker',
+            availableActions: ['retry-same-worker', 'abort-workflow'],
+            recommendedAction: 'retry-same-worker',
+            workerProfile: 'large-worker',
+            facts: { safeToContinue: false },
+          },
+        },
+      },
+      { persistTranscript: false },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
+    expect(frames).toEqual([
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-question-1',
+          kind: 'question_asked',
+          question: {
+            id: 'question-1',
+            type: 'choice',
+            text: TRANSCRIPT_OMITTED_MESSAGE,
+            options: [TRANSCRIPT_OMITTED_MESSAGE],
+            default: TRANSCRIPT_OMITTED_MESSAGE,
+          },
+          num: 1,
+          total: 1,
+        },
+      },
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-recovery-1',
+          kind: 'recovery_needed',
+          issue: {
+            id: 'recovery-1',
+            reason: 'retry-exhausted',
+            phase: 'implementing',
+            taskId: taskId('T001'),
+            taskTitle: 'ipc-recovery-task-context',
+            files: ['src/task.ts'],
+            affectedTaskIds: [taskId('T001')],
+            selectedImplementerProfile: 'small-worker',
+            availableActions: ['retry-same-worker', 'abort-workflow'],
+            recommendedAction: 'retry-same-worker',
+            workerProfile: 'large-worker',
+            facts: { safeToContinue: false },
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(frames)).not.toContain('ipc-question-secret-41802');
+    expect(JSON.stringify(frames)).not.toContain('ipc-choice-secret-41802');
+    expect(JSON.stringify(frames)).not.toContain('ipc-recovery-secret-41802');
+    expect(JSON.stringify(frames)).not.toContain('message');
+    expect(JSON.stringify(frames)).not.toContain('details');
+  });
+
+  it('uses the central event projection for task review prompt requests', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+
+    writeServerMessage(
+      server,
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-review-1',
+          kind: 'task_review',
+          request: {
+            taskId: taskId('T001'),
+            taskTitle: 'ipc-task-review-title-secret-79231',
+            status: 'recovery-required',
+            filesTouched: ['src/secret.ts'],
+            validation: {
+              passed: false,
+              summary: 'ipc-validation-secret-79231',
+              stages: [{ stage: 'test', passed: false, errorSummary: 'ipc-stage-secret-79231' }],
+            },
+            evidence: {
+              path: 'src/evidence-secret.ts',
+              summary: 'ipc-evidence-secret-79231',
+              expected: ['ipc-expected-secret-79231'],
+              observed: ['ipc-observed-secret-79231'],
+            },
+            cost: {
+              tokenUsage: {
+                plannerInput: 1,
+                plannerOutput: 2,
+                implementerInput: 3,
+                implementerOutput: 4,
+                escalationInput: 5,
+                escalationOutput: 6,
+              },
+            },
+            recovery: {
+              reason: 'retry-exhausted',
+              message: 'ipc-review-recovery-secret-79231',
+              availableActions: ['retry-same-worker', 'abort-workflow'],
+              recommendedAction: 'retry-same-worker',
+            },
+            availableCommands: ['continue', 'abort'],
+          },
+        },
+      },
+      { persistTranscript: false },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
+    expect(frames).toEqual([
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-review-1',
+          kind: 'task_review',
+          request: expect.objectContaining({
+            taskId: 'T001',
+            taskTitle: TRANSCRIPT_OMITTED_MESSAGE,
+            status: 'recovery-required',
+            filesTouched: [TRANSCRIPT_OMITTED_MESSAGE],
+            validation: expect.objectContaining({
+              summary: TRANSCRIPT_OMITTED_MESSAGE,
+              stages: [
+                expect.objectContaining({
+                  errorSummary: TRANSCRIPT_OMITTED_MESSAGE,
+                }),
+              ],
+            }),
+            evidence: expect.objectContaining({
+              path: TRANSCRIPT_OMITTED_MESSAGE,
+              summary: TRANSCRIPT_OMITTED_MESSAGE,
+              expected: [TRANSCRIPT_OMITTED_MESSAGE],
+              observed: [TRANSCRIPT_OMITTED_MESSAGE],
+            }),
+            recovery: {
+              reason: 'retry-exhausted',
+              message: TRANSCRIPT_OMITTED_MESSAGE,
+              availableActions: ['retry-same-worker', 'abort-workflow'],
+              recommendedAction: 'retry-same-worker',
+            },
+            availableCommands: ['continue', 'abort'],
+          }),
+        },
+      },
+    ]);
+    expect(JSON.stringify(frames)).not.toContain('ipc-task-review-title-secret-79231');
+    expect(JSON.stringify(frames)).not.toContain('ipc-validation-secret-79231');
+    expect(JSON.stringify(frames)).not.toContain('ipc-review-recovery-secret-79231');
+  });
+
+  it('bounds oversized warning events before frame-size handling when transcript persistence is disabled', async () => {
     const { server, client } = await connectedPair();
     const received = collectLines(client);
 
@@ -181,7 +443,8 @@ describe('writeServerMessage', () => {
     expect(only?.kind).toBe('event');
     if (only?.kind === 'event') {
       expect(only.payload.type).toBe('warning');
-      expect((only.payload as { message: string }).message).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+      const message = (only.payload as { message: string }).message;
+      expect(message).toBe(TRANSCRIPT_OMITTED_MESSAGE);
       expect(JSON.stringify(only)).not.toContain('dropped oversized warning frame');
       expect(Buffer.byteLength(JSON.stringify(only), 'utf8')).toBeLessThan(IPC_MAX_FRAME_BYTES);
     }

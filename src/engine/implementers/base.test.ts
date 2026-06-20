@@ -132,10 +132,13 @@ describe('createImplementerBase — error paths', () => {
   });
 
   it('returns failure when the invoke output contains no extractable code', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      text: 'I think you should write this yourself.',
-      usage: null,
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: 'I think you should write this yourself.',
+        usage: null,
+      }),
+    );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: 'src/nope.ts', action: 'create' });
 
@@ -159,10 +162,13 @@ describe('createImplementerBase — error paths', () => {
       writeFileSync(join(outside, 'secret.ts'), 'outside secret');
       symlinkSync(join(outside, 'secret.ts'), join(projectDir, 'src', 'leak.ts'));
 
-      const invoke = vi.fn().mockResolvedValue({
-        text: '```ts\nexport const leaked = true;\n```',
-        usage: null,
-      });
+      const invoke = vi.fn().mockResolvedValue(
+        makeRunnerCallResult({
+          status: 'completed',
+          text: '```ts\nexport const leaked = true;\n```',
+          usage: null,
+        }),
+      );
       const implementer = createImplementerBase(makeBaseConfig({ invoke }));
       const task = makeTask({ id: 'T001', file: 'src/leak.ts', action: 'modify' });
 
@@ -185,10 +191,13 @@ describe('createImplementerBase — error paths', () => {
   });
 
   it('throws when task file path escapes projectDir', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nconst x = 1;\n```',
-      usage: null,
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nconst x = 1;\n```',
+        usage: null,
+      }),
+    );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: '../escape.ts', action: 'create' });
 
@@ -211,7 +220,7 @@ describe('createImplementerBase — language-aware system preamble', () => {
     const invoke = vi.fn().mockImplementation(async (opts) => {
       seenPrompt = opts.prompt;
       seenSystemPreamble = opts.systemPreamble;
-      return { text: 'done', usage: null };
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
     });
     const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
 
@@ -235,7 +244,7 @@ describe('createImplementerBase — runner call projection', () => {
     const contexts: RunnerCallContext[] = [];
     const invoke = vi.fn().mockImplementation(async (opts: { callContext: RunnerCallContext }) => {
       contexts.push(opts.callContext);
-      return { text: 'done', usage: null };
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
     });
     const implementer = createImplementerBase(
       makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
@@ -340,10 +349,13 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'old content\n');
 
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nexport const hello = () => "world";\n```',
-      usage: { inputTokens: 10, outputTokens: 20 },
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const hello = () => "world";\n```',
+        usage: { inputTokens: 10, outputTokens: 20 },
+      }),
+    );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
 
@@ -363,10 +375,13 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
   });
 
   it('asks for approval before applying extracted code and leaves disk untouched when denied', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nexport const denied = true;\n```',
-      usage: { inputTokens: 10, outputTokens: 20 },
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const denied = true;\n```',
+        usage: { inputTokens: 10, outputTokens: 20 },
+      }),
+    );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const approveWrite = vi.fn().mockResolvedValue({ allow: false, reason: 'approval denied' });
     const task = makeTask({ id: 'T001', file: 'src/denied.ts', action: 'create' });
@@ -389,10 +404,13 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "before";\n');
 
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nexport const value = "implementer";\n```',
-      usage: { inputTokens: 10, outputTokens: 20 },
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const value = "implementer";\n```',
+        usage: { inputTokens: 10, outputTokens: 20 },
+      }),
+    );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const approveWrite = vi.fn().mockImplementation(async () => {
       writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "user";\n');
@@ -448,7 +466,11 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
       makeBaseConfig({
         extractsCode: false,
         detectChanges,
-        invoke: vi.fn().mockResolvedValue({ text: 'done', usage: null }),
+        invoke: vi
+          .fn()
+          .mockResolvedValue(
+            makeRunnerCallResult({ status: 'completed', text: 'done', usage: null }),
+          ),
       }),
     );
 
@@ -470,7 +492,7 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
         detectChanges,
         invoke: vi.fn().mockImplementation(async () => {
           writeFileSync(newPath, 'export const created = true;\n');
-          return { text: 'done', usage: null };
+          return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
         }),
       }),
     );
@@ -508,9 +530,13 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
       makeBaseConfig({
         extractsCode: false,
         detectChanges,
-        invoke: vi
-          .fn()
-          .mockResolvedValue({ text: 'done', usage: { inputTokens: 10, outputTokens: 20 } }),
+        invoke: vi.fn().mockResolvedValue(
+          makeRunnerCallResult({
+            status: 'completed',
+            text: 'done',
+            usage: { inputTokens: 10, outputTokens: 20 },
+          }),
+        ),
       }),
     );
 
@@ -535,10 +561,13 @@ describe('createImplementerBase — retry', () => {
     ['local', 2, 'tsc failed'],
     ['hint', 1, 'lint failed'],
   ] as const)('succeeds on retry for kind "%s"', async (kind, attempt, error) => {
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nconst x = 1;\n```',
-      usage: null,
-    });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nconst x = 1;\n```',
+        usage: null,
+      }),
+    );
     const implementer = createImplementerBase(
       makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }),
     );

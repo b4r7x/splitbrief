@@ -10,6 +10,7 @@ import { dispatchNativeInjection } from './native-injection.js';
 import type { Planner } from '../planners/types.js';
 import { warnError } from '../../lib/warn.js';
 import { nowIso } from '../../utils/format-time.js';
+import { formatQueuedMessagePreview } from '../../core/queue-preview.js';
 
 export type CollectClarificationsOptions = {
   questions: ClarificationQuestion[];
@@ -68,6 +69,7 @@ export async function collectAndPersistClarifications(
       queuedAt: nowIso(),
       phase: state.phase,
       deliveredViaNative: false,
+      nativeDeliveryState: 'pending',
       origin: 'clarification',
       question: question.text,
     };
@@ -84,7 +86,14 @@ export async function collectAndPersistClarifications(
       answer,
     });
     if (planner) {
-      bus.publish({ type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
+      const preview = formatQueuedMessagePreview(message);
+      bus.publish({
+        type: 'message_queued',
+        ts: Date.now(),
+        phase: state.phase,
+        id: message.id,
+        ...(preview.length > 0 && { preview }),
+      });
       await dispatchNativeInjection({
         message,
         planner,

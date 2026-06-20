@@ -12,5 +12,5 @@ export function parseTextLine(line: string): ParsedLine {
     return { usage: { inputTokens: parseK(tokenMatch[1]), outputTokens: parseK(tokenMatch[2]) } };
   }
 
-  return { text: line + '\n' };
+  return { text: line + '\n', channel: 'stdout' };
 }

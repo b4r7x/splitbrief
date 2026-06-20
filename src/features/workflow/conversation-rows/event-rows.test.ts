@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventRows } from './event-rows.js';
 import { rowText } from './row-format.js';
 
@@ -106,6 +107,299 @@ describe('eventRows', () => {
 
     expect(text).toContain('T001 Validate no-op workflow: dependency failed');
     expect(text).not.toContain('TT001');
+  });
+
+  it('redacts secrets in planner, warning, and user display rows', () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const events: EngineEvent[] = [
+      {
+        type: 'planner_text',
+        ts: 0,
+        phase: 'planning',
+        role: 'planner',
+        text: `planner token ${secret}\u001b[31m`,
+      },
+      {
+        type: 'warning',
+        ts: 0,
+        phase: 'implementing',
+        message: 'aws AKIAIOSFODNN7EXAMPLE',
+      },
+      {
+        type: 'user_message',
+        ts: 0,
+        phase: 'implementing',
+        text: 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz',
+      },
+    ];
+
+    const text = events
+      .flatMap((event, globalIndex) =>
+        eventRows({
+          event,
+          globalIndex,
+          expanded: false,
+          ctx: { width: 80, viewportRows: 20, streaming },
+        }),
+      )
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('***REDACTED***');
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(text).not.toContain('\u001b');
+  });
+
+  it('strips terminal controls before wrapping planner rows', () => {
+    const event: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'planning',
+      role: 'planner',
+      text: `abcd\u001b]52;c;${'x'.repeat(80)}\u0007efgh`,
+    };
+
+    const lines = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 4, viewportRows: 20, streaming },
+    }).map(rowText);
+
+    expect(lines).toEqual(['abcd', 'efgh']);
+    expect(lines.every((line) => getTerminalCellWidth(line) <= 4)).toBe(true);
+  });
+
+  it('renders sanitized queue previews when queued and injected events carry them', () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const events: EngineEvent[] = [
+      {
+        type: 'message_queued',
+        ts: 0,
+        phase: 'implementing',
+        id: 'queued-1',
+        preview: `ship it ${secret}\u001b[31m`,
+      },
+      {
+        type: 'message_injected_native',
+        ts: 1,
+        phase: 'implementing',
+        id: 'queued-1',
+        preview: 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz',
+      },
+    ];
+
+    const text = events
+      .flatMap((event, globalIndex) =>
+        eventRows({
+          event,
+          globalIndex,
+          expanded: false,
+          ctx: { width: 120, viewportRows: 20, streaming },
+        }),
+      )
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('Message queued during implementing: ship it sk-***REDACTED***');
+    expect(text).toContain(
+      'Message delivered to live session: Authorization: Bearer ***REDACTED***',
+    );
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(text).not.toContain('\u001b');
+  });
+
+  it('does not render runner tool use as ordinary conversation rows', () => {
+    const event: EngineEventOf<'runner_call_tool_use'> = {
+      type: 'runner_call_tool_use',
+      ts: 0,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      sequence: 1,
+      stage: 'delta',
+      name: 'Bash',
+      inputDelta: '{"command":"npm run typecheck sk-abcdefghijklmnopqrstuvwxyz"}',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows).toEqual([]);
+  });
+
+  it('renders safe runner activity as styled conversation rows', () => {
+    const event: EngineEventOf<'runner_call_activity'> = {
+      type: 'runner_call_activity',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      sequence: 2,
+      activityId: 'call-1:tool:Bash',
+      stage: 'updated',
+      kind: 'command',
+      label: 'running npm run typecheck',
+      target: 'npm run typecheck',
+      redacted: false,
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual(['run  npm run typecheck']);
+    expect(rows[0]?.segments).toEqual([
+      { text: 'run  ', tone: 'info' },
+      { text: 'npm run typecheck', tone: 'textDim' },
+    ]);
+    expectNoConversationGutter(rows);
+  });
+
+  it('renders shell-wrapper activity without exposing the wrapper as the message label', () => {
+    const event: EngineEventOf<'runner_call_activity'> = {
+      type: 'runner_call_activity',
+      ts: 0,
+      phase: 'researching',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      sequence: 2,
+      activityId: 'call-1:system',
+      stage: 'updated',
+      kind: 'unknown',
+      label: '/bin/zsh -lc "sed -n \'1,260p\' CLAUDE.md"',
+      redacted: false,
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toBe("run  sed -n '1,260p' CLAUDE.md");
+    expect(text).not.toContain('/bin/zsh -lc');
+    expect(text).not.toContain('activity:');
+  });
+
+  it('redacts secrets in rendered runner activity rows', () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const event: EngineEventOf<'runner_call_activity'> = {
+      type: 'runner_call_activity',
+      ts: 0,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      sequence: 2,
+      activityId: 'call-1:tool:Bash',
+      stage: 'updated',
+      kind: 'command',
+      label: `running npm test ${secret}`,
+      target: `npm test ${secret}`,
+      redacted: false,
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('sk-***REDACTED***');
+    expect(text).not.toContain(secret);
+  });
+
+  it('renders task routing reasons instead of generic cost posture noise', () => {
+    const event: EngineEventOf<'task_started'> = {
+      type: 'task_started',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'Route narrow task',
+      index: 0,
+      total: 1,
+      file: 'src/app.ts',
+      action: 'modify',
+      tool: 'codex',
+      implementerProfile: 'cheap-cloud',
+      contextFit: 'tight',
+      estimatedTokens: 95_000,
+      contextLength: 100_000,
+      costPosture: 'Selected unknown cost tier via cheapest-capable routing',
+      routingReason: 'current code reduced to fit cheap-cloud context',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 52, viewportRows: 20, streaming },
+    });
+    const lines = rows.map(rowText);
+    const text = lines.join('\n');
+
+    expect(text).toContain('why current code reduced to fit cheap-cloud context');
+    expect(text).not.toContain('cost Selected unknown cost tier');
+    expect(lines.every((line) => line.length <= 52)).toBe(true);
+  });
+
+  it('keeps ordinary fit task-start routing rows compact', () => {
+    const event: EngineEventOf<'task_started'> = {
+      type: 'task_started',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      title: 'Route ordinary task',
+      index: 0,
+      total: 1,
+      file: 'src/app.ts',
+      action: 'modify',
+      implementerProfile: 'cheap-cloud',
+      contextFit: 'fits',
+      estimatedTokens: 3911,
+      contextLength: 32_768,
+      routingReason: 'selected cheapest capable profile',
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 52, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    const normalized = text.replace(/\s+/g, ' ');
+
+    expect(normalized).toContain('fit fits');
+    expect(normalized).toContain('why selected cheapest capable profile');
+    expect(normalized).not.toContain('3911/32768 tok');
   });
 
   it('renders workflow activity rows without persistent left gutters or leading layout spaces', () => {

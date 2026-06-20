@@ -17,13 +17,17 @@ import {
 } from '../../core/schemas/enums.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import { TaskReviewRecoverySchema } from '../../core/schemas/recovery.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
-import { WORKFLOW_CANCEL_REASONS } from '../orchestrator/types.js';
-import type { EngineEvent } from './types.js';
+import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
+import { isRecord } from '../../utils/type-guards.js';
 import {
   RunnerCallArtifactSchema,
+  RunnerCallActivityKindSchema,
+  RunnerCallActivityStageSchema,
+  CallIdSchema,
   RunnerCallErrorSchema,
   RunnerCallFailureStatusSchema,
   RunnerCallToolUseSchema,
@@ -75,6 +79,12 @@ const validationStageSkipsSchema = z.object({
   test: z.boolean().optional(),
 });
 
+const validationStageCommandsSchema = z.object({
+  typecheck: z.string().optional(),
+  lint: z.string().optional(),
+  test: z.string().optional(),
+});
+
 const replayDiagnosticsSchema = z.object({
   totalLines: z.number().int().nonnegative(),
   replayedEvents: z.number().int().nonnegative(),
@@ -84,6 +94,21 @@ const replayDiagnosticsSchema = z.object({
   skippedUnknown: z.number().int().nonnegative(),
   skippedOversized: z.number().int().nonnegative(),
 });
+
+const runnerCallToolUseEventBase = strictCallPhaseEvent('runner_call_tool_use');
+
+const runnerCallToolUseEventSchema = z.discriminatedUnion('stage', [
+  runnerCallToolUseEventBase.extend({
+    stage: z.literal('delta'),
+    toolUseId: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    inputDelta: z.string(),
+  }),
+  runnerCallToolUseEventBase.extend({
+    stage: z.literal('done'),
+    toolUse: RunnerCallToolUseSchema,
+  }),
+]);
 
 export const WorkflowCancelReasonSchema = z.enum(WORKFLOW_CANCEL_REASONS);
 
@@ -145,18 +170,11 @@ export const taskReviewRequestFields = {
       reason: z.string(),
     })
     .optional(),
-  recovery: z
-    .looseObject({
-      reason: RecoveryReasonSchema,
-      message: z.string(),
-      availableActions: stringArray,
-      recommendedAction: z.string(),
-    })
-    .optional(),
+  recovery: TaskReviewRecoverySchema.optional(),
   availableCommands: z.array(z.enum(TASK_REVIEW_COMMANDS)),
 } as const;
 
-export const EngineEventSchema = z.discriminatedUnion('type', [
+const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_started').extend({ feature: z.string() }),
   phaseEvent('workflow_resumed'),
   phaseEvent('workflow_complete'),
@@ -216,21 +234,26 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),
     accumulatedTokens: z.number(),
+    callId: CallIdSchema.optional(),
     phaseHint: z.string().optional(),
   }),
   strictCallPhaseEvent('runner_call_started'),
   strictCallPhaseEvent('runner_call_text_delta').extend({
+    channel: z.enum(['stdout', 'assistant', 'result', 'system']),
     text: z.string(),
   }),
   strictCallPhaseEvent('runner_call_usage').extend({
     usage: RunnerCallUsageSchema,
     semantics: RunnerCallUsageSemanticsSchema,
   }),
-  strictCallPhaseEvent('runner_call_tool_use').extend({
-    toolUse: RunnerCallToolUseSchema.optional(),
-    toolUseId: z.string().optional(),
-    name: z.string().optional(),
-    inputDelta: z.string().optional(),
+  runnerCallToolUseEventSchema,
+  strictCallPhaseEvent('runner_call_activity').extend({
+    activityId: z.string().min(1).max(512),
+    stage: RunnerCallActivityStageSchema,
+    kind: RunnerCallActivityKindSchema,
+    label: z.string().min(1).max(512),
+    target: z.string().min(1).max(2048).optional(),
+    redacted: z.boolean(),
   }),
   strictCallPhaseEvent('runner_call_session_id').extend({
     nativeSessionId: z.string(),
@@ -366,6 +389,10 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     method: TaskCompletionMethodSchema,
     implementerTokens: z.number().int().nonnegative(),
     escalationTokens: z.number().int().nonnegative(),
+    implementerCacheReadTokens: z.number().nonnegative().optional(),
+    implementerCacheCreateTokens: z.number().nonnegative().optional(),
+    escalationCacheReadTokens: z.number().nonnegative().optional(),
+    escalationCacheCreateTokens: z.number().nonnegative().optional(),
     retryCount: z.number().int().nonnegative(),
     tool: z.string().optional(),
     model: z.string().optional(),
@@ -402,6 +429,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     status: z.enum(['running', 'done']),
     passed: z.boolean(),
     stages: validationStagesSchema,
+    activeStage: z.enum(['typecheck', 'lint', 'test']).optional(),
+    commands: validationStageCommandsSchema.optional(),
     skipped: validationStageSkipsSchema.optional(),
     error: z.string().optional(),
     duration: z.number().optional(),
@@ -435,8 +464,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('clarification_answered').extend({
     answer: z.string(),
   }),
-  phaseEvent('message_queued').extend({ id: z.string() }),
-  phaseEvent('message_injected_native').extend({ id: z.string() }),
+  phaseEvent('message_queued').extend({ id: z.string(), preview: z.string().optional() }),
+  phaseEvent('message_injected_native').extend({ id: z.string(), preview: z.string().optional() }),
   phaseEvent('queue_drained').extend({ count: z.number().int().nonnegative() }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
   phaseEvent('user_message').extend({ text: z.string() }),
@@ -506,12 +535,43 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   phaseEvent('error').extend({ message: z.string() }),
 ]);
 
-export function parseEngineEvent(value: unknown): EngineEvent | null {
+export const EngineEventSchema = z.preprocess(normalizeLegacyEngineEvent, EngineEventPayloadSchema);
+
+type EngineEventFromSchema = z.infer<typeof EngineEventSchema>;
+
+function normalizeLegacyEngineEvent(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+
+  if (value.type === 'runner_call_text_delta' && value.channel === undefined) {
+    return { ...value, channel: 'stdout' };
+  }
+
+  if (value.type === 'runner_call_tool_use' && value.stage === undefined) {
+    return { ...value, stage: value.toolUse !== undefined ? 'done' : 'delta' };
+  }
+
+  return value;
+}
+
+export function parseEngineEvent(value: unknown): EngineEventFromSchema | null {
   const result = EngineEventSchema.safeParse(value);
   return result.success ? result.data : null;
 }
 
-export function eventPhase(event: EngineEvent): Phase | undefined {
+export function eventPhase(event: EngineEventFromSchema): Phase | undefined {
   const result = PhaseSchema.safeParse(event.phase);
   return result.success ? result.data : undefined;
+}
+
+const INFRASTRUCTURE_PHASE_EVENT_TYPES = new Set<EngineEventFromSchema['type']>([
+  'ipc_client_attached',
+  'ipc_client_detached',
+  'ipc_reconnect_attempt',
+  'ipc_reconnect_failed',
+  'replay_started',
+  'replay_complete',
+]);
+
+export function isInfrastructurePhaseEvent(event: EngineEventFromSchema): boolean {
+  return INFRASTRUCTURE_PHASE_EVENT_TYPES.has(event.type);
 }

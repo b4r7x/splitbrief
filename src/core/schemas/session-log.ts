@@ -19,6 +19,7 @@ export const SessionLogMessageEntrySchema = z.object({
   text: z.string(),
   interrupted: z.boolean().optional(),
   queuedAt: z.string().optional(),
+  queueMessageId: z.string().optional(),
 });
 export type SessionLogMessageEntry = z.infer<typeof SessionLogMessageEntrySchema>;
 

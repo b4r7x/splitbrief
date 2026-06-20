@@ -11,7 +11,11 @@ import { saveState } from '../core/state/persistence.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
-import { beginSession, writeActive } from '../core/sessions/lifecycle.js';
+import {
+  beginSession,
+  TRANSCRIPT_OMITTED_FEATURE,
+  writeActive,
+} from '../core/sessions/lifecycle.js';
 import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { listSessions } from '../core/sessions/io.js';
 import { DIPTYCH_DIR, CONFIG_FILE, sessionDir } from '../core/paths.js';
@@ -679,7 +683,7 @@ describe('runHeadless — liveness record (F-261)', () => {
     expect(midRunLock).not.toBeNull();
     expect(midRunLock?.pid).toBe(process.pid);
     expect(midRunLock?.sessionId).toBe(sessionId);
-    expect(midRunLock?.feature).toBe('liveness feature');
+    expect(midRunLock?.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
     expect(midRunLock?.lastAliveMs).toBeGreaterThanOrEqual(before);
     expect(midRunLock?.exitedAt).toBeUndefined();
   });

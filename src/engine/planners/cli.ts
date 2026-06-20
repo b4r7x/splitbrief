@@ -5,7 +5,7 @@ import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');
 import type { Config } from '../../core/schemas/config.js';
-import { toTokenDelta, type RunnerCallCompatibleResult } from '../calls/projection.js';
+import { applyInvokeResultProjection, toTokenDelta } from '../calls/projection.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
@@ -29,7 +29,7 @@ import {
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
 import { composeAbortSignal } from '../../utils/abort.js';
-import type { RunnerCallContext } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -108,7 +108,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     resumeId: string | null;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<RunnerCallCompatibleResult> {
+  }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
@@ -148,8 +148,13 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
     if (result.status !== 'completed') return result;
     const usage = toTokenDelta(result.usage);
-    if (planner.postProcess) return planner.postProcess(result.text, stderrOutput, usage);
-    return { text: result.text, usage };
+    if (planner.postProcess) {
+      return applyInvokeResultProjection(
+        result,
+        planner.postProcess(result.text, stderrOutput, usage),
+      );
+    }
+    return result;
   }
 
   async function invoke(opts: {
@@ -163,16 +168,14 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     mode: 'plan' | 'escalate';
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<RunnerCallCompatibleResult> {
+  }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, mode, signal, sandboxEnv } = opts;
     const planningBaseline =
       mode === 'plan' && callbacks.sessionId
         ? await capturePlanningMutationBaseline(projectDir)
         : null;
 
-    const finish = async (
-      result: RunnerCallCompatibleResult,
-    ): Promise<RunnerCallCompatibleResult> => {
+    const finish = async (result: RunnerCallResult): Promise<RunnerCallResult> => {
       if (planningBaseline && callbacks.sessionId) {
         const unexpected = await findUnexpectedPlanningMutations({
           projectDir,

@@ -16,6 +16,7 @@ function makePrediction(): CostPrediction {
     plannerTool: 'anthropic',
     implementerTool: 'anthropic',
     deterministic: {
+      estimateScope: 'prompt-input-only',
       taskCount: 12,
       taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
       contextConfidenceCounts: {
@@ -53,9 +54,33 @@ describe('CostApprovalPrompt', () => {
     );
     const output = ui.lastFrame() ?? '';
     expect(output).toContain('12 tasks');
+    expect(output).toContain('Prompt input');
     expect(output).toContain('$0.14');
+    expect(output).toContain('All-planner prompt');
     expect(output).toContain('~$1.20');
+    expect(output).toContain('Prompt saving');
+    expect(output).toContain(
+      'Output, retries, validation reruns, and escalation are tracked at runtime.',
+    );
     expect(output).toContain('Approve?');
+    expect(output).not.toContain('Est.');
+    ui.unmount();
+  });
+
+  it('renders an all-planner baseline when the actual estimate is unknown', () => {
+    const prediction = makePrediction();
+    prediction.deterministic!.totals.knownActualEstimate = null;
+    prediction.deterministic!.totals.estimatedSavings = null;
+
+    const ui = renderFeature(
+      <CostApprovalPrompt prediction={prediction} onApprove={vi.fn()} onReject={vi.fn()} />,
+    );
+    const output = ui.lastFrame() ?? '';
+
+    expect(output).toContain('Prompt input');
+    expect(output).toContain('n/a');
+    expect(output).toContain('All-planner prompt');
+    expect(output).toContain('~$1.20');
     ui.unmount();
   });
 

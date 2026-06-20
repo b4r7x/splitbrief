@@ -43,7 +43,7 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
   try {
     const session: Session = {
       id: opts.sessionId,
-      feature: opts.feature,
+      feature: opts.summary.feature,
       startedAt: opts.startTime,
       completedAt: Date.now(),
       stateVersion: CURRENT_STATE_VERSION,

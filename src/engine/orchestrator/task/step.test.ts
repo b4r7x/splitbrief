@@ -8,6 +8,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import {
   cleanupTaskProjects,
@@ -839,10 +840,13 @@ describe('runSingleTask — happy path', () => {
 
     const implementer = createImplementerBase({
       extractsCode: true,
-      invoke: vi.fn().mockResolvedValue({
-        text: '```ts\nexport const value = "implementer";\n```',
-        usage: { inputTokens: 10, outputTokens: 5 },
-      }),
+      invoke: vi.fn().mockResolvedValue(
+        makeRunnerCallResult({
+          status: 'completed',
+          text: '```ts\nexport const value = "implementer";\n```',
+          usage: { inputTokens: 10, outputTokens: 5 },
+        }),
+      ),
     });
     const userEdit = 'export const value = "user";\n';
     const onUserEditConflict = vi.fn().mockResolvedValue('pause');

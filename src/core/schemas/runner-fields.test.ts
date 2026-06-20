@@ -65,7 +65,7 @@ describe('createRunnerConfigSchema', () => {
     ).toBe(false);
   });
 
-  it('accepts orchestration-level planner capabilities on shell and agent planner runners', () => {
+  it('accepts supported orchestration-level planner capabilities on shell and agent planner runners', () => {
     const schema = createPlannerConfigSchema(GenerationCommonFields);
 
     expect(
@@ -81,12 +81,31 @@ describe('createRunnerConfigSchema', () => {
         kind: 'agent',
         command: 'my-agent',
         model: 'agent-default',
-        capabilities: { supportsSessionResume: true },
+        capabilities: { supportsHintEscalation: true },
       }).success,
     ).toBe(true);
   });
 
-  it('rejects supportsEffort/supportsImages on shell and agent planners — no command delivery channel', () => {
+  it('rejects supportsSessionResume/supportsEffort/supportsImages on shell and agent planners', () => {
+    const shellResume = PlannerConfigSchema.safeParse({
+      kind: 'shell',
+      command: './run',
+      model: 'local-shell',
+      capabilities: { supportsSessionResume: true },
+    });
+    expect(shellResume.success).toBe(false);
+    expect(shellResume.error?.issues[0]?.path).toEqual(['capabilities', 'supportsSessionResume']);
+    expect(shellResume.error?.issues[0]?.message).toContain('session-handle contract');
+
+    const agentResume = PlannerConfigSchema.safeParse({
+      kind: 'agent',
+      command: 'my-agent',
+      model: 'agent-default',
+      capabilities: { supportsSessionResume: true },
+    });
+    expect(agentResume.success).toBe(false);
+    expect(agentResume.error?.issues[0]?.path).toEqual(['capabilities', 'supportsSessionResume']);
+
     const shellEffort = PlannerConfigSchema.safeParse({
       kind: 'shell',
       command: './run',

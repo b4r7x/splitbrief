@@ -43,6 +43,29 @@ export const RUNNER_CALL_FAILURE_STATUSES = [
 
 export const RUNNER_CALL_USAGE_SEMANTICS = ['delta', 'cumulative', 'final'] as const;
 export const RUNNER_CALL_ARTIFACT_SOURCES = ['stream', 'file', 'tool', 'derived'] as const;
+export const RUNNER_CALL_ACTIVITY_STAGES = [
+  'started',
+  'updated',
+  'completed',
+  'failed',
+  'warning',
+] as const;
+export const RUNNER_CALL_ACTIVITY_KINDS = [
+  'read',
+  'write',
+  'edit',
+  'command',
+  'search',
+  'glob',
+  'task',
+  'mcp',
+  'web',
+  'plan',
+  'session',
+  'artifact',
+  'warning',
+  'unknown',
+] as const;
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
@@ -60,9 +83,12 @@ export const RunnerCallChannelSchema = z.enum(RUNNER_CALL_CHANNELS);
 export const RunnerCallStatusSchema = z.enum(RUNNER_CALL_STATUSES);
 export const RunnerCallUsageSemanticsSchema = z.enum(RUNNER_CALL_USAGE_SEMANTICS);
 export const RunnerCallArtifactSourceSchema = z.enum(RUNNER_CALL_ARTIFACT_SOURCES);
+export const RunnerCallActivityStageSchema = z.enum(RUNNER_CALL_ACTIVITY_STAGES);
+export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 
 export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
 const RunnerCallTextChannelSchema = z.enum(['stdout', 'assistant', 'result', 'system']);
+const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
 
 export const CallIdSchema = boundedId;
 
@@ -141,6 +167,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   callEvent('call_text_delta', {
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
+    semantics: RunnerCallTextSemanticsSchema.optional(),
   }),
   callEvent('call_stderr_delta', {
     channel: z.literal('stderr'),

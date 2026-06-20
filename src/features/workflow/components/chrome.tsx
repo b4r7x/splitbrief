@@ -64,7 +64,6 @@ export function WorkflowHeader({ startedAt }: { startedAt: string }) {
       <Header startedAt={startedAt} />
       <WorkflowMetaRow />
       <AgentStatusRow />
-      <Box height={1} flexShrink={0} />
     </>
   );
 }

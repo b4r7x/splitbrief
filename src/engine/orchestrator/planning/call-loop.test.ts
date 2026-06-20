@@ -104,6 +104,51 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const heartbeatsAfterDelay = events.filter((e) => e.type === 'planner_heartbeat').length;
     expect(heartbeatsAfterDelay).toBe(heartbeatsAfterError);
   });
+
+  it('tags heartbeat events with the active planner runner call id', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onCallEvent?.({
+            type: 'call_started',
+            ts: Date.now(),
+            callId: 'planner-call-1',
+            role: 'planner',
+            backendKind: 'cli',
+          });
+          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS));
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makeTask()],
+            usage: null,
+          };
+        }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, { bus });
+
+    const run = runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS);
+    await run;
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'planner_heartbeat',
+        callId: 'planner-call-1',
+      }),
+    );
+  });
 });
 
 describe('planning mutation guard', () => {

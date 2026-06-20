@@ -34,6 +34,11 @@ function mergeModelMetadata(opts: {
   const contextLength = modelsDev?.contextLength ?? runtime?.contextLength ?? base.contextLength;
   const pricingInput = modelsDev?.pricingInput ?? runtime?.pricingInput ?? seedIn;
   const pricingOutput = modelsDev?.pricingOutput ?? runtime?.pricingOutput ?? seedOut;
+  const pricingCacheRead =
+    modelsDev?.pricingCacheRead ?? runtime?.pricingCacheRead ?? base.pricingCacheRead;
+  const pricingCacheWrite =
+    modelsDev?.pricingCacheWrite ?? runtime?.pricingCacheWrite ?? base.pricingCacheWrite;
+  const pricingTiers = modelsDev?.pricingTiers ?? runtime?.pricingTiers ?? base.pricingTiers;
   const isFree = modelsDev?.isFree ?? runtime?.isFree ?? seedFree;
   const isDetected = base.isDetected ?? !!runtime;
   const releaseDate = modelsDev?.releaseDate ?? runtime?.releaseDate ?? base.releaseDate;
@@ -50,6 +55,9 @@ function mergeModelMetadata(opts: {
     ...(contextLength !== undefined && { contextLength }),
     ...(apiPriced && pricingInput !== undefined && { pricingInput }),
     ...(apiPriced && pricingOutput !== undefined && { pricingOutput }),
+    ...(apiPriced && pricingCacheRead !== undefined && { pricingCacheRead }),
+    ...(apiPriced && pricingCacheWrite !== undefined && { pricingCacheWrite }),
+    ...(apiPriced && pricingTiers !== undefined && { pricingTiers }),
     ...(apiPriced && isFree !== undefined && { isFree }),
     ...(isDetected !== undefined && { isDetected }),
     ...(releaseDate !== undefined && { releaseDate }),
