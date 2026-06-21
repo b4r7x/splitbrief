@@ -1,4 +1,5 @@
 import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
+import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -239,7 +240,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     state = savedState;
     setTrackedState(state);
     bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
-    publishPlannerStatus(bus, state, 'running');
+    if (shouldPublishResumePlannerStatus(state)) {
+      publishPlannerStatus(bus, state, 'running');
+    }
   } else {
     state = createInitialState(feature);
     state = {
@@ -328,4 +331,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   };
 
   return { ok: true, state, wctx };
+}
+
+function shouldPublishResumePlannerStatus(state: WorkflowState): boolean {
+  return isLivePhase(state.phase) && !isImplementerPhase(state.phase);
 }

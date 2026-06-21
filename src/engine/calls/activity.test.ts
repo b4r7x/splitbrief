@@ -41,6 +41,15 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({ kind: 'command', label: 'running npm run typecheck' });
     expect(
       projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'command_execution',
+          inputDelta: '{"type":"command_execution","command":"npm test"}',
+        }),
+        1,
+      ),
+    ).toMatchObject({ kind: 'command', label: 'running npm test', target: 'npm test' });
+    expect(
+      projectRunnerCallActivity(
         runnerToolUse({ name: 'Grep', inputDelta: '{"pattern":"useWorkflowRunner"}' }),
         1,
       ),
@@ -133,6 +142,20 @@ describe('projectRunnerCallActivity', () => {
     expect(
       projectRunnerCallActivity(runnerToolUse({ name: 'mcp__chrome_devtools__click' }), 1),
     ).toMatchObject({ kind: 'mcp', label: 'calling mcp__chrome_devtools__click' });
+
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'mcp_tool_call',
+          inputDelta: '{"type":"mcp_tool_call","server":"github","tool_name":"list_issues"}',
+        }),
+        1,
+      ),
+    ).toMatchObject({
+      kind: 'mcp',
+      label: 'calling mcp_tool_call github/list_issues',
+      target: 'github/list_issues',
+    });
   });
 
   it('falls back to a safe tool name for malformed input deltas', () => {
@@ -153,7 +176,8 @@ describe('projectRunnerCallActivity', () => {
         1,
       ),
     ).toMatchObject({
-      label: 'reading files token sk-***REDACTED***',
+      label: 'system activity',
+      textPartial: 'reading files token sk-***REDACTED***',
       redacted: true,
     });
     expect(
@@ -184,5 +208,108 @@ describe('projectRunnerCallActivity', () => {
 
     expect(activity).not.toBeNull();
     if (activity !== null) expect(getTerminalCellWidth(activity.label)).toBeLessThanOrEqual(80);
+  });
+
+  it('projects terminal success and failure states as distinct activity', () => {
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_completed',
+          status: 'completed',
+          error: null,
+          startedAt: 1_000,
+          endedAt: 2_000,
+          durationMs: 1_000,
+          partial: false,
+          usage: null,
+          nativeSessionId: null,
+        },
+        10,
+      ),
+    ).toMatchObject({
+      activityId: 'call-1:terminal',
+      stage: 'completed',
+      kind: 'text',
+      label: 'completed implementer',
+      rawAvailable: false,
+    });
+
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_error',
+          status: 'timeout',
+          error: { code: 'timeout', message: 'runner timed out sk-abcdefghijklmnopqrst' },
+          startedAt: 1_000,
+          endedAt: 2_000,
+          durationMs: 1_000,
+          partial: true,
+          usage: null,
+          nativeSessionId: null,
+        },
+        11,
+      ),
+    ).toMatchObject({
+      activityId: 'call-1:terminal',
+      stage: 'timeout',
+      kind: 'error',
+      label: 'timeout timeout',
+      diagnosticPartial: 'runner timed out sk-***REDACTED***',
+      rawAvailable: true,
+      redacted: true,
+    });
+  });
+
+  it('keeps safe warning detail separate from text partials', () => {
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_warning',
+          warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+        },
+        12,
+      ),
+    ).toMatchObject({
+      stage: 'warning',
+      kind: 'warning',
+      label: 'warning stderr',
+      diagnosticPartial: 'line one sk-***REDACTED***',
+      rawAvailable: true,
+      redacted: true,
+    });
+  });
+
+  it('uses normalized visible warning content for activity identity', () => {
+    const first = projectRunnerCallActivity(
+      {
+        ...runnerCallBase,
+        type: 'call_warning',
+        warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+      },
+      12,
+    );
+    const repeated = projectRunnerCallActivity(
+      {
+        ...runnerCallBase,
+        type: 'call_warning',
+        warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+      },
+      13,
+    );
+    const changed = projectRunnerCallActivity(
+      {
+        ...runnerCallBase,
+        type: 'call_warning',
+        warning: { code: 'stderr', message: 'line two sk-abcdefghijklmnopqrst' },
+      },
+      14,
+    );
+
+    expect(first?.activityId).toBe(repeated?.activityId);
+    expect(changed?.activityId).not.toBe(first?.activityId);
+    expect(first?.activityId).not.toContain('abcdefghijklmnopqrst');
   });
 });

@@ -365,6 +365,7 @@ describe('parseEngineEvent', () => {
         status: 'running',
         passed: false,
         stages: { typecheck: false, lint: false, test: false },
+        attempted: { typecheck: false, lint: false, test: false },
         activeStage: 'typecheck',
         commands: { typecheck: 'npm run typecheck' },
       }),

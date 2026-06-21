@@ -71,12 +71,27 @@ function formatEventContextFit(
 }
 
 function validationStageSymbol(
+  event: Extract<EngineEvent, { type: 'validate' }>,
   stages: ValidationStages,
   stage: ValidationStage,
   skipped: ValidationStageSkips | undefined,
 ): string {
-  if (skipped?.[stage]) return '–';
-  return stages[stage] ? '✓' : '○';
+  if (skipped?.[stage]) return 'skipped';
+  if (event.status === 'running' && event.activeStage === stage) return 'running';
+  if (stages[stage]) return 'passed';
+  if (event.status === 'done' && validationStageWasAttempted(event, stage, skipped)) {
+    return 'failed';
+  }
+  return 'not-run';
+}
+
+function validationStageWasAttempted(
+  event: Extract<EngineEvent, { type: 'validate' }>,
+  stage: ValidationStage,
+  skipped: ValidationStageSkips | undefined,
+): boolean {
+  if (event.attempted !== undefined) return event.attempted[stage];
+  return event.stages[stage] || skipped?.[stage] === true || !event.passed;
 }
 
 function validationStageText(
@@ -86,6 +101,5 @@ function validationStageText(
   const command = event.commands?.[stage];
   const label =
     command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
-  if (event.status === 'running' && event.activeStage === stage) return `${label} …`;
-  return `${label} ${validationStageSymbol(event.stages, stage, event.skipped)}`;
+  return `${label} ${validationStageSymbol(event, event.stages, stage, event.skipped)}`;
 }

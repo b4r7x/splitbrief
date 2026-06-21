@@ -19,7 +19,9 @@ function getReservedScrollBannerRows(
   newEventRows: number,
 ): number {
   if (contentHeight <= visibleHeight) return 0;
-  return Math.min(2 * TOP_OR_BOTTOM_BANNER_ROWS, Math.max(0, visibleHeight - newEventRows));
+  const contentFloor = contentHeight > 0 ? 1 : 0;
+  const rowsAvailable = Math.max(0, visibleHeight - newEventRows - contentFloor);
+  return Math.min(2 * TOP_OR_BOTTOM_BANNER_ROWS, rowsAvailable);
 }
 
 export function computeScrollMaxOffset(
@@ -31,7 +33,7 @@ export function computeScrollMaxOffset(
   const visibleHeight = Math.max(0, viewportHeight);
   if (contentHeight <= visibleHeight) return 0;
 
-  const newEventRows = hasNewEvents && visibleHeight > 0 ? NEW_EVENT_BANNER_ROWS : 0;
+  const newEventRows = hasNewEvents && visibleHeight > 1 ? NEW_EVENT_BANNER_ROWS : 0;
   const scrollBannerRows = getReservedScrollBannerRows(contentHeight, visibleHeight, newEventRows);
   const innerHeight = Math.max(0, visibleHeight - scrollBannerRows - newEventRows);
   return Math.max(0, contentHeight - innerHeight);
@@ -54,7 +56,7 @@ export function getScrollWindowState(input: ScrollWindowStateInput): ScrollWindo
     computeScrollMaxOffset(contentHeight, visibleHeight, hasNewEvents),
   );
   const newEventRows =
-    hasNewEvents && visibleHeight > 0 && clampedOffset > 0 ? NEW_EVENT_BANNER_ROWS : 0;
+    hasNewEvents && visibleHeight > 1 && clampedOffset > 0 ? NEW_EVENT_BANNER_ROWS : 0;
   const scrollBannerRows = getReservedScrollBannerRows(contentHeight, visibleHeight, newEventRows);
   const bannerRows = scrollBannerRows + newEventRows;
   const innerHeight = Math.max(0, visibleHeight - bannerRows);

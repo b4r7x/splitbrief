@@ -174,6 +174,34 @@ describe('getScrollWindowState', () => {
     }
   });
 
+  it('keeps one content row visible before scroll banners in tiny viewports', () => {
+    expect(
+      getScrollWindowState({
+        totalHeight: 8,
+        viewportHeight: 1,
+        scrollOffset: 4,
+        hasNewEvents: true,
+      }),
+    ).toMatchObject({
+      bannerRows: 0,
+      innerHeight: 1,
+      newEventRows: 0,
+    });
+
+    expect(
+      getScrollWindowState({
+        totalHeight: 8,
+        viewportHeight: 2,
+        scrollOffset: 4,
+        hasNewEvents: true,
+      }),
+    ).toMatchObject({
+      bannerRows: 1,
+      innerHeight: 1,
+      newEventRows: 1,
+    });
+  });
+
   it('clamps negative and oversized offsets to valid window geometry', () => {
     expect(
       getScrollWindowState({

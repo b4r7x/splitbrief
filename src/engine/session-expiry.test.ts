@@ -9,6 +9,8 @@ describe('isSessionExpiredError', () => {
     'Expired session: abc-123',
     'server returned: no such session',
     'could not resume: stream closed',
+    'session: failed to load thread-abc',
+    'thread not loaded: thread-abc',
   ];
 
   it.each(EXPIRED_MESSAGES)('matches expired-session variant: %s', (msg) => {

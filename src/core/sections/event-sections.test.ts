@@ -39,19 +39,24 @@ describe('groupEventsIntoSections', () => {
   });
 
   it('creates completed-task section for task-start + task-complete pair', () => {
+    const generateEvent = makeImplementerGenerate();
     const events = [
       makeTaskStart({ taskId: taskId('T001'), title: 'Auth', index: 0 }),
-      makeImplementerGenerate(),
+      generateEvent,
       makeTaskComplete({ taskId: taskId('T001'), method: 'local', retries: 1, duration: 8000 }),
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
-    const summary = requireSection(sections, 0, 'completed-task').summary;
+    const section = requireSection(sections, 0, 'completed-task');
+    const summary = section.summary;
     expect(summary.index).toBe(1);
     expect(summary.title).toBe('Auth');
     expect(summary.method).toBe('local');
     expect(summary.retries).toBe(1);
     expect(summary.duration).toBe(8000);
+    expect(section.items).toEqual(events);
+    expect(section.items).toContain(generateEvent);
+    expect(section.startIndex).toBe(0);
   });
 
   it('preserves task-complete duration in milliseconds without unit conversion', () => {
@@ -78,6 +83,26 @@ describe('groupEventsIntoSections', () => {
     expect(summary.duration).toBe(0);
   });
 
+  it('creates completed-task section for task-start + task-full-fail pair', () => {
+    const events = [
+      makeTaskStart({ taskId: taskId('T003'), title: 'Failed task', index: 2, file: 'src/a.ts' }),
+      { type: 'task_full_fail', ts: 10, phase: 'implementing', taskId: taskId('T003') } as const,
+    ];
+    const sections = groupEventsIntoSections(events);
+    expect(sections).toHaveLength(1);
+    const section = requireSection(sections, 0, 'completed-task');
+
+    expect(section.summary).toMatchObject({
+      index: 3,
+      title: 'Failed task',
+      method: 'failed',
+      retries: 0,
+      duration: 0,
+      file: 'src/a.ts',
+    });
+    expect(section.items).toEqual(events);
+  });
+
   it('creates active-task section for unclosed task-start', () => {
     const events = [
       makeTaskStart({ taskId: taskId('T001') }),
@@ -86,6 +111,50 @@ describe('groupEventsIntoSections', () => {
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
     expect(requireSection(sections, 0, 'active-task').items).toHaveLength(2);
+  });
+
+  it('treats task_reset as an abandoned attempt boundary before retry completion', () => {
+    const reset = {
+      type: 'task_reset',
+      ts: 20,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    } as const;
+    const retryStart = makeTaskStart({ taskId: taskId('T001'), title: 'Retry auth', index: 0 });
+    const retryComplete = makeTaskComplete({ taskId: taskId('T001'), method: 'local' });
+    const events = [
+      makeTaskStart({ taskId: taskId('T001'), title: 'Auth', index: 0 }),
+      makeImplementerGenerate({ status: 'running' }),
+      reset,
+      retryStart,
+      retryComplete,
+    ];
+
+    const sections = groupEventsIntoSections(events);
+
+    expect(sections).toHaveLength(2);
+    expect(requireSection(sections, 0, 'events').items).toEqual(events.slice(0, 3));
+    expect(requireSection(sections, 1, 'completed-task').items).toEqual([
+      retryStart,
+      retryComplete,
+    ]);
+  });
+
+  it('abandons a previous open attempt when the same task starts again', () => {
+    const retryStart = makeTaskStart({ taskId: taskId('T001'), title: 'Retry auth', index: 0 });
+    const retryComplete = makeTaskComplete({ taskId: taskId('T001'), method: 'local' });
+    const events = [
+      makeTaskStart({ taskId: taskId('T001'), title: 'Auth', index: 0 }),
+      makeImplementerGenerate({ status: 'running' }),
+      retryStart,
+      retryComplete,
+    ];
+
+    const sections = groupEventsIntoSections(events);
+
+    expect(sections).toHaveLength(2);
+    expect(requireSection(sections, 0, 'events').items).toEqual(events.slice(0, 2));
+    expect(requireSection(sections, 1, 'completed-task').summary.title).toBe('Retry auth');
   });
 
   it('handles events before first task as events section', () => {
@@ -142,6 +211,8 @@ describe('findLatestRenderableDiffKey', () => {
       },
       {
         type: 'completed-task',
+        items: [],
+        startIndex: 1,
         summary: { index: 1, title: 'done', method: 'local', retries: 0, duration: 0 },
       },
       {

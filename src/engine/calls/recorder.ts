@@ -83,6 +83,7 @@ export function createRunnerCallRecorder(opts: {
   let hasTerminalEvent = false;
 
   function emit(event: RunnerCallEvent): void {
+    if (hasTerminalEvent && !isRunnerCallTerminalEvent(event)) return;
     if (isRunnerCallTerminalEvent(event)) {
       if (hasTerminalEvent) return;
       hasTerminalEvent = true;

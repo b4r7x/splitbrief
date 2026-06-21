@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -7,8 +8,12 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { Sidebar } from './sidebar.js';
 
-function task(id: string, status: WorkflowTask['status']): WorkflowTask {
-  return { id, title: `task ${id}`, status };
+function task(
+  id: string,
+  status: WorkflowTask['status'],
+  title: string = `task ${id}`,
+): WorkflowTask {
+  return { id, title, status };
 }
 
 beforeEach(() => {
@@ -73,6 +78,51 @@ describe('Sidebar — completed count', () => {
     expect(frame).toContain('3/3');
     expect(frame).toContain('2 local');
     expect(frame).toContain('1 escalated');
+
+    ui.unmount();
+  });
+
+  it('sanitizes secret-like text and terminal controls in task titles', async () => {
+    tasksStore.__testReset({
+      tasks: [
+        task(
+          '1',
+          'in_progress',
+          'ship \u001b[31mred\u001b[0m eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c sk-abcdefghijklmnopqrstuvwxyz',
+        ),
+      ],
+    });
+
+    const ui = renderFeature(<Sidebar width={120} />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('ship red ***REDACTED*** sk-***REDACTED***');
+    expect(frame).not.toContain('eyJhbGci');
+    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(frame).not.toContain('\u001b');
+
+    ui.unmount();
+  });
+
+  it('keeps footer cost and status visible when the task list is long', async () => {
+    const tasks = Array.from({ length: 40 }, (_value, index) =>
+      task(String(index + 1), index % 2 === 0 ? 'done' : 'pending'),
+    );
+    tasksStore.__testReset({ tasks });
+
+    const ui = renderFeature(
+      <Box height={10}>
+        <Sidebar width={32} />
+      </Box>,
+    );
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Tasks 20/40');
+    expect(frame).toContain('mode');
+    expect(frame).toContain('Cost');
+    expect(frame).toContain('Local rate:');
 
     ui.unmount();
   });

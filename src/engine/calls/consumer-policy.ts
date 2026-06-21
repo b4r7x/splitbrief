@@ -241,11 +241,11 @@ function normalizeObjectPayloadValue(value: object, state: PayloadTransformState
 }
 
 function sanitizeString(value: string, state: PayloadTransformState): string {
-  const redacted = redactSecretsWithMetadata(value, { marker: CALL_CONSUMER_REDACTION_MARKER });
+  const clean = stripPublicStringControls(value);
+  const redacted = redactSecretsWithMetadata(clean, { marker: CALL_CONSUMER_REDACTION_MARKER });
   if (redacted.redacted) state.redacted = true;
 
-  const clean = stripPublicStringControls(redacted.text);
-  const bounded = truncateUtf8String(clean, state.maxStringBytes);
+  const bounded = truncateUtf8String(redacted.text, state.maxStringBytes);
   if (bounded.truncated) state.truncated = true;
   return bounded.text;
 }

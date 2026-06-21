@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
+import { eventsStore } from '../../../../stores/workflow/events.js';
 import { taskId } from '../../../../core/schemas/task.js';
-import type { Section } from '../../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { ConversationFlow } from './flow.js';
 
@@ -82,6 +82,28 @@ function makeRunningImplementer(): Extract<EngineEvent, { type: 'implementer_gen
   };
 }
 
+function makeTaskCompleted(): Extract<EngineEvent, { type: 'task_completed' }> {
+  return {
+    type: 'task_completed',
+    ts: 0,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Finished task',
+    method: 'local',
+    retries: 0,
+    duration: 1,
+  };
+}
+
+function makeTaskFullFail(): Extract<EngineEvent, { type: 'task_full_fail' }> {
+  return {
+    type: 'task_full_fail',
+    ts: 0,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+  };
+}
+
 function makeRunnerActivity(): Extract<EngineEvent, { type: 'runner_call_activity' }> {
   return {
     type: 'runner_call_activity',
@@ -126,18 +148,20 @@ function contentRows(frame: string): string[] {
   return normalizedRows(frame).filter((line) => /^line-\d+$/.test(line));
 }
 
+function renderConversation(events: EngineEvent[], height: number, width: number) {
+  eventsStore.__testReset({ events });
+  return renderFeature(<ConversationFlow height={height} width={width} />);
+}
+
 describe('ConversationFlow', () => {
   beforeEach(() => {
+    eventsStore.__testReset();
     conversationScrollStore.reset();
     streamingOutputStore.__testReset();
   });
 
   it('renders markdown planner documents without raw markdown control markers', () => {
-    const sections: Section<EngineEvent>[] = [
-      { type: 'events', startIndex: 0, items: [makeMarkdownPlannerText()] },
-    ];
-
-    const ui = renderFeature(<ConversationFlow sections={sections} height={20} width={90} />);
+    const ui = renderConversation([makeMarkdownPlannerText()], 20, 90);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Description');
@@ -153,11 +177,7 @@ describe('ConversationFlow', () => {
   });
 
   it('renders safe runner activity as a styled conversation row', () => {
-    const sections: Section<EngineEvent>[] = [
-      { type: 'events', startIndex: 0, items: [makeRunnerActivity()] },
-    ];
-
-    const ui = renderFeature(<ConversationFlow sections={sections} height={5} width={90} />);
+    const ui = renderConversation([makeRunnerActivity()], 5, 90);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain("run  sed -n '1,260p' CLAUDE.md");
@@ -169,7 +189,6 @@ describe('ConversationFlow', () => {
 
   it('keeps scroll indicators inside the fixed viewport', () => {
     const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
-    const sections: Section<EngineEvent>[] = [{ type: 'events', startIndex: 0, items: events }];
 
     conversationScrollStore.__testReset({
       scrollOffset: 1,
@@ -177,7 +196,7 @@ describe('ConversationFlow', () => {
       heightAtScroll: 11,
     });
 
-    const ui = renderFeature(<ConversationFlow sections={sections} height={10} width={80} />);
+    const ui = renderConversation(events, 10, 80);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('2 lines above');
@@ -189,7 +208,6 @@ describe('ConversationFlow', () => {
 
   it('shows new renderable events without growing the viewport when scrolled up', () => {
     const events = Array.from({ length: 7 }, (_, index) => makePlannerText(index));
-    const sections: Section<EngineEvent>[] = [{ type: 'events', startIndex: 0, items: events }];
 
     conversationScrollStore.__testReset({
       scrollOffset: 1,
@@ -197,7 +215,7 @@ describe('ConversationFlow', () => {
       heightAtScroll: 11,
     });
 
-    const ui = renderFeature(<ConversationFlow sections={sections} height={10} width={80} />);
+    const ui = renderConversation(events, 10, 80);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('↓ 1 new event');
@@ -208,20 +226,14 @@ describe('ConversationFlow', () => {
   });
 
   it('moves a tall event by one rendered row between adjacent scroll offsets', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [makePlannerTextBlock(12)],
-      },
-    ];
+    const events: EngineEvent[] = [makePlannerTextBlock(12)];
 
     conversationScrollStore.__testReset({
       scrollOffset: 0,
       renderableCountAtScroll: 1,
       heightAtScroll: 12,
     });
-    const bottom = renderFeature(<ConversationFlow sections={sections} height={6} width={80} />);
+    const bottom = renderConversation(events, 6, 80);
     const bottomFrame = bottom.lastFrame() ?? '';
     bottom.unmount();
 
@@ -230,7 +242,7 @@ describe('ConversationFlow', () => {
       renderableCountAtScroll: 1,
       heightAtScroll: 12,
     });
-    const scrolled = renderFeature(<ConversationFlow sections={sections} height={6} width={80} />);
+    const scrolled = renderConversation(events, 6, 80);
     const scrolledFrame = scrolled.lastFrame() ?? '';
 
     expect(contentRows(bottomFrame)).toEqual(['line-9', 'line-10', 'line-11', 'line-12']);
@@ -242,20 +254,14 @@ describe('ConversationFlow', () => {
   });
 
   it('scrolls a wrapped task_started card by rendered rows, not by the whole card', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [makeLongTaskStarted(), makePlannerTextBlock(8)],
-      },
-    ];
+    const events: EngineEvent[] = [makeLongTaskStarted(), makePlannerTextBlock(8)];
 
     conversationScrollStore.__testReset({
       scrollOffset: 4,
       renderableCountAtScroll: 2,
       heightAtScroll: 13,
     });
-    const bottom = renderFeature(<ConversationFlow sections={sections} height={7} width={72} />);
+    const bottom = renderConversation(events, 7, 72);
     const bottomRows = windowRows(bottom.lastFrame() ?? '');
     bottom.unmount();
 
@@ -264,7 +270,7 @@ describe('ConversationFlow', () => {
       renderableCountAtScroll: 2,
       heightAtScroll: 13,
     });
-    const scrolled = renderFeature(<ConversationFlow sections={sections} height={7} width={72} />);
+    const scrolled = renderConversation(events, 7, 72);
     const scrolledFrame = scrolled.lastFrame() ?? '';
     const scrolledRows = windowRows(scrolledFrame);
 
@@ -276,13 +282,7 @@ describe('ConversationFlow', () => {
   });
 
   it('includes streaming output in row height and scrolls it one rendered row at a time', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [makeRunningImplementer()],
-      },
-    ];
+    const events: EngineEvent[] = [makeRunningImplementer()];
     streamingOutputStore.__testReset({
       active: true,
       taskId: taskId('T001'),
@@ -294,7 +294,7 @@ describe('ConversationFlow', () => {
       renderableCountAtScroll: 1,
       heightAtScroll: 6,
     });
-    const bottom = renderFeature(<ConversationFlow sections={sections} height={5} width={80} />);
+    const bottom = renderConversation(events, 5, 80);
     const bottomRows = normalizedRows(bottom.lastFrame() ?? '');
     bottom.unmount();
 
@@ -303,7 +303,7 @@ describe('ConversationFlow', () => {
       renderableCountAtScroll: 1,
       heightAtScroll: 6,
     });
-    const scrolled = renderFeature(<ConversationFlow sections={sections} height={5} width={80} />);
+    const scrolled = renderConversation(events, 5, 80);
     const scrolledFrame = scrolled.lastFrame() ?? '';
     const scrolledRows = normalizedRows(scrolledFrame);
 
@@ -317,22 +317,19 @@ describe('ConversationFlow', () => {
   });
 
   it('does not let completed task summaries expand the fixed viewport', () => {
-    const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'completed-task',
-        summary: { index: 1, title: 'Finished task', method: 'local', retries: 0, duration: 1 },
-      },
-      { type: 'events', startIndex: 0, items: events },
+    const events: EngineEvent[] = [
+      { ...makeLongTaskStarted(), title: 'Finished task' },
+      makeTaskCompleted(),
+      ...Array.from({ length: 6 }, (_, index) => makePlannerText(index)),
     ];
 
     conversationScrollStore.__testReset({
       scrollOffset: 1,
-      renderableCountAtScroll: events.length,
+      renderableCountAtScroll: 6,
       heightAtScroll: 11,
     });
 
-    const ui = renderFeature(<ConversationFlow sections={sections} height={10} width={80} />);
+    const ui = renderConversation(events, 10, 80);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Finished task');
@@ -344,6 +341,22 @@ describe('ConversationFlow', () => {
       'event 4',
     ]);
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
+
+    ui.unmount();
+  });
+
+  it('renders task_full_fail as a completed failed task in the runtime flow', () => {
+    const events: EngineEvent[] = [
+      { ...makeLongTaskStarted(), title: 'Failed runtime task' },
+      makeTaskFullFail(),
+    ];
+
+    const ui = renderConversation(events, 5, 80);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Failed runtime task');
+    expect(frame).toContain('failed');
+    expect(frame).not.toContain('No events yet');
 
     ui.unmount();
   });

@@ -1,4 +1,5 @@
 import { toErrorMessage } from '../utils/format-errors.js';
+import { error } from '../utils/error.js';
 import type { RunnerCallContext } from './calls/types.js';
 
 export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [
@@ -8,6 +9,8 @@ export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [
   /expired session/i,
   /no such session/i,
   /could not resume/i,
+  /session:\s*failed to load/i,
+  /thread not loaded/i,
 ];
 
 const CALL_ID_MAX_LENGTH = 128;
@@ -72,4 +75,15 @@ export function createSessionAttemptCallContext(
       ? `${context.callId}${suffix}`
       : `${context.callId.slice(0, CALL_ID_MAX_LENGTH - suffix.length)}${suffix}`;
   return { ...context, callId, attempt };
+}
+
+export function sessionResumeMismatchError(expectedId: string, actualId: string) {
+  return error(
+    'session-resume-mismatch',
+    `could not resume session ${expectedId}: returned thread id ${actualId}`,
+    {
+      expectedId,
+      actualId,
+    },
+  );
 }

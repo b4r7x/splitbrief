@@ -33,6 +33,11 @@ const CodexItemEvent = z.object({
   item: z.record(z.string(), z.unknown()),
 });
 
+const MALFORMED_JSONL_WARNING = {
+  code: 'malformed_jsonl',
+  message: 'Malformed JSONL line skipped',
+} as const;
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     const candidate = optionalString(value, { trim: true, nonEmpty: true });
@@ -44,16 +49,12 @@ function firstString(...values: unknown[]): string | undefined {
 function codexToolName(item: Record<string, unknown>): string | null {
   const itemType = firstString(item.type);
   if (!itemType || itemType === 'agent_message') return null;
-  return (
-    firstString(item.name, item.tool_name, item.command, item.operation, item.action, itemType) ??
-    null
-  );
+  return itemType;
 }
 
 function codexToolInput(item: Record<string, unknown>): Record<string, unknown> {
   const explicit = item.input ?? item.arguments ?? item.args;
-  if (isRecord(explicit)) return explicit;
-  const input: Record<string, unknown> = {};
+  const input: Record<string, unknown> = isRecord(explicit) ? { ...explicit } : {};
   for (const key of [
     'type',
     'command',
@@ -66,7 +67,7 @@ function codexToolInput(item: Record<string, unknown>): Record<string, unknown> 
     'tool_name',
     'status',
   ]) {
-    if (item[key] !== undefined) input[key] = item[key];
+    if (item[key] !== undefined && input[key] === undefined) input[key] = item[key];
   }
   return input;
 }
@@ -145,6 +146,6 @@ export function parseJsonlLine(line: string): ParsedLine {
     return {};
   } catch (err) {
     warnError('output-parser: malformed JSONL line', err);
-    return {};
+    return { warning: [MALFORMED_JSONL_WARNING] };
   }
 }

@@ -1,10 +1,12 @@
 import type { Key } from 'ink';
 import type { Section } from '../../core/sections/event-sections.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; key: string }
+  | { type: 'toggle-activity-batch'; key: string }
   | { type: 'review-scroll'; offset: number }
   | {
       type: 'conversation-scroll-up';
@@ -22,15 +24,21 @@ export interface WorkflowCtrlChordsInput {
   input: string;
   key: Key;
   isSmall: boolean;
-  sections: Section[];
-  findLatestDiff: (sections: Section[]) => string | null;
+  sections: Section<EngineEvent>[];
+  findLatestDiff: (sections: Section<EngineEvent>[]) => string | null;
+  findLatestActivityBatch: (sections: Section<EngineEvent>[]) => string | null;
 }
 
 export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
-  const { input, key, isSmall, sections, findLatestDiff } = options;
+  const { input, key, isSmall, sections, findLatestDiff, findLatestActivityBatch } = options;
   if (!key.ctrl) return NONE;
   if (input === 'e') {
     if (!isSmall) return { type: 'toggle-sidebar' };
+    return NONE;
+  }
+  if (input === 'a') {
+    const key = findLatestActivityBatch(sections);
+    if (key != null) return { type: 'toggle-activity-batch', key };
     return NONE;
   }
   if (input === 'd') {

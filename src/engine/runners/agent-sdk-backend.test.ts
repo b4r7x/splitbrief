@@ -4,9 +4,15 @@ import {
   loadSdk,
   isAgentSdkAvailable,
   createAgentSdkBackend,
+  processStream,
   PLANNER_ALLOWED_TOOLS,
   PLANNER_PERMISSION_MODE,
 } from './agent-sdk-backend.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+
+async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
+  for (const item of items) yield item;
+}
 
 describe('isModuleNotFoundError', () => {
   it('returns true for ERR_MODULE_NOT_FOUND', () => {
@@ -73,6 +79,78 @@ describe('createAgentSdkBackend', () => {
         signal: controller.signal,
       }),
     ).rejects.toThrow('cancelled');
+  });
+});
+
+describe('processStream', () => {
+  it('calls onOutput for result-only text', async () => {
+    const chunks: string[] = [];
+    const result = await processStream({
+      stream: asyncIter([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'final answer',
+          usage: { input_tokens: 1, output_tokens: 2 },
+        },
+      ]),
+      onOutput: (text) => chunks.push(text),
+    });
+
+    expect(chunks).toEqual(['final answer']);
+    expect(result.text).toBe('final answer');
+  });
+
+  it('streams only the missing result suffix after assistant text', async () => {
+    const chunks: string[] = [];
+    const result = await processStream({
+      stream: asyncIter([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'Hello' }] },
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'Hello world',
+        },
+      ]),
+      onOutput: (text) => chunks.push(text),
+    });
+
+    expect(chunks).toEqual(['Hello', ' world']);
+    expect(result.text).toBe('Hello world');
+  });
+
+  it('records divergent result text as a typed replacement without replaying it to output', async () => {
+    const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    const result = await processStream({
+      stream: asyncIter([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'draft text' }] },
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'final text',
+        },
+      ]),
+      onOutput: (text) => chunks.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(chunks).toEqual(['draft text']);
+    expect(result.text).toBe('final text');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        channel: 'result',
+        text: 'final text',
+        semantics: 'final',
+      }),
+    );
   });
 });
 

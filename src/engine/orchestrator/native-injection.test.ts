@@ -113,7 +113,13 @@ describe('dispatchNativeInjection', () => {
       expect(events.some((e) => e.type === 'message_injected_native')).toBe(true);
       expect(
         events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
-      ).toEqual(['runner_call_started', 'runner_call_completed']);
+      ).toEqual(['runner_call_started', 'runner_call_completed', 'runner_call_activity']);
+      expect(events.find((event) => event.type === 'runner_call_activity')).toMatchObject({
+        callId: 'native-injection-call',
+        role: 'planner',
+        stage: 'completed',
+        kind: 'text',
+      });
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

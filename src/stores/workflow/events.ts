@@ -61,7 +61,31 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     return next;
   }
   if (events.length >= MAX_EVENTS) {
-    return [...events.slice(1), event];
+    const evictionIndex = firstEvictableEventIndex(events);
+    const kept =
+      evictionIndex < 0
+        ? events.slice(1)
+        : [...events.slice(0, evictionIndex), ...events.slice(evictionIndex + 1)];
+    return [...kept, event];
   }
   return [...events, event];
+}
+
+function firstEvictableEventIndex(events: readonly EngineEvent[]): number {
+  return events.findIndex((event) => !isStructuralTranscriptEvent(event));
+}
+
+function isStructuralTranscriptEvent(event: EngineEvent): boolean {
+  switch (event.type) {
+    case 'workflow_started':
+    case 'workflow_resumed':
+    case 'workflow_config':
+    case 'task_started':
+    case 'task_completed':
+    case 'task_skipped':
+    case 'task_full_fail':
+      return true;
+    default:
+      return false;
+  }
 }

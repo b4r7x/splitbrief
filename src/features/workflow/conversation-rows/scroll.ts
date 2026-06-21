@@ -31,6 +31,7 @@ export function computeConversationRowScroll(
   const { rows, renderableCount } = buildConversationRows({
     sections: inputs.sections,
     expandedDiffs: inputs.expandedDiffs,
+    expandedActivityBatches: inputs.expandedActivityBatches,
     cols: inputs.cols,
     viewportHeight: scrollViewportHeight,
     streaming: inputs.streaming,

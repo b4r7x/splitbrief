@@ -140,6 +140,17 @@ describe('consumer payload policies', () => {
     expect(text).toContain(`sk-ant-${CALL_CONSUMER_REDACTION_MARKER}`);
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(96);
   });
+
+  it('canonicalizes terminal controls before redacting public payload strings', () => {
+    const result = protectConsumerPayload({
+      context: 'ipc',
+      payload: { text: 'key=sk-\u001b[31mabcdefghijklmnopqrstuvwxyz' },
+    });
+    const payload = expectRecord(result.payload);
+
+    expect(result.redacted).toBe(true);
+    expect(payload.text).toBe(`key=sk-${CALL_CONSUMER_REDACTION_MARKER}`);
+  });
 });
 
 function expectRecord(value: PublicPayload): { [key: string]: PublicPayload } {

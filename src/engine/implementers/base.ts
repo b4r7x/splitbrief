@@ -341,8 +341,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         implBuffer?.flushInterrupted();
       } else {
         implBuffer?.flush();
+        failTask();
       }
-      failTask();
       return {
         success: false,
         output: outputText,

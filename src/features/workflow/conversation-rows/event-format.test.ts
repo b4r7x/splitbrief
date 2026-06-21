@@ -19,26 +19,45 @@ function validateEvent(
 }
 
 describe('validationRow', () => {
-  it('renders a passing stage as ✓ and a not-run stage as ○', () => {
+  it('renders passing and not-run stages as distinct states', () => {
     const row = validationRow(
       validateEvent({ stages: { typecheck: true, lint: false, test: false } }),
     );
-    expect(row).toContain('typecheck ✓');
-    expect(row).toContain('lint ○');
-    expect(row).toContain('test ○');
+    expect(row).toContain('typecheck passed');
+    expect(row).toContain('lint not-run');
+    expect(row).toContain('test not-run');
   });
 
-  it('renders a skipped stage distinctly rather than as a passing ✓', () => {
+  it('renders failed validation stages distinctly from not-run stages', () => {
     const row = validationRow(
       validateEvent({
+        passed: false,
+        stages: { typecheck: true, lint: false, test: false },
+        attempted: { typecheck: true, lint: true, test: false },
+      }),
+    );
+
+    expect(row).toContain('typecheck passed');
+    expect(row).toContain('lint failed');
+    expect(row).toContain('test not-run');
+    expect(row).not.toContain('typecheck failed');
+    expect(row).not.toContain('lint not-run');
+    expect(row).not.toContain('test failed');
+  });
+
+  it('renders a skipped stage distinctly rather than as passed or failed', () => {
+    const row = validationRow(
+      validateEvent({
+        passed: false,
         stages: { typecheck: true, lint: false, test: true },
         skipped: { lint: true },
       }),
     );
-    expect(row).toContain('lint –');
-    expect(row).not.toContain('lint ✓');
-    expect(row).toContain('typecheck ✓');
-    expect(row).toContain('test ✓');
+    expect(row).toContain('lint skipped');
+    expect(row).not.toContain('lint passed');
+    expect(row).not.toContain('lint failed');
+    expect(row).toContain('typecheck passed');
+    expect(row).toContain('test passed');
   });
 
   it('renders active validation command metadata', () => {
@@ -51,8 +70,8 @@ describe('validationRow', () => {
       }),
     );
 
-    expect(row).toContain('typecheck (npm run typecheck) …');
-    expect(row).toContain('lint ○');
-    expect(row).toContain('test ○');
+    expect(row).toContain('typecheck (npm run typecheck) running');
+    expect(row).toContain('lint not-run');
+    expect(row).toContain('test not-run');
   });
 });

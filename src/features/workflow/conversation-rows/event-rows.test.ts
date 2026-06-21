@@ -8,13 +8,6 @@ import { rowText } from './row-format.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
-function expectNoConversationGutter(rows: ReturnType<typeof eventRows>): void {
-  const textRows = rows.map(rowText);
-
-  expect(textRows.join('\n')).not.toMatch(/[│┆]/);
-  expect(textRows.every((text) => !/^\s/.test(text))).toBe(true);
-}
-
 describe('eventRows', () => {
   it('renders markdown planner documents without raw heading or fence markers', () => {
     const event: EngineEvent = {
@@ -46,7 +39,7 @@ describe('eventRows', () => {
     const text = rows.map(rowText).join('\n');
     const heading = rows.find((rowValue) => rowText(rowValue).includes('Description'));
 
-    expect(rowText(rows[0] ?? { key: 'missing', segments: [] })).toBe('id: T001');
+    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
     expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'accent', bold: true });
     expect(text).toContain('Description');
     expect(text).toContain('// No exported signature.');
@@ -109,15 +102,68 @@ describe('eventRows', () => {
     expect(text).not.toContain('TT001');
   });
 
+  it('renders task_full_fail as a visible failed terminal row', () => {
+    const event: EngineEventOf<'task_full_fail'> = {
+      type: 'task_full_fail',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual(['task failed  T001']);
+    expect(rows[0]?.kind).toBe('summary');
+    expect(rows[0]?.segments).toContainEqual({ text: 'task failed  ', tone: 'error' });
+    expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'error' });
+  });
+
+  it.each([
+    ['continued', 'success'],
+    ['retry-current-task', 'success'],
+    ['skipped-current-task', 'warning'],
+    ['aborted', 'error'],
+  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, tone) => {
+    const event: EngineEventOf<'recovery_resolved'> = {
+      type: 'recovery_resolved',
+      ts: 0,
+      phase: 'implementing',
+      issueId: 'issue-1',
+      reason: 'validation-failed',
+      action: 'retry-same-worker',
+      outcome,
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows[0]?.segments[0]?.tone).toBe(tone);
+    expect(rows[0]?.segments[1]?.tone).toBe(tone);
+    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toContain(
+      `${outcome} via retry-same-worker`,
+    );
+  });
+
   it('redacts secrets in planner, warning, and user display rows', () => {
     const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
     const events: EngineEvent[] = [
       {
         type: 'planner_text',
         ts: 0,
         phase: 'planning',
         role: 'planner',
-        text: `planner token ${secret}\u001b[31m`,
+        text: `planner token ${secret} ${jwt}\u001b[31m`,
       },
       {
         type: 'warning',
@@ -147,6 +193,7 @@ describe('eventRows', () => {
 
     expect(text).toContain('***REDACTED***');
     expect(text).not.toContain(secret);
+    expect(text).not.toContain('eyJhbGci');
     expect(text).not.toContain('AKIAIOSFODNN7EXAMPLE');
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
     expect(text).not.toContain('\u001b');
@@ -268,7 +315,8 @@ describe('eventRows', () => {
       { text: 'run  ', tone: 'info' },
       { text: 'npm run typecheck', tone: 'textDim' },
     ]);
-    expectNoConversationGutter(rows);
+    expect(rows[0]?.kind).toBe('activity-child');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 
   it('renders shell-wrapper activity without exposing the wrapper as the message label', () => {
@@ -402,7 +450,7 @@ describe('eventRows', () => {
     expect(normalized).not.toContain('3911/32768 tok');
   });
 
-  it('renders workflow activity rows without persistent left gutters or leading layout spaces', () => {
+  it('renders workflow activity rows as bounded compact rows', () => {
     const events: EngineEvent[] = [
       {
         type: 'planner_text',
@@ -463,22 +511,23 @@ describe('eventRows', () => {
     ];
 
     for (const event of events) {
-      expectNoConversationGutter(
-        eventRows({
-          event,
-          globalIndex: 0,
-          expanded: true,
-          ctx: {
-            width: 80,
-            viewportRows: 20,
-            streaming: {
-              taskId: taskId('T001'),
-              lines: ['streamed output'],
-              active: true,
-            },
+      const rows = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: true,
+        ctx: {
+          width: 80,
+          viewportRows: 20,
+          streaming: {
+            taskId: taskId('T001'),
+            lines: ['streamed output'],
+            active: true,
           },
-        }),
-      );
+        },
+      });
+
+      expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
+      expect(rows.every((rowValue) => rowValue.kind.length > 0)).toBe(true);
     }
   });
 });

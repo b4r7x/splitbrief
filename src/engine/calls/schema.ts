@@ -48,9 +48,18 @@ export const RUNNER_CALL_ACTIVITY_STAGES = [
   'updated',
   'completed',
   'failed',
+  'aborted',
+  'timeout',
+  'truncated',
+  'refused',
+  'unsupported_tool',
+  'incomplete',
   'warning',
 ] as const;
 export const RUNNER_CALL_ACTIVITY_KINDS = [
+  'tool',
+  'file',
+  'text',
   'read',
   'write',
   'edit',
@@ -64,6 +73,7 @@ export const RUNNER_CALL_ACTIVITY_KINDS = [
   'session',
   'artifact',
   'warning',
+  'error',
   'unknown',
 ] as const;
 

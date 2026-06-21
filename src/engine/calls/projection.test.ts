@@ -257,6 +257,40 @@ describe('projectRunnerCallEvent', () => {
     });
   });
 
+  it('adds terminal activity projections for completed calls', () => {
+    const projected = projectRunnerCallEvents(
+      {
+        type: 'call_completed',
+        ts: 20,
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        status: 'completed',
+        error: null,
+        startedAt: 10,
+        endedAt: 20,
+        durationMs: 10,
+        partial: false,
+        usage: null,
+        nativeSessionId: null,
+      },
+      { phase: 'implementing', sequence: 7 },
+    );
+
+    expect(projected).toEqual([
+      expect.objectContaining({ type: 'runner_call_completed', sequence: 7 }),
+      expect.objectContaining({
+        type: 'runner_call_activity',
+        activityId: 'call-1:terminal',
+        stage: 'completed',
+        kind: 'text',
+        label: 'completed implementer',
+        rawAvailable: false,
+        expandId: 'call-1:terminal',
+      }),
+    ]);
+  });
+
   it('bounds projected stderr warnings to the engine event schema limit', () => {
     const projected = projectRunnerCallEvent(
       {
@@ -276,6 +310,36 @@ describe('projectRunnerCallEvent', () => {
       type: 'runner_call_warning',
       warning: {
         code: 'stderr',
+        message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
+      },
+    });
+  });
+
+  it('bounds projected runner call error messages to the engine event schema limit', () => {
+    const projected = projectRunnerCallEvent(
+      {
+        type: 'call_error',
+        ts: 10,
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'api',
+        status: 'failed',
+        error: { code: 'failed', message: 'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH + 100) },
+        startedAt: 1,
+        endedAt: 10,
+        durationMs: 9,
+        partial: true,
+        usage: null,
+        nativeSessionId: null,
+      },
+      { phase: 'planning', sequence: 5 },
+    );
+
+    expect(EngineEventSchema.safeParse(projected).success).toBe(true);
+    expect(projected).toMatchObject({
+      type: 'runner_call_error',
+      error: {
+        code: 'failed',
         message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
       },
     });

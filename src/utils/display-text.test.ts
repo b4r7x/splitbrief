@@ -4,6 +4,7 @@ import {
   padTerminalDisplayTextEnd,
   stripTerminalControls,
   truncateTerminalDisplayText,
+  truncateTerminalDisplayTextMiddle,
   truncateTerminalDisplayTextStart,
 } from './display-text.js';
 
@@ -68,6 +69,29 @@ describe('truncateTerminalDisplayTextStart', () => {
     expect(truncateTerminalDisplayTextStart('src/feature/e\u0301/👩‍💻-file.ts', 12)).toBe(
       '…/👩‍💻-file.ts',
     );
+  });
+});
+
+describe('truncateTerminalDisplayTextMiddle', () => {
+  it('preserves the head and tail by terminal cell width', () => {
+    const result = truncateTerminalDisplayTextMiddle(
+      "sed -n '1,260p' /Users/voitz/.agents/library/codebase-exploration/SKILL.md",
+      36,
+    );
+
+    expect(result.startsWith("sed -n '1,260p'")).toBe(true);
+    expect(result.endsWith('SKILL.md')).toBe(true);
+    expect(result).toContain('…');
+    expect(getTerminalCellWidth(result)).toBeLessThanOrEqual(36);
+  });
+
+  it('does not split combining marks or emoji grapheme clusters', () => {
+    const result = truncateTerminalDisplayTextMiddle('alpha/e\u0301/👩‍💻/omega.ts', 15);
+
+    expect(result.startsWith('alpha/e\u0301')).toBe(true);
+    expect(result.endsWith('mega.ts')).toBe(true);
+    expect(result).toContain('…');
+    expect(getTerminalCellWidth(result)).toBeLessThanOrEqual(15);
   });
 });
 

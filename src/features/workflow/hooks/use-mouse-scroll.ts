@@ -20,7 +20,7 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
 
     const review = reviewStore.get();
     const snapshot = readConversationScrollSnapshot();
-    const { contentRect } = snapshot;
+    const contentRect = review.filePath ? snapshot.contentRect : snapshot.conversationRect;
     if (
       event.x < contentRect.left ||
       event.x > contentRect.right ||

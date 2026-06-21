@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
+  getWorkflowConversationRect,
   getWorkflowContentRect,
   getWorkflowContentWidth,
+  getWorkflowRuntimeLayout,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
@@ -14,6 +16,44 @@ describe('hasWorkflowConfig', () => {
     expect(hasWorkflowConfig([])).toBe(false);
     expect(hasWorkflowConfig([{ type: 'planner_text' }])).toBe(false);
     expect(hasWorkflowConfig([{ type: 'planner_text' }, { type: 'workflow_config' }])).toBe(true);
+  });
+});
+
+describe('getWorkflowRuntimeLayout', () => {
+  it('keeps compact runtime layouts full width without an activity rail', () => {
+    expect(getWorkflowRuntimeLayout({ contentWidth: 98, terminalCols: 100 })).toEqual({
+      activityRailWidth: 0,
+      conversationWidth: 98,
+      contentWidth: 98,
+    });
+  });
+
+  it('splits wide runtime layouts between conversation and activity rail', () => {
+    expect(getWorkflowRuntimeLayout({ contentWidth: 118, terminalCols: 120 })).toEqual({
+      activityRailWidth: 35,
+      conversationWidth: 82,
+      contentWidth: 118,
+    });
+  });
+
+  it('returns a conversation rect that matches the rendered conversation width', () => {
+    const contentRect = getWorkflowContentRect({
+      cols: 120,
+      rows: 30,
+      inputRows: 2,
+      hasConfig: false,
+      sidebarVisible: false,
+      isSmall: false,
+    });
+    const runtime = getWorkflowRuntimeLayout({
+      contentWidth: contentRect.width,
+      terminalCols: 120,
+    });
+    const conversationRect = getWorkflowConversationRect(contentRect, runtime);
+
+    expect(conversationRect.width).toBe(runtime.conversationWidth);
+    expect(conversationRect.left).toBe(contentRect.left);
+    expect(conversationRect.right).toBe(conversationRect.left + runtime.conversationWidth - 1);
   });
 });
 

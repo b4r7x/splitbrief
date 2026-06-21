@@ -329,8 +329,6 @@ function acceptsEventAfterCancellation(event: EngineEvent): boolean {
     case 'runner_call_session_id':
     case 'runner_call_artifact':
       return true;
-    case 'runner_call_activity':
-      return event.stage !== 'started' && event.stage !== 'updated';
     default:
       return false;
   }

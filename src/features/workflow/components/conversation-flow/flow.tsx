@@ -5,15 +5,13 @@ import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getCompletedTaskSummaryRows } from '../../../../core/sections/completed-task-summary-rows.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
+import { useSections } from '../../../../stores/workflow/actions.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
-import type { Section } from '../../../../core/sections/event-sections.js';
-import type { EngineEvent } from '../../../../engine/events/types.js';
 import { ConversationRowView } from './row-view.js';
 
 interface ConversationFlowProps {
-  sections: Section<EngineEvent>[];
   height: number;
   width: number;
 }
@@ -28,20 +26,24 @@ function computeScrollBannerText(
   };
 }
 
-export function ConversationFlow({ sections, height, width }: ConversationFlowProps) {
+export function ConversationFlow({ height, width }: ConversationFlowProps) {
   const t = useTheme();
   const [
-    { scrollOffset: rawScrollOffset, expandedDiffs, renderableCountAtScroll, heightAtScroll },
+    {
+      scrollOffset: rawScrollOffset,
+      expandedDiffs,
+      expandedActivityBatches,
+      renderableCountAtScroll,
+      heightAtScroll,
+    },
     streaming,
   ] = useStores(conversationScrollStore, streamingOutputStore);
+  const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = width;
-  const completedItems = sections
-    .filter(
-      (section): section is Section & { type: 'completed-task' } =>
-        section.type === 'completed-task',
-    )
-    .map((section) => section.summary);
+  const completedItems = sections.flatMap((section) =>
+    section.type === 'completed-task' ? [section.summary] : [],
+  );
   const completedRows = getCompletedTaskSummaryRows(sections, viewportHeight);
   const visibleCompletedItems = completedRows > 0 ? completedItems.slice(-completedRows) : [];
   const {
@@ -53,6 +55,7 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
   } = computeConversationRowScroll({
     sections,
     expandedDiffs,
+    expandedActivityBatches,
     cols,
     viewportHeight,
     rawScrollOffset,

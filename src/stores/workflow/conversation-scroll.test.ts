@@ -48,6 +48,17 @@ describe('conversationScrollStore', () => {
 
     conversationScrollStore.toggleDiff('implementer_generate_done:1');
     conversationScrollStore.toggleDiff('implementer_generate_done:5');
+    conversationScrollStore.toggleActivityBatch('activity-batch:1:call-1');
+    expect(
+      conversationScrollStore.get().expandedActivityBatches.has('activity-batch:1:call-1'),
+    ).toBe(true);
+
+    conversationScrollStore.toggleActivityBatch('activity-batch:1:call-1');
+    expect(
+      conversationScrollStore.get().expandedActivityBatches.has('activity-batch:1:call-1'),
+    ).toBe(false);
+
+    conversationScrollStore.toggleActivityBatch('activity-batch:1:call-2');
     const { expandedDiffs } = conversationScrollStore.get();
     expect(expandedDiffs.has('implementer_generate_done:1')).toBe(true);
     expect(expandedDiffs.has('implementer_generate_done:5')).toBe(true);
@@ -57,6 +68,7 @@ describe('conversationScrollStore', () => {
     const s = conversationScrollStore.get();
     expect(s.scrollOffset).toBe(0);
     expect(s.expandedDiffs.size).toBe(0);
+    expect(s.expandedActivityBatches.size).toBe(0);
     expect(s.renderableCountAtScroll).toBe(0);
   });
 });

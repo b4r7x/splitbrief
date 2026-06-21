@@ -90,6 +90,26 @@ function runnerCompleted(
   };
 }
 
+function runnerWarning(
+  overrides?: Partial<EngineEventOf<'runner_call_warning'>>,
+): EngineEventOf<'runner_call_warning'> {
+  return {
+    type: 'runner_call_warning',
+    ts: 1_100,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    callId: 'call-1',
+    role: 'implementer',
+    backendKind: 'cli',
+    sequence: 2,
+    warning: {
+      code: 'stderr',
+      message: 'warn',
+    },
+    ...overrides,
+  };
+}
+
 describe('operationsStore', () => {
   beforeEach(() => resetWorkflow());
 
@@ -173,6 +193,31 @@ describe('operationsStore', () => {
     });
   });
 
+  it('closes stale planner_status fallbacks when a new phase fallback starts', () => {
+    addEvent(makePlannerStatus({ ts: 1_000, phase: 'researching', status: 'running' }));
+    addEvent(makePlannerStatus({ ts: 1_200, phase: 'planning', status: 'running' }));
+    addEvent(runnerStarted({ ts: 1_400, phase: 'planning', role: 'planner', callId: 'call-2' }));
+    addEvent(
+      runnerCompleted({
+        ts: 1_500,
+        phase: 'planning',
+        role: 'planner',
+        callId: 'call-2',
+        startedAt: 1_400,
+        endedAt: 1_500,
+        durationMs: 100,
+      }),
+    );
+
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().byCallId.get('planner-status:researching')).toMatchObject({
+      status: 'completed',
+    });
+    expect(operationsStore.get().byCallId.get('planner-status:planning')).toMatchObject({
+      status: 'completed',
+    });
+  });
+
   it('keeps post-cancel aborted terminal events idempotent for a known callId', () => {
     addEvent(runnerStarted({ ts: 1_000 }));
     markCancellationRequested({ ts: 1_250 });
@@ -193,7 +238,44 @@ describe('operationsStore', () => {
       status: 'cancelled',
       endedAt: 1_250,
       durationMs: 250,
-      partial: true,
+      reason: 'user_cancelled',
+      partial: false,
+    });
+  });
+
+  it('dedupes repeated warning text while a call is running', () => {
+    addEvent(runnerStarted());
+    addEvent(runnerWarning({ warning: { code: 'stderr', message: 'same warning' } }));
+    addEvent(
+      runnerWarning({
+        ts: 1_150,
+        sequence: 3,
+        warning: { code: 'stderr', message: 'same warning' },
+      }),
+    );
+    addEvent(
+      runnerWarning({
+        ts: 1_200,
+        sequence: 4,
+        warning: { code: 'stderr', message: 'second warning' },
+      }),
+    );
+
+    expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
+      'same warning',
+      'second warning',
+    ]);
+  });
+
+  it('ignores late warnings for terminal operations', () => {
+    addEvent(runnerStarted());
+    markCancellationRequested({ ts: 1_250 });
+    addEvent(runnerWarning({ ts: 1_300, sequence: 3 }));
+
+    expect(operationsStore.get().byCallId.get('call-1')).toMatchObject({
+      status: 'cancelled',
+      warnings: [],
+      reason: 'user_cancelled',
     });
   });
 
@@ -222,20 +304,14 @@ describe('operationsStore', () => {
         model: 'xhigh\u001b[31m sk-ant-abcdefghijklmnopqrstuvwxyz',
       }),
     );
-    addEvent({
-      type: 'runner_call_warning',
-      ts: 1_100,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      callId: 'call-1',
-      role: 'implementer',
-      backendKind: 'cli',
-      sequence: 2,
-      warning: {
-        code: 'stderr',
-        message: 'warn\u001b[31mred\u001b[0m token sk-or-abcdefghijklmnopqrst',
-      },
-    });
+    addEvent(
+      runnerWarning({
+        warning: {
+          code: 'stderr',
+          message: 'warn\u001b[31mred\u001b[0m token sk-or-abcdefghijklmnopqrst',
+        },
+      }),
+    );
     addEvent(
       runnerAborted({
         error: {

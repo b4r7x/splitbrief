@@ -1,8 +1,9 @@
 import { formatCost, formatScoreSummary } from '../../../core/formatting.js';
-import { formatModelName, formatToolModel } from '../../../core/model-display.js';
+import { formatModelName } from '../../../core/model-display.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { runnerActivityBatchRows } from './activity-rows.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import {
   formatExternalChangesValue,
@@ -13,10 +14,6 @@ import { implementerDoneRows, runningImplementerRows } from './implementer-rows.
 import type { ConversationRow, ConversationRowTone, RowBuildContext } from './types.js';
 import { cardRows, eventWrappedRows, row, rowText, wrapRows } from './row-format.js';
 import { markdownConversationRows } from './markdown-rows.js';
-
-type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
-
-const MAX_RUNNER_ACTIVITY_BATCH_ITEMS = 3;
 
 export function eventRows(options: {
   event: EngineEvent;
@@ -49,7 +46,6 @@ export function eventRows(options: {
     case 'instant_plan_received':
     case 'task_completed':
     case 'task_escalating':
-    case 'task_full_fail':
     case 'task_tokens':
     case 'task_review_needed':
     case 'hint_failed':
@@ -112,7 +108,8 @@ export function eventRows(options: {
         label: 'recovery',
         value: `${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
         width: ctx.width,
-        labelTone: 'success',
+        labelTone: recoveryResolvedTone(event.outcome),
+        valueTone: recoveryResolvedTone(event.outcome),
       });
     case 'planner_text':
       return plannerTextRows({ event, keyPrefix, width: ctx.width });
@@ -182,6 +179,7 @@ export function eventRows(options: {
         width: ctx.width,
         tone: 'text',
         bold: true,
+        kind: 'task-header',
       });
     case 'task_skipped':
       return cardRows({
@@ -190,6 +188,16 @@ export function eventRows(options: {
         value: `${event.taskId} ${event.title}: ${event.reason}`,
         width: ctx.width,
         labelTone: 'textDim',
+      });
+    case 'task_full_fail':
+      return cardRows({
+        keyPrefix,
+        label: 'task failed',
+        value: event.taskId,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'error',
+        kind: 'summary',
       });
     case 'task_retry':
       return eventWrappedRows({
@@ -406,7 +414,7 @@ export function eventRows(options: {
     case 'runner_call_tool_use':
       return [];
     case 'runner_call_activity':
-      return runnerActivityBatchRows({ events: [event], keyPrefix, width: ctx.width });
+      return runnerActivityBatchRows({ events: [event], batchKey: keyPrefix, width: ctx.width });
     default:
       return assertNever(event);
   }
@@ -455,242 +463,18 @@ function plannerTextTone(role: EngineEventOf<'planner_text'>['role']): Conversat
   }
 }
 
-export function runnerActivityBatchRows(options: {
-  events: readonly RunnerActivityEvent[];
-  keyPrefix: string;
-  width: number;
-}): ConversationRow[] {
-  const { events, keyPrefix, width } = options;
-  const items = latestActivityItems(events, MAX_RUNNER_ACTIVITY_BATCH_ITEMS);
-  if (items.length === 0) return [];
-
-  const rows: ConversationRow[] = [];
-  if (events.length > 1) {
-    rows.push(
-      row({
-        key: `${keyPrefix}-header`,
-        text: activityBatchHeader(events),
-        tone: activityBatchTone(events),
-        bold: true,
-      }),
-    );
-  }
-
-  for (const [index, item] of items.entries()) {
-    rows.push(
-      ...cardRows({
-        keyPrefix: `${keyPrefix}-item-${index}`,
-        label: item.label,
-        value: item.value,
-        width,
-        labelTone: item.labelTone,
-        valueTone: item.valueTone,
-      }),
-    );
-  }
-
-  return rows;
-}
-
-interface ActivityDisplayItem {
-  key: string;
-  label: string;
-  value: string;
-  labelTone: ConversationRowTone;
-  valueTone: ConversationRowTone;
-}
-
-function latestActivityItems(
-  events: readonly RunnerActivityEvent[],
-  maxItems: number,
-): ActivityDisplayItem[] {
-  const items: ActivityDisplayItem[] = [];
-  for (const event of events) {
-    const item = activityDisplayItem(event);
-    const existingIndex = items.findIndex((current) => current.key === item.key);
-    if (existingIndex >= 0) items.splice(existingIndex, 1);
-    items.push(item);
-  }
-  return items.slice(-maxItems);
-}
-
-function activityDisplayItem(event: RunnerActivityEvent): ActivityDisplayItem {
-  const raw = event.target ?? event.label;
-  const withoutVerb = stripActivityVerb(raw);
-  const value = activityValue(event);
-  const label = activityLabel(
-    event,
-    shellCommandFromText(withoutVerb) !== null || shellCommandFromText(raw) !== null,
-  );
-  return {
-    key: `${label}\u0000${value}`,
-    label,
-    value,
-    labelTone: activityTone(event.stage),
-    valueTone: activityValueTone(event.stage),
-  };
-}
-
-function activityValue(event: RunnerActivityEvent): string {
-  const source = event.target ?? event.label;
-  const withoutVerb = stripActivityVerb(source);
-  return shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
-}
-
-function stripActivityVerb(text: string): string {
-  const prefixes = [
-    'running ',
-    'reading ',
-    'editing ',
-    'searching ',
-    'matching ',
-    'calling ',
-    'planning ',
-    'session ',
-    'artifact ',
-    'warning ',
-    'failed ',
-  ];
-  for (const prefix of prefixes) {
-    if (text.startsWith(prefix)) return text.slice(prefix.length).trim();
-  }
-  return text;
-}
-
-function activityLabel(event: RunnerActivityEvent, shellCommand: boolean): string {
-  if (shellCommand) return 'run';
-
-  switch (event.kind) {
-    case 'command':
-      return 'run';
-    case 'read':
-      return 'read';
-    case 'write':
-    case 'edit':
-      return 'edit';
-    case 'search':
-    case 'glob':
-      return 'search';
-    case 'task':
-      return 'task';
-    case 'web':
-    case 'mcp':
-      return 'call';
-    case 'plan':
-      return 'plan';
-    case 'session':
-      return 'session';
-    case 'artifact':
-      return 'artifact';
-    case 'warning':
-      return 'warning';
-    case 'unknown':
-      return 'activity';
-    default:
-      return assertNever(event.kind);
-  }
-}
-
-function activityTone(stage: RunnerActivityEvent['stage']): ConversationRowTone {
-  switch (stage) {
-    case 'started':
-    case 'updated':
-      return 'info';
-    case 'completed':
+function recoveryResolvedTone(
+  outcome: EngineEventOf<'recovery_resolved'>['outcome'],
+): ConversationRowTone {
+  switch (outcome) {
+    case 'continued':
+    case 'retry-current-task':
       return 'success';
-    case 'warning':
+    case 'skipped-current-task':
       return 'warning';
-    case 'failed':
+    case 'aborted':
       return 'error';
     default:
-      return assertNever(stage);
+      return assertNever(outcome);
   }
-}
-
-function activityValueTone(stage: RunnerActivityEvent['stage']): ConversationRowTone {
-  switch (stage) {
-    case 'started':
-    case 'updated':
-    case 'completed':
-      return 'textDim';
-    case 'warning':
-      return 'warning';
-    case 'failed':
-      return 'error';
-    default:
-      return assertNever(stage);
-  }
-}
-
-function activityBatchHeader(events: readonly RunnerActivityEvent[]): string {
-  const latest = events.at(-1);
-  if (latest === undefined) return 'activity';
-  const tool = formatToolModel(latest.runnerName, latest.model);
-  return [`${latest.role} activity`, `${events.length} updates`, tool ? `[${tool}]` : null]
-    .filter((part): part is string => part !== null)
-    .join('  ');
-}
-
-function activityBatchTone(events: readonly RunnerActivityEvent[]): ConversationRowTone {
-  const role = events.at(-1)?.role;
-  switch (role) {
-    case 'implementer':
-      return 'implementer';
-    case 'planner':
-    case 'review':
-    case 'summary':
-    case 'compaction':
-    case 'escalation':
-      return 'planner';
-    case undefined:
-      return 'text';
-    default:
-      return assertNever(role);
-  }
-}
-
-function shellCommandFromText(text: string): string | null {
-  const prefixes = [
-    '/bin/zsh -lc ',
-    '/bin/bash -lc ',
-    '/bin/sh -lc ',
-    'zsh -lc ',
-    'bash -lc ',
-    'sh -lc ',
-  ];
-  for (const prefix of prefixes) {
-    const index = text.indexOf(prefix);
-    if (index < 0) continue;
-    const command = text.slice(index + prefix.length).trim();
-    if (command.length === 0) return null;
-    return shellCommandArgument(command);
-  }
-  return null;
-}
-
-function shellCommandArgument(command: string): string {
-  if (command.length < 2) return command;
-  const first = command[0];
-  if (first !== '"' && first !== "'") return command;
-
-  const quoted = readQuotedShellArgument(command, first);
-  return quoted ?? command;
-}
-
-function readQuotedShellArgument(command: string, quote: '"' | "'"): string | null {
-  let escaped = false;
-  for (let index = 1; index < command.length; index += 1) {
-    const char = command[index];
-    if (char === undefined) continue;
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (char === quote) return command.slice(1, index);
-  }
-  return null;
 }

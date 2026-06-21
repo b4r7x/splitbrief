@@ -122,8 +122,54 @@ describe('runClaudePlannerStream', () => {
 
     expect(result.sessionId).toBe('sess-abc');
     expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 7 });
-    expect(chunks.join('')).toContain('Hello world');
+    expect(chunks).toEqual(['Hello ', 'world']);
     expect(result.text).toBe('Hello world');
+  });
+
+  it('streams only the missing suffix when the final result extends streamed text', async () => {
+    installShim([
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}',
+      '{"type":"result","result":"Hello world"}',
+    ]);
+
+    const chunks: string[] = [];
+    const result = await runClaudePlannerStream({
+      prompt: 'do thing',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: (text) => chunks.push(text),
+    });
+
+    expect(chunks).toEqual(['Hello', ' world']);
+    expect(result.text).toBe('Hello world');
+  });
+
+  it('records divergent final result text as a typed replacement without replaying it', async () => {
+    installShim([
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"draft text"}]}}',
+      '{"type":"result","result":"final text"}',
+    ]);
+
+    const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    const result = await runClaudePlannerStream({
+      prompt: 'do thing',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: (text) => chunks.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(chunks).toEqual(['draft text']);
+    expect(result.text).toBe('final text');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        channel: 'result',
+        text: 'final text',
+        semantics: 'final',
+      }),
+    );
   });
 
   it('preserves initial sessionId when stream carries none', async () => {
@@ -170,6 +216,46 @@ describe('runClaudePlannerStream', () => {
       expect.objectContaining({
         type: 'call_tool_use_done',
         toolUse: { id: 'tool-bash', name: 'Bash', input: { command: 'ls -la' } },
+      }),
+    );
+  });
+
+  it('preserves stream-json tool id and name on input deltas', async () => {
+    installShim([
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 1,
+          content_block: { type: 'tool_use', id: 'tool-live', name: 'Read', input: {} },
+        },
+      }),
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: { type: 'input_json_delta', partial_json: '{"file_path":"src/app.ts"}' },
+        },
+      }),
+      '{"type":"result","result":""}',
+    ]);
+
+    const events: RunnerCallEvent[] = [];
+    await runClaudePlannerStream({
+      prompt: 'p',
+      projectDir: shimDir,
+      sessionId: null,
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_tool_use_delta',
+        toolUseId: 'tool-live',
+        name: 'Read',
+        inputDelta: '{"file_path":"src/app.ts"}',
       }),
     );
   });

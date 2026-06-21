@@ -105,8 +105,10 @@ describe('parseJsonlLine', () => {
     expect(result.text).toBe('content string');
   });
 
-  it('returns empty for invalid JSON', () => {
-    expect(parseJsonlLine('not json {{')).toEqual({});
+  it('returns a bounded warning for invalid JSON', () => {
+    expect(parseJsonlLine('not json {{')).toEqual({
+      warning: [{ code: 'malformed_jsonl', message: 'Malformed JSONL line skipped' }],
+    });
   });
 
   it('JSON-stringifies non-string content field', () => {
@@ -139,7 +141,7 @@ describe('parseJsonlLine', () => {
       toolUseStart: [
         {
           id: 'cmd-1',
-          name: 'npm test',
+          name: 'command_execution',
           input: { type: 'command_execution', command: 'npm test' },
         },
       ],
@@ -148,7 +150,7 @@ describe('parseJsonlLine', () => {
       toolUseDone: [
         {
           id: 'cmd-1',
-          name: 'npm test',
+          name: 'command_execution',
           input: { type: 'command_execution', command: 'npm test', status: 'completed' },
           output: 'ok',
         },
@@ -191,8 +193,13 @@ describe('parseJsonlLine', () => {
       toolUseDone: [
         {
           id: 'mcp-1',
-          name: 'list_issues',
-          input: { owner: 'acme' },
+          name: 'mcp_tool_call',
+          input: {
+            owner: 'acme',
+            type: 'mcp_tool_call',
+            server: 'github',
+            tool_name: 'list_issues',
+          },
         },
       ],
     });
@@ -226,6 +233,30 @@ describe('parseJsonlLine', () => {
           name: 'plan_update',
           input: { type: 'plan_update' },
           output: '1. inspect\n2. edit',
+        },
+      ],
+    });
+  });
+
+  it('preserves Codex envelope fields when explicit input exists', () => {
+    expect(
+      parseJsonlLine(
+        JSON.stringify({
+          type: 'item.started',
+          item: {
+            id: 'cmd-2',
+            type: 'command_execution',
+            command: 'npm run lint',
+            input: { cwd: '/tmp/project' },
+          },
+        }),
+      ),
+    ).toEqual({
+      toolUseStart: [
+        {
+          id: 'cmd-2',
+          name: 'command_execution',
+          input: { cwd: '/tmp/project', type: 'command_execution', command: 'npm run lint' },
         },
       ],
     });

@@ -14,6 +14,7 @@ import type {
   EngineEvent,
   EngineEventOf,
   EventBus,
+  ValidationStageAttempts,
   ValidationStageCommands,
   ValidationStages,
   ValidationStageSkips,
@@ -184,11 +185,13 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   }
 
   const stages: ValidationStages = { ...EMPTY_STAGES };
+  const attempted: ValidationStageAttempts = { ...EMPTY_STAGES };
   const skipped: ValidationStageSkips = {};
   let failedError: string | undefined;
   let passed = true;
   const commands: ValidationStageCommands = {};
   for (const r of opts.results) {
+    attempted[r.stage] = true;
     if (r.command !== undefined) commands[r.stage] = r.command;
     if (r.skipped) {
       skipped[r.stage] = true;
@@ -211,6 +214,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     status: 'done',
     passed,
     stages,
+    attempted,
     ...(hasValidationCommands(commands) && { commands }),
     ...(hasSkips && { skipped }),
     ...(failedError !== undefined && { error: failedError }),

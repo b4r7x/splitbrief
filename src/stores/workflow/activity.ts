@@ -13,11 +13,21 @@ type ActivityEvent =
 export interface WorkflowActivityItem {
   id: string;
   callId: string;
+  taskId?: string;
   phase: Phase;
   role: EngineEventOf<'runner_call_started'>['role'];
   stage: EngineEventOf<'runner_call_activity'>['stage'];
   kind: EngineEventOf<'runner_call_activity'>['kind'];
   label: string;
+  target?: string;
+  runnerName?: string;
+  model?: string;
+  redacted: boolean;
+  rawAvailable: boolean;
+  expandId?: string;
+  textPartial?: string;
+  diagnosticPartial?: string;
+  sequence: number;
   ts: number;
 }
 
@@ -47,14 +57,25 @@ export function updateActivity(state: ActivityState, event: EngineEvent): Activi
     return retireRunningCallActivity(state, event.callId);
   }
 
+  const rawAvailable = event.rawAvailable ?? false;
   const item: WorkflowActivityItem = {
     id: event.activityId,
     callId: event.callId,
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
     phase: event.phase,
     role: event.role,
     stage: event.stage,
     kind: event.kind,
     label: event.label,
+    ...(event.target !== undefined && { target: event.target }),
+    ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
+    ...(event.model !== undefined && { model: event.model }),
+    redacted: event.redacted,
+    rawAvailable,
+    ...(rawAvailable && { expandId: event.expandId ?? event.activityId }),
+    ...(event.textPartial !== undefined && { textPartial: event.textPartial }),
+    ...(event.diagnosticPartial !== undefined && { diagnosticPartial: event.diagnosticPartial }),
+    sequence: event.sequence,
     ts: event.ts,
   };
 

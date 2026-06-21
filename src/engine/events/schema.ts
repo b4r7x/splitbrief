@@ -79,6 +79,12 @@ const validationStageSkipsSchema = z.object({
   test: z.boolean().optional(),
 });
 
+const validationStageAttemptsSchema = z.object({
+  typecheck: z.boolean(),
+  lint: z.boolean(),
+  test: z.boolean(),
+});
+
 const validationStageCommandsSchema = z.object({
   typecheck: z.string().optional(),
   lint: z.string().optional(),
@@ -254,6 +260,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     label: z.string().min(1).max(512),
     target: z.string().min(1).max(2048).optional(),
     redacted: z.boolean(),
+    rawAvailable: z.boolean().optional(),
+    expandId: z.string().min(1).max(512).optional(),
+    textPartial: z.string().min(1).max(2048).optional(),
+    diagnosticPartial: z.string().min(1).max(2048).optional(),
   }),
   strictCallPhaseEvent('runner_call_session_id').extend({
     nativeSessionId: z.string(),
@@ -429,6 +439,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     status: z.enum(['running', 'done']),
     passed: z.boolean(),
     stages: validationStagesSchema,
+    attempted: validationStageAttemptsSchema.optional(),
     activeStage: z.enum(['typecheck', 'lint', 'test']).optional(),
     commands: validationStageCommandsSchema.optional(),
     skipped: validationStageSkipsSchema.optional(),

@@ -4,6 +4,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
 import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 import { formatDuration } from '../../../utils/format-time.js';
+import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -25,13 +26,16 @@ export function TaskSummary({
   reason,
 }: TaskSummaryProps) {
   const t = useTheme();
+  const safeTitle = sanitizeWorkflowDisplayText(title);
+  const safeFile = file === undefined ? undefined : sanitizeWorkflowDisplayText(file);
+  const safeReason = reason === undefined ? undefined : sanitizeWorkflowDisplayText(reason);
 
   if (method === 'failed') {
     return (
       <Box>
         <Text color={t.error}>{STATUS_GLYPH.failed} </Text>
         <Text color={t.error}>
-          T{index} {title}
+          T{index} {safeTitle}
         </Text>
         <Text color={t.textDim}> — failed</Text>
       </Box>
@@ -42,7 +46,8 @@ export function TaskSummary({
     return (
       <Box>
         <Text color={t.textDim}>
-          {STATUS_GLYPH.skipped} T{index} {title} — skipped{reason ? `: ${reason}` : ''}
+          {STATUS_GLYPH.skipped} T{index} {safeTitle} — skipped
+          {safeReason ? `: ${safeReason}` : ''}
         </Text>
       </Box>
     );
@@ -57,9 +62,9 @@ export function TaskSummary({
     <Box>
       <Text color={t.success}>✓ </Text>
       <Text color={t.text}>
-        T{index} {title}
+        T{index} {safeTitle}
       </Text>
-      {file && <Text color={t.textDim}> {file}</Text>}
+      {safeFile && <Text color={t.textDim}> {safeFile}</Text>}
       <Text color={t.textDim}> {meta.join(' ')}</Text>
     </Box>
   );
