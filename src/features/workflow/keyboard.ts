@@ -1,6 +1,7 @@
 import type { Key } from 'ink';
 import type { Section } from '../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
@@ -31,14 +32,14 @@ export interface WorkflowCtrlChordsInput {
 
 export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
   const { input, key, isSmall, sections, findLatestDiff, findLatestActivityBatch } = options;
+  if (!key.ctrl && (key.meta || key.super) && input.toLowerCase() === 'a') {
+    const key = findLatestActivityBatch(sections);
+    if (key != null) return { type: 'toggle-activity-batch', key };
+    return NONE;
+  }
   if (!key.ctrl) return NONE;
   if (input === 'e') {
     if (!isSmall) return { type: 'toggle-sidebar' };
-    return NONE;
-  }
-  if (input === 'a') {
-    const key = findLatestActivityBatch(sections);
-    if (key != null) return { type: 'toggle-activity-batch', key };
     return NONE;
   }
   if (input === 'd') {
@@ -50,23 +51,50 @@ export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): Work
 }
 
 export interface ReviewScrollInput {
+  input: string;
   key: Key;
   reviewScrollOffset: number;
   reviewLineCount: number;
   visibleHeight: number;
 }
 
+function reviewScrollOffsetForAction(
+  action: ScrollKeyAction,
+  reviewScrollOffset: number,
+  maxOffset: number,
+  pageStep: number,
+): number {
+  switch (action) {
+    case 'line-up':
+      return Math.max(0, reviewScrollOffset - 1);
+    case 'line-down':
+      return Math.min(maxOffset, reviewScrollOffset + 1);
+    case 'page-up':
+      return Math.max(0, reviewScrollOffset - pageStep);
+    case 'page-down':
+      return Math.min(maxOffset, reviewScrollOffset + pageStep);
+    case 'top':
+      return 0;
+    case 'bottom':
+      return maxOffset;
+  }
+}
+
 export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyAction {
-  const { key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
+  const { input, key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
+  const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
+  if (scrollKey === null) return NONE;
+
   const maxOffset = Math.max(0, reviewLineCount - visibleHeight);
-  if (key.upArrow) return { type: 'review-scroll', offset: Math.max(0, reviewScrollOffset - 1) };
-  if (key.downArrow)
-    return { type: 'review-scroll', offset: Math.min(maxOffset, reviewScrollOffset + 1) };
-  if (key.end) return { type: 'review-scroll', offset: maxOffset };
-  return NONE;
+  const pageStep = Math.max(1, visibleHeight);
+  return {
+    type: 'review-scroll',
+    offset: reviewScrollOffsetForAction(scrollKey, reviewScrollOffset, maxOffset, pageStep),
+  };
 }
 
 export interface ConversationScrollInput {
+  input: string;
   key: Key;
   renderableCount: number;
   maxOffset: number;
@@ -75,41 +103,36 @@ export interface ConversationScrollInput {
 }
 
 export function handleConversationScroll(options: ConversationScrollInput): WorkflowKeyAction {
-  const { key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
+  const { input, key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
+  const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
+  if (scrollKey === null) return NONE;
+
   const pageStep = Math.max(1, viewportHeight - 2);
 
-  if (key.shift && key.upArrow) {
-    return { type: 'conversation-scroll-up', renderableCount, step: 1, totalHeight, maxOffset };
+  switch (scrollKey) {
+    case 'line-up':
+      return { type: 'conversation-scroll-up', renderableCount, step: 1, totalHeight, maxOffset };
+    case 'line-down':
+      return { type: 'conversation-scroll-down', step: 1 };
+    case 'page-up':
+      return {
+        type: 'conversation-scroll-up',
+        renderableCount,
+        step: pageStep,
+        totalHeight,
+        maxOffset,
+      };
+    case 'page-down':
+      return { type: 'conversation-scroll-down', step: pageStep };
+    case 'top':
+      return {
+        type: 'conversation-scroll-up',
+        renderableCount,
+        step: maxOffset,
+        totalHeight,
+        maxOffset,
+      };
+    case 'bottom':
+      return { type: 'conversation-scroll-bottom', renderableCount };
   }
-  if (key.shift && key.downArrow) {
-    return { type: 'conversation-scroll-down', step: 1 };
-  }
-
-  if (key.pageUp) {
-    return {
-      type: 'conversation-scroll-up',
-      renderableCount,
-      step: pageStep,
-      totalHeight,
-      maxOffset,
-    };
-  }
-  if (key.pageDown) {
-    return { type: 'conversation-scroll-down', step: pageStep };
-  }
-
-  if (key.home) {
-    return {
-      type: 'conversation-scroll-up',
-      renderableCount,
-      step: maxOffset,
-      totalHeight,
-      maxOffset,
-    };
-  }
-  if (key.end) {
-    return { type: 'conversation-scroll-bottom', renderableCount };
-  }
-
-  return NONE;
 }

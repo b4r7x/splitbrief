@@ -104,7 +104,7 @@ src/stores/ui/
 ```
 src/engine/events/
 ├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
-├── schema.ts          # EngineEventSchema discriminated union + parseEngineEvent
+├── schema.ts          # EngineEventSchema type-dispatched schema + parseEngineEvent
 ├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl

@@ -3,6 +3,7 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 
@@ -14,7 +15,18 @@ export function handlePlanningFailure(opts: {
   wctx: PlannerCallbacksContext;
 }): PlanningPhaseResult {
   const { err, projectDir, sessionId, state, wctx } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase }, labelError('Planning failed', err));
+  publishError({ bus: wctx.bus, phase: state.phase, message: labelError('Planning failed', err) });
+  if (isAbortError(err)) {
+    const persisted = loadState({ projectDir, sessionId });
+    if (persisted?.rewindPending !== undefined) {
+      return {
+        state: persisted,
+        tasks: [],
+        cancelled: true,
+        failed: false,
+      };
+    }
+  }
   return {
     state: transitionAndSave({ projectDir, sessionId }, state, { type: 'CANCEL' }),
     tasks: [],

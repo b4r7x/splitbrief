@@ -27,6 +27,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     state = drainedState;
     feature = prefix + feature;
   }
+  feature = featureWithRewindFeedback(feature, opts.rewindPending);
 
   const textHandler = createBusTextHandler(
     { bus: wctx.bus, phase: state.phase },
@@ -48,7 +49,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       textHandler(text);
       buffer.append(text);
     },
-    onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase }, message),
+    onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase, message: message }),
     onSessionId: (id) => {
       state = transitionAndSave({ projectDir, sessionId }, state, {
         type: 'SET_PLANNER_SESSION_ID',
@@ -139,4 +140,12 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };
+}
+
+function featureWithRewindFeedback(
+  feature: string,
+  rewindPending: PlanningPhaseOptions['rewindPending'],
+): string {
+  if (rewindPending?.comment === undefined) return feature;
+  return `${feature}\n\n<rewind-feedback target="${rewindPending.target}">\n${rewindPending.comment}\n</rewind-feedback>`;
 }

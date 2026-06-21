@@ -4,7 +4,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
 import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 import { formatDuration } from '../../../utils/format-time.js';
-import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -26,9 +26,9 @@ export function TaskSummary({
   reason,
 }: TaskSummaryProps) {
   const t = useTheme();
-  const safeTitle = sanitizeWorkflowDisplayText(title);
-  const safeFile = file === undefined ? undefined : sanitizeWorkflowDisplayText(file);
-  const safeReason = reason === undefined ? undefined : sanitizeWorkflowDisplayText(reason);
+  const safeTitle = sanitizeTerminalDisplayText(title);
+  const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
+  const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
 
   if (method === 'failed') {
     return (

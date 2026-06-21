@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { RecoveryActionSchema, RecoveryReasonSchema } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
-import { protectConsumerPayload, type CallConsumerContext } from '../calls/consumer-policy.js';
+import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
 import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from './protection.js';
 

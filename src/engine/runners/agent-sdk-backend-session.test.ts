@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createAgentSdkBackend, processStream } from './agent-sdk-backend.js';
+import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
@@ -343,9 +344,6 @@ describe('createAgentSdkBackend — session resume', () => {
       onCallEvent: (event) => events.push(event),
     });
 
-    // Behaviour: the expired session is reported to the caller, a fresh session
-    // is established, and the user receives the fresh reply — without seeing the
-    // original failure.
     const firstCall = query.mock.calls[0]?.[0] as { options: { resume?: string } };
     const secondCall = query.mock.calls[1]?.[0] as { options: { resume?: string } };
     expect(firstCall.options.resume).toBe('sess-old');
@@ -354,12 +352,196 @@ describe('createAgentSdkBackend — session resume', () => {
     expect(onSessionId).toHaveBeenCalledWith('sess-new');
     expect(result.text).toBe('fresh reply');
     const started = events.filter((event) => event.type === 'call_started');
-    expect(started).toHaveLength(2);
-    expect(started[0]).toMatchObject({ attempt: 1 });
-    expect(started[1]).toMatchObject({ attempt: 2 });
-    expect(started[0]?.callId).toMatch(/-attempt-1$/);
-    expect(started[1]?.callId).toMatch(/-attempt-2$/);
-    expect(started[0]?.callId).not.toBe(started[1]?.callId);
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-2$/);
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_error' }));
+    expect(JSON.stringify(events)).not.toContain('sess-old');
+  });
+
+  it('falls back without exposing a resumed SDK result failure', async () => {
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const query = vi.mocked(sdk.query);
+    query.mockReset();
+
+    const freshEvents = [
+      { type: 'system', subtype: 'init', session_id: 'sess-new' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'fresh reply' }] } },
+      {
+        type: 'result',
+        session_id: 'sess-new',
+        result: 'fresh reply',
+        usage: { input_tokens: 3, output_tokens: 2 },
+      },
+    ];
+
+    query.mockImplementationOnce(() =>
+      asyncIter([
+        {
+          type: 'result',
+          is_error: true,
+          session_id: 'sess-old',
+          result: 'session not found: sess-old',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      ]),
+    );
+    query.mockImplementationOnce(() => asyncIter(freshEvents));
+
+    const backend = createAgentSdkBackend({ allowedTools: ['Read'], initialSessionId: 'sess-old' });
+    const onSessionId = vi.fn();
+    const onSessionExpired = vi.fn();
+    const onOutput = vi.fn();
+    const events: RunnerCallEvent[] = [];
+
+    const result = await backend.invoke({
+      prompt: 'hi',
+      projectDir: '/tmp/proj',
+      model: 'claude-sonnet-4-5',
+      onOutput,
+      onSessionId,
+      onSessionExpired,
+      onCallEvent: (event) => events.push(event),
+    });
+
+    const firstCall = query.mock.calls[0]?.[0] as { options: { resume?: string } };
+    const secondCall = query.mock.calls[1]?.[0] as { options: { resume?: string } };
+    expect(firstCall.options.resume).toBe('sess-old');
+    expect(secondCall.options.resume).toBeUndefined();
+    expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
+    expect(onSessionId).toHaveBeenCalledTimes(1);
+    expect(onSessionId).toHaveBeenCalledWith('sess-new');
+    expect(onOutput).toHaveBeenCalledWith('fresh reply');
+    expect(JSON.stringify(onOutput.mock.calls)).not.toContain('session not found');
+    expect(result.text).toBe('fresh reply');
+    const started = events.filter((event) => event.type === 'call_started');
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-2$/);
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_error' }));
+    expect(JSON.stringify(events)).not.toContain('sess-old');
+  });
+
+  it('caps buffered resumed-attempt callbacks when SDK output is too large', async () => {
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const query = vi.mocked(sdk.query);
+    query.mockReset();
+    query.mockImplementationOnce(() =>
+      asyncIter([
+        { type: 'system', subtype: 'init', session_id: 'sess-old' },
+        ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'x' }] },
+        })),
+        {
+          type: 'result',
+          session_id: 'sess-old',
+          result: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS + 1),
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      ]),
+    );
+
+    const backend = createAgentSdkBackend({ allowedTools: ['Read'], initialSessionId: 'sess-old' });
+    const output: string[] = [];
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      backend.invoke({
+        prompt: 'hi',
+        projectDir: '/tmp/proj',
+        model: 'claude-sonnet-4-5',
+        onOutput: (text) => output.push(text),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        status: 'truncated',
+        output: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS),
+        error: { code: 'agent_sdk_output_text_limit' },
+      },
+    });
+
+    expect(output.join('')).toBe('x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS));
+    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(
+      RUNNER_CALL_OUTPUT_MAX_EVENTS,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_error',
+        status: 'truncated',
+        error: { code: 'agent_sdk_output_text_limit', message: expect.any(String) },
+      }),
+    );
+  });
+
+  it('treats a different returned SDK session id as expired resume and does not expose it', async () => {
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const query = vi.mocked(sdk.query);
+    query.mockReset();
+
+    const freshEvents = [
+      { type: 'system', subtype: 'init', session_id: 'sess-fresh' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'fresh reply' }] } },
+      {
+        type: 'result',
+        session_id: 'sess-fresh',
+        result: 'fresh reply',
+        usage: { input_tokens: 3, output_tokens: 2 },
+      },
+    ];
+
+    query.mockImplementationOnce(() =>
+      asyncIter([
+        { type: 'system', subtype: 'init', session_id: 'sess-new-unexpected' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'stale resumed output' }] },
+        },
+        {
+          type: 'result',
+          session_id: 'sess-new-unexpected',
+          result: 'stale resumed output',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      ]),
+    );
+    query.mockImplementationOnce(() => asyncIter(freshEvents));
+
+    const backend = createAgentSdkBackend({ allowedTools: ['Read'], initialSessionId: 'sess-old' });
+    const onSessionId = vi.fn();
+    const onSessionExpired = vi.fn();
+    const onOutput = vi.fn();
+    const events: RunnerCallEvent[] = [];
+
+    const result = await backend.invoke({
+      prompt: 'hi',
+      projectDir: '/tmp/proj',
+      model: 'claude-sonnet-4-5',
+      onOutput,
+      onSessionId,
+      onSessionExpired,
+      onCallEvent: (event) => events.push(event),
+    });
+
+    const firstCall = query.mock.calls[0]?.[0] as { options: { resume?: string } };
+    const secondCall = query.mock.calls[1]?.[0] as { options: { resume?: string } };
+    expect(firstCall.options.resume).toBe('sess-old');
+    expect(secondCall.options.resume).toBeUndefined();
+    expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
+    expect(onSessionId).not.toHaveBeenCalledWith('sess-new-unexpected');
+    expect(onSessionId).toHaveBeenCalledWith('sess-fresh');
+    expect(JSON.stringify(onOutput.mock.calls)).not.toContain('stale resumed output');
+    expect(result.text).toBe('fresh reply');
+
+    const started = events.filter((event) => event.type === 'call_started');
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ attempt: 2 });
+    const sessionEvents = events.filter((event) => event.type === 'call_session_id');
+    expect(sessionEvents).toHaveLength(1);
+    expect(sessionEvents[0]).toMatchObject({ nativeSessionId: 'sess-fresh' });
+    expect(JSON.stringify(events)).not.toContain('sess-new-unexpected');
   });
 
   it('omits options.resume and uses projectDir as cwd when no initialSessionId is provided', async () => {

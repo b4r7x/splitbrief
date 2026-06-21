@@ -47,7 +47,18 @@ const SHORTCUTS: ShortcutInfo[] = [
   { id: 'close-overlay', key: 'Escape', description: 'Close overlay', screens: ALL_SCREENS },
   { id: 'toggle-sidebar', key: 'Ctrl+E', description: 'Toggle sidebar', screens: ['workflow'] },
   { id: 'toggle-diff', key: 'Ctrl+D', description: 'Toggle diff', screens: ['workflow'] },
-  { id: 'scroll', key: 'Shift+↑/↓, PgUp/PgDn', description: 'Scroll', screens: ['workflow'] },
+  {
+    id: 'scroll',
+    key: 'Shift+↑/↓, PgUp/PgDn, Home/End, Ctrl+B/F',
+    description: 'Scroll; PageUp/PageDown; /scroll top|bottom',
+    screens: ['workflow'],
+  },
+  {
+    id: 'activity',
+    key: 'Alt+A, /activity',
+    description: 'Expand activity rows',
+    screens: ['workflow'],
+  },
   { id: 'continue', key: 'Enter', description: 'Continue', screens: ['summary'] },
 ];
 

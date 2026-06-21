@@ -8,7 +8,7 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
 import { closeApprovalPrompt } from '../approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../cost-approval/prompt.js';
-import { _eventsInternal, eventsStore, mergeEvent } from './events.js';
+import { _eventsInternal, eventsStore, mergeEvent, projectEventForTuiEventLog } from './events.js';
 import {
   _tasksInternal,
   tasksStore,
@@ -58,11 +58,14 @@ export function addEvent(event: EngineEvent): void {
   // noise that would restart old phase spans.
   if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
 
-  // Ordering invariant: events → tasks → tokens → lifecycle → operations → activity.
+  // Ordering invariant: retained event log → tasks → tokens → lifecycle → operations → activity.
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
   // consistent commit with all workflow stores updated.
-  _eventsInternal.set((s) => ({ ...s, events: mergeEvent(s.events, event) }));
+  const eventForLog = projectEventForTuiEventLog(event);
+  if (eventForLog !== null) {
+    _eventsInternal.set((s) => ({ ...s, events: mergeEvent(s.events, eventForLog) }));
+  }
 
   _tasksInternal.set((s) => {
     const taskMap = updateTaskMap(s.taskMap, event);

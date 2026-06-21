@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRunnerCallRecorder } from './recorder.js';
+import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 
 const context: RunnerCallContext = {
@@ -84,5 +85,33 @@ describe('createRunnerCallRecorder', () => {
     recorder.usage({ usage: { inputTokens: 1, outputTokens: 1 }, semantics: 'final', ts: 13 });
 
     expect(events.map((event) => event.type)).toEqual(['call_started', 'call_error']);
+  });
+
+  it('converts invalid recorder events to bounded unknown-upstream diagnostics', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 5,
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.warning({
+      warning: { code: 'oversized_warning', message: 'x'.repeat(20_000) },
+      ts: 6,
+    });
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'call_unknown_upstream',
+      rawPreview: expect.stringContaining('Invalid runner call event'),
+      backendMetadata: {
+        backendKind: 'api',
+        source: 'recorder',
+        upstreamType: 'call_warning',
+      },
+    });
+    const last = events.at(-1);
+    expect(last?.type === 'call_unknown_upstream' ? last.rawPreview.length : 0).toBeLessThanOrEqual(
+      UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH,
+    );
   });
 });

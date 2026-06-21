@@ -1,7 +1,10 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../../utils/display-text.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -9,7 +12,6 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 import { CostDisplay } from './cost/display.js';
-import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
 
 interface SidebarProps {
   width: number;
@@ -73,7 +75,7 @@ export function Sidebar({ width }: SidebarProps) {
               color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}
             >
               {truncateTerminalDisplayText(
-                sanitizeWorkflowDisplayText(task.title),
+                sanitizeTerminalDisplayText(task.title),
                 Math.max(labelWidth - 2, 10),
               )}
             </Text>

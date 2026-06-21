@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { readReplayEvents } from './replay.js';
-import { CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES } from '../calls/consumer-policy.js';
+import { CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES } from '../../core/consumer-policy.js';
 import type { EngineEvent } from '../events/types.js';
 
 function makeSessionEntry(event: EngineEvent): string {

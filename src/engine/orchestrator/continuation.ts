@@ -148,7 +148,7 @@ export async function regenerateFromFeedback(
   const { projectDir, sessionId, planner, bus, metadata, skillsContext, planOverride } = ctx;
   let { state } = ctx;
 
-  const drain = drainQueue(projectDir, sessionId, state, bus);
+  const drain = drainQueue({ projectDir, sessionId, state, bus });
   state = drain.state;
   const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
@@ -183,7 +183,7 @@ export async function regenerateFromFeedback(
   const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
   const persisted = await readPersistedTasks(
     join(sessionDir(projectDir, sessionId), TASKS_FILE),
-    (message) => publishWarning({ bus, phase: state.phase }, message),
+    (message) => publishWarning({ bus, phase: state.phase, message }),
   );
   const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
   const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
@@ -202,7 +202,7 @@ export async function regenerateFromFeedback(
     kind: 'tasks',
     state: result.state,
     tasks: parseTasksStrict(result.text, (message) =>
-      publishWarning({ bus, phase: state.phase }, message),
+      publishWarning({ bus, phase: state.phase, message }),
     ),
   };
 }

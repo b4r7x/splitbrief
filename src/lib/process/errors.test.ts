@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS } from '../../utils/display-text.js';
 import { processError } from './errors.js';
+
+const JWT_FIXTURE =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
 
 describe('processError.notFound', () => {
   it.each([
@@ -23,6 +27,13 @@ describe('processError.notFound', () => {
     });
     expect(processError.isNotFound(err)).toBe(true);
   });
+
+  it('sanitizes terminal-unsafe command payloads', () => {
+    const err = processError.notFound(`\u001b]0;owned\u0007cmd-${JWT_FIXTURE}`);
+
+    expect(err.message).toBe('Command not found: cmd-***REDACTED***');
+    expect(err.data.command).toBe('cmd-***REDACTED***');
+  });
 });
 
 describe('processError.timeout', () => {
@@ -44,6 +55,22 @@ describe('processError.timeout', () => {
       data: opts,
     });
     expect(processError.isTimeout(err)).toBe(true);
+  });
+
+  it('sanitizes timeout message and payload command fields', () => {
+    const err = processError.timeout({
+      command: `cmd-${JWT_FIXTURE}`,
+      label: `\u001b]0;owned\u0007label-${JWT_FIXTURE}`,
+      timeoutMs: 1000,
+      output: `out-${JWT_FIXTURE}`,
+    });
+
+    expect(err.message).toBe('label-***REDACTED*** timed out after 1s');
+    expect(err.data).toMatchObject({
+      command: 'cmd-***REDACTED***',
+      label: 'label-***REDACTED***',
+      output: 'out-***REDACTED***',
+    });
   });
 });
 
@@ -97,5 +124,35 @@ describe('processError.exitCode', () => {
     });
 
     expect(err.data.output).toBe('Credit balance is too low');
+  });
+
+  it('sanitizes and bounds terminal-unsafe failure payloads', () => {
+    const err = processError.exitCode({
+      command: 'node',
+      code: 1,
+      stderr: `\u001b]0;owned\u0007token=${JWT_FIXTURE} \u001b[31mred\u001b[0m`,
+      output: `key=sk-abcdefghijklmnopqrstuvwxyz ${'x'.repeat(
+        DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS + 10,
+      )}`,
+    });
+
+    expect(err.message).toBe('node exited with code 1: token=***REDACTED*** red');
+    expect(err.data.stderr).toBe('token=***REDACTED*** red');
+    expect(err.data.output).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(err.data.output).toHaveLength(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS);
+    expect(err.data.output.endsWith('…')).toBe(true);
+  });
+
+  it('sanitizes process-output command and label payloads', () => {
+    const err = processError.exitCode({
+      command: `cmd-${JWT_FIXTURE}`,
+      label: `\u001b]0;owned\u0007label-${JWT_FIXTURE}`,
+      code: 1,
+      stderr: '',
+    });
+
+    expect(err.message).toBe('label-***REDACTED*** exited with code 1');
+    expect(err.data.command).toBe('cmd-***REDACTED***');
+    expect(err.data.label).toBe('label-***REDACTED***');
   });
 });

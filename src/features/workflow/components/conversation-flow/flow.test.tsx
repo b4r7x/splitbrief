@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '#testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { eventsStore } from '../../../../stores/workflow/events.js';
+import { addEvent } from '../../../../stores/workflow/actions.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { ConversationFlow } from './flow.js';
@@ -45,6 +46,38 @@ function makeMarkdownPlannerText(): Extract<EngineEvent, { type: 'planner_text' 
       '### Signature',
       '```typescript',
       '// No exported signature.',
+      '```',
+    ].join('\n'),
+  };
+}
+
+function makeLiveTaskBriefPlannerText(): Extract<EngineEvent, { type: 'planner_text' }> {
+  return {
+    type: 'planner_text',
+    ts: 0,
+    phase: 'researching',
+    role: 'planner',
+    text: [
+      '---',
+      'id: T018',
+      'title: Render live task brief markdown',
+      'action: modify',
+      'file: src/features/workflow/components/conversation-flow/flow.test.tsx',
+      'depends_on: []',
+      '---',
+      '',
+      '### Description',
+      'Render the same live frame users see.',
+      '',
+      '### Signature',
+      '```ts',
+      'export function renderLiveBrief(): void',
+      '```',
+      '',
+      '### Validation',
+      '```yaml',
+      'scripts:',
+      '  typecheck: npm run typecheck',
       '```',
     ].join('\n'),
   };
@@ -176,11 +209,33 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
+  it('styles live researching Task Brief markdown through the workflow event path', async () => {
+    const ui = renderFeature(<ConversationFlow height={20} width={90} />);
+
+    addEvent(makeLiveTaskBriefPlannerText());
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Description');
+    expect(frame).toContain('Signature');
+    expect(frame).toContain('Validation');
+    expect(frame).toContain('export function renderLiveBrief(): void');
+    expect(frame).toContain('scripts:');
+    expect(frame).toContain('typecheck: npm run typecheck');
+    expect(frame).not.toContain('###');
+    expect(frame).not.toContain('```ts');
+    expect(frame).not.toContain('```yaml');
+    expect(frame).not.toContain('```');
+    expect(frame).not.toContain('---');
+
+    ui.unmount();
+  });
+
   it('renders safe runner activity as a styled conversation row', () => {
     const ui = renderConversation([makeRunnerActivity()], 5, 90);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain("run  sed -n '1,260p' CLAUDE.md");
+    expect(frame).toContain("RUN   sed -n '1,260p' CLAUDE.md");
     expect(frame).not.toContain('/bin/zsh -lc');
     expect(frame).not.toContain('activity:');
 

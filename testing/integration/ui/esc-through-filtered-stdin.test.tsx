@@ -39,7 +39,7 @@ function InstantWorkflowApp({
   // Mirror the real workflow screen: both global app keys and the workflow-screen keys
   // are mounted, because the ESC->home-when-cancelled hop lives in useWorkflowKeys.
   useAppKeys({ exit, interruptWorkflow });
-  useWorkflowKeys(true);
+  useWorkflowKeys({ isActive: true });
   return (
     <ThemeProvider>
       <Box flexDirection="column">

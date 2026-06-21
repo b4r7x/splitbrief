@@ -1,6 +1,8 @@
 import { basename, join, relative, resolve } from 'node:path';
 import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
 import { isPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
+import { createBoundedOutput } from '../../lib/process/bounded-output.js';
+import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn.js';
 import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');
@@ -20,6 +22,7 @@ import {
   createSessionResumeState,
   isSessionExpiredError,
   runWithResumeFallback,
+  sessionResumeExpiredError,
   sessionResumeMismatchError,
 } from '../session-expiry.js';
 import { runnerConfigError } from '../runners/errors.js';
@@ -32,6 +35,7 @@ import {
 } from '../orchestrator/planning/mutation-guard.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -123,8 +127,13 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
-    let stderrOutput = '';
+    const stderrOutput = createBoundedOutput({
+      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+      policy: 'tail',
+    });
     let unexpectedResumeSessionId: string | null = null;
+    const callbackBuffer = resumeId === null ? null : createRunnerAttemptCallbackBuffer(callbacks);
+    const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
       prompt,
       projectDir,
@@ -137,51 +146,65 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
       if (resumeId && isRecoverableResumeNoise(event, resumeId)) return;
-      callbacks.onCallEvent?.(event);
+      attemptCallbacks.onCallEvent?.(event);
     };
 
-    const result = await spawnAndCollect({
-      command: tool.command,
-      args: [...planner.buildArgs(buildOpts), ...extraArgs],
-      cwd: projectDir,
-      env: sandboxEnv,
-      notFoundMessage: tool.notFoundMessage,
-      parseLine,
-      onText: callbacks.onOutput,
-      onCallEvent,
-      callContext,
-      onStderr: planner.postProcess
-        ? (chunk) => {
-            stderrOutput += chunk;
-          }
-        : undefined,
-      signal: effectiveSignal,
-      ...(supportsSessionResume && {
-        onSessionId: (id: string) => {
-          if (resumeId && id !== resumeId) {
-            unexpectedResumeSessionId = id;
-            return;
-          }
-          session.capture(id);
-          callbacks.onSessionId?.(id);
-        },
-      }),
-    });
+    try {
+      const result = await spawnAndCollect({
+        command: tool.command,
+        args: [...planner.buildArgs(buildOpts), ...extraArgs],
+        cwd: projectDir,
+        env: sandboxEnv,
+        notFoundMessage: tool.notFoundMessage,
+        parseLine,
+        onText: attemptCallbacks.onOutput,
+        onCallEvent,
+        callContext,
+        onStderr: planner.postProcess
+          ? (chunk) => {
+              stderrOutput.append(chunk);
+            }
+          : undefined,
+        signal: effectiveSignal,
+        ...(supportsSessionResume && {
+          onSessionId: (id: string) => {
+            if (resumeId && id !== resumeId) {
+              unexpectedResumeSessionId = id;
+              return;
+            }
+            session.capture(id);
+            attemptCallbacks.onSessionId?.(id);
+          },
+        }),
+      });
 
-    const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;
-    if (resumeId && returnedSessionId !== null && returnedSessionId !== resumeId) {
-      throw sessionResumeMismatchError(resumeId, returnedSessionId);
-    }
+      const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;
+      if (resumeId && returnedSessionId !== null && returnedSessionId !== resumeId) {
+        throw sessionResumeMismatchError(resumeId, returnedSessionId);
+      }
 
-    if (result.status !== 'completed') return result;
-    const usage = toTokenDelta(result.usage);
-    if (planner.postProcess) {
-      return applyInvokeResultProjection(
-        result,
-        planner.postProcess(result.text, stderrOutput, usage),
-      );
+      if (result.status !== 'completed') {
+        if (resumeId && isSessionExpiredError(result.error?.message ?? result.text)) {
+          throw sessionResumeExpiredError(resumeId, result.error?.message ?? result.text);
+        }
+        callbackBuffer?.flush();
+        return result;
+      }
+      const usage = toTokenDelta(result.usage);
+      if (planner.postProcess) {
+        const projected = applyInvokeResultProjection(
+          result,
+          planner.postProcess(result.text, stderrOutput.snapshot().text, usage),
+        );
+        callbackBuffer?.flush();
+        return projected;
+      }
+      callbackBuffer?.flush();
+      return result;
+    } catch (err) {
+      if (!resumeId || !isSessionExpiredError(err)) callbackBuffer?.flush();
+      throw err;
     }
-    return result;
   }
 
   async function invoke(opts: {

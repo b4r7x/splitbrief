@@ -38,6 +38,7 @@ function key(overrides: Partial<Key>): Key {
 
 describe('handleConversationScroll', () => {
   const base = {
+    input: '',
     key: {} as Key,
     renderableCount: 24,
     maxOffset: 9,
@@ -89,21 +90,105 @@ describe('handleConversationScroll', () => {
       'conversation-scroll-down',
     );
   });
+
+  it('maps Ctrl+B and Ctrl+F to page conversation scroll actions', () => {
+    expect(handleConversationScroll({ ...base, input: 'b', key: { ctrl: true } as Key })).toEqual({
+      type: 'conversation-scroll-up',
+      renderableCount: 24,
+      step: 10,
+      totalHeight: 42,
+      maxOffset: 9,
+    });
+    expect(handleConversationScroll({ ...base, input: 'f', key: { ctrl: true } as Key })).toEqual({
+      type: 'conversation-scroll-down',
+      step: 10,
+    });
+  });
 });
 
 describe('handleReviewScroll', () => {
   const base = {
+    input: '',
     key: {} as Key,
     reviewScrollOffset: 0,
     reviewLineCount: 40,
     visibleHeight: 10,
   };
 
-  it('maps End to the bottom of the review and ignores the plain printable G key', () => {
+  it('maps Shift+arrows to line review scroll actions and ignores plain arrows', () => {
+    expect(handleReviewScroll({ ...base, key: { shift: true, downArrow: true } as Key })).toEqual({
+      type: 'review-scroll',
+      offset: 1,
+    });
+    expect(
+      handleReviewScroll({
+        ...base,
+        key: { shift: true, upArrow: true } as Key,
+        reviewScrollOffset: 1,
+      }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 0,
+    });
+    expect(handleReviewScroll({ ...base, key: { downArrow: true } as Key })).toEqual({
+      type: 'none',
+    });
+    expect(handleReviewScroll({ ...base, key: { upArrow: true } as Key })).toEqual({
+      type: 'none',
+    });
+  });
+
+  it('maps Home, PageUp, PageDown, and End to review scroll actions', () => {
+    expect(
+      handleReviewScroll({ ...base, key: { home: true } as Key, reviewScrollOffset: 20 }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 0,
+    });
+    expect(
+      handleReviewScroll({ ...base, key: { pageUp: true } as Key, reviewScrollOffset: 20 }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 10,
+    });
+    expect(
+      handleReviewScroll({ ...base, key: { pageDown: true } as Key, reviewScrollOffset: 20 }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 30,
+    });
     expect(handleReviewScroll({ ...base, key: { end: true } as Key })).toEqual({
       type: 'review-scroll',
       offset: 30,
     });
+  });
+
+  it('maps Ctrl+B and Ctrl+F to page review scroll actions', () => {
+    expect(
+      handleReviewScroll({
+        ...base,
+        input: 'b',
+        key: { ctrl: true } as Key,
+        reviewScrollOffset: 20,
+      }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 10,
+    });
+    expect(
+      handleReviewScroll({
+        ...base,
+        input: 'f',
+        key: { ctrl: true } as Key,
+        reviewScrollOffset: 20,
+      }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 30,
+    });
+  });
+
+  it('ignores the plain printable G key', () => {
     expect(handleReviewScroll({ ...base, key: { end: false } as Key })).toEqual({
       type: 'none',
     });
@@ -111,7 +196,20 @@ describe('handleReviewScroll', () => {
 });
 
 describe('handleWorkflowCtrlChords', () => {
-  it('maps Ctrl+A to the latest expandable activity batch', () => {
+  it('maps Alt/Meta+A to the latest expandable activity batch', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'a',
+        key: key({ meta: true }),
+        isSmall: false,
+        sections,
+        findLatestDiff: () => null,
+        findLatestActivityBatch: () => 'activity-batch:0:call-1',
+      }),
+    ).toEqual({ type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' });
+  });
+
+  it('leaves Ctrl+A for composer line-start editing', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'a',
@@ -121,7 +219,7 @@ describe('handleWorkflowCtrlChords', () => {
         findLatestDiff: () => null,
         findLatestActivityBatch: () => 'activity-batch:0:call-1',
       }),
-    ).toEqual({ type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' });
+    ).toEqual({ type: 'none' });
   });
 
   it('ignores plain a and A so they reach the composer as text', () => {

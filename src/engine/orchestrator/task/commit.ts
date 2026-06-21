@@ -127,10 +127,11 @@ export async function validateCommitAndAdvance(
   if (strategy === 'per-task') {
     const inProgressOp = await gitOps.getInProgressGitOp(projectDir);
     if (inProgressOp) {
-      publishWarning(
-        { bus: bus, phase: state.phase },
-        `Skipped per-task commit: a git ${inProgressOp} is in progress. Finish or abort it first.`,
-      );
+      publishWarning({
+        bus: bus,
+        phase: state.phase,
+        message: `Skipped per-task commit: a git ${inProgressOp} is in progress. Finish or abort it first.`,
+      });
       const nextState = transitionAndSave({ projectDir, sessionId }, state, {
         type: completionTransitionType,
       });
@@ -139,10 +140,11 @@ export async function validateCommitAndAdvance(
     }
 
     if (usingFallbackFiles) {
-      publishWarning(
-        { bus: bus, phase: state.phase },
-        `No attributed file set for ${task.id}; staging and secret scan cover only ${task.file}.`,
-      );
+      publishWarning({
+        bus: bus,
+        phase: state.phase,
+        message: `No attributed file set for ${task.id}; staging and secret scan cover only ${task.file}.`,
+      });
     }
 
     const commitMsg = buildTaskCommitMessage({
@@ -179,10 +181,11 @@ export async function validateCommitAndAdvance(
           } catch {
             // best-effort unstage
           }
-          publishWarning(
-            { bus: bus, phase: state.phase },
-            `pre_commit blocked: ${pre.reason ?? 'hook denied'}`,
-          );
+          publishWarning({
+            bus: bus,
+            phase: state.phase,
+            message: `pre_commit blocked: ${pre.reason ?? 'hook denied'}`,
+          });
           const nextState = transitionAndSave({ projectDir, sessionId }, state, {
             type: completionTransitionType,
           });

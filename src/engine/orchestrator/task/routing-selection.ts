@@ -49,7 +49,7 @@ export async function selectRoutingProfile(opts: {
       : resolvedProfiles.filter((profile) => profile.name === retryProfileOverride);
   if (routingProfiles.length === 0) {
     const message = `Recovery selected implementer profile "${retryProfileOverride}" is not configured.`;
-    publishError({ bus: wctx.bus, phase: state.phase }, message);
+    publishError({ bus: wctx.bus, phase: state.phase, message: message });
     const issue = buildContextOverflowRecoveryIssue({
       task,
       phase: state.phase,
@@ -83,7 +83,7 @@ export async function selectRoutingProfile(opts: {
     : undefined;
   if (!selectedProfile) {
     const message = routingBlockMessage(routingDecision);
-    publishError({ bus: wctx.bus, phase: state.phase }, message);
+    publishError({ bus: wctx.bus, phase: state.phase, message: message });
     const issue = buildContextOverflowRecoveryIssue({
       task,
       phase: state.phase,

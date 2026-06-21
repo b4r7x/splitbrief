@@ -28,6 +28,7 @@ export type GateActionInput = {
   bus: EventBus;
   callbacks: OrchestratorCallbacks;
   config: Config;
+  getApprovalEnabled?: (() => boolean) | undefined;
   grants?: ApprovalGrant[];
 };
 
@@ -138,9 +139,10 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     bus,
     callbacks,
     config,
+    getApprovalEnabled,
   } = input;
 
-  if (config.approval?.enabled === false) {
+  if ((getApprovalEnabled ? getApprovalEnabled() : config.approval?.enabled !== false) === false) {
     return { allow: true };
   }
 

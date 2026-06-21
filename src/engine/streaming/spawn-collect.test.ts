@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn.js';
+import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import { spawnAndCollect } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -106,7 +108,7 @@ describe('spawnAndCollect', () => {
     });
   });
 
-  it('buffers stderr chunks into one warning per logical line', async () => {
+  it('buffers stderr chunks without promoting them to result warnings by default', async () => {
     const stderrChunks: string[] = [];
     const result = await spawnAndCollect({
       command: 'node',
@@ -119,20 +121,17 @@ describe('spawnAndCollect', () => {
     });
 
     expect(stderrChunks.join('')).toBe('first line\nsecond line\n');
-    expect(result.warnings).toEqual([
-      { code: 'stderr', message: 'first line' },
-      { code: 'stderr', message: 'second line' },
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it('flushes trailing stderr as one warning when the process exits', async () => {
+  it('flushes trailing stderr without promoting it to a result warning', async () => {
     const result = await spawnAndCollect({
       command: 'node',
       args: ['-e', 'process.stderr.write("trailing warning")'],
       cwd: process.cwd(),
     });
 
-    expect(result.warnings).toEqual([{ code: 'stderr', message: 'trailing warning' }]);
+    expect(result.warnings).toEqual([]);
   });
 
   it('bounds oversized stderr lines and emits an overflow warning', async () => {
@@ -143,11 +142,62 @@ describe('spawnAndCollect', () => {
     });
 
     expect(result.warnings).toEqual([
-      {
+      expect.objectContaining({
         code: 'stderr_line_overflow',
+        severity: 'warning',
+        source: 'provider',
+        surface: 'activity',
         message: 'stderr line exceeded 8192 bytes and was skipped',
-      },
+      }),
     ]);
+  });
+
+  it('reports an oversized structured terminal result as a bounded truncation', async () => {
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: [
+        '-e',
+        `process.stdout.write(JSON.stringify({type:"result",result:"x".repeat(${
+          DEFAULT_PROCESS_LINE_MAX_BYTES + 100
+        })})+"\\n")`,
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      text: '',
+      error: { code: 'stdout_line_overflow' },
+    });
+    expect(result.error?.code).not.toBe('missing_terminal_event');
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stdout_line_overflow',
+        message: expect.stringContaining('stdout line exceeded'),
+      }),
+    ]);
+  });
+
+  it('caps aggregate parsed stdout from many small lines', async () => {
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: [
+        '-e',
+        `for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1}; i += 1) console.log("x")`,
+      ],
+      cwd: process.cwd(),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    const textEvents = events.filter((event) => event.type === 'call_text_delta');
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'runner_output_text_limit' },
+    });
+    expect(result.text).toBe('x\n'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS));
+    expect(textEvents).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
   });
 });
 
@@ -195,7 +245,13 @@ describe('CLI implementer JSONL parsing', () => {
     });
 
     expect(result.warnings).toEqual([
-      { code: 'malformed_jsonl', message: 'Malformed JSONL line skipped' },
+      expect.objectContaining({
+        code: 'malformed_jsonl',
+        severity: 'warning',
+        source: 'provider',
+        surface: 'activity',
+        message: 'Malformed JSONL line skipped',
+      }),
     ]);
   });
 

@@ -47,10 +47,11 @@ export async function reviewAutoSplitOutput(opts: {
     formatTasks(opts.tasks),
     opts.wctx.metadata,
   );
-  publishWarning(
-    { bus: opts.wctx.bus, phase: opts.state.phase },
-    `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`,
-  );
+  publishWarning({
+    bus: opts.wctx.bus,
+    phase: opts.state.phase,
+    message: `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`,
+  });
 
   let state = transitionAndSave(opts.wctx, opts.state, {
     type: 'BRIEFS_READY',
@@ -66,15 +67,16 @@ export async function reviewAutoSplitOutput(opts: {
     if (opts.wctx.signal?.aborted) return { state, tasks, approved: false };
 
     const warnDropped = (message: string) =>
-      publishWarning({ bus: opts.wctx.bus, phase: state.phase }, message);
+      publishWarning({ bus: opts.wctx.bus, phase: state.phase, message: message });
 
     if (result.action === 'edit') {
       const edited = await readApprovedSplitTasks(tasksFilePath, warnDropped);
       if (!edited.ok) {
-        publishError(
-          { bus: opts.wctx.bus, phase: state.phase },
-          `Auto-split overflow review failed: ${edited.message}`,
-        );
+        publishError({
+          bus: opts.wctx.bus,
+          phase: state.phase,
+          message: `Auto-split overflow review failed: ${edited.message}`,
+        });
         continue;
       }
       const { ok, report } = runBriefQualityGate({
@@ -85,10 +87,11 @@ export async function reviewAutoSplitOutput(opts: {
         phase: state.phase,
       });
       if (!ok) {
-        publishError(
-          { bus: opts.wctx.bus, phase: state.phase },
-          `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
-        );
+        publishError({
+          bus: opts.wctx.bus,
+          phase: state.phase,
+          message: `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
+        });
         continue;
       }
       tasks = edited.tasks;
@@ -101,12 +104,13 @@ export async function reviewAutoSplitOutput(opts: {
     }
 
     if (!result.approved) {
-      publishError(
-        { bus: opts.wctx.bus, phase: state.phase },
-        result.comment
+      publishError({
+        bus: opts.wctx.bus,
+        phase: state.phase,
+        message: result.comment
           ? `Auto-split overflow rejected: ${result.comment}`
           : 'Auto-split overflow rejected before implementation.',
-      );
+      });
       state = transitionAndSave(opts.wctx, state, {
         type: 'REJECT_BRIEFS',
       });
@@ -116,10 +120,11 @@ export async function reviewAutoSplitOutput(opts: {
 
     const approvedTasksResult = await readApprovedSplitTasks(tasksFilePath, warnDropped);
     if (!approvedTasksResult.ok) {
-      publishError(
-        { bus: opts.wctx.bus, phase: state.phase },
-        `Auto-split overflow review failed: ${approvedTasksResult.message}`,
-      );
+      publishError({
+        bus: opts.wctx.bus,
+        phase: state.phase,
+        message: `Auto-split overflow review failed: ${approvedTasksResult.message}`,
+      });
       continue;
     }
     const approvedTasks = approvedTasksResult.tasks;
@@ -132,10 +137,11 @@ export async function reviewAutoSplitOutput(opts: {
       phase: state.phase,
     });
     if (!ok) {
-      publishError(
-        { bus: opts.wctx.bus, phase: state.phase },
-        `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
-      );
+      publishError({
+        bus: opts.wctx.bus,
+        phase: state.phase,
+        message: `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
+      });
       continue;
     }
 

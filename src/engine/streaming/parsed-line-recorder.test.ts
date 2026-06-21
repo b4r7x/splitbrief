@@ -161,7 +161,14 @@ describe('createParsedLineRecorder', () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_warning',
-        warning: { code: 'retry', message: 'retrying' },
+        warning: expect.objectContaining({
+          code: 'retry',
+          severity: 'warning',
+          source: 'provider',
+          surface: 'activity',
+          message: 'retrying',
+          fingerprint: expect.stringMatching(/^rw:/),
+        }),
       }),
     );
   });

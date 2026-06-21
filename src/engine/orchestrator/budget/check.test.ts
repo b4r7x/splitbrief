@@ -4,6 +4,7 @@ import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { checkBudget, getBudgetCostKnownness, getCurrentCost, enforceBudget } from './check.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { protectEngineEventForConsumer } from '../../events/protection.js';
 
 const zeroUsage: TokenUsage = {
   plannerInput: 0,
@@ -412,6 +413,26 @@ describe('enforceBudget', () => {
     expect(result.stop).toBe(false);
     expect(result.warningEmitted).toBe(true);
     expect(events.some((e) => e.type === 'budget_warning')).toBe(true);
+    const warning = events.find((e) => e.type === 'warning');
+    expect(warning).toMatchObject({
+      type: 'warning',
+      category: 'budget',
+      code: 'warning_threshold_reached',
+      transcriptSafe: true,
+    });
+    expect(
+      warning === undefined
+        ? null
+        : protectEngineEventForConsumer(warning, {
+            context: 'session-log',
+            persistTranscript: false,
+          }),
+    ).toMatchObject({
+      type: 'warning',
+      category: 'budget',
+      code: 'warning_threshold_reached',
+      message: expect.stringContaining('Budget 80% reached:'),
+    });
   });
 
   it('does not re-emit warning if already emitted', async () => {
@@ -638,6 +659,9 @@ describe('enforceBudget', () => {
     expect(unknownResult.pauseEmitted).toBe(true);
     expect(eHaiku.some((e) => e.type === 'budget_paused')).toBe(true);
     expect(eHaiku.find((e) => e.type === 'warning')).toMatchObject({
+      category: 'budget',
+      code: 'tracking_paused',
+      transcriptSafe: true,
       message:
         'Budget tracking paused: pricing unknown for anthropic/definitely-not-a-real-model-xyz; configure pricing or continue acknowledging unknown spend.',
     });

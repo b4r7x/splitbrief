@@ -69,6 +69,8 @@ function createTestCommands(): RuntimeCommandDef[] {
     rejectRunSnapshot: async () => ({ status: 'empty' }),
     compactTranscript: async () => ({ status: 'unsupported', plannerName: 'test' }),
     exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
+    scrollConversation: () => ({ status: 'scrolled' }),
+    toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
   };
   return createRuntimeCommands(ctx);
 }

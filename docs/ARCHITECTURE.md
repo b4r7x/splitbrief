@@ -303,7 +303,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/engine/events/schema.ts` (add a Zod member to the `EngineEventSchema` discriminated union; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
+| New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
@@ -332,7 +332,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 └────────┘ └──────────┘ └────────────┘ └──────────────┘ └──────────┘
 ```
 
-- **`EngineEvent`** is a discriminated union with snake_case `type`, mandatory `ts`, and usually `phase` — defined as `EngineEventSchema` in `src/engine/events/schema.ts`, with the `EngineEvent` alias (`z.infer`) re-exported from `src/engine/events/types.ts`. The single source of truth for all engine events. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
+- **`EngineEvent`** is a type-dispatched event contract with snake_case `type`, mandatory `ts`, and usually `phase` — defined as `EngineEventSchema` in `src/engine/events/schema.ts`, with the `EngineEvent` alias (`z.infer`) re-exported from `src/engine/events/types.ts`. The single source of truth for all engine events. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
 - **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
 - **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
 - **`tuiSink`** (`src/features/workflow/tui-sink.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
@@ -819,7 +819,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 ### EngineEvent Variants
 
-`src/engine/events/schema.ts` defines the discriminated union as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source union for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
+`src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (6):**
 `workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`
@@ -864,7 +864,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm.
 
-`eventRows(event, ...)` returns one-row conversation records or `[]` for silent events. Role and status are represented by row tones and explicit text, not by persistent left gutters.
+`eventRowBlock(event, ...)` returns a lazy row block or `null` for silent events. Role and status are represented by row tones and explicit text, not by persistent left gutters.
 
 Adding a new EngineEvent variant without adding it to this switch is a compile error.
 
@@ -1213,7 +1213,7 @@ All sections are optional; absence means the feature is off (snapshots) or uses 
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-Full verification: `npm run test-ci` (format:check, typecheck, lint, Vitest, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
+Full verification: `npm run test-ci` (format:check, typecheck, lint, test:coverage, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
 
 ---
 
@@ -1230,7 +1230,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 7. **Zero runtime classes.** Production source uses functions and module-scoped state; test fixtures may contain class syntax when that is the behavior under test.
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.
 9. **ESM `.js` suffix on every internal import.** `'./foo.js'` not `'./foo'`. Required for Node 22 ESM resolution.
-10. **Conversation row exhaustive switch handles EVERY EngineEvent variant.** `eventRows` ends with `default: return assertNever(event)`. Adding a variant without updating it is a TypeScript error.
+10. **Conversation row exhaustive switch handles EVERY EngineEvent variant.** `eventRowBlock` ends with `default: return assertNever(event)`. Adding a variant without updating it is a TypeScript error.
 11. **One foreground active session per project directory.** `.diptych/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `diptych worktree` (each worktree has its own `.diptych/`).
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.

@@ -18,10 +18,11 @@ import { readPersistedTasks, readTasksForApproval } from './io.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 
 function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {
-  publishError(
-    { bus: bus, phase: phase },
-    `Task Brief quality gate failed: ${firstBriefErrorMessage(report)}`,
-  );
+  publishError({
+    bus: bus,
+    phase: phase,
+    message: `Task Brief quality gate failed: ${firstBriefErrorMessage(report)}`,
+  });
 }
 
 export async function runBriefsApprovalLoop(
@@ -47,12 +48,13 @@ export async function runBriefsApprovalLoop(
     const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
     if (signal?.aborted) return { state, tasks, rejected: false, aborted: true };
 
-    const warnDropped = (message: string) => publishWarning({ bus, phase: state.phase }, message);
+    const warnDropped = (message: string) =>
+      publishWarning({ bus, phase: state.phase, message: message });
 
     if (result.action === 'edit') {
       const edited = await readPersistedTasks(tasksFilePath, warnDropped);
       if (!edited.ok) {
-        publishError({ bus: bus, phase: state.phase }, edited.message);
+        publishError({ bus: bus, phase: state.phase, message: edited.message });
         continue;
       }
       const { report, ok } = runBriefQualityGate({
@@ -85,7 +87,7 @@ export async function runBriefsApprovalLoop(
         metadata,
       });
       if (!approved.ok) {
-        publishError({ bus: bus, phase: state.phase }, approved.message);
+        publishError({ bus: bus, phase: state.phase, message: approved.message });
         continue;
       }
       const { report, ok } = runBriefQualityGate({

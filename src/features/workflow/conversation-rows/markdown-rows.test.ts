@@ -1,9 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import { getTheme } from '../../../components/theme.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
+import { layoutMarkdown } from '../../../utils/markdown/layout.js';
 import type { MarkdownLayoutSegment } from '../../../utils/markdown/types.js';
-import { markdownConversationRows, workflowMarkdownRenderSegments } from './markdown-rows.js';
+import {
+  beginMarkdownConversationRowsProjectionPass,
+  markdownConversationRows,
+  markdownConversationRowsCacheKey,
+  markdownConversationRowsProjection,
+  resetMarkdownConversationRowsCache,
+  workflowMarkdownRenderSegments,
+} from './markdown-rows.js';
 import { rowText } from './row-format.js';
+
+type MarkdownRows = ReturnType<typeof markdownConversationRows>;
+
+function comparableRows(rows: MarkdownRows): Pick<MarkdownRows[number], 'kind' | 'segments'>[] {
+  return rows.map(({ kind, segments }) => ({ kind, segments }));
+}
+
+function appendedLineByLineRows(input: { keyPrefix: string; text: string; width: number }) {
+  const lines = input.text.split('\n');
+  let rows = markdownConversationRows({ ...input, text: '' });
+  for (const lineIndex of lines.keys()) {
+    rows = markdownConversationRows({
+      ...input,
+      text: lines.slice(0, lineIndex + 1).join('\n'),
+    });
+  }
+  return rows;
+}
+
+function appendedCharacterByCharacterRows(input: {
+  keyPrefix: string;
+  text: string;
+  width: number;
+}) {
+  let rows = markdownConversationRows({ ...input, text: '' });
+  for (let length = 1; length <= input.text.length; length += 1) {
+    rows = markdownConversationRows({
+      ...input,
+      text: input.text.slice(0, length),
+    });
+  }
+  return rows;
+}
+
+function canonicalMarkdownLineText(text: string, width: number): string[] {
+  const layout = layoutMarkdown(parseMarkdownBlocks(text), { width });
+  return layout.rows.flatMap((layoutRow) =>
+    layoutRow.lines.map((line) => line.segments.map((segment) => segment.text).join('')),
+  );
+}
+
+function markdownListText(eventIndex: number, lineCount: number): string {
+  return Array.from(
+    { length: lineCount },
+    (_, lineIndex) =>
+      `- T${String((lineIndex % 999) + 1).padStart(3, '0')} event ${eventIndex} update src/file-${lineIndex}.ts`,
+  ).join('\n');
+}
 
 describe('markdownConversationRows', () => {
   it('classifies workflow markers outside generic markdown parsing', () => {
@@ -89,6 +146,141 @@ describe('markdownConversationRows', () => {
 
     expect(text).toContain('REDACTED');
     expect(text).not.toContain(secret);
+  });
+
+  it('reuses cached layout for identical markdown and invalidates on width changes', () => {
+    resetMarkdownConversationRowsCache();
+    const input = {
+      keyPrefix: 'markdown-cache',
+      text: '### Heading\n\nLong content that wraps around a narrow terminal width.',
+      width: 40,
+    };
+
+    const first = markdownConversationRowsProjection(input);
+    const second = markdownConversationRowsProjection(input);
+    const widthChanged = markdownConversationRowsProjection({ ...input, width: 20 });
+
+    expect(second).toBe(first);
+    expect(widthChanged).not.toBe(first);
+  });
+
+  it('retains newest active markdown entries when a projection pass exceeds the cache cap', () => {
+    resetMarkdownConversationRowsCache();
+    const width = 96;
+    const entries = Array.from({ length: 30 }, (_, index) => ({
+      keyPrefix: `event-${index}-planner_text`,
+      text: markdownListText(index, 500),
+      width,
+    }));
+    const endProjectionPass = beginMarkdownConversationRowsProjectionPass(
+      entries.map(markdownConversationRowsCacheKey),
+    );
+    const projections: ReturnType<typeof markdownConversationRowsProjection>[] = [];
+
+    try {
+      for (const entry of entries) {
+        projections.push(markdownConversationRowsProjection(entry));
+      }
+    } finally {
+      endProjectionPass();
+    }
+
+    for (const [index, entry] of entries.slice(6).entries()) {
+      expect(markdownConversationRowsProjection(entry)).toBe(projections[index + 6]);
+    }
+    for (const [index, entry] of entries.slice(0, 6).entries()) {
+      expect(markdownConversationRowsProjection(entry)).not.toBe(projections[index]);
+    }
+  });
+
+  it('keeps appended metadata rows equivalent to a cold render', () => {
+    const examples = [
+      {
+        name: 'task',
+        text: [
+          '---',
+          'id: T001',
+          'title: Add parser support',
+          'action: modify',
+          'file: src/utils/markdown/block-parser.ts',
+          'depends_on:',
+          '  - T000',
+          '---',
+          '### Description',
+          'Parse task metadata.',
+        ].join('\n'),
+      },
+      {
+        name: 'frontmatter',
+        text: [
+          '---',
+          'title: Markdown core',
+          'owner: docs',
+          '---',
+          '# Markdown core',
+          'Render frontmatter incrementally.',
+        ].join('\n'),
+      },
+    ];
+
+    for (const example of examples) {
+      resetMarkdownConversationRowsCache();
+      const cold = comparableRows(
+        markdownConversationRows({
+          keyPrefix: `markdown-${example.name}-cold`,
+          text: example.text,
+          width: 80,
+        }),
+      );
+
+      resetMarkdownConversationRowsCache();
+      const lineByLine = appendedLineByLineRows({
+        keyPrefix: `markdown-${example.name}-incremental`,
+        text: example.text,
+        width: 80,
+      });
+
+      resetMarkdownConversationRowsCache();
+      const charByChar = appendedCharacterByCharacterRows({
+        keyPrefix: `markdown-${example.name}-incremental`,
+        text: example.text,
+        width: 80,
+      });
+
+      expect(comparableRows(lineByLine)).toEqual(cold);
+      expect(comparableRows(charByChar)).toEqual(cold);
+    }
+  });
+
+  it('keeps long appended paragraphs equivalent to canonical markdown layout', () => {
+    const words = Array.from({ length: 520 }, (_, index) => `word-${index}`);
+    const text = words.join(' ');
+    const prefix = words.slice(0, -1).join(' ');
+    const width = 48;
+    const canonical = canonicalMarkdownLineText(text, width);
+
+    resetMarkdownConversationRowsCache();
+    const cold = markdownConversationRows({
+      keyPrefix: 'markdown-long-paragraph-cold',
+      text,
+      width,
+    });
+
+    resetMarkdownConversationRowsCache();
+    markdownConversationRows({
+      keyPrefix: 'markdown-long-paragraph-incremental',
+      text: prefix,
+      width,
+    });
+    const appended = markdownConversationRows({
+      keyPrefix: 'markdown-long-paragraph-incremental',
+      text,
+      width,
+    });
+
+    expect(cold.map(rowText)).toEqual(canonical);
+    expect(appended.map(rowText)).toEqual(canonical);
+    expect(comparableRows(appended)).toEqual(comparableRows(cold));
   });
 
   it('wraps CJK, emoji, and combining marks by terminal cells', () => {

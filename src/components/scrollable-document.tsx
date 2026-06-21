@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
+import { resolveScrollKey, type ScrollKeyAction } from '../core/keybindings/scroll.js';
 import { ScrollIndicator } from './scroll-indicator.js';
 
 export interface ScrollableDocumentRow {
@@ -100,6 +101,28 @@ function getScrollableDocumentWindow(
   };
 }
 
+function offsetForScrollAction(
+  action: ScrollKeyAction,
+  offset: number,
+  lineCount: number,
+  visibleHeight: number,
+): number {
+  switch (action) {
+    case 'line-up':
+      return offset - 1;
+    case 'line-down':
+      return offset + 1;
+    case 'page-up':
+      return offset - visibleHeight;
+    case 'page-down':
+      return offset + visibleHeight;
+    case 'top':
+      return 0;
+    case 'bottom':
+      return lineCount;
+  }
+}
+
 export function ScrollableDocument({
   rows,
   height,
@@ -132,30 +155,21 @@ export function ScrollableDocument({
   }
 
   useInput(
-    (_input, key) => {
-      if (key.home) {
-        setRequestedOffset(0);
-        return;
-      }
-      if (key.end) {
-        setRequestedOffset(windowState.lineCount);
-        return;
-      }
-      if (key.pageUp) {
-        setRequestedOffset(windowState.offset - windowState.visibleHeight);
-        return;
-      }
-      if (key.pageDown) {
-        setRequestedOffset(windowState.offset + windowState.visibleHeight);
-        return;
-      }
-      if (keyboardMode === 'line-and-page' && key.upArrow) {
-        setRequestedOffset(windowState.offset - 1);
-        return;
-      }
-      if (keyboardMode === 'line-and-page' && key.downArrow) {
-        setRequestedOffset(windowState.offset + 1);
-      }
+    (input, key) => {
+      const scrollKey = resolveScrollKey({
+        input,
+        key,
+        lineKeys: keyboardMode === 'line-and-page' ? 'plain' : 'none',
+      });
+      if (scrollKey === null) return;
+      setRequestedOffset(
+        offsetForScrollAction(
+          scrollKey,
+          windowState.offset,
+          windowState.lineCount,
+          windowState.visibleHeight,
+        ),
+      );
     },
     { isActive },
   );

@@ -1,4 +1,5 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { RunnerCallTextChannel } from '../../core/runner-call-contract.js';
 
 export interface ToolUseInfo {
   id?: string | undefined;
@@ -18,7 +19,7 @@ export interface ParsedWarningInfo {
   message: string;
 }
 
-export type ParsedTextChannel = 'stdout' | 'assistant' | 'result' | 'system';
+export type ParsedTextChannel = RunnerCallTextChannel;
 
 export type ParsedLine =
   | {

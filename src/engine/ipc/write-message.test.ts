@@ -207,8 +207,8 @@ describe('writeServerMessage', () => {
           activityId: 'call-1:tool:tool-1',
           stage: 'completed',
           kind: 'command',
-          label: 'running echo sk-***REDACTED***',
-          target: 'echo sk-***REDACTED***',
+          label: 'running echo private-runner-output-92741',
+          target: 'echo private-runner-output-92741',
           redacted: true,
         },
       },
@@ -222,11 +222,15 @@ describe('writeServerMessage', () => {
         kind: 'event',
         payload: expect.objectContaining({
           type: 'runner_call_activity',
-          label: TRANSCRIPT_OMITTED_MESSAGE,
-          target: TRANSCRIPT_OMITTED_MESSAGE,
+          label: 'running command',
+          rawAvailable: false,
+          redacted: true,
         }),
       },
     ]);
+    expect(JSON.stringify(frames[0])).not.toContain('"target"');
+    expect(JSON.stringify(frames[0])).not.toContain('"expandId"');
+    expect(JSON.stringify(frames[0])).not.toContain('private-runner-output-92741');
   });
 
   it('projects prompt requests when transcript persistence is disabled', async () => {
@@ -308,7 +312,7 @@ describe('writeServerMessage', () => {
             reason: 'retry-exhausted',
             phase: 'implementing',
             taskId: taskId('T001'),
-            taskTitle: 'ipc-recovery-task-context',
+            taskTitle: TRANSCRIPT_OMITTED_MESSAGE,
             files: ['src/task.ts'],
             affectedTaskIds: [taskId('T001')],
             selectedImplementerProfile: 'small-worker',
@@ -322,9 +326,70 @@ describe('writeServerMessage', () => {
     ]);
     expect(JSON.stringify(frames)).not.toContain('ipc-question-secret-41802');
     expect(JSON.stringify(frames)).not.toContain('ipc-choice-secret-41802');
-    expect(JSON.stringify(frames)).not.toContain('ipc-recovery-secret-41802');
+    expect(JSON.stringify(frames)).not.toContain('ipc-recovery-task-context');
     expect(JSON.stringify(frames)).not.toContain('message');
     expect(JSON.stringify(frames)).not.toContain('details');
+  });
+
+  it('projects user-edit conflict prompt requests when transcript persistence is disabled', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+    const rawPath = 'src/private-conflict-file.ts';
+
+    writeServerMessage(
+      server,
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-conflict-1',
+          kind: 'user_edit_conflict',
+          conflict: {
+            kind: 'current-task-conflict',
+            files: [rawPath],
+            affectedTaskIds: [taskId('T001')],
+            currentTaskId: taskId('T001'),
+            fileConflicts: [
+              {
+                file: rawPath,
+                kind: 'current-task-conflict',
+                affectedTaskIds: [taskId('T001')],
+              },
+            ],
+            safeToContinue: false,
+            availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
+          },
+        },
+      },
+      { persistTranscript: false },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
+    expect(frames).toEqual([
+      {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-conflict-1',
+          kind: 'user_edit_conflict',
+          conflict: {
+            kind: 'current-task-conflict',
+            files: [TRANSCRIPT_OMITTED_MESSAGE],
+            affectedTaskIds: [taskId('T001')],
+            currentTaskId: taskId('T001'),
+            fileConflicts: [
+              {
+                file: TRANSCRIPT_OMITTED_MESSAGE,
+                kind: 'current-task-conflict',
+                affectedTaskIds: [taskId('T001')],
+              },
+            ],
+            safeToContinue: false,
+            availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(frames)).not.toContain(rawPath);
   });
 
   it('uses the central event projection for task review prompt requests', async () => {

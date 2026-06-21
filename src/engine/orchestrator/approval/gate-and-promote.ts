@@ -27,6 +27,7 @@ export type GateAndPromoteOpts = {
   bus: EventBus;
   callbacks: OrchestratorCallbacks;
   config: Config;
+  getApprovalEnabled?: (() => boolean) | undefined;
   staged: StagedProject | undefined;
   usesStaging: boolean;
   taskStartSnapshot: ChangedFilesSnapshot;
@@ -52,6 +53,7 @@ export async function gateAndPromoteChangedFiles(
     bus,
     callbacks,
     config,
+    getApprovalEnabled,
     staged,
     usesStaging,
     taskStartSnapshot,
@@ -101,6 +103,7 @@ export async function gateAndPromoteChangedFiles(
       bus,
       callbacks,
       config,
+      getApprovalEnabled,
     });
   }
 

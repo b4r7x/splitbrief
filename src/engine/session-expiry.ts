@@ -87,3 +87,9 @@ export function sessionResumeMismatchError(expectedId: string, actualId: string)
     },
   );
 }
+
+export function sessionResumeExpiredError(sessionId: string, message: string) {
+  return error('session-resume-expired', `could not resume session ${sessionId}: ${message}`, {
+    sessionId,
+  });
+}

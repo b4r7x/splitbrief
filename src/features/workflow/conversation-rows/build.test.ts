@@ -3,8 +3,9 @@ import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { activityBatchKey } from './activity-batch-key.js';
-import { buildConversationRows } from './build.js';
+import { buildConversationRows, materializeConversationRowsWindow } from './build.js';
 import { rowText } from './row-format.js';
+import type { ConversationRowBlock } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -37,6 +38,36 @@ function activity(
 }
 
 describe('buildConversationRows', () => {
+  it('materializes only blocks that intersect the requested row window', () => {
+    const calls: string[] = [];
+    const block = (key: string, rowCount: number): ConversationRowBlock => ({
+      key,
+      rowCount,
+      renderableUnits: 1,
+      createRows: (windowStart, windowEnd) => {
+        calls.push(`${key}:${windowStart}-${windowEnd}`);
+        return Array.from({ length: windowEnd - windowStart }, (_, index) => ({
+          key: `${key}-${windowStart + index}`,
+          kind: 'message',
+          segments: [{ text: `${key}-${windowStart + index}` }],
+        }));
+      },
+    });
+
+    const rows = materializeConversationRowsWindow({
+      projection: {
+        blocks: [block('before', 2), block('visible', 3), block('after', 2)],
+        renderableCount: 3,
+        totalRows: 7,
+      },
+      windowStart: 2,
+      windowEnd: 4,
+    });
+
+    expect(calls).toEqual(['visible:0-2']);
+    expect(rows.map(rowText)).toEqual(['visible-0', 'visible-1']);
+  });
+
   it('batches repeated runner activity from one call into one renderable block', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -85,11 +116,11 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(3);
-    expect(text).toContain('planner activity  3 updates  [Codex]');
+    expect(text).toContain('plan activity  3 updates  [Codex]');
     expect(text.match(/sed -n/g)).toHaveLength(1);
-    expect(text).toContain("run  sed -n '1,240p' CLAUDE.md");
-    expect(text).toContain('run  wc -l CLAUDE.md');
-    expect(text).toContain('run  rg -n \\');
+    expect(text).toContain("RUN   sed -n '1,240p' CLAUDE.md");
+    expect(text).toContain('RUN   wc -l CLAUDE.md');
+    expect(text).toContain('PLAN  rg -n \\');
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');
   });
@@ -141,13 +172,13 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(2);
-    expect(text).toContain('planner activity  2 updates  [Codex]');
+    expect(text).toContain('plan activity  2 updates  [Codex]');
     expect(text.match(/npm run typecheck/g)).toHaveLength(1);
-    expect(text).toContain('read  src/app.ts');
-    expect(text).not.toContain('more  ctrl+a');
+    expect(text).toContain('READ  src/app.ts');
+    expect(text).not.toContain('+  ');
   });
 
-  it('keeps the latest three distinct activity rows with an earlier-update affordance', () => {
+  it('keeps recent activity rows with an earlier-update affordance', () => {
     const sections: Section<EngineEvent>[] = [
       {
         type: 'events',
@@ -173,10 +204,10 @@ describe('buildConversationRows', () => {
 
     expect(renderableCount).toBe(4);
     expect(text).not.toContain('a.ts');
-    expect(text).toContain('more  ctrl+a expand 1 earlier update');
-    expect(text).toContain('read  b.ts');
-    expect(text).toContain('read  c.ts');
-    expect(text).toContain('read  d.ts');
+    expect(text).toContain('READ  b.ts');
+    expect(text).toContain('READ  c.ts');
+    expect(text).toContain('READ  d.ts');
+    expect(text).toContain('+     1 earlier  Alt+A /activity');
 
     const expanded = buildConversationRows({
       sections,
@@ -188,8 +219,46 @@ describe('buildConversationRows', () => {
     });
     const expandedText = expanded.rows.map(rowText).join('\n');
 
-    expect(expandedText).toContain('less  ctrl+a collapse 1 earlier update');
-    expect(expandedText).toContain('read  a.ts');
+    expect(expandedText).toContain('less  Alt+A /activity');
+    expect(expandedText).toContain('READ  a.ts');
+  });
+
+  it('pins the highest-severity warning or error in collapsed activity blocks', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          activity({
+            sequence: 1,
+            activityId: 'warning',
+            kind: 'warning',
+            label: 'warning stderr',
+          }),
+          activity({ sequence: 2, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+          activity({ sequence: 3, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+          activity({ sequence: 4, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+          activity({ sequence: 5, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+        ],
+      },
+    ];
+
+    const { rows } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('plan activity  5 updates  1 warn  [Codex]');
+    expect(text).toContain('WARN  stderr');
+    expect(text).toContain('READ  c.ts');
+    expect(text).toContain('READ  d.ts');
+    expect(text).not.toContain('READ  a.ts');
+    expect(text).not.toContain('READ  b.ts');
   });
 
   it('sanitizes runner metadata in compact activity batch headers', () => {
@@ -262,8 +331,7 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('interrupted  current turn interrupted');
-    expect(text).not.toContain('error');
+    expect(text).toContain('WARN  current turn interrupted');
     expect(text).not.toContain('runner_interrupted');
   });
 
@@ -304,8 +372,8 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('warning  stderr: npm deprecated package token sk-***REDACTED***');
-    expect(text).toContain('error  exit_code_1: Command failed: npm test');
+    expect(text).toContain('WARN  stderr: npm deprecated package token sk-***REDACTED***');
+    expect(text).toContain('ERR   exit_code_1: Command failed: npm test');
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 });

@@ -7,12 +7,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { DIPTYCH_DIR, SPEC_FILE } from '../../core/paths.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { Planner } from '../../engine/planners/types.js';
+import { registerSpecCommand } from './spec.js';
 
-const createPlannerMock = vi.fn();
-
-vi.mock('../../engine/runners/factory.js', () => ({
-  createPlanner: (config: unknown) => createPlannerMock(config),
-}));
+const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
 
 let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -62,8 +61,7 @@ describe('spec command', () => {
   it('runs the planner and writes the spec artifact to the session folder', async () => {
     const program = new Command();
     program.exitOverride();
-    const { registerSpecCommand } = await import('./spec.js');
-    registerSpecCommand(program);
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
 
     await program.parseAsync([
       'node',
@@ -106,8 +104,7 @@ describe('spec command', () => {
     try {
       const program = new Command();
       program.exitOverride();
-      const { registerSpecCommand } = await import('./spec.js');
-      registerSpecCommand(program);
+      registerSpecCommand(program, { createPlanner: createPlannerMock });
 
       await program.parseAsync([
         'node',

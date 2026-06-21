@@ -356,12 +356,13 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     );
     publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'result', results, startTime });
     if (results.length > 0 && results.every((r) => r.skipped)) {
-      publishWarning(
-        { bus: bus, phase: phase },
-        `Task ${taskId} was not validated: every enabled validation stage was skipped (${results
+      publishWarning({
+        bus: bus,
+        phase: phase,
+        message: `Task ${taskId} was not validated: every enabled validation stage was skipped (${results
           .map((r) => r.stage)
           .join(', ')}).`,
-      );
+      });
     }
     return results;
   }

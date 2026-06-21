@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RewindEventSchema } from '../../core/state/rewind-event.js';
 import { parseEngineEvent } from './schema.js';
 import type { EngineEvent } from './types.js';
 
@@ -34,6 +35,32 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
+  it('keeps operational warning safety metadata type-safe', () => {
+    const complete = {
+      type: 'warning',
+      ts: 1,
+      phase: 'implementing',
+      message: 'Queue full (50 messages).',
+      category: 'queue',
+      code: 'queue_full',
+      transcriptSafe: true,
+    } satisfies EngineEvent;
+
+    const partial = {
+      type: 'warning',
+      ts: 1,
+      phase: 'implementing',
+      message: 'Queue full (50 messages).',
+      category: 'queue',
+    };
+    // @ts-expect-error operational message safety metadata is all-or-nothing
+    const invalid: EngineEvent = partial;
+
+    expect(complete.transcriptSafe).toBe(true);
+    expect(invalid).toBeDefined();
+    expect(partial.category).toBe('queue');
+  });
+
   it('accepts known events with required variant fields', () => {
     expect(
       parseEngineEvent({
@@ -106,6 +133,77 @@ describe('parseEngineEvent', () => {
       forwardCompatField: { nested: true },
     });
     expect(parsed).toMatchObject({ forwardCompatField: { nested: true } });
+  });
+
+  it('requires operational warning safety metadata to be complete', () => {
+    expect(
+      parseEngineEvent({
+        type: 'warning',
+        ts: 1,
+        phase: 'implementing',
+        message: 'Queue full (50 messages).',
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: true,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'warning', category: 'queue' }));
+    expect(
+      parseEngineEvent({
+        type: 'warning',
+        ts: 1,
+        phase: 'implementing',
+        message: 'Queue full (50 messages).',
+        category: 'queue',
+      }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({
+        type: 'error',
+        ts: 1,
+        phase: 'implementing',
+        message: 'safe by claim only',
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('parses operational warning and error events through their type-indexed schemas', () => {
+    expect(
+      parseEngineEvent({
+        type: 'warning',
+        ts: 1,
+        phase: 'implementing',
+        message: 'Queue full (50 messages).',
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: true,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'warning', code: 'queue_full' }));
+    expect(
+      parseEngineEvent({
+        type: 'error',
+        ts: 1,
+        phase: 'implementing',
+        message: 'safe by claim only',
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('parses core-owned rewind event variants with the same schemas used by rewind persistence', () => {
+    const event = {
+      type: 'rewind_to_plan',
+      ts: 1,
+      phase: 'implementing',
+      comment: 'split up the tasks',
+    } as const;
+
+    expect(RewindEventSchema.safeParse(event).success).toBe(true);
+    expect(parseEngineEvent(event)).toEqual(expect.objectContaining(event));
   });
 
   it('accepts only the canonical workflow cancellation reason when present', () => {

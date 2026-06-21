@@ -1,6 +1,10 @@
-import type { EngineEvent, EventSink } from '../types.js';
+import type { EngineEvent, EngineEventOf, EventSink } from '../types.js';
+import type { z } from 'zod';
 import { taskIdToString } from '../../../core/schemas/task.js';
-import type { TreeEntryEnvelope } from '../../../core/sessions/tree/schemas.js';
+import {
+  TreeEntryEnvelopeSchema,
+  type TreeEntryEnvelope,
+} from '../../../core/sessions/tree/schemas.js';
 import type { SessionTree } from '../../../core/sessions/tree/store.js';
 import { createEmptyTree, appendEntry, branchFrom } from '../../../core/sessions/tree/store.js';
 import {
@@ -12,12 +16,19 @@ import {
 import { sessionDir } from '../../../core/paths.js';
 import { warnError } from '../../../lib/warn.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
-import { projectEngineEventForTranscriptPolicy } from '../protection.js';
+import { protectConsumerPayload } from '../../../core/consumer-policy.js';
+import { protectEngineEventForConsumer } from '../protection.js';
 import type {
   AgentInvocationPayload,
   CostCheckpointPayload,
   PlanStepPayload,
   RecoveryDecisionPayload,
+} from '../../../core/sessions/tree/payloads.js';
+import {
+  AgentInvocationPayloadSchema,
+  CostCheckpointPayloadSchema,
+  PlanStepPayloadSchema,
+  RecoveryDecisionPayloadSchema,
 } from '../../../core/sessions/tree/payloads.js';
 import * as typeGuards from '../../../utils/type-guards.js';
 
@@ -32,6 +43,27 @@ const BRANCHING_ACTIONS = new Set([
   'route-bigger-worker',
   'planner-split-rebase',
 ]);
+const MAX_RUNNER_TREE_WARNING_CODES = 64;
+
+interface RunnerWarningSummary {
+  count: number;
+  codes: Set<string>;
+}
+
+type TreeAppendResult = ReturnType<typeof appendEntry>;
+type TreeBranchResult = ReturnType<typeof branchFrom>;
+
+interface ProtectedAppendOptions<TPayload> {
+  type: string;
+  payload: TPayload;
+  schema: z.ZodType<TPayload>;
+  timestamp: number;
+  display?: boolean | undefined;
+}
+
+interface ProtectedBranchOptions<TPayload> extends ProtectedAppendOptions<TPayload> {
+  fromId: TreeEntryEnvelope['id'];
+}
 
 // All disk I/O is wrapped in try/catch — persistence failures must not crash the workflow.
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
@@ -41,14 +73,26 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   let tree: SessionTree | null = null;
   const taskStartTimes = new Map<string, number>();
   const taskTokens = new Map<string, number>();
+  const runnerWarnings = new Map<string, RunnerWarningSummary>();
 
-  function persist(entry: TreeEntryEnvelope): void {
-    if (!tree) return;
+  function persist(entry: TreeEntryEnvelope, meta: SessionTree['meta']): boolean {
+    if (!tree) return false;
+    const protectedEntry = protectTreeEntry(entry);
+    if (protectedEntry === null) return false;
     try {
-      persistAppend(dir, entry, tree.meta);
+      persistAppend(dir, protectedEntry, meta);
+      return true;
     } catch (err) {
       warnError('session-tree: persist failed', err);
+      return false;
     }
+  }
+
+  function commitAppendResult(result: TreeAppendResult | TreeBranchResult | null): boolean {
+    if (result === null) return false;
+    if (!persist(result.entry, result.tree.meta)) return false;
+    tree = result.tree;
+    return true;
   }
 
   function initializeTree(ts: number): SessionTree | null {
@@ -67,8 +111,30 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     return fresh;
   }
 
+  function recordRunnerWarning(event: EngineEventOf<'runner_call_warning'>): void {
+    const existing = runnerWarnings.get(event.callId) ?? { count: 0, codes: new Set<string>() };
+    existing.count += 1;
+    recordRunnerWarningCode(existing.codes, event.warning.code);
+    runnerWarnings.set(event.callId, existing);
+  }
+
+  function runnerWarningFields(
+    callId: string,
+  ): Pick<AgentInvocationPayload, 'warningCount' | 'warningCodes'> {
+    const summary = runnerWarnings.get(callId);
+    if (summary === undefined || summary.count === 0) return {};
+    return {
+      warningCount: summary.count,
+      warningCodes: Array.from(summary.codes).sort().slice(0, MAX_RUNNER_TREE_WARNING_CODES),
+    };
+  }
+
+  function clearRunnerWarnings(callId: string): void {
+    runnerWarnings.delete(callId);
+  }
+
   return (rawEvent: EngineEvent) => {
-    const event = projectEngineEventForTranscriptPolicy(rawEvent, persistTranscript);
+    const event = protectEngineEventForConsumer(rawEvent, { context: 'tree', persistTranscript });
     if (event === null) return;
 
     switch (event.type) {
@@ -96,13 +162,13 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
             phase: event.phase,
             status: 'started',
           };
-          const result = appendEntry(tree, {
+          const result = appendProtectedEntry(tree, {
             type: 'agent-invocation',
             payload,
+            schema: AgentInvocationPayloadSchema,
             timestamp: event.ts,
           });
-          tree = result.tree;
-          persist(result.entry);
+          if (!commitAppendResult(result)) return;
           return;
         }
 
@@ -115,14 +181,14 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           index: event.index,
           total: event.total,
         };
-        const result = appendEntry(tree, {
+        const result = appendProtectedEntry(tree, {
           type: 'plan-step',
           payload,
+          schema: PlanStepPayloadSchema,
           timestamp: event.ts,
           display: true,
         });
-        tree = result.tree;
-        persist(result.entry);
+        if (!commitAppendResult(result)) return;
         return;
       }
 
@@ -147,13 +213,13 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           durationMs: event.duration,
           tokensUsed: taskTokens.get(taskIdToString(event.taskId)),
         };
-        const result = appendEntry(tree, {
+        const result = appendProtectedEntry(tree, {
           type: 'agent-invocation',
           payload,
+          schema: AgentInvocationPayloadSchema,
           timestamp: event.ts,
         });
-        tree = result.tree;
-        persist(result.entry);
+        if (!commitAppendResult(result)) return;
         taskTokens.delete(taskIdToString(event.taskId));
         taskStartTimes.delete(taskIdToString(event.taskId));
         return;
@@ -171,13 +237,13 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           durationMs: startTime !== undefined ? event.ts - startTime : undefined,
           tokensUsed: taskTokens.get(taskIdToString(event.taskId)),
         };
-        const result = appendEntry(tree, {
+        const result = appendProtectedEntry(tree, {
           type: 'agent-invocation',
           payload,
+          schema: AgentInvocationPayloadSchema,
           timestamp: event.ts,
         });
-        tree = result.tree;
-        persist(result.entry);
+        if (!commitAppendResult(result)) return;
         taskTokens.delete(taskIdToString(event.taskId));
         taskStartTimes.delete(taskIdToString(event.taskId));
         return;
@@ -195,24 +261,24 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
 
         if (BRANCHING_ACTIONS.has(event.action)) {
           const branchFromId = tree.meta.leafId;
-          const result = branchFrom(tree, {
+          const result = branchProtectedEntry(tree, {
             fromId: branchFromId,
             type: 'recovery-decision',
             payload,
+            schema: RecoveryDecisionPayloadSchema,
             timestamp: event.ts,
             display: true,
           });
-          tree = result.tree;
-          persist(result.entry);
+          if (!commitAppendResult(result)) return;
         } else {
-          const result = appendEntry(tree, {
+          const result = appendProtectedEntry(tree, {
             type: 'recovery-decision',
             payload,
+            schema: RecoveryDecisionPayloadSchema,
             timestamp: event.ts,
             display: true,
           });
-          tree = result.tree;
-          persist(result.entry);
+          if (!commitAppendResult(result)) return;
         }
         return;
       }
@@ -224,13 +290,60 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           outputTokens: totalOutputTokens(event.tokenUsage),
           phase: event.phase,
         };
-        const result = appendEntry(tree, {
+        const result = appendProtectedEntry(tree, {
           type: 'cost-checkpoint',
           payload,
+          schema: CostCheckpointPayloadSchema,
           timestamp: event.ts,
         });
-        tree = result.tree;
-        persist(result.entry);
+        if (!commitAppendResult(result)) return;
+        return;
+      }
+
+      case 'runner_call_started': {
+        if (!tree) return;
+        const payload = runnerStartedPayload(event);
+        const result = appendProtectedEntry(tree, {
+          type: 'agent-invocation',
+          payload,
+          schema: AgentInvocationPayloadSchema,
+          timestamp: event.ts,
+        });
+        if (!commitAppendResult(result)) return;
+        return;
+      }
+
+      case 'runner_call_warning': {
+        if (!tree) return;
+        recordRunnerWarning(event);
+        return;
+      }
+
+      case 'runner_call_error': {
+        if (!tree) return;
+        const payload = runnerTerminalPayload(event, runnerWarningFields(event.callId));
+        const result = appendProtectedEntry(tree, {
+          type: 'agent-invocation',
+          payload,
+          schema: AgentInvocationPayloadSchema,
+          timestamp: event.ts,
+        });
+        clearRunnerWarnings(event.callId);
+        if (!commitAppendResult(result)) return;
+        return;
+      }
+
+      case 'runner_call_completed': {
+        if (!tree) return;
+        const payload = runnerTerminalPayload(event, runnerWarningFields(event.callId));
+        const result = appendProtectedEntry(tree, {
+          type: 'agent-invocation',
+          payload,
+          schema: AgentInvocationPayloadSchema,
+          timestamp: event.ts,
+        });
+        clearRunnerWarnings(event.callId);
+        if (!commitAppendResult(result)) return;
         return;
       }
 
@@ -301,16 +414,12 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'ipc_reconnect_failed':
       case 'replay_started':
       case 'replay_complete':
-      case 'runner_call_started':
       case 'runner_call_text_delta':
       case 'runner_call_usage':
       case 'runner_call_tool_use':
       case 'runner_call_activity':
       case 'runner_call_session_id':
       case 'runner_call_artifact':
-      case 'runner_call_warning':
-      case 'runner_call_error':
-      case 'runner_call_completed':
       case 'warning':
       case 'error':
         return;
@@ -319,4 +428,121 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         return typeGuards.assertNever(event);
     }
   };
+}
+
+function runnerStartedPayload(event: EngineEventOf<'runner_call_started'>): AgentInvocationPayload {
+  return {
+    callId: event.callId,
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
+    role: event.role,
+    backendKind: event.backendKind,
+    tool: event.runnerName ?? event.backendKind,
+    ...(event.model !== undefined && { model: event.model }),
+    ...(event.attempt !== undefined && { attempt: event.attempt }),
+    phase: event.phase,
+    status: 'started',
+    startedAt: event.ts,
+  };
+}
+
+function recordRunnerWarningCode(codes: Set<string>, code: string): void {
+  if (codes.has(code)) return;
+  if (codes.size < MAX_RUNNER_TREE_WARNING_CODES) {
+    codes.add(code);
+    return;
+  }
+
+  let largest: string | undefined;
+  for (const existing of codes) {
+    if (largest === undefined || existing > largest) largest = existing;
+  }
+  if (largest !== undefined && code < largest) {
+    codes.delete(largest);
+    codes.add(code);
+  }
+}
+
+function runnerTerminalPayload(
+  event: EngineEventOf<'runner_call_completed'> | EngineEventOf<'runner_call_error'>,
+  warnings: Pick<AgentInvocationPayload, 'warningCount' | 'warningCodes'>,
+): AgentInvocationPayload {
+  return {
+    callId: event.callId,
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
+    role: event.role,
+    backendKind: event.backendKind,
+    tool: event.runnerName ?? event.backendKind,
+    ...(event.model !== undefined && { model: event.model }),
+    ...(event.attempt !== undefined && { attempt: event.attempt }),
+    phase: event.phase,
+    status: event.status,
+    startedAt: event.startedAt,
+    endedAt: event.endedAt,
+    durationMs: event.durationMs,
+    usage: event.usage,
+    partial: event.partial,
+    ...warnings,
+    ...(event.type === 'runner_call_error' && { errorCode: event.error.code }),
+  };
+}
+
+function appendProtectedEntry<TPayload>(
+  tree: SessionTree,
+  opts: ProtectedAppendOptions<TPayload>,
+): TreeAppendResult | null {
+  const payload = protectTreePayload(opts.type, opts.payload, opts.schema);
+  if (payload === null) return null;
+  return appendEntry(tree, {
+    type: opts.type,
+    payload,
+    timestamp: opts.timestamp,
+    ...(opts.display !== undefined && { display: opts.display }),
+  });
+}
+
+function branchProtectedEntry<TPayload>(
+  tree: SessionTree,
+  opts: ProtectedBranchOptions<TPayload>,
+): TreeBranchResult | null {
+  const payload = protectTreePayload(opts.type, opts.payload, opts.schema);
+  if (payload === null) return null;
+  return branchFrom(tree, {
+    fromId: opts.fromId,
+    type: opts.type,
+    payload,
+    timestamp: opts.timestamp,
+    ...(opts.display !== undefined && { display: opts.display }),
+  });
+}
+
+function protectTreePayload<TPayload>(
+  entryType: string,
+  payload: TPayload,
+  schema: z.ZodType<TPayload>,
+): TPayload | null {
+  const protectedPayload = protectConsumerPayload({ context: 'tree', payload });
+  if (protectedPayload.oversized) {
+    warnError(`session-tree: omitted oversized ${entryType} payload`);
+    return null;
+  }
+  const parsed = schema.safeParse(protectedPayload.payload);
+  if (!parsed.success) {
+    warnError(`session-tree: omitted invalid ${entryType} payload after protection`);
+    return null;
+  }
+  return parsed.data;
+}
+
+function protectTreeEntry(entry: TreeEntryEnvelope): TreeEntryEnvelope | null {
+  const protectedEntry = protectConsumerPayload({ context: 'tree', payload: entry });
+  if (protectedEntry.oversized) {
+    warnError(`session-tree: omitted oversized ${entry.type} entry`);
+    return null;
+  }
+  const parsed = TreeEntryEnvelopeSchema.safeParse(protectedEntry.payload);
+  if (!parsed.success) {
+    warnError(`session-tree: omitted invalid ${entry.type} entry after protection`);
+    return null;
+  }
+  return parsed.data;
 }

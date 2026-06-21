@@ -35,6 +35,17 @@ type BusContext = {
   phase: Phase;
 };
 
+interface OperationalMessageSafety {
+  readonly category: string;
+  readonly code: string;
+  readonly transcriptSafe: true;
+}
+
+interface PublishOperationalMessageOptions extends BusContext {
+  message: string;
+  safety?: OperationalMessageSafety | undefined;
+}
+
 type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 'content'>;
 
 let runnerCallEventSequence = 0;
@@ -331,16 +342,34 @@ export function publishBudgetExceeded(
   });
 }
 
-export function publishError(ctx: BusContext, message: string): void {
-  ctx.bus.publish({ type: 'error', ts: Date.now(), phase: ctx.phase, message });
+export function publishError(options: PublishOperationalMessageOptions): void {
+  const { bus, phase, message, safety } = options;
+  bus.publish({
+    type: 'error',
+    ts: Date.now(),
+    phase,
+    message,
+    ...(safety?.category !== undefined && { category: safety.category }),
+    ...(safety?.code !== undefined && { code: safety.code }),
+    ...(safety?.transcriptSafe !== undefined && { transcriptSafe: safety.transcriptSafe }),
+  });
 }
 
-export function publishWarning(ctx: BusContext, message: string): void {
-  ctx.bus.publish({ type: 'warning', ts: Date.now(), phase: ctx.phase, message });
+export function publishWarning(options: PublishOperationalMessageOptions): void {
+  const { bus, phase, message, safety } = options;
+  bus.publish({
+    type: 'warning',
+    ts: Date.now(),
+    phase,
+    message,
+    ...(safety?.category !== undefined && { category: safety.category }),
+    ...(safety?.code !== undefined && { code: safety.code }),
+    ...(safety?.transcriptSafe !== undefined && { transcriptSafe: safety.transcriptSafe }),
+  });
 }
 
 export function publishWarningFromError(ctx: BusContext, label: string, err: unknown): void {
-  publishWarning(ctx, labelError(label, err));
+  publishWarning({ ...ctx, message: labelError(label, err) });
 }
 
 export function publishUserMessage(ctx: BusContext, text: string): void {

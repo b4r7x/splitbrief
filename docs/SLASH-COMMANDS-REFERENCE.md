@@ -21,7 +21,7 @@ Three rewind-family commands also enforce a `phaseGuard`. The guards are the sin
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, wired up for the TUI in `src/app/command-context.ts`. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-There are 26 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
+There are 28 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, scroll and activity controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -71,6 +71,27 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Behavior**: `show` prints `"Queue is empty"` or `"Queue: N message(s) pending"`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`. Delivered native messages and already-drained history are not cleared.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; depth read from `lifecycleStore.get().queueDepth` in `src/app/command-context.ts`; clearing routes through `requestClearQueue()` in `src/features/workflow/handlers.ts`.
 - **See also**: `/handoff`.
+
+### `/scroll <top|bottom|page-up|page-down>`
+
+- **Purpose**: Move the workflow conversation without relying on terminal-delivered navigation keys.
+- **Screens**: `workflow`.
+- **Args**: required. `top` jumps to the oldest visible conversation rows, `bottom` returns to live output, `page-up` moves up by one viewport page, and `page-down` moves down by one viewport page.
+- **Example**: `/scroll top`, `/scroll bottom`, `/scroll page-up`, `/scroll page-down`.
+- **Behavior**: Dispatches the same row-based scroll actions as the keyboard path. This is the guaranteed route when a terminal does not forward `Home`, `End`, `PageUp`, or `PageDown`.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context reads the conversation scroll snapshot and writes `conversationScrollStore`.
+- **See also**: `/activity`.
+
+### `/activity`
+
+- **Purpose**: Toggle the latest expandable runner-activity block in the workflow conversation.
+- **Screens**: `workflow`.
+- **Args**: none.
+- **Shortcut**: `Alt+A` / `Option+A` when the terminal forwards it; `/activity` is the guaranteed command path.
+- **Example**: `/activity`
+- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show the `Alt+A /activity` affordance when earlier rows are hidden. If no activity block has hidden rows, there is nothing to expand.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context uses `findLatestExpandableActivityBatchKey()` and `conversationScrollStore.toggleActivityBatch()`.
+- **See also**: `/scroll`.
 
 ### `/accept-run`
 
@@ -376,7 +397,9 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 
 ### Workflow screen
 
-These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. They take effect only when no overlay is open and the input mode is `normal` (i.e. you are not typing in a prompt field).
+These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. Conversation keys take effect only when no overlay is open and the input mode is `normal` (i.e. you are not typing in a prompt field). `Ctrl+A` remains composer line-start editing, not a workflow activity shortcut.
+
+macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or `End` without an `Fn` layer. `Ctrl+B` and `Ctrl+F` are the fallback page keys, and `/scroll` is the reliable command path.
 
 | Key | Action | Source |
 |---|---|---|
@@ -388,17 +411,30 @@ These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed t
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
 | `PageDown` | Scroll conversation down by one page | `keyboard.ts` `handleConversationScroll` |
+| `Ctrl+B` | Fallback scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
+| `Ctrl+F` | Fallback scroll conversation down by one page | `keyboard.ts` `handleConversationScroll` |
 | `Home` | Jump to top of conversation | `keyboard.ts` `handleConversationScroll` |
 | `End` | Jump to bottom of conversation | `keyboard.ts` `handleConversationScroll` |
+| `/scroll top` | Command path to jump to top of conversation | runtime command registry |
+| `/scroll bottom` | Command path to jump to bottom of conversation | runtime command registry |
+| `/scroll page-up` | Command path to scroll conversation up by one page | runtime command registry |
+| `/scroll page-down` | Command path to scroll conversation down by one page | runtime command registry |
+| `Alt+A` / `Option+A` | Expand or collapse the latest hidden activity rows | `keyboard.ts` `handleWorkflowCtrlChords` |
+| `/activity` | Expand or collapse the latest hidden activity rows | runtime command registry |
 
 ### Review pane (workflow screen, when a file is open)
 
-When the review pane has a `filePath` set (e.g. inspecting a spec or plan), these keys scroll the review content instead of the conversation. They are handled before the input-mode guard, so they work even while a prompt field has focus:
+When the review pane has a `filePath` set (e.g. inspecting a spec or plan), these keys scroll the review content instead of the conversation. They are handled before the conversation-scroll path:
 
 | Key | Action | Source |
 |---|---|---|
-| `↑` | Scroll review pane up one line | `keyboard.ts` `handleReviewScroll` |
-| `↓` | Scroll review pane down one line | `keyboard.ts` `handleReviewScroll` |
+| `Shift+↑` | Scroll review pane up one line | `keyboard.ts` `handleReviewScroll` |
+| `Shift+↓` | Scroll review pane down one line | `keyboard.ts` `handleReviewScroll` |
+| `PageUp` | Scroll review pane up by one page | `keyboard.ts` `handleReviewScroll` |
+| `PageDown` | Scroll review pane down by one page | `keyboard.ts` `handleReviewScroll` |
+| `Ctrl+B` | Fallback scroll review pane up by one page | `keyboard.ts` `handleReviewScroll` |
+| `Ctrl+F` | Fallback scroll review pane down by one page | `keyboard.ts` `handleReviewScroll` |
+| `Home` | Jump to top of review pane | `keyboard.ts` `handleReviewScroll` |
 | `End` | Jump to bottom of review pane | `keyboard.ts` `handleReviewScroll` |
 
 ### Brief review and rich editor
@@ -458,7 +494,8 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `close-overlay` | `Esc` | Close overlay | all |
 | `toggle-sidebar` | `Ctrl+E` | Toggle sidebar | workflow |
 | `toggle-diff` | `Ctrl+D` | Toggle diff | workflow |
-| `scroll` | `Shift+↑/↓, PgUp/PgDn` | Scroll | workflow |
+| `scroll` | `Shift+↑/↓, PgUp/PgDn, Home/End, Ctrl+B/F` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
+| `activity` | `Alt+A, /activity` | Expand activity rows | workflow |
 | `continue` | `Enter` | Continue | summary |
 
 ---
@@ -469,6 +506,7 @@ Alphabetical, for fast lookup:
 
 - [`/approval`](#approval-listclear) — list or clear sticky approval grants.
 - [`/attach`](#attach-path) — attach an image for the next planner call.
+- [`/activity`](#activity) — expand or collapse the latest hidden activity rows.
 - [`/compact-transcript`](#compact-transcript) — summarize older persisted transcript turns.
 - [`/config`](#settings-alias-config) — alias for `/settings`.
 - [`/detach`](#detach-indexid) — remove a pending image attachment.
@@ -492,6 +530,7 @@ Alphabetical, for fast lookup:
 - [`/revise-spec`](#revise-spec-comment) — rewind to the spec phase.
 - [`/sessions`](#sessions) — browse past sessions.
 - [`/settings`](#settings-alias-config) — open the settings overlay.
+- [`/scroll`](#scroll-topbottompage-uppage-down) — move the workflow conversation by command.
 - [`/skills`](#skills) — pick planner skills (home only).
 - [`/yolo`](#yolo) — toggle action-level tiered approvals for the session.
 

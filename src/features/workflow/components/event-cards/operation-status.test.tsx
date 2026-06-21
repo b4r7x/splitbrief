@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import type { ActiveOperation, OperationStatus } from '../../../../stores/workflow/operations.js';
+import type {
+  ActiveOperation,
+  OperationStatus,
+  OperationWarningGroup,
+} from '../../../../stores/workflow/operations.js';
 import { OperationStatusCard } from './operation-status.js';
 
 function runningPlannerOperation(): ActiveOperation {
@@ -57,6 +61,20 @@ function terminalOperation(status: TerminalStatus): TerminalOperation {
   };
 }
 
+function operationWarningGroup(message: string, count = 1): OperationWarningGroup {
+  return {
+    code: 'stderr',
+    severity: 'warning',
+    source: 'provider',
+    surface: 'activity',
+    fingerprint: `rw:test-${message.replace(/\W+/g, '-')}`,
+    count,
+    firstTs: 1_100,
+    lastTs: 1_100,
+    latestMessage: message,
+  };
+}
+
 describe('OperationStatusCard', () => {
   it('renders heartbeat proof-of-life only for the matching planner call', () => {
     const operation = runningPlannerOperation();
@@ -108,7 +126,10 @@ describe('OperationStatusCard', () => {
       ...terminalOperation('failed'),
       reason: 'model refused to edit',
       partial: true,
-      warnings: ['first warning', 'latest warning detail'],
+      warnings: [
+        operationWarningGroup('first warning'),
+        operationWarningGroup('latest warning detail'),
+      ],
       runnerName: 'codex',
       model: 'gpt-5',
     };
@@ -157,7 +178,7 @@ describe('OperationStatusCard', () => {
     const operation: ActiveOperation = {
       ...terminalOperation('failed'),
       reason: `failed runner_interrupted ${jwt}\u001b[31m`,
-      warnings: [`warn runner_interrupted ${jwt}`],
+      warnings: [operationWarningGroup(`warn runner_interrupted ${jwt}`)],
       runnerName: `codex ${jwt}`,
     };
 

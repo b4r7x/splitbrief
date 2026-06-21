@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { USER_EDIT_CONFLICT_ACTIONS } from '../../core/schemas/enums.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseClientMessage, parseIpcPromptResponse, parseServerMessage } from './protocol.js';
 
@@ -312,6 +313,52 @@ describe('parseServerMessage', () => {
     };
 
     expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('parses transcript-projected recovery and conflict prompt requests', () => {
+    const recovery = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'req-recovery',
+        kind: 'recovery_needed',
+        issue: {
+          id: 'rec-1',
+          reason: 'retry-exhausted',
+          phase: 'implementing',
+          taskId: 'T001',
+          taskTitle: TRANSCRIPT_OMITTED_MESSAGE,
+          files: ['src/task.ts'],
+          affectedTaskIds: ['T001'],
+          availableActions: ['retry-same-worker', 'abort-workflow'],
+          recommendedAction: 'retry-same-worker',
+        },
+      },
+    };
+    const conflict = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'req-conflict',
+        kind: 'user_edit_conflict',
+        conflict: {
+          kind: 'current-task-conflict',
+          files: [TRANSCRIPT_OMITTED_MESSAGE],
+          affectedTaskIds: ['T001'],
+          currentTaskId: 'T001',
+          fileConflicts: [
+            {
+              file: TRANSCRIPT_OMITTED_MESSAGE,
+              kind: 'current-task-conflict',
+              affectedTaskIds: ['T001'],
+            },
+          ],
+          safeToContinue: false,
+          availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
+        },
+      },
+    };
+
+    expect(parseServerMessage(recovery)).toEqual(recovery);
+    expect(parseServerMessage(conflict)).toEqual(conflict);
   });
 
   it('rejects recovery prompt requests with prose message or details', () => {

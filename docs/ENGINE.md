@@ -85,7 +85,7 @@ function createEventBus(): EventBus {
 
 ### EngineEvent
 
-`EngineEventSchema` in `src/engine/events/schema.ts` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). A discriminated union with a mandatory `type` field (snake_case) and `ts` (epoch millis). Workflow events also carry `phase` when they occur inside a workflow phase; global events such as snapshot restore conflicts and approval-mode changes are phase-less. Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
+`EngineEventSchema` in `src/engine/events/schema.ts` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). It is dispatched by the mandatory `type` field (snake_case) and carries `ts` (epoch millis). Workflow events also carry `phase` when they occur inside a workflow phase; global events such as snapshot restore conflicts and approval-mode changes are phase-less. Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
 
 Events cover the full workflow lifecycle. A few examples:
 
@@ -100,7 +100,9 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 ### Runner call pipeline
 
-Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, Claude Code, and Agent SDK adapters emit `RunnerCallEvent` values. The collector turns the ordered stream into a `RunnerCallResult` with:
+Raw acquisition happens before the runner-call contract. The shared subprocess helpers in `src/lib/process/spawn.ts` drain child stdout/stderr while retaining bounded snapshots: stdout/result text defaults to 1 MiB with prefix+tail retention, stderr defaults to a 256 KiB tail, and stdout line buffers default to 1 MiB. Snapshots carry `bytesSeen`, `bytesStored`, `omittedBytes`, `truncated`, policy, and budget. Runner stderr streaming uses an 8 KiB line buffer; an oversized stderr line is skipped and becomes a bounded `stderr_line_overflow` warning. Process errors use only sanitized bounded snapshots.
+
+Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, Claude Code, and Agent SDK adapters emit `RunnerCallEvent` values. `createRunnerCallRecorder()` validates every emitted value with `RunnerCallEventSchema`; invalid upstream data becomes a bounded `call_unknown_upstream` diagnostic with a safe preview instead of a malformed event. Final snapshots/results validate with `RunnerCallResultSchema`. Streaming parsers and provider adapters validate their own upstream message/block shapes before recording; unrecognized provider chunks also route through unknown-upstream diagnostics. The collector turns the ordered stream into a `RunnerCallResult` with:
 
 - call identity: `callId`, role, backend kind, runner/model metadata
 - lifecycle status: `completed`, `failed`, `truncated`, `aborted`, `timeout`, `refused`, `unsupported_tool`, or `incomplete`
@@ -114,6 +116,8 @@ Terminal runner events always carry frozen timing and outcome fields: `startedAt
 
 Model answer text is transcript/output content. It is never repurposed as status chrome or tool/action activity. Structured assistant/model protocol chunks are recorded as assistant/result text channels, while operational progress must be explicitly classified into safe `runner_call_activity` before the UI can render it as activity.
 
+Warnings are explicit, not a side effect of stderr. `call_stderr_delta` is raw diagnostic material and is dropped from the public `runner_call_*` projection by default. A successful subprocess can write benign stderr without creating a warning row. Actionable warnings enter through `call_warning` or unknown-upstream conversion and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Fingerprints normalize volatile timestamps, session ids, attempts, pids, durations, temp paths, and project-local absolute paths. Primary UI surfaces are `status`, `activity`, and `transcript`; `hidden` and `debug` stay out of the main transcript/status. `operationsStore` groups warnings by fingerprint/code/source/surface and keeps count, first/last timestamps, latest message, and max severity. Native-session resume attempts buffer callback output; if the old backend session is expired and a fresh attempt succeeds, the failed attempt is not flushed as primary runner activity.
+
 ---
 
 ## Sinks
@@ -124,7 +128,7 @@ Up to six sinks can subscribe to the bus. Two are unconditional (JSONL, tree rec
 
 **JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends protected events to `.diptych/sessions/<id>/session.jsonl`. When transcript persistence is disabled, transcript-like events are dropped or stripped before write. This is the audit log and the source for session replay.
 
-**Tree recorder sink** (`src/engine/events/sinks/tree-recorder.ts`) — maintains a branching session tree on disk. Records plan steps, agent invocations, recovery decisions, and cost checkpoints. Recovery actions that change the execution path (retry, route to bigger worker, planner split) create branches instead of appending linearly.
+**Tree recorder sink** (`src/engine/events/sinks/tree-recorder.ts`) — maintains a branching session tree on disk. Records plan steps, agent invocations, recovery decisions, and cost checkpoints. Recovery actions that change the execution path (retry, route to bigger worker, planner split) create branches instead of appending linearly. Every raw event first passes `protectEngineEventForConsumer(context: 'tree')`; tree payloads and entry envelopes then pass consumer payload protection and schema validation before disk write. Runner invocations store control fields such as call id, role, backend kind, runner/model, phase, status, timing, usage, partial, error code, and warning counts/codes, not raw runner text/tool/artifact output.
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events are protected with the same transcript policy as external consumers before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
@@ -171,11 +175,11 @@ The split exists because events and callbacks solve different problems. Events p
 
 ## Transcript protection
 
-`protectEngineEventForConsumer()` is applied before events leave the engine through the session log, IPC, stdout JSON, or RPC. With `persistTranscript: true`, events still pass through public payload size/shape protection. With `persistTranscript: false`, full transcript-like event types are omitted: `planner_text`, `user_message`, clarification text events, `implementer_generate_done`, and runner text/tool/artifact payload events. Safe `runner_call_activity`, usage, opaque session ids, lifecycle, and terminal status remain visible after redaction. `workflow_started.feature`, IPC `session_meta.feature`, queue previews, RPC status state, task titles/reasons, task-review prose, approval/revision comments, retry errors, cost-prediction task prose, and other prompt-bearing metadata are stripped or replaced so lifecycle remains observable without exposing user text.
+`protectEngineEventForConsumer()` is applied before events leave the engine through the session log, tree recorder, IPC/TUI, stdout JSON, or RPC. With `persistTranscript: true`, events still pass through public payload size/shape protection. With `persistTranscript: false`, full transcript-like event types are omitted: `planner_text`, `user_message`, clarification text events, `implementer_generate_done`, and runner text/tool/artifact payload events. Safe `runner_call_activity`, usage, lifecycle, and terminal status remain visible after redaction. Runner activity raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`; raw markers are only affordances, never inline raw text. `workflow_started.feature`, IPC `session_meta.feature`, queue previews, RPC status state, task titles/reasons, task-review prose, approval/revision comments, retry errors, cost-prediction task prose, native session ids, and other prompt-bearing metadata are stripped or replaced so lifecycle remains observable without exposing user text.
 
 Runner-call warning and error events remain structurally visible, but their message text is replaced with `[transcript omitted]` because backend diagnostics can contain prompt or transcript fragments. Ordinary operational `warning` and `error` events keep their bounded message text, so queue-full, queue-not-ready, IPC, replay, and protection diagnostics remain actionable in transcript-off mode.
 
-OpenTelemetry is also an external consumer boundary. When transcript persistence is disabled, `diptych.feature` is omitted or replaced with a placeholder rather than exporting the feature prompt. Summary JSON, summary UI, HTML export, `ps`, active-session metadata, and generated branch/session names use the same transcript policy for feature text.
+All protected consumers share `src/core/consumer-policy.ts`: terminal controls are stripped from strings, secrets are redacted with the shared redaction rules, strings and full payloads are byte-bounded per consumer, unsupported/circular values are replaced, and the normalized payload is validated again. If protection makes an event invalid or too large, the consumer receives a bounded protection warning or drops the payload rather than writing unsafe data. Hooks and OpenTelemetry have separate boundaries: hook command stdin and interpolated fields use consumer-payload protection, while builtin and module hooks receive engine events; OTel applies transcript projection before span handling and per-string protection before exporting attributes. When transcript persistence is disabled, `diptych.feature` is omitted or replaced with a placeholder rather than exporting the feature prompt. Summary JSON, summary UI, HTML export, `ps`, active-session metadata, and generated branch/session names use the same transcript policy for feature text.
 
 ---
 
@@ -186,7 +190,7 @@ The full path from engine to pixel:
 1. Engine calls `bus.publish({ type: 'task_completed', ... })`
 2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions.ts`
 3. `addEvent` dispatches to workflow sub-stores synchronously:
-   - `eventsStore` — appends to the event log
+   - `eventsStore` — appends the TUI-safe event-log projection
    - `tasksStore` — updates task progress (status, counts)
    - `tokensStore` — updates cost and token usage
    - `lifecycleStore` — updates phase, queue depth/previews, terminal workflow timing
@@ -194,7 +198,7 @@ The full path from engine to pixel:
    - `activityStore` — updates bounded runner/tool activity from safe normalized metadata
 4. React components using `store.use(s => s.tasks)` re-render when their selector output changes
 
-**Ordering invariant:** events, then tasks, then tokens, then lifecycle, then operations, then activity. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
+**Ordering invariant:** safe retained event log, then tasks, then tokens, then lifecycle, then operations, then activity. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. `addEvent()` computes the safe event-log projection first, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
 
 `cost_update` events take a fast path: they skip the event log and task store and only update tokens. This avoids growing the event log with high-frequency cost ticks.
 

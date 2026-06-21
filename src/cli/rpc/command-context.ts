@@ -23,6 +23,8 @@ import {
 } from '../../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
 import { writeConfig } from '../../core/config/load/io.js';
+import { defaultApprovalConfig } from '../../core/schemas/config.js';
+import { persistedConfigForSave } from '../../stores/project/config-persistence.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 
@@ -36,12 +38,18 @@ export function createRpcCommandContext(opts: {
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
   getConfig: () => Config | null;
+  getPersistedConfig?: (() => Config | null) | undefined;
   setConfig: (config: Config) => void;
+  setPersistedConfig?: ((config: Config) => void) | undefined;
+  getApprovalEnabled?: (() => boolean) | undefined;
+  setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getPhase: () => Phase;
   queueHandler: () => QueueHandler | null;
   clearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
+  abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
+  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
   messages: string[];
   errors: string[];
   pendingQueueDepth: (state: WorkflowState | null) => number;
@@ -57,12 +65,32 @@ export function createRpcCommandContext(opts: {
     getConfig: opts.getConfig,
     saveConfig: (config) => {
       try {
-        writeConfig(opts.projectDir, config);
+        const effective = opts.getConfig();
+        const persistedBase = opts.getPersistedConfig?.();
+        const persisted =
+          effective && persistedBase
+            ? persistedConfigForSave({
+                persisted: persistedBase,
+                effective,
+                updated: config,
+              })
+            : config;
+        writeConfig(opts.projectDir, persisted);
+        opts.setPersistedConfig?.(persisted);
       } catch (err) {
         return { ok: false, errorMessage: `Failed to save config: ${toErrorMessage(err)}` };
       }
       opts.setConfig(config);
       return { ok: true };
+    },
+    getApprovalEnabled: opts.getApprovalEnabled,
+    setApprovalEnabled: (enabled) => {
+      const current = opts.getConfig();
+      if (current) {
+        const approval = current.approval ?? defaultApprovalConfig();
+        opts.setConfig({ ...current, approval: { ...approval, enabled } });
+      }
+      opts.setApprovalEnabled?.(enabled);
     },
     getSessionId: () => opts.getSessionId(),
     noActiveSession: () => rpcCommandContextError.noActiveSession(),
@@ -83,30 +111,37 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const { action, event } = buildRewindAction(
+      const persistTranscript = opts.getConfig()?.workflow.persistTranscript ?? true;
+      const { action, persistedAction, event } = buildRewindAction({
         request,
-        { projectDir: opts.projectDir, sessionId },
+        ref: { projectDir: opts.projectDir, sessionId },
         state,
-        { persistEvent: false },
-      );
-      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
+        persistEvent: false,
+        persistTranscript,
+      });
+      if (action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN') {
+        opts.setRewindFeedback?.(action.comment);
+      }
+      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, persistedAction);
       opts.bus.publish(event);
-      opts.abort(WORKFLOW_REWIND_ABORT_REASON);
+      opts.abortTurn?.(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
     requestTaskRedo: (taskId) => {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const { action, event } = buildRewindAction(
-        { target: 'task', taskId },
-        { projectDir: opts.projectDir, sessionId },
+      const persistTranscript = opts.getConfig()?.workflow.persistTranscript ?? true;
+      const { persistedAction, event } = buildRewindAction({
+        request: { target: 'task', taskId },
+        ref: { projectDir: opts.projectDir, sessionId },
         state,
-        { persistEvent: false },
-      );
-      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, action);
+        persistEvent: false,
+        persistTranscript,
+      });
+      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, persistedAction);
       opts.bus.publish(event);
-      opts.abort(WORKFLOW_REWIND_ABORT_REASON);
+      opts.abortTurn?.(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
@@ -120,7 +155,12 @@ export function createRpcCommandContext(opts: {
       }
       return {
         status: 'cleared',
-        count: clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count,
+        count: clearPendingQueue({
+          projectDir: opts.projectDir,
+          sessionId,
+          state,
+          bus: opts.bus,
+        }).count,
       };
     },
     rebuildRepomap: async (projectDir, cacheDir) =>
@@ -152,5 +192,13 @@ export function createRpcCommandContext(opts: {
     compactTranscript: performManualCompaction,
     exportSession: async (projectDir, sessionId) =>
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
+    scrollConversation: () => ({
+      status: 'unavailable',
+      message: 'Conversation scrolling is not available in RPC mode.',
+    }),
+    toggleLatestActivityBatch: () => ({
+      status: 'unavailable',
+      message: 'Activity expansion is not available in RPC mode.',
+    }),
   });
 }

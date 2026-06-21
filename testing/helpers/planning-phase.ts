@@ -17,6 +17,7 @@ import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Config } from '../../src/core/schemas/config.js';
+import type { Attachment } from '../../src/core/schemas/attachment.js';
 
 export { TEST_METADATA };
 
@@ -164,6 +165,8 @@ export type RunOpts = {
   config?: Config;
   state?: WorkflowState;
   rewindPending?: WorkflowState['rewindPending'];
+  rewindFeedback?: string | undefined;
+  drainPendingAttachments?: (() => Attachment[]) | undefined;
   sinks?: WorkflowSinks & { abortTurn: () => boolean };
 };
 
@@ -184,11 +187,15 @@ export async function runPhase(dirs: string[], opts: RunOpts = {}) {
       sessionId,
       sinks,
       bus: recorder.bus,
+      ...(opts.drainPendingAttachments !== undefined && {
+        drainPendingAttachments: opts.drainPendingAttachments,
+      }),
     },
     planner,
     state,
     feature: 'test-feature',
     ...(opts.rewindPending ? { rewindPending: opts.rewindPending } : {}),
+    ...(opts.rewindFeedback !== undefined && { rewindFeedback: opts.rewindFeedback }),
   });
   return { result, projectDir, sessionId, events: recorder.events };
 }

@@ -113,7 +113,7 @@ describe('createCliPlanner', () => {
     expect(onSessionId).toHaveBeenCalledWith('sess-abc');
   });
 
-  it('uses distinct runner call ids for expired-session resume fallback attempts', async () => {
+  it('suppresses expired-session resume attempt events when fallback succeeds', async () => {
     const tasksMarkdown = `---
 id: T001
 title: Fallback task
@@ -161,18 +161,17 @@ Create the fallback file.
 
     expect(result.tasks).toHaveLength(1);
     const started = events.filter((event) => event.type === 'call_started');
-    expect(started).toHaveLength(2);
-    expect(started[0]).toMatchObject({ attempt: 1 });
-    expect(started[1]).toMatchObject({ attempt: 2 });
-    expect(started[0]?.callId).toMatch(/-attempt-1$/);
-    expect(started[1]?.callId).toMatch(/-attempt-2$/);
-    expect(started[0]?.callId).not.toBe(started[1]?.callId);
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ attempt: 2 });
+    expect(started[0]?.callId).toMatch(/-attempt-2$/);
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_error' }));
     expect(events).not.toContainEqual(
       expect.objectContaining({
         type: 'call_stderr_delta',
         text: expect.stringContaining('session not found'),
       }),
     );
+    expect(JSON.stringify(events)).not.toContain('sess-old');
   });
 
   it('treats a different returned Codex thread id as expired resume and does not persist it', async () => {
@@ -259,6 +258,30 @@ Create the mismatch fallback file.
 
     expect(result.text).toContain('Aider response text');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('uses bounded stderr for Aider postProcess usage extraction', async () => {
+    const shimPath = join(shimDir, 'aider');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        "printf '%s\\n' 'Aider response text'",
+        "printf '%s\\n' 'Tokens: 1 sent, 1 received.' >&2",
+        'node -e \'process.stderr.write("x".repeat(2 * 1024 * 1024) + "\\n")\' >&2',
+        "printf '%s\\n' 'Tokens: 321 sent, 123 received.' >&2",
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'aider' } }));
+
+    const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    expect(result.text).toContain('Aider response text');
+    expect(result.usage).toEqual({ inputTokens: 321, outputTokens: 123 });
   });
 
   it('uses a CLI-written tasks.md artifact when stdout reports the file path', async () => {

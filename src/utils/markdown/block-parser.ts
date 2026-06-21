@@ -7,17 +7,25 @@ import type {
   MarkdownListItem,
   MarkdownBlock,
 } from './types.js';
+import {
+  hasTaskBriefMetadataKeys,
+  isMarkdownBlockquoteLine as isBlockquoteLine,
+  isMarkdownFenceCloseLine as isFenceClose,
+  isMarkdownListItemLine as isListItemLine,
+  isMarkdownThematicBreakLine as isThematicBreak,
+  isMarkdownYamlContinuationLine as isYamlContinuationLine,
+  isMarkdownYamlLikeLine as isYamlLikeLine,
+  parseMarkdownFenceStart as parseFenceStart,
+  parseMarkdownHeadingStart,
+  parseMarkdownYamlKey as parseYamlKey,
+  type MarkdownFenceStart,
+} from './grammar.js';
 
 interface ParseState {
   lines: readonly string[];
   index: number;
   allowFrontmatter: boolean;
   blockquoteDepth: number;
-}
-
-interface FenceStart {
-  marker: string;
-  language: string | undefined;
 }
 
 interface ParseLinesOptions {
@@ -32,8 +40,6 @@ interface MetadataCandidate {
   nextIndex: number;
 }
 
-const REQUIRED_TASK_BRIEF_METADATA_KEYS = ['id', 'title', 'action', 'file', 'depends_on'];
-const TASK_BRIEF_METADATA_KEYS = new Set<string>(REQUIRED_TASK_BRIEF_METADATA_KEYS);
 const MAX_BLOCKQUOTE_NESTING = 8;
 
 export function parseMarkdownBlocks(source: string): MarkdownDocument {
@@ -243,19 +249,7 @@ function createMetadataCandidate(
   return { lines: [...lines], keys, nextIndex };
 }
 
-function hasTaskBriefMetadataKeys(keys: ReadonlySet<string>): boolean {
-  for (const key of keys) {
-    if (!TASK_BRIEF_METADATA_KEYS.has(key)) return false;
-  }
-
-  for (const key of REQUIRED_TASK_BRIEF_METADATA_KEYS) {
-    if (!keys.has(key)) return false;
-  }
-
-  return true;
-}
-
-function parseCodeBlock(state: ParseState, fence: FenceStart): MarkdownCodeBlock {
+function parseCodeBlock(state: ParseState, fence: MarkdownFenceStart): MarkdownCodeBlock {
   const lines: string[] = [];
   state.index += 1;
 
@@ -284,19 +278,17 @@ function createCodeBlock(
 }
 
 function parseHeading(line: string): MarkdownBlock | undefined {
-  const match = /^(#{1,3})\s+(.+?)\s*$/.exec(line);
-  const marker = match?.[1];
-  const text = match?.[2];
-  if (!marker || !text) return undefined;
+  const parsed = parseMarkdownHeadingStart(line);
+  if (!parsed) return undefined;
 
-  const depth = headingDepth(marker.length);
+  const depth = headingDepth(parsed.marker.length);
   if (!depth) return undefined;
 
   return {
     kind: 'heading',
     depth,
-    text,
-    inlines: parseMarkdownInlines(text),
+    text: parsed.text,
+    inlines: parseMarkdownInlines(parsed.text),
   };
 }
 
@@ -419,80 +411,6 @@ function startsBlock(line: string, state: ParseState): boolean {
 
 function canParseBlockquote(state: ParseState): boolean {
   return state.blockquoteDepth < MAX_BLOCKQUOTE_NESTING;
-}
-
-function parseFenceStart(line: string): FenceStart | undefined {
-  const trimmed = trimFenceIndent(line);
-  if (trimmed === undefined) return undefined;
-
-  const marker = readFenceMarker(trimmed);
-  if (!marker) return undefined;
-
-  const info = trimmed.slice(marker.length).trim();
-  const languageMatch = /^\S+/.exec(info);
-  return { marker, language: languageMatch?.[0] };
-}
-
-function readFenceMarker(trimmed: string): string | undefined {
-  const first = trimmed[0];
-  if (first !== '`' && first !== '~') return undefined;
-
-  const count = countLeading(trimmed, first);
-  if (count < 3) return undefined;
-
-  return first.repeat(count);
-}
-
-function isFenceClose(line: string, marker: string): boolean {
-  const trimmed = trimFenceIndent(line);
-  if (trimmed === undefined) return false;
-
-  const first = marker[0];
-  if (first === undefined) return false;
-
-  const count = countLeading(trimmed, first);
-  if (count < marker.length) return false;
-
-  return trimmed.slice(count).trim().length === 0;
-}
-
-function trimFenceIndent(line: string): string | undefined {
-  const trimmed = line.trimStart();
-  if (line.length - trimmed.length > 3) return undefined;
-  return trimmed;
-}
-
-function countLeading(text: string, char: string): number {
-  let count = 0;
-  while (text[count] === char) {
-    count += 1;
-  }
-  return count;
-}
-
-function isThematicBreak(line: string): boolean {
-  return /^ {0,3}((?:-\s*){3,}|(?:_\s*){3,}|(?:\*\s*){3,})$/.test(line);
-}
-
-function isListItemLine(line: string): boolean {
-  return /^(\s*)([-*+])\s+.+$/.test(line) || /^(\s*)(\d+)([.)])\s+.+$/.test(line);
-}
-
-function isBlockquoteLine(line: string): boolean {
-  return /^ {0,3}>\s?.*$/.test(line);
-}
-
-function isYamlLikeLine(line: string): boolean {
-  return parseYamlKey(line) !== undefined || isYamlContinuationLine(line);
-}
-
-function parseYamlKey(line: string): string | undefined {
-  const match = /^([A-Za-z0-9_-]+):\s*.*$/.exec(line);
-  return match?.[1];
-}
-
-function isYamlContinuationLine(line: string): boolean {
-  return /^\s{2,}\S.*$/.test(line);
 }
 
 function parseUnorderedMarker(marker: string | undefined): '-' | '*' | '+' | undefined {

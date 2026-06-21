@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+import { loadConfig } from '../../core/config/load/io.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
 import { runRpc, rpcShutdownError } from './run.js';
 
 let dirs: string[] = [];
@@ -226,7 +228,7 @@ describe('runRpc', () => {
     input.write('{"type":"status"}\n');
     await waitForLine(
       chunks,
-      (line) => line.type === 'error' && String(line.error).includes('Invalid JSON'),
+      (line) => line.type === 'error' && line.error === 'Invalid RPC frame.',
     );
     await waitForLine(
       chunks,
@@ -244,6 +246,7 @@ describe('runRpc', () => {
 
     finishWorkflow?.();
     await run;
+    expect(JSON.stringify(parseLines(chunks))).not.toContain('not json');
   });
 
   it('reports only undrained messages that were not delivered natively as queued', async () => {
@@ -311,9 +314,11 @@ describe('runRpc', () => {
         line.command === 'slash' &&
         typeof line.data === 'object' &&
         line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/queue' &&
         'messages' in line.data &&
         Array.isArray(line.data.messages) &&
-        line.data.messages.includes('Queue: 1 message pending'),
+        line.data.messages.includes('[transcript omitted]'),
     );
 
     finishWorkflow?.();
@@ -559,7 +564,7 @@ describe('runRpc', () => {
       (line) =>
         line.type === 'error' &&
         typeof line.error === 'string' &&
-        line.error.includes('No pending recovery prompt'),
+        line.error === 'Recovery command rejected.',
     );
 
     finishWorkflow?.();
@@ -620,7 +625,7 @@ describe('runRpc', () => {
       (line) =>
         line.type === 'error' &&
         typeof line.error === 'string' &&
-        line.error.includes('Invalid recovery action'),
+        line.error === 'Recovery command rejected.',
     );
     input.write('{"type":"recovery","action":"continue"}\n');
     await waitForLine(
@@ -628,7 +633,7 @@ describe('runRpc', () => {
       (line) =>
         line.type === 'error' &&
         typeof line.error === 'string' &&
-        line.error.includes('not available'),
+        line.error === 'Recovery command rejected.',
     );
     input.write('{"type":"recovery","action":"abort-workflow"}\n');
     await run;
@@ -743,7 +748,7 @@ describe('runRpc', () => {
     await run;
   });
 
-  it('does not echo raw revise slash command comments when transcript persistence is disabled', async () => {
+  it('keeps raw revise feedback transient while restarting the RPC workflow turn', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-revise-session';
     const sentinel = 'rpc-raw-revise-secret-81427';
@@ -756,10 +761,20 @@ describe('runRpc', () => {
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
+    const workflowCalls: RunWorkflowOptions[] = [];
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      await new Promise<void>((resolve) => {
-        workflowOpts.signal?.addEventListener('abort', () => resolve(), { once: true });
-      });
+      workflowCalls.push(workflowOpts);
+      if (workflowCalls.length === 1) {
+        await new Promise<void>((resolve) => {
+          workflowOpts.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        expect(workflowOpts.signal?.reason).toBe(WORKFLOW_REWIND_ABORT_REASON);
+        return;
+      }
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('revise rpc feature'), phase: 'implementing' },
+      );
     };
 
     const run = runRpc({
@@ -771,6 +786,9 @@ describe('runRpc', () => {
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
+    await vi.waitFor(() => {
+      expect(workflowCalls).toHaveLength(1);
+    });
     input.write(`{"type":"slash","command":"/revise-plan ${sentinel}"}\n`);
     await waitForLine(
       chunks,
@@ -784,6 +802,9 @@ describe('runRpc', () => {
     );
     await run;
 
+    expect(workflowCalls).toHaveLength(2);
+    expect(workflowCalls[1]?.rewindFeedback).toBe(sentinel);
+    expect(loadState({ projectDir, sessionId })?.rewindPending).toBeUndefined();
     const lines = parseLines(chunks);
     expect(lines).toContainEqual(
       expect.objectContaining({
@@ -796,6 +817,149 @@ describe('runRpc', () => {
     );
     expect(JSON.stringify(lines)).not.toContain(sentinel);
     expect(JSON.stringify(lines)).not.toContain(`/revise-plan ${sentinel}`);
+  });
+
+  it('preserves rewind feedback when revising during a pending approval gate', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-approval-revise-session';
+    const sentinel = 'rpc-approval-revise-secret-42861';
+    const state: WorkflowState = {
+      ...createInitialState('approval revise rpc feature'),
+      phase: 'reviewing-plan',
+    };
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, state);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const workflowCalls: RunWorkflowOptions[] = [];
+    let gateError: unknown;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      workflowCalls.push(workflowOpts);
+      if (workflowCalls.length === 1) {
+        try {
+          await workflowOpts.callbacks.onApprovalNeeded('plan', join(projectDir, 'plan.md'));
+        } catch (err) {
+          gateError = err;
+        }
+        expect(workflowOpts.signal?.reason).toBe(WORKFLOW_REWIND_ABORT_REASON);
+        return;
+      }
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('approval revise rpc feature'), phase: 'implementing' },
+      );
+    };
+
+    const run = runRpc({
+      feature: 'approval revise rpc feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: state,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'approval',
+    );
+    input.write(`{"type":"slash","command":"/revise-plan ${sentinel}"}\n`);
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/revise-plan',
+    );
+    await run;
+
+    expect(gateError).toMatchObject({ kind: 'operation-aborted' });
+    expect(workflowCalls).toHaveLength(2);
+    expect(workflowCalls[1]?.rewindFeedback).toBe(sentinel);
+    expect(loadState({ projectDir, sessionId })?.rewindPending).toBeUndefined();
+    expect(JSON.stringify(parseLines(chunks))).not.toContain(sentinel);
+  });
+
+  it('restarts the workflow when revising during a pending recovery gate', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-recovery-revise-session';
+    const sentinel = 'rpc-recovery-revise-secret-39162';
+    const stateWithRecovery: WorkflowState = {
+      ...createInitialState('recovery revise rpc feature'),
+      phase: 'implementing',
+      pendingRecovery: {
+        id: 'rec-revise',
+        reason: 'implementation-error',
+        phase: 'implementing',
+        status: 'awaiting-user',
+        message: 'Task failed',
+        details: ['Retry or revise'],
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker', 'abort-workflow'],
+        recommendedAction: 'retry-same-worker',
+        createdAt: new Date().toISOString(),
+      },
+    };
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, stateWithRecovery);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    const workflowCalls: RunWorkflowOptions[] = [];
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      workflowCalls.push(workflowOpts);
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('recovery revise rpc feature'), phase: 'implementing' },
+      );
+    };
+
+    const run = runRpc({
+      feature: 'recovery revise rpc feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: stateWithRecovery,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'recovery',
+    );
+    input.write(`{"type":"slash","command":"/revise-plan ${sentinel}"}\n`);
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/revise-plan',
+    );
+    await run;
+
+    expect(workflowCalls).toHaveLength(1);
+    expect(workflowCalls[0]?.rewindFeedback).toBe(sentinel);
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.rewindPending).toBeUndefined();
+    expect(JSON.stringify(parseLines(chunks))).not.toContain(sentinel);
   });
 
   it('clears the live workflow queue from slash commands', async () => {
@@ -836,16 +1000,59 @@ describe('runRpc', () => {
         line.command === 'slash' &&
         typeof line.data === 'object' &&
         line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/queue' &&
         'messages' in line.data &&
         Array.isArray(line.data.messages) &&
-        line.data.messages.length > 0 &&
-        line.data.messages.some(
-          (message) =>
-            typeof message === 'string' && /clear/i.test(message) && message.includes('2'),
-        ),
+        line.data.messages.includes('[transcript omitted]'),
     );
 
     expect(clearCalls).toBe(1);
+
+    finishWorkflow?.();
+    await run;
+  });
+
+  it('applies RPC /yolo to the active workflow approval state without persisting config', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    let activeApprovalEnabled: (() => boolean) | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      activeApprovalEnabled = workflowOpts.getApprovalEnabled;
+      await workflowDone;
+    };
+
+    const run = runRpc({
+      feature: 'rpc yolo active state test',
+      projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-yolo-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await vi.waitFor(() => {
+      expect(activeApprovalEnabled).toBeDefined();
+      expect(activeApprovalEnabled?.()).toBe(true);
+    });
+    input.write('{"type":"slash","command":"/yolo"}\n');
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'slash' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'command' in line.data &&
+        line.data.command === '/yolo',
+    );
+
+    expect(activeApprovalEnabled?.()).toBe(false);
+    expect(loadConfig(projectDir).config.approval?.enabled).not.toBe(false);
 
     finishWorkflow?.();
     await run;
@@ -875,7 +1082,7 @@ describe('runRpc', () => {
       (line) =>
         line.type === 'error' &&
         typeof line.error === 'string' &&
-        line.error.includes('Invalid mode'),
+        line.error === 'Slash command failed.',
     );
 
     finishWorkflow?.();
@@ -884,6 +1091,7 @@ describe('runRpc', () => {
     expect(parseLines(chunks)).not.toContainEqual(
       expect.objectContaining({ type: 'ack', command: 'slash' }),
     );
+    expect(JSON.stringify(parseLines(chunks))).not.toContain('/mode nope');
   });
 
   it('reports a typo without executing the nearest fuzzy slash command', async () => {
@@ -910,8 +1118,7 @@ describe('runRpc', () => {
       (line) =>
         line.type === 'error' &&
         typeof line.error === 'string' &&
-        line.error.includes('Unknown command') &&
-        line.error.includes('Did you mean /mode?'),
+        line.error === 'Slash command failed.',
     );
 
     finishWorkflow?.();
@@ -920,6 +1127,7 @@ describe('runRpc', () => {
     expect(parseLines(chunks)).not.toContainEqual(
       expect.objectContaining({ type: 'ack', command: 'slash' }),
     );
+    expect(JSON.stringify(parseLines(chunks))).not.toContain('/mde');
   });
 
   it('shuts down cleanly when stdin closes', async () => {

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makePlannerStatus } from '#testing/helpers/events.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import type { RunnerCallWarningInput } from '../../../engine/calls/types.js';
+import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { AgentStatusRow } from './agent-status-row.js';
@@ -41,8 +43,11 @@ function makePlannerRunnerStarted(
 }
 
 function makeRunnerWarning(
-  overrides?: Partial<EngineEventOf<'runner_call_warning'>>,
+  overrides?: Partial<Omit<EngineEventOf<'runner_call_warning'>, 'warning'>> & {
+    warning?: RunnerCallWarningInput;
+  },
 ): EngineEventOf<'runner_call_warning'> {
+  const { warning, ...eventOverrides } = overrides ?? {};
   return {
     type: 'runner_call_warning',
     ts: 1_100,
@@ -53,8 +58,8 @@ function makeRunnerWarning(
     runnerName: 'codex',
     model: 'default',
     sequence: 2,
-    warning: { code: 'stderr', message: 'stderr noise' },
-    ...overrides,
+    warning: normalizeRunnerCallWarning(warning ?? { code: 'stderr', message: 'stderr noise' }),
+    ...eventOverrides,
   };
 }
 

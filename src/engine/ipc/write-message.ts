@@ -2,8 +2,12 @@ import type { Socket } from 'node:net';
 import type { IpcPromptRequest, ServerMessage } from './protocol.js';
 import { IPC_MAX_FRAME_BYTES, parseServerMessage } from './protocol.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
-import { protectConsumerPayload } from '../calls/consumer-policy.js';
-import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
+import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import {
+  protectEngineEventForConsumer,
+  projectUserEditConflictForTranscriptPolicy,
+  TRANSCRIPT_OMITTED_MESSAGE,
+} from '../events/protection.js';
 
 const MAX_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024;
 
@@ -98,7 +102,10 @@ function projectPromptRequestForTranscriptPolicy(request: IpcPromptRequest): Ipc
     case 'approval_needed':
       return request;
     case 'user_edit_conflict':
-      return request;
+      return {
+        ...request,
+        conflict: projectUserEditConflictForTranscriptPolicy(request.conflict, false),
+      };
     case 'question_asked':
       return { ...request, question: projectClarificationQuestion(request.question) };
     case 'continuation_needed':
@@ -113,12 +120,21 @@ function projectPromptRequestForTranscriptPolicy(request: IpcPromptRequest): Ipc
     case 'task_review':
       return { ...request, request: projectTaskReviewPrompt(request.request) };
     case 'recovery_needed':
-      return request;
+      return { ...request, issue: projectIpcRecoveryPrompt(request.issue) };
     default: {
       const _exhaustive: never = request;
       return _exhaustive;
     }
   }
+}
+
+function projectIpcRecoveryPrompt(
+  issue: Extract<IpcPromptRequest, { kind: 'recovery_needed' }>['issue'],
+): Extract<IpcPromptRequest, { kind: 'recovery_needed' }>['issue'] {
+  return {
+    ...issue,
+    ...(issue.taskTitle !== undefined && { taskTitle: TRANSCRIPT_OMITTED_MESSAGE }),
+  };
 }
 
 function projectClarificationQuestion(question: ClarificationQuestion): ClarificationQuestion {

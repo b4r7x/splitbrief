@@ -200,7 +200,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 **Comments & hygiene**
 - [ ] No decorative banners; comments explain non-obvious *why*, invariants, or workarounds only ([STRUCTURE.md](./STRUCTURE.md#no-decorative-comments)).
 - [ ] No defensive check on a statically non-nullable value; no never-triggering fallback; no empty `catch {}` without a one-line justification ([ERRORS.md](./ERRORS.md)).
-- [ ] `npm run test-ci` (format:check → typecheck → lint → test → invariants) is green.
+- [ ] `npm run test-ci` (format:check → typecheck → lint → test:coverage → invariants) is green.
 
 ---
 

@@ -29,6 +29,7 @@ export type RunPlanningPhasesOptions = {
   phaseTimings: Record<string, number>;
   startTime: number;
   setTrackedState: (s: WorkflowState) => void;
+  rewindFeedback?: string | undefined;
 };
 
 function isInterruptedPlanningTurn(state: WorkflowState): boolean {
@@ -41,12 +42,27 @@ function isInterruptedPlanningTurn(state: WorkflowState): boolean {
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
 ): Promise<{ state: WorkflowState; cancelled: boolean; failed: boolean }> {
-  const { wctx, savedState, selectedSkills, phaseTimings, startTime, setTrackedState } = opts;
+  const {
+    wctx,
+    savedState,
+    selectedSkills,
+    phaseTimings,
+    startTime,
+    setTrackedState,
+    rewindFeedback,
+  } = opts;
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, planner } = wctx;
 
   const interrupted = isInterruptedPlanningTurn(state);
   const shouldRunPlanning = !savedState || Boolean(savedState.rewindPending) || interrupted;
+  const rewindPending =
+    savedState?.rewindPending === undefined
+      ? undefined
+      : {
+          ...savedState.rewindPending,
+          ...(rewindFeedback !== undefined && { comment: rewindFeedback }),
+        };
 
   if (interrupted) {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CONTINUE_TURN' });
@@ -66,10 +82,11 @@ export async function runPlanningPhases(
         sessionId,
       });
       if (!pre.allow) {
-        publishWarning(
-          { bus: wctx.bus, phase: state.phase },
-          `pre_planning blocked: ${pre.reason ?? 'hook denied'}`,
-        );
+        publishWarning({
+          bus: wctx.bus,
+          phase: state.phase,
+          message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}`,
+        });
         return { state, cancelled: true, failed: false };
       }
     }
@@ -93,7 +110,7 @@ export async function runPlanningPhases(
       state,
       feature: plannerFeature,
       selectedSkills,
-      rewindPending: savedState?.rewindPending,
+      ...(rewindPending !== undefined && { rewindPending }),
     });
     state = planning.state;
     setTrackedState(state);
@@ -151,7 +168,7 @@ function predictTasksCost(opts: {
 
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
-): Promise<{ summary: Summary; completed: boolean }> {
+): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
   const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
   let { summaryBase } = opts;
   let { state } = opts;
@@ -204,10 +221,11 @@ export async function runTasksAndReview(
         costGateEnabled: wctx.config.workflow.costGate !== false,
       });
       if (gateDecision === 'skip-unknown-cost') {
-        publishWarning(
-          { bus: wctx.bus, phase: state.phase },
-          'cost gate skipped: implementer pricing unknown',
-        );
+        publishWarning({
+          bus: wctx.bus,
+          phase: state.phase,
+          message: 'cost gate skipped: implementer pricing unknown',
+        });
       }
       if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
         const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
@@ -215,6 +233,7 @@ export async function runTasksAndReview(
           return {
             summary: buildSummary({ ...summaryBase, state, phaseTimings }),
             completed: false,
+            state,
           };
         }
       }
@@ -228,10 +247,11 @@ export async function runTasksAndReview(
         plannerReview: prediction.plannerEstimateReview,
       });
       if (split.skippedSplits.length > 0) {
-        publishWarning(
-          { bus: wctx.bus, phase: state.phase },
-          formatSkippedSplitNotice(split.skippedSplits),
-        );
+        publishWarning({
+          bus: wctx.bus,
+          phase: state.phase,
+          message: formatSkippedSplitNotice(split.skippedSplits),
+        });
       }
       if (split.changed) {
         const reviewed = await reviewAutoSplitOutput({
@@ -245,6 +265,7 @@ export async function runTasksAndReview(
           return {
             summary: buildSummary({ ...summaryBase, state, phaseTimings }),
             completed: false,
+            state,
           };
         }
         prediction = predictTasksCost({
@@ -280,6 +301,7 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
+      state,
     };
   }
 
@@ -296,6 +318,7 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
+      state,
     };
   }
 
@@ -319,5 +342,6 @@ export async function runTasksAndReview(
   return {
     summary: finalReview.summary,
     completed: !wctx.signal?.aborted && finalReview.state.phase === 'complete',
+    state: finalReview.state,
   };
 }

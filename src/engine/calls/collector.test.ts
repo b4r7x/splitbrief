@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
-import type { RunnerCallEvent } from './types.js';
+import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 
 const base = {
   ts: 1,
@@ -28,6 +29,10 @@ const timeoutTerminal = {
   usage: null,
   nativeSessionId: null,
 } as const;
+
+function runnerWarning(input: RunnerCallWarningInput) {
+  return normalizeRunnerCallWarning(input);
+}
 
 describe('collectRunnerCallResult', () => {
   it('collects text, usage, session, tools, artifacts, warnings, and terminal success', () => {
@@ -66,7 +71,11 @@ describe('collectRunnerCallResult', () => {
           text: null,
         },
       },
-      { type: 'call_warning', ...base, warning: { code: 'slow', message: 'slow stream' } },
+      {
+        type: 'call_warning',
+        ...base,
+        warning: runnerWarning({ code: 'slow', message: 'slow stream' }),
+      },
       {
         type: 'call_completed',
         ...base,
@@ -97,7 +106,16 @@ describe('collectRunnerCallResult', () => {
           text: null,
         },
       ],
-      warnings: [{ code: 'slow', message: 'slow stream' }],
+      warnings: [
+        expect.objectContaining({
+          code: 'slow',
+          severity: 'warning',
+          source: 'provider',
+          surface: 'activity',
+          message: 'slow stream',
+          fingerprint: expect.stringMatching(/^rw:/),
+        }),
+      ],
       error: null,
       partial: false,
     });
@@ -182,7 +200,7 @@ describe('collectRunnerCallResult', () => {
     expect(result.text).toBe('final text');
   });
 
-  it('bounds stderr warnings to the schema message limit', () => {
+  it('keeps stderr diagnostics out of result warnings by default', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },
       {
@@ -199,8 +217,30 @@ describe('collectRunnerCallResult', () => {
       },
     ]);
 
-    expect(result.warnings[0]).toEqual({
-      code: 'stderr',
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('bounds explicit warnings to the schema message limit', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_warning',
+        ...base,
+        warning: runnerWarning({
+          code: 'provider_warning',
+          message: 'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH + 100),
+        }),
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.warnings[0]).toMatchObject({
+      code: 'provider_warning',
       message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
     });
   });

@@ -67,6 +67,7 @@ export type RunWorkflowOptions = {
   feature: string;
   projectDir: string;
   config: Config;
+  getApprovalEnabled?: (() => boolean) | undefined;
   callbacks: OrchestratorCallbacks;
   sinks: WorkflowSinks;
   savedState?: WorkflowState | undefined;
@@ -75,6 +76,8 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
   /** Transient @file text context appended to the planner prompt but never persisted in state, summaries, or events. */
   plannerContext?: string | undefined;
+  /** Transient rewind feedback used by same-process continuation when transcript persistence is disabled. */
+  rewindFeedback?: string | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
   /** When true, automatically trust hooks without prompting. Fail-closed otherwise in non-interactive paths. */
@@ -217,10 +220,11 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   if (!hasPendingRecovery) {
     const available = await planner.isAvailable();
     if (!available) {
-      publishError(
-        { bus: bus, phase: savedState?.phase ?? 'idle' },
-        plannerUnavailableMessage(config.planner, planner),
-      );
+      publishError({
+        bus: bus,
+        phase: savedState?.phase ?? 'idle',
+        message: plannerUnavailableMessage(config.planner, planner),
+      });
       return {
         ok: false,
         summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }),
@@ -303,6 +307,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     projectDir,
     sessionId,
     config,
+    ...(opts.getApprovalEnabled !== undefined && { getApprovalEnabled: opts.getApprovalEnabled }),
     callbacks,
     bus,
     planner,

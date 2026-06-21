@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type OpenAI from 'openai';
 import type {
   ChatCompletionChunk,
@@ -21,6 +22,12 @@ import {
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import { normalizeRunnerCallUsage } from '../calls/usage.js';
+import { runnerCallUnknownUpstreamPreview } from '../calls/unknown-upstream.js';
+import {
+  createRunnerCallDeltaLimiter,
+  finishRunnerCallOutputLimit,
+  type RunnerCallDeltaLimitResult,
+} from '../calls/output-limit.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
@@ -41,30 +48,50 @@ interface StreamCompletionOptions {
   callContext?: RunnerCallContext | undefined;
 }
 
-interface StreamFunctionCallDelta {
-  name?: string | undefined;
-  arguments?: string | undefined;
-}
+const StreamFunctionCallDeltaSchema = z.looseObject({
+  name: z.string().optional(),
+  arguments: z.string().optional(),
+});
 
-interface StreamToolCallDelta {
-  id?: string | undefined;
-  function?: StreamFunctionCallDelta | undefined;
-}
+const StreamToolCallDeltaSchema = z.looseObject({
+  id: z.string().optional(),
+  function: StreamFunctionCallDeltaSchema.optional(),
+});
 
-interface StreamChoiceDelta {
-  content?: string | null | undefined;
-  function_call?: StreamFunctionCallDelta | undefined;
-  tool_calls?: StreamToolCallDelta[] | undefined;
-}
+const StreamChoiceDeltaSchema = z.looseObject({
+  content: z.string().nullable().optional(),
+  function_call: StreamFunctionCallDeltaSchema.optional(),
+  tool_calls: z.array(StreamToolCallDeltaSchema).optional(),
+});
 
-interface StreamChunk {
-  choices: Array<{ delta?: StreamChoiceDelta; finish_reason?: string | null }>;
-  usage?: {
-    prompt_tokens?: number | null;
-    completion_tokens?: number | null;
-    prompt_tokens_details?: { cached_tokens?: number | null } | null;
-  } | null;
-}
+const StreamChoiceSchema = z.looseObject({
+  delta: StreamChoiceDeltaSchema.optional(),
+  finish_reason: z.string().nullable().optional(),
+});
+
+const StreamUsageSchema = z
+  .looseObject({
+    prompt_tokens: z.number().nullable().optional(),
+    completion_tokens: z.number().nullable().optional(),
+    prompt_tokens_details: z
+      .looseObject({
+        cached_tokens: z.number().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .nullable();
+
+const StreamChunkSchema = z.looseObject({
+  choices: z.array(StreamChoiceSchema),
+  usage: StreamUsageSchema.optional(),
+});
+
+type StreamChoiceDelta = z.infer<typeof StreamChoiceDeltaSchema>;
+type StreamChunk = z.infer<typeof StreamChunkSchema>;
+type OpenAiChoice = ChatCompletionChunk['choices'][number];
+type OpenAiFunctionCallDelta = NonNullable<OpenAiChoice['delta']['function_call']>;
+type OpenAiToolCallDelta = NonNullable<OpenAiChoice['delta']['tool_calls']>[number];
 
 interface OpenAITextPart {
   type: 'text';
@@ -103,7 +130,7 @@ export interface StreamClient {
       create: (
         body: StreamRequestBody,
         requestOptions?: { signal?: AbortSignal | undefined | null },
-      ) => Promise<AsyncIterable<StreamChunk>>;
+      ) => Promise<AsyncIterable<unknown>>;
     };
   };
 }
@@ -231,8 +258,10 @@ function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
         ...(choice.delta.content === undefined ? {} : { content: choice.delta.content }),
         ...(choice.delta.function_call === undefined
           ? {}
-          : { function_call: choice.delta.function_call }),
-        ...(choice.delta.tool_calls === undefined ? {} : { tool_calls: choice.delta.tool_calls }),
+          : { function_call: toStreamFunctionCallDelta(choice.delta.function_call) }),
+        ...(choice.delta.tool_calls === undefined
+          ? {}
+          : { tool_calls: choice.delta.tool_calls.map(toStreamToolCallDelta) }),
       },
       ...(choice.finish_reason != null && { finish_reason: choice.finish_reason }),
     })),
@@ -241,10 +270,32 @@ function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
           prompt_tokens: chunk.usage.prompt_tokens,
           completion_tokens: chunk.usage.completion_tokens,
           ...(chunk.usage.prompt_tokens_details && {
-            prompt_tokens_details: chunk.usage.prompt_tokens_details,
+            prompt_tokens_details: {
+              ...(chunk.usage.prompt_tokens_details.cached_tokens !== undefined && {
+                cached_tokens: chunk.usage.prompt_tokens_details.cached_tokens,
+              }),
+            },
           }),
         }
       : null,
+  };
+}
+
+function toStreamFunctionCallDelta(
+  value: OpenAiFunctionCallDelta,
+): z.infer<typeof StreamFunctionCallDeltaSchema> {
+  return {
+    ...(value.name !== undefined && { name: value.name }),
+    ...(value.arguments !== undefined && { arguments: value.arguments }),
+  };
+}
+
+function toStreamToolCallDelta(
+  value: OpenAiToolCallDelta,
+): z.infer<typeof StreamToolCallDeltaSchema> {
+  return {
+    ...(value.id !== undefined && { id: value.id }),
+    ...(value.function !== undefined && { function: toStreamFunctionCallDelta(value.function) }),
   };
 }
 
@@ -256,31 +307,47 @@ async function* adaptOpenAIStream(
   }
 }
 
-function emitText(recorder: RunnerCallRecorder, text: string): void {
+function emitText(
+  recorder: RunnerCallRecorder,
+  text: string,
+  onProgress: (text: string) => void,
+): void {
+  if (text.length === 0) return;
   recorder.text({ channel: 'assistant', text });
+  onProgress(text);
 }
 
 function emitToolUseDeltas(
   recorder: RunnerCallRecorder,
   delta: StreamChoiceDelta | undefined,
-): void {
-  if (delta === undefined) return;
+  limiter: ReturnType<typeof createRunnerCallDeltaLimiter>,
+): RunnerCallDeltaLimitResult {
+  if (delta === undefined) return { text: '', limit: null };
+  let accepted: RunnerCallDeltaLimitResult = { text: '', limit: null };
 
   for (const toolCall of delta.tool_calls ?? []) {
-    recorder.toolUseDelta({
-      toolUseId: toolCall.id ?? null,
-      name: toolCall.function?.name ?? null,
-      inputDelta: toolCall.function?.arguments ?? '',
-    });
+    accepted = limiter.accept(toolCall.function?.arguments ?? '', { countEvent: true });
+    if (accepted.text.length > 0 || accepted.limit === null) {
+      recorder.toolUseDelta({
+        toolUseId: toolCall.id ?? null,
+        name: toolCall.function?.name ?? null,
+        inputDelta: accepted.text,
+      });
+    }
+    if (accepted.limit !== null) return accepted;
   }
 
   if (delta.function_call !== undefined) {
-    recorder.toolUseDelta({
-      toolUseId: null,
-      name: delta.function_call.name ?? null,
-      inputDelta: delta.function_call.arguments ?? '',
-    });
+    accepted = limiter.accept(delta.function_call.arguments ?? '', { countEvent: true });
+    if (accepted.text.length > 0 || accepted.limit === null) {
+      recorder.toolUseDelta({
+        toolUseId: null,
+        name: delta.function_call.name ?? null,
+        inputDelta: accepted.text,
+      });
+    }
   }
+  return accepted;
 }
 
 function emitOpenAiTerminal(
@@ -365,6 +432,26 @@ function finishOpenAiFailure(
   throw mapped;
 }
 
+function recordInvalidOpenAiChunk(
+  recorder: RunnerCallRecorder,
+  chunk: unknown,
+  issues: Parameters<typeof runnerCallUnknownUpstreamPreview>[0]['issues'],
+): void {
+  recorder.unknownUpstream({
+    rawPreview: runnerCallUnknownUpstreamPreview({
+      label: 'Invalid OpenAI stream chunk',
+      value: chunk,
+      issues,
+    }),
+    backendMetadata: {
+      backendKind: recorder.context.backendKind,
+      source: 'openai-stream',
+      parser: 'stream_chunk',
+      upstreamType: 'chat.completion.chunk',
+    },
+  });
+}
+
 export async function streamCompletion(
   client: StreamClient,
   model: string,
@@ -391,7 +478,7 @@ export async function streamCompletion(
       : baseMessages;
   const context = opts.callContext ?? openAiCallContext(model, endpoint);
   const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
-  let stream: AsyncIterable<StreamChunk>;
+  let stream: AsyncIterable<unknown>;
   try {
     stream = await client.chat.completions.create(
       {
@@ -420,21 +507,44 @@ export async function streamCompletion(
 
   let usage: RunnerCallUsage | null = null;
   let finishReason: string | null = null;
+  const textLimiter = createRunnerCallDeltaLimiter({
+    code: 'provider_text_delta_limit',
+    label: 'provider text deltas',
+  });
+  const toolDeltaLimiter = createRunnerCallDeltaLimiter({
+    code: 'provider_tool_delta_limit',
+    label: 'provider tool deltas',
+  });
+  let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
 
   try {
-    for await (const chunk of withIdleTimeout(
+    for await (const rawChunk of withIdleTimeout(
       stream,
       STREAM_IDLE_TIMEOUT_MS,
       STREAM_IDLE_TIMEOUT_MESSAGE,
     )) {
       throwIfAborted(opts.signal);
+      const parsedChunk = StreamChunkSchema.safeParse(rawChunk);
+      if (!parsedChunk.success) {
+        recordInvalidOpenAiChunk(recorder, rawChunk, parsedChunk.error.issues);
+        continue;
+      }
+      const chunk = parsedChunk.data;
       const choice = chunk.choices?.[0];
-      emitToolUseDeltas(recorder, choice?.delta);
+      const toolDelta = emitToolUseDeltas(recorder, choice?.delta, toolDeltaLimiter);
+      if (toolDelta.limit !== null) {
+        outputLimit = toolDelta.limit;
+        break;
+      }
 
       const content = choice?.delta?.content;
       if (content) {
-        emitText(recorder, content);
-        onProgress(content);
+        const accepted = textLimiter.accept(content);
+        emitText(recorder, accepted.text, onProgress);
+        if (accepted.limit !== null) {
+          outputLimit = accepted.limit;
+          break;
+        }
       }
       if (choice?.finish_reason) {
         finishReason = choice.finish_reason;
@@ -464,6 +574,11 @@ export async function streamCompletion(
       throw err;
     }
     finishOpenAiFailure(recorder, err, endpoint, usage);
+  }
+
+  if (outputLimit !== null) {
+    finishRunnerCallOutputLimit(recorder, outputLimit, { usage, nativeSessionId: null });
+    return recorder.finalResult();
   }
 
   emitOpenAiTerminal(recorder, finishReason, usage);

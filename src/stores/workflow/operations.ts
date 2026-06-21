@@ -11,6 +11,19 @@ export type OperationStatus = 'running' | 'completed' | 'cancelled' | RunnerCall
 type TerminalOperationStatus = Exclude<OperationStatus, 'running'>;
 
 export type OperationRole = EngineEventOf<'runner_call_started'>['role'];
+export type OperationWarningSeverity = EngineEventOf<'runner_call_warning'>['warning']['severity'];
+
+export interface OperationWarningGroup {
+  code: string;
+  severity: OperationWarningSeverity;
+  source: string;
+  surface: EngineEventOf<'runner_call_warning'>['warning']['surface'];
+  fingerprint: string;
+  count: number;
+  firstTs: number;
+  lastTs: number;
+  latestMessage: string;
+}
 
 interface OperationBase {
   callId: string;
@@ -24,7 +37,7 @@ interface OperationBase {
   startedAt: number;
   reason: string | null;
   usage: unknown | null;
-  warnings: readonly string[];
+  warnings: readonly OperationWarningGroup[];
 }
 
 interface RunningOperation extends OperationBase {
@@ -63,6 +76,7 @@ const initial = (): OperationsState => ({
 
 const LEGACY_PLANNER_STATUS_PREFIX = 'planner-status:';
 const MAX_WARNINGS = 20;
+export const MAX_COMPLETED_OPERATIONS = 64;
 
 const store = createStore<OperationsState>(initial);
 
@@ -88,8 +102,8 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
       }));
     case 'runner_call_warning':
       return updateKnownOperation(state, event.callId, (operation) =>
-        operation.status === 'running'
-          ? { ...operation, warnings: appendWarning(operation.warnings, event.warning.message) }
+        operation.status === 'running' && showsWarningOnPrimarySurface(event.warning)
+          ? { ...operation, warnings: appendWarning(operation.warnings, event.warning, event.ts) }
           : operation,
       );
     case 'runner_call_completed':
@@ -136,7 +150,7 @@ function startRunnerOperation(
   const operation = operationFromRunnerStart(event);
   const byCallId = new Map(state.byCallId);
   byCallId.set(operation.callId, operation);
-  return { ...state, active: operation, byCallId };
+  return compactOperationsState({ ...state, active: operation, byCallId });
 }
 
 function operationFromRunnerStart(event: EngineEventOf<'runner_call_started'>): RunningOperation {
@@ -211,7 +225,7 @@ function updatePlannerStatusFallback(
   const nextState = closePlannerStatusFallbacks(state, event.ts);
   const byCallId = new Map(nextState.byCallId);
   byCallId.set(operation.callId, operation);
-  return { ...nextState, active: operation, byCallId };
+  return compactOperationsState({ ...nextState, active: operation, byCallId });
 }
 
 function closePlannerStatusFallbacks(state: OperationsState, ts: number): OperationsState {
@@ -304,7 +318,7 @@ function cancelRunningOperations(
   }
 
   if (!changed) return state;
-  return { ...state, active: null, last, byCallId };
+  return compactOperationsState({ ...state, active: null, last, byCallId });
 }
 
 function updateKnownOperation(
@@ -325,7 +339,39 @@ function replaceOperation(state: OperationsState, operation: ActiveOperation): O
       ? operation
       : currentActiveAfterTerminal(state.active, operation.callId, byCallId);
   const last = operation.status === 'running' ? state.last : operation;
-  return { ...state, active, last, byCallId };
+  return compactOperationsState({ ...state, active, last, byCallId });
+}
+
+function compactOperationsState(state: OperationsState): OperationsState {
+  const byCallId = cappedOperationsByCallId(state.byCallId, state.last);
+  return byCallId === state.byCallId ? state : { ...state, byCallId };
+}
+
+function cappedOperationsByCallId(
+  byCallId: Map<string, ActiveOperation>,
+  last: ActiveOperation | null,
+): Map<string, ActiveOperation> {
+  const terminalOperations = Array.from(byCallId.values()).filter(
+    (operation): operation is TerminalOperation => operation.status !== 'running',
+  );
+  if (terminalOperations.length <= MAX_COMPLETED_OPERATIONS) return byCallId;
+
+  terminalOperations.sort(
+    (a, b) =>
+      b.endedAt - a.endedAt || b.startedAt - a.startedAt || a.callId.localeCompare(b.callId),
+  );
+  const retainedTerminalCallIds = new Set(
+    terminalOperations.slice(0, MAX_COMPLETED_OPERATIONS).map((operation) => operation.callId),
+  );
+  if (last !== null && last.status !== 'running') retainedTerminalCallIds.add(last.callId);
+
+  const next = new Map<string, ActiveOperation>();
+  for (const [callId, operation] of byCallId) {
+    if (operation.status === 'running' || retainedTerminalCallIds.has(callId)) {
+      next.set(callId, operation);
+    }
+  }
+  return next.size === byCallId.size ? byCallId : next;
 }
 
 function currentActiveAfterTerminal(
@@ -379,10 +425,97 @@ function labelForRunnerEvent(event: EngineEventOf<'runner_call_started'>): strin
   );
 }
 
-function appendWarning(warnings: readonly string[], warning: string): readonly string[] {
-  const clean = cleanOperationText(warning);
-  if (warnings.includes(clean)) return warnings;
-  return [...warnings, clean].slice(-MAX_WARNINGS);
+function appendWarning(
+  warnings: readonly OperationWarningGroup[],
+  warning: EngineEventOf<'runner_call_warning'>['warning'],
+  ts: number,
+): readonly OperationWarningGroup[] {
+  const latestMessage = cleanOperationText(warning.message);
+  if (latestMessage.length === 0) return warnings;
+  const code = cleanOperationText(warning.code);
+  const source = cleanOperationText(warning.source);
+  const warningKey = operationWarningGroupKey({
+    fingerprint: warning.fingerprint,
+    code,
+    source,
+    surface: warning.surface,
+  });
+
+  const existingIndex = warnings.findIndex((item) => operationWarningGroupKey(item) === warningKey);
+  if (existingIndex === -1) {
+    return [
+      ...warnings,
+      {
+        code,
+        severity: warning.severity,
+        source,
+        surface: warning.surface,
+        fingerprint: warning.fingerprint,
+        count: 1,
+        firstTs: ts,
+        lastTs: ts,
+        latestMessage,
+      },
+    ].slice(-MAX_WARNINGS);
+  }
+
+  const existing = warnings[existingIndex];
+  if (existing === undefined) return warnings;
+  return warnings.map((item, index) =>
+    index === existingIndex
+      ? {
+          ...item,
+          severity: maxWarningSeverity(item.severity, warning.severity),
+          count: item.count + 1,
+          lastTs: ts,
+          latestMessage,
+        }
+      : item,
+  );
+}
+
+function showsWarningOnPrimarySurface(
+  warning: EngineEventOf<'runner_call_warning'>['warning'],
+): boolean {
+  switch (warning.surface) {
+    case 'activity':
+    case 'status':
+    case 'transcript':
+      return true;
+    case 'debug':
+    case 'hidden':
+      return false;
+    default:
+      return assertNever(warning.surface);
+  }
+}
+
+function operationWarningGroupKey(
+  warning: Pick<OperationWarningGroup, 'fingerprint' | 'code' | 'source' | 'surface'>,
+): string {
+  return `${warning.fingerprint}\0${warning.code}\0${warning.source}\0${warning.surface}`;
+}
+
+function maxWarningSeverity(
+  current: OperationWarningSeverity,
+  next: OperationWarningSeverity,
+): OperationWarningSeverity {
+  return warningSeverityRank(next) > warningSeverityRank(current) ? next : current;
+}
+
+function warningSeverityRank(severity: OperationWarningSeverity): number {
+  switch (severity) {
+    case 'debug':
+      return 0;
+    case 'info':
+      return 1;
+    case 'warning':
+      return 2;
+    case 'error':
+      return 3;
+    default:
+      return assertNever(severity);
+  }
 }
 
 function durationBetween(startedAt: number, endedAt: number): number {

@@ -142,7 +142,9 @@ describe('WorkflowBody brief review rendering', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Activity 1');
-    expect(frame).toContain('npm test sk-***');
+    expect(frame).toContain('RUN');
+    expect(frame).toContain('EDACTED***');
+    expect(frame).toContain('raw');
     expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
 
     ui.unmount();

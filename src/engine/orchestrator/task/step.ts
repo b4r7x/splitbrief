@@ -92,10 +92,11 @@ async function restoreExhaustedTaskFiles(opts: {
       opts.taskChangedFiles,
     );
     if (restoredFiles.length > 0) {
-      publishWarning(
-        { bus: opts.wctx.bus, phase: opts.phase },
-        `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
-      );
+      publishWarning({
+        bus: opts.wctx.bus,
+        phase: opts.phase,
+        message: `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
+      });
     }
   } catch (err) {
     publishWarningFromError(
@@ -114,7 +115,7 @@ function recordApprovalDenial(opts: {
   message: string;
 }): void {
   const { wctx, state, task, decision, message } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase }, message);
+  publishError({ bus: wctx.bus, phase: state.phase, message: message });
   const rejectedTier = decision.tier;
   if (
     rejectedTier &&
@@ -183,6 +184,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     bus: wctx.bus,
     callbacks,
     config,
+    getApprovalEnabled: wctx.getApprovalEnabled,
   });
   if (!gateResult.allow) {
     recordApprovalDenial({
@@ -241,7 +243,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
   } catch (err) {
     if (isAbortError(err) || wctx.signal?.aborted) return state;
-    publishError({ bus: wctx.bus, phase: state.phase }, labelError('Implementation failed', err));
+    publishError({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: labelError('Implementation failed', err),
+    });
     const retry = await retryAndRecord({
       wctx,
       task,
@@ -338,10 +344,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
     if (!preVal.allow) {
       const reason = preVal.reason ?? 'pre_validation hook denied';
-      publishWarning(
-        { bus: wctx.bus, phase: state.phase },
-        `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`,
-      );
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`,
+      });
       publishTaskSkipped(
         { bus: wctx.bus, phase: state.phase },
         { taskId: task.id, title: task.title, reason },

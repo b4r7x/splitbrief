@@ -2,8 +2,10 @@ import { Box, Text } from 'ink';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
-import { sanitizeWorkflowDisplayText } from '../../display/safe-text.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+} from '../../../../utils/display-text.js';
 
 type WorkflowConfigEvent = Extract<EngineEvent, { type: 'workflow_config' }>;
 export type WorkflowConfigDensity = 'full' | 'labels' | 'tools';
@@ -14,15 +16,15 @@ function getWorkflowConfigSegments(
   event: WorkflowConfigEvent,
   density: WorkflowConfigDensity,
 ): WorkflowConfigSegment[] {
-  const mode = sanitizeWorkflowDisplayText(event.mode);
-  const planner = sanitizeWorkflowDisplayText(getProviderDisplayName(event.plannerTool));
-  const implementer = sanitizeWorkflowDisplayText(getProviderDisplayName(event.implementerTool));
+  const mode = sanitizeTerminalDisplayText(event.mode);
+  const planner = sanitizeTerminalDisplayText(getProviderDisplayName(event.plannerTool));
+  const implementer = sanitizeTerminalDisplayText(getProviderDisplayName(event.implementerTool));
   const plannerModel =
-    event.plannerModel === undefined ? undefined : sanitizeWorkflowDisplayText(event.plannerModel);
+    event.plannerModel === undefined ? undefined : sanitizeTerminalDisplayText(event.plannerModel);
   const implementerModel =
     event.implementerModel === undefined
       ? undefined
-      : sanitizeWorkflowDisplayText(event.implementerModel);
+      : sanitizeTerminalDisplayText(event.implementerModel);
 
   if (density === 'tools') {
     return [

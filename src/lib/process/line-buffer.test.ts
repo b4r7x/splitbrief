@@ -25,15 +25,20 @@ describe('createLineBuffer', () => {
 
   it('reports an oversized line and keeps processing subsequent lines', () => {
     const lines: string[] = [];
-    const overflows: number[] = [];
+    const overflows: Array<{ lineBytes: number; maxLineBytes: number; truncated: true }> = [];
     const buffer = createLineBuffer((line) => lines.push(line), {
       maxLineBytes: 8,
-      onOverflow: (bytes) => overflows.push(bytes),
+      onOverflow: (overflow) =>
+        overflows.push({
+          lineBytes: overflow.lineBytes,
+          maxLineBytes: overflow.maxLineBytes,
+          truncated: overflow.truncated,
+        }),
     });
 
     buffer.push(`${'x'.repeat(20)}\nshort\n`);
 
-    expect(overflows).toEqual([20]);
+    expect(overflows).toEqual([{ lineBytes: 20, maxLineBytes: 8, truncated: true }]);
     expect(lines).toEqual(['short']);
   });
 
@@ -42,7 +47,7 @@ describe('createLineBuffer', () => {
     const overflows: number[] = [];
     const buffer = createLineBuffer((line) => lines.push(line), {
       maxLineBytes: 8,
-      onOverflow: (bytes) => overflows.push(bytes),
+      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
     });
 
     buffer.push('x'.repeat(20));
@@ -58,7 +63,7 @@ describe('createLineBuffer', () => {
     const overflows: number[] = [];
     const buffer = createLineBuffer((line) => lines.push(line), {
       maxLineBytes: 8,
-      onOverflow: (bytes) => overflows.push(bytes),
+      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
     });
 
     buffer.push('aaaaaaaaaa\nbbbbbbbbbb\nok\n');
@@ -71,7 +76,7 @@ describe('createLineBuffer', () => {
     const overflows: number[] = [];
     const buffer = createLineBuffer(() => {}, {
       maxLineBytes: 4,
-      onOverflow: (bytes) => overflows.push(bytes),
+      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
     });
 
     buffer.push('aaaaa');

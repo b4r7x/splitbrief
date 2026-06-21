@@ -55,6 +55,23 @@ The flowchart covers `src/**` source. Two trees outside it also hold colocated t
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
 | Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
 
+## Performance harnesses
+
+Performance tests live under `testing/integration/performance/` and are skipped unless `DIPTYCH_PERF=1` is set. Use `node --expose-gc` for these harnesses so tests can force collection around memory-sensitive measurements when they need it.
+
+Current harnesses:
+
+```bash
+DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-large-log.perf.test.ts
+DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/runner-large-output.perf.test.ts
+DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/events-store-cap.perf.test.ts
+DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/event-sinks-throughput.perf.test.ts
+```
+
+`conversation-flow-large-log.perf.test.ts` covers the Phase 5 row projection path: 10k event projection reuse, visible-window materialization, markdown suffix append reuse, and cache-cap behavior. Keep thresholds as regression guards for the reference machine; do not treat them as portable benchmarks.
+
+`runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers protected JSONL, stdout JSON, and session-tree sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
+
 **Fixtures vs factories.** Split by kind:
 - `testing/fixtures/<domain>/` = read-only **bytes on disk**. Consumers read via `fs.readFile`.
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
@@ -457,7 +474,15 @@ git init && git config user.email x@x.com && git config user.name X
 npm run dev -- --project /tmp/smoke-tui start "smoke tui test"
 ```
 
-Verify: the fullscreen Ink TUI renders, phases progress visually, and the workflow completes with a `workflow_complete` banner.
+Verify: the fullscreen Ink TUI renders, phases progress visually, and the workflow completes with a `workflow_complete` banner. For keyboard changes, also verify workflow scroll with `Shift+↑` / `Shift+↓`, `PageUp` / `PageDown`, `Home` / `End`, fallback `Ctrl+B` / `Ctrl+F`, `/scroll top`, `/scroll bottom`, `/scroll page-up`, `/scroll page-down`, and `Alt+A` plus `/activity` on a compact activity block. `Ctrl+A` should stay in the composer as line-start editing.
+
+If a terminal does not deliver a key as expected, rerun the smoke with key logging enabled:
+
+```bash
+DIPTYCH_DEBUG_KEYS=1 npm run dev -- --project /tmp/smoke-tui start "smoke tui keys"
+```
+
+The log is written under `.diptych/debug/keys-*.log` in the smoke project and records both raw bytes and parsed Ink key flags.
 
 ### M2. Headless `--json` mode
 
@@ -499,7 +524,7 @@ cd /tmp/diptych-fresh
 npm ci && npm run test-ci
 ```
 
-Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test → invariants) is green.
+Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test:coverage → invariants) is green.
 
 ## References
 

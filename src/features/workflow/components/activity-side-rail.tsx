@@ -1,68 +1,23 @@
 import { Box, Text } from 'ink';
-import { formatToolModel } from '../../../core/model-display.js';
 import { useTheme, type Theme } from '../../../components/theme.js';
 import type { WorkflowActivityItem } from '../../../stores/workflow/activity.js';
 import { activityStore } from '../../../stores/workflow/activity.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import { fitCompactActivityDisplayLine } from '../display/activity-display-text.js';
 import {
-  cleanRunnerDisplayText,
-  type RunnerActivityDisplay,
-  runnerActivityDisplay,
-  type RunnerTerminalTone,
-} from '../display/runner-terminal.js';
+  runnerActivityLedgerItem,
+  runnerActivityRoleLabel,
+  runnerActivitySeverityRank,
+  runnerActivityToolLabel,
+  type RunnerActivityLedgerItem,
+  type RunnerActivityLedgerTone,
+} from '../display/runner-activity-display.js';
 
 interface ActivitySideRailProps {
   height: number;
   width: number;
 }
 
-function roleLabel(role: WorkflowActivityItem['role']): string {
-  switch (role) {
-    case 'planner':
-      return 'plan';
-    case 'implementer':
-      return 'run';
-    case 'review':
-      return 'review';
-    case 'summary':
-      return 'summary';
-    case 'compaction':
-      return 'compact';
-    case 'escalation':
-      return 'escalate';
-    default:
-      return assertNever(role);
-  }
-}
-
-function activityText(
-  item: WorkflowActivityItem,
-  display: RunnerActivityDisplay,
-  textWidth: number,
-): string {
-  const tool = cleanRunnerDisplayText(formatToolModel(item.runnerName, item.model));
-  const role = roleLabel(item.role);
-  const value = [
-    role === display.label ? null : role,
-    display.value,
-    display.diagnosticPreview ? `- ${display.diagnosticPreview}` : null,
-    item.redacted ? '[redacted]' : null,
-    tool ? `[${tool}]` : null,
-  ]
-    .filter((part): part is string => part !== null && part !== '')
-    .join(' ');
-
-  return fitCompactActivityDisplayLine({
-    label: display.label,
-    value,
-    rowCells: textWidth,
-    prefixCells: 0,
-    ...(item.redacted && { valueFit: 'end' }),
-  }).text;
-}
-
-function toneColor(tone: RunnerTerminalTone, t: Theme): string {
+function toneColor(tone: RunnerActivityLedgerTone, t: Theme): string {
   switch (tone) {
     case 'info':
       return t.info;
@@ -74,17 +29,31 @@ function toneColor(tone: RunnerTerminalTone, t: Theme): string {
       return t.error;
     case 'textDim':
       return t.textDim;
-    default:
-      return assertNever(tone);
   }
+}
+
+interface RailDisplayItem {
+  item: WorkflowActivityItem;
+  display: RunnerActivityLedgerItem;
 }
 
 export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
   const t = useTheme();
   const items = activityStore.use((state) => state.items);
   const bodyHeight = Math.max(0, height - 1);
-  const visibleItems = items.slice(-bodyHeight);
-  const textWidth = Math.max(1, width - 5);
+  const textWidth = Math.max(1, width - 3);
+  const currentItems = currentCallItems(items);
+  const displayItems = currentItems.map((item) => ({
+    item,
+    display: runnerActivityLedgerItem(item),
+  }));
+  const current = currentItems.at(-1);
+  const summary = current ? currentCallSummary(current) : null;
+  const groups = groupSummary(displayItems);
+  const pinned = highestSeverityPinnedItem(displayItems);
+  const fixedRows = (summary ? 1 : 0) + (groups ? 1 : 0) + (pinned ? 1 : 0);
+  const tailLimit = Math.max(0, bodyHeight - fixedRows);
+  const recent = displayItems.filter((displayItem) => displayItem !== pinned).slice(-tailLimit);
 
   return (
     <Box
@@ -105,24 +74,111 @@ export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
         <Text bold color={t.text}>
           Activity
         </Text>
-        <Text color={t.textDim}> {items.length}</Text>
+        <Text color={t.textDim}> {currentItems.length}</Text>
       </Box>
       <Box flexDirection="column" height={bodyHeight} overflow="hidden" flexShrink={0}>
-        {visibleItems.length === 0 ? (
+        {items.length === 0 ? (
           <Text color={t.textDim}>No runner activity</Text>
         ) : (
-          visibleItems.map((item) => {
-            const display = runnerActivityDisplay(item, textWidth);
-            const textColor = item.redacted ? t.warning : toneColor(display.valueTone, t);
-            return (
-              <Box key={`${item.id}-${item.sequence}`} height={1} overflow="hidden" flexShrink={0}>
-                <Text color={toneColor(display.tone, t)}>{display.marker} </Text>
-                <Text color={textColor}>{activityText(item, display, textWidth)}</Text>
-              </Box>
-            );
-          })
+          <>
+            {summary && <RailText key="summary" text={summary} color={t.text} />}
+            {groups && <RailText key="groups" text={groups} color={t.textDim} />}
+            {pinned && (
+              <RailActivityRow
+                key={`pinned-${pinned.item.id}-${pinned.item.sequence}`}
+                displayItem={pinned}
+                textWidth={textWidth}
+                theme={t}
+              />
+            )}
+            {recent.map((displayItem) => (
+              <RailActivityRow
+                key={`${displayItem.item.id}-${displayItem.item.sequence}`}
+                displayItem={displayItem}
+                textWidth={textWidth}
+                theme={t}
+              />
+            ))}
+          </>
         )}
       </Box>
     </Box>
   );
+}
+
+function RailText({ text, color }: { text: string; color: string }) {
+  return (
+    <Box height={1} overflow="hidden" flexShrink={0}>
+      <Text color={color} wrap="truncate-end">
+        {text}
+      </Text>
+    </Box>
+  );
+}
+
+function RailActivityRow({
+  displayItem,
+  textWidth,
+  theme,
+}: {
+  displayItem: RailDisplayItem;
+  textWidth: number;
+  theme: Theme;
+}) {
+  const text = activityText(displayItem.display, textWidth);
+  const color = displayItem.item.redacted
+    ? theme.warning
+    : toneColor(displayItem.display.valueTone, theme);
+  return <RailText text={text} color={color} />;
+}
+
+function currentCallItems(items: readonly WorkflowActivityItem[]): WorkflowActivityItem[] {
+  const latest = items.at(-1);
+  if (latest === undefined) return [];
+  return items.filter((item) => item.callId === latest.callId);
+}
+
+function currentCallSummary(item: WorkflowActivityItem): string {
+  const tool = runnerActivityToolLabel(item);
+  return [runnerActivityRoleLabel(item.role), item.phase, tool ? `[${tool}]` : null]
+    .filter((part): part is string => part !== null && part !== '')
+    .join(' ');
+}
+
+function groupSummary(displayItems: readonly RailDisplayItem[]): string | null {
+  const groups = new Map<string, number>();
+  for (const { display } of displayItems) {
+    groups.set(display.groupLabel, (groups.get(display.groupLabel) ?? 0) + 1);
+  }
+  if (groups.size === 0) return null;
+  return Array.from(groups, ([label, count]) => `${label} ${count}`).join('  ');
+}
+
+function highestSeverityPinnedItem(
+  displayItems: readonly RailDisplayItem[],
+): RailDisplayItem | null {
+  let best: RailDisplayItem | null = null;
+  for (const displayItem of displayItems) {
+    if (!displayItem.display.pinned) continue;
+    if (
+      best === null ||
+      runnerActivitySeverityRank(displayItem.display.severity) >=
+        runnerActivitySeverityRank(best.display.severity)
+    ) {
+      best = displayItem;
+    }
+  }
+  return best;
+}
+
+function activityText(display: RunnerActivityLedgerItem, textWidth: number): string {
+  const rawMarker = display.rawMarker ? `  ${display.rawMarker}` : '';
+  const line = fitCompactActivityDisplayLine({
+    label: display.label.padEnd(4),
+    value: display.value,
+    rowCells: textWidth - rawMarker.length,
+    prefixCells: 0,
+    valueFit: display.fitMode,
+  });
+  return `${line.text}${rawMarker}`;
 }

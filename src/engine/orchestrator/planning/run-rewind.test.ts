@@ -3,6 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { TASKS_FILE } from '../../../core/paths.js';
+import { loadState } from '../../../core/state/persistence.js';
 import {
   REAL_TASKS_MD,
   prepareState,
@@ -225,6 +226,31 @@ describe('runPlanningPhase — rewindPending', () => {
 
     expect(result.cancelled).toBe(false);
     expect(result.state.rewindPending).toBeUndefined();
+  });
+
+  it('does not persist transient rewind feedback if planning fails before rewind is cleared', async () => {
+    const secret = 'secret raw rewind comment';
+    const protectedComment = '[transcript omitted]';
+    await expect(
+      runPhase({
+        config: makeConfig({
+          workflow: { ...auto(), persistTranscript: false },
+          codebase: { enabled: false, tokenBudget: 1, cacheDir: '.diptych/codebase-cache' },
+        }),
+        state: prepareState('specifying', { target: 'spec', comment: protectedComment }),
+        rewindPending: { target: 'spec', comment: protectedComment },
+        rewindFeedback: secret,
+        drainPendingAttachments: () => {
+          throw new Error('attachment drain failed');
+        },
+      }),
+    ).rejects.toThrow('attachment drain failed');
+
+    const projectDir = dirs.at(-1);
+    if (projectDir === undefined) throw new Error('Expected planning test project');
+    const saved = loadState({ projectDir, sessionId: 'sess-planning' });
+    expect(saved?.rewindPending).toEqual({ target: 'spec', comment: protectedComment });
+    expect(JSON.stringify(saved)).not.toContain(secret);
   });
 
   const rewindSpecGateCases: Array<{

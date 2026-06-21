@@ -60,11 +60,11 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
 const phaseActions = {
   idle: ['START', 'START_QUICK', 'START_INSTANT', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
   researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
-  specifying: ['SPEC_DONE'],
+  specifying: ['SPEC_DONE', 'START_QUICK', 'START_INSTANT'],
   'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
   clarifying: ['SPEC_CLARIFY_DONE'],
   'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
-  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START'],
+  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
   'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEFS_READY', 'ANALYZE_START'],
   'reviewing-briefs': ['BRIEFS_READY', 'APPROVE_BRIEFS', 'REJECT_BRIEFS'],
   analyzing: ['ANALYZE_DONE'],
@@ -172,6 +172,7 @@ function rewindReset(
     plannerSessionId: undefined,
     changedFilesBaseline: undefined,
     discoveredValidation: undefined,
+    pendingRecovery: undefined,
     rewindPending: { target, ...(comment ? { comment } : {}) },
   };
 }
@@ -212,6 +213,7 @@ export function transition(
         tasks: action.tasks,
         currentTaskIndex: 0,
         attempt: 0,
+        rewindPending: undefined,
       };
 
     case 'START_INSTANT':
@@ -221,6 +223,7 @@ export function transition(
         tasks: action.tasks,
         currentTaskIndex: 0,
         attempt: 0,
+        rewindPending: undefined,
       };
 
     case 'RESEARCH_DONE':

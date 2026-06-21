@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTuiSink } from './tui-sink.js';
 import { createEventBus } from '../../engine/events/bus.js';
+import type { EngineEventOf } from '../../engine/events/types.js';
+import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow, markCancellationRequested } from '../../stores/workflow/actions.js';
+import { operationsStore } from '../../stores/workflow/operations.js';
+import { activityStore } from '../../stores/workflow/activity.js';
 import { makePlannerText, makeTaskStart, makeWorkflowCancelled } from '#testing/helpers/events.js';
 
 describe('tuiSink', () => {
@@ -54,6 +58,123 @@ describe('tuiSink', () => {
     expect(lifecycleStore.get().cancelled).toBe(true);
   });
 
+  it('protects live workflow stores when transcript persistence is disabled', () => {
+    const bus = createEventBus();
+    bus.subscribe(createTuiSink({ persistTranscript: false }));
+    const secret = 'private-runner-output-92741';
+
+    bus.publish(makePlannerText({ text: secret }));
+    bus.publish(runnerStarted());
+    bus.publish({
+      type: 'runner_call_activity',
+      ts: 1_100,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+      activityId: 'call-1:command',
+      stage: 'completed',
+      kind: 'command',
+      label: 'running command',
+      target: `npm test ${secret}`,
+      redacted: false,
+      rawAvailable: true,
+      expandId: `raw-${secret}`,
+      textPartial: `stdout ${secret}`,
+      diagnosticPartial: `stderr ${secret}`,
+    });
+    bus.publish({
+      type: 'runner_call_warning',
+      ts: 1_200,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 3,
+      warning: normalizeRunnerCallWarning({
+        code: 'provider_warning',
+        message: `warning ${secret}`,
+        surface: 'activity',
+      }),
+    });
+    bus.publish({
+      type: 'runner_call_error',
+      ts: 1_900,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 4,
+      status: 'failed',
+      error: { code: 'failed', message: `failed ${secret}` },
+      partial: true,
+      startedAt: 1_000,
+      endedAt: 1_900,
+      durationMs: 900,
+      usage: { inputTokens: 1, outputTokens: 2 },
+      nativeSessionId: `session-${secret}`,
+    });
+
+    expect(eventsStore.get().events).toEqual([
+      expect.objectContaining({
+        type: 'runner_call_activity',
+        label: 'running command',
+      }),
+    ]);
+    expect(eventsStore.get().events[0]).not.toHaveProperty('rawAvailable');
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(secret);
+
+    expect(activityStore.get().items).toEqual([
+      expect.objectContaining({
+        label: 'running command',
+        rawAvailable: false,
+      }),
+    ]);
+    expect(activityStore.get().items[0]).not.toHaveProperty('target');
+    expect(activityStore.get().items[0]).not.toHaveProperty('expandId');
+    expect(activityStore.get().items[0]).not.toHaveProperty('textPartial');
+    expect(activityStore.get().items[0]).not.toHaveProperty('diagnosticPartial');
+    expect(JSON.stringify(activityStore.get().items)).not.toContain(secret);
+
+    expect(operationsStore.get().last).toMatchObject({
+      status: 'failed',
+      reason: '[transcript omitted]',
+      warnings: [
+        expect.objectContaining({
+          latestMessage: '[transcript omitted]',
+        }),
+      ],
+    });
+    expect(JSON.stringify(operationsStore.get())).not.toContain(secret);
+  });
+
+  it('omits queued message previews from live stores when transcript persistence is disabled', () => {
+    const bus = createEventBus();
+    bus.subscribe(createTuiSink({ persistTranscript: false }));
+    const secret = 'private inline resume text';
+
+    bus.publish({
+      type: 'message_queued',
+      ts: 1_000,
+      phase: 'implementing',
+      id: 'msg-1',
+      queueDepth: 1,
+      preview: secret,
+    });
+
+    expect(eventsStore.get().events).toEqual([
+      {
+        type: 'message_queued',
+        ts: 1_000,
+        phase: 'implementing',
+        id: 'msg-1',
+        queueDepth: 1,
+      },
+    ]);
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(secret);
+  });
+
   it('unsubscribing stops delivery to the store', () => {
     const bus = createEventBus();
     const unsubscribe = bus.subscribe(createTuiSink());
@@ -67,3 +188,20 @@ describe('tuiSink', () => {
     expect(eventsStore.get().events.length).toBe(afterFirst);
   });
 });
+
+function runnerStarted(
+  overrides?: Partial<EngineEventOf<'runner_call_started'>>,
+): EngineEventOf<'runner_call_started'> {
+  return {
+    type: 'runner_call_started',
+    ts: 1_000,
+    phase: 'implementing',
+    callId: 'call-1',
+    role: 'implementer',
+    backendKind: 'cli',
+    sequence: 1,
+    runnerName: 'codex',
+    model: 'gpt-5-mini',
+    ...overrides,
+  };
+}

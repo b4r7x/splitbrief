@@ -15,6 +15,8 @@ import {
   CALL_SESSION_LOG_MAX_PUBLIC_STRING_BYTES,
   CALL_STDOUT_JSON_MAX_PUBLIC_PAYLOAD_BYTES,
   CALL_STDOUT_JSON_MAX_PUBLIC_STRING_BYTES,
+  CALL_TREE_MAX_PUBLIC_PAYLOAD_BYTES,
+  CALL_TREE_MAX_PUBLIC_STRING_BYTES,
   getConsumerPayloadPolicy,
   measurePublicPayloadBytes,
   protectConsumerPayload,
@@ -53,6 +55,11 @@ describe('consumer payload policies', () => {
       context: 'session-log',
       maxBytes: CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES,
       maxStringBytes: CALL_SESSION_LOG_MAX_PUBLIC_STRING_BYTES,
+    });
+    expect(getConsumerPayloadPolicy('tree')).toEqual({
+      context: 'tree',
+      maxBytes: CALL_TREE_MAX_PUBLIC_PAYLOAD_BYTES,
+      maxStringBytes: CALL_TREE_MAX_PUBLIC_STRING_BYTES,
     });
   });
 

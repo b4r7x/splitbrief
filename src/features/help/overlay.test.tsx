@@ -51,6 +51,33 @@ describe('HelpOverlay', () => {
     ui.unmount();
   });
 
+  it('shows workflow scroll and activity affordances', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const ui = renderFeature(
+      <HelpOverlay
+        currentScreen="workflow"
+        commands={[
+          command('/scroll', ['workflow']),
+          command('/activity', ['workflow']),
+          command('/skills', ['home']),
+        ]}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('/scroll');
+    expect(frame).toContain('/activity');
+    expect(frame).toContain('Shift+↑/↓, PgUp/PgDn, Home/End, Ctrl+B/F');
+    expect(frame).toContain('PageUp/PageDown');
+    expect(frame).toContain('/scroll top|bottom');
+    expect(frame).toContain('Alt+A, /activity');
+    expect(frame).toContain('Expand activity rows');
+    expect(frame).not.toContain('Ctrl+A');
+
+    ui.unmount();
+  });
+
   it('pages through help content on short terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
     const commands = Array.from({ length: 8 }, (_, i) => command(`/cmd-${i}`, ['home']));

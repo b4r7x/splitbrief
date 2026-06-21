@@ -11,7 +11,7 @@ import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { protectConsumerPayload } from '../../calls/consumer-policy.js';
+import { protectConsumerPayload } from '../../../core/consumer-policy.js';
 import { projectEngineEventForTranscriptPolicy } from '../protection.js';
 
 export interface OtelSinkOptions {

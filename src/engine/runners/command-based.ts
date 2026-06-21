@@ -8,10 +8,16 @@ import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { createParsedLineRecorder } from '../streaming/parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from '../streaming/stderr-lines.js';
-import { spawnWithShellFallback } from '../../lib/process/spawn.js';
+import { createBoundedOutput } from '../../lib/process/bounded-output.js';
+import {
+  DEFAULT_PROCESS_LINE_MAX_BYTES,
+  DEFAULT_PROCESS_STDERR_MAX_BYTES,
+  spawnWithShellFallback,
+} from '../../lib/process/spawn.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 
 export interface CommandBasedOptions {
   command: string;
@@ -109,9 +115,29 @@ export async function invokeCommandBasedRunner(
       onSessionId: opts.onSessionId,
     });
     const stderrBuffer = createRunnerCallStderrBuffer(recorder);
-    const liveOutputBuffer = createLineBuffer((line) => {
-      parsedRecorder.apply(parseLine(line));
-    });
+    const liveOutputBuffer = createLineBuffer(
+      (line) => {
+        parsedRecorder.apply(parseLine(line));
+      },
+      {
+        maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
+        onOverflow: (overflow) => {
+          finishRunnerCallOutputLimit(
+            recorder,
+            runnerCallLineOutputLimit({
+              code: 'stdout_line_overflow',
+              label: 'stdout line',
+              lineBytes: overflow.lineBytes,
+              maxLineBytes: overflow.maxLineBytes,
+            }),
+            {
+              usage: parsedRecorder.usage,
+              nativeSessionId: parsedRecorder.sessionId,
+            },
+          );
+        },
+      },
+    );
     try {
       const result = await spawnWithShellFallback({
         command: finalCommand,
@@ -161,6 +187,10 @@ export async function invokeCommandBasedRunner(
       throw err;
     }
   } else {
+    const stderrOutput = createBoundedOutput({
+      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+      policy: 'tail',
+    });
     const result = await spawnAndCollect({
       command: finalCommand,
       args: finalArgs,
@@ -175,11 +205,12 @@ export async function invokeCommandBasedRunner(
       callContext: context,
       signal,
       onStderr: (chunk) => {
-        stderr += chunk;
+        stderrOutput.append(chunk);
       },
     });
 
     stdout = result.text;
+    stderr = stderrOutput.snapshot().text;
     usage = toTokenDelta(result.usage);
     callResult = result;
   }

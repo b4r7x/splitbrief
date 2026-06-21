@@ -18,6 +18,7 @@ interface CommandContextFactoryOptions {
   projectDir: () => string;
   getConfig: () => Config | null;
   saveConfig: (config: Config) => ConfigSaveResult;
+  getApprovalEnabled?: (() => boolean) | undefined;
   setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getSessionId: (command: string) => string | null | undefined;
   noActiveSession: (command: string) => Error;
@@ -70,6 +71,8 @@ interface CommandContextFactoryOptions {
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['exportSession']>;
+  scrollConversation: RuntimeCommandContext['scrollConversation'];
+  toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
 }
 
 export function createCommandContext(opts: CommandContextFactoryOptions): RuntimeCommandContext {
@@ -131,7 +134,10 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     },
     listApprovals: () => opts.listApprovals(opts.projectDir()),
     clearApprovals: () => opts.clearApprovals(opts.projectDir(), 'all'),
-    getApprovalEnabled: () => opts.getConfig()?.approval?.enabled !== false,
+    getApprovalEnabled: () =>
+      opts.getApprovalEnabled
+        ? opts.getApprovalEnabled()
+        : opts.getConfig()?.approval?.enabled !== false,
     setApprovalEnabled: (enabled) => {
       if (opts.setApprovalEnabled) {
         opts.setApprovalEnabled(enabled);
@@ -161,5 +167,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       }
       return opts.exportSession(projectDir, sessionId);
     },
+    scrollConversation: opts.scrollConversation,
+    toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
   };
 }

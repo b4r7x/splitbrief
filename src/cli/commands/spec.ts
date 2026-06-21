@@ -18,7 +18,12 @@ import { stripTerminalControls } from '../../utils/display-text.js';
 
 type SpecOpts = { project?: string; allowHooks: boolean };
 
-export function registerSpecCommand(program: Command): void {
+interface SpecCommandDeps {
+  createPlanner?: typeof createPlanner | undefined;
+}
+
+export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}): void {
+  const createPlannerForCommand = deps.createPlanner ?? createPlanner;
   program
     .command('spec <feature>')
     .description('Generate spec, plan, and tasks only (no implementation)')
@@ -38,7 +43,7 @@ export function registerSpecCommand(program: Command): void {
 
       const sessionId = beginSession(projectDir, feature);
 
-      const planner = await createPlanner(baseConfig);
+      const planner = await createPlannerForCommand(baseConfig);
 
       console.log(
         `Planning feature: ${feature} (planner: ${getRunnerDisplayName(baseConfig.planner)})\n`,

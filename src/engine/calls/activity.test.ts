@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { projectRunnerCallActivity } from './activity.js';
-import type { RunnerCallEvent } from './types.js';
+import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 
 const runnerCallBase = {
   ts: 1_200,
@@ -25,6 +26,10 @@ function runnerToolUse(overrides?: Partial<RunnerToolUseDeltaEvent>): RunnerCall
     inputDelta: '{"file_path":"src/app.ts"}',
     ...overrides,
   };
+}
+
+function runnerWarning(input: RunnerCallWarningInput) {
+  return normalizeRunnerCallWarning(input);
 }
 
 describe('projectRunnerCallActivity', () => {
@@ -75,7 +80,15 @@ describe('projectRunnerCallActivity', () => {
         { ...runnerCallBase, type: 'call_session_id', nativeSessionId: 'native-session-1' },
         1,
       ),
-    ).toMatchObject({ kind: 'session', label: 'session native-session-1' });
+    ).toMatchObject({ kind: 'session', label: 'session captured' });
+    expect(
+      JSON.stringify(
+        projectRunnerCallActivity(
+          { ...runnerCallBase, type: 'call_session_id', nativeSessionId: 'native-session-1' },
+          1,
+        ),
+      ),
+    ).not.toContain('native-session-1');
     expect(
       projectRunnerCallActivity(
         {
@@ -95,7 +108,11 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({ kind: 'artifact', label: 'artifact plan.md' });
     expect(
       projectRunnerCallActivity(
-        { ...runnerCallBase, type: 'call_warning', warning: { code: 'stderr', message: 'raw' } },
+        {
+          ...runnerCallBase,
+          type: 'call_warning',
+          warning: runnerWarning({ code: 'stderr', message: 'raw' }),
+        },
         1,
       ),
     ).toMatchObject({ kind: 'warning', label: 'warning stderr' });
@@ -198,6 +215,17 @@ describe('projectRunnerCallActivity', () => {
         1,
       ),
     ).toBeNull();
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_stderr_delta',
+          channel: 'stderr',
+          text: 'benign progress',
+        },
+        1,
+      ),
+    ).toBeNull();
   });
 
   it('bounds activity labels by terminal cell width', () => {
@@ -268,7 +296,7 @@ describe('projectRunnerCallActivity', () => {
         {
           ...runnerCallBase,
           type: 'call_warning',
-          warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+          warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
         },
         12,
       ),
@@ -277,7 +305,7 @@ describe('projectRunnerCallActivity', () => {
       kind: 'warning',
       label: 'warning stderr',
       diagnosticPartial: 'line one sk-***REDACTED***',
-      rawAvailable: true,
+      rawAvailable: false,
       redacted: true,
     });
   });
@@ -287,7 +315,7 @@ describe('projectRunnerCallActivity', () => {
       {
         ...runnerCallBase,
         type: 'call_warning',
-        warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+        warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
       },
       12,
     );
@@ -295,7 +323,7 @@ describe('projectRunnerCallActivity', () => {
       {
         ...runnerCallBase,
         type: 'call_warning',
-        warning: { code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' },
+        warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
       },
       13,
     );
@@ -303,7 +331,7 @@ describe('projectRunnerCallActivity', () => {
       {
         ...runnerCallBase,
         type: 'call_warning',
-        warning: { code: 'stderr', message: 'line two sk-abcdefghijklmnopqrst' },
+        warning: runnerWarning({ code: 'stderr', message: 'line two sk-abcdefghijklmnopqrst' }),
       },
       14,
     );

@@ -4,6 +4,7 @@ import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../call
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { ParsedLine } from '../runners/types.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
+import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from './stderr-lines.js';
@@ -61,6 +62,21 @@ export async function spawnAndCollect(
         opts.onStderr?.(chunk);
       },
       signal: opts.signal,
+      onStdoutLineOverflow: (overflow) => {
+        finishRunnerCallOutputLimit(
+          recorder,
+          runnerCallLineOutputLimit({
+            code: 'stdout_line_overflow',
+            label: 'stdout line',
+            lineBytes: overflow.lineBytes,
+            maxLineBytes: overflow.maxLineBytes,
+          }),
+          {
+            usage: parsedRecorder.usage,
+            nativeSessionId: parsedRecorder.sessionId,
+          },
+        );
+      },
       onLine(line) {
         parsedRecorder.apply(parseLine(line));
       },

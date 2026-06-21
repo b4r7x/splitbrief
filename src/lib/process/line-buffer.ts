@@ -1,7 +1,13 @@
 export type LineBufferOptions = {
   maxLineBytes?: number | undefined;
-  onOverflow?: ((bytes: number) => void) | undefined;
+  onOverflow?: ((overflow: LineBufferOverflow) => void) | undefined;
 };
+
+export interface LineBufferOverflow {
+  readonly lineBytes: number;
+  readonly maxLineBytes: number;
+  readonly truncated: true;
+}
 
 export function createLineBuffer(
   onLine: (line: string) => void,
@@ -31,7 +37,11 @@ export function createLineBuffer(
           const head = newlineIndex === -1 ? buffer : buffer.slice(0, newlineIndex);
           const headBytes = Buffer.byteLength(head, 'utf8');
           if (headBytes <= maxLineBytes) break;
-          options.onOverflow?.(headBytes);
+          options.onOverflow?.({
+            lineBytes: headBytes,
+            maxLineBytes,
+            truncated: true,
+          });
           if (newlineIndex === -1) {
             skipping = true;
             buffer = '';

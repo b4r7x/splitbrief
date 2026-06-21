@@ -29,7 +29,7 @@ TypeScript types exist for things that cannot be expressed as runtime-checkable 
 
 **`z.infer<>` types live in the same file as the schema.** Do not split `TaskSchema` and `type Task = z.infer<typeof TaskSchema>` across two files. They are one concept.
 
-**Carve-out — `EngineEvent`.** The discriminated-union schema is `EngineEventSchema` in `src/engine/events/schema.ts`; its inferred alias `EngineEvent = z.infer<typeof EngineEventSchema>` is declared one file over in `src/engine/events/types.ts`, alongside the schema-less `EventBus` / `EventSink` ports it travels with. This is the one sanctioned split: the event ports have no Zod backing and over a hundred consumers import the alias and the ports as a single `events/types.js` contract. The alias is still derived from the schema — never hand-written — so the two files cannot drift.
+**Carve-out — `EngineEvent`.** The type-dispatched schema is `EngineEventSchema` in `src/engine/events/schema.ts`; its inferred alias `EngineEvent = z.infer<typeof EngineEventSchema>` is declared one file over in `src/engine/events/types.ts`, alongside the schema-less `EventBus` / `EventSink` ports it travels with. This is the one sanctioned split: the event ports have no Zod backing and over a hundred consumers import the alias and the ports as a single `events/types.js` contract. The alias is still derived from the schema — never hand-written — so the two files cannot drift.
 
 ---
 
@@ -107,7 +107,7 @@ Types should live where their domain meaning is created — not in a central `ty
 
 | Type | Old home | New home | Why |
 |---|---|---|---|
-| `EngineEventSchema` (union) | n/a (new) | `engine/events/schema.ts` | The `z.discriminatedUnion('type', …)` is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
+| `EngineEventSchema` (type-dispatched union) | n/a (new) | `engine/events/schema.ts` | The type-indexed schema contract is the source of truth for every engine event; persisted to `session.jsonl` and validated by `parseEngineEvent` |
 | `EngineEvent` (alias) | n/a (new) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
 | `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/orchestrator/types.ts` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |

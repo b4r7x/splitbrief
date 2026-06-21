@@ -88,8 +88,8 @@ describe('stdoutJsonSink', () => {
         activityId: 'call-1:tool:tool-1',
         stage: 'completed',
         kind: 'command',
-        label: 'running echo sk-***REDACTED***',
-        target: 'echo sk-***REDACTED***',
+        label: 'running echo private-runner-output-92741',
+        target: 'echo private-runner-output-92741',
         redacted: true,
       });
 
@@ -102,11 +102,14 @@ describe('stdoutJsonSink', () => {
           activityId: 'call-1:tool:tool-1',
           stage: 'completed',
           kind: 'command',
-          label: TRANSCRIPT_OMITTED_MESSAGE,
-          target: TRANSCRIPT_OMITTED_MESSAGE,
+          label: 'running command',
+          rawAvailable: false,
           redacted: true,
         },
       });
+      expect(JSON.stringify(record)).not.toContain('"target"');
+      expect(JSON.stringify(record)).not.toContain('"expandId"');
+      expect(JSON.stringify(record)).not.toContain('private-runner-output-92741');
     } finally {
       spy.mockRestore();
     }

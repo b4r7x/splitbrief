@@ -63,7 +63,7 @@ registerLastCommand(program);
 program.parseAsync().catch(async (err) => {
   await flushOtel();
   if (isCliError(err)) {
-    console.error(`${ansis.red('Error:')} ${err.message}`);
+    console.error(`${ansis.red('Error:')} ${toErrorMessage(err)}`);
     process.exit(err.exitCode);
   }
   console.error(`${ansis.red('Error:')} ${toErrorMessage(err)}`);

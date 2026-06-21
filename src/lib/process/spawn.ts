@@ -1,10 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { error } from '../../utils/error.js';
+import { createBoundedOutput, type BoundedOutputMetadata } from './bounded-output.js';
 import { isENOENT, processError } from './errors.js';
 import { createLineBuffer } from './line-buffer.js';
 import { registerProcess, unregisterProcess, killProcess, abortProcess } from './registry.js';
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+export const DEFAULT_PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024;
+export const DEFAULT_PROCESS_STDERR_MAX_BYTES = 256 * 1024;
+export const DEFAULT_PROCESS_LINE_MAX_BYTES = 1024 * 1024;
 
 export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
@@ -104,21 +108,46 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       fail(err);
     });
 
-    if (opts.stdin !== undefined) {
-      stdin.write(opts.stdin);
+    if (opts.stdin === undefined) {
+      stdin.end();
+      return;
     }
-    stdin.end();
+
+    if (stdin.write(opts.stdin)) {
+      stdin.end();
+      return;
+    }
+
+    stdin.once('drain', () => stdin.end());
   });
 }
 
 export function runCommand(
   command: string,
   args: string[],
-  options?: { cwd?: string | undefined; timeout?: number | undefined; label?: string | undefined },
-): Promise<{ stdout: string; stderr: string; code: 0 }> {
+  options?: {
+    cwd?: string | undefined;
+    timeout?: number | undefined;
+    label?: string | undefined;
+    outputMaxBytes?: number | undefined;
+    stderrMaxBytes?: number | undefined;
+  },
+): Promise<{
+  stdout: string;
+  stderr: string;
+  code: 0;
+  stdoutMetadata?: BoundedOutputMetadata | undefined;
+  stderrMetadata?: BoundedOutputMetadata | undefined;
+}> {
   const timeout = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
-  let stdout = '';
-  let stderr = '';
+  const stdout = createBoundedOutput({
+    maxBytes: options?.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    policy: 'prefix-tail',
+  });
+  const stderr = createBoundedOutput({
+    maxBytes: options?.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    policy: 'tail',
+  });
   const timeoutSignal = AbortSignal.timeout(timeout);
 
   return spawnPipe({
@@ -133,18 +162,20 @@ export function runCommand(
       timeoutSignal.addEventListener('abort', () => killProcess(proc), { once: true });
     },
     onStdout: (chunk) => {
-      stdout += chunk;
+      stdout.append(chunk);
     },
     onStderr: (chunk) => {
-      stderr += chunk;
+      stderr.append(chunk);
     },
     onClose: (code) => {
+      const stdoutSnapshot = stdout.snapshot();
+      const stderrSnapshot = stderr.snapshot();
       if (timeoutSignal.aborted) {
         throw processError.timeout({
           command,
           label: options?.label,
           timeoutMs: timeout,
-          output: stderr || stdout,
+          output: stderrSnapshot.text || stdoutSnapshot.text,
         });
       }
       if (code === 127) {
@@ -155,11 +186,17 @@ export function runCommand(
           command,
           label: options?.label,
           code,
-          stderr,
-          output: stdout,
+          stderr: stderrSnapshot.text,
+          output: stdoutSnapshot.text,
         });
       }
-      return { stdout, stderr, code: 0 };
+      return {
+        stdout: stdoutSnapshot.text,
+        stderr: stderrSnapshot.text,
+        code: 0,
+        stdoutMetadata: stdoutSnapshot,
+        stderrMetadata: stderrSnapshot,
+      };
     },
     onError: () => null,
   });
@@ -170,6 +207,8 @@ export interface SpawnResult {
   code: number;
   timedOut: boolean;
   stderr: string;
+  outputMetadata?: BoundedOutputMetadata | undefined;
+  stderrMetadata?: BoundedOutputMetadata | undefined;
 }
 
 export interface SpawnOptions {
@@ -183,11 +222,19 @@ export interface SpawnOptions {
   stdinInput?: string | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
+  outputMaxBytes?: number | undefined;
+  stderrMaxBytes?: number | undefined;
 }
 
 export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
-  let output = '';
-  let stderrOutput = '';
+  const output = createBoundedOutput({
+    maxBytes: opts.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    policy: 'prefix-tail',
+  });
+  const stderrOutput = createBoundedOutput({
+    maxBytes: opts.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    policy: 'tail',
+  });
   const timeoutSignal = AbortSignal.timeout(opts.timeout);
 
   return spawnPipe({
@@ -208,16 +255,25 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
       });
     },
     onStdout: (chunk) => {
-      output += chunk;
+      output.append(chunk);
       opts.onProgress(chunk);
     },
     onStderr: (chunk) => {
-      stderrOutput += chunk;
+      stderrOutput.append(chunk);
       opts.onStderr?.(chunk);
     },
     onClose: (code) => {
+      const outputSnapshot = output.snapshot();
+      const stderrSnapshot = stderrOutput.snapshot();
       if (timeoutSignal.aborted) {
-        return { output, code: code ?? 1, timedOut: true, stderr: stderrOutput };
+        return {
+          output: outputSnapshot.text,
+          code: code ?? 1,
+          timedOut: true,
+          stderr: stderrSnapshot.text,
+          outputMetadata: outputSnapshot,
+          stderrMetadata: stderrSnapshot,
+        };
       }
       if (code === 127) {
         throw processError.notFound(opts.command, opts.notFoundMessage);
@@ -226,11 +282,18 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
         throw processError.exitCode({
           command: opts.command,
           code,
-          stderr: stderrOutput,
-          output,
+          stderr: stderrSnapshot.text,
+          output: outputSnapshot.text,
         });
       }
-      return { output, code: 0, timedOut: false, stderr: stderrOutput };
+      return {
+        output: outputSnapshot.text,
+        code: 0,
+        timedOut: false,
+        stderr: stderrSnapshot.text,
+        outputMetadata: outputSnapshot,
+        stderrMetadata: stderrSnapshot,
+      };
     },
     onError: (err) => {
       if (opts.notFoundMessage && isENOENT(err))
@@ -263,14 +326,35 @@ export async function spawnWithStdin(opts: {
   env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   onLine: (line: string) => void;
+  onStdoutLineOverflow?:
+    | ((overflow: { lineBytes: number; maxLineBytes: number }) => void)
+    | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
   errorDetail?: (() => string | undefined) | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
-}): Promise<{ text: string; stderrOutput: string; code: number }> {
-  let rawText = '';
-  let stderrOutput = '';
-  const stdoutBuf = createLineBuffer(opts.onLine);
+  outputMaxBytes?: number | undefined;
+  stderrMaxBytes?: number | undefined;
+  stdoutLineMaxBytes?: number | undefined;
+}): Promise<{
+  text: string;
+  stderrOutput: string;
+  code: number;
+  textMetadata?: BoundedOutputMetadata | undefined;
+  stderrMetadata?: BoundedOutputMetadata | undefined;
+}> {
+  const rawText = createBoundedOutput({
+    maxBytes: opts.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    policy: 'prefix-tail',
+  });
+  const stderrOutput = createBoundedOutput({
+    maxBytes: opts.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    policy: 'tail',
+  });
+  const stdoutBuf = createLineBuffer(opts.onLine, {
+    maxLineBytes: opts.stdoutLineMaxBytes ?? DEFAULT_PROCESS_LINE_MAX_BYTES,
+    onOverflow: (overflow) => opts.onStdoutLineOverflow?.(overflow),
+  });
 
   return spawnPipe({
     command: opts.command,
@@ -281,17 +365,19 @@ export async function spawnWithStdin(opts: {
     stdin: opts.stdin,
     signal: opts.signal,
     onStdout: (chunk) => {
-      rawText += chunk;
+      rawText.append(chunk);
       stdoutBuf.push(chunk);
     },
     onStderr: (chunk) => {
-      stderrOutput += chunk;
+      stderrOutput.append(chunk);
       opts.onStderr?.(chunk);
     },
     onError: (err) =>
       isENOENT(err) ? processError.notFound(opts.command, opts.notFoundMessage) : null,
     onClose: (code) => {
       stdoutBuf.flush();
+      const textSnapshot = rawText.snapshot();
+      const stderrSnapshot = stderrOutput.snapshot();
 
       if (code === 127) {
         throw processError.notFound(opts.command, opts.notFoundMessage);
@@ -301,13 +387,19 @@ export async function spawnWithStdin(opts: {
         throw processError.exitCode({
           command: opts.command,
           code,
-          stderr: stderrOutput,
-          output: rawText,
-          detail: stderrOutput.trim() ? undefined : opts.errorDetail?.(),
+          stderr: stderrSnapshot.text,
+          output: textSnapshot.text,
+          detail: stderrSnapshot.text.trim() ? undefined : opts.errorDetail?.(),
         });
       }
 
-      return { text: rawText, stderrOutput, code: code ?? 0 };
+      return {
+        text: textSnapshot.text,
+        stderrOutput: stderrSnapshot.text,
+        code: code ?? 0,
+        textMetadata: textSnapshot,
+        stderrMetadata: stderrSnapshot,
+      };
     },
   });
 }

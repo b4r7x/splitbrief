@@ -60,10 +60,11 @@ export async function autoCompactResumeContext(
       onCallEvent: (event) =>
         publishRunnerCallEvent({ bus: opts.bus, phase: opts.state.phase }, event),
       onFallback: () =>
-        publishWarning(
-          { bus: opts.bus, phase: 'researching' },
-          'Structured compaction returned invalid JSON; saved freeform summary instead.',
-        ),
+        publishWarning({
+          bus: opts.bus,
+          phase: 'researching',
+          message: 'Structured compaction returned invalid JSON; saved freeform summary instead.',
+        }),
     });
     return addUsageAndSave(
       { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
@@ -90,10 +91,12 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
     config.workflow.persistTranscript !== false,
   );
   if (rebuilt.warning === 'transcript-unavailable') {
-    publishWarning(
-      { bus: bus, phase: 'researching' },
-      'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.',
-    );
+    publishWarning({
+      bus: bus,
+      phase: 'researching',
+      message:
+        'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.',
+    });
     return;
   }
   if (!resumeHolder) return;
@@ -111,10 +114,11 @@ export type SessionExpiredHandlerOpts = {
 
 export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {
   return async () => {
-    publishWarning(
-      { bus: opts.bus, phase: 'researching' },
-      'Previous planner conversation expired — rebuilding context from transcript.',
-    );
+    publishWarning({
+      bus: opts.bus,
+      phase: 'researching',
+      message: 'Previous planner conversation expired — rebuilding context from transcript.',
+    });
     await applyRebuiltContext(opts);
   };
 }

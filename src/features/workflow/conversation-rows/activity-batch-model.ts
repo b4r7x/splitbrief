@@ -1,10 +1,15 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { shellCommandFromText } from '../../../utils/shell-quote.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from '../display/activity-display-text.js';
-import { runnerActivityDiagnosticPreview } from '../display/runner-terminal.js';
-import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
+import {
+  runnerActivityLedgerItem,
+  runnerActivityRoleLabel,
+  runnerActivitySeverityRank,
+  type RunnerActivityLedgerItem,
+  type RunnerActivitySeverity,
+} from '../display/runner-activity-display.js';
 import type { ConversationRowTone } from './types.js';
 
 export const COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT = 3;
@@ -18,18 +23,44 @@ export interface ActivityDisplayItem {
   labelTone: ConversationRowTone;
   valueTone: ConversationRowTone;
   fitMode: ActivityDisplayValueFit;
+  severity: RunnerActivitySeverity;
+  pinned: boolean;
+  rawMarker: string | null;
+  groupLabel: string;
 }
 
 export interface ActivityBatchViewModel {
   batchKey: string;
-  allItems: readonly ActivityDisplayItem[];
   visibleItems: readonly ActivityDisplayItem[];
+  expanded: boolean;
   hiddenCount: number;
   headerCount: number;
   headerText: string | null;
   tone: ConversationRowTone;
   renderableUnits: number;
   expandableKey: string | null;
+  severityCounts: Readonly<Record<RunnerActivitySeverity, number>>;
+  groups: readonly ActivityBatchGroup[];
+  rawMarkers: number;
+}
+
+export interface ActivityBatchGroup {
+  label: string;
+  count: number;
+}
+
+interface ActivityItemSummary {
+  groupLabel: string;
+  rawMarker: string | null;
+  severity: RunnerActivitySeverity;
+}
+
+interface ActivityItemsProjection {
+  visibleItems: readonly ActivityDisplayItem[];
+  headerCount: number;
+  severityCounts: Readonly<Record<RunnerActivitySeverity, number>>;
+  groups: readonly ActivityBatchGroup[];
+  rawMarkers: number;
 }
 
 export function buildActivityBatchViewModel(input: {
@@ -37,215 +68,226 @@ export function buildActivityBatchViewModel(input: {
   batchKey: string;
   expanded?: boolean;
 }): ActivityBatchViewModel {
-  const allItems = activityItems(input.events);
-  const hiddenCount = Math.max(0, allItems.length - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
-  const visibleItems =
-    input.expanded === true ? allItems : allItems.slice(-COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
-  const headerCount = allItems.length;
+  const expanded = input.expanded === true;
+  const projection = expanded
+    ? expandedActivityItemsProjection(input.events)
+    : collapsedActivityItemsProjection(input.events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
+  const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
 
   return {
     batchKey: input.batchKey,
-    allItems,
-    visibleItems,
+    visibleItems: projection.visibleItems,
+    expanded,
     hiddenCount,
-    headerCount,
-    headerText: activityBatchHeader(input.events, headerCount),
+    headerCount: projection.headerCount,
+    headerText: activityBatchHeader(
+      input.events,
+      projection.headerCount,
+      projection.severityCounts,
+    ),
     tone: activityBatchTone(input.events),
-    renderableUnits: headerCount,
+    renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
+    severityCounts: projection.severityCounts,
+    groups: projection.groups,
+    rawMarkers: projection.rawMarkers,
   };
 }
 
 export function runnerActivityDisplayKey(event: RunnerActivityEvent): string {
-  return activityDisplayItem(event).key;
+  return runnerActivityLedgerItem(event).visibleKey;
 }
 
-function activityItems(events: readonly RunnerActivityEvent[]): ActivityDisplayItem[] {
-  const items: ActivityDisplayItem[] = [];
+function activityLedgerItems(events: readonly RunnerActivityEvent[]): RunnerActivityLedgerItem[] {
+  const items = new Map<string, RunnerActivityLedgerItem>();
   for (const event of events) {
-    const item = activityDisplayItem(event);
-    const existingIndex = items.findIndex((current) => current.key === item.key);
-    if (existingIndex >= 0) items.splice(existingIndex, 1);
-    items.push(item);
+    const item = runnerActivityLedgerItem(event);
+    if (items.has(item.visibleKey)) items.delete(item.visibleKey);
+    items.set(item.visibleKey, item);
   }
-  return items;
+  return Array.from(items.values());
 }
 
-function activityDisplayItem(event: RunnerActivityEvent): ActivityDisplayItem {
-  const raw = event.target ?? event.label;
-  const withoutVerb = stripActivityVerb(raw);
-  const value = activityValue(event);
-  const label = activityLabel(
-    event,
-    shellCommandFromText(withoutVerb) !== null || shellCommandFromText(raw) !== null,
-  );
-
+function expandedActivityItemsProjection(
+  events: readonly RunnerActivityEvent[],
+): ActivityItemsProjection {
+  const items = activityLedgerItems(events);
+  const summaries = items.map(activityItemSummary);
   return {
-    key: [label, value].join('\u0000'),
-    label,
-    value,
-    labelTone: activityTone(event.stage),
-    valueTone: activityValueTone(event.stage),
-    fitMode: activityFitMode(label, event),
+    visibleItems: items.map(activityDisplayItem),
+    headerCount: items.length,
+    severityCounts: activitySeverityCounts(summaries),
+    groups: activityGroups(summaries),
+    rawMarkers: activityRawMarkerCount(summaries),
   };
 }
 
-function activityValue(event: RunnerActivityEvent): string {
-  if (isUserInterruptedActivity(event)) return 'current turn interrupted';
+function collapsedActivityItemsProjection(
+  events: readonly RunnerActivityEvent[],
+  maxItems: number,
+): ActivityItemsProjection {
+  const summaries = new Map<string, ActivityItemSummary>();
+  const pinnedCandidates = new Map<string, RunnerActivityLedgerItem>();
+  const recent = new Map<string, RunnerActivityLedgerItem>();
 
-  const source = event.target ?? event.label;
-  const withoutVerb = stripActivityVerb(source);
-  const primary = shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
-  const detail = runnerActivityDiagnosticPreview(event);
-  if (detail === null || primary.includes(detail)) return primary;
-  return `${primary}: ${detail}`;
-}
-
-function stripActivityVerb(text: string): string {
-  const prefixes = [
-    'aborted ',
-    'running ',
-    'reading ',
-    'editing ',
-    'searching ',
-    'matching ',
-    'calling ',
-    'planning ',
-    'session ',
-    'artifact ',
-    'warning ',
-    'failed ',
-    'timeout ',
-    'truncated ',
-    'refused ',
-    'unsupported_tool ',
-    'incomplete ',
-  ];
-  for (const prefix of prefixes) {
-    if (text.startsWith(prefix)) return text.slice(prefix.length).trim();
+  for (const event of events) {
+    const item = runnerActivityLedgerItem(event);
+    summaries.set(item.visibleKey, activityItemSummary(item));
+    if (recent.has(item.visibleKey)) recent.delete(item.visibleKey);
+    recent.set(item.visibleKey, item);
+    trimRecentActivityItems(recent, maxItems);
+    if (pinnedCandidates.has(item.visibleKey)) pinnedCandidates.delete(item.visibleKey);
+    if (item.pinned) {
+      pinnedCandidates.set(item.visibleKey, item);
+    }
   }
-  return text;
+
+  return {
+    visibleItems: collapsedActivityItems({
+      recent: Array.from(recent.values()),
+      pinned: selectPinnedActivityItem(pinnedCandidates.values()),
+      totalCount: summaries.size,
+      maxItems,
+    }).map(activityDisplayItem),
+    headerCount: summaries.size,
+    severityCounts: activitySeverityCounts(summaries.values()),
+    groups: activityGroups(summaries.values()),
+    rawMarkers: activityRawMarkerCount(summaries.values()),
+  };
 }
 
-function activityLabel(event: RunnerActivityEvent, shellCommand: boolean): string {
-  if (isUserInterruptedActivity(event)) return 'interrupted';
-  if (shellCommand) return 'run';
-
-  switch (event.kind) {
-    case 'tool':
-      return 'tool';
-    case 'file':
-      return 'file';
-    case 'text':
-      return 'text';
-    case 'command':
-      return 'run';
-    case 'read':
-      return 'read';
-    case 'write':
-    case 'edit':
-      return 'edit';
-    case 'search':
-    case 'glob':
-      return 'search';
-    case 'task':
-      return 'task';
-    case 'web':
-    case 'mcp':
-      return 'call';
-    case 'plan':
-      return 'plan';
-    case 'session':
-      return 'session';
-    case 'artifact':
-      return 'artifact';
-    case 'warning':
-      return 'warning';
-    case 'error':
-      if (event.stage === 'aborted') return 'interrupted';
-      return 'error';
-    case 'unknown':
-      return 'activity';
-    default:
-      return assertNever(event.kind);
+function selectPinnedActivityItem(
+  items: Iterable<RunnerActivityLedgerItem>,
+): RunnerActivityLedgerItem | null {
+  let pinned: RunnerActivityLedgerItem | null = null;
+  for (const item of items) {
+    if (
+      pinned === null ||
+      runnerActivitySeverityRank(item.severity) >= runnerActivitySeverityRank(pinned.severity)
+    ) {
+      pinned = item;
+    }
   }
+  return pinned;
 }
 
-function isUserInterruptedActivity(event: RunnerActivityEvent): boolean {
-  return (
-    event.stage === 'aborted' &&
-    event.kind === 'error' &&
-    event.label.includes('runner_interrupted')
-  );
-}
-
-function activityFitMode(label: string, event: RunnerActivityEvent): ActivityDisplayValueFit {
-  if (label === 'run') return 'middle';
-  if (event.kind === 'read' || event.kind === 'write' || event.kind === 'edit') return 'start';
-  if (event.kind === 'warning' || event.kind === 'error') return 'middle';
-  return 'end';
-}
-
-function activityTone(stage: RunnerActivityEvent['stage']): ConversationRowTone {
-  switch (stage) {
-    case 'started':
-    case 'updated':
-      return 'info';
-    case 'completed':
-      return 'success';
-    case 'warning':
-    case 'aborted':
-    case 'timeout':
-    case 'truncated':
-    case 'incomplete':
-      return 'warning';
-    case 'failed':
-    case 'refused':
-    case 'unsupported_tool':
-      return 'error';
-    default:
-      return assertNever(stage);
-  }
-}
-
-function activityValueTone(stage: RunnerActivityEvent['stage']): ConversationRowTone {
-  switch (stage) {
-    case 'started':
-    case 'updated':
-    case 'completed':
-      return 'textDim';
-    case 'warning':
-    case 'aborted':
-    case 'timeout':
-    case 'truncated':
-    case 'incomplete':
-      return 'warning';
-    case 'failed':
-    case 'refused':
-    case 'unsupported_tool':
-      return 'error';
-    default:
-      return assertNever(stage);
-  }
+function activityDisplayItem(display: RunnerActivityLedgerItem): ActivityDisplayItem {
+  return {
+    key: display.visibleKey,
+    label: display.label,
+    value: display.value,
+    labelTone: toneToConversationTone(display.tone),
+    valueTone: toneToConversationTone(display.valueTone),
+    fitMode: display.fitMode,
+    severity: display.severity,
+    pinned: display.pinned,
+    rawMarker: display.rawMarker,
+    groupLabel: display.groupLabel,
+  };
 }
 
 function activityBatchHeader(
   events: readonly RunnerActivityEvent[],
   headerCount: number,
+  severityCounts: Readonly<Record<RunnerActivitySeverity, number>>,
 ): string | null {
   if (headerCount <= 1) return null;
 
   const latest = events.at(-1);
   if (latest === undefined) return null;
 
-  const tool = sanitizeWorkflowDisplayText(formatToolModel(latest.runnerName, latest.model));
+  const tool = sanitizeTerminalDisplayText(formatToolModel(latest.runnerName, latest.model));
+  const warnings = severityCounts.warning;
+  const errors = severityCounts.error;
   return [
-    `${latest.role} activity`,
+    `${runnerActivityRoleLabel(latest.role)} activity`,
     `${headerCount} ${headerCount === 1 ? 'update' : 'updates'}`,
+    warnings > 0 ? `${warnings} warn` : null,
+    errors > 0 ? `${errors} err` : null,
     tool ? `[${tool}]` : null,
   ]
     .filter((part): part is string => part !== null)
     .join('  ');
+}
+
+function collapsedActivityItems(input: {
+  recent: readonly RunnerActivityLedgerItem[];
+  pinned: RunnerActivityLedgerItem | null;
+  totalCount: number;
+  maxItems: number;
+}): RunnerActivityLedgerItem[] {
+  if (input.totalCount <= input.maxItems) return [...input.recent];
+  const visible: RunnerActivityLedgerItem[] = [];
+  if (input.pinned) visible.push(input.pinned);
+
+  const remaining = input.maxItems - visible.length;
+  if (remaining <= 0) return visible;
+
+  const recentWithoutPinned = input.recent.filter(
+    (item) => item.visibleKey !== input.pinned?.visibleKey,
+  );
+  visible.push(...recentWithoutPinned.slice(-remaining));
+  return visible;
+}
+
+function activityItemSummary(item: ActivityItemSummary): ActivityItemSummary {
+  return {
+    groupLabel: item.groupLabel,
+    rawMarker: item.rawMarker,
+    severity: item.severity,
+  };
+}
+
+function trimRecentActivityItems(
+  items: Map<string, RunnerActivityLedgerItem>,
+  maxItems: number,
+): void {
+  while (items.size > maxItems) {
+    const oldest = items.keys().next();
+    if (oldest.done === true) return;
+    items.delete(oldest.value);
+  }
+}
+
+function activitySeverityCounts(
+  items: Iterable<ActivityItemSummary>,
+): Readonly<Record<RunnerActivitySeverity, number>> {
+  const counts: Record<RunnerActivitySeverity, number> = { info: 0, warning: 0, error: 0 };
+  for (const item of items) counts[item.severity] += 1;
+  return counts;
+}
+
+function activityRawMarkerCount(items: Iterable<ActivityItemSummary>): number {
+  let count = 0;
+  for (const item of items) {
+    if (item.rawMarker !== null) count += 1;
+  }
+  return count;
+}
+
+function activityGroups(items: Iterable<ActivityItemSummary>): ActivityBatchGroup[] {
+  const groups = new Map<string, number>();
+  for (const item of items) groups.set(item.groupLabel, (groups.get(item.groupLabel) ?? 0) + 1);
+  return Array.from(groups, ([label, count]) => ({ label, count }));
+}
+
+function toneToConversationTone(
+  tone: 'info' | 'success' | 'warning' | 'error' | 'textDim',
+): ConversationRowTone {
+  switch (tone) {
+    case 'info':
+      return 'info';
+    case 'success':
+      return 'success';
+    case 'warning':
+      return 'warning';
+    case 'error':
+      return 'error';
+    case 'textDim':
+      return 'textDim';
+    default:
+      return assertNever(tone);
+  }
 }
 
 function activityBatchTone(events: readonly RunnerActivityEvent[]): ConversationRowTone {

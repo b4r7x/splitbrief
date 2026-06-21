@@ -1,23 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { detectAvailablePlanners } from './detect.js';
 import { detectAvailableProviders } from '../providers/registry.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
-import { runCommand } from '../../lib/process/spawn.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { CliToolId } from '../../core/schemas/enums.js';
+import type { Planner } from '../planners/types.js';
 
-vi.mock('../../lib/process/spawn.js', () => ({
-  runCommand: vi.fn(),
-}));
+type PlannerFactory = (config: Config) => Promise<Planner>;
 
-const runCommandMock = vi.mocked(runCommand);
+function makeCliPlannerFactory(opts: {
+  available?: boolean;
+  versions?: Partial<Record<CliToolId, string>>;
+}): PlannerFactory {
+  return async (config) => {
+    if (config.planner.kind !== 'cli') throw new Error('expected cli planner config');
+    const version =
+      opts.versions?.[config.planner.tool] ?? CLI_TOOLS[config.planner.tool].testedVersion;
+    return makePlanner({
+      isAvailable: vi.fn().mockResolvedValue(opts.available ?? true),
+      getVersion: vi.fn().mockResolvedValue(version),
+    });
+  };
+}
 
 describe('detectAvailablePlanners', () => {
   const providerResults = [
     { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
   ] as const;
+  const createPlanner = makeCliPlannerFactory({ available: false });
 
   it('shell planner is always available', async () => {
-    const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
+    const results = await detectAvailablePlanners({
+      providerResults: [...providerResults],
+      createPlanner,
+    });
     const shell = results.find((r) => r.tool === 'shell');
     expect(shell).toMatchObject({ type: 'shell', available: true, description: 'Custom command' });
   });
@@ -26,7 +44,10 @@ describe('detectAvailablePlanners', () => {
     const orig = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = 'test-key';
     try {
-      const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
+      const results = await detectAvailablePlanners({
+        providerResults: [...providerResults],
+        createPlanner,
+      });
       const anthropic = results.find((r) => r.tool === 'anthropic');
       expect(anthropic).toMatchObject({
         available: true,
@@ -49,7 +70,10 @@ describe('detectAvailablePlanners', () => {
       return new Response('', { status: 404 });
     }) as typeof fetch;
     try {
-      const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
+      const results = await detectAvailablePlanners({
+        providerResults: [...providerResults],
+        createPlanner,
+      });
       const openrouter = results.find((r) => r.tool === 'openrouter');
       expect(openrouter).toMatchObject({
         available: false,
@@ -80,27 +104,18 @@ describe('detectAvailablePlanners CLI version matrix', () => {
 
   afterEach(() => {
     writeSpy.mockRestore();
-    runCommandMock.mockReset();
   });
-
-  // Every CLI tool reports its own tested version, except the one under test,
-  // so the only warning that can appear is the deliberate mismatch.
-  function mockVersionsExcept(overrideCommand: string, overrideStdout: string) {
-    runCommandMock.mockImplementation(async (command: string) => {
-      if (command === overrideCommand) return { stdout: overrideStdout, stderr: '', code: 0 };
-      const entry = Object.values(CLI_TOOLS).find((e) => e.command === command);
-      return { stdout: entry ? entry.testedVersion : '0.0.0', stderr: '', code: 0 };
-    });
-  }
 
   it('records version compatibility without writing startup stderr', async () => {
     const testedMajor = Number(CLI_TOOLS.codex.testedVersion.split('.')[0]);
     const installed = `${testedMajor + 9}.0.0`;
-    mockVersionsExcept(CLI_TOOLS.codex.command, `codex ${installed}`);
+    const createPlanner = makeCliPlannerFactory({
+      versions: { codex: installed },
+    });
 
-    const codex = (await detectAvailablePlanners({ providerResults: [...providerResults] })).find(
-      (r) => r.tool === 'codex',
-    );
+    const codex = (
+      await detectAvailablePlanners({ providerResults: [...providerResults], createPlanner })
+    ).find((r) => r.tool === 'codex');
 
     expect(codex).toMatchObject({ available: true, version: installed });
     expect(codex).not.toHaveProperty('error');
@@ -115,11 +130,13 @@ describe('detectAvailablePlanners CLI version matrix', () => {
   });
 
   it('does not warn when the installed CLI major version matches the tested one', async () => {
-    mockVersionsExcept(CLI_TOOLS.codex.command, `codex ${CLI_TOOLS.codex.testedVersion}`);
+    const createPlanner = makeCliPlannerFactory({
+      versions: { codex: CLI_TOOLS.codex.testedVersion },
+    });
 
-    const codex = (await detectAvailablePlanners({ providerResults: [...providerResults] })).find(
-      (r) => r.tool === 'codex',
-    );
+    const codex = (
+      await detectAvailablePlanners({ providerResults: [...providerResults], createPlanner })
+    ).find((r) => r.tool === 'codex');
 
     expect(codex).toMatchObject({ available: true, version: CLI_TOOLS.codex.testedVersion });
     expect(stderr).not.toContain('differs in major version');

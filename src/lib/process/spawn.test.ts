@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin, spawnError } from './spawn.js';
 import { killProcess } from './registry.js';
-import { isENOENT } from './errors.js';
+import { isENOENT, processError } from './errors.js';
 import { spawn } from 'node:child_process';
+
 describe('spawnError', () => {
   it('tags the unavailable-streams failure with a domain kind', () => {
     const err = spawnError.streamsUnavailable();
@@ -38,6 +39,34 @@ describe('runCommand', () => {
     expect(result.code).toBe(0);
   });
 
+  it('retains bounded stdout and stderr snapshots for large command output', async () => {
+    const result = await runCommand(
+      'node',
+      [
+        '-e',
+        ['process.stdout.write("a".repeat(80));', 'process.stderr.write("b".repeat(80));'].join(''),
+      ],
+      { outputMaxBytes: 20, stderrMaxBytes: 10 },
+    );
+
+    expect(result.stdout).toHaveLength(20);
+    expect(result.stderr).toHaveLength(10);
+    expect(result.stdoutMetadata).toMatchObject({
+      bytesSeen: 80,
+      bytesStored: 20,
+      omittedBytes: 80,
+      truncated: true,
+      policy: 'prefix-tail',
+    });
+    expect(result.stderrMetadata).toMatchObject({
+      bytesSeen: 80,
+      bytesStored: 10,
+      omittedBytes: 80,
+      truncated: true,
+      policy: 'tail',
+    });
+  });
+
   it('rejects with a process-output error on nonzero exit', async () => {
     await expect(runCommand('node', ['-e', 'process.exit(42)'])).rejects.toMatchObject({
       kind: 'process-output',
@@ -57,6 +86,47 @@ describe('runCommand', () => {
         label: 'typecheck validation',
       }),
     ).rejects.toThrow('typecheck validation timed out');
+  });
+
+  it('caps retained stdout and reports truncation metadata', async () => {
+    const result = await runCommand(
+      'node',
+      ['-e', 'process.stdout.write("A".repeat(1024 * 1024 + 100))'],
+      { outputMaxBytes: 1024 },
+    );
+
+    expect(Buffer.byteLength(result.stdout, 'utf8')).toBeLessThanOrEqual(1024);
+    expect(result.stdout).toContain('output truncated');
+    expect(result.stdoutMetadata).toMatchObject({
+      bytesSeen: 1024 * 1024 + 100,
+      maxBytes: 1024,
+      truncated: true,
+    });
+  });
+
+  it('uses bounded stderr and stdout in process-output errors', async () => {
+    try {
+      await runCommand(
+        'node',
+        [
+          '-e',
+          [
+            'process.stdout.write("O".repeat(100_000));',
+            'process.stderr.write("E".repeat(100_000));',
+            'process.exit(2);',
+          ].join(''),
+        ],
+        { outputMaxBytes: 512, stderrMaxBytes: 256 },
+      );
+      throw new Error('expected command to fail');
+    } catch (err: unknown) {
+      expect(processError.isExitCode(err)).toBe(true);
+      if (!processError.isExitCode(err)) return;
+      expect(Buffer.byteLength(err.data.output, 'utf8')).toBeLessThanOrEqual(512);
+      expect(Buffer.byteLength(err.data.stderr, 'utf8')).toBeLessThanOrEqual(256);
+      expect(err.data.output).toContain('output truncated');
+      expect(err.data.stderr).toContain('output truncated');
+    }
   });
 });
 
@@ -108,6 +178,49 @@ describe('spawnWithTimeout', () => {
 
     expect(result.stderr).toContain('err');
     expect(stderrChunks.join('')).toContain('err');
+  });
+
+  it('streams every stdout chunk while retaining only bounded output', async () => {
+    const chunks: string[] = [];
+    const result = await spawnWithTimeout({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("x".repeat(100))'],
+      cwd: process.cwd(),
+      timeout: 5000,
+      outputMaxBytes: 12,
+      onProgress: (chunk) => chunks.push(chunk),
+    });
+
+    expect(chunks.join('')).toHaveLength(100);
+    expect(result.output).toHaveLength(12);
+    expect(result.outputMetadata).toMatchObject({
+      bytesSeen: 100,
+      bytesStored: 12,
+      omittedBytes: 100,
+      truncated: true,
+    });
+  });
+
+  it('caps retained output while still forwarding progress chunks', async () => {
+    let progressBytes = 0;
+    const result = await spawnWithTimeout({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("x".repeat(100_000))'],
+      cwd: process.cwd(),
+      timeout: 5000,
+      outputMaxBytes: 1024,
+      onProgress: (chunk) => {
+        progressBytes += Buffer.byteLength(chunk, 'utf8');
+      },
+    });
+
+    expect(progressBytes).toBe(100_000);
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(1024);
+    expect(result.outputMetadata).toMatchObject({
+      bytesSeen: 100_000,
+      maxBytes: 1024,
+      truncated: true,
+    });
   });
 
   it('times out long-running processes', async () => {
@@ -284,6 +397,66 @@ describe('spawnWithStdin', () => {
 
     expect(result.stderrOutput).toContain('err msg');
     expect(stderrChunks.join('')).toContain('err msg');
+  });
+
+  it('retains bounded stdout and stderr while line parsing still receives safe lines', async () => {
+    const lines: string[] = [];
+    const stderrChunks: string[] = [];
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: [
+        '-e',
+        [
+          'process.stdout.write("line1\\n");',
+          'process.stdout.write("x".repeat(80));',
+          'process.stderr.write("e".repeat(80));',
+        ].join(''),
+      ],
+      cwd: '.',
+      onLine: (line) => lines.push(line),
+      onStderr: (chunk) => stderrChunks.push(chunk),
+      outputMaxBytes: 20,
+      stderrMaxBytes: 10,
+      stdoutLineMaxBytes: 16,
+    });
+
+    expect(lines).toEqual(['line1']);
+    expect(stderrChunks.join('')).toHaveLength(80);
+    expect(result.text).toHaveLength(20);
+    expect(result.stderrOutput).toHaveLength(10);
+    expect(result.textMetadata).toMatchObject({
+      bytesSeen: 86,
+      bytesStored: 20,
+      omittedBytes: 86,
+      truncated: true,
+    });
+    expect(result.stderrMetadata).toMatchObject({
+      bytesSeen: 80,
+      bytesStored: 10,
+      omittedBytes: 80,
+      truncated: true,
+    });
+  });
+
+  it('caps retained text and prevents an oversized partial stdout line from being emitted', async () => {
+    const lines: string[] = [];
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("x".repeat(100_000))'],
+      cwd: '.',
+      notFoundMessage: 'node not found',
+      outputMaxBytes: 1024,
+      stdoutLineMaxBytes: 512,
+      onLine: (line) => lines.push(line),
+    });
+
+    expect(lines).toEqual([]);
+    expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(1024);
+    expect(result.textMetadata).toMatchObject({
+      bytesSeen: 100_000,
+      maxBytes: 1024,
+      truncated: true,
+    });
   });
 
   it('rejects with notFoundMessage for missing command', async () => {

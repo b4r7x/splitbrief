@@ -176,10 +176,11 @@ export function resolveIntermediateConfig(
   const intermediateModel = escalation.intermediateModel;
   const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
   if (!resolvedApiBase) {
-    publishWarning(
-      { bus: ctx.bus, phase: state.phase },
-      `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`,
-    );
+    publishWarning({
+      bus: ctx.bus,
+      phase: state.phase,
+      message: `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`,
+    });
   }
 
   const currentApiBase = hasApiBase(ctx.config.implementer)
@@ -187,10 +188,11 @@ export function resolveIntermediateConfig(
     : undefined;
   const effectiveApiBase = resolvedApiBase || currentApiBase;
   if (!effectiveApiBase) {
-    publishWarning(
-      { bus: ctx.bus, phase: state.phase },
-      `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`,
-    );
+    publishWarning({
+      bus: ctx.bus,
+      phase: state.phase,
+      message: `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`,
+    });
     return null;
   }
 
@@ -272,6 +274,7 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
     bus: ctx.bus,
     callbacks: ctx.callbacks,
     config: ctx.config,
+    getApprovalEnabled: ctx.getApprovalEnabled,
     staged,
     usesStaging: true,
     taskStartSnapshot: ctx.taskStartSnapshot,
@@ -347,10 +350,11 @@ function handleHintTierGateOutcome(input: {
   if (gateResult.outcome === 'gate-denied') {
     const files = gateResult.decision.changedFiles.join(', ');
     const reason = gateResult.decision.reason ?? 'denied';
-    publishError(
-      { bus: ctx.bus, phase: gateResult.state.phase },
-      `Hint-tier changed files blocked by approval gate: ${reason} (${files})`,
-    );
+    publishError({
+      bus: ctx.bus,
+      phase: gateResult.state.phase,
+      message: `Hint-tier changed files blocked by approval gate: ${reason} (${files})`,
+    });
     persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
     return {
       state: gateResult.state,
@@ -361,7 +365,7 @@ function handleHintTierGateOutcome(input: {
     };
   }
   const reason = `Hint-tier promotion blocked because files changed during approval: ${gateResult.conflictedFiles.join(', ')}`;
-  publishError({ bus: ctx.bus, phase: gateResult.state.phase }, reason);
+  publishError({ bus: ctx.bus, phase: gateResult.state.phase, message: reason });
   return {
     state: gateResult.state,
     task,
@@ -413,10 +417,11 @@ async function runFullTier(
         fileIgnoreProjectDir,
       }),
     onValidationAfterRetryFail: (validationError) => {
-      publishWarning(
-        { bus: ctx.bus, phase: state.phase },
-        `Tier-2 escalation produced code but validation failed: ${validationError}`,
-      );
+      publishWarning({
+        bus: ctx.bus,
+        phase: state.phase,
+        message: `Tier-2 escalation produced code but validation failed: ${validationError}`,
+      });
     },
   });
 

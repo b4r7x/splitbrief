@@ -5,6 +5,7 @@ import { applyInvokeResultProjection, toInvokeResult } from './projection.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import { runnerCallEventToSessionLogEntry } from './session-log.js';
 import type { RunnerCallEvent, RunnerCallResult } from './types.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 
 const result: RunnerCallResult = {
   callId: 'call-1',
@@ -291,7 +292,7 @@ describe('projectRunnerCallEvent', () => {
     ]);
   });
 
-  it('bounds projected stderr warnings to the engine event schema limit', () => {
+  it('keeps stderr deltas out of primary warning projection by default', () => {
     const projected = projectRunnerCallEvent(
       {
         type: 'call_stderr_delta',
@@ -305,12 +306,51 @@ describe('projectRunnerCallEvent', () => {
       { phase: 'planning', sequence: 5 },
     );
 
+    expect(projected).toBeNull();
+    expect(
+      projectRunnerCallEvents(
+        {
+          type: 'call_stderr_delta',
+          ts: 10,
+          callId: 'call-1',
+          role: 'planner',
+          backendKind: 'api',
+          channel: 'stderr',
+          text: 'benign progress',
+        },
+        { phase: 'planning', sequence: 5 },
+      ),
+    ).toEqual([]);
+  });
+
+  it('projects explicit runner call warnings with severity and fingerprint', () => {
+    const projected = projectRunnerCallEvent(
+      {
+        type: 'call_warning',
+        ts: 10,
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'api',
+        warning: normalizeRunnerCallWarning({
+          code: 'provider_retry',
+          severity: 'warning',
+          source: 'provider',
+          message: 'retrying request at 2026-06-21T10:00:00.000Z after 23ms',
+        }),
+      },
+      { phase: 'planning', sequence: 5 },
+    );
+
     expect(EngineEventSchema.safeParse(projected).success).toBe(true);
     expect(projected).toMatchObject({
       type: 'runner_call_warning',
       warning: {
-        code: 'stderr',
-        message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
+        code: 'provider_retry',
+        severity: 'warning',
+        source: 'provider',
+        surface: 'activity',
+        message: 'retrying request at 2026-06-21T10:00:00.000Z after 23ms',
+        fingerprint: expect.stringMatching(/^rw:/),
       },
     });
   });
