@@ -560,13 +560,24 @@ describe('runWorkflow — smoke', () => {
 
     expect(
       events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
-    ).toEqual(['runner_call_started', 'runner_call_usage', 'runner_call_completed']);
+    ).toEqual([
+      'runner_call_started',
+      'runner_call_usage',
+      'runner_call_completed',
+      'runner_call_activity',
+    ]);
     expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
       type: 'runner_call_completed',
       callId: 'planner-call-test',
       role: 'planner',
       status: 'completed',
       durationMs: 2,
+    });
+    expect(events.find((event) => event.type === 'runner_call_activity')).toMatchObject({
+      callId: 'planner-call-test',
+      role: 'planner',
+      stage: 'completed',
+      kind: 'text',
     });
   });
 

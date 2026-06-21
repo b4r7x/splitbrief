@@ -175,11 +175,25 @@ export function projectCostPredictionForTranscriptPolicy(
 function projectRunnerCallActivity(
   event: EngineEventOf<'runner_call_activity'>,
 ): EngineEventOf<'runner_call_activity'> {
+  const {
+    label: _label,
+    target,
+    textPartial,
+    diagnosticPartial,
+    redacted: _redacted,
+    rawAvailable: _rawAvailable,
+    expandId: _expandId,
+    ...base
+  } = event;
+
   return {
-    ...event,
+    ...base,
     label: TRANSCRIPT_OMITTED_MESSAGE,
-    ...(event.target !== undefined && { target: TRANSCRIPT_OMITTED_MESSAGE }),
+    ...(target !== undefined && { target: TRANSCRIPT_OMITTED_MESSAGE }),
+    ...(textPartial !== undefined && { textPartial: TRANSCRIPT_OMITTED_MESSAGE }),
+    ...(diagnosticPartial !== undefined && { diagnosticPartial: TRANSCRIPT_OMITTED_MESSAGE }),
     redacted: true,
+    rawAvailable: false,
   };
 }
 

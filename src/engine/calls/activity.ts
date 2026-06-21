@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 import { stripTerminalControls, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent } from './types.js';
@@ -18,6 +19,10 @@ export interface RunnerCallActivityProjection {
   label: string;
   target?: string | undefined;
   redacted: boolean;
+  rawAvailable: boolean;
+  expandId: string;
+  textPartial?: string | undefined;
+  diagnosticPartial?: string | undefined;
 }
 
 interface ActivityText {
@@ -29,6 +34,9 @@ interface ActivityDetails {
   kind: RunnerCallActivityKind;
   label: string;
   target?: string | undefined;
+  rawAvailable?: boolean | undefined;
+  textPartial?: string | undefined;
+  diagnosticPartial?: string | undefined;
 }
 
 export function projectRunnerCallActivity(
@@ -41,11 +49,12 @@ export function projectRunnerCallActivity(
       return buildActivity({
         activityId: `${event.callId}:system`,
         stage: 'updated',
-        kind: 'unknown',
-        label: event.text,
+        kind: 'text',
+        label: 'system activity',
+        textPartial: event.text,
       });
     case 'call_stderr_delta':
-      return warningActivity(event.callId, sequence, 'stderr');
+      return warningActivity(event.callId, 'stderr', event.text);
     case 'call_tool_use_delta': {
       const name = event.name ?? event.toolUseId ?? 'unknown';
       return toolActivity({
@@ -83,19 +92,27 @@ export function projectRunnerCallActivity(
         target: event.artifact.path ?? event.artifact.name,
       });
     case 'call_warning':
-      return warningActivity(event.callId, sequence, event.warning.code);
+      return warningActivity(event.callId, event.warning.code, event.warning.message);
     case 'call_unknown_upstream':
-      return warningActivity(event.callId, sequence, 'unknown_upstream');
+      return warningActivity(event.callId, unknownUpstreamWarningLabel(event), event.rawPreview);
     case 'call_error':
       return buildActivity({
         activityId: `${event.callId}:terminal`,
-        stage: 'failed',
-        kind: 'warning',
-        label: `failed ${event.status}`,
+        stage: event.status,
+        kind: 'error',
+        label: `${event.status} ${event.error.code}`,
+        diagnosticPartial: event.error.message,
+        rawAvailable: event.partial,
+      });
+    case 'call_completed':
+      return buildActivity({
+        activityId: `${event.callId}:terminal`,
+        stage: 'completed',
+        kind: 'text',
+        label: `completed ${event.role}`,
       });
     case 'call_started':
     case 'call_usage':
-    case 'call_completed':
       return null;
   }
 }
@@ -118,15 +135,26 @@ function toolActivity(opts: {
 
 function warningActivity(
   callId: string,
-  sequence: number,
   code: string,
+  message: string,
 ): RunnerCallActivityProjection | null {
+  const label = cleanActivityText(`warning ${code}`, RUNNER_ACTIVITY_MAX_CELLS);
+  if (label === null) return null;
+  const diagnosticPartial = cleanActivityText(message, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+  const identity = warningActivityIdentity(label.text, diagnosticPartial?.text ?? '');
+
   return buildActivity({
-    activityId: `${callId}:warning:${sequence}`,
+    activityId: `${callId}:warning:${identity}`,
     stage: 'warning',
     kind: 'warning',
     label: `warning ${code}`,
+    diagnosticPartial: message,
+    rawAvailable: true,
   });
+}
+
+function warningActivityIdentity(label: string, diagnosticPartial: string): string {
+  return sha256Hex(`${label}\0${diagnosticPartial}`).slice(0, 16);
 }
 
 function buildActivity(opts: {
@@ -135,6 +163,9 @@ function buildActivity(opts: {
   kind: RunnerCallActivityKind;
   label: string;
   target?: string | undefined;
+  rawAvailable?: boolean | undefined;
+  textPartial?: string | undefined;
+  diagnosticPartial?: string | undefined;
 }): RunnerCallActivityProjection | null {
   const label = cleanActivityText(opts.label, RUNNER_ACTIVITY_MAX_CELLS);
   if (label === null) return null;
@@ -143,14 +174,43 @@ function buildActivity(opts: {
     opts.target === undefined
       ? undefined
       : cleanActivityText(opts.target, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+  const textPartial =
+    opts.textPartial === undefined
+      ? undefined
+      : cleanActivityText(opts.textPartial, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+  const diagnosticPartial =
+    opts.diagnosticPartial === undefined
+      ? undefined
+      : cleanActivityText(opts.diagnosticPartial, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
   return {
     activityId: opts.activityId,
     stage: opts.stage,
     kind: opts.kind,
     label: label.text,
     ...(target !== undefined && target !== null && { target: target.text }),
-    redacted: label.redacted || target?.redacted === true,
+    rawAvailable: opts.rawAvailable === true,
+    expandId: opts.activityId,
+    ...(textPartial !== undefined && textPartial !== null && { textPartial: textPartial.text }),
+    ...(diagnosticPartial !== undefined &&
+      diagnosticPartial !== null && { diagnosticPartial: diagnosticPartial.text }),
+    redacted:
+      label.redacted ||
+      target?.redacted === true ||
+      textPartial?.redacted === true ||
+      diagnosticPartial?.redacted === true,
   };
+}
+
+function unknownUpstreamWarningLabel(
+  event: Extract<RunnerCallEvent, { type: 'call_unknown_upstream' }>,
+): string {
+  const parts = [
+    'unknown_upstream',
+    event.backendMetadata.parser,
+    event.backendMetadata.upstreamType,
+    event.backendMetadata.channel,
+  ].filter((part): part is string => part !== undefined && part.length > 0);
+  return parts.join(':');
 }
 
 function parseToolInputDelta(inputDelta: string | undefined): Record<string, unknown> | null {
@@ -171,6 +231,7 @@ function toolUseDetails(name: string, input: Record<string, unknown> | null): Ac
     stringInput(input, 'pattern') ?? stringInput(input, 'regex') ?? stringInput(input, 'query');
   const agentType = stringInput(input, 'subagent_type') ?? stringInput(input, 'agent_type');
   const url = stringInput(input, 'url') ?? stringInput(input, 'uri');
+  const mcpTarget = mcpCallTarget(input);
 
   if (command !== undefined && isCommandTool(normalized)) {
     return { kind: 'command', label: `running ${command}`, target: command };
@@ -196,6 +257,9 @@ function toolUseDetails(name: string, input: Record<string, unknown> | null): Ac
   if (target !== null && isWebTool(normalized)) {
     return { kind: 'web', label: `calling ${name} ${target}`, target };
   }
+  if (mcpTarget !== null && isMcpTool(normalized)) {
+    return { kind: 'mcp', label: `calling ${name} ${mcpTarget}`, target: mcpTarget };
+  }
   if (target !== null && isMcpTool(normalized)) {
     return { kind: 'mcp', label: `calling ${name} ${target}`, target };
   }
@@ -219,6 +283,13 @@ function toolUseDetails(name: string, input: Record<string, unknown> | null): Ac
   if (command !== undefined)
     return { kind: 'unknown', label: `${name} ${command}`, target: command };
   return { kind: 'unknown', label: `tool ${name}` };
+}
+
+function mcpCallTarget(input: Record<string, unknown> | null): string | null {
+  const server = stringInput(input, 'server');
+  const toolName = stringInput(input, 'tool_name');
+  if (server === undefined && toolName === undefined) return null;
+  return [server, toolName].filter((part) => part !== undefined).join('/');
 }
 
 function stringInput(input: Record<string, unknown> | null, key: string): string | undefined {

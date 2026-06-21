@@ -105,6 +105,50 @@ describe('spawnAndCollect', () => {
       partial: true,
     });
   });
+
+  it('buffers stderr chunks into one warning per logical line', async () => {
+    const stderrChunks: string[] = [];
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: [
+        '-e',
+        'process.stderr.write("first "); process.stderr.write("line\\nsecond"); process.stderr.write(" line\\n")',
+      ],
+      cwd: process.cwd(),
+      onStderr: (chunk) => stderrChunks.push(chunk),
+    });
+
+    expect(stderrChunks.join('')).toBe('first line\nsecond line\n');
+    expect(result.warnings).toEqual([
+      { code: 'stderr', message: 'first line' },
+      { code: 'stderr', message: 'second line' },
+    ]);
+  });
+
+  it('flushes trailing stderr as one warning when the process exits', async () => {
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: ['-e', 'process.stderr.write("trailing warning")'],
+      cwd: process.cwd(),
+    });
+
+    expect(result.warnings).toEqual([{ code: 'stderr', message: 'trailing warning' }]);
+  });
+
+  it('bounds oversized stderr lines and emits an overflow warning', async () => {
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: ['-e', 'process.stderr.write("x".repeat(9000))'],
+      cwd: process.cwd(),
+    });
+
+    expect(result.warnings).toEqual([
+      {
+        code: 'stderr_line_overflow',
+        message: 'stderr line exceeded 8192 bytes and was skipped',
+      },
+    ]);
+  });
 });
 
 describe('CLI implementer JSONL parsing', () => {
@@ -140,6 +184,19 @@ describe('CLI implementer JSONL parsing', () => {
     expect(result.text).not.toContain('"type":"thread.started"');
     expect(collected.join('')).toContain('Created the file successfully.');
     expect(result.sessionId).toBe('sess_123');
+  });
+
+  it('collects malformed JSONL lines as per-call warnings', async () => {
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("not json {{\\n")'],
+      cwd: process.cwd(),
+      parseLine: parseJsonlLine,
+    });
+
+    expect(result.warnings).toEqual([
+      { code: 'malformed_jsonl', message: 'Malformed JSONL line skipped' },
+    ]);
   });
 
   it('falls back to text parsing for plain-text CLI output', async () => {

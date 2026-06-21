@@ -33,7 +33,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { addEvent, resetWorkflow, useSections } from '../../stores/workflow/actions.js';
+import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
@@ -143,7 +143,6 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     lifecycleStore,
     reviewStore,
   );
-  const sections = useSections();
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
 
   const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
@@ -296,7 +295,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         useRichEditor={useRichEditor}
         contentHeight={contentHeight}
         contentWidth={contentWidth}
-        sections={sections}
+        terminalCols={cols}
       />
       <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
         {approvalPromptState.status === 'pending' && <ApprovalPrompt />}

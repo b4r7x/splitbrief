@@ -95,6 +95,36 @@ describe('activityStore', () => {
     expect(labels.at(-1)).toBe('running cmd-11');
   });
 
+  it('coalesces repeated warning activity by stable identity', () => {
+    addEvent(
+      activity({
+        activityId: 'call-1:warning:stable',
+        kind: 'warning',
+        stage: 'warning',
+        label: 'warning stderr',
+        diagnosticPartial: 'same warning',
+      }),
+    );
+    addEvent(
+      activity({
+        ts: 1_100,
+        sequence: 2,
+        activityId: 'call-1:warning:stable',
+        kind: 'warning',
+        stage: 'warning',
+        label: 'warning stderr',
+        diagnosticPartial: 'same warning',
+      }),
+    );
+
+    expect(activityStore.get().items).toHaveLength(1);
+    expect(activityStore.get().items[0]).toMatchObject({
+      id: 'call-1:warning:stable',
+      sequence: 2,
+      diagnosticPartial: 'same warning',
+    });
+  });
+
   it('retires running activity when a runner call completes or fails', () => {
     addEvent(activity({ callId: 'call-1', activityId: 'call-1:tool:Bash', stage: 'updated' }));
     addEvent(
@@ -127,10 +157,86 @@ describe('activityStore', () => {
     expect(activityStore.get().items.map((item) => item.label)).toEqual(['reading src/app.ts']);
   });
 
+  it('stores terminal activity view-model fields for side-rail and expand consumers', () => {
+    addEvent(
+      activity({
+        callId: 'call-1',
+        activityId: 'call-1:terminal',
+        stage: 'timeout',
+        kind: 'error',
+        label: 'timeout timeout',
+        target: 'runner timed out',
+        redacted: true,
+        rawAvailable: true,
+        expandId: 'call-1:terminal',
+        textPartial: 'partial output',
+        diagnosticPartial: 'runner timed out',
+      }),
+    );
+
+    expect(activityStore.get().items[0]).toMatchObject({
+      id: 'call-1:terminal',
+      callId: 'call-1',
+      stage: 'timeout',
+      kind: 'error',
+      label: 'timeout timeout',
+      target: 'runner timed out',
+      redacted: true,
+      rawAvailable: true,
+      expandId: 'call-1:terminal',
+      textPartial: 'partial output',
+      diagnosticPartial: 'runner timed out',
+      sequence: 1,
+    });
+  });
+
+  it('does not synthesize expand metadata when raw activity is unavailable', () => {
+    addEvent(
+      activity({
+        activityId: 'call-1:warning',
+        kind: 'warning',
+        stage: 'warning',
+        label: 'warning stderr',
+        rawAvailable: false,
+      }),
+    );
+
+    expect(activityStore.get().items[0]).toMatchObject({
+      id: 'call-1:warning',
+      rawAvailable: false,
+    });
+    expect(activityStore.get().items[0]).not.toHaveProperty('expandId');
+  });
+
   it('clears activity on workflow cancellation', () => {
     addEvent(activity());
     addEvent({ type: 'workflow_cancelled', ts: 2_000, phase: 'implementing' });
 
     expect(activityStore.get().items).toEqual([]);
+  });
+
+  it('does not re-add late activity after cancellation', () => {
+    addEvent(activity());
+    addEvent({ type: 'workflow_cancelled', ts: 2_000, phase: 'implementing' });
+    addEvent(
+      activity({
+        ts: 2_100,
+        stage: 'completed',
+        activityId: 'call-1:terminal',
+        kind: 'text',
+        label: 'completed implementer',
+      }),
+    );
+    addEvent(
+      activity({
+        ts: 2_200,
+        stage: 'timeout',
+        activityId: 'call-1:terminal',
+        kind: 'error',
+        label: 'timeout timeout',
+      }),
+    );
+
+    expect(activityStore.get().items.map((item) => item.label)).toEqual([]);
   });
 });

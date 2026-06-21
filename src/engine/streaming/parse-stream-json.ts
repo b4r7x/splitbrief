@@ -51,6 +51,11 @@ const SessionEvent = z.object({
   session_id: z.string(),
 });
 
+const MALFORMED_STREAM_JSON_WARNING = {
+  code: 'malformed_stream_json',
+  message: 'Malformed stream-json line skipped',
+} as const;
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     const candidate = optionalString(value, { trim: true, nonEmpty: true });
@@ -195,6 +200,6 @@ export function parseStreamLine(line: string): StreamParseResult {
     return EMPTY_RESULT;
   } catch (err) {
     warnError('output-parser: malformed stream-json line', err);
-    return EMPTY_RESULT;
+    return { warning: [MALFORMED_STREAM_JSON_WARNING] };
   }
 }

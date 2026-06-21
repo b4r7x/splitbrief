@@ -68,18 +68,36 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('replaces assistant draft text with final result text', () => {
-    const { events, parsed } = createHarness();
+    const { events, parsed, text } = createHarness();
 
     parsed.apply({ text: 'draft text', channel: 'assistant' });
     parsed.apply({ text: 'final text', channel: 'result' });
 
     expect(parsed.text).toBe('final text');
+    expect(text).toEqual(['draft text']);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_text_delta',
         channel: 'result',
         text: 'final text',
         semantics: 'final',
+      }),
+    );
+  });
+
+  it('streams only the final suffix when result text extends assistant text', () => {
+    const { events, parsed, text } = createHarness();
+
+    parsed.apply({ text: 'draft', channel: 'assistant' });
+    parsed.apply({ text: 'draft final', channel: 'result' });
+
+    expect(parsed.text).toBe('draft final');
+    expect(text).toEqual(['draft', ' final']);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        channel: 'result',
+        text: 'draft final',
       }),
     );
   });

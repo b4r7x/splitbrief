@@ -91,6 +91,24 @@ export function truncateTerminalDisplayTextStart(text: string, maxCells: number)
   return tail.length > 0 ? `${ELLIPSIS}${tail}` : ELLIPSIS;
 }
 
+export function truncateTerminalDisplayTextMiddle(text: string, maxCells: number): string {
+  if (maxCells <= 0) return '';
+
+  const clean = stripTerminalControls(text);
+  if (getTerminalCellWidth(clean) <= maxCells) return clean;
+
+  const ellipsisWidth = getTerminalCellWidth(ELLIPSIS);
+  if (maxCells <= ellipsisWidth) return ELLIPSIS;
+
+  const contentWidth = maxCells - ellipsisWidth;
+  const headWidth = Math.floor(contentWidth / 2);
+  const tailWidth = Math.ceil(contentWidth / 2);
+  const head = takeLeadingCells(clean, headWidth);
+  const tail = takeTrailingCells(clean, tailWidth);
+
+  return `${head}${ELLIPSIS}${tail}`;
+}
+
 export function padTerminalDisplayTextEnd(text: string, width: number): string {
   const clean = stripTerminalControls(text);
   return `${clean}${' '.repeat(Math.max(0, width - getTerminalCellWidth(clean)))}`;
@@ -115,6 +133,20 @@ function takeTrailingCells(text: string, maxCells: number): string {
   }
 
   return result.join('');
+}
+
+function takeLeadingCells(text: string, maxCells: number): string {
+  let width = 0;
+  let result = '';
+
+  for (const grapheme of graphemes(text)) {
+    const graphemeWidth = getGraphemeWidth(grapheme);
+    if (width + graphemeWidth > maxCells) break;
+    result += grapheme;
+    width += graphemeWidth;
+  }
+
+  return result;
 }
 
 function getGraphemeWidth(grapheme: string): number {

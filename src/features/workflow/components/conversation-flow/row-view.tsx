@@ -4,6 +4,7 @@ import { stripTerminalControls } from '../../../../utils/display-text.js';
 import type {
   ConversationRow,
   ConversationRowSegment,
+  ConversationRowKind,
   ConversationRowTone,
 } from '../../conversation-rows/types.js';
 import { assertNever } from '../../../../utils/type-guards.js';
@@ -62,9 +63,18 @@ function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   );
 }
 
+function rowPrefix(kind: ConversationRowKind): string {
+  if (kind === 'task-header' || kind === 'activity') return '> ';
+  if (kind === 'activity-child') return '| ';
+  return '';
+}
+
 export function ConversationRowView({ row }: { row: ConversationRow }) {
+  const t = useTheme();
+  const prefix = rowPrefix(row.kind);
   return (
     <Box height={1} overflow="hidden" flexShrink={0}>
+      {prefix !== '' && <Text color={t.textDim}>{prefix}</Text>}
       <Text wrap="truncate-end">
         {row.segments.map((segment, index) => (
           <RowSegment key={index} segment={segment} />

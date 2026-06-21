@@ -3,6 +3,7 @@ import { createStore, storeBase } from '../create-store.js';
 interface ConversationScrollState {
   scrollOffset: number;
   expandedDiffs: Set<string>;
+  expandedActivityBatches: Set<string>;
   renderableCountAtScroll: number;
   heightAtScroll: number;
 }
@@ -10,6 +11,7 @@ interface ConversationScrollState {
 const initial = (): ConversationScrollState => ({
   scrollOffset: 0,
   expandedDiffs: new Set(),
+  expandedActivityBatches: new Set(),
   renderableCountAtScroll: 0,
   heightAtScroll: 0,
 });
@@ -67,5 +69,15 @@ export const conversationScrollStore = {
         next.add(key);
       }
       return { ...s, expandedDiffs: next };
+    }),
+  toggleActivityBatch: (key: string) =>
+    store.set((s) => {
+      const next = new Set(s.expandedActivityBatches);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return { ...s, expandedActivityBatches: next };
     }),
 };

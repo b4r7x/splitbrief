@@ -8,6 +8,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
+import { findLatestExpandableActivityBatchKey } from '../conversation-rows/activity-batch-key.js';
 import {
   handleWorkflowCtrlChords,
   handleReviewScroll,
@@ -25,6 +26,9 @@ function applyAction(action: WorkflowKeyAction) {
       return;
     case 'toggle-diff':
       conversationScrollStore.toggleDiff(action.key);
+      return;
+    case 'toggle-activity-batch':
+      conversationScrollStore.toggleActivityBatch(action.key);
       return;
     case 'review-scroll':
       reviewStore.setScrollOffset(action.offset);
@@ -94,17 +98,21 @@ export function useWorkflowKeys(isActive: boolean) {
   useInput(
     (input, key) => {
       const sections = getSections();
+      const inputMode = controlsStore.get().inputMode;
 
-      const chord = handleWorkflowCtrlChords({
-        input,
-        key,
-        isSmall,
-        sections,
-        findLatestDiff: findLatestRenderableDiffKey,
-      });
-      if (chord.type !== 'none') {
-        applyAction(chord);
-        return;
+      if (inputMode === 'normal') {
+        const chord = handleWorkflowCtrlChords({
+          input,
+          key,
+          isSmall,
+          sections,
+          findLatestDiff: findLatestRenderableDiffKey,
+          findLatestActivityBatch: findLatestExpandableActivityBatchKey,
+        });
+        if (chord.type !== 'none') {
+          applyAction(chord);
+          return;
+        }
       }
 
       const reviewScroll = getReviewScrollAction(key);
@@ -113,7 +121,7 @@ export function useWorkflowKeys(isActive: boolean) {
         return;
       }
 
-      if (controlsStore.get().inputMode !== 'normal') return;
+      if (inputMode !== 'normal') return;
 
       if (key.ctrl && input === 'g') {
         overlayStore.open('cost-drilldown');

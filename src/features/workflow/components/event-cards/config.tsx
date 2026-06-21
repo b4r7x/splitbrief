@@ -2,6 +2,8 @@ import { Box, Text } from 'ink';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { sanitizeWorkflowDisplayText } from '../../display/safe-text.js';
 
 type WorkflowConfigEvent = Extract<EngineEvent, { type: 'workflow_config' }>;
 export type WorkflowConfigDensity = 'full' | 'labels' | 'tools';
@@ -12,12 +14,19 @@ function getWorkflowConfigSegments(
   event: WorkflowConfigEvent,
   density: WorkflowConfigDensity,
 ): WorkflowConfigSegment[] {
-  const planner = getProviderDisplayName(event.plannerTool);
-  const implementer = getProviderDisplayName(event.implementerTool);
+  const mode = sanitizeWorkflowDisplayText(event.mode);
+  const planner = sanitizeWorkflowDisplayText(getProviderDisplayName(event.plannerTool));
+  const implementer = sanitizeWorkflowDisplayText(getProviderDisplayName(event.implementerTool));
+  const plannerModel =
+    event.plannerModel === undefined ? undefined : sanitizeWorkflowDisplayText(event.plannerModel);
+  const implementerModel =
+    event.implementerModel === undefined
+      ? undefined
+      : sanitizeWorkflowDisplayText(event.implementerModel);
 
   if (density === 'tools') {
     return [
-      { text: event.mode, role: 'mode' },
+      { text: mode, role: 'mode' },
       { text: ' · ', role: 'dim' },
       { text: planner, role: 'planner' },
       { text: ' → ', role: 'dim' },
@@ -26,18 +35,18 @@ function getWorkflowConfigSegments(
   }
 
   return [
-    { text: event.mode, role: 'mode' },
+    { text: mode, role: 'mode' },
     { text: ' · ', role: 'dim' },
     { text: 'Planner: ', role: 'dim' },
     { text: planner, role: 'planner' },
-    ...(density === 'full' && event.plannerModel
-      ? [{ text: ` (${event.plannerModel})`, role: 'dim' as const }]
+    ...(density === 'full' && plannerModel
+      ? [{ text: ` (${plannerModel})`, role: 'dim' as const }]
       : []),
     { text: ' · ', role: 'dim' },
     { text: 'Implementer: ', role: 'dim' },
     { text: implementer, role: 'implementer' },
-    ...(density === 'full' && event.implementerModel
-      ? [{ text: ` (${event.implementerModel})`, role: 'dim' as const }]
+    ...(density === 'full' && implementerModel
+      ? [{ text: ` (${implementerModel})`, role: 'dim' as const }]
       : []),
   ];
 }
@@ -47,7 +56,7 @@ function getWorkflowConfigWidth(
   density: WorkflowConfigDensity,
 ): number {
   return getWorkflowConfigSegments(event, density).reduce(
-    (width, segment) => width + segment.text.length,
+    (width, segment) => width + getTerminalCellWidth(segment.text),
     0,
   );
 }

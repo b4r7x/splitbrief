@@ -80,17 +80,18 @@ export const operationsStore = {
 export function updateOperations(state: OperationsState, event: EngineEvent): OperationsState {
   switch (event.type) {
     case 'runner_call_started':
-      return startRunnerOperation(closePlannerStatusFallback(state, event.ts), event);
+      return startRunnerOperation(closePlannerStatusFallbacks(state, event.ts), event);
     case 'runner_call_usage':
       return updateKnownOperation(state, event.callId, (operation) => ({
         ...operation,
         usage: event.usage,
       }));
     case 'runner_call_warning':
-      return updateKnownOperation(state, event.callId, (operation) => ({
-        ...operation,
-        warnings: appendWarning(operation.warnings, event.warning.message),
-      }));
+      return updateKnownOperation(state, event.callId, (operation) =>
+        operation.status === 'running'
+          ? { ...operation, warnings: appendWarning(operation.warnings, event.warning.message) }
+          : operation,
+      );
     case 'runner_call_completed':
       return terminalizeKnownOperation(state, event.callId, {
         status: 'completed',
@@ -207,31 +208,34 @@ function updatePlannerStatusFallback(
     ...(runnerName !== undefined && { runnerName }),
     ...(model !== undefined && { model }),
   };
-  const byCallId = new Map(state.byCallId);
+  const nextState = closePlannerStatusFallbacks(state, event.ts);
+  const byCallId = new Map(nextState.byCallId);
   byCallId.set(operation.callId, operation);
-  return { ...state, active: operation, byCallId };
+  return { ...nextState, active: operation, byCallId };
 }
 
-function closePlannerStatusFallback(state: OperationsState, ts: number): OperationsState {
-  const active = state.active;
-  if (
-    !active ||
-    active.status !== 'running' ||
-    !active.callId.startsWith(LEGACY_PLANNER_STATUS_PREFIX)
-  ) {
-    return state;
+function closePlannerStatusFallbacks(state: OperationsState, ts: number): OperationsState {
+  let next = state;
+  for (const operation of state.byCallId.values()) {
+    if (
+      operation.status !== 'running' ||
+      !operation.callId.startsWith(LEGACY_PLANNER_STATUS_PREFIX)
+    ) {
+      continue;
+    }
+    next = replaceOperation(
+      next,
+      terminalizeRunningOperation(operation, {
+        status: 'completed',
+        endedAt: ts,
+        durationMs: durationBetween(operation.startedAt, ts),
+        reason: null,
+        usage: operation.usage,
+        partial: false,
+      }),
+    );
   }
-  return replaceOperation(
-    state,
-    terminalizeRunningOperation(active, {
-      status: 'completed',
-      endedAt: ts,
-      durationMs: durationBetween(active.startedAt, ts),
-      reason: null,
-      usage: active.usage,
-      partial: false,
-    }),
-  );
+  return next;
 }
 
 interface TerminalUpdate {
@@ -257,14 +261,7 @@ function terminalizeOperation(
   operation: ActiveOperation,
   update: TerminalUpdate,
 ): TerminalOperation {
-  if (operation.status !== 'running') {
-    return {
-      ...operation,
-      partial: operation.partial || update.partial,
-      reason: operation.reason ?? cleanOperationReason(update.reason),
-      usage: update.usage ?? operation.usage,
-    };
-  }
+  if (operation.status !== 'running') return operation;
   return terminalizeRunningOperation(operation, update);
 }
 
@@ -383,7 +380,9 @@ function labelForRunnerEvent(event: EngineEventOf<'runner_call_started'>): strin
 }
 
 function appendWarning(warnings: readonly string[], warning: string): readonly string[] {
-  return [...warnings, cleanOperationText(warning)].slice(-MAX_WARNINGS);
+  const clean = cleanOperationText(warning);
+  if (warnings.includes(clean)) return warnings;
+  return [...warnings, clean].slice(-MAX_WARNINGS);
 }
 
 function durationBetween(startedAt: number, endedAt: number): number {

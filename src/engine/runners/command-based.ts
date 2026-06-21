@@ -7,6 +7,7 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../ca
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { createParsedLineRecorder } from '../streaming/parsed-line-recorder.js';
+import { createRunnerCallStderrBuffer } from '../streaming/stderr-lines.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
@@ -107,6 +108,7 @@ export async function invokeCommandBasedRunner(
       onText: onOutput,
       onSessionId: opts.onSessionId,
     });
+    const stderrBuffer = createRunnerCallStderrBuffer(recorder);
     const liveOutputBuffer = createLineBuffer((line) => {
       parsedRecorder.apply(parseLine(line));
     });
@@ -118,12 +120,13 @@ export async function invokeCommandBasedRunner(
         env: opts.env,
         timeout: opts.timeout,
         onProgress: (chunk) => liveOutputBuffer.push(chunk),
-        onStderr: (chunk) => recorder.stderr({ text: chunk }),
+        onStderr: (chunk) => stderrBuffer.push(chunk),
         stdinInput: useStdin ? prompt : undefined,
         notFoundMessage: opts.notFoundMessage,
         signal,
       });
       liveOutputBuffer.flush();
+      stderrBuffer.flush();
 
       if (result.timedOut) {
         recorder.finishFailed({
@@ -148,6 +151,7 @@ export async function invokeCommandBasedRunner(
       callResult = recorder.finalResult();
     } catch (err) {
       liveOutputBuffer.flush();
+      stderrBuffer.flush();
       if (!recorder.hasTerminal()) {
         recorder.finishFailed({
           status: signal?.aborted ? runnerCallInterruptedStatus(signal) : 'failed',

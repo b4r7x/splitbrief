@@ -1,8 +1,10 @@
 import { getChromeHeight } from './chrome-rows.js';
 import {
+  getWorkflowConversationRect,
   getReviewContentLayout,
   getWorkflowContentRect,
   getWorkflowContentWidth,
+  getWorkflowRuntimeLayout,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
 } from './rect.js';
@@ -20,6 +22,9 @@ import { getWorkflowPromptRows } from '../prompt-rows.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 
 export interface ConversationScrollSnapshot {
+  activityRailWidth: number;
+  conversationRect: ReturnType<typeof getWorkflowContentRect>;
+  conversationWidth: number;
   contentRect: ReturnType<typeof getWorkflowContentRect>;
   maxOffset: number;
   renderableCount: number;
@@ -68,6 +73,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   );
   const sidebarVisible = controlsStore.get().sidebarVisible;
   const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
+  const runtimeLayout = getWorkflowRuntimeLayout({ contentWidth, terminalCols: cols });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
@@ -77,6 +83,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     isSmall,
     promptRows,
   });
+  const conversationRect = getWorkflowConversationRect(contentRect, runtimeLayout);
   const {
     maxOffset,
     renderableCount,
@@ -86,7 +93,8 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   } = computeConversationRowScroll({
     sections: getSections(),
     expandedDiffs: scroll.expandedDiffs,
-    cols: contentWidth,
+    expandedActivityBatches: scroll.expandedActivityBatches,
+    cols: runtimeLayout.conversationWidth,
     viewportHeight,
     rawScrollOffset: scroll.scrollOffset,
     renderableCountAtScroll: scroll.renderableCountAtScroll,
@@ -94,6 +102,9 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     streaming: streamingOutputStore.get(),
   });
   return {
+    activityRailWidth: runtimeLayout.activityRailWidth,
+    conversationRect,
+    conversationWidth: runtimeLayout.conversationWidth,
     contentRect,
     maxOffset,
     renderableCount,

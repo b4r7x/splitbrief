@@ -5,10 +5,12 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
+import { reconcileFinalText } from '../streaming/final-text.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
 
@@ -19,8 +21,9 @@ interface StreamHandlerState {
   resultText: string | null;
   sawResult: boolean;
   isError: boolean;
-  sawAssistantText: boolean;
   recorder: RunnerCallRecorder;
+  activeToolUse: ContentBlockTool | null;
+  contentBlockTools: Map<number, ContentBlockTool>;
 }
 
 interface StreamHandlerCallbacks {
@@ -32,6 +35,11 @@ interface StreamHandlerCallbacks {
 }
 
 let claudeCallSequence = 0;
+
+interface ContentBlockTool {
+  id: string | null;
+  name: string;
+}
 
 function createClaudeCallContext(opts: {
   role: RunnerCallContext['role'];
@@ -58,12 +66,29 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     resultText: null,
     sawResult: false,
     isError: false,
-    sawAssistantText: false,
     recorder,
+    activeToolUse: null,
+    contentBlockTools: new Map(),
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
 
+  function emitAssistantOutput(text: string): void {
+    callbacks.onOutput(text);
+
+    if (callbacks.onQuestion && questionAccumulator) {
+      const newQuestions = questionAccumulator.addChunk(text);
+      if (newQuestions.length > 0) {
+        callbacks.onQuestion(newQuestions);
+      }
+    }
+  }
+
   function handleLine(line: string): void {
+    const contentBlockToolStart = parseContentBlockToolStart(line);
+    if (contentBlockToolStart) {
+      state.contentBlockTools.set(contentBlockToolStart.index, contentBlockToolStart.toolUse);
+    }
+
     const parsed = parseStreamLine(line);
 
     if (parsed.sessionId) {
@@ -87,6 +112,10 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.toolUseStart) {
       for (const toolUse of parsed.toolUseStart) {
+        state.activeToolUse = {
+          id: toolUse.id ?? null,
+          name: toolUse.name,
+        };
         state.recorder.toolUseDelta({
           toolUseId: toolUse.id ?? null,
           name: toolUse.name,
@@ -97,9 +126,10 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.toolUseDelta) {
       for (const toolUse of parsed.toolUseDelta) {
+        const resolvedToolUse = resolveToolUseDelta(state, toolUse);
         state.recorder.toolUseDelta({
-          toolUseId: toolUse.id ?? null,
-          name: toolUse.name ?? null,
+          toolUseId: resolvedToolUse.id,
+          name: resolvedToolUse.name,
           inputDelta: toolUse.inputDelta,
         });
       }
@@ -110,15 +140,7 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       state.recorder.text({ channel, text: parsed.text });
       if (channel === 'assistant' || channel === 'stdout') {
         state.text += parsed.text;
-        state.sawAssistantText = true;
-        callbacks.onOutput(parsed.text);
-
-        if (callbacks.onQuestion && questionAccumulator) {
-          const newQuestions = questionAccumulator.addChunk(parsed.text);
-          if (newQuestions.length > 0) {
-            callbacks.onQuestion(newQuestions);
-          }
-        }
+        emitAssistantOutput(parsed.text);
       }
     }
 
@@ -131,12 +153,18 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.isResult) {
       state.sawResult = true;
       if (parsed.text) {
-        state.text = parsed.text;
         state.resultText = parsed.text;
-        if (!state.sawAssistantText) {
-          state.recorder.text({ channel: 'result', text: parsed.text });
+        const reconciliation = reconcileFinalText(state.text, parsed.text);
+        if (reconciliation.kind === 'full') {
+          state.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
+          emitAssistantOutput(parsed.text);
+        } else if (reconciliation.kind === 'suffix') {
+          state.recorder.text({ channel: 'assistant', text: reconciliation.text });
+          emitAssistantOutput(reconciliation.text);
+        } else if (reconciliation.kind === 'replace') {
+          state.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
         }
-        callbacks.onOutput(parsed.text);
+        state.text = parsed.text;
       }
     }
 
@@ -162,6 +190,56 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   }
 
   return { state, handleLine };
+}
+
+function parseContentBlockToolStart(
+  line: string,
+): { index: number; toolUse: ContentBlockTool } | null {
+  if (!line.trim()) return null;
+  try {
+    const event: unknown = JSON.parse(line);
+    if (!isRecord(event) || !isRecord(event.event)) return null;
+    const streamEvent = event.event;
+    if (streamEvent.type !== 'content_block_start') return null;
+    if (typeof streamEvent.index !== 'number') return null;
+    if (!Number.isSafeInteger(streamEvent.index)) return null;
+    if (!isRecord(streamEvent.content_block)) return null;
+    const block = streamEvent.content_block;
+    if (block.type !== 'tool_use' || typeof block.name !== 'string') return null;
+    return {
+      index: streamEvent.index,
+      toolUse: {
+        id: typeof block.id === 'string' ? block.id : null,
+        name: block.name,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function contentBlockIndex(id: string | undefined): number | null {
+  const match = id?.match(/^content-block-(\d+)$/);
+  if (!match) return null;
+  const rawIndex = match[1];
+  if (rawIndex === undefined) return null;
+  const index = Number(rawIndex);
+  return Number.isSafeInteger(index) ? index : null;
+}
+
+function resolveToolUseDelta(
+  state: StreamHandlerState,
+  toolUse: { id?: string | undefined; name?: string | undefined },
+): { id: string | null; name: string | null } {
+  const index = contentBlockIndex(toolUse.id);
+  const indexedToolUse = index === null ? undefined : state.contentBlockTools.get(index);
+  const fallback =
+    indexedToolUse ??
+    (index !== null || toolUse.id === state.activeToolUse?.id ? state.activeToolUse : null);
+  return {
+    id: fallback?.id ?? toolUse.id ?? null,
+    name: toolUse.name ?? fallback?.name ?? null,
+  };
 }
 
 function throwForClaudeCallFailure(result: RunnerCallResult): never {

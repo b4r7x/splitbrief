@@ -65,4 +65,24 @@ describe('createRunnerCallRecorder', () => {
     });
     expect(events.at(-1)).toMatchObject({ type: 'call_error', status: 'incomplete' });
   });
+
+  it('suppresses non-terminal events after the first terminal event', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 5,
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.finishFailed({
+      status: 'aborted',
+      error: { code: 'aborted', message: 'user cancelled' },
+      endedAt: 10,
+    });
+    recorder.text({ channel: 'assistant', text: 'late text', ts: 11 });
+    recorder.warning({ warning: { code: 'late', message: 'late warning' }, ts: 12 });
+    recorder.usage({ usage: { inputTokens: 1, outputTokens: 1 }, semantics: 'final', ts: 13 });
+
+    expect(events.map((event) => event.type)).toEqual(['call_started', 'call_error']);
+  });
 });

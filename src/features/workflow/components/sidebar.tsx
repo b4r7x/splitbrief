@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
-import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -9,6 +9,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { STATUS_GLYPH } from '../../../components/task-status-glyph.js';
 import { CostDisplay } from './cost/display.js';
+import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
 
 interface SidebarProps {
   width: number;
@@ -54,7 +55,7 @@ export function Sidebar({ width }: SidebarProps) {
       borderRight={false}
       borderColor={t.border}
     >
-      <Box paddingX={1}>
+      <Box paddingX={1} flexShrink={0}>
         <Text bold color={t.text}>
           Tasks
         </Text>
@@ -64,20 +65,23 @@ export function Sidebar({ width }: SidebarProps) {
         </Text>
       </Box>
 
-      <Box flexDirection="column" paddingX={1} flexGrow={1}>
+      <Box flexDirection="column" paddingX={1} flexGrow={1} flexShrink={1} overflow="hidden">
         {tasks.map((task) => (
           <Box key={task.id}>
             <Text color={statusColor(task.status, t)}>{STATUS_GLYPH[task.status]} </Text>
             <Text
               color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}
             >
-              {truncateWithEllipsis(task.title, Math.max(labelWidth - 2, 10))}
+              {truncateTerminalDisplayText(
+                sanitizeWorkflowDisplayText(task.title),
+                Math.max(labelWidth - 2, 10),
+              )}
             </Text>
           </Box>
         ))}
       </Box>
 
-      <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column" paddingX={1} flexShrink={0}>
         {mode && <Text color={t.textDim}>mode {mode}</Text>}
         {advisory && advisory.kind !== 'none' && (
           <Text color={t.warning}>risk {advisory.risk}</Text>

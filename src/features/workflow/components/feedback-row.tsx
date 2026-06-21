@@ -3,6 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { abortStore, type ArmedKind } from '../../../stores/workflow/abort.js';
 import { useStores } from '../../../stores/use-stores.js';
+import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 
 const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
   exit: 'Ctrl+C again to exit',
@@ -19,7 +20,7 @@ export function FeedbackRow() {
   const displayColor = armed !== 'none' ? t.warning : isError ? t.error : t.info;
 
   return (
-    <Box height={1} paddingX={2} flexShrink={0}>
+    <Box height={1} paddingX={WORKFLOW_CONTENT_PADDING_X} flexShrink={0}>
       {displayMessage && <Text color={displayColor}>{displayMessage}</Text>}
     </Box>
   );

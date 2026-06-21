@@ -2,6 +2,7 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { accumulateUsage, toTokenDelta } from '../streaming/token-usage.js';
+import { reconcileFinalText } from '../streaming/final-text.js';
 import { createChangeDetector, type ChangeDetector } from '../change-detection.js';
 import {
   createSessionAttemptCallContext,
@@ -208,7 +209,6 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
   let collectedText = '';
   let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
-  let sawAssistantText = false;
 
   try {
     throwIfAborted(signal);
@@ -227,7 +227,6 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         const text = extractAssistantText(message);
         if (text) {
           collectedText += text;
-          sawAssistantText = true;
           recorder.text({ channel: 'assistant', text });
           onOutput(text);
           throwIfAborted(signal);
@@ -259,8 +258,15 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         }
         const resultText = extractResultText(message);
         if (resultText) {
-          if (!sawAssistantText) {
-            recorder.text({ channel: 'result', text: resultText });
+          const reconciliation = reconcileFinalText(collectedText, resultText);
+          if (reconciliation.kind === 'full') {
+            recorder.text({ channel: 'result', text: resultText, semantics: 'final' });
+            onOutput(reconciliation.text);
+          } else if (reconciliation.kind === 'suffix') {
+            recorder.text({ channel: 'assistant', text: reconciliation.text });
+            onOutput(reconciliation.text);
+          } else if (reconciliation.kind === 'replace') {
+            recorder.text({ channel: 'result', text: resultText, semantics: 'final' });
           }
           collectedText = resultText;
         }

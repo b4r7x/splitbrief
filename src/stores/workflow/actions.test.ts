@@ -82,6 +82,28 @@ describe('addEvent — cancelled gate', () => {
     expect(eventsStore.get().events.filter((e) => e.type === 'error')).toHaveLength(0);
   });
 
+  it('drops late runner activity after cancel so interrupted rows do not reappear', () => {
+    markCancellationRequested();
+    addEvent({
+      type: 'runner_call_activity',
+      ts: Date.now(),
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      sequence: 1,
+      activityId: 'call-1:terminal',
+      stage: 'aborted',
+      kind: 'error',
+      label: 'aborted runner_interrupted',
+      redacted: false,
+    });
+
+    expect(eventsStore.get().events.filter((e) => e.type === 'runner_call_activity')).toEqual([]);
+    expect(activityStore.get().items).toEqual([]);
+  });
+
   it('drops planner_status events after cancel', () => {
     markCancellationRequested();
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));

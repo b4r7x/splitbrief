@@ -37,11 +37,16 @@ describe('protectEngineEventForConsumer', () => {
       label: 'running echo sk-abcdefghijklmnopqrst',
       target: 'echo sk-abcdefghijklmnopqrst',
       redacted: false,
+      rawAvailable: true,
+      expandId: 'call-1:tool:tool-1',
     };
 
-    expect(
-      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: false }),
-    ).toMatchObject({
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'ipc',
+      persistTranscript: false,
+    });
+
+    expect(protectedEvent).toMatchObject({
       type: 'runner_call_activity',
       activityId: 'call-1:tool:tool-1',
       stage: 'completed',
@@ -49,6 +54,42 @@ describe('protectEngineEventForConsumer', () => {
       label: TRANSCRIPT_OMITTED_MESSAGE,
       target: TRANSCRIPT_OMITTED_MESSAGE,
       redacted: true,
+      rawAvailable: false,
+    });
+    expect(protectedEvent).not.toHaveProperty('expandId');
+  });
+
+  it('redacts canonicalized runner activity before exposing persisted events', () => {
+    const event: EngineEvent = {
+      type: 'runner_call_activity',
+      ts: 14,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 2,
+      activityId: 'call-1:warning:1',
+      stage: 'warning',
+      kind: 'warning',
+      label: 'warning stderr',
+      diagnosticPartial: 'token sk-\u001b[31mabcdefghijklmnopqrstuvwxyz',
+      redacted: false,
+      rawAvailable: true,
+      expandId: 'call-1:warning:1',
+    };
+
+    expect(
+      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
+    ).toMatchObject({
+      type: 'runner_call_activity',
+      activityId: 'call-1:warning:1',
+      stage: 'warning',
+      kind: 'warning',
+      label: 'warning stderr',
+      diagnosticPartial: 'token sk-***REDACTED***',
+      redacted: true,
+      rawAvailable: true,
+      expandId: 'call-1:warning:1',
     });
   });
 

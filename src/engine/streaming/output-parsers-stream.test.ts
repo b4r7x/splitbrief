@@ -109,7 +109,13 @@ describe('parseStreamLine', () => {
       }),
       { text: 'visible text', channel: 'assistant', toolUse: [{ name: 'read_file', input: {} }] },
     ],
-    ['malformed JSON', 'not valid json {{{', {}],
+    [
+      'malformed JSON',
+      'not valid json {{{',
+      {
+        warning: [{ code: 'malformed_stream_json', message: 'Malformed stream-json line skipped' }],
+      },
+    ],
     ['empty line', '', {}],
     ['whitespace-only line', '   \t  ', {}],
     [
@@ -221,5 +227,11 @@ describe('getLineParser("stream-json")', () => {
     ],
   ] as const)('wraps %s', (_name, line, expected) => {
     expect(parse(line)).toEqual(expected);
+  });
+
+  it('wraps malformed stream-json lines as warnings', () => {
+    expect(parse('not valid json {{{')).toEqual({
+      warning: [{ code: 'malformed_stream_json', message: 'Malformed stream-json line skipped' }],
+    });
   });
 });

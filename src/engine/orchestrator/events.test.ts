@@ -137,6 +137,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       status: 'done',
       passed: true,
       stages: { typecheck: true, lint: true, test: true },
+      attempted: { typecheck: true, lint: true, test: true },
     });
     expect((events[0] as Record<string, unknown>)['error']).toBeUndefined();
   });
@@ -160,7 +161,29 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       type: 'validate',
       passed: false,
       stages: { typecheck: true, lint: false, test: false },
+      attempted: { typecheck: true, lint: true, test: false },
       error: 'lint error',
+    });
+  });
+
+  it('marks only stages present in validation results as attempted', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation(
+      { bus: bus, phase: 'implementing' },
+      'T001' as import('../../core/schemas/task.js').TaskId,
+      {
+        phase: 'result',
+        results: [{ stage: 'test', passed: false, error: 'test error' }],
+        startTime: Date.now(),
+      },
+    );
+
+    expect(events[0]).toMatchObject({
+      type: 'validate',
+      passed: false,
+      stages: { typecheck: false, lint: false, test: false },
+      attempted: { typecheck: false, lint: false, test: true },
+      error: 'test error',
     });
   });
 
@@ -231,6 +254,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       type: 'validate',
       passed: true,
       stages: { typecheck: true, lint: false, test: true },
+      attempted: { typecheck: true, lint: true, test: true },
       skipped: { lint: true },
     });
   });

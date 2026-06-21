@@ -34,6 +34,54 @@ export interface WorkflowContentRect {
   height: number;
 }
 
+export interface WorkflowRuntimeLayout {
+  activityRailWidth: number;
+  conversationWidth: number;
+  contentWidth: number;
+}
+
+export function getWorkflowRuntimeLayout(input: {
+  contentWidth: number;
+  terminalCols: number;
+}): WorkflowRuntimeLayout {
+  const { contentWidth, terminalCols } = input;
+  if (terminalCols < 120) {
+    return {
+      activityRailWidth: 0,
+      conversationWidth: contentWidth,
+      contentWidth,
+    };
+  }
+
+  const activityRailWidth = Math.min(42, Math.max(32, Math.floor(contentWidth * 0.3)));
+  const conversationWidth = contentWidth - activityRailWidth - 1;
+  if (conversationWidth < 56) {
+    return {
+      activityRailWidth: 0,
+      conversationWidth: contentWidth,
+      contentWidth,
+    };
+  }
+
+  return {
+    activityRailWidth,
+    conversationWidth: Math.max(1, conversationWidth),
+    contentWidth,
+  };
+}
+
+export function getWorkflowConversationRect(
+  contentRect: WorkflowContentRect,
+  runtimeLayout: WorkflowRuntimeLayout,
+): WorkflowContentRect {
+  const width = runtimeLayout.conversationWidth;
+  return {
+    ...contentRect,
+    width,
+    right: width > 0 ? contentRect.left + width - 1 : contentRect.left,
+  };
+}
+
 export interface WorkflowContentRectInput {
   cols: number;
   rows: number;

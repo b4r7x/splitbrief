@@ -6,6 +6,7 @@ import type { ParsedLine } from '../runners/types.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
+import { createRunnerCallStderrBuffer } from './stderr-lines.js';
 
 interface SpawnAndCollectOptions {
   command: string;
@@ -45,6 +46,7 @@ export async function spawnAndCollect(
     onText: opts.onText,
     onSessionId: opts.onSessionId,
   });
+  const stderrBuffer = createRunnerCallStderrBuffer(recorder);
 
   try {
     await spawnWithStdin({
@@ -55,7 +57,7 @@ export async function spawnAndCollect(
       stdin: opts.stdin,
       notFoundMessage: opts.notFoundMessage,
       onStderr: (chunk) => {
-        recorder.stderr({ text: chunk });
+        stderrBuffer.push(chunk);
         opts.onStderr?.(chunk);
       },
       signal: opts.signal,
@@ -64,6 +66,7 @@ export async function spawnAndCollect(
       },
     });
   } catch (err) {
+    stderrBuffer.flush();
     if (!recorder.hasTerminal()) {
       recorder.finishFailed({
         status: opts.signal?.aborted ? runnerCallInterruptedStatus(opts.signal) : 'failed',
@@ -76,6 +79,7 @@ export async function spawnAndCollect(
     throw err;
   }
 
+  stderrBuffer.flush();
   if (!recorder.hasTerminal()) {
     recorder.finishCompleted({ nativeSessionId: parsedRecorder.sessionId });
   }

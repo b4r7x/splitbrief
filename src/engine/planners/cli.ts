@@ -18,7 +18,9 @@ import { assertPlannerKind } from '../config-assertions.js';
 import {
   createSessionAttemptCallContext,
   createSessionResumeState,
+  isSessionExpiredError,
   runWithResumeFallback,
+  sessionResumeMismatchError,
 } from '../session-expiry.js';
 import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
@@ -29,7 +31,7 @@ import {
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
 import { composeAbortSignal } from '../../utils/abort.js';
-import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -81,6 +83,17 @@ function readCliPhaseOutput(
   return resultText;
 }
 
+function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boolean {
+  switch (event.type) {
+    case 'call_stderr_delta':
+      return isSessionExpiredError(event.text);
+    case 'call_session_id':
+      return event.nativeSessionId !== resumeId;
+    default:
+      return false;
+  }
+}
+
 export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');
   const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
@@ -111,6 +124,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
     let stderrOutput = '';
+    let unexpectedResumeSessionId: string | null = null;
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
       prompt,
       projectDir,
@@ -121,6 +135,10 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     };
 
     const effectiveSignal = composeAbortSignal(signal, timeout);
+    const onCallEvent = (event: RunnerCallEvent): void => {
+      if (resumeId && isRecoverableResumeNoise(event, resumeId)) return;
+      callbacks.onCallEvent?.(event);
+    };
 
     const result = await spawnAndCollect({
       command: tool.command,
@@ -130,7 +148,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       notFoundMessage: tool.notFoundMessage,
       parseLine,
       onText: callbacks.onOutput,
-      onCallEvent: callbacks.onCallEvent,
+      onCallEvent,
       callContext,
       onStderr: planner.postProcess
         ? (chunk) => {
@@ -140,11 +158,20 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       signal: effectiveSignal,
       ...(supportsSessionResume && {
         onSessionId: (id: string) => {
+          if (resumeId && id !== resumeId) {
+            unexpectedResumeSessionId = id;
+            return;
+          }
           session.capture(id);
           callbacks.onSessionId?.(id);
         },
       }),
     });
+
+    const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;
+    if (resumeId && returnedSessionId !== null && returnedSessionId !== resumeId) {
+      throw sessionResumeMismatchError(resumeId, returnedSessionId);
+    }
 
     if (result.status !== 'completed') return result;
     const usage = toTokenDelta(result.usage);

@@ -1,6 +1,40 @@
 import { describe, it, expect } from 'vitest';
 import type { Key } from 'ink';
-import { handleConversationScroll, handleReviewScroll } from './keyboard.js';
+import type { Section } from '../../core/sections/event-sections.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+import {
+  handleConversationScroll,
+  handleReviewScroll,
+  handleWorkflowCtrlChords,
+} from './keyboard.js';
+
+const sections: Section<EngineEvent>[] = [];
+
+function key(overrides: Partial<Key>): Key {
+  return {
+    upArrow: false,
+    downArrow: false,
+    leftArrow: false,
+    rightArrow: false,
+    pageDown: false,
+    pageUp: false,
+    home: false,
+    end: false,
+    return: false,
+    escape: false,
+    ctrl: false,
+    shift: false,
+    tab: false,
+    backspace: false,
+    delete: false,
+    meta: false,
+    super: false,
+    hyper: false,
+    capsLock: false,
+    numLock: false,
+    ...overrides,
+  };
+}
 
 describe('handleConversationScroll', () => {
   const base = {
@@ -73,5 +107,35 @@ describe('handleReviewScroll', () => {
     expect(handleReviewScroll({ ...base, key: { end: false } as Key })).toEqual({
       type: 'none',
     });
+  });
+});
+
+describe('handleWorkflowCtrlChords', () => {
+  it('maps Ctrl+A to the latest expandable activity batch', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'a',
+        key: key({ ctrl: true }),
+        isSmall: false,
+        sections,
+        findLatestDiff: () => null,
+        findLatestActivityBatch: () => 'activity-batch:0:call-1',
+      }),
+    ).toEqual({ type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' });
+  });
+
+  it('ignores plain a and A so they reach the composer as text', () => {
+    for (const input of ['a', 'A']) {
+      expect(
+        handleWorkflowCtrlChords({
+          input,
+          key: key({}),
+          isSmall: false,
+          sections,
+          findLatestDiff: () => null,
+          findLatestActivityBatch: () => 'activity-batch:0:call-1',
+        }),
+      ).toEqual({ type: 'none' });
+    }
   });
 });

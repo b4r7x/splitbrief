@@ -75,6 +75,9 @@ describe('readConversationScrollSnapshot', () => {
     const snap = readConversationScrollSnapshot();
 
     expect(snap.contentRect.width).toBe(158);
+    expect(snap.conversationWidth).toBe(115);
+    expect(snap.conversationRect.width).toBe(115);
+    expect(snap.activityRailWidth).toBe(42);
     expect(snap.viewportHeight).toBeGreaterThan(0);
     expect(snap.viewportHeight).toBeLessThan(40);
   });
@@ -162,6 +165,20 @@ describe('readConversationScrollSnapshot', () => {
     const narrow = readConversationScrollSnapshot();
 
     expect(narrow.totalHeight).toBeGreaterThan(wide.totalHeight);
+  });
+
+  it('uses rendered conversation width for wide activity-rail scroll calculations', () => {
+    eventsStore.__testReset({ events: [makeLongTaskStarted()] });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+
+    const snap = readConversationScrollSnapshot();
+
+    expect(snap.contentRect.width).toBe(118);
+    expect(snap.activityRailWidth).toBe(35);
+    expect(snap.conversationWidth).toBe(82);
+    expect(snap.conversationRect.width).toBe(82);
+    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 81);
   });
 
   it('sidebar presence narrows content width', () => {

@@ -3,22 +3,22 @@ import { formatTokensShort } from '../../../../core/formatting.js';
 import { formatToolModel } from '../../../../core/model-display.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { useTheme, type Theme } from '../../../../components/theme.js';
-import { formatDuration } from '../../../../utils/format-time.js';
 import {
   getTerminalCellWidth,
   truncateTerminalDisplayText,
 } from '../../../../utils/display-text.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import type {
-  ActiveOperation,
-  OperationRole,
-  OperationStatus,
-} from '../../../../stores/workflow/operations.js';
+import type { ActiveOperation, OperationRole } from '../../../../stores/workflow/operations.js';
+import {
+  cleanRunnerDisplayText,
+  runnerTerminalOperationLine,
+  type RunnerOperationLineSegmentRole,
+  type RunnerTerminalTone,
+} from '../../display/runner-terminal.js';
 
 type PlannerHeartbeat = EngineEventOf<'planner_heartbeat'>;
 
-const WARNING_PREVIEW_MAX_CELLS = 80;
 const RUNNING_SEGMENT_SEPARATOR = ' · ';
 const SPINNER_PREFIX_CELLS = 2;
 const LEGACY_PLANNER_STATUS_PREFIX = 'planner-status:';
@@ -38,7 +38,6 @@ export function OperationStatusCard({
 }: OperationStatusCardProps) {
   const t = useTheme();
   const color = roleColor(operation.role, t);
-  const formattedTool = toolLabel(operation);
 
   if (operation.status === 'running') {
     const heartbeat = heartbeatForOperation(operation, plannerHeartbeat);
@@ -60,20 +59,14 @@ export function OperationStatusCard({
 
   return (
     <Text wrap="truncate">
-      <Text color={color}>{operation.role}</Text>
-      <Text color={statusColor(operation.status, t)}>
-        {' '}
-        {statusMarker(operation.status)} {terminalHeadline(operation)}
-      </Text>
-      <Text color={t.textDim}> {formatDuration(operation.durationMs)}</Text>
-      {terminalSuffixes(operation).map((suffix) => (
-        <Text key={suffix} color={t.textDim}>
-          {' '}
-          {suffix}
+      {runnerTerminalOperationLine(operation, width).map((segment, index) => (
+        <Text
+          key={`${segment.role}-${index}`}
+          color={operationSegmentColor(segment.role, segment.tone, operation.role, t)}
+        >
+          {segment.text}
         </Text>
       ))}
-      {formattedTool && <Text color={t.textDim}> [{formattedTool}]</Text>}
-      {operation.reason && <Text color={t.textDim}> {operation.reason}</Text>}
     </Text>
   );
 }
@@ -115,7 +108,7 @@ function heartbeatForOperation(
 }
 
 function toolLabel(operation: ActiveOperation): string {
-  return formatToolModel(operation.runnerName, operation.model);
+  return cleanRunnerDisplayText(formatToolModel(operation.runnerName, operation.model));
 }
 
 function runningBaseLabel(operation: ActiveOperation): string {
@@ -170,85 +163,6 @@ function joinRunningSegments(segments: readonly string[]): string {
   return segments.filter((segment) => segment.length > 0).join(RUNNING_SEGMENT_SEPARATOR);
 }
 
-function terminalHeadline(operation: ActiveOperation): string {
-  const status = terminalStatusLabel(operation.status);
-  return status ? `${status} ${operation.phase}` : operation.phase;
-}
-
-function terminalStatusLabel(status: OperationStatus): string | null {
-  switch (status) {
-    case 'completed':
-      return null;
-    case 'cancelled':
-      return 'cancelled';
-    case 'failed':
-      return 'failed';
-    case 'truncated':
-      return 'truncated';
-    case 'aborted':
-      return 'aborted';
-    case 'timeout':
-      return 'timeout';
-    case 'refused':
-      return 'refused';
-    case 'unsupported_tool':
-      return 'unsupported tool';
-    case 'incomplete':
-      return 'incomplete';
-    case 'running':
-      return null;
-    default:
-      return assertNever(status);
-  }
-}
-
-function terminalSuffixes(operation: ActiveOperation): string[] {
-  if (operation.status === 'running') return [];
-
-  const suffixes: string[] = [];
-  if (operation.partial) suffixes.push('partial output');
-
-  const warnings = operation.warnings.length;
-  if (warnings > 0) {
-    const count = warningCountLabel(warnings);
-    const preview = latestActionableWarningPreview(operation);
-    suffixes.push(preview ? `${count}: ${preview}` : count);
-  }
-
-  return suffixes;
-}
-
-function warningCountLabel(count: number): string {
-  return count === 1 ? '1 warning' : `${count} warnings`;
-}
-
-function latestActionableWarningPreview(operation: ActiveOperation): string | null {
-  if (!isActionableTerminalStatus(operation.status)) return null;
-
-  const latest = operation.warnings.at(-1);
-  if (latest === undefined || latest.length === 0) return null;
-  return truncateTerminalDisplayText(latest, WARNING_PREVIEW_MAX_CELLS);
-}
-
-function isActionableTerminalStatus(status: OperationStatus): boolean {
-  switch (status) {
-    case 'failed':
-    case 'truncated':
-    case 'aborted':
-    case 'timeout':
-    case 'refused':
-    case 'unsupported_tool':
-    case 'incomplete':
-      return true;
-    case 'running':
-    case 'completed':
-    case 'cancelled':
-      return false;
-    default:
-      return assertNever(status);
-  }
-}
-
 function roleColor(role: OperationRole, theme: Theme): string {
   switch (role) {
     case 'planner':
@@ -264,44 +178,37 @@ function roleColor(role: OperationRole, theme: Theme): string {
   }
 }
 
-function statusColor(status: OperationStatus, theme: Theme): string {
-  switch (status) {
-    case 'completed':
-      return theme.success;
-    case 'cancelled':
-    case 'aborted':
-      return theme.warning;
-    case 'failed':
-    case 'truncated':
-    case 'timeout':
-    case 'refused':
-    case 'unsupported_tool':
-    case 'incomplete':
-      return theme.error;
-    case 'running':
+function operationSegmentColor(
+  role: RunnerOperationLineSegmentRole,
+  tone: RunnerTerminalTone | undefined,
+  operationRole: OperationRole,
+  theme: Theme,
+): string {
+  switch (role) {
+    case 'role':
+      return roleColor(operationRole, theme);
+    case 'status':
+      return runnerToneColor(tone ?? 'textDim', theme);
+    case 'dim':
       return theme.textDim;
     default:
-      return assertNever(status);
+      return assertNever(role);
   }
 }
 
-function statusMarker(status: OperationStatus): string {
-  switch (status) {
-    case 'completed':
-      return '✓';
-    case 'cancelled':
-    case 'aborted':
-      return '×';
-    case 'failed':
-    case 'truncated':
-    case 'timeout':
-    case 'refused':
-    case 'unsupported_tool':
-    case 'incomplete':
-      return '!';
-    case 'running':
-      return '-';
+function runnerToneColor(tone: RunnerTerminalTone, theme: Theme): string {
+  switch (tone) {
+    case 'success':
+      return theme.success;
+    case 'warning':
+      return theme.warning;
+    case 'error':
+      return theme.error;
+    case 'info':
+      return theme.info;
+    case 'textDim':
+      return theme.textDim;
     default:
-      return assertNever(status);
+      return assertNever(tone);
   }
 }

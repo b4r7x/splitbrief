@@ -1,6 +1,11 @@
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
-import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
+import type {
+  ConversationRow,
+  ConversationRowKind,
+  ConversationRowSegment,
+  ConversationRowTone,
+} from './types.js';
 
 const MIN_ROW_WIDTH = 1;
 const LINE_BREAK_PLACEHOLDER_PREFIX = '\ue000diptych-line-break';
@@ -10,15 +15,16 @@ export interface RowInput {
   text: string;
   tone?: ConversationRowTone;
   bold?: boolean;
+  kind?: ConversationRowKind;
 }
 
 export function row(input: RowInput): ConversationRow {
-  const { key, text, tone = 'text', bold = false } = input;
-  return { key, segments: [{ text: sanitizeRowDisplayText(text), tone, bold }] };
+  const { key, text, tone = 'text', bold = false, kind = 'message' } = input;
+  return { key, kind, segments: [{ text: sanitizeRowDisplayText(text), tone, bold }] };
 }
 
 export function blankRow(key: string): ConversationRow {
-  return row({ key, text: '' });
+  return row({ key, text: '', kind: 'spacer' });
 }
 
 export function rowText(rowValue: ConversationRow): string {
@@ -29,9 +35,14 @@ function wrapText(text: string, width: number): string[] {
   return wrapHard(sanitizeRowDisplayText(text), Math.max(MIN_ROW_WIDTH, width)).split('\n');
 }
 
-function segmentedRow(key: string, segments: ConversationRowSegment[]): ConversationRow {
+function segmentedRow(
+  key: string,
+  segments: ConversationRowSegment[],
+  kind: ConversationRowKind,
+): ConversationRow {
   return {
     key,
+    kind,
     segments: segments.map((segment) => ({
       ...segment,
       text: sanitizeRowDisplayText(segment.text),
@@ -40,10 +51,10 @@ function segmentedRow(key: string, segments: ConversationRowSegment[]): Conversa
 }
 
 export function sanitizeRowDisplayText(text: string): string {
-  if (!text.includes('\n')) return sanitizeTerminalDisplayText(text);
+  if (!text.includes('\n')) return sanitizeWorkflowDisplayText(text);
 
   const placeholder = unusedLineBreakPlaceholder(text);
-  return sanitizeTerminalDisplayText(text.replaceAll('\n', placeholder)).replaceAll(
+  return sanitizeWorkflowDisplayText(text.replaceAll('\n', placeholder)).replaceAll(
     placeholder,
     '\n',
   );
@@ -65,17 +76,18 @@ export interface EventRowsInput {
   width: number;
   tone: ConversationRowTone;
   bold?: boolean;
+  kind?: ConversationRowKind;
 }
 
 export function eventWrappedRows(input: EventRowsInput): ConversationRow[] {
-  const { keyPrefix, text, width, tone, bold = false } = input;
+  const { keyPrefix, text, width, tone, bold = false, kind = 'message' } = input;
   const rows: ConversationRow[] = [];
   const cleanText = sanitizeRowDisplayText(text);
 
   for (const rawLine of cleanText.split('\n')) {
     const wrapped = wrapText(rawLine, width);
     for (const wrappedLine of wrapped) {
-      rows.push(row({ key: `${keyPrefix}-${rows.length}`, text: wrappedLine, tone, bold }));
+      rows.push(row({ key: `${keyPrefix}-${rows.length}`, text: wrappedLine, tone, bold, kind }));
     }
   }
 
@@ -89,10 +101,11 @@ export interface CardRowsInput {
   width: number;
   labelTone: ConversationRowTone;
   valueTone?: ConversationRowTone;
+  kind?: ConversationRowKind;
 }
 
 export function cardRows(input: CardRowsInput): ConversationRow[] {
-  const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim' } = input;
+  const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim', kind = 'card' } = input;
   const cleanLabel = sanitizeRowDisplayText(label);
   const cleanValue = value === undefined ? undefined : sanitizeRowDisplayText(value);
   const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
@@ -104,12 +117,17 @@ export function cardRows(input: CardRowsInput): ConversationRow[] {
         key: `${keyPrefix}-${index}`,
         text: line,
         tone: index > 0 ? valueTone : labelTone,
+        kind,
       });
     }
-    return segmentedRow(`${keyPrefix}-${index}`, [
-      { text: labelText, tone: labelTone },
-      { text: line.slice(labelText.length), tone: valueTone },
-    ]);
+    return segmentedRow(
+      `${keyPrefix}-${index}`,
+      [
+        { text: labelText, tone: labelTone },
+        { text: line.slice(labelText.length), tone: valueTone },
+      ],
+      kind,
+    );
   });
 }
 
@@ -125,6 +143,7 @@ export function wrapRows(rows: ConversationRow[], width: number): ConversationRo
           text: line,
           tone: sourceRow.segments[0]?.tone ?? 'text',
           bold: sourceRow.segments[0]?.bold ?? false,
+          kind: sourceRow.kind,
         }),
       );
     }

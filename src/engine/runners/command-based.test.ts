@@ -133,7 +133,7 @@ describe('invokeCommandBasedRunner', () => {
       ),
     ).toBe(true);
     expect(result.callResult.warnings).toEqual([
-      { code: 'stderr', message: 'timeout-branch-progress\n' },
+      { code: 'stderr', message: 'timeout-branch-progress' },
     ]);
   });
 
@@ -183,6 +183,7 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('uses final stream-json result text instead of assistant draft text', async () => {
+    const chunks: string[] = [];
     const lines = [
       JSON.stringify({
         type: 'assistant',
@@ -200,12 +201,40 @@ describe('invokeCommandBasedRunner', () => {
       outputFormat: 'stream-json',
       prompt: '',
       projectDir: process.cwd(),
+      onOutput: (chunk) => chunks.push(chunk),
     });
     expect(result.stdout).toBe('final text');
     expect(result.callResult.text).toBe('final text');
+    expect(chunks).toEqual(['draft text']);
+  });
+
+  it('streams only the missing suffix when stream-json final text extends assistant text', async () => {
+    const chunks: string[] = [];
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'draft' }] },
+      }),
+      JSON.stringify({
+        type: 'result',
+        result: 'draft final',
+      }),
+    ];
+    const result = await invokeCommandBasedRunner({
+      command: 'printf',
+      args: ['%s\\n', lines.join('\n')],
+      outputFormat: 'stream-json',
+      prompt: '',
+      projectDir: process.cwd(),
+      onOutput: (chunk) => chunks.push(chunk),
+    });
+
+    expect(result.stdout).toBe('draft final');
+    expect(chunks).toEqual(['draft', ' final']);
   });
 
   it('uses final stream-json result text instead of assistant draft text on the timeout branch', async () => {
+    const chunks: string[] = [];
     const lines = [
       JSON.stringify({
         type: 'assistant',
@@ -224,9 +253,11 @@ describe('invokeCommandBasedRunner', () => {
       timeout: 30_000,
       prompt: '',
       projectDir: process.cwd(),
+      onOutput: (chunk) => chunks.push(chunk),
     });
     expect(result.stdout).toBe('final text');
     expect(result.callResult.text).toBe('final text');
+    expect(chunks).toEqual(['draft text']);
   });
 
   it('keeps one tool-use id and name across stream-json start and input deltas', async () => {

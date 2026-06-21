@@ -20,6 +20,18 @@ export type ConversationRowTone =
   | 'markdownRule'
   | 'reviewFile';
 
+export type ConversationRowKind =
+  | 'message'
+  | 'card'
+  | 'activity'
+  | 'activity-child'
+  | 'task-header'
+  | 'diff-header'
+  | 'diff-line'
+  | 'spacer'
+  | 'section'
+  | 'summary';
+
 export interface ConversationRowSegment {
   text: string;
   tone?: ConversationRowTone;
@@ -29,6 +41,7 @@ export interface ConversationRowSegment {
 
 export interface ConversationRow {
   key: string;
+  kind: ConversationRowKind;
   segments: ConversationRowSegment[];
 }
 
@@ -50,6 +63,7 @@ export interface ConversationRowScrollComputation {
 export interface ConversationRowInputs {
   sections: Section<EngineEvent>[];
   expandedDiffs: Set<string>;
+  expandedActivityBatches: Set<string>;
   cols: number;
   viewportHeight: number;
   streaming: StreamingOutputState;

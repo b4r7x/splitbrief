@@ -7,44 +7,19 @@ import type {
   RowBuildContext,
 } from './types.js';
 import { blankRow } from './row-format.js';
-import { eventRows, runnerActivityBatchRows } from './event-rows.js';
+import { runnerActivityBatchRows } from './activity-rows.js';
+import { activityBatchKey } from './activity-batch-key.js';
+import { buildActivityBatchViewModel } from './activity-batch-model.js';
+import { eventRows } from './event-rows.js';
 
 const MIN_ROW_WIDTH = 1;
 
-const rowCache = new WeakMap<EngineEvent, Map<string, ConversationRow[]>>();
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
 interface RunnerActivityBatch {
   callId: string;
   firstIndex: number;
   events: RunnerActivityEvent[];
-}
-
-function isVolatileEvent(event: EngineEvent, expanded: boolean): boolean {
-  if (event.type === 'implementer_generate_running') return true;
-  return event.type === 'implementer_generate_done' && expanded;
-}
-
-function cachedEventRows(
-  event: EngineEvent,
-  globalIndex: number,
-  ctx: RowBuildContext,
-  expanded: boolean,
-): ConversationRow[] {
-  if (isVolatileEvent(event, expanded)) {
-    return eventRows({ event, globalIndex, ctx, expanded });
-  }
-  let byKey = rowCache.get(event);
-  if (!byKey) {
-    byKey = new Map();
-    rowCache.set(event, byKey);
-  }
-  const key = `${ctx.width}|${expanded ? 1 : 0}|${globalIndex}`;
-  const cached = byKey.get(key);
-  if (cached) return cached;
-  const computed = eventRows({ event, globalIndex, ctx, expanded });
-  byKey.set(key, computed);
-  return computed;
 }
 
 export function buildConversationRows(inputs: ConversationRowInputs): ConversationRowsResult {
@@ -57,22 +32,32 @@ export function buildConversationRows(inputs: ConversationRowInputs): Conversati
     streaming: inputs.streaming,
   };
 
-  const appendRows = (eventRowList: ConversationRow[], globalIndex: number): void => {
+  const appendRows = (
+    eventRowList: ConversationRow[],
+    globalIndex: number,
+    renderableUnits = 1,
+  ): void => {
     if (eventRowList.length === 0) return;
     if (rows.length > 0) rows.push(blankRow(`spacer-${globalIndex}`));
     rows.push(...eventRowList);
-    renderableCount++;
+    renderableCount += renderableUnits;
   };
 
   const flushActivityBatch = (): void => {
     if (activityBatch === null) return;
+    const batchKey = activityBatchKey(activityBatch.firstIndex, activityBatch.callId);
+    const model = buildActivityBatchViewModel({
+      events: activityBatch.events,
+      batchKey,
+      expanded: inputs.expandedActivityBatches.has(batchKey),
+    });
     appendRows(
       runnerActivityBatchRows({
-        events: activityBatch.events,
-        keyPrefix: `activity-batch-${activityBatch.firstIndex}-${activityBatch.callId}`,
+        model,
         width: ctx.width,
       }),
       activityBatch.firstIndex,
+      model.renderableUnits,
     );
     activityBatch = null;
   };
@@ -94,12 +79,12 @@ export function buildConversationRows(inputs: ConversationRowInputs): Conversati
         continue;
       }
 
-      const eventRowList = cachedEventRows(
+      const eventRowList = eventRows({
         event,
         globalIndex,
         ctx,
-        inputs.expandedDiffs.has(diffEventKey(event)),
-      );
+        expanded: inputs.expandedDiffs.has(diffEventKey(event)),
+      });
       if (eventRowList.length === 0) {
         if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
         continue;

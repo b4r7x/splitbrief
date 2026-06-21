@@ -9,6 +9,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { createInitialState } from '../../../core/state/machine.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -234,6 +235,65 @@ describe('initializeWorkflow', () => {
       expect(errorEvent?.message).toContain("Planner 'openrouter' is not available");
       expect(errorEvent?.message).toContain('HTTP 401');
       expect(errorEvent?.message).not.toContain("Make sure it's installed");
+    });
+  });
+
+  it('does not publish a planner_status fallback when resuming an implementer phase', async () => {
+    await withTempDir('diptych-init-resume-implementing', async (projectDir) => {
+      const feature = 'resume implementation';
+      const sessionId = 'session-init-resume-implementing';
+      const config = makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const events: EngineEvent[] = [];
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          savedState: { ...createInitialState(feature), phase: 'implementing' },
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+          _eventSink: (e) => events.push(e),
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(events).toContainEqual(expect.objectContaining({ type: 'workflow_resumed' }));
+      expect(events).not.toContainEqual(
+        expect.objectContaining({
+          type: 'planner_status',
+          phase: 'implementing',
+          status: 'running',
+        }),
+      );
     });
   });
 

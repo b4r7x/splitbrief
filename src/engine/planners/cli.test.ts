@@ -7,6 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
 import { TASKS_FILE } from '../../core/paths.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 /**
  * CLI planner is a thin wrapper around a real subprocess. Instead of mocking
@@ -143,7 +144,7 @@ Create the fallback file.
     );
     chmodSync(shimPath, 0o755);
 
-    const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
+    const events: RunnerCallEvent[] = [];
     const planner = createCliPlanner(
       makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
       'sess-old',
@@ -154,9 +155,7 @@ Create the fallback file.
       projectDir,
       callbacks: {
         onOutput: vi.fn(),
-        onCallEvent: (event) => {
-          if (event.type === 'call_started' || event.type === 'call_error') events.push(event);
-        },
+        onCallEvent: (event) => events.push(event),
       },
     });
 
@@ -168,6 +167,74 @@ Create the fallback file.
     expect(started[0]?.callId).toMatch(/-attempt-1$/);
     expect(started[1]?.callId).toMatch(/-attempt-2$/);
     expect(started[0]?.callId).not.toBe(started[1]?.callId);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: 'call_stderr_delta',
+        text: expect.stringContaining('session not found'),
+      }),
+    );
+  });
+
+  it('treats a different returned Codex thread id as expired resume and does not persist it', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Fallback after thread mismatch
+action: create
+file: src/mismatch.ts
+depends_on: []
+---
+
+### Description
+Create the mismatch fallback file.
+
+### Tests
+- fallback attempt succeeds
+`;
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'if printf \'%s\\n\' "$@" | grep -q "^sess-old$"; then',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-new-unexpected' }).replace(/'/g, "'\\''")}'`,
+        `  printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        '  exit 0',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-fresh' }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const events: RunnerCallEvent[] = [];
+    const onSessionId = vi.fn();
+    const onSessionExpired = vi.fn();
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      'sess-old',
+    );
+
+    const result = await planner.quickPlan({
+      feature: 'fallback',
+      projectDir,
+      callbacks: {
+        onOutput: vi.fn(),
+        onSessionId,
+        onSessionExpired,
+        onCallEvent: (event) => events.push(event),
+      },
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
+    expect(onSessionId).not.toHaveBeenCalledWith('sess-new-unexpected');
+    expect(onSessionId).toHaveBeenCalledWith('sess-fresh');
+
+    const sessionEvents = events.filter((event) => event.type === 'call_session_id');
+    expect(sessionEvents).toHaveLength(1);
+    expect(sessionEvents[0]).toMatchObject({ nativeSessionId: 'sess-fresh' });
   });
 
   it('applies the aider postProcess hook: pulls usage from stderr when present', async () => {

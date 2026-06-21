@@ -6,6 +6,7 @@ import type { EngineEventOf } from '../../engine/events/types.js';
 import {
   makePlannerText,
   makePlannerStatus,
+  makeTaskStart,
   makeValidate,
   makeRetry,
   makeCostUpdate,
@@ -49,6 +50,23 @@ describe('eventsStore — append via addEvent', () => {
     expect(s.events).toHaveLength(MAX_EVENTS);
     expect((s.events[s.events.length - 1] as { taskId: string }).taskId).toBe('T999');
     expect((s.events[0] as { taskId: string }).taskId).toBe('T002');
+  });
+
+  it('preserves structural task events before evicting ordinary activity', () => {
+    const structural = makeTaskStart({ taskId: taskId('T001'), index: 0 });
+    const events = [
+      structural,
+      ...Array.from({ length: MAX_EVENTS - 1 }, (_, i) =>
+        makeRetry({ taskId: taskId(`T${String((i % 998) + 2).padStart(3, '0')}`) }),
+      ),
+    ];
+
+    const result = mergeEvent(events, makeRetry({ taskId: taskId('T999') }));
+
+    expect(result).toHaveLength(MAX_EVENTS);
+    expect(result).toContain(structural);
+    expect(result[0]).toBe(structural);
+    expect((result[result.length - 1] as { taskId: string }).taskId).toBe('T999');
   });
 
   it('coalesces consecutive planner-text events', () => {

@@ -94,7 +94,10 @@ export function projectRunnerCallEvent(
         type: 'runner_call_error',
         ...base,
         status: event.status,
-        error: event.error,
+        error: {
+          ...event.error,
+          message: boundedRunnerCallMessage(event.error.message),
+        },
         startedAt: event.startedAt,
         endedAt: event.endedAt,
         durationMs: event.durationMs,

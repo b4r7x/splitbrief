@@ -245,10 +245,16 @@ describe('autoCompactResumeContext', () => {
     expect(events.some((event) => event.type === 'cost_update')).toBe(true);
     expect(
       events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
-    ).toEqual(['runner_call_started', 'runner_call_completed']);
+    ).toEqual(['runner_call_started', 'runner_call_completed', 'runner_call_activity']);
     expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
       callId: 'compaction-call-test',
       role: 'compaction',
+    });
+    expect(events.find((event) => event.type === 'runner_call_activity')).toMatchObject({
+      callId: 'compaction-call-test',
+      role: 'compaction',
+      stage: 'completed',
+      kind: 'text',
     });
   });
 

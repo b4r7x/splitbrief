@@ -119,4 +119,30 @@ describe('createImplementerBase — bus events', () => {
       types.indexOf('implementer_generate_failed'),
     );
   });
+
+  it('does not publish implementer_generate_failed when invoke aborts after running', async () => {
+    const controller = new AbortController();
+    const invoke = vi.fn().mockImplementation(() => {
+      controller.abort(new Error('cancelled'));
+      return Promise.reject(new Error('cancelled'));
+    });
+    const task = makeTask({ id: 'T003', file: 'src/abort.ts', action: 'create' });
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({ invoke, publisher: makePublisher(events) }),
+    );
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+      signal: controller.signal,
+    });
+
+    expect(result).toMatchObject({ success: false, error: 'Aborted' });
+    expect(events.map((event) => event.type)).toEqual(['implementer_generate_running']);
+  });
 });

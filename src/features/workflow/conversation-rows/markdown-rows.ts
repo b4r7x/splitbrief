@@ -60,6 +60,7 @@ export function markdownConversationRows(input: MarkdownConversationRowsInput): 
     for (const line of layoutRow.lines) {
       rows.push({
         key: `${input.keyPrefix}-${layoutRow.key}-${lineIndex}`,
+        kind: 'message',
         segments: markdownLineSegments(line),
       });
       lineIndex += 1;
