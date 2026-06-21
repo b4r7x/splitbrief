@@ -1,16 +1,21 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import { formatDuration } from '../../../utils/format-time.js';
-import type { WorkflowActivityItem } from '../../../stores/workflow/activity.js';
-import type { ActiveOperation, OperationStatus } from '../../../stores/workflow/operations.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import type {
+  ActiveOperation,
+  OperationStatus,
+  OperationWarningGroup,
+} from '../../../stores/workflow/operations.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { sanitizeWorkflowDisplayText } from './safe-text.js';
 
 export type RunnerTerminalTone = 'info' | 'success' | 'warning' | 'error' | 'textDim';
 export type RunnerOperationLineSegmentRole = 'role' | 'status' | 'dim';
 
 type OperationMarker = '✓' | '×' | '!' | '-';
-type ActivityMarker = '*' | '+' | '!' | 'x';
 type TerminalOperation = Exclude<ActiveOperation, { status: 'running' }>;
 
 export interface RunnerOperationStatusDisplay {
@@ -20,28 +25,10 @@ export interface RunnerOperationStatusDisplay {
   showDiagnosticPreview: boolean;
 }
 
-export interface RunnerActivityDisplay {
-  label: string;
-  value: string | null;
-  diagnosticPreview: string | null;
-  marker: ActivityMarker;
-  tone: RunnerTerminalTone;
-  valueTone: RunnerTerminalTone;
-}
-
 export interface RunnerOperationLineSegment {
   text: string;
   role: RunnerOperationLineSegmentRole;
   tone?: RunnerTerminalTone;
-}
-
-interface RunnerActivityDisplayInput {
-  stage: WorkflowActivityItem['stage'];
-  kind: WorkflowActivityItem['kind'];
-  label: string;
-  target?: string | undefined;
-  textPartial?: string | undefined;
-  diagnosticPartial?: string | undefined;
 }
 
 const DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS = 80;
@@ -97,37 +84,6 @@ export function runnerOperationStatusDisplay(
   }
 }
 
-export function runnerActivityDisplay(
-  item: RunnerActivityDisplayInput,
-  diagnosticMaxCells = DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS,
-): RunnerActivityDisplay {
-  const stage = runnerActivityStageDisplay(item.stage);
-  const interrupted = item.stage === 'aborted';
-  return {
-    label: interrupted ? 'interrupted' : activityKindLabel(item.kind),
-    value: interrupted ? null : cleanRunnerDisplayText(item.target ?? item.label),
-    diagnosticPreview: runnerActivityDiagnosticPreview(item, diagnosticMaxCells),
-    marker: stage.marker,
-    tone: stage.tone,
-    valueTone: stage.valueTone,
-  };
-}
-
-export function runnerActivityDiagnosticPreview(
-  item: RunnerActivityDisplayInput,
-  maxCells = DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS,
-): string | null {
-  if (!isDiagnosticActivity(item)) return null;
-
-  const source = item.diagnosticPartial ?? item.textPartial;
-  if (source === undefined) return null;
-
-  const clean = cleanRunnerDisplayText(source);
-  if (clean.length === 0) return null;
-
-  return truncateTerminalDisplayText(clean, maxCells);
-}
-
 export function runnerTerminalOperationLine(
   operation: TerminalOperation,
   maxCells?: number,
@@ -165,7 +121,7 @@ export function runnerTerminalOperationLine(
 }
 
 export function cleanRunnerDisplayText(text: string): string {
-  return sanitizeWorkflowDisplayText(text)
+  return sanitizeTerminalDisplayText(text)
     .replace(INTERNAL_RUNNER_INTERRUPTED_PATTERN, 'interrupted')
     .replace(/\s+/g, ' ')
     .trim();
@@ -262,7 +218,7 @@ function terminalHeadline(
 function operationWarningDisplay(
   operation: TerminalOperation,
 ): { count: string; preview: string | null } | null {
-  const warnings = operation.warnings.length;
+  const warnings = operationWarningCount(operation.warnings);
   if (warnings === 0) return null;
 
   return {
@@ -279,11 +235,15 @@ function latestActionableWarningPreview(operation: TerminalOperation): string | 
   if (!runnerOperationStatusDisplay(operation.status).showDiagnosticPreview) return null;
 
   const latest = operation.warnings.at(-1);
-  if (latest === undefined || latest.length === 0) return null;
+  if (latest === undefined || latest.latestMessage.length === 0) return null;
   return truncateTerminalDisplayText(
-    cleanRunnerDisplayText(latest),
+    cleanRunnerDisplayText(latest.latestMessage),
     DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS,
   );
+}
+
+function operationWarningCount(warnings: readonly OperationWarningGroup[]): number {
+  return warnings.reduce((count, warning) => count + warning.count, 0);
 }
 
 function failureStatusDisplay(label: string): RunnerOperationStatusDisplay {
@@ -293,85 +253,4 @@ function failureStatusDisplay(label: string): RunnerOperationStatusDisplay {
     tone: 'error',
     showDiagnosticPreview: true,
   };
-}
-
-function runnerActivityStageDisplay(stage: WorkflowActivityItem['stage']): {
-  marker: ActivityMarker;
-  tone: RunnerTerminalTone;
-  valueTone: RunnerTerminalTone;
-} {
-  switch (stage) {
-    case 'started':
-    case 'updated':
-      return { marker: '*', tone: 'info', valueTone: 'textDim' };
-    case 'completed':
-      return { marker: '+', tone: 'success', valueTone: 'textDim' };
-    case 'warning':
-    case 'aborted':
-      return { marker: '!', tone: 'warning', valueTone: 'warning' };
-    case 'failed':
-    case 'timeout':
-    case 'truncated':
-    case 'refused':
-    case 'unsupported_tool':
-    case 'incomplete':
-      return { marker: 'x', tone: 'error', valueTone: 'error' };
-    default:
-      return assertNever(stage);
-  }
-}
-
-function activityKindLabel(kind: WorkflowActivityItem['kind']): string {
-  switch (kind) {
-    case 'warning':
-      return 'warning';
-    case 'error':
-      return 'error';
-    case 'command':
-      return 'run';
-    case 'read':
-      return 'read';
-    case 'write':
-    case 'edit':
-      return 'edit';
-    case 'search':
-    case 'glob':
-      return 'search';
-    case 'web':
-    case 'mcp':
-      return 'call';
-    case 'tool':
-    case 'file':
-    case 'text':
-    case 'task':
-    case 'plan':
-    case 'session':
-    case 'artifact':
-    case 'unknown':
-      return kind;
-    default:
-      return assertNever(kind);
-  }
-}
-
-function isDiagnosticActivity(item: RunnerActivityDisplayInput): boolean {
-  if (item.kind === 'warning' || item.kind === 'error') return true;
-
-  switch (item.stage) {
-    case 'warning':
-    case 'aborted':
-    case 'failed':
-    case 'timeout':
-    case 'truncated':
-    case 'refused':
-    case 'unsupported_tool':
-    case 'incomplete':
-      return true;
-    case 'started':
-    case 'updated':
-    case 'completed':
-      return false;
-    default:
-      return assertNever(item.stage);
-  }
 }

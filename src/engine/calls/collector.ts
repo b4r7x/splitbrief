@@ -2,6 +2,7 @@ import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { boundedRunnerCallMessage, isRunnerCallTerminalEvent } from './status.js';
 import { applyRunnerCallUsageSample } from './usage.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 import type {
   RunnerCallContext,
   RunnerCallError,
@@ -52,10 +53,15 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
       assertSameCall(state.context, event);
     }
     if (state.terminalStatus !== null && !isRunnerCallTerminalEvent(event)) {
-      state.warnings.push({
-        code: 'event_after_terminal',
-        message: `Ignored non-terminal event after ${state.terminalStatus} terminal status`,
-      });
+      state.warnings.push(
+        normalizeRunnerCallWarning({
+          code: 'event_after_terminal',
+          severity: 'debug',
+          source: 'system',
+          surface: 'debug',
+          message: `Ignored non-terminal event after ${state.terminalStatus} terminal status`,
+        }),
+      );
       continue;
     }
     applyRunnerCallEvent(state, event);
@@ -158,7 +164,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       }
       return;
     case 'call_stderr_delta':
-      state.warnings.push({ code: 'stderr', message: boundedRunnerCallMessage(event.text) });
       return;
     case 'call_tool_use_delta':
       return;
@@ -178,10 +183,12 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.artifacts.push(event.artifact);
       return;
     case 'call_warning':
-      state.warnings.push({
-        ...event.warning,
-        message: boundedRunnerCallMessage(event.warning.message),
-      });
+      state.warnings.push(
+        normalizeRunnerCallWarning({
+          ...event.warning,
+          message: boundedRunnerCallMessage(event.warning.message),
+        }),
+      );
       return;
     case 'call_error':
       state.terminalStatus = event.status;
@@ -214,10 +221,15 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.nativeSessionId = event.nativeSessionId;
       return;
     case 'call_unknown_upstream':
-      state.warnings.push({
-        code: 'unknown_upstream',
-        message: boundedRunnerCallMessage(event.rawPreview),
-      });
+      state.warnings.push(
+        normalizeRunnerCallWarning({
+          code: 'unknown_upstream',
+          severity: 'warning',
+          source: event.backendMetadata.source ?? 'upstream',
+          surface: 'activity',
+          message: boundedRunnerCallMessage(event.rawPreview),
+        }),
+      );
       return;
     default:
       assertNever(event);

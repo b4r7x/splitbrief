@@ -58,4 +58,52 @@ describe('parseEntryAs', () => {
     expect(result).not.toBeNull();
     expect(result!.valid).toBe(true);
   });
+
+  it('uses canonical runner call role and status values for agent-invocation', () => {
+    expect(
+      AgentInvocationPayloadSchema.safeParse({
+        role: 'escalation',
+        backendKind: 'agent-sdk',
+        tool: 'claude-code',
+        phase: 'implementing',
+        status: 'unsupported_tool',
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentInvocationPayloadSchema.safeParse({
+        role: 'escalator',
+        tool: 'claude-code',
+        phase: 'implementing',
+        status: 'started',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates agent-invocation usage with the shared runner call usage contract', () => {
+    expect(
+      AgentInvocationPayloadSchema.safeParse({
+        role: 'planner',
+        tool: 'claude-code',
+        phase: 'planning',
+        status: 'completed',
+        usage: {
+          inputTokens: 10,
+          outputTokens: 20,
+          reasoningTokens: 5,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentInvocationPayloadSchema.safeParse({
+        role: 'planner',
+        tool: 'claude-code',
+        phase: 'planning',
+        status: 'completed',
+        usage: {
+          inputTokens: 10,
+          outputTokens: -1,
+        },
+      }).success,
+    ).toBe(false);
+  });
 });

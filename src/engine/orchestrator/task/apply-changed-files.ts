@@ -37,6 +37,7 @@ export async function applyChangedFiles(opts: {
     bus: wctx.bus,
     callbacks,
     config,
+    getApprovalEnabled: wctx.getApprovalEnabled,
     staged,
     usesStaging,
     taskStartSnapshot,
@@ -47,10 +48,11 @@ export async function applyChangedFiles(opts: {
     catchChangedFilesError: true,
     handleConflict: opts.handleConflict,
     onRestoreConflict: (files) =>
-      publishWarning(
-        { bus: wctx.bus, phase: state.phase },
-        `denied task rollback skipped files changed during approval: ${files.join(', ')}`,
-      ),
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: `denied task rollback skipped files changed during approval: ${files.join(', ')}`,
+      }),
     onRestoreError: (err) =>
       publishWarningFromError(
         { bus: wctx.bus, phase: state.phase },
@@ -61,10 +63,11 @@ export async function applyChangedFiles(opts: {
   });
 
   if (result.outcome === 'error') {
-    publishError(
-      { bus: wctx.bus, phase: state.phase },
-      `Task changed files blocked by approval gate: ${toErrorMessage(result.error)}`,
-    );
+    publishError({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: `Task changed files blocked by approval gate: ${toErrorMessage(result.error)}`,
+    });
     return { proceed: false, state: result.state };
   }
   if (result.outcome === 'gate-denied') {
@@ -77,10 +80,11 @@ export async function applyChangedFiles(opts: {
     return { proceed: false, state: result.state };
   }
   if (result.outcome === 'promote-conflict') {
-    publishError(
-      { bus: wctx.bus, phase: result.state.phase },
-      `Approved task promotion blocked because files changed during approval: ${result.conflictedFiles.join(', ')}`,
-    );
+    publishError({
+      bus: wctx.bus,
+      phase: result.state.phase,
+      message: `Approved task promotion blocked because files changed during approval: ${result.conflictedFiles.join(', ')}`,
+    });
     return { proceed: false, state: result.state };
   }
   if (result.outcome === 'aborted') {

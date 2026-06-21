@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
+import { runnerCallWarningFingerprint } from '../calls/warning-fingerprint.js';
 import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from './protection.js';
 import type { EngineEvent } from './types.js';
 
@@ -22,7 +23,7 @@ describe('protectEngineEventForConsumer', () => {
     ).toBeNull();
   });
 
-  it('omits runner activity text when transcript persistence is disabled', () => {
+  it('keeps runner activity control metadata but replaces prompt-bearing labels when transcript persistence is disabled', () => {
     const event: EngineEvent = {
       type: 'runner_call_activity',
       ts: 12,
@@ -34,8 +35,8 @@ describe('protectEngineEventForConsumer', () => {
       activityId: 'call-1:tool:tool-1',
       stage: 'completed',
       kind: 'command',
-      label: 'running echo sk-abcdefghijklmnopqrst',
-      target: 'echo sk-abcdefghijklmnopqrst',
+      label: 'running echo private-runner-output-92741',
+      target: 'echo private-runner-output-92741',
       redacted: false,
       rawAvailable: true,
       expandId: 'call-1:tool:tool-1',
@@ -51,12 +52,15 @@ describe('protectEngineEventForConsumer', () => {
       activityId: 'call-1:tool:tool-1',
       stage: 'completed',
       kind: 'command',
-      label: TRANSCRIPT_OMITTED_MESSAGE,
-      target: TRANSCRIPT_OMITTED_MESSAGE,
+      label: 'running command',
       redacted: true,
       rawAvailable: false,
     });
+    expect(protectedEvent).not.toHaveProperty('target');
+    expect(protectedEvent).not.toHaveProperty('textPartial');
+    expect(protectedEvent).not.toHaveProperty('diagnosticPartial');
     expect(protectedEvent).not.toHaveProperty('expandId');
+    expect(JSON.stringify(protectedEvent)).not.toContain('private-runner-output-92741');
   });
 
   it('redacts canonicalized runner activity before exposing persisted events', () => {
@@ -93,7 +97,7 @@ describe('protectEngineEventForConsumer', () => {
     });
   });
 
-  it('preserves runner terminal metadata while omitting error message content', () => {
+  it('preserves runner terminal metadata while omitting error message and native session content', () => {
     const event: EngineEvent = {
       type: 'runner_call_error',
       ts: 20,
@@ -109,7 +113,7 @@ describe('protectEngineEventForConsumer', () => {
       endedAt: 20,
       durationMs: 10,
       usage: { inputTokens: 1, outputTokens: 2 },
-      nativeSessionId: 'native-1',
+      nativeSessionId: 'native-secret-session-123',
     };
 
     expect(
@@ -120,9 +124,170 @@ describe('protectEngineEventForConsumer', () => {
       partial: true,
       durationMs: 10,
       usage: { inputTokens: 1, outputTokens: 2 },
-      nativeSessionId: 'native-1',
+      nativeSessionId: null,
       error: { code: 'failed', message: TRANSCRIPT_OMITTED_MESSAGE },
     });
+    expect(
+      JSON.stringify(
+        protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: false }),
+      ),
+    ).not.toContain('native-secret-session-123');
+  });
+
+  it('removes native session id from completed runner terminal metadata under transcript-off', () => {
+    const event: EngineEvent = {
+      type: 'runner_call_completed',
+      ts: 20,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+      status: 'completed',
+      error: null,
+      partial: false,
+      startedAt: 10,
+      endedAt: 20,
+      durationMs: 10,
+      usage: null,
+      nativeSessionId: 'native-secret-session-123',
+    };
+
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'ipc',
+      persistTranscript: false,
+    });
+
+    expect(protectedEvent).toMatchObject({
+      type: 'runner_call_completed',
+      nativeSessionId: null,
+    });
+    expect(JSON.stringify(protectedEvent)).not.toContain('native-secret-session-123');
+  });
+
+  it('removes standalone runner native session ids under transcript-off', () => {
+    const event: EngineEvent = {
+      type: 'runner_call_session_id',
+      ts: 21,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 3,
+      nativeSessionId: 'native-secret-session-456',
+    };
+
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'ipc',
+      persistTranscript: false,
+    });
+
+    expect(protectedEvent).toMatchObject({
+      type: 'runner_call_session_id',
+      nativeSessionId: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(JSON.stringify(protectedEvent)).not.toContain('native-secret-session-456');
+  });
+
+  it('removes runner warning raw refs and message-derived fingerprints under transcript-off', () => {
+    const rawMessage = 'warning contains private prompt detail';
+    const rawFingerprint = runnerCallWarningFingerprint({
+      code: 'provider_warning',
+      source: 'provider',
+      message: rawMessage,
+    });
+    const event: EngineEvent = {
+      type: 'runner_call_warning',
+      ts: 22,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 4,
+      warning: {
+        code: 'provider_warning',
+        severity: 'warning',
+        source: 'provider',
+        surface: 'activity',
+        fingerprint: rawFingerprint,
+        message: rawMessage,
+        rawRef: 'raw-secret-ref-789',
+      },
+    };
+
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'ipc',
+      persistTranscript: false,
+    });
+
+    expect(protectedEvent).toMatchObject({
+      type: 'runner_call_warning',
+      warning: {
+        code: 'provider_warning',
+        fingerprint: expect.stringMatching(/^rw-safe:/),
+        message: TRANSCRIPT_OMITTED_MESSAGE,
+      },
+    });
+    if (protectedEvent?.type !== 'runner_call_warning') {
+      throw new Error('Expected protected runner warning event');
+    }
+    expect(protectedEvent.warning.fingerprint).not.toBe(rawFingerprint);
+    expect(protectedEvent.warning).not.toHaveProperty('rawRef');
+    expect(JSON.stringify(protectedEvent)).not.toContain('raw-secret-ref-789');
+    expect(JSON.stringify(protectedEvent)).not.toContain('private prompt detail');
+  });
+
+  it('projects paused external-change conflict metadata under transcript-off', () => {
+    const rawPath = 'src/private-user-file.ts';
+    const event: EngineEvent = {
+      type: 'paused_external_changes',
+      ts: 23,
+      phase: 'implementing',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'current-task-conflict',
+        files: [rawPath],
+        affectedTaskIds: [taskId('T001')],
+        currentTaskId: taskId('T001'),
+        fileConflicts: [
+          {
+            file: rawPath,
+            kind: 'current-task-conflict',
+            affectedTaskIds: [taskId('T001')],
+          },
+        ],
+        safeToContinue: false,
+        availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
+      },
+    };
+
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'session-log',
+      persistTranscript: false,
+    });
+
+    expect(protectedEvent).toEqual({
+      type: 'paused_external_changes',
+      ts: 23,
+      phase: 'implementing',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'current-task-conflict',
+        files: [TRANSCRIPT_OMITTED_MESSAGE],
+        affectedTaskIds: [taskId('T001')],
+        currentTaskId: taskId('T001'),
+        fileConflicts: [
+          {
+            file: TRANSCRIPT_OMITTED_MESSAGE,
+            kind: 'current-task-conflict',
+            affectedTaskIds: [taskId('T001')],
+          },
+        ],
+        safeToContinue: false,
+        availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
+      },
+    });
+    expect(JSON.stringify(protectedEvent)).not.toContain(rawPath);
   });
 
   it('redacts secrets and strips terminal controls from persisted events', () => {
@@ -180,7 +345,7 @@ describe('protectEngineEventForConsumer', () => {
     });
   });
 
-  it('omits warning messages and keeps operational errors when transcript persistence is disabled', () => {
+  it('omits unsafe operational warning and error messages when transcript persistence is disabled', () => {
     const warning: EngineEvent = {
       type: 'warning',
       ts: 50,
@@ -208,7 +373,118 @@ describe('protectEngineEventForConsumer', () => {
       type: 'error',
       ts: 51,
       phase: 'planning',
-      message: 'ipc failed hard',
+      message: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+  });
+
+  it('keeps explicitly safe operational warnings actionable when transcript persistence is disabled', () => {
+    const warning: EngineEvent = {
+      type: 'warning',
+      ts: 52,
+      phase: 'planning',
+      category: 'queue',
+      code: 'queue_full',
+      transcriptSafe: true,
+      message: 'queue full \u001b[31mretry later\u001b[0m',
+    };
+
+    expect(
+      protectEngineEventForConsumer(warning, { context: 'session-log', persistTranscript: false }),
+    ).toEqual({
+      type: 'warning',
+      ts: 52,
+      phase: 'planning',
+      category: 'queue',
+      code: 'queue_full',
+      transcriptSafe: true,
+      message: 'queue full retry later',
+    });
+  });
+
+  it('projects prompt-bearing operational fields while preserving control metadata', () => {
+    const sentinel = 'operational-projection-sentinel-64831';
+    const events: EngineEvent[] = [
+      {
+        type: 'planner_status',
+        ts: 53,
+        phase: 'planning',
+        status: 'done',
+        summary: `summary ${sentinel}`,
+      },
+      {
+        type: 'validate',
+        ts: 54,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        status: 'done',
+        passed: false,
+        stages: { typecheck: true, lint: true, test: false },
+        commands: { test: `npm test -- ${sentinel}` },
+        error: `test failed ${sentinel}`,
+        duration: 100,
+      },
+      {
+        type: 'escalate',
+        ts: 55,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        tier: 1,
+        hint: `try ${sentinel}`,
+      },
+      {
+        type: 'recovery_action_failed',
+        ts: 56,
+        phase: 'implementing',
+        issueId: 'issue-1',
+        reason: 'validation-failed',
+        action: 'retry-same-worker',
+        message: `blocked ${sentinel}`,
+      },
+      {
+        type: 'implementer_generate_running',
+        ts: 57,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        file: `src/${sentinel}.ts`,
+      },
+    ];
+
+    const protectedEvents = events.map((event) =>
+      protectEngineEventForConsumer(event, { context: 'session-log', persistTranscript: false }),
+    );
+
+    expect(JSON.stringify(protectedEvents)).not.toContain(sentinel);
+    expect(protectedEvents[0]).toMatchObject({
+      type: 'planner_status',
+      status: 'done',
+      summary: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(protectedEvents[1]).toMatchObject({
+      type: 'validate',
+      taskId: taskId('T001'),
+      status: 'done',
+      stages: { typecheck: true, lint: true, test: false },
+      error: TRANSCRIPT_OMITTED_MESSAGE,
+      duration: 100,
+    });
+    expect(protectedEvents[1]).not.toHaveProperty('commands');
+    expect(protectedEvents[2]).toMatchObject({
+      type: 'escalate',
+      taskId: taskId('T001'),
+      tier: 1,
+      hint: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(protectedEvents[3]).toMatchObject({
+      type: 'recovery_action_failed',
+      issueId: 'issue-1',
+      reason: 'validation-failed',
+      action: 'retry-same-worker',
+      message: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(protectedEvents[4]).toMatchObject({
+      type: 'implementer_generate_running',
+      taskId: taskId('T001'),
+      file: TRANSCRIPT_OMITTED_MESSAGE,
     });
   });
 

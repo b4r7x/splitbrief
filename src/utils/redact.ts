@@ -36,6 +36,10 @@ const KEY_PATTERNS: RedactionRule[] = [
     pattern: /\b(xox[baprs])[-_][A-Za-z0-9_=-]{8,}\b/g,
     replacement: (marker) => (_match, prefix: string) => `${prefix}-${marker}`,
   },
+  {
+    pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+    replacement: (marker) => marker,
+  },
   { pattern: /\bAKIA[A-Z0-9]{16}\b/g, replacement: (marker) => `AKIA${marker}` },
   { pattern: /\bsk-[a-zA-Z0-9_-]{20,}\b/g, replacement: (marker) => `sk-${marker}` },
   { pattern: /\bBearer\s+[a-zA-Z0-9._~+/=-]{8,}\b/gi, replacement: (marker) => `Bearer ${marker}` },

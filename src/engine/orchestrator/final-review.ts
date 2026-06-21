@@ -169,7 +169,7 @@ export async function runFinalReviewPhase(
       warnError('Failed to compute drift report', err);
     }
 
-    const drain = drainQueue(projectDir, sessionId, state, bus);
+    const drain = drainQueue({ projectDir, sessionId, state, bus });
     state = drain.state;
     const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
@@ -228,7 +228,7 @@ export async function runFinalReviewPhase(
     }
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interruptedSummary();
-    publishError({ bus: bus, phase: state.phase }, labelError('Final review failed', err));
+    publishError({ bus: bus, phase: state.phase, message: labelError('Final review failed', err) });
     reviewStatus = 'failed';
   }
   if (opts.signal?.aborted) return interruptedSummary();

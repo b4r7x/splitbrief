@@ -8,6 +8,11 @@ import {
   PLANNER_ALLOWED_TOOLS,
   PLANNER_PERMISSION_MODE,
 } from './agent-sdk-backend.js';
+import {
+  RUNNER_CALL_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_OUTPUT_MAX_EVENTS,
+} from '../calls/output-limit.js';
+import { RunnerCallEventSchema } from '../calls/schema.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
@@ -149,6 +154,118 @@ describe('processStream', () => {
         channel: 'result',
         text: 'final text',
         semantics: 'final',
+      }),
+    );
+  });
+
+  it('records malformed SDK messages and blocks as unknown upstream diagnostics', async () => {
+    const events: RunnerCallEvent[] = [];
+    const result = await processStream({
+      stream: asyncIter([
+        { type: 'unknown_sdk_event', payload: { value: 1 } },
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 123 },
+              { type: 'text', text: 'ok' },
+              { type: 'tool_use', id: 'tool-1', name: 42, input: {} },
+            ],
+          },
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+        },
+      ]),
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.text).toBe('ok');
+    expect(events.every((event) => RunnerCallEventSchema.safeParse(event).success)).toBe(true);
+    expect(events.filter((event) => event.type === 'call_unknown_upstream')).toHaveLength(3);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_unknown_upstream',
+        rawPreview: expect.stringContaining('Invalid Agent SDK stream message'),
+        backendMetadata: expect.objectContaining({
+          source: 'agent-sdk',
+          parser: 'sdk_message',
+        }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        text: 'ok',
+      }),
+    );
+  });
+
+  it('caps many SDK text chunks before accumulating output', async () => {
+    const events: RunnerCallEvent[] = [];
+    const chunks: string[] = [];
+    const stream = asyncIter([
+      ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'x' }] },
+      })),
+      { type: 'result', subtype: 'success', result: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS + 1) },
+    ]);
+
+    await expect(
+      processStream({
+        stream,
+        onOutput: (text) => chunks.push(text),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        status: 'truncated',
+        output: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS),
+        error: { code: 'agent_sdk_output_text_limit' },
+      },
+    });
+
+    expect(chunks).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(
+      RUNNER_CALL_OUTPUT_MAX_EVENTS,
+    );
+  });
+
+  it('caps one huge SDK result before recorder and output callbacks', async () => {
+    const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      processStream({
+        stream: asyncIter([
+          {
+            type: 'result',
+            subtype: 'success',
+            result: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 1),
+          },
+        ]),
+        onOutput: (text) => chunks.push(text),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        status: 'truncated',
+        error: { code: 'agent_sdk_output_text_limit' },
+      },
+    });
+
+    expect(Buffer.byteLength(chunks.join(''), 'utf8')).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_error',
+        status: 'truncated',
+        error: { code: 'agent_sdk_output_text_limit', message: expect.any(String) },
       }),
     );
   });

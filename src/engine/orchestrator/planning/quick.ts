@@ -21,6 +21,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     state = drainedState;
     feature = prefix + feature;
   }
+  feature = featureWithRewindFeedback(feature, opts.rewindPending);
 
   let planResult: PlanResult;
   try {
@@ -85,4 +86,12 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };
+}
+
+function featureWithRewindFeedback(
+  feature: string,
+  rewindPending: PlanningPhaseOptions['rewindPending'],
+): string {
+  if (rewindPending?.comment === undefined) return feature;
+  return `${feature}\n\n<rewind-feedback target="${rewindPending.target}">\n${rewindPending.comment}\n</rewind-feedback>`;
 }

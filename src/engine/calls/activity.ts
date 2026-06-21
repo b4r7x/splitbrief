@@ -4,10 +4,12 @@ import { stripTerminalControls, truncateTerminalDisplayText } from '../../utils/
 import { sha256Hex } from '../../utils/sha256.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
-import type { RunnerCallEvent } from './types.js';
+import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
+import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
 
 const RUNNER_ACTIVITY_MAX_CELLS = 80;
 const RUNNER_ACTIVITY_TARGET_MAX_CELLS = 120;
+const SESSION_ACTIVITY_LABEL = 'session captured';
 
 type RunnerCallActivityStage = z.infer<typeof RunnerCallActivityStageSchema>;
 type RunnerCallActivityKind = z.infer<typeof RunnerCallActivityKindSchema>;
@@ -54,7 +56,7 @@ export function projectRunnerCallActivity(
         textPartial: event.text,
       });
     case 'call_stderr_delta':
-      return warningActivity(event.callId, 'stderr', event.text);
+      return null;
     case 'call_tool_use_delta': {
       const name = event.name ?? event.toolUseId ?? 'unknown';
       return toolActivity({
@@ -80,8 +82,7 @@ export function projectRunnerCallActivity(
         activityId: `${event.callId}:session`,
         stage: 'completed',
         kind: 'session',
-        label: `session ${event.nativeSessionId}`,
-        target: event.nativeSessionId,
+        label: SESSION_ACTIVITY_LABEL,
       });
     case 'call_artifact':
       return buildActivity({
@@ -92,9 +93,18 @@ export function projectRunnerCallActivity(
         target: event.artifact.path ?? event.artifact.name,
       });
     case 'call_warning':
-      return warningActivity(event.callId, event.warning.code, event.warning.message);
+      return warningActivity(event.callId, event.warning);
     case 'call_unknown_upstream':
-      return warningActivity(event.callId, unknownUpstreamWarningLabel(event), event.rawPreview);
+      return warningActivity(
+        event.callId,
+        normalizeRunnerCallWarning({
+          code: unknownUpstreamWarningLabel(event),
+          severity: 'warning',
+          source: event.backendMetadata.source ?? 'upstream',
+          surface: 'activity',
+          message: event.rawPreview,
+        }),
+      );
     case 'call_error':
       return buildActivity({
         activityId: `${event.callId}:terminal`,
@@ -135,21 +145,24 @@ function toolActivity(opts: {
 
 function warningActivity(
   callId: string,
-  code: string,
-  message: string,
+  warning: RunnerCallWarning,
 ): RunnerCallActivityProjection | null {
-  const label = cleanActivityText(`warning ${code}`, RUNNER_ACTIVITY_MAX_CELLS);
+  if (!showsRunnerCallWarningOnPrimarySurface(warning)) return null;
+  const kind = warning.severity === 'error' ? 'error' : 'warning';
+  const labelPrefix = warning.severity === 'error' ? 'error' : 'warning';
+  const label = cleanActivityText(`${labelPrefix} ${warning.code}`, RUNNER_ACTIVITY_MAX_CELLS);
   if (label === null) return null;
-  const diagnosticPartial = cleanActivityText(message, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
-  const identity = warningActivityIdentity(label.text, diagnosticPartial?.text ?? '');
+  const diagnosticPartial = cleanActivityText(warning.message, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+  const identity =
+    warning.fingerprint || warningActivityIdentity(label.text, diagnosticPartial?.text ?? '');
 
   return buildActivity({
     activityId: `${callId}:warning:${identity}`,
     stage: 'warning',
-    kind: 'warning',
-    label: `warning ${code}`,
-    diagnosticPartial: message,
-    rawAvailable: true,
+    kind,
+    label: `${labelPrefix} ${warning.code}`,
+    diagnosticPartial: warning.message,
+    rawAvailable: warning.rawRef !== undefined,
   });
 }
 

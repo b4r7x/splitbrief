@@ -60,14 +60,18 @@ describe('activityStore', () => {
         stage: 'completed',
         kind: 'session',
         label: 'session native-session-1',
+        target: 'native-session-1',
+        rawAvailable: true,
+        expandId: 'native-session-1',
       }),
     );
 
     expect(activityStore.get().items.map((item) => item.label)).toEqual([
       'checking repo',
       'running npm run typecheck',
-      'session native-session-1',
+      'session captured',
     ]);
+    expect(JSON.stringify(activityStore.get().items)).not.toContain('native-session-1');
   });
 
   it('replaces repeated event identity and keeps the latest bounded history', () => {

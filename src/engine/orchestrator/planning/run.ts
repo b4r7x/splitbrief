@@ -1,12 +1,15 @@
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { resolveMode, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { saveState } from '../../../core/state/persistence.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { runQuickPlanning } from './quick.js';
 import { runInstantPlanning } from './instant.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
 import { adviseMode } from './mode-advisor.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
+import { publishWarning } from '../events.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
@@ -23,7 +26,10 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   let state = opts.state;
   if (state.mode !== mode || state.approve !== approveLevel) {
     state = { ...state, mode, approve: approveLevel };
-    saveState({ projectDir, sessionId }, state);
+    saveState(
+      { projectDir, sessionId },
+      stateForPlanningPersistence(state, config.workflow.persistTranscript),
+    );
   }
 
   if (
@@ -31,11 +37,11 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     approveLevel !== 'none' &&
     approveLevel !== 'default'
   ) {
-    wctx.bus.publish({
-      type: 'warning',
-      ts: Date.now(),
+    publishWarning({
+      bus: wctx.bus,
       phase: state.phase,
       message: `approve level "${approveLevel}" has no effect in ${mode} mode`,
+      safety: { category: 'workflow', code: 'approve_ignored_for_mode', transcriptSafe: true },
     });
   }
 
@@ -119,4 +125,19 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   }
 
   return runFullPlanning(optsWithContext);
+}
+
+function stateForPlanningPersistence(
+  state: WorkflowState,
+  persistTranscript: boolean,
+): WorkflowState {
+  if (persistTranscript) return state;
+  if (state.rewindPending?.comment === undefined) return state;
+  return {
+    ...state,
+    rewindPending: {
+      ...state.rewindPending,
+      comment: TRANSCRIPT_OMITTED_MESSAGE,
+    },
+  };
 }

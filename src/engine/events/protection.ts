@@ -1,10 +1,12 @@
-import { protectConsumerPayload, type CallConsumerContext } from '../calls/consumer-policy.js';
+import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { runnerCallWarningSafeFingerprint } from '../calls/warning-fingerprint.js';
 import { EngineEventSchema, eventPhase } from './schema.js';
 import type { EngineEvent, EngineEventOf } from './types.js';
+import type { UserEditConflict } from './workflow-events.js';
 
 export { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
@@ -83,18 +85,20 @@ export function projectEngineEventForTranscriptPolicy(
   switch (event.type) {
     case 'workflow_started':
       return { ...event, feature: TRANSCRIPT_OMITTED_MESSAGE };
+    case 'paused_external_changes':
+      return projectPausedExternalChanges(event);
+    case 'planner_status':
+      return projectPlannerStatus(event);
     case 'runner_call_activity':
       return projectRunnerCallActivity(event);
+    case 'runner_call_session_id':
+      return { ...event, nativeSessionId: TRANSCRIPT_OMITTED_MESSAGE };
     case 'runner_call_warning':
-      return {
-        ...event,
-        warning: { ...event.warning, message: TRANSCRIPT_OMITTED_MESSAGE },
-      };
+      return projectRunnerCallWarning(event);
     case 'runner_call_error':
-      return {
-        ...event,
-        error: { ...event.error, message: TRANSCRIPT_OMITTED_MESSAGE },
-      };
+      return projectRunnerCallError(event);
+    case 'runner_call_completed':
+      return { ...event, nativeSessionId: null };
     case 'task_started':
       return projectTaskStarted(event);
     case 'task_completed':
@@ -105,8 +109,16 @@ export function projectEngineEventForTranscriptPolicy(
         title: TRANSCRIPT_OMITTED_MESSAGE,
         reason: TRANSCRIPT_OMITTED_MESSAGE,
       };
+    case 'recovery_action_failed':
+      return { ...event, message: TRANSCRIPT_OMITTED_MESSAGE };
     case 'task_retry':
       return { ...event, error: TRANSCRIPT_OMITTED_MESSAGE };
+    case 'validate':
+      return projectValidate(event);
+    case 'escalate':
+      return event.hint === undefined ? event : { ...event, hint: TRANSCRIPT_OMITTED_MESSAGE };
+    case 'implementer_generate_running':
+      return event.file === undefined ? event : { ...event, file: TRANSCRIPT_OMITTED_MESSAGE };
     case 'task_tokens':
       return projectTaskTokens(event);
     case 'task_review_needed':
@@ -137,7 +149,9 @@ export function projectEngineEventForTranscriptPolicy(
         ? event
         : { ...event, comment: TRANSCRIPT_OMITTED_MESSAGE };
     case 'warning':
-      return { ...event, message: TRANSCRIPT_OMITTED_MESSAGE };
+      return projectOperationalMessage(event);
+    case 'error':
+      return projectOperationalMessage(event);
     case 'message_queued':
     case 'message_injected_native': {
       if (event.preview === undefined) return event;
@@ -172,29 +186,150 @@ export function projectCostPredictionForTranscriptPolicy(
   };
 }
 
+export function projectUserEditConflictForTranscriptPolicy(
+  conflict: UserEditConflict,
+  persistTranscript: boolean,
+): UserEditConflict {
+  if (persistTranscript) return conflict;
+  return {
+    kind: conflict.kind,
+    files: conflict.files.map(omittedText),
+    affectedTaskIds: conflict.affectedTaskIds,
+    ...(conflict.currentTaskId !== undefined && { currentTaskId: conflict.currentTaskId }),
+    fileConflicts: conflict.fileConflicts.map((fileConflict) => ({
+      kind: fileConflict.kind,
+      file: TRANSCRIPT_OMITTED_MESSAGE,
+      affectedTaskIds: fileConflict.affectedTaskIds,
+    })),
+    safeToContinue: conflict.safeToContinue,
+    availableActions: conflict.availableActions,
+  };
+}
+
+function projectPausedExternalChanges(
+  event: EngineEventOf<'paused_external_changes'>,
+): EngineEventOf<'paused_external_changes'> {
+  return event.conflict === undefined
+    ? event
+    : { ...event, conflict: projectUserEditConflictForTranscriptPolicy(event.conflict, false) };
+}
+
 function projectRunnerCallActivity(
   event: EngineEventOf<'runner_call_activity'>,
 ): EngineEventOf<'runner_call_activity'> {
   const {
-    label: _label,
-    target,
-    textPartial,
-    diagnosticPartial,
+    target: _target,
+    textPartial: _textPartial,
+    diagnosticPartial: _diagnosticPartial,
     redacted: _redacted,
     rawAvailable: _rawAvailable,
     expandId: _expandId,
     ...base
   } = event;
 
+  const safeLabel = safeRunnerCallActivityLabel(event);
+
   return {
     ...base,
-    label: TRANSCRIPT_OMITTED_MESSAGE,
-    ...(target !== undefined && { target: TRANSCRIPT_OMITTED_MESSAGE }),
-    ...(textPartial !== undefined && { textPartial: TRANSCRIPT_OMITTED_MESSAGE }),
-    ...(diagnosticPartial !== undefined && { diagnosticPartial: TRANSCRIPT_OMITTED_MESSAGE }),
-    redacted: true,
+    label: safeLabel,
+    redacted:
+      event.redacted ||
+      safeLabel !== event.label ||
+      event.target !== undefined ||
+      event.textPartial !== undefined ||
+      event.diagnosticPartial !== undefined ||
+      event.rawAvailable === true ||
+      event.expandId !== undefined,
     rawAvailable: false,
   };
+}
+
+function safeRunnerCallActivityLabel(event: EngineEventOf<'runner_call_activity'>): string {
+  switch (event.kind) {
+    case 'tool':
+      return 'tool activity';
+    case 'file':
+      return 'file activity';
+    case 'text':
+      return 'text activity';
+    case 'command':
+      return 'running command';
+    case 'read':
+      return 'reading file';
+    case 'write':
+    case 'edit':
+      return 'editing file';
+    case 'search':
+    case 'glob':
+      return 'searching';
+    case 'task':
+      return 'task activity';
+    case 'web':
+    case 'mcp':
+      return 'calling tool';
+    case 'plan':
+      return 'planning';
+    case 'session':
+      return 'session captured';
+    case 'artifact':
+      return 'artifact';
+    case 'warning':
+      return 'warning';
+    case 'error':
+      return event.stage === 'aborted' ? 'runner interrupted' : 'runner error';
+    case 'unknown':
+      return 'runner activity';
+  }
+}
+
+function projectRunnerCallError(
+  event: EngineEventOf<'runner_call_error'>,
+): EngineEventOf<'runner_call_error'> {
+  return {
+    ...event,
+    nativeSessionId: null,
+    error: { ...event.error, message: TRANSCRIPT_OMITTED_MESSAGE },
+  };
+}
+
+function projectRunnerCallWarning(
+  event: EngineEventOf<'runner_call_warning'>,
+): EngineEventOf<'runner_call_warning'> {
+  const { fingerprint: _fingerprint, rawRef: _rawRef, ...warning } = event.warning;
+  return {
+    ...event,
+    warning: {
+      ...warning,
+      fingerprint: runnerCallWarningSafeFingerprint({
+        callId: event.callId,
+        code: event.warning.code,
+        source: event.warning.source,
+        surface: event.warning.surface,
+      }),
+      message: TRANSCRIPT_OMITTED_MESSAGE,
+    },
+  };
+}
+
+function projectPlannerStatus(
+  event: EngineEventOf<'planner_status'>,
+): EngineEventOf<'planner_status'> {
+  const { summary, ...base } = event;
+  return summary === undefined ? event : { ...base, summary: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+function projectValidate(event: EngineEventOf<'validate'>): EngineEventOf<'validate'> {
+  const { commands: _commands, error, ...base } = event;
+  return error === undefined ? base : { ...base, error: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+function projectOperationalMessage<
+  TEvent extends EngineEventOf<'warning'> | EngineEventOf<'error'>,
+>(event: TEvent): TEvent {
+  if (event.transcriptSafe === true && event.category !== undefined && event.code !== undefined) {
+    return event;
+  }
+  return { ...event, message: TRANSCRIPT_OMITTED_MESSAGE };
 }
 
 function projectTaskStarted(event: EngineEventOf<'task_started'>): EngineEventOf<'task_started'> {
@@ -338,6 +473,9 @@ function protectionWarning(event: EngineEvent, message: string): EngineEventOf<'
     type: 'warning',
     ts: event.ts,
     phase: eventPhase(event) ?? 'idle',
+    category: 'protection',
+    code: 'payload_omitted',
+    transcriptSafe: true,
     message,
   };
 }

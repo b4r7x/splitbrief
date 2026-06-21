@@ -75,10 +75,11 @@ export async function handleRetryAndEscalation(
     });
     if (!pre.allow) {
       const reason = pre.reason ?? 'hook denied';
-      publishWarning(
-        { bus: ctx.bus, phase: retries.state.phase },
-        `pre_escalation blocked: ${reason}`,
-      );
+      publishWarning({
+        bus: ctx.bus,
+        phase: retries.state.phase,
+        message: `pre_escalation blocked: ${reason}`,
+      });
       const issue = buildRetryExhaustedRecoveryIssue({
         task,
         phase: retries.state.phase,

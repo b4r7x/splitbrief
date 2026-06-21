@@ -90,6 +90,7 @@ export interface WorkflowContext {
   projectDir: string;
   sessionId: string;
   config: Config;
+  getApprovalEnabled?: (() => boolean) | undefined;
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   planner: Planner;
@@ -112,6 +113,7 @@ export interface WorkflowContext {
   streamingSink?: StreamingSink | undefined;
   plannerContext?: string | undefined;
   detectedContextLength?: number | undefined;
+  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
 }
 
 export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };

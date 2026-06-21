@@ -73,7 +73,6 @@ export function ConversationFlow({ height, width }: ConversationFlowProps) {
   });
   const { above, below } = computeScrollBannerText(windowState.linesAbove, windowState.linesBelow);
   const { newEventRows, innerHeight } = windowState;
-  const visibleRows = rows.slice(windowState.windowStart, windowState.windowEnd);
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden" flexShrink={0}>
@@ -100,7 +99,7 @@ export function ConversationFlow({ height, width }: ConversationFlowProps) {
           {rows.length === 0 && completedItems.length === 0 && (
             <Text color={t.textDim}>No events yet</Text>
           )}
-          {visibleRows.map((row) => (
+          {rows.map((row) => (
             <ConversationRowView key={row.key} row={row} />
           ))}
         </Box>

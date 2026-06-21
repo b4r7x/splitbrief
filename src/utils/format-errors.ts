@@ -1,7 +1,7 @@
-import { redactSecrets } from './redact.js';
+import { sanitizeTerminalDiagnosticText } from './display-text.js';
 
 export function toErrorMessage(err: unknown): string {
-  return redactSecrets(err instanceof Error ? err.message : String(err));
+  return sanitizeTerminalDiagnosticText(err instanceof Error ? err.message : String(err));
 }
 
 export const labelError = (action: string, err: unknown): string =>

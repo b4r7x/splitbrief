@@ -12,8 +12,21 @@ import { reviewStore } from '../../../stores/workflow/review.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
 import { useWorkflowKeys } from './use-keys.js';
 
+const CTRL_A = '\x01';
+const CTRL_B = '\x02';
+const CTRL_F = '\x06';
+const ALT_A = '\x1ba';
+const SHIFT_UP = '\x1B[1;2A';
+const SHIFT_DOWN = '\x1B[1;2B';
+const PAGE_UP = '\x1B[5~';
+const PAGE_DOWN = '\x1B[6~';
+const HOME = '\x1B[H';
+const END = '\x1B[F';
+const ARROW_UP = '\x1B[A';
+const ARROW_DOWN = '\x1B[B';
+
 function Harness() {
-  useWorkflowKeys(true);
+  useWorkflowKeys({ isActive: true });
   return <Text> </Text>;
 }
 
@@ -69,7 +82,7 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('Ctrl+A toggles the latest expandable activity batch', async () => {
+  it('Alt+A toggles the latest expandable activity batch', async () => {
     const key = seedExpandableActivityBatch();
     const ui = render(<Harness />);
     await tick(1);
@@ -77,13 +90,13 @@ describe('useWorkflowKeys', () => {
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(false);
 
-    ui.stdin.write('\x01');
+    ui.stdin.write(ALT_A);
     await tick(1);
     await tick(1);
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(true);
 
-    ui.stdin.write('\x01');
+    ui.stdin.write(ALT_A);
     await tick(1);
     await tick(1);
 
@@ -91,14 +104,13 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('Ctrl+A does not toggle activity expansion while input mode owns text editing', async () => {
+  it('Ctrl+A does not toggle activity expansion while composing', async () => {
     const key = seedExpandableActivityBatch();
-    controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
     await tick(1);
 
-    ui.stdin.write('\x01');
+    ui.stdin.write(CTRL_A);
     await tick(1);
     await tick(1);
 
@@ -180,7 +192,7 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('↓ scrolls the open review pane even while inputMode is review', async () => {
+  it('Shift+↓ scrolls the open review pane even while inputMode is review', async () => {
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
@@ -188,7 +200,7 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(0);
 
-    ui.stdin.write('\x1B[B');
+    ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
 
@@ -196,7 +208,7 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('↑ scrolls the open review pane back up while inputMode is review', async () => {
+  it('Shift+↑ scrolls the open review pane back up while inputMode is review', async () => {
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     reviewStore.setScrollOffset(5);
     controlsStore.setInputMode('review');
@@ -204,7 +216,7 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     await tick(1);
 
-    ui.stdin.write('\x1B[A');
+    ui.stdin.write(SHIFT_UP);
     await tick(1);
     await tick(1);
 
@@ -212,18 +224,60 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('End jumps to the bottom of the open review pane while inputMode is review', async () => {
+  it('plain arrows do not scroll the open review pane while inputMode is review', async () => {
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
     await tick(1);
 
-    ui.stdin.write('\x1B[F');
+    ui.stdin.write(ARROW_DOWN);
+    await tick(1);
+    ui.stdin.write(ARROW_UP);
     await tick(1);
     await tick(1);
 
+    expect(reviewStore.get().scrollOffset).toBe(0);
+    ui.unmount();
+  });
+
+  it('Home, PageUp, PageDown, End, and Ctrl+B/F scroll the open review pane', async () => {
+    reviewStore.setReviewFile('/tmp/spec.md', 1000);
+    controlsStore.setInputMode('review');
+    const ui = render(<Harness />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write(PAGE_DOWN);
+    await tick(1);
+    await tick(1);
     expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
+
+    const afterPageDown = reviewStore.get().scrollOffset;
+    ui.stdin.write(CTRL_B);
+    await tick(1);
+    await tick(1);
+    expect(reviewStore.get().scrollOffset).toBeLessThan(afterPageDown);
+
+    ui.stdin.write(CTRL_F);
+    await tick(1);
+    await tick(1);
+    expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
+
+    ui.stdin.write(END);
+    await tick(1);
+    await tick(1);
+    expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
+
+    ui.stdin.write(HOME);
+    await tick(1);
+    await tick(1);
+    expect(reviewStore.get().scrollOffset).toBe(0);
+
+    ui.stdin.write(PAGE_UP);
+    await tick(1);
+    await tick(1);
+    expect(reviewStore.get().scrollOffset).toBe(0);
     ui.unmount();
   });
 

@@ -1,13 +1,22 @@
 import type { EngineEvent } from '../../engine/events/types.js';
 import { RecoveryIssueSchema } from '../../core/schemas/recovery.js';
-import { protectConsumerPayload } from '../../engine/calls/consumer-policy.js';
+import { CostPredictionSchema } from '../../core/schemas/summary.js';
+import { protectConsumerPayload } from '../../core/consumer-policy.js';
 import {
+  projectCostPredictionForTranscriptPolicy,
+  projectUserEditConflictForTranscriptPolicy,
   protectEngineEventForConsumer,
   TRANSCRIPT_OMITTED_MESSAGE,
 } from '../../engine/events/protection.js';
 import { projectRecoveryIssueForTranscriptPolicy } from '../../engine/events/public-json.js';
+import { userEditConflictSchema } from '../../engine/events/schema.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { RpcResponse } from './types.js';
+
+export interface RpcErrorOptions {
+  transcriptSensitive?: boolean | undefined;
+  summary?: string | undefined;
+}
 
 export function createResponseWriter(deps: {
   stream: NodeJS.WritableStream;
@@ -47,10 +56,10 @@ export function createResponseWriter(deps: {
 
   return {
     ack(command: string, data?: unknown): void {
-      write({ type: 'ack', command, data });
+      write({ type: 'ack', command, data: protectAckData(command, data, persistTranscript()) });
     },
-    error(message: string): void {
-      write({ type: 'error', error: message });
+    error(message: string, options: RpcErrorOptions = {}): void {
+      write({ type: 'error', error: protectErrorMessage(message, options, persistTranscript()) });
     },
     status(data: unknown): void {
       write({ type: 'status', data: protectStatusData(data, persistTranscript()) });
@@ -69,12 +78,40 @@ export function createResponseWriter(deps: {
   }
 }
 
+function protectAckData(command: string, data: unknown, persistTranscript: boolean): unknown {
+  if (persistTranscript || command !== 'slash' || !isRecord(data)) return data;
+
+  const output: Record<string, unknown> = { ...data };
+  if (typeof output.command === 'string') {
+    output.command = ackCommandName(output.command);
+  }
+  if (Array.isArray(output.messages)) {
+    output.messages = output.messages.map(omittedMessage);
+  }
+  return output;
+}
+
+function ackCommandName(raw: string): string {
+  const trimmed = raw.trim();
+  const firstWhitespace = trimmed.search(/\s/);
+  return firstWhitespace === -1 ? trimmed : trimmed.slice(0, firstWhitespace);
+}
+
+function protectErrorMessage(
+  message: string,
+  options: RpcErrorOptions,
+  persistTranscript: boolean,
+): string {
+  if (persistTranscript || options.transcriptSensitive !== true) return message;
+  return options.summary ?? TRANSCRIPT_OMITTED_MESSAGE;
+}
+
 function protectStatusData(data: unknown, persistTranscript: boolean): unknown {
   if (persistTranscript || !isRecord(data)) return data;
 
   let omittedTranscript = false;
   const output: Record<string, unknown> = { ...data };
-  for (const key of ['state', 'question', 'partialResponse', 'conflict', 'request']) {
+  for (const key of ['state', 'question', 'partialResponse', 'request']) {
     if (key in output) {
       output[key] = key === 'state' ? null : TRANSCRIPT_OMITTED_MESSAGE;
       omittedTranscript = true;
@@ -87,5 +124,23 @@ function protectStatusData(data: unknown, persistTranscript: boolean): unknown {
       : TRANSCRIPT_OMITTED_MESSAGE;
     omittedTranscript = true;
   }
+  if ('prediction' in output) {
+    const prediction = CostPredictionSchema.safeParse(output.prediction);
+    output.prediction = prediction.success
+      ? projectCostPredictionForTranscriptPolicy(prediction.data, false)
+      : TRANSCRIPT_OMITTED_MESSAGE;
+    omittedTranscript = true;
+  }
+  if ('conflict' in output) {
+    const conflict = userEditConflictSchema.safeParse(output.conflict);
+    output.conflict = conflict.success
+      ? projectUserEditConflictForTranscriptPolicy(conflict.data, false)
+      : TRANSCRIPT_OMITTED_MESSAGE;
+    omittedTranscript = true;
+  }
   return omittedTranscript ? { ...output, transcript: TRANSCRIPT_OMITTED_MESSAGE } : output;
+}
+
+function omittedMessage(): string {
+  return TRANSCRIPT_OMITTED_MESSAGE;
 }

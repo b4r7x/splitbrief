@@ -47,10 +47,11 @@ export async function runPreTaskHooksAndPublish(opts: {
       sessionId,
     });
     if (!pre.allow) {
-      publishWarning(
-        { bus: wctx.bus, phase: state.phase },
-        `pre_task blocked: ${pre.reason ?? 'hook denied'}`,
-      );
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: `pre_task blocked: ${pre.reason ?? 'hook denied'}`,
+      });
       publishTaskSkipped(
         { bus: wctx.bus, phase: state.phase },
         { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' },
@@ -93,13 +94,18 @@ export async function runPreTaskHooksAndPublish(opts: {
   let taskStartSnapshot: ChangedFilesSnapshot;
   try {
     taskStartSnapshot = await getChangedFilesSnapshot(projectDir, (dir) =>
-      publishWarning({ bus: wctx.bus, phase: state.phase }, `embedded repository ${dir} ignored`),
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: `embedded repository ${dir} ignored`,
+      }),
     );
   } catch (err) {
-    publishError(
-      { bus: wctx.bus, phase: state.phase },
-      `Failed to capture task baseline snapshot: ${toErrorMessage(err)}`,
-    );
+    publishError({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: `Failed to capture task baseline snapshot: ${toErrorMessage(err)}`,
+    });
     return { proceed: false, state };
   }
 

@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { RUNNER_KINDS } from '../../core/schemas/enums.js';
+import {
+  RUNNER_CALL_BACKEND_KINDS,
+  RUNNER_CALL_TEXT_CHANNELS,
+} from '../../core/runner-call-contract.js';
 import {
   RunnerCallEventSchema,
   RunnerCallResultSchema,
@@ -27,6 +32,34 @@ const terminalFields = {
 } as const;
 
 describe('RunnerCallEventSchema', () => {
+  it('derives runner-call backend kinds from the canonical runner kind tuple', () => {
+    expect(RUNNER_CALL_BACKEND_KINDS).toBe(RUNNER_KINDS);
+  });
+
+  it('validates call text deltas from the canonical text channel tuple', () => {
+    expect(
+      RUNNER_CALL_TEXT_CHANNELS.map(
+        (channel) =>
+          RunnerCallEventSchema.safeParse({
+            type: 'call_text_delta',
+            ts: 1,
+            ...context,
+            channel,
+            text: `${channel} text`,
+          }).success,
+      ),
+    ).toEqual(RUNNER_CALL_TEXT_CHANNELS.map(() => true));
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_text_delta',
+        ts: 1,
+        ...context,
+        channel: 'stderr',
+        text: 'diagnostic text',
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts the runner call event variants emitted by the call subsystem', () => {
     const events = [
       { type: 'call_started', ts: 1, ...context },
@@ -127,6 +160,41 @@ describe('RunnerCallEventSchema', () => {
     expect(events.map((event) => RunnerCallEventSchema.safeParse(event).success)).toEqual(
       events.map(() => true),
     );
+  });
+
+  it('normalizes warning metadata and stable fingerprints', () => {
+    const first = RunnerCallEventSchema.parse({
+      type: 'call_warning',
+      ts: 1,
+      ...context,
+      warning: {
+        code: 'provider_retry',
+        source: 'provider',
+        message: 'retrying session sess_123 attempt 1 after 23ms at 2026-06-21T10:00:00.000Z',
+      },
+    });
+    const repeated = RunnerCallEventSchema.parse({
+      type: 'call_warning',
+      ts: 2,
+      ...context,
+      warning: {
+        code: 'provider_retry',
+        source: 'provider',
+        message: 'retrying session sess_999 attempt 4 after 991ms at 2026-06-21T10:01:00.000Z',
+      },
+    });
+
+    if (first.type !== 'call_warning' || repeated.type !== 'call_warning') {
+      throw new Error('expected call_warning events');
+    }
+    expect(first.warning).toMatchObject({
+      code: 'provider_retry',
+      severity: 'warning',
+      source: 'provider',
+      surface: 'activity',
+      fingerprint: expect.stringMatching(/^rw:/),
+    });
+    expect(first.warning.fingerprint).toBe(repeated.warning.fingerprint);
   });
 
   it('rejects unknown fields on known event variants', () => {

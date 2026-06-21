@@ -1,6 +1,11 @@
 import { ALL_SCREENS } from '../../navigation/types.js';
 import { EFFORT_LEVELS, WORKFLOW_MODES } from '../../schemas/enums.js';
-import type { RuntimeCommandDef, RuntimeCommandContext } from './types.js';
+import {
+  SCROLL_COMMAND_TARGETS,
+  type RuntimeCommandDef,
+  type RuntimeCommandContext,
+  type ScrollCommandTarget,
+} from './types.js';
 import { getShortcutKey } from '../../keybindings/registry.js';
 import { includes } from '../../../utils/type-guards.js';
 import { canRedoTask, canRevisePlan, canReviseSpec, isLivePhase } from '../../phases.js';
@@ -8,6 +13,20 @@ import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { formatRejectRunMessage } from './messages.js';
+
+const SCROLL_COMMAND_USAGE = `/scroll <${SCROLL_COMMAND_TARGETS.join('|')}>`;
+const SCROLL_FEEDBACK = {
+  top: 'to top',
+  bottom: 'to bottom',
+  'page-up': 'up one page',
+  'page-down': 'down one page',
+} satisfies Record<ScrollCommandTarget, string>;
+
+function parseScrollCommandTarget(args: string | undefined): ScrollCommandTarget | null {
+  const target = args?.trim().toLowerCase();
+  if (!target) return null;
+  return includes(SCROLL_COMMAND_TARGETS, target) ? target : null;
+}
 
 export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
@@ -120,6 +139,45 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       description: 'Return to home screen',
       validScreens: ['workflow', 'summary'],
       handler: () => ctx.navigate('home'),
+    },
+    {
+      kind: 'arg',
+      name: '/scroll',
+      label: 'Scroll',
+      description: `Scroll conversation: ${SCROLL_COMMAND_TARGETS.join(' | ')}`,
+      validScreens: ['workflow'],
+      handler: (args) => {
+        const target = parseScrollCommandTarget(args);
+        if (target === null) {
+          const value = args?.trim();
+          const prefix = value ? `Invalid scroll target: ${value}. ` : '';
+          ctx.setFeedbackError(`${prefix}Usage: ${SCROLL_COMMAND_USAGE}`);
+          return;
+        }
+        const result = ctx.scrollConversation(target);
+        if (result.status === 'unavailable') {
+          ctx.setFeedbackError(result.message);
+          return;
+        }
+        ctx.setFeedbackMessage(`Scrolled conversation ${SCROLL_FEEDBACK[target]}`);
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/activity',
+      label: 'Activity',
+      description: 'Expand or collapse the latest activity batch',
+      validScreens: ['workflow'],
+      handler: () => {
+        const result = ctx.toggleLatestActivityBatch();
+        if (result.status === 'unavailable') {
+          ctx.setFeedbackError(result.message);
+          return;
+        }
+        ctx.setFeedbackMessage(
+          result.expanded ? 'Expanded latest activity batch' : 'Collapsed latest activity batch',
+        );
+      },
     },
     {
       kind: 'noarg',

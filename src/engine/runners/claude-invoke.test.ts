@@ -3,6 +3,8 @@ import { writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaudePlannerStream, runClaudeOneShot } from './claude-invoke.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn.js';
+import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import {
@@ -28,6 +30,13 @@ function installShim(bodyLines: string[]): string {
     .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
     .join('\n');
   writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return shimPath;
+}
+
+function installNodeShim(script: string): string {
+  const shimPath = join(shimDir, 'claude');
+  writeFileSync(shimPath, `#!/usr/bin/env node\n${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return shimPath;
 }
@@ -421,6 +430,86 @@ describe('runClaudePlannerStream', () => {
     });
   });
 
+  it('reports an oversized terminal result line as bounded truncation', async () => {
+    installNodeShim(`
+const result = "x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100});
+process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
+`);
+
+    const events: RunnerCallEvent[] = [];
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('stdout line exceeded'),
+    });
+
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'truncated',
+      error: { code: 'stdout_line_overflow' },
+    });
+    expect(errors[0]?.error.code).not.toBe('missing_terminal_event');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_warning',
+        warning: expect.objectContaining({
+          code: 'stdout_line_overflow',
+          message: expect.stringContaining('stdout line exceeded'),
+        }),
+      }),
+    );
+  });
+
+  it('caps many small assistant chunks before accumulating unbounded output', async () => {
+    installNodeShim(`
+for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1}; i += 1) {
+  process.stdout.write(JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "text", text: "x" }] }
+  }) + "\\n");
+}
+process.stdout.write(JSON.stringify({
+  type: "result",
+  result: "x".repeat(${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1})
+}) + "\\n");
+`);
+
+    const chunks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: (text) => chunks.push(text),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('runner output text exceeded'),
+    });
+
+    const textEvents = events.filter((event) => event.type === 'call_text_delta');
+    const errors = runnerCallErrors(events);
+    expect(chunks.join('')).toBe('x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS));
+    expect(textEvents).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'truncated',
+      error: { code: 'runner_output_text_limit' },
+    });
+  });
+
   it('emits session id and partial output before an interrupted stream rejects', async () => {
     installSlowShim([
       '{"type":"system","session_id":"sess-interrupt"}',
@@ -704,5 +793,34 @@ describe('runClaudeOneShot', () => {
       reason: 'Runner call ended without a terminal event',
       partial: true,
     });
+  });
+
+  it('reports an oversized terminal result line as bounded truncation', async () => {
+    installNodeShim(`
+const result = "x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100});
+process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
+`);
+
+    const events: RunnerCallEvent[] = [];
+    await expect(
+      runClaudeOneShot({
+        prompt: 'p',
+        projectDir: shimDir,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      message: expect.stringContaining('stdout line exceeded'),
+    });
+
+    const errors = runnerCallErrors(events);
+    expect(runnerCallTerminals(events)).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'truncated',
+      error: { code: 'stdout_line_overflow' },
+    });
+    expect(errors[0]?.error.code).not.toBe('missing_terminal_event');
   });
 });

@@ -92,6 +92,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     bus: ctx.bus,
     callbacks: ctx.callbacks,
     config: ctx.config,
+    getApprovalEnabled: ctx.getApprovalEnabled,
     staged,
     usesStaging: true,
     taskStartSnapshot: ctx.taskStartSnapshot,
@@ -117,10 +118,11 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   if (gateResult.outcome === 'gate-denied') {
     const files = gateResult.decision.changedFiles.join(', ');
     const reason = gateResult.decision.reason ?? 'denied';
-    publishError(
-      { bus: ctx.bus, phase: gateResult.state.phase },
-      `Retry changed files blocked by approval gate: ${reason} (${files})`,
-    );
+    publishError({
+      bus: ctx.bus,
+      phase: gateResult.state.phase,
+      message: `Retry changed files blocked by approval gate: ${reason} (${files})`,
+    });
     persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
     return {
       state: gateResult.state,
@@ -132,7 +134,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   }
   if (gateResult.outcome === 'promote-conflict') {
     const reason = `Approved retry promotion blocked because files changed during approval: ${gateResult.conflictedFiles.join(', ')}`;
-    publishError({ bus: ctx.bus, phase: gateResult.state.phase }, reason);
+    publishError({ bus: ctx.bus, phase: gateResult.state.phase, message: reason });
     return {
       state: gateResult.state,
       task,

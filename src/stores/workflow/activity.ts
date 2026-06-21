@@ -3,6 +3,7 @@ import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { createStore, storeBase } from '../create-store.js';
 
 const MAX_ACTIVITY_ITEMS = 8;
+const SESSION_ACTIVITY_LABEL = 'session captured';
 
 type ActivityEvent =
   | EngineEventOf<'runner_call_activity'>
@@ -57,7 +58,8 @@ export function updateActivity(state: ActivityState, event: EngineEvent): Activi
     return retireRunningCallActivity(state, event.callId);
   }
 
-  const rawAvailable = event.rawAvailable ?? false;
+  const isSessionActivity = event.kind === 'session';
+  const rawAvailable = isSessionActivity ? false : (event.rawAvailable ?? false);
   const item: WorkflowActivityItem = {
     id: event.activityId,
     callId: event.callId,
@@ -66,15 +68,17 @@ export function updateActivity(state: ActivityState, event: EngineEvent): Activi
     role: event.role,
     stage: event.stage,
     kind: event.kind,
-    label: event.label,
-    ...(event.target !== undefined && { target: event.target }),
+    label: isSessionActivity ? SESSION_ACTIVITY_LABEL : event.label,
+    ...(!isSessionActivity && event.target !== undefined && { target: event.target }),
     ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
     ...(event.model !== undefined && { model: event.model }),
     redacted: event.redacted,
     rawAvailable,
     ...(rawAvailable && { expandId: event.expandId ?? event.activityId }),
-    ...(event.textPartial !== undefined && { textPartial: event.textPartial }),
-    ...(event.diagnosticPartial !== undefined && { diagnosticPartial: event.diagnosticPartial }),
+    ...(!isSessionActivity &&
+      event.textPartial !== undefined && { textPartial: event.textPartial }),
+    ...(!isSessionActivity &&
+      event.diagnosticPartial !== undefined && { diagnosticPartial: event.diagnosticPartial }),
     sequence: event.sequence,
     ts: event.ts,
   };

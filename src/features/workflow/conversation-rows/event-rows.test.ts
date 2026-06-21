@@ -310,9 +310,9 @@ describe('eventRows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['run  npm run typecheck']);
+    expect(rows.map(rowText)).toEqual(['RUN   npm run typecheck']);
     expect(rows[0]?.segments).toEqual([
-      { text: 'run  ', tone: 'info' },
+      { text: 'RUN   ', tone: 'info' },
       { text: 'npm run typecheck', tone: 'textDim' },
     ]);
     expect(rows[0]?.kind).toBe('activity-child');
@@ -345,7 +345,7 @@ describe('eventRows', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toBe("run  sed -n '1,260p' CLAUDE.md");
+    expect(text).toBe("RUN   sed -n '1,260p' CLAUDE.md");
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');
   });

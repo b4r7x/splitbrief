@@ -95,6 +95,7 @@ export async function runImplementation(opts: {
               bus: wctx.bus,
               callbacks,
               config,
+              getApprovalEnabled: wctx.getApprovalEnabled,
             });
             if (!decision.allow) {
               preApplyApprovalDenied = true;

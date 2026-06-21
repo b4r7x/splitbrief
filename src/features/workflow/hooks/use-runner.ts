@@ -6,7 +6,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -21,7 +21,7 @@ import {
   WORKFLOW_USER_CANCELLED_ABORT_REASON,
   type WorkflowSinks,
 } from '../../../engine/orchestrator/types.js';
-import { createTuiSink } from '../tui-sink.js';
+import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import {
@@ -49,6 +49,8 @@ import { enqueueUserMessage } from '../../../engine/orchestrator/queue.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
 
+export type RunWorkflowFn = typeof runWorkflow;
+
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
   return controller.signal.aborted || ref.current;
 }
@@ -64,6 +66,7 @@ interface UseWorkflowRunnerOptions {
   inputMode: UseInputModeResult;
   sessionId?: string | undefined;
   enabled?: boolean | undefined;
+  runWorkflow?: RunWorkflowFn | undefined;
 }
 
 export interface WorkflowCompletion {
@@ -89,9 +92,11 @@ export function useWorkflowRunner({
   inputMode,
   sessionId: initialSessionId,
   enabled = true,
+  runWorkflow: runWorkflowFn = runWorkflow,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindEventRef = useRef<EngineEvent | null>(null);
+  const pendingRewindFeedbackRef = useRef<string | undefined>(undefined);
   const sessionIdRef = useRef<string | undefined>(initialSessionId);
   const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
@@ -110,6 +115,8 @@ export function useWorkflowRunner({
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     let stateForRun = resumeState;
+    const rewindFeedbackForRun = pendingRewindFeedbackRef.current;
+    pendingRewindFeedbackRef.current = undefined;
     if (initialSessionId) sessionIdRef.current = initialSessionId;
     const pendingRecoverySessionId = stateForRun?.pendingRecovery
       ? (readActive(projectDir) ?? undefined)
@@ -126,7 +133,9 @@ export function useWorkflowRunner({
 
     resetWorkflow(stateForRun);
     if (pendingRewindEventRef.current) {
-      addEvent(pendingRewindEventRef.current);
+      addTuiEvent(pendingRewindEventRef.current, {
+        persistTranscript: config.workflow.persistTranscript,
+      });
       pendingRewindEventRef.current = null;
     }
     conversationScrollStore.reset();
@@ -140,14 +149,21 @@ export function useWorkflowRunner({
       const current = loadState(ref);
       if (!current) return;
 
-      const { action, event } = buildRewindAction(request, ref, current, {
+      const { action, persistedAction, event } = buildRewindAction({
+        request,
+        ref,
+        state: current,
         persistTranscript: config.workflow.persistTranscript,
       });
-      let next = transition(current, action);
+      let next = transition(current, persistedAction);
       if (request.target === 'task' && next.pendingRecovery?.taskId === request.taskId) {
         next = transition(next, { type: 'RESOLVE_PENDING_RECOVERY' });
       }
       saveState(ref, next);
+      pendingRewindFeedbackRef.current =
+        action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
+          ? action.comment
+          : undefined;
       pendingRewindEventRef.current = event;
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
       setInlineResume(next);
@@ -187,13 +203,14 @@ export function useWorkflowRunner({
         };
 
         const detectedContextLength = configStore.getDetectedContextLength();
-        const summary = await runWorkflow({
+        const summary = await runWorkflowFn({
           feature,
           plannerContext,
           projectDir,
           config,
+          getApprovalEnabled: () => configStore.get().config?.approval?.enabled !== false,
           sinks,
-          tuiSink: createTuiSink(),
+          tuiSink: createTuiSink({ persistTranscript: config.workflow.persistTranscript }),
           modelCache: modelCacheStore,
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
@@ -208,6 +225,7 @@ export function useWorkflowRunner({
           savedState: stateForRun,
           selectedSkills,
           sessionId: activeSessionId,
+          ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
           ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
@@ -237,12 +255,15 @@ export function useWorkflowRunner({
       }
     } catch (err) {
       if (!isWorkflowAborted(controller, abortedRef) && !lifecycleStore.get().cancelled) {
-        addEvent({
-          type: 'error',
-          ts: Date.now(),
-          phase: lifecycleStore.get().phase,
-          message: toErrorMessage(err),
-        });
+        addTuiEvent(
+          {
+            type: 'error',
+            ts: Date.now(),
+            phase: lifecycleStore.get().phase,
+            message: toErrorMessage(err),
+          },
+          { persistTranscript: config.workflow.persistTranscript },
+        );
       }
     }
   });
@@ -292,17 +313,17 @@ export function useWorkflowRunner({
           persistTranscript: config.workflow.persistTranscript,
         }),
       );
-      bus.subscribe(addEvent);
-      const queued = enqueueUserMessage(
+      bus.subscribe(createTuiSink({ persistTranscript: config.workflow.persistTranscript }));
+      const queued = enqueueUserMessage({
         projectDir,
         sessionId,
-        saved,
+        state: saved,
         text,
-        saved.phase,
+        phase: saved.phase,
         bus,
-        config.workflow.persistTranscript !== false,
-        { enforcePhasePolicy: false },
-      );
+        persistTranscript: config.workflow.persistTranscript !== false,
+        enforcePhasePolicy: false,
+      });
       next = queued.state;
       if (queued.result.status === 'rejected') {
         feedbackStore.setError(queued.result.message);

@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
   cleanRunnerDisplayText,
-  runnerActivityDiagnosticPreview,
-  runnerActivityDisplay,
   runnerOperationStatusDisplay,
   runnerTerminalOperationLine,
 } from './runner-terminal.js';
-import type { ActiveOperation } from '../../../stores/workflow/operations.js';
+import type {
+  ActiveOperation,
+  OperationWarningGroup,
+} from '../../../stores/workflow/operations.js';
+
+function operationWarningGroup(message: string): OperationWarningGroup {
+  return {
+    code: 'stderr',
+    severity: 'warning',
+    source: 'provider',
+    surface: 'activity',
+    fingerprint: `rw:test-${message.replace(/\W+/g, '-')}`,
+    count: 1,
+    firstTs: 1_100,
+    lastTs: 1_100,
+    latestMessage: message,
+  };
+}
 
 describe('runnerOperationStatusDisplay', () => {
   it('treats aborted runner status as user interruption', () => {
@@ -53,7 +68,10 @@ describe('runnerTerminalOperationLine', () => {
       reason:
         'the runner returned a very long failure explanation with a path /tmp/generated/output/that/keeps/going',
       usage: null,
-      warnings: ['old warning', 'latest warning detail that should fit if there is room'],
+      warnings: [
+        operationWarningGroup('old warning'),
+        operationWarningGroup('latest warning detail that should fit if there is room'),
+      ],
       runnerName: 'codex',
       model: 'gpt-5',
     };
@@ -67,71 +85,6 @@ describe('runnerTerminalOperationLine', () => {
     expect(text).toContain('partial output');
     expect(text).toContain('[Codex');
     expect(text.length).toBeLessThan(120);
-  });
-});
-
-describe('runnerActivityDisplay', () => {
-  it('hides internal interruption codes from compact activity', () => {
-    expect(
-      runnerActivityDisplay({
-        stage: 'aborted',
-        kind: 'error',
-        label: 'aborted runner_interrupted',
-        diagnosticPartial: 'cancelled',
-      }),
-    ).toMatchObject({
-      label: 'interrupted',
-      value: null,
-      diagnosticPreview: 'cancelled',
-      marker: '!',
-      tone: 'warning',
-      valueTone: 'warning',
-    });
-  });
-
-  it('keeps real terminal failures distinct from interruption', () => {
-    expect(
-      runnerActivityDisplay({
-        stage: 'timeout',
-        kind: 'error',
-        label: 'timeout command_timeout',
-        diagnosticPartial: 'Command timed out',
-      }),
-    ).toMatchObject({
-      label: 'error',
-      value: 'timeout command_timeout',
-      diagnosticPreview: 'Command timed out',
-      marker: 'x',
-      tone: 'error',
-      valueTone: 'error',
-    });
-  });
-});
-
-describe('runnerActivityDiagnosticPreview', () => {
-  it('uses bounded sanitized diagnostics for warning and error activity', () => {
-    const preview = runnerActivityDiagnosticPreview(
-      {
-        stage: 'warning',
-        kind: 'warning',
-        label: 'warning stderr',
-        diagnosticPartial: 'stderr sk-abcdefghijklmnopqrstuvwxyz keeps going',
-      },
-      24,
-    );
-
-    expect(preview).toBe('stderr sk-***REDACTED**…');
-  });
-
-  it('falls back to textPartial when no diagnosticPartial is available', () => {
-    expect(
-      runnerActivityDiagnosticPreview({
-        stage: 'warning',
-        kind: 'warning',
-        label: 'warning stderr',
-        textPartial: 'stderr preview',
-      }),
-    ).toBe('stderr preview');
   });
 });
 

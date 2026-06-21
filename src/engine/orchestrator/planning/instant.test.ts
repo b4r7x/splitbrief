@@ -139,6 +139,45 @@ async function runInstant(
 }
 
 describe('runInstantPlanning', () => {
+  it('passes transient rewind feedback to instant planning and clears rewindPending', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const rawFeedback = 'instant private feedback for the next task list';
+    const instantPlan = vi.fn().mockResolvedValue(instantPlanResult());
+    const planner = makePlanner({ instantPlan });
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const { bus } = makeBusRecorder();
+    const state: WorkflowState = {
+      ...createInitialState('rename foo to bar'),
+      phase: 'planning',
+      rewindPending: { target: 'plan', comment: '[transcript omitted]' },
+    };
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state,
+      feature: 'rename foo to bar',
+      rewindPending: { target: 'plan', comment: rawFeedback },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(instantPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: expect.stringContaining(rawFeedback),
+      }),
+    );
+    expect(result.state.rewindPending).toBeUndefined();
+  });
+
   it('writes only tasks.md (no spec/plan/research)', async () => {
     const { projectDir, sessionId } = await runInstant();
     const dir = sessionDir(projectDir, sessionId);

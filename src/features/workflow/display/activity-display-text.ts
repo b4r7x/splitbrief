@@ -1,11 +1,11 @@
 import {
   getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
   truncateTerminalDisplayTextStart,
 } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { sanitizeWorkflowDisplayText } from './safe-text.js';
 
 const LABEL_VALUE_SEPARATOR = '  ';
 
@@ -29,8 +29,8 @@ export function fitCompactActivityDisplayLine(
   input: CompactActivityDisplayLineInput,
 ): CompactActivityDisplayLine {
   const availableCells = Math.max(0, input.rowCells - Math.max(0, input.prefixCells));
-  const label = sanitizeWorkflowDisplayText(input.label);
-  const value = input.value === undefined ? undefined : sanitizeWorkflowDisplayText(input.value);
+  const label = sanitizeTerminalDisplayText(input.label);
+  const value = input.value === undefined ? undefined : sanitizeTerminalDisplayText(input.value);
 
   if (value === undefined || value === '') return fitLabelOnly(label, availableCells);
 

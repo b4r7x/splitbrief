@@ -33,7 +33,7 @@ Existing example to follow: `src/cli/commands/start.ts`.
 
 ## 3. New EngineEvent type
 
-1. Add a Zod member to the `EngineEventSchema` discriminated union in `src/engine/events/schema.ts`
+1. Add a Zod member to the type-dispatched `EngineEventSchema` contract in `src/engine/events/schema.ts`
    - Use the `phaseEvent('my_event')` helper (it supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … }).passthrough()` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
    - The `EngineEvent` TS alias in `src/engine/events/types.ts` is `z.infer<typeof EngineEventSchema>`, so the new variant flows into every consumer automatically — no separate type edit
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
@@ -140,7 +140,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 1. Open `src/features/workflow/conversation-rows/event-rows.ts`
 2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
-3. Add your event type to `eventRows()` when it should appear in the scrollable conversation.
+3. Add your event type to `eventRowBlock()` when it should appear in the scrollable conversation.
 4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping and cards.
 5. Events that should remain silent in the conversation should return `[]`.
 

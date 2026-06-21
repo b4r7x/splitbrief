@@ -8,23 +8,7 @@ import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';
 import type { RpcCommand } from './types.js';
-
-function ackCommandName(raw: string): string {
-  const trimmed = raw.trim();
-  const firstWhitespace = trimmed.search(/\s/);
-  return firstWhitespace === -1 ? trimmed : trimmed.slice(0, firstWhitespace);
-}
-
-function slashAckData(
-  raw: string,
-  messages: string[],
-  persistTranscript: boolean,
-): { command: string; messages: string[] } {
-  return {
-    command: persistTranscript ? raw : ackCommandName(raw),
-    messages,
-  };
-}
+import type { RpcErrorOptions } from './writer.js';
 
 export function createCommandHandler(deps: {
   projectDir: string;
@@ -32,10 +16,15 @@ export function createCommandHandler(deps: {
   getState: () => WorkflowState | null;
   getConfig: () => Config;
   setConfig: (config: Config) => void;
+  getPersistedConfig?: (() => Config | null) | undefined;
+  setPersistedConfig?: ((config: Config) => void) | undefined;
+  getApprovalEnabled?: (() => boolean) | undefined;
+  setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getPhase: () => Phase;
   getQueueHandler: () => QueueHandler | null;
   getClearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
+  abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
   approvalGate: { handle: (cmd: RpcCommand) => boolean };
   messageGate: { resolve: (value: string) => boolean };
@@ -43,9 +32,10 @@ export function createCommandHandler(deps: {
   writeStatus: () => void;
   writer: {
     ack: (command: string, data?: unknown) => void;
-    error: (message: string) => void;
+    error: (message: string, options?: RpcErrorOptions) => void;
   };
   pendingQueueDepth: (state: WorkflowState | null) => number;
+  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
 }): (cmd: RpcCommand) => void {
   let runtimeChain: Promise<void> = Promise.resolve();
 
@@ -57,12 +47,18 @@ export function createCommandHandler(deps: {
       getSessionId: deps.getSessionId,
       getState: deps.getState,
       getConfig: deps.getConfig,
+      getPersistedConfig: deps.getPersistedConfig,
       setConfig: deps.setConfig,
+      setPersistedConfig: deps.setPersistedConfig,
+      getApprovalEnabled: deps.getApprovalEnabled,
+      setApprovalEnabled: deps.setApprovalEnabled,
       getPhase: deps.getPhase,
       queueHandler: deps.getQueueHandler,
       clearQueueHandler: deps.getClearQueueHandler,
       abort: deps.abort,
+      abortTurn: deps.abortTurn,
       bus: deps.bus,
+      setRewindFeedback: deps.setRewindFeedback,
       messages,
       errors,
       pendingQueueDepth: deps.pendingQueueDepth,
@@ -73,13 +69,12 @@ export function createCommandHandler(deps: {
       onError: (message) => errors.push(message),
     });
     if (errors.length > 0) {
-      for (const error of errors) deps.writer.error(error);
+      for (const error of errors) {
+        deps.writer.error(error, { transcriptSensitive: true, summary: 'Slash command failed.' });
+      }
       return;
     }
-    deps.writer.ack(
-      'slash',
-      slashAckData(raw, messages, deps.getConfig().workflow.persistTranscript),
-    );
+    deps.writer.ack('slash', { command: raw, messages });
   };
 
   return (cmd: RpcCommand) => {
@@ -137,7 +132,10 @@ export function createCommandHandler(deps: {
     runtimeChain = runtimeChain
       .then(() => executeRpcRuntimeCommand(cmd.command))
       .catch((err) => {
-        deps.writer.error(toErrorMessage(err));
+        deps.writer.error(toErrorMessage(err), {
+          transcriptSensitive: true,
+          summary: 'Slash command failed.',
+        });
       });
   };
 }

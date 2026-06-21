@@ -7,6 +7,8 @@ const HOME = '\u001b[H';
 const END = '\u001b[F';
 const PAGE_UP = '\u001b[5~';
 const PAGE_DOWN = '\u001b[6~';
+const CTRL_B = '\x02';
+const CTRL_F = '\x06';
 const ARROW_UP = '\u001b[A';
 const ARROW_DOWN = '\u001b[B';
 
@@ -62,6 +64,21 @@ describe('ScrollableDocument', () => {
     ui.stdin.write(PAGE_UP);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-2');
+
+    ui.unmount();
+  });
+
+  it('supports Ctrl+B and Ctrl+F as page key fallbacks', async () => {
+    const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_F);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('line-3');
+
+    ui.stdin.write(CTRL_B);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('line-0');
 
     ui.unmount();
   });

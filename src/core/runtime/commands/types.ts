@@ -41,6 +41,18 @@ export type QueueClearCommandResult =
   | { status: 'cleared'; count: number }
   | { status: 'unavailable'; message: string };
 
+export const SCROLL_COMMAND_TARGETS = ['top', 'bottom', 'page-up', 'page-down'] as const;
+
+export type ScrollCommandTarget = (typeof SCROLL_COMMAND_TARGETS)[number];
+
+export type ScrollConversationResult =
+  | { status: 'scrolled' }
+  | { status: 'unavailable'; message: string };
+
+export type ToggleLatestActivityBatchResult =
+  | { status: 'toggled'; expanded: boolean }
+  | { status: 'unavailable'; message: string };
+
 interface RuntimeCommandBase {
   name: string;
   aliases?: string[];
@@ -86,6 +98,8 @@ export interface RuntimeCommandContext {
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
   compactTranscript: () => Promise<CompactTranscriptResult>;
   exportSession: () => Promise<ExportSessionResult>;
+  scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
+  toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
 }
 
 export interface CommandPaletteItem {

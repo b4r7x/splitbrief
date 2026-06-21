@@ -56,10 +56,11 @@ export async function retryAndRecord(
     try {
       taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
     } catch (err) {
-      publishError(
-        { bus: wctx.bus, phase: opts.state.phase },
-        `Retry blocked by approval gate: ${toErrorMessage(err)}`,
-      );
+      publishError({
+        bus: wctx.bus,
+        phase: opts.state.phase,
+        message: `Retry blocked by approval gate: ${toErrorMessage(err)}`,
+      });
       return { state: opts.state, completed: false };
     }
   }
@@ -83,7 +84,7 @@ export async function retryAndRecord(
       return { state: opts.state, completed: false };
     }
     const message = labelError('Retry/escalation failed', err);
-    publishError({ bus: wctx.bus, phase: opts.state.phase }, message);
+    publishError({ bus: wctx.bus, phase: opts.state.phase, message: message });
     const recoveryBaseState = loadState(wctx) ?? opts.state;
     if (recoveryBaseState.pendingRecovery) {
       setTrackedState(recoveryBaseState);

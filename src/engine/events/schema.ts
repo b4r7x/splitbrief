@@ -20,6 +20,8 @@ import { TaskIdSchema } from '../../core/schemas/task.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
+import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
+import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -54,6 +56,54 @@ function noPhaseEvent<T extends string>(type: T) {
     type: z.literal(type),
     ts: z.number(),
   });
+}
+
+function operationalMessageEvent<T extends 'warning' | 'error'>(type: T) {
+  const base = phaseEvent(type).extend({
+    message: z.string(),
+    category: z.undefined().optional(),
+    code: z.undefined().optional(),
+    transcriptSafe: z.undefined().optional(),
+  });
+  const safe = phaseEvent(type).extend({
+    message: z.string(),
+    category: z.string().min(1).max(128),
+    code: z.string().min(1).max(128),
+    transcriptSafe: z.literal(true),
+  });
+  return z.union([safe, base]);
+}
+
+const OperationalWarningEventSchema = operationalMessageEvent('warning');
+const OperationalErrorEventSchema = operationalMessageEvent('error');
+
+function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T | null {
+  const result = schema.safeParse(value);
+  return result.success ? result.data : null;
+}
+
+function parseOperationalMessageEvent(value: unknown): EngineEventFromPayloadSchemas | null {
+  if (!isRecord(value)) return null;
+  switch (value.type) {
+    case 'warning':
+      return parseWithSchema(OperationalWarningEventSchema, value);
+    case 'error':
+      return parseWithSchema(OperationalErrorEventSchema, value);
+    default:
+      return null;
+  }
+}
+
+function parseEngineEventPayload(value: unknown): EngineEventFromPayloadSchemas | null {
+  const operationalMessage = parseOperationalMessageEvent(value);
+  if (operationalMessage !== null) return operationalMessage;
+
+  return parseWithSchema(EngineEventPayloadSchema, value);
+}
+
+function invalidEngineEventMessage(value: unknown): string {
+  const type = isRecord(value) && typeof value.type === 'string' ? ` "${value.type}"` : '';
+  return `Invalid engine event${type}`;
 }
 
 function strictCallPhaseEvent<T extends string>(type: T) {
@@ -245,7 +295,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   strictCallPhaseEvent('runner_call_started'),
   strictCallPhaseEvent('runner_call_text_delta').extend({
-    channel: z.enum(['stdout', 'assistant', 'result', 'system']),
+    channel: RunnerCallTextChannelSchema,
     text: z.string(),
   }),
   strictCallPhaseEvent('runner_call_usage').extend({
@@ -291,8 +341,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('plan_approved'),
   phaseEvent('plan_rejected'),
   phaseEvent('plan_regenerated').extend({ comment: z.string() }),
-  phaseEvent('rewind_to_spec').extend({ comment: z.string().optional() }),
-  phaseEvent('rewind_to_plan').extend({ comment: z.string().optional() }),
+  ...RewindEventVariantSchemas,
   phaseEvent('all_tasks_done'),
   phaseEvent('brief_quality_passed').extend({
     score: z.number(),
@@ -393,7 +442,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('task_escalating').extend({ taskId: TaskIdSchema }),
   phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema }),
-  phaseEvent('task_reset').extend({ taskId: TaskIdSchema }),
   phaseEvent('task_tokens').extend({
     taskId: TaskIdSchema,
     method: TaskCompletionMethodSchema,
@@ -542,11 +590,22 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     durationMs: z.number(),
     diagnostics: replayDiagnosticsSchema.optional(),
   }),
-  phaseEvent('warning').extend({ message: z.string() }),
-  phaseEvent('error').extend({ message: z.string() }),
 ]);
 
-export const EngineEventSchema = z.preprocess(normalizeLegacyEngineEvent, EngineEventPayloadSchema);
+type EngineEventFromPayloadSchemas =
+  | z.infer<typeof EngineEventPayloadSchema>
+  | z.infer<typeof OperationalWarningEventSchema>
+  | z.infer<typeof OperationalErrorEventSchema>;
+
+export const EngineEventSchema = z
+  .unknown()
+  .transform((value, ctx): EngineEventFromPayloadSchemas => {
+    const normalized = normalizeLegacyEngineEvent(value);
+    const parsed = parseEngineEventPayload(normalized);
+    if (parsed !== null) return parsed;
+    ctx.addIssue({ code: 'custom', path: [], message: invalidEngineEventMessage(normalized) });
+    return z.NEVER;
+  });
 
 type EngineEventFromSchema = z.infer<typeof EngineEventSchema>;
 

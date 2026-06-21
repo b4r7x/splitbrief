@@ -10,6 +10,13 @@ import { createQuestionAccumulator } from '../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import {
+  createRunnerCallDeltaLimiter,
+  finishRunnerCallOutputLimit,
+  runnerCallLineOutputLimit,
+  type RunnerCallDeltaLimitResult,
+  type RunnerCallOutputLimit,
+} from '../calls/output-limit.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
@@ -71,6 +78,10 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     contentBlockTools: new Map(),
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
+  const textLimiter = createRunnerCallDeltaLimiter({
+    code: 'runner_output_text_limit',
+    label: 'runner output text',
+  });
 
   function emitAssistantOutput(text: string): void {
     callbacks.onOutput(text);
@@ -83,7 +94,61 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
   }
 
+  function acceptTextDelta(text: string): RunnerCallDeltaLimitResult {
+    return textLimiter.accept(text);
+  }
+
+  function finishLimitIfNeeded(result: RunnerCallDeltaLimitResult): boolean {
+    if (result.limit === null) return false;
+    finishClaudeOutputLimit(state, result.limit);
+    return true;
+  }
+
+  function applyStreamText(
+    channel: NonNullable<ReturnType<typeof parseStreamLine>['channel']>,
+    text: string,
+  ): boolean {
+    const accepted = acceptTextDelta(text);
+    if (accepted.text.length > 0) {
+      state.recorder.text({ channel, text: accepted.text });
+      if (channel === 'assistant' || channel === 'stdout') {
+        state.text += accepted.text;
+        emitAssistantOutput(accepted.text);
+      }
+    }
+    return finishLimitIfNeeded(accepted);
+  }
+
+  function applyResultText(text: string): boolean {
+    state.resultText = text;
+    const reconciliation = reconcileFinalText(state.text, text);
+    if (reconciliation.kind === 'none') return false;
+
+    const accepted = acceptTextDelta(reconciliation.text);
+    if (reconciliation.kind === 'full') {
+      if (accepted.text.length > 0) {
+        state.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+        emitAssistantOutput(accepted.text);
+      }
+      state.text = accepted.text;
+    } else if (reconciliation.kind === 'suffix') {
+      if (accepted.text.length > 0) {
+        state.recorder.text({ channel: 'assistant', text: accepted.text });
+        emitAssistantOutput(accepted.text);
+      }
+      state.text += accepted.text;
+    } else if (reconciliation.kind === 'replace') {
+      if (accepted.text.length > 0) {
+        state.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+      }
+      state.text = accepted.text;
+    }
+    return finishLimitIfNeeded(accepted);
+  }
+
   function handleLine(line: string): void {
+    if (state.recorder.hasTerminal()) return;
+
     const contentBlockToolStart = parseContentBlockToolStart(line);
     if (contentBlockToolStart) {
       state.contentBlockTools.set(contentBlockToolStart.index, contentBlockToolStart.toolUse);
@@ -137,11 +202,7 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.text && !parsed.isResult) {
       const channel = parsed.channel ?? 'assistant';
-      state.recorder.text({ channel, text: parsed.text });
-      if (channel === 'assistant' || channel === 'stdout') {
-        state.text += parsed.text;
-        emitAssistantOutput(parsed.text);
-      }
+      if (applyStreamText(channel, parsed.text)) return;
     }
 
     if (parsed.warning) {
@@ -153,18 +214,7 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.isResult) {
       state.sawResult = true;
       if (parsed.text) {
-        state.resultText = parsed.text;
-        const reconciliation = reconcileFinalText(state.text, parsed.text);
-        if (reconciliation.kind === 'full') {
-          state.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
-          emitAssistantOutput(parsed.text);
-        } else if (reconciliation.kind === 'suffix') {
-          state.recorder.text({ channel: 'assistant', text: reconciliation.text });
-          emitAssistantOutput(reconciliation.text);
-        } else if (reconciliation.kind === 'replace') {
-          state.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
-        }
-        state.text = parsed.text;
+        if (applyResultText(parsed.text)) return;
       }
     }
 
@@ -190,6 +240,13 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   }
 
   return { state, handleLine };
+}
+
+function finishClaudeOutputLimit(state: StreamHandlerState, limit: RunnerCallOutputLimit): void {
+  finishRunnerCallOutputLimit(state.recorder, limit, {
+    usage: state.usage,
+    nativeSessionId: state.sessionId,
+  });
 }
 
 function parseContentBlockToolStart(
@@ -381,6 +438,17 @@ export async function runClaudePlannerStream(
       stdin: applyImageRefs(prompt, images),
       notFoundMessage: CLAUDE_NOT_FOUND,
       onLine: handleLine,
+      onStdoutLineOverflow: (overflow) => {
+        finishClaudeOutputLimit(
+          state,
+          runnerCallLineOutputLimit({
+            code: 'stdout_line_overflow',
+            label: 'stdout line',
+            lineBytes: overflow.lineBytes,
+            maxLineBytes: overflow.maxLineBytes,
+          }),
+        );
+      },
       errorDetail: () => state.resultText ?? undefined,
       signal,
     });
@@ -446,6 +514,17 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
       stdin: prompt,
       notFoundMessage: CLAUDE_NOT_FOUND,
       onLine: handleLine,
+      onStdoutLineOverflow: (overflow) => {
+        finishClaudeOutputLimit(
+          state,
+          runnerCallLineOutputLimit({
+            code: 'stdout_line_overflow',
+            label: 'stdout line',
+            lineBytes: overflow.lineBytes,
+            maxLineBytes: overflow.maxLineBytes,
+          }),
+        );
+      },
       errorDetail: () => state.resultText ?? undefined,
       signal,
     });

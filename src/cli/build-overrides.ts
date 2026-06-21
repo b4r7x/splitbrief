@@ -15,15 +15,13 @@ export function printConfigWarnings(warnings: readonly string[]): void {
   for (const w of warnings) warnStderr(`⚠ ${w}`);
 }
 
-export function resolveRunConfig(args: {
+export function resolveRunConfigWithBase(args: {
   projectDir: string;
   opts: WorkflowOpts;
   readiness?: CollectedReadiness | undefined;
   autoApprove?: boolean | undefined;
-}): Config {
-  const loadedResult = args.readiness?.config
-    ? { config: args.readiness.config, warnings: args.readiness.warnings }
-    : loadConfig(args.projectDir);
+}): { config: Config; persistedConfig: Config } {
+  const loadedResult = loadConfig(args.projectDir);
   const { config: loaded, warnings } = loadedResult;
   const overrides = buildCLIOverrides(args.opts);
   const effectiveOverrides =
@@ -34,5 +32,15 @@ export function resolveRunConfig(args: {
     baseWarnings: warnings,
   });
   printConfigWarnings(effectiveWarnings);
+  return { config, persistedConfig: loaded };
+}
+
+export function resolveRunConfig(args: {
+  projectDir: string;
+  opts: WorkflowOpts;
+  readiness?: CollectedReadiness | undefined;
+  autoApprove?: boolean | undefined;
+}): Config {
+  const { config } = resolveRunConfigWithBase(args);
   return config;
 }

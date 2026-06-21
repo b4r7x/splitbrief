@@ -8,7 +8,8 @@ import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
 import type { TaskReviewRequest } from '../../events/workflow-events.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { enqueueUserMessage } from '../queue.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transition } from '../../../core/state/machine.js';
+import { saveState } from '../../../core/state/persistence.js';
 
 export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task';
 
@@ -19,33 +20,44 @@ function applyTaskReviewRewind(
   request: TaskReviewRequest,
   response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined },
   persistTranscript: boolean,
+  setRewindFeedback: WorkflowContext['setRewindFeedback'],
 ): WorkflowState {
   if (response.action === 'redo-task') {
-    const { action } = buildRewindAction(
-      { target: 'task', taskId: request.taskId },
-      { projectDir, sessionId },
+    const { persistedAction } = buildRewindAction({
+      request: { target: 'task', taskId: request.taskId },
+      ref: { projectDir, sessionId },
       state,
-      { persistTranscript },
-    );
-    let next = transitionAndSave({ projectDir, sessionId }, state, action);
+      persistTranscript,
+    });
+    let next = transition(state, persistedAction);
+    let persistedNext = transition(state, persistedAction);
     if (next.pendingRecovery?.taskId === request.taskId) {
-      next = transitionAndSave({ projectDir, sessionId }, next, {
+      next = transition(next, {
+        type: 'RESOLVE_PENDING_RECOVERY',
+      });
+      persistedNext = transition(persistedNext, {
         type: 'RESOLVE_PENDING_RECOVERY',
       });
     }
+    saveState({ projectDir, sessionId }, persistedNext);
     return next;
   }
 
-  const { action } = buildRewindAction(
-    {
+  const { action, persistedAction } = buildRewindAction({
+    request: {
       target: 'plan',
       ...(response.notes ? { comment: response.notes } : {}),
     },
-    { projectDir, sessionId },
+    ref: { projectDir, sessionId },
     state,
-    { persistTranscript },
-  );
-  return transitionAndSave({ projectDir, sessionId }, state, action);
+    persistTranscript,
+  });
+  if (action.type === 'REWIND_TO_PLAN') {
+    setRewindFeedback?.(action.comment);
+  }
+  const next = transition(state, persistedAction);
+  saveState({ projectDir, sessionId }, next);
+  return next;
 }
 
 export async function reviewTaskIfNeeded(opts: {
@@ -97,6 +109,7 @@ export async function reviewTaskIfNeeded(opts: {
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
       opts.wctx.config.workflow.persistTranscript,
+      opts.wctx.setRewindFeedback,
     );
     opts.setTrackedState(next);
     return { state: next, decision: 'redo-task' };
@@ -112,6 +125,7 @@ export async function reviewTaskIfNeeded(opts: {
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
       opts.wctx.config.workflow.persistTranscript,
+      opts.wctx.setRewindFeedback,
     );
     opts.setTrackedState(next);
     return { state: next, decision: 'stop' };
@@ -121,16 +135,16 @@ export async function reviewTaskIfNeeded(opts: {
   const notes = response.notes?.trim();
   if (!notes) return { state: opts.state, decision: 'continue' };
 
-  const queued = enqueueUserMessage(
-    opts.wctx.projectDir,
-    opts.wctx.sessionId,
-    opts.state,
-    formatTaskReviewNotes(request, notes),
-    opts.state.phase,
-    opts.wctx.bus,
-    opts.wctx.config.workflow.persistTranscript,
-    { enforcePhasePolicy: false },
-  );
+  const queued = enqueueUserMessage({
+    projectDir: opts.wctx.projectDir,
+    sessionId: opts.wctx.sessionId,
+    state: opts.state,
+    text: formatTaskReviewNotes(request, notes),
+    phase: opts.state.phase,
+    bus: opts.wctx.bus,
+    persistTranscript: opts.wctx.config.workflow.persistTranscript,
+    enforcePhasePolicy: false,
+  });
   opts.setTrackedState(queued.state);
   return { state: queued.state, decision: 'continue' };
 }

@@ -12,7 +12,7 @@ Every run writes its full `EngineEvent` stream to:
 .diptych/sessions/<session-id>/session.jsonl
 ```
 
-One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` via `appendEngineEvent` in `src/core/state/persistence.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union — `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/state/persistence.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
 
 Inspect with `jq`:
 
@@ -30,9 +30,19 @@ jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.s
 
 # Cost accumulation
 jq 'select(.type == "cost_update")' .diptych/sessions/<id>/session.jsonl
+
+# Runner-call warnings with grouping fields
+jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warning: .data.warning}' \
+  .diptych/sessions/<id>/session.jsonl
 ```
 
-When `workflow.persistTranscript: false`, transcript-like events (`planner_text`, `user_message`, clarification text, implementer output, and raw runner text/tool/artifact payloads) are omitted from protected consumers. Safe `runner_call_activity` labels, queue depth, lifecycle, cost, and compact runner status remain visible; prompt-bearing previews, RPC state, task prose, comments, retry errors, summary/session feature text, and generated commit messages are stripped or replaced. Product artifacts such as `spec.md`, `plan.md`, `tasks.md`, source changes, validation output, and evidence files remain review artifacts and are not redacted by this setting.
+Stderr is diagnostic by default. A `call_stderr_delta` from the raw runner stream is not projected into `session.jsonl` as a `runner_call_warning` and does not create a primary warning row. Actionable warnings appear as `runner_call_warning` and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Repeated warnings are grouped in the TUI by fingerprint/code/source/surface; session tree rows keep warning counts and warning codes on runner invocation entries.
+
+When `workflow.persistTranscript: false`, transcript-like events (`planner_text`, `user_message`, clarification text, implementer output, and raw runner text/tool/artifact payloads) are omitted from protected consumers. Safe `runner_call_activity` labels, queue depth, lifecycle, cost, and compact runner status remain visible; prompt-bearing previews, RPC state, task prose, comments, retry errors, summary/session feature text, and generated commit messages are stripped or replaced. Runner-call warning/error event structure remains, but backend diagnostic messages are replaced with `[transcript omitted]`. Raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`. Product artifacts such as `spec.md`, `plan.md`, `tasks.md`, source changes, validation output, and evidence files remain review artifacts and are not redacted by this setting.
+
+### Session tree
+
+The tree recorder writes protected structured entries under the same session directory, including `session-tree.jsonl` and `tree-meta.json`. It records plan steps, runner invocations, recovery decisions, and cost checkpoints. Tree entries do not contain raw runner text/tool/artifact payloads. Runner invocation entries keep safe control fields such as call id, role, backend kind, runner/model, phase, status, timing, usage, partial, error code, warning count, and warning codes.
 
 ### Active session pointer
 
@@ -75,6 +85,10 @@ There is no `debug` package / namespace logger in diptych today. The diagnostic 
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
 For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.
+
+### Terminal diagnostics
+
+Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
 
 ## Common issues
 
@@ -146,7 +160,7 @@ Diagnostic checklist:
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/diptych-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test → invariants).
+- Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test:coverage → invariants).
 
 ### API key warning in logs
 

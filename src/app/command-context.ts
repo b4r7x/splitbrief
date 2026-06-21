@@ -6,10 +6,19 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
+import { getSections } from '../stores/workflow/actions.js';
+import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { requestClearQueue, requestRewind } from '../features/workflow/handlers.js';
+import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
+import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { refreshDetection } from '../engine/detection/service.js';
 import { readActive } from '../core/sessions/lifecycle.js';
-import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandContext,
+  ScrollCommandTarget,
+  ScrollConversationResult,
+  ToggleLatestActivityBatchResult,
+} from '../core/runtime/commands/types.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { sessionDir } from '../core/paths.js';
 import { rebuildRepomap } from '../engine/codebase/rebuild.js';
@@ -23,6 +32,7 @@ import {
   clearGrantsByScope,
 } from '../core/approval/store.js';
 import { error } from '../utils/error.js';
+import { assertNever } from '../utils/type-guards.js';
 
 const appCommandContextError = {
   noActiveSession: (command: string) =>
@@ -37,6 +47,54 @@ function currentSessionId(projectDir: string): string | null {
     return route.sessionId;
   }
   return readActive(projectDir);
+}
+
+function conversationPageStep(viewportHeight: number): number {
+  return Math.max(1, viewportHeight - 2);
+}
+
+function scrollConversation(target: ScrollCommandTarget): ScrollConversationResult {
+  const snapshot = readConversationScrollSnapshot();
+  switch (target) {
+    case 'top':
+      conversationScrollStore.scrollUp({
+        renderableCount: snapshot.renderableCount,
+        totalHeight: snapshot.totalHeight,
+        step: snapshot.maxOffset,
+        maxOffset: snapshot.maxOffset,
+      });
+      return { status: 'scrolled' };
+    case 'bottom':
+      conversationScrollStore.scrollToBottom(snapshot.renderableCount);
+      return { status: 'scrolled' };
+    case 'page-up':
+      conversationScrollStore.scrollUp({
+        renderableCount: snapshot.renderableCount,
+        totalHeight: snapshot.totalHeight,
+        step: conversationPageStep(snapshot.viewportHeight),
+        maxOffset: snapshot.maxOffset,
+      });
+      return { status: 'scrolled' };
+    case 'page-down':
+      conversationScrollStore.scrollDown(conversationPageStep(snapshot.viewportHeight));
+      return { status: 'scrolled' };
+    default:
+      return assertNever(target);
+  }
+}
+
+function toggleLatestActivityBatch(): ToggleLatestActivityBatchResult {
+  const key = findLatestExpandableActivityBatchKey(getSections());
+  if (key === null) {
+    return {
+      status: 'unavailable',
+      message: 'No expandable activity batch is available.',
+    };
+  }
+
+  const expanded = !conversationScrollStore.get().expandedActivityBatches.has(key);
+  conversationScrollStore.toggleActivityBatch(key);
+  return { status: 'toggled', expanded };
 }
 
 export function buildCommandContext({ exit }: { exit: () => void }): RuntimeCommandContext {
@@ -102,5 +160,7 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     compactTranscript: performManualCompaction,
     exportSession: async (projectDir, sessionId) =>
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
+    scrollConversation,
+    toggleLatestActivityBatch,
   });
 }

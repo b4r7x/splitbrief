@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
@@ -13,6 +14,16 @@ import type { StreamMessage } from '../stream-types.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';
+import { runnerCallUnknownUpstreamPreview } from '../../calls/unknown-upstream.js';
+import {
+  finishRunnerCallOutputLimit,
+  runnerCallOutputLimitError,
+  runnerCallOutputLimitFromError,
+  takeUtf8PrefixBytes,
+  RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES,
+  RUNNER_CALL_SSE_EVENT_MAX_BYTES,
+  type RunnerCallOutputLimit,
+} from '../../calls/output-limit.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
@@ -20,16 +31,6 @@ import type {
   RunnerCallUsage,
 } from '../../calls/types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-
-type AnthropicEventType =
-  | 'message_start'
-  | 'content_block_start'
-  | 'content_block_delta'
-  | 'content_block_stop'
-  | 'message_delta'
-  | 'message_stop'
-  | 'ping'
-  | 'error';
 
 const DEFAULT_MAX_TOKENS = 4096;
 // Headroom above the thinking budget so the visible answer is never truncated.
@@ -86,6 +87,53 @@ interface SseBoundary {
   index: number;
   length: number;
 }
+
+interface BoundedResponseText {
+  text: string;
+  bytesSeen: number;
+  truncated: boolean;
+}
+
+const AnthropicMessageStartPayloadSchema = z.looseObject({
+  type: z.literal('message_start'),
+  message: z.looseObject({ usage: z.unknown().optional() }).optional(),
+});
+
+const AnthropicContentBlockDeltaPayloadSchema = z.looseObject({
+  type: z.literal('content_block_delta'),
+  delta: z.looseObject({
+    type: z.string().optional(),
+    text: z.string().optional(),
+  }),
+});
+
+const AnthropicMessageDeltaPayloadSchema = z.looseObject({
+  type: z.literal('message_delta'),
+  delta: z
+    .looseObject({
+      stop_reason: z.string().nullable().optional(),
+    })
+    .optional(),
+  usage: z.unknown().optional(),
+});
+
+const AnthropicErrorPayloadSchema = z.looseObject({
+  type: z.literal('error'),
+  error: z.looseObject({ message: z.string().optional() }).optional(),
+});
+
+const AnthropicPayloadSchema = z.discriminatedUnion('type', [
+  AnthropicMessageStartPayloadSchema,
+  z.looseObject({ type: z.literal('content_block_start') }),
+  AnthropicContentBlockDeltaPayloadSchema,
+  z.looseObject({ type: z.literal('content_block_stop') }),
+  AnthropicMessageDeltaPayloadSchema,
+  z.looseObject({ type: z.literal('message_stop') }),
+  z.looseObject({ type: z.literal('ping') }),
+  AnthropicErrorPayloadSchema,
+]);
+
+type AnthropicPayload = z.infer<typeof AnthropicPayloadSchema>;
 
 let callSequence = 0;
 
@@ -182,6 +230,21 @@ function parseSseEvent(rawEvent: string): SseEvent | null {
   return { data: dataLines.join('\n') };
 }
 
+function sseEventLimit(bytesSeen: number): RunnerCallOutputLimit {
+  return {
+    code: 'provider_sse_event_limit',
+    message: `provider SSE event exceeded ${RUNNER_CALL_SSE_EVENT_MAX_BYTES} bytes and was truncated`,
+    bytesSeen,
+    maxBytes: RUNNER_CALL_SSE_EVENT_MAX_BYTES,
+  };
+}
+
+function assertSseEventWithinLimit(rawEvent: string): void {
+  const bytesSeen = Buffer.byteLength(rawEvent, 'utf8');
+  if (bytesSeen <= RUNNER_CALL_SSE_EVENT_MAX_BYTES) return;
+  throw runnerCallOutputLimitError(sseEventLimit(bytesSeen));
+}
+
 function findSseBoundary(buffer: string): SseBoundary | null {
   const lfIndex = buffer.indexOf('\n\n');
   const crlfIndex = buffer.indexOf('\r\n\r\n');
@@ -213,13 +276,16 @@ async function* readSseEvents(
         const rawEvent = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary.length);
         throwIfAborted(signal);
+        assertSseEventWithinLimit(rawEvent);
         const parsed = parseSseEvent(rawEvent);
         if (parsed) yield parsed;
       }
+      assertSseEventWithinLimit(buffer);
     }
 
     buffer += decoder.decode();
     throwIfAborted(signal);
+    assertSseEventWithinLimit(buffer);
     const trailing = parseSseEvent(buffer);
     if (trailing) yield trailing;
   } finally {
@@ -227,46 +293,73 @@ async function* readSseEvents(
   }
 }
 
-const ANTHROPIC_EVENT_TYPES = [
-  'message_start',
-  'content_block_start',
-  'content_block_delta',
-  'content_block_stop',
-  'message_delta',
-  'message_stop',
-  'ping',
-  'error',
-] as const satisfies readonly AnthropicEventType[];
+async function readResponseTextBounded(response: Response): Promise<BoundedResponseText> {
+  if (!response.body) return { text: '', bytesSeen: 0, truncated: false };
 
-const ANTHROPIC_EVENT_TYPE_SET: ReadonlySet<string> = new Set(ANTHROPIC_EVENT_TYPES);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytesSeen = 0;
+  let truncated = false;
 
-function isAnthropicEventType(t: string): t is AnthropicEventType {
-  return ANTHROPIC_EVENT_TYPE_SET.has(t);
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
+      bytesSeen += chunkBytes;
+      if (!truncated) {
+        const remainingBytes =
+          RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES - Buffer.byteLength(text, 'utf8');
+        if (chunkBytes <= remainingBytes) {
+          text += chunk;
+        } else {
+          text += takeUtf8PrefixBytes(chunk, remainingBytes);
+          truncated = true;
+          await reader.cancel();
+          break;
+        }
+      }
+    }
+    if (!truncated) {
+      const rest = decoder.decode();
+      bytesSeen += Buffer.byteLength(rest, 'utf8');
+      text += takeUtf8PrefixBytes(
+        rest,
+        RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES - Buffer.byteLength(text, 'utf8'),
+      );
+      truncated = bytesSeen > Buffer.byteLength(text, 'utf8');
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { text, bytesSeen, truncated };
 }
 
-function getEventType(payload: Record<string, unknown>): AnthropicEventType | null {
-  const t = payload.type;
-  if (typeof t !== 'string') return null;
-  return isAnthropicEventType(t) ? t : null;
+function formatBoundedErrorBody(body: BoundedResponseText): string {
+  if (!body.truncated) return body.text;
+  return `${body.text}\n[response body truncated at ${RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES} bytes]`;
 }
 
-function getDeltaText(payload: Record<string, unknown>): string | null {
-  const delta = narrowRecord(payload.delta);
-  if (delta === null) return null;
+function getDeltaText(
+  payload: Extract<AnthropicPayload, { type: 'content_block_delta' }>,
+): string | null {
+  const delta = payload.delta;
   if (delta.type !== 'text_delta') return null;
   return typeof delta.text === 'string' ? delta.text : null;
 }
 
-function getApiErrorMessage(payload: Record<string, unknown>): string {
-  const error = narrowRecord(payload.error);
-  if (error && typeof error.message === 'string') return error.message;
+function getApiErrorMessage(payload: Extract<AnthropicPayload, { type: 'error' }>): string {
+  if (payload.error && typeof payload.error.message === 'string') return payload.error.message;
   return JSON.stringify(payload);
 }
 
-function getStopReason(payload: Record<string, unknown>): string | null {
-  const delta = narrowRecord(payload.delta);
-  if (delta === null) return null;
-  return typeof delta.stop_reason === 'string' ? delta.stop_reason : null;
+function getStopReason(
+  payload: Extract<AnthropicPayload, { type: 'message_delta' }>,
+): string | null {
+  return payload.delta?.stop_reason ?? null;
 }
 
 function emitText(recorder: RunnerCallRecorder, text: string): void {
@@ -333,6 +426,53 @@ function finishAnthropicFailure(
   throw mapped;
 }
 
+function parseAnthropicPayload(
+  raw: unknown,
+  recorder: RunnerCallRecorder,
+): AnthropicPayload | null {
+  const parsed = AnthropicPayloadSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  recorder.unknownUpstream({
+    rawPreview: runnerCallUnknownUpstreamPreview({
+      label: 'Invalid Anthropic stream payload',
+      value: raw,
+      issues: parsed.error.issues,
+    }),
+    backendMetadata: {
+      backendKind: recorder.context.backendKind,
+      source: 'anthropic-stream',
+      parser: 'sse_event',
+      ...(upstreamType(raw) !== undefined && { upstreamType: upstreamType(raw) }),
+    },
+  });
+  return null;
+}
+
+function parseAnthropicEventData(data: string, recorder: RunnerCallRecorder): unknown {
+  try {
+    return JSON.parse(data);
+  } catch (err) {
+    recorder.unknownUpstream({
+      rawPreview: runnerCallUnknownUpstreamPreview({
+        label: 'Malformed Anthropic stream payload',
+        value: data,
+      }),
+      backendMetadata: {
+        backendKind: recorder.context.backendKind,
+        source: 'anthropic-stream',
+        parser: 'sse_event',
+        upstreamType: 'malformed_json',
+      },
+    });
+    throw err;
+  }
+}
+
+function upstreamType(raw: unknown): string | undefined {
+  const record = narrowRecord(raw);
+  return typeof record?.type === 'string' ? record.type : undefined;
+}
+
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<RunnerCallResult> {
@@ -395,7 +535,7 @@ export async function streamAnthropicCompletion(
   }
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = formatBoundedErrorBody(await readResponseTextBounded(response));
     const err = streamError.httpStatus('anthropic', response.status, message);
     recorder.finishFailed({
       status: 'failed',
@@ -427,15 +567,13 @@ export async function streamAnthropicCompletion(
     )) {
       if (event.data === '[DONE]') continue;
 
-      const raw: unknown = JSON.parse(event.data);
-      const payload = narrowRecord(raw);
+      const raw = parseAnthropicEventData(event.data, recorder);
+      const payload = parseAnthropicPayload(raw, recorder);
       if (payload === null) continue;
-
-      const eventType = getEventType(payload);
-      if (eventType === null) continue;
+      const eventType = payload.type;
       switch (eventType) {
         case 'message_start':
-          usage = emitUsageUpdate(recorder, usage, narrowRecord(payload.message)?.usage);
+          usage = emitUsageUpdate(recorder, usage, payload.message?.usage);
           break;
         case 'content_block_delta': {
           const text = getDeltaText(payload);
@@ -481,6 +619,11 @@ export async function streamAnthropicCompletion(
         nativeSessionId: null,
       });
       throw err;
+    }
+    const outputLimit = runnerCallOutputLimitFromError(err);
+    if (outputLimit !== null) {
+      finishRunnerCallOutputLimit(recorder, outputLimit, { usage, nativeSessionId: null });
+      return recorder.finalResult();
     }
     if (err instanceof SyntaxError) {
       const mapped = streamError.invalidPayload(

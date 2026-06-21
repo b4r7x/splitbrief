@@ -18,10 +18,14 @@ import { ScreenShell } from '../../components/screen-shell.js';
 import { WorkflowBody } from './components/body.js';
 import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
-import { useWorkflowRunner, type WorkflowCompletion } from './hooks/use-runner.js';
+import {
+  useWorkflowRunner,
+  type RunWorkflowFn,
+  type WorkflowCompletion,
+} from './hooks/use-runner.js';
 import { useIpcClient } from './hooks/use-ipc-client.js';
 import { createIpcPromptDispatcher } from './ipc-prompt-dispatcher.js';
-import { useReadinessFetch } from './hooks/use-readiness-fetch.js';
+import { type CollectReadinessFn, useReadinessFetch } from './hooks/use-readiness-fetch.js';
 import { useWorkflowKeys } from './hooks/use-keys.js';
 import { createReviewInputHandler } from './review-parser.js';
 import { resolveAttachInputHint, resolveInputHint } from './input-hints.js';
@@ -33,7 +37,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
@@ -50,10 +54,17 @@ import {
   hasWorkflowConfig,
 } from './layout/rect.js';
 import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.js';
+import { addTuiEvent } from './tui-sink.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
+  deps?: WorkflowScreenDeps | undefined;
+}
+
+interface WorkflowScreenDeps {
+  runWorkflow?: RunWorkflowFn | undefined;
+  collectReadiness?: CollectReadinessFn | undefined;
 }
 
 function persistTuiReadiness(projectDir: string, report: ReadinessReport): void {
@@ -87,7 +98,7 @@ function hasLoadedResumableStateForSession({
   }
 }
 
-export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenProps) {
+export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScreenProps) {
   const { exit } = useApp();
   const config = configStore.useConfig();
   const projectDir = configStore.use((s) => s.projectDir);
@@ -105,7 +116,13 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   );
   const attach = routerStore.use((s) => (s.screen === 'workflow' ? s.attach : undefined));
   const isAttachedClient = attach !== undefined;
-  const readiness = useReadinessFetch({ isAttachedClient, routeReadiness, projectDir, config });
+  const readiness = useReadinessFetch({
+    isAttachedClient,
+    routeReadiness,
+    projectDir,
+    config,
+    collectReadiness: deps?.collectReadiness,
+  });
   const readinessLoaded = isAttachedClient || readiness !== undefined;
   const readinessBlocked = !isAttachedClient && readiness?.status === 'blocked';
   const { cols, rows, isSmall } = terminal;
@@ -126,6 +143,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     sessionId,
     inputMode,
     enabled: !isAttachedClient && readinessLoaded && !readinessBlocked,
+    runWorkflow: deps?.runWorkflow,
   });
   const review = createReviewInputHandler(inputMode);
   const handleIpcPrompt = createIpcPromptDispatcher(inputMode, {
@@ -135,7 +153,8 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     sockPath: attach?.sockPath ?? '',
     authToken: attach?.authToken ?? '',
     enabled: isAttachedClient,
-    onEvent: addEvent,
+    onEvent: (event) =>
+      addTuiEvent(event, { persistTranscript: config.workflow.persistTranscript }),
     onPromptRequest: handleIpcPrompt,
   });
 
@@ -171,7 +190,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const useRichEditor = briefReview === 'rich' || runtimeRichMode;
 
   const useRichEditorActive = phase === 'reviewing-briefs' && useRichEditor;
-  useWorkflowKeys(!useRichEditorActive);
+  useWorkflowKeys({ isActive: !useRichEditorActive });
 
   useEffect(() => {
     if (!isAttachedClient) return;

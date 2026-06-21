@@ -11,10 +11,12 @@ import {
   publishPlannerStatus,
   publishValidation,
   publishError,
+  publishWarning,
   publishGitCommit,
   publishDriftChainDetected,
 } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
+import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
 
 let dirs: string[] = [];
 
@@ -278,10 +280,68 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 describe('publish* payload forwarding', () => {
   it('publishError — forwards message and timestamp', () => {
     const { bus, events } = makeBusRecorder();
-    publishError({ bus: bus, phase: 'implementing' }, 'something went wrong');
+    publishError({ bus: bus, phase: 'implementing', message: 'something went wrong' });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'error', message: 'something went wrong' });
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
+  });
+
+  it('publishWarning — preserves explicitly safe operational warning text under transcript-off', () => {
+    const { bus, events } = makeBusRecorder();
+    publishWarning({
+      bus: bus,
+      phase: 'implementing',
+      message: 'Queue full (50 messages).',
+      safety: {
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: true,
+      },
+    });
+
+    const warning = events[0];
+    if (warning === undefined) {
+      expect(warning).toBeDefined();
+      return;
+    }
+
+    expect(warning).toMatchObject({
+      type: 'warning',
+      message: 'Queue full (50 messages).',
+      category: 'queue',
+      code: 'queue_full',
+      transcriptSafe: true,
+    });
+    expect(
+      protectEngineEventForConsumer(warning, {
+        context: 'session-log',
+        persistTranscript: false,
+      }),
+    ).toMatchObject({
+      type: 'warning',
+      message: 'Queue full (50 messages).',
+      category: 'queue',
+      code: 'queue_full',
+      transcriptSafe: true,
+    });
+  });
+
+  it('publishWarning — omits unclassified warning text under transcript-off', () => {
+    const { bus, events } = makeBusRecorder();
+    publishWarning({ bus: bus, phase: 'implementing', message: 'private prompt detail' });
+
+    const warning = events[0];
+    if (warning === undefined) {
+      expect(warning).toBeDefined();
+      return;
+    }
+
+    expect(
+      protectEngineEventForConsumer(warning, {
+        context: 'session-log',
+        persistTranscript: false,
+      }),
+    ).toMatchObject({ type: 'warning', message: TRANSCRIPT_OMITTED_MESSAGE });
   });
 
   it('publishGitCommit — includes file when provided', () => {

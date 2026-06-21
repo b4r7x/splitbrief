@@ -132,12 +132,12 @@ export function createIpcConnection(opts: {
     },
     {
       maxLineBytes: IPC_MAX_FRAME_BYTES,
-      onOverflow: (bytes) => {
+      onOverflow: (overflow) => {
         onEvent({
           type: 'warning',
           ts: Date.now(),
           phase: 'idle',
-          message: `IPC: server frame too large: ${bytes} bytes`,
+          message: `IPC: server frame too large: ${overflow.lineBytes} bytes`,
         });
         socket.destroy();
       },

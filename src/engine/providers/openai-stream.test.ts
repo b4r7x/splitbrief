@@ -1,6 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { streamCompletion } from './openai-stream.js';
+import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
+import { RunnerCallEventSchema } from '../calls/schema.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
@@ -150,6 +152,41 @@ describe('streamCompletion', () => {
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
+  it('records invalid stream chunks as unknown upstream diagnostics and continues', async () => {
+    const events: RunnerCallEvent[] = [];
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () =>
+            (async function* () {
+              yield { choices: 'not-an-array' };
+              yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }], usage: null };
+            })(),
+        },
+      },
+    };
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.text).toBe('ok');
+    expect(events.every((event) => RunnerCallEventSchema.safeParse(event).success)).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_unknown_upstream',
+        rawPreview: expect.stringContaining('Invalid OpenAI stream chunk'),
+        backendMetadata: expect.objectContaining({
+          source: 'openai-stream',
+          parser: 'stream_chunk',
+          upstreamType: 'chat.completion.chunk',
+        }),
+      }),
+    );
+  });
+
   it('returns truncated status when the finish_reason is length', async () => {
     const client = makeMockClient([{ content: 'cut off' }, { finishReason: 'length' }]);
     const progress: string[] = [];
@@ -166,6 +203,55 @@ describe('streamCompletion', () => {
       error: { code: 'openai_finish_reason_length' },
     });
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
+  });
+
+  it('caps many OpenAI-compatible text deltas before recorder storage', async () => {
+    const client = makeMockClient([
+      ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({ content: 'x' })),
+      { finishReason: 'stop' },
+    ]);
+    const progress: string[] = [];
+    const events: RunnerCallEvent[] = [];
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: (text) => progress.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS),
+      error: { code: 'provider_text_delta_limit' },
+    });
+    expect(progress).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(
+      RUNNER_CALL_OUTPUT_MAX_EVENTS,
+    );
+  });
+
+  it('caps many OpenAI-compatible tool deltas before recorder storage', async () => {
+    const client = makeMockClient([
+      ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({
+        delta: { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: 'x' } }] },
+      })),
+      { finishReason: 'tool_calls' },
+    ]);
+    const events: RunnerCallEvent[] = [];
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'provider_tool_delta_limit' },
+    });
+    expect(events.filter((event) => event.type === 'call_tool_use_delta')).toHaveLength(
+      RUNNER_CALL_OUTPUT_MAX_EVENTS,
+    );
   });
 
   it('returns refused status when the finish_reason is content_filter', async () => {

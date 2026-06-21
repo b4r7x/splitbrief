@@ -1,17 +1,24 @@
 import { collectRunnerCallResult } from './collector.js';
+import { RunnerCallEventSchema, RunnerCallResultSchema } from './schema.js';
 import {
   isRunnerCallTerminalEvent,
   runnerCallCompletedEvent,
   runnerCallErrorEvent,
 } from './status.js';
+import { error } from '../../utils/error.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { isRecord } from '../../utils/type-guards.js';
+import { formatZodIssues, runnerCallUnknownUpstreamPreview } from './unknown-upstream.js';
 import type {
   RunnerCallContext,
   RunnerCallError,
   RunnerCallEvent,
+  RunnerCallEventInput,
   RunnerCallFailureStatus,
   RunnerCallResult,
   RunnerCallUsage,
   RunnerCallUsageSemantics,
+  RunnerCallWarningInput,
 } from './types.js';
 
 type RunnerCallTextChannel = Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'];
@@ -47,7 +54,7 @@ export interface RunnerCallRecorder {
   }) => void;
   sessionId: (opts: { nativeSessionId: string; ts?: number | undefined }) => void;
   artifact: (opts: { artifact: RunnerCallArtifact; ts?: number | undefined }) => void;
-  warning: (opts: { warning: RunnerCallEventWarning; ts?: number | undefined }) => void;
+  warning: (opts: { warning: RunnerCallWarningInput; ts?: number | undefined }) => void;
   unknownUpstream: (opts: {
     rawPreview: string;
     backendMetadata: RunnerCallUnknownUpstreamMetadata;
@@ -71,8 +78,6 @@ export interface RunnerCallRecorder {
   snapshot: () => RunnerCallResult;
 }
 
-type RunnerCallEventWarning = Extract<RunnerCallEvent, { type: 'call_warning' }>['warning'];
-
 export function createRunnerCallRecorder(opts: {
   context: RunnerCallContext;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -82,7 +87,8 @@ export function createRunnerCallRecorder(opts: {
   const events: RunnerCallEvent[] = [];
   let hasTerminalEvent = false;
 
-  function emit(event: RunnerCallEvent): void {
+  function emit(input: RunnerCallEventInput): void {
+    const event = validateRunnerCallEvent(input);
     if (hasTerminalEvent && !isRunnerCallTerminalEvent(event)) return;
     if (isRunnerCallTerminalEvent(event)) {
       if (hasTerminalEvent) return;
@@ -93,7 +99,7 @@ export function createRunnerCallRecorder(opts: {
   }
 
   function snapshot(): RunnerCallResult {
-    return collectRunnerCallResult(events);
+    return validateRunnerCallResult(collectRunnerCallResult(events));
   }
 
   function currentTerminalDefaults(opts: {
@@ -166,6 +172,43 @@ export function createRunnerCallRecorder(opts: {
       },
       endedAt: finishOpts.endedAt,
     });
+  }
+
+  function validateRunnerCallEvent(input: RunnerCallEventInput): RunnerCallEvent {
+    const parsed = RunnerCallEventSchema.safeParse(input);
+    if (parsed.success) return parsed.data;
+    return invalidUpstreamEvent(input, parsed.error.issues);
+  }
+
+  function validateRunnerCallResult(result: RunnerCallResult): RunnerCallResult {
+    const parsed = RunnerCallResultSchema.safeParse(result);
+    if (parsed.success) return parsed.data;
+    throw error('runner-call-result-invalid', 'Runner call result failed schema validation', {
+      callId: opts.context.callId,
+      issues: formatZodIssues(parsed.error.issues),
+    });
+  }
+
+  function invalidUpstreamEvent(
+    input: RunnerCallEventInput,
+    issues: Parameters<typeof runnerCallUnknownUpstreamPreview>[0]['issues'],
+  ): RunnerCallEvent {
+    const upstreamType = metadataString(recordType(input));
+    return {
+      type: 'call_unknown_upstream',
+      ts: nowOrTimestamp(input),
+      ...opts.context,
+      rawPreview: runnerCallUnknownUpstreamPreview({
+        label: 'Invalid runner call event',
+        value: input,
+        issues,
+      }),
+      backendMetadata: {
+        backendKind: opts.context.backendKind,
+        source: 'recorder',
+        ...(upstreamType !== undefined && { upstreamType }),
+      },
+    };
   }
 
   emit({ type: 'call_started', ts: startedAt, ...opts.context });
@@ -252,6 +295,28 @@ export function createRunnerCallRecorder(opts: {
     finalResult: () => (hasTerminalEvent ? snapshot() : finishIncomplete()),
     snapshot,
   };
+}
+
+function nowOrTimestamp(input: RunnerCallEventInput): number {
+  if (
+    isRecord(input) &&
+    typeof input.ts === 'number' &&
+    Number.isInteger(input.ts) &&
+    input.ts >= 0
+  ) {
+    return input.ts;
+  }
+  return Date.now();
+}
+
+function recordType(input: RunnerCallEventInput): unknown {
+  return isRecord(input) ? input.type : undefined;
+}
+
+function metadataString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const clean = sanitizeTerminalDiagnosticText(value, { maxChars: 256 }).trim();
+  return clean.length > 0 ? clean : undefined;
 }
 
 function hasPartialResult(result: RunnerCallResult): boolean {

@@ -14,6 +14,8 @@ import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isPlannerToolId, type PlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
 import { typedEntries } from '../../utils/type-guards.js';
 
+type PlannerFactory = typeof createPlanner;
+
 function providerDescription(id: ProviderId): string {
   const info = PROVIDER_CATALOG[id];
   return info.isLocal ? `${info.displayName} (local)` : `${info.displayName} API`;
@@ -87,15 +89,17 @@ async function probeProviders(): Promise<PlannerDetection[]> {
 
 interface DetectPlannersOptions {
   providerResults?: ProviderDetection[];
+  createPlanner?: PlannerFactory | undefined;
 }
 
 export async function detectAvailablePlanners(
   opts: DetectPlannersOptions = {},
 ): Promise<PlannerDetection[]> {
+  const plannerFactory = opts.createPlanner ?? createPlanner;
   const cliResults = await Promise.all(
     CLI_PLANNERS.map(async ({ tool, description, testedVersion }): Promise<PlannerDetection> => {
       try {
-        const planner = await createPlanner(minimalConfig(tool));
+        const planner = await plannerFactory(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
         let version: string | undefined;
         let compatibility: PlannerDetection['compatibility'];

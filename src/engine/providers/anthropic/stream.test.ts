@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { streamAnthropicCompletion } from './stream.js';
 import type { StreamMessage } from '../dispatch-stream.js';
+import {
+  RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES,
+  RUNNER_CALL_SSE_EVENT_MAX_BYTES,
+} from '../../calls/output-limit.js';
+import { RunnerCallEventSchema } from '../../calls/schema.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
@@ -13,6 +18,18 @@ function makeSseResponse(events: string[]): Response {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream' },
   });
+}
+
+function makeStreamResponse(text: string, status = 200): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    }),
+    { status, headers: { 'Content-Type': 'text/event-stream' } },
+  );
 }
 
 const MINIMAL_SSE = ['event: message_stop\ndata: {"type":"message_stop"}\n\n'];
@@ -124,6 +141,41 @@ describe('streamAnthropicCompletion', () => {
     expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 3 });
   });
 
+  it('records schema-invalid SSE payloads as unknown upstream diagnostics and continues', async () => {
+    const events: RunnerCallEvent[] = [];
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":"bad"}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    );
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.text).toBe('ok');
+    expect(events.every((event) => RunnerCallEventSchema.safeParse(event).success)).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_unknown_upstream',
+        rawPreview: expect.stringContaining('Invalid Anthropic stream payload'),
+        backendMetadata: expect.objectContaining({
+          source: 'anthropic-stream',
+          parser: 'sse_event',
+          upstreamType: 'content_block_delta',
+        }),
+      }),
+    );
+  });
+
   it('parses Anthropic cache usage fields', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
@@ -201,6 +253,60 @@ describe('streamAnthropicCompletion', () => {
     expect(terminal).toMatchObject({
       status: 'aborted',
       usage: { inputTokens: 42, outputTokens: 17 },
+    });
+  });
+
+  it('reads only a bounded Anthropic HTTP error body preview', async () => {
+    const tail = 'must-not-appear-in-error';
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeStreamResponse(
+        `head-${'x'.repeat(RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES + 100)}-${tail}`,
+        500,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({
+      kind: 'stream-http-status',
+      data: {
+        detail: expect.stringContaining(
+          `response body truncated at ${RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES} bytes`,
+        ),
+      },
+    });
+    expect(JSON.stringify(caught)).not.toContain(tail);
+  });
+
+  it('caps an unterminated Anthropic SSE event before payload parsing', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeStreamResponse(`data: ${'x'.repeat(RUNNER_CALL_SSE_EVENT_MAX_BYTES + 1)}`),
+    );
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: () => {},
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'provider_sse_event_limit' },
     });
   });
 });
@@ -439,8 +545,19 @@ describe('stream that the model truncates at max_tokens', () => {
     expect(terminal).toMatchObject({
       status: 'failed',
       error: { code: 'stream-invalid-payload' },
-      partial: false,
+      partial: true,
     });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_unknown_upstream',
+        rawPreview: expect.stringContaining('Malformed Anthropic stream payload'),
+        backendMetadata: expect.objectContaining({
+          source: 'anthropic-stream',
+          parser: 'sse_event',
+          upstreamType: 'malformed_json',
+        }),
+      }),
+    );
   });
 
   it('emits one call_error before rethrowing an Anthropic provider error event', async () => {

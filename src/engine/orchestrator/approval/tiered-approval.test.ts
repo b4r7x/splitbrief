@@ -64,6 +64,22 @@ describe('gateAction', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('live session approval state disables the next gate even when captured config enables approval', async () => {
+    const { bus, events } = makeBusRecorder();
+    const config = makeApprovalConfig({ enabled: true, headless: true });
+    const input = makeInput({
+      bus,
+      config,
+      getApprovalEnabled: () => false,
+      actionDescription: 'write /tmp/outside-project/file.ts',
+    });
+
+    const result = await gateAction(input);
+
+    expect(result.allow).toBe(true);
+    expect(events).toHaveLength(0);
+  });
+
   it('auto tier → allow, no events emitted', async () => {
     const { bus, events } = makeBusRecorder();
     const config = makeConfig();

@@ -162,7 +162,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/skill-discovery.ts` — planner skill source discovery
 - `engine/availability.ts` — command availability probing
 - `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
-- `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` discriminated union + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
+- `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`

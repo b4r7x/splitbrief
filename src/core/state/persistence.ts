@@ -1,8 +1,10 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import type { z } from 'zod';
 import type { WorkflowState } from '../schemas/workflow.js';
 import {
   SessionLogEntrySchema,
+  SessionLogEventEntrySchema,
   SESSION_LOG_MAX_ENTRY_BYTES,
   type SessionLogEventEntry,
   type SessionLogMessageEntry,
@@ -38,6 +40,7 @@ import {
 import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
+import { protectConsumerPayload } from '../consumer-policy.js';
 
 function assertInsideRoot(projectDir: string, fullPath: string): void {
   const realRoot = nearestExistingAncestor(projectDir);
@@ -221,4 +224,27 @@ export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
   event: TEvent,
 ): void {
   appendLine(ref, toEngineEventEntry(event));
+}
+
+export function appendProtectedEngineEvent<TEvent extends { type: string; ts: number }>(
+  ref: SessionRef,
+  event: TEvent,
+  schema: z.ZodType<TEvent>,
+): void {
+  const protectedEvent = protectConsumerPayload({ context: 'session-log', payload: event });
+  if (protectedEvent.oversized) return;
+
+  const parsedEvent = schema.safeParse(protectedEvent.payload);
+  if (!parsedEvent.success) return;
+
+  const protectedEntry = protectConsumerPayload({
+    context: 'session-log',
+    payload: toEngineEventEntry(parsedEvent.data),
+  });
+  if (protectedEntry.oversized) return;
+
+  const parsedEntry = SessionLogEventEntrySchema.safeParse(protectedEntry.payload);
+  if (!parsedEntry.success) return;
+
+  appendLine(ref, parsedEntry.data);
 }

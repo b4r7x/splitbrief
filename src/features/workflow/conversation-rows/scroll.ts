@@ -1,7 +1,10 @@
 import { getCompletedTaskSummaryRows } from '../../../core/sections/completed-task-summary-rows.js';
 import { clamp } from '../../../utils/math.js';
-import { computeScrollMaxOffset } from '../layout/scroll-window.js';
-import { buildConversationRows } from './build.js';
+import { computeScrollMaxOffset, getScrollWindowState } from '../layout/scroll-window.js';
+import {
+  getConversationRowsProjection,
+  getConversationRowsWindowProjection,
+} from './projection-cache.js';
 import type { ConversationRowScrollComputation, ConversationRowScrollInputs } from './types.js';
 
 interface AnchoredScrollOffsetInput {
@@ -28,17 +31,19 @@ export function computeConversationRowScroll(
     0,
     inputs.viewportHeight - getCompletedTaskSummaryRows(inputs.sections, inputs.viewportHeight),
   );
-  const { rows, renderableCount } = buildConversationRows({
+  const projectionInput = {
     sections: inputs.sections,
     expandedDiffs: inputs.expandedDiffs,
     expandedActivityBatches: inputs.expandedActivityBatches,
     cols: inputs.cols,
     viewportHeight: scrollViewportHeight,
     streaming: inputs.streaming,
-  });
+  };
+  const projection = getConversationRowsProjection(projectionInput);
+  const renderableCount = projection.renderableCount;
   const newEventCount =
     inputs.rawScrollOffset > 0 ? Math.max(0, renderableCount - inputs.renderableCountAtScroll) : 0;
-  const totalDynamicHeight = rows.length;
+  const totalDynamicHeight = projection.totalRows;
   const maxOffset = computeScrollMaxOffset(
     totalDynamicHeight,
     scrollViewportHeight,
@@ -50,14 +55,27 @@ export function computeConversationRowScroll(
     totalDynamicHeight,
     maxOffset,
   });
+  const windowState = getScrollWindowState({
+    totalHeight: totalDynamicHeight,
+    viewportHeight: scrollViewportHeight,
+    scrollOffset,
+    hasNewEvents: newEventCount > 0,
+  });
+  const windowProjection = getConversationRowsWindowProjection({
+    ...projectionInput,
+    windowStart: windowState.windowStart,
+    windowEnd: windowState.windowEnd,
+  });
 
   return {
     maxOffset,
     newEventCount,
     renderableCount,
-    rows,
+    rows: windowProjection.rows,
     scrollOffset,
     totalDynamicHeight,
     viewportHeight: scrollViewportHeight,
+    windowEnd: windowState.windowEnd,
+    windowStart: windowState.windowStart,
   };
 }

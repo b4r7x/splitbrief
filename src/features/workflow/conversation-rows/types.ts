@@ -50,6 +50,19 @@ export interface ConversationRowsResult {
   renderableCount: number;
 }
 
+export interface ConversationRowBlock {
+  key: string;
+  rowCount: number;
+  renderableUnits: number;
+  createRows: (windowStart: number, windowEnd: number) => ConversationRow[];
+}
+
+export interface ConversationRowsProjection {
+  blocks: ConversationRowBlock[];
+  renderableCount: number;
+  totalRows: number;
+}
+
 export interface ConversationRowScrollComputation {
   maxOffset: number;
   newEventCount: number;
@@ -58,6 +71,8 @@ export interface ConversationRowScrollComputation {
   scrollOffset: number;
   totalDynamicHeight: number;
   viewportHeight: number;
+  windowEnd: number;
+  windowStart: number;
 }
 
 export interface ConversationRowInputs {

@@ -1,9 +1,9 @@
-import { redactSecretsWithMetadata } from '../../utils/redact.js';
+import { redactSecretsWithMetadata } from '../utils/redact.js';
 import {
   SESSION_LOG_MAX_ENTRY_BYTES,
   SESSION_LOG_MAX_STRING_BYTES,
-} from '../../core/schemas/session-log.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+} from './schemas/session-log.js';
+import { stripTerminalControls } from '../utils/display-text.js';
 
 export const CALL_IPC_MAX_PUBLIC_PAYLOAD_BYTES = 512 * 1024;
 export const CALL_STDOUT_JSON_MAX_PUBLIC_PAYLOAD_BYTES = 256 * 1024;
@@ -11,6 +11,7 @@ export const CALL_RPC_MAX_PUBLIC_PAYLOAD_BYTES = 128 * 1024;
 export const CALL_HOOKS_MAX_PUBLIC_PAYLOAD_BYTES = 64 * 1024;
 export const CALL_OTEL_MAX_PUBLIC_PAYLOAD_BYTES = 8 * 1024;
 export const CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES = SESSION_LOG_MAX_ENTRY_BYTES;
+export const CALL_TREE_MAX_PUBLIC_PAYLOAD_BYTES = SESSION_LOG_MAX_ENTRY_BYTES;
 
 export const CALL_IPC_MAX_PUBLIC_STRING_BYTES = 64 * 1024;
 export const CALL_STDOUT_JSON_MAX_PUBLIC_STRING_BYTES = 32 * 1024;
@@ -18,6 +19,7 @@ export const CALL_RPC_MAX_PUBLIC_STRING_BYTES = 32 * 1024;
 export const CALL_HOOKS_MAX_PUBLIC_STRING_BYTES = 16 * 1024;
 export const CALL_OTEL_MAX_PUBLIC_STRING_BYTES = 2 * 1024;
 export const CALL_SESSION_LOG_MAX_PUBLIC_STRING_BYTES = SESSION_LOG_MAX_STRING_BYTES;
+export const CALL_TREE_MAX_PUBLIC_STRING_BYTES = SESSION_LOG_MAX_STRING_BYTES;
 
 export const CALL_CONSUMER_REDACTION_MARKER = '***REDACTED***';
 export const CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER = '\n[... oversized string truncated ...]';
@@ -27,7 +29,14 @@ export const CALL_CONSUMER_UNSUPPORTED_VALUE_PLACEHOLDER =
 export const CALL_CONSUMER_CIRCULAR_REFERENCE_PLACEHOLDER =
   '[... circular payload reference omitted ...]';
 
-export type CallConsumerContext = 'ipc' | 'stdout-json' | 'rpc' | 'hooks' | 'otel' | 'session-log';
+export type CallConsumerContext =
+  | 'ipc'
+  | 'stdout-json'
+  | 'rpc'
+  | 'hooks'
+  | 'otel'
+  | 'session-log'
+  | 'tree';
 
 export type PublicPayload =
   | string
@@ -92,6 +101,11 @@ const CONSUMER_POLICIES: Record<CallConsumerContext, ConsumerPayloadPolicy> = {
     context: 'session-log',
     maxBytes: CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES,
     maxStringBytes: CALL_SESSION_LOG_MAX_PUBLIC_STRING_BYTES,
+  },
+  tree: {
+    context: 'tree',
+    maxBytes: CALL_TREE_MAX_PUBLIC_PAYLOAD_BYTES,
+    maxStringBytes: CALL_TREE_MAX_PUBLIC_STRING_BYTES,
   },
 };
 

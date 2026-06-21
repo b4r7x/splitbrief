@@ -8,7 +8,7 @@ export function drainAndFormat(
   state: WorkflowState,
   bus: EventBus,
 ): { state: WorkflowState; prefix: string } {
-  const drain = drainQueue(projectDir, sessionId, state, bus);
+  const drain = drainQueue({ projectDir, sessionId, state, bus });
   if (drain.messages.length === 0) return { state, prefix: '' };
   return { state: drain.state, prefix: formatDrainedMessages(drain.messages) };
 }

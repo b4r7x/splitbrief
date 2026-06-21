@@ -1,5 +1,5 @@
 import type { EngineEvent } from '../events/types.js';
-import { protectConsumerPayload } from '../calls/consumer-policy.js';
+import { protectConsumerPayload } from '../../core/consumer-policy.js';
 
 const PLACEHOLDER_RE = /\$\{event\.([a-zA-Z_][\w.]*)\}/g;
 const LEADING_PLACEHOLDER_RE = /^\$\{event\.[a-zA-Z_][\w.]*\}/;

@@ -721,6 +721,9 @@ describe('startIpcServer', () => {
     const warning = events.find((e) => e.type === 'warning');
     expect(warning?.type).toBe('warning');
     if (warning?.type === 'warning') {
+      expect(warning.category).toBe('ipc');
+      expect(warning.code).toBe('malformed_json');
+      expect(warning.transcriptSafe).toBe(true);
       expect(warning.message).toContain('malformed JSON');
       expect(warning.message).toContain('bytes');
       expect(warning.message).not.toContain('secret feature prompt');

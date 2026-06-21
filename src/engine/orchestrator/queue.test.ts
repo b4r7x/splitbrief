@@ -16,6 +16,7 @@ import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
 import { createWriteSequencer } from './serial-executor.js';
 import { transitionAndSave } from './state-ops.js';
+import { protectEngineEventForConsumer } from '../events/protection.js';
 
 let dirs: string[] = [];
 
@@ -271,6 +272,29 @@ describe('enqueue', () => {
     expect(result).toMatchObject({ status: 'rejected', reason: 'phase-unavailable' });
     expect(state?.messageQueue).toHaveLength(0);
     expect(events.find((event) => event.type === 'message_queued')).toBeUndefined();
+    const warning = events.find((event) => event.type === 'warning');
+    expect(warning).toMatchObject({
+      type: 'warning',
+      category: 'queue',
+      code: 'phase_unavailable',
+      transcriptSafe: true,
+      message:
+        'Queue is only available while the planner is running; current phase is implementing.',
+    });
+    expect(
+      warning === undefined
+        ? null
+        : protectEngineEventForConsumer(warning, {
+            context: 'session-log',
+            persistTranscript: false,
+          }),
+    ).toMatchObject({
+      type: 'warning',
+      category: 'queue',
+      code: 'phase_unavailable',
+      message:
+        'Queue is only available while the planner is running; current phase is implementing.',
+    });
   });
 
   it('persists later messages before a slow native injection resolves', async () => {
@@ -496,7 +520,7 @@ describe('drain', () => {
     state = transition(state, { type: 'START' });
     const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, bus);
+    const result = drainQueue({ projectDir, sessionId, state, bus });
 
     expect(result.messages).toHaveLength(0);
     expect(result.state).toBe(state);
@@ -520,7 +544,7 @@ describe('drain', () => {
     ]);
     const { bus, events } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, bus);
+    const result = drainQueue({ projectDir, sessionId, state, bus });
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]?.text).toBe('first message');
@@ -543,7 +567,7 @@ describe('drain', () => {
     ]);
     const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, bus);
+    const result = drainQueue({ projectDir, sessionId, state, bus });
 
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]?.text).toBe('pending');
@@ -555,7 +579,7 @@ describe('drain', () => {
     saveState({ projectDir, sessionId }, makeStateWithQueue([makeMessage('persisted pending')]));
     const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, staleState, bus);
+    const result = drainQueue({ projectDir, sessionId, state: staleState, bus });
 
     expect(result.messages).toEqual([expect.objectContaining({ text: 'persisted pending' })]);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
@@ -571,7 +595,7 @@ describe('drain', () => {
     };
     const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, bus);
+    const result = drainQueue({ projectDir, sessionId, state, bus });
 
     expect(result.messages).toEqual([]);
     expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
@@ -595,7 +619,7 @@ describe('drain', () => {
       'pending',
     );
 
-    const result = drainQueue(projectDir, sessionId, staleState, bus);
+    const result = drainQueue({ projectDir, sessionId, state: staleState, bus });
 
     expect(result.messages).toEqual([expect.objectContaining({ text: 'stale in flight' })]);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();

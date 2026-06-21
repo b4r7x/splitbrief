@@ -5,19 +5,16 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import type { CollectedReadiness, CollectReadinessOptions } from '../../core/readiness/collect.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import type { Summary } from '../../core/schemas/summary.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import { WorkflowScreen } from './screen.js';
 
-const runWorkflow = vi.hoisted(() => vi.fn());
-const collectReadiness = vi.hoisted(() => vi.fn());
+const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
+const collectReadiness = vi.fn<(options: CollectReadinessOptions) => Promise<CollectedReadiness>>();
+const workflowDeps = { runWorkflow, collectReadiness };
 
-vi.mock('../../engine/orchestrator/run/workflow.js', () => ({
-  runWorkflow,
-  WORKFLOW_REWIND_ABORT_REASON: 'workflow-rewind',
-}));
-
-vi.mock('../../core/readiness/collect.js', () => ({ collectReadiness }));
-
-const { WorkflowScreen } = await import('./screen.js');
 const { configStore } = await import('../../stores/project/config.js');
 const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
@@ -71,7 +68,9 @@ describe('WorkflowScreen TUI readiness persistence', () => {
     routerStore.navigate({ to: 'workflow', feature: 'tui readiness feature' });
 
     const target = join(sessionDir(projectDir, SESSION_ID), READINESS_FILE);
-    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
 
     // useReadinessFetch resolves client-side; nothing is written until the session run begins.
     await tick(20);
@@ -106,7 +105,9 @@ describe('WorkflowScreen TUI readiness persistence', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
     routerStore.navigate({ to: 'workflow', feature: 'tui readiness feature' });
 
-    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
     await tick(20);
     lifecycleStore.__testReset({ phase: 'researching' });
     await tick(20);

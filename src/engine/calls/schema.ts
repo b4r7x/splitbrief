@@ -1,81 +1,20 @@
 import { z } from 'zod';
-
-export const RUNNER_CALL_ROLES = [
-  'planner',
-  'implementer',
-  'review',
-  'summary',
-  'compaction',
-  'escalation',
-] as const;
-
-export const RUNNER_CALL_BACKEND_KINDS = ['cli', 'shell', 'api', 'agent', 'agent-sdk'] as const;
-
-export const RUNNER_CALL_CHANNELS = [
-  'stdout',
-  'stderr',
-  'assistant',
-  'result',
-  'tool',
-  'system',
-] as const;
-
-export const RUNNER_CALL_STATUSES = [
-  'completed',
-  'failed',
-  'truncated',
-  'aborted',
-  'timeout',
-  'refused',
-  'unsupported_tool',
-  'incomplete',
-] as const;
-
-export const RUNNER_CALL_FAILURE_STATUSES = [
-  'failed',
-  'truncated',
-  'aborted',
-  'timeout',
-  'refused',
-  'unsupported_tool',
-  'incomplete',
-] as const;
-
-export const RUNNER_CALL_USAGE_SEMANTICS = ['delta', 'cumulative', 'final'] as const;
-export const RUNNER_CALL_ARTIFACT_SOURCES = ['stream', 'file', 'tool', 'derived'] as const;
-export const RUNNER_CALL_ACTIVITY_STAGES = [
-  'started',
-  'updated',
-  'completed',
-  'failed',
-  'aborted',
-  'timeout',
-  'truncated',
-  'refused',
-  'unsupported_tool',
-  'incomplete',
-  'warning',
-] as const;
-export const RUNNER_CALL_ACTIVITY_KINDS = [
-  'tool',
-  'file',
-  'text',
-  'read',
-  'write',
-  'edit',
-  'command',
-  'search',
-  'glob',
-  'task',
-  'mcp',
-  'web',
-  'plan',
-  'session',
-  'artifact',
-  'warning',
-  'error',
-  'unknown',
-] as const;
+import { runnerCallWarningFingerprint } from './warning-fingerprint.js';
+import {
+  RUNNER_CALL_ACTIVITY_KINDS,
+  RUNNER_CALL_ACTIVITY_STAGES,
+  RUNNER_CALL_ARTIFACT_SOURCES,
+  RUNNER_CALL_BACKEND_KINDS,
+  RUNNER_CALL_CHANNELS,
+  RUNNER_CALL_FAILURE_STATUSES,
+  RUNNER_CALL_ROLES,
+  RUNNER_CALL_STATUSES,
+  RunnerCallTextChannelSchema,
+  RunnerCallUsageContractSchema,
+  RUNNER_CALL_WARNING_SEVERITIES,
+  RUNNER_CALL_WARNING_SURFACES,
+  RUNNER_CALL_USAGE_SEMANTICS,
+} from '../../core/runner-call-contract.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
@@ -92,12 +31,13 @@ export const RunnerCallBackendKindSchema = z.enum(RUNNER_CALL_BACKEND_KINDS);
 export const RunnerCallChannelSchema = z.enum(RUNNER_CALL_CHANNELS);
 export const RunnerCallStatusSchema = z.enum(RUNNER_CALL_STATUSES);
 export const RunnerCallUsageSemanticsSchema = z.enum(RUNNER_CALL_USAGE_SEMANTICS);
+export const RunnerCallWarningSeveritySchema = z.enum(RUNNER_CALL_WARNING_SEVERITIES);
+export const RunnerCallWarningSurfaceSchema = z.enum(RUNNER_CALL_WARNING_SURFACES);
 export const RunnerCallArtifactSourceSchema = z.enum(RUNNER_CALL_ARTIFACT_SOURCES);
 export const RunnerCallActivityStageSchema = z.enum(RUNNER_CALL_ACTIVITY_STAGES);
 export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 
 export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
-const RunnerCallTextChannelSchema = z.enum(['stdout', 'assistant', 'result', 'system']);
 const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
 
 export const CallIdSchema = boundedId;
@@ -113,13 +53,7 @@ export const runnerCallContextFields = {
 
 export const RunnerCallContextSchema = z.strictObject(runnerCallContextFields);
 
-export const RunnerCallUsageSchema = z.strictObject({
-  inputTokens: nonnegativeInteger,
-  outputTokens: nonnegativeInteger,
-  cacheReadTokens: nonnegativeInteger.optional(),
-  cacheCreateTokens: nonnegativeInteger.optional(),
-  reasoningTokens: nonnegativeInteger.optional(),
-});
+export const RunnerCallUsageSchema = RunnerCallUsageContractSchema;
 
 export const RunnerCallToolUseSchema = z.strictObject({
   id: boundedId.nullable(),
@@ -142,10 +76,26 @@ export const RunnerCallErrorSchema = z.strictObject({
   message: boundedMessage,
 });
 
-export const RunnerCallWarningSchema = z.strictObject({
-  code: boundedName,
-  message: boundedMessage,
-});
+export const RunnerCallWarningSchema = z
+  .strictObject({
+    code: boundedName,
+    severity: RunnerCallWarningSeveritySchema.default('warning'),
+    source: boundedName.default('provider'),
+    surface: RunnerCallWarningSurfaceSchema.default('activity'),
+    fingerprint: boundedName.optional(),
+    message: boundedMessage,
+    rawRef: z.string().min(1).max(512).optional(),
+  })
+  .transform((warning) => ({
+    ...warning,
+    fingerprint:
+      warning.fingerprint ??
+      runnerCallWarningFingerprint({
+        code: warning.code,
+        source: warning.source,
+        message: warning.message,
+      }),
+  }));
 
 const RunnerCallUnknownUpstreamBackendMetadataSchema = z.strictObject({
   backendKind: RunnerCallBackendKindSchema,

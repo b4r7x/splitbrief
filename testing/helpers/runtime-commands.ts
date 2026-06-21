@@ -105,6 +105,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     }),
     compactTranscript: async () => ({ status: 'compacted', summary: 'summary', entriesRemoved: 3 }),
     exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
+    scrollConversation: () => ({ status: 'scrolled' }),
+    toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     ...overrides,
   };
 }

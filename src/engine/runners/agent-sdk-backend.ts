@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
@@ -7,13 +8,22 @@ import { createChangeDetector, type ChangeDetector } from '../change-detection.j
 import {
   createSessionAttemptCallContext,
   createSessionResumeState,
+  isSessionExpiredError,
   runWithResumeFallback,
+  sessionResumeMismatchError,
 } from '../session-expiry.js';
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
+import { runnerCallUnknownUpstreamPreview } from '../calls/unknown-upstream.js';
+import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
+import {
+  createRunnerCallDeltaLimiter,
+  finishRunnerCallOutputLimit,
+  type RunnerCallDeltaLimitResult,
+} from '../calls/output-limit.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
@@ -27,29 +37,57 @@ export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob
 
 type RunnerCallFailureStatus = Exclude<RunnerCallStatus, 'completed'>;
 
-interface SdkBlock {
-  type: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
-  tool_use_id?: string;
-  text?: string;
-}
+const SdkTextBlockSchema = z.looseObject({
+  type: z.literal('text'),
+  text: z.string(),
+});
 
-interface SdkMessage {
-  type: string;
-  subtype?: string;
-  session_id?: string;
-  message?: { content?: SdkBlock[] };
-  result?: string;
-  is_error?: boolean;
-  errors?: string[];
-  terminal_reason?: string | null;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-  };
-}
+const SdkToolUseBlockSchema = z.looseObject({
+  type: z.literal('tool_use'),
+  id: z.string().optional(),
+  tool_use_id: z.string().optional(),
+  name: z.string(),
+  input: z.unknown().optional(),
+});
+
+const SdkSystemMessageSchema = z.looseObject({
+  type: z.literal('system'),
+  subtype: z.string().optional(),
+  session_id: z.string().optional(),
+});
+
+const SdkAssistantMessageSchema = z.looseObject({
+  type: z.literal('assistant'),
+  message: z
+    .looseObject({
+      content: z.array(z.unknown()).optional(),
+    })
+    .optional(),
+});
+
+const SdkResultMessageSchema = z.looseObject({
+  type: z.literal('result'),
+  subtype: z.string().optional(),
+  session_id: z.string().optional(),
+  result: z.string().optional(),
+  is_error: z.boolean().optional(),
+  errors: z.array(z.string()).optional(),
+  terminal_reason: z.string().nullable().optional(),
+  usage: z
+    .looseObject({
+      input_tokens: z.number(),
+      output_tokens: z.number(),
+    })
+    .optional(),
+});
+
+const SdkMessageSchema = z.discriminatedUnion('type', [
+  SdkSystemMessageSchema,
+  SdkAssistantMessageSchema,
+  SdkResultMessageSchema,
+]);
+
+type SdkMessage = z.infer<typeof SdkMessageSchema>;
 
 interface SdkQueryOptions {
   prompt: string;
@@ -66,7 +104,7 @@ interface SdkQueryOptions {
 }
 
 interface SdkClient {
-  query: (opts: SdkQueryOptions) => AsyncIterable<SdkMessage>;
+  query: (opts: SdkQueryOptions) => AsyncIterable<unknown>;
 }
 
 export function isModuleNotFoundError(err: unknown): boolean {
@@ -102,16 +140,28 @@ export async function isAgentSdkAvailable(apiKey?: string): Promise<boolean> {
   }
 }
 
-function extractTextFromBlocks(blocks: SdkBlock[] | undefined): string {
+function extractTextFromBlocks(
+  blocks: readonly unknown[] | undefined,
+  recorder: RunnerCallRecorder,
+): string {
   if (!blocks) return '';
-  return blocks
-    .filter((block: SdkBlock) => block.type === 'text' && typeof block.text === 'string')
-    .map((block: SdkBlock) => block.text)
-    .join('');
+  const texts: string[] = [];
+  for (const block of blocks) {
+    const parsed = SdkTextBlockSchema.safeParse(block);
+    if (parsed.success) {
+      texts.push(parsed.data.text);
+      continue;
+    }
+    if (blockType(block) === 'text') recordInvalidSdkPayload(recorder, block, parsed.error.issues);
+  }
+  return texts.join('');
 }
 
-function extractAssistantText(message: SdkMessage): string {
-  return extractTextFromBlocks(message.message?.content);
+function extractAssistantText(
+  message: Extract<SdkMessage, { type: 'assistant' }>,
+  recorder: RunnerCallRecorder,
+): string {
+  return extractTextFromBlocks(message.message?.content, recorder);
 }
 
 interface SdkToolUse {
@@ -120,30 +170,39 @@ interface SdkToolUse {
   input: Record<string, unknown>;
 }
 
-function extractToolUses(message: SdkMessage): SdkToolUse[] {
+function extractToolUses(
+  message: Extract<SdkMessage, { type: 'assistant' }>,
+  recorder: RunnerCallRecorder,
+): SdkToolUse[] {
   const blocks = message.message?.content;
   if (!blocks) return [];
   const tools: SdkToolUse[] = [];
   for (const block of blocks) {
-    if (block.type !== 'tool_use' || typeof block.name !== 'string') continue;
+    const parsed = SdkToolUseBlockSchema.safeParse(block);
+    if (!parsed.success) {
+      if (blockType(block) === 'tool_use')
+        recordInvalidSdkPayload(recorder, block, parsed.error.issues);
+      continue;
+    }
+    const data = parsed.data;
     tools.push({
-      id: block.id ?? block.tool_use_id ?? null,
-      name: block.name,
-      input: isRecord(block.input) ? block.input : {},
+      id: data.id ?? data.tool_use_id ?? null,
+      name: data.name,
+      input: isRecord(data.input) ? data.input : {},
     });
   }
   return tools;
 }
 
-function extractResultText(message: SdkMessage): string {
+function extractResultText(message: Extract<SdkMessage, { type: 'result' }>): string {
   if (typeof message.result === 'string') return message.result;
-  return extractTextFromBlocks(message.message?.content);
+  return '';
 }
 
 type StreamResult = RunnerCallResult & { sessionId?: string | null };
 
 export interface ProcessStreamOptions {
-  stream: AsyncIterable<SdkMessage>;
+  stream: AsyncIterable<unknown>;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -166,13 +225,15 @@ function createSdkCallContext(opts: {
   };
 }
 
-function isSdkResultFailure(message: SdkMessage): boolean {
+function isSdkResultFailure(message: Extract<SdkMessage, { type: 'result' }>): boolean {
   if (message.type !== 'result') return false;
   if (message.is_error === true) return true;
   return message.subtype !== undefined && message.subtype !== 'success';
 }
 
-function sdkFailureStatus(message: SdkMessage): RunnerCallFailureStatus {
+function sdkFailureStatus(
+  message: Extract<SdkMessage, { type: 'result' }>,
+): RunnerCallFailureStatus {
   if (
     message.terminal_reason === 'aborted_streaming' ||
     message.terminal_reason === 'aborted_tools'
@@ -183,7 +244,7 @@ function sdkFailureStatus(message: SdkMessage): RunnerCallFailureStatus {
   return 'failed';
 }
 
-function sdkResultErrorMessage(message: SdkMessage): string {
+function sdkResultErrorMessage(message: Extract<SdkMessage, { type: 'result' }>): string {
   if (message.errors && message.errors.length > 0) return message.errors.join('\n');
   const resultText = extractResultText(message);
   if (resultText) return resultText;
@@ -192,7 +253,12 @@ function sdkResultErrorMessage(message: SdkMessage): string {
 }
 
 function throwForSdkCallFailure(result: RunnerCallResult): never {
-  throw error('runner-call-failed', `Agent SDK runner call ${result.status}`, {
+  const detail = result.error?.message;
+  const message =
+    detail && detail.length > 0
+      ? `Agent SDK runner call ${result.status}: ${detail}`
+      : `Agent SDK runner call ${result.status}`;
+  throw error('runner-call-failed', message, {
     callId: result.callId,
     status: result.status,
     output: result.text,
@@ -202,6 +268,38 @@ function throwForSdkCallFailure(result: RunnerCallResult): never {
   });
 }
 
+function parseSdkMessage(raw: unknown, recorder: RunnerCallRecorder): SdkMessage | null {
+  const parsed = SdkMessageSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  recordInvalidSdkPayload(recorder, raw, parsed.error.issues);
+  return null;
+}
+
+function recordInvalidSdkPayload(
+  recorder: RunnerCallRecorder,
+  payload: unknown,
+  issues: Parameters<typeof runnerCallUnknownUpstreamPreview>[0]['issues'],
+): void {
+  const upstreamType = blockType(payload);
+  recorder.unknownUpstream({
+    rawPreview: runnerCallUnknownUpstreamPreview({
+      label: 'Invalid Agent SDK stream message',
+      value: payload,
+      issues,
+    }),
+    backendMetadata: {
+      backendKind: recorder.context.backendKind,
+      source: 'agent-sdk',
+      parser: 'sdk_message',
+      ...(upstreamType !== undefined && { upstreamType }),
+    },
+  });
+}
+
+function blockType(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.type === 'string' ? value.type : undefined;
+}
+
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
   const { stream, onOutput, onSessionId, onCallEvent, signal } = opts;
   const context = opts.callContext ?? createSdkCallContext({ permissionMode: 'acceptEdits' });
@@ -209,35 +307,56 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
   let collectedText = '';
   let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
+  const textLimiter = createRunnerCallDeltaLimiter({
+    code: 'agent_sdk_output_text_limit',
+    label: 'Agent SDK output text',
+  });
+  let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
+
+  function captureStreamSessionId(nextSessionId: string): void {
+    if (sessionId === nextSessionId) return;
+    sessionId = nextSessionId;
+    onSessionId?.(nextSessionId);
+    recorder.sessionId({ nativeSessionId: nextSessionId });
+  }
 
   try {
     throwIfAborted(signal);
-    for await (const message of stream) {
+    for await (const rawMessage of stream) {
       throwIfAborted(signal);
+      const message = parseSdkMessage(rawMessage, recorder);
+      if (message === null) continue;
       if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-        sessionId = message.session_id;
-        onSessionId?.(message.session_id);
-        recorder.sessionId({ nativeSessionId: message.session_id });
+        captureStreamSessionId(message.session_id);
       }
 
       if (message.type === 'assistant') {
-        for (const toolUse of extractToolUses(message)) {
+        for (const toolUse of extractToolUses(message, recorder)) {
           recorder.toolUseDone({ toolUse });
         }
-        const text = extractAssistantText(message);
+        const text = extractAssistantText(message, recorder);
         if (text) {
-          collectedText += text;
-          recorder.text({ channel: 'assistant', text });
-          onOutput(text);
+          const accepted = textLimiter.accept(text);
+          if (accepted.text.length > 0) {
+            collectedText += accepted.text;
+            recorder.text({ channel: 'assistant', text: accepted.text });
+            onOutput(accepted.text);
+          }
+          if (accepted.limit !== null) {
+            outputLimit = accepted.limit;
+            finishRunnerCallOutputLimit(recorder, outputLimit, {
+              usage,
+              nativeSessionId: sessionId,
+            });
+            break;
+          }
           throwIfAborted(signal);
         }
       }
 
       if (message.type === 'result') {
         if (message.session_id) {
-          sessionId = message.session_id;
-          onSessionId?.(message.session_id);
-          recorder.sessionId({ nativeSessionId: message.session_id });
+          captureStreamSessionId(message.session_id);
         }
         const delta = toTokenDelta(message.usage);
         if (delta) {
@@ -259,16 +378,38 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         const resultText = extractResultText(message);
         if (resultText) {
           const reconciliation = reconcileFinalText(collectedText, resultText);
+          const accepted =
+            reconciliation.kind === 'none'
+              ? ({ text: '', limit: null } satisfies RunnerCallDeltaLimitResult)
+              : textLimiter.accept(reconciliation.text);
           if (reconciliation.kind === 'full') {
-            recorder.text({ channel: 'result', text: resultText, semantics: 'final' });
-            onOutput(reconciliation.text);
+            if (accepted.text.length > 0) {
+              recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+              onOutput(accepted.text);
+            }
           } else if (reconciliation.kind === 'suffix') {
-            recorder.text({ channel: 'assistant', text: reconciliation.text });
-            onOutput(reconciliation.text);
+            if (accepted.text.length > 0) {
+              recorder.text({ channel: 'assistant', text: accepted.text });
+              onOutput(accepted.text);
+            }
           } else if (reconciliation.kind === 'replace') {
-            recorder.text({ channel: 'result', text: resultText, semantics: 'final' });
+            if (accepted.text.length > 0) {
+              recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+            }
           }
-          collectedText = resultText;
+          if (reconciliation.kind === 'full' || reconciliation.kind === 'replace') {
+            collectedText = accepted.text;
+          } else if (reconciliation.kind === 'suffix') {
+            collectedText += accepted.text;
+          }
+          if (accepted.limit !== null) {
+            outputLimit = accepted.limit;
+            finishRunnerCallOutputLimit(recorder, outputLimit, {
+              usage,
+              nativeSessionId: sessionId,
+            });
+            break;
+          }
         }
         recorder.finishCompleted({ usage, nativeSessionId: sessionId });
       }
@@ -378,16 +519,30 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       const { query } = await loadSdk();
 
       const apiKey = opts.apiKey;
-      const captureSession = (id: string) => {
-        session.capture(id);
-        onSessionId?.(id);
-      };
       const finalPrompt = buildPromptWithImages(prompt, images);
       const baseCallContext = callContext ?? createSdkCallContext({ permissionMode, model });
 
       const runQuery = async (resumeId: string | undefined, attempt: number) => {
         throwIfAborted(signal);
         const forwardedAbort = createForwardedAbortController(signal);
+        const callbackBuffer =
+          resumeId === undefined
+            ? null
+            : createRunnerAttemptCallbackBuffer({ onOutput, onSessionId, onCallEvent });
+        const attemptCallbacks = callbackBuffer?.callbacks ?? {
+          onOutput,
+          onSessionId,
+          onCallEvent,
+        };
+        let unexpectedResumeSessionId: string | null = null;
+        const captureSession = (id: string) => {
+          if (resumeId !== undefined && id !== resumeId) {
+            unexpectedResumeSessionId = id;
+            return;
+          }
+          session.capture(id);
+          attemptCallbacks.onSessionId?.(id);
+        };
         const options: SdkQueryOptions['options'] = {
           allowedTools: opts.allowedTools,
           permissionMode,
@@ -409,14 +564,27 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
         }
         if (forwardedAbort.controller) options.abortController = forwardedAbort.controller;
         try {
-          return await processStream({
+          const result = await processStream({
             stream: query({ prompt: finalPrompt, options }),
-            onOutput,
+            onOutput: attemptCallbacks.onOutput,
             onSessionId: captureSession,
-            onCallEvent,
+            onCallEvent: attemptCallbacks.onCallEvent,
             callContext: createSessionAttemptCallContext(baseCallContext, attempt),
             signal,
           });
+          const returnedSessionId = result.sessionId ?? unexpectedResumeSessionId;
+          if (
+            resumeId !== undefined &&
+            returnedSessionId !== null &&
+            returnedSessionId !== resumeId
+          ) {
+            throw sessionResumeMismatchError(resumeId, returnedSessionId);
+          }
+          callbackBuffer?.flush();
+          return result;
+        } catch (err) {
+          if (resumeId === undefined || !isSessionExpiredError(err)) callbackBuffer?.flush();
+          throw err;
         } finally {
           forwardedAbort.cleanup();
         }

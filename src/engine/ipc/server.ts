@@ -56,6 +56,18 @@ export const ipcServerError = {
     error('ipc-server-bind-failed', `IPC server failed to bind: ${reason}`, { reason }),
 } as const;
 
+function publishIpcOperationalWarning(bus: EventBus, message: string, code: string): void {
+  bus.publish({
+    type: 'warning',
+    ts: Date.now(),
+    phase: 'idle',
+    category: 'ipc',
+    code,
+    transcriptSafe: true,
+    message,
+  });
+}
+
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
   const {
     sessionId,
@@ -165,6 +177,9 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
               type: 'warning',
               ts: Date.now(),
               phase: 'idle',
+              category: 'ipc',
+              code: 'live_backlog_exceeded',
+              transcriptSafe: true,
               message: 'IPC: live backlog exceeded while replaying, closing client',
             };
             replaying = false;
@@ -223,22 +238,20 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           msg = parseClientMessage(parsed);
           if (!msg) {
             const byteLength = Buffer.byteLength(trimmed, 'utf8');
-            bus.publish({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: `IPC: invalid message structure from client (${byteLength} bytes)`,
-            });
+            publishIpcOperationalWarning(
+              bus,
+              `IPC: invalid message structure from client (${byteLength} bytes)`,
+              'invalid_message_structure',
+            );
             return;
           }
         } catch {
           const byteLength = Buffer.byteLength(trimmed, 'utf8');
-          bus.publish({
-            type: 'warning',
-            ts: Date.now(),
-            phase: 'idle',
-            message: `IPC: malformed JSON from client (${byteLength} bytes)`,
-          });
+          publishIpcOperationalWarning(
+            bus,
+            `IPC: malformed JSON from client (${byteLength} bytes)`,
+            'malformed_json',
+          );
           return;
         }
 
@@ -282,12 +295,11 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           }
         } else if (msg.kind === 'queue_clear') {
           if (!onQueueClear) {
-            bus.publish({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: 'IPC: queue clear is not available for this workflow',
-            });
+            publishIpcOperationalWarning(
+              bus,
+              'IPC: queue clear is not available for this workflow',
+              'queue_clear_unavailable',
+            );
             return;
           }
           try {
@@ -316,13 +328,12 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       },
       {
         maxLineBytes: IPC_MAX_FRAME_BYTES,
-        onOverflow: (bytes) => {
-          bus.publish({
-            type: 'warning',
-            ts: Date.now(),
-            phase: 'idle',
-            message: `IPC: client frame too large: ${bytes} bytes`,
-          });
+        onOverflow: (overflow) => {
+          publishIpcOperationalWarning(
+            bus,
+            `IPC: client frame too large: ${overflow.lineBytes} bytes`,
+            'client_frame_too_large',
+          );
           socket.destroy();
           detachClient();
         },

@@ -4,6 +4,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { EngineEvent } from '../events/types.js';
 import { projectRunnerCallActivity } from './activity.js';
 import { boundedRunnerCallMessage } from './status.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 import type { RunnerCallEvent } from './types.js';
 
 interface RunnerCallEventProjectionOptions {
@@ -49,11 +50,7 @@ export function projectRunnerCallEvent(
         text: event.text,
       };
     case 'call_stderr_delta':
-      return {
-        type: 'runner_call_warning',
-        ...base,
-        warning: { code: 'stderr', message: boundedRunnerCallMessage(event.text) },
-      };
+      return null;
     case 'call_tool_use_delta':
       return {
         type: 'runner_call_tool_use',
@@ -84,10 +81,10 @@ export function projectRunnerCallEvent(
       return {
         type: 'runner_call_warning',
         ...base,
-        warning: {
+        warning: normalizeRunnerCallWarning({
           ...event.warning,
           message: boundedRunnerCallMessage(event.warning.message),
-        },
+        }),
       };
     case 'call_error':
       return {
@@ -122,10 +119,13 @@ export function projectRunnerCallEvent(
       return {
         type: 'runner_call_warning',
         ...base,
-        warning: {
+        warning: normalizeRunnerCallWarning({
           code: 'unknown_upstream',
+          severity: 'warning',
+          source: event.backendMetadata.source ?? 'upstream',
+          surface: 'activity',
           message: boundedRunnerCallMessage(event.rawPreview),
-        },
+        }),
       };
     default:
       return assertNever(event);

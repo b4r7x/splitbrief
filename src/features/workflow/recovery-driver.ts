@@ -62,7 +62,7 @@ export function createRecoveryDriver(): (
         projectDir,
         sessionId: activeSessionId,
         persistTranscript: config.workflow.persistTranscript,
-        sinks: [createTuiSink()],
+        sinks: [createTuiSink({ persistTranscript: config.workflow.persistTranscript })],
       });
       publishPendingRecoveryPrompt(bus, issue, republishPrompt);
 

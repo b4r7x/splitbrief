@@ -4,7 +4,7 @@ import type { EngineEvent } from '../events/types.js';
 import { parseEngineEvent } from '../events/schema.js';
 import { parseJsonlLine } from '../../lib/fs.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES } from '../calls/consumer-policy.js';
+import { CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES } from '../../core/consumer-policy.js';
 
 export type ReplayOptions = {
   sessionJsonlPath: string;

@@ -7,7 +7,7 @@ import type { HookOutcome, HookContext } from './types.js';
 import { loadHookModule } from './load-module.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
-import { protectConsumerPayload } from '../calls/consumer-policy.js';
+import { protectConsumerPayload } from '../../core/consumer-policy.js';
 
 type HookResponse = {
   decision?: string;

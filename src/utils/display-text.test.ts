@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
   getTerminalCellWidth,
   padTerminalDisplayTextEnd,
+  sanitizeTerminalDiagnosticText,
   stripTerminalControls,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
@@ -13,6 +15,28 @@ describe('stripTerminalControls', () => {
     const text = 'a\u001b[31mb\u001b[0mc\u0007d\u001b]0;owned\u0007e\u009b2Kf\u009dtitle\u009cg\nh';
 
     expect(stripTerminalControls(text)).toBe('abcdefgh');
+  });
+});
+
+describe('sanitizeTerminalDiagnosticText', () => {
+  it('strips terminal controls, redacts secrets, and bounds diagnostic text', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = sanitizeTerminalDiagnosticText(
+      `a \u001b]0;owned\u0007${jwt} ${'x'.repeat(20)}`,
+      { maxChars: 20 },
+    );
+
+    expect(result).toBe('a ***REDACTED*** xx…');
+  });
+
+  it('uses the default terminal diagnostic bound', () => {
+    const result = sanitizeTerminalDiagnosticText(
+      'x'.repeat(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS + 10),
+    );
+
+    expect(result).toHaveLength(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS);
+    expect(result.endsWith('…')).toBe(true);
   });
 });
 

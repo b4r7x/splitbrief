@@ -1,6 +1,7 @@
 import { redactSecrets } from './redact.js';
 
 const ELLIPSIS = '\u2026';
+export const DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS = 4000;
 const ESC = '\\u001b';
 const BEL = '\\u0007';
 const STRING_TERMINATOR = '\\u009c';
@@ -30,6 +31,10 @@ const EMOJI_VARIATION_BASE_PATTERN = /\p{Extended_Pictographic}/u;
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
+export interface TerminalDiagnosticTextOptions {
+  maxChars?: number | undefined;
+}
+
 export function stripTerminalControls(text: string): string {
   return text
     .replace(OSC_SEQUENCE_PATTERN, '')
@@ -41,6 +46,16 @@ export function stripTerminalControls(text: string): string {
 
 export function sanitizeTerminalDisplayText(text: string): string {
   return redactSecrets(stripTerminalControls(text));
+}
+
+export function sanitizeTerminalDiagnosticText(
+  text: string,
+  opts: TerminalDiagnosticTextOptions = {},
+): string {
+  return truncateDiagnosticText(
+    sanitizeTerminalDisplayText(text),
+    opts.maxChars ?? DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
+  );
 }
 
 export function getTerminalCellWidth(text: string): number {
@@ -116,6 +131,13 @@ export function padTerminalDisplayTextEnd(text: string, width: number): string {
 
 function graphemes(text: string): string[] {
   return Array.from(graphemeSegmenter.segment(text), (part) => part.segment);
+}
+
+function truncateDiagnosticText(text: string, maxChars: number): string {
+  if (maxChars <= 0) return '';
+  if (text.length <= maxChars) return text;
+  if (maxChars <= ELLIPSIS.length) return ELLIPSIS.slice(0, maxChars);
+  return `${text.slice(0, maxChars - ELLIPSIS.length)}${ELLIPSIS}`;
 }
 
 function takeTrailingCells(text: string, maxCells: number): string {

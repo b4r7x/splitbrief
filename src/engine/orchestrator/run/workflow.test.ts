@@ -26,10 +26,12 @@ import {
   readActive,
   writeActive,
 } from '../../../core/sessions/lifecycle.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../types.js';
+import { error } from '../../../utils/error.js';
 
 let dirs: string[] = [];
 
@@ -379,6 +381,55 @@ describe('runWorkflow — smoke', () => {
     expect(readActive(projectDir)).toBe(sessionId);
   });
 
+  it('preserves persisted rewind state when an approval gate aborts the turn', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'approval-rewind-sid';
+    const controller = new AbortController();
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        approve: 'plan',
+        commitStrategy: 'none',
+        mode: 'standard',
+        persistTranscript: false,
+      },
+    });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn(async (type) => {
+        if (type !== 'plan') return { approved: true };
+        const persisted = loadState({ projectDir, sessionId });
+        expect(persisted?.phase).toBe('reviewing-plan');
+        if (!persisted) throw new Error('Expected persisted planning state');
+        saveState(
+          { projectDir, sessionId },
+          {
+            ...persisted,
+            rewindPending: { target: 'plan', comment: TRANSCRIPT_OMITTED_MESSAGE },
+          },
+        );
+        controller.abort(WORKFLOW_REWIND_ABORT_REASON);
+        throw error('operation-aborted', WORKFLOW_REWIND_ABORT_REASON);
+      }),
+    });
+
+    await runWorkflow({
+      feature: 'approval gate rewind',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner(),
+    });
+
+    expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({
+      target: 'plan',
+      comment: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
+  });
+
   it('clears the active session for a normal aborted run', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -493,6 +544,78 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001' });
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);
+  });
+
+  it('re-enters planning after task review requests revise-plan without notes', async () => {
+    const projectDir = setupProject();
+    const quickPlan = vi
+      .fn()
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '# First plan',
+        tasks: [
+          makeTask({
+            id: 'T001',
+            title: 'First task',
+            scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the first task ran'],
+            typeDefs: 'type FirstTask = { file: string }',
+          }),
+        ],
+        usage: null,
+      })
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '# Revised plan',
+        tasks: [
+          makeTask({
+            id: 'T002',
+            title: 'Revised task',
+            scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the revised task ran'],
+            typeDefs: 'type RevisedTask = { file: string }',
+          }),
+        ],
+        usage: null,
+      });
+    const onTaskReviewNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({ action: 'revise-plan' })
+      .mockResolvedValue({ action: 'continue' });
+    const { callbacks } = makeCallbacks({ onTaskReviewNeeded });
+    const events: EngineEvent[] = [];
+
+    await runWorkflow({
+      feature: 'commentless task review rewind',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+          taskReview: 'every',
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner({ quickPlan }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(onTaskReviewNeeded).toHaveBeenCalledTimes(2);
+    expect(onTaskReviewNeeded.mock.calls.map(([request]) => request.taskId)).toEqual([
+      'T001',
+      'T002',
+    ]);
+    expect(events.filter((e) => e.type === 'task_review_needed').map((e) => e.taskId)).toEqual([
+      'T001',
+      'T002',
+    ]);
   });
 
   it('forwards planner runner_call lifecycle events through the workflow EventBus', async () => {

@@ -90,7 +90,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run test-ci` (format → typecheck → lint → test → invariants) must pass before any PR.
+- **Zero failing gates.** `npm run test-ci` (format → typecheck → lint → test:coverage → invariants) must pass before any PR.
 
 ## Current TUI architecture
 

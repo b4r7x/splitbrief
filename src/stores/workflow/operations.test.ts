@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
+import {
+  protectEngineEventForConsumer,
+  TRANSCRIPT_OMITTED_MESSAGE,
+} from '../../engine/events/protection.js';
+import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
+import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js';
-import { operationsStore } from './operations.js';
+import { MAX_COMPLETED_OPERATIONS, operationsStore } from './operations.js';
 import { makePlannerStatus } from '#testing/helpers/events.js';
 
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
@@ -91,8 +97,11 @@ function runnerCompleted(
 }
 
 function runnerWarning(
-  overrides?: Partial<EngineEventOf<'runner_call_warning'>>,
+  overrides?: Partial<Omit<EngineEventOf<'runner_call_warning'>, 'warning'>> & {
+    warning?: RunnerCallWarningInput;
+  },
 ): EngineEventOf<'runner_call_warning'> {
+  const { warning, ...eventOverrides } = overrides ?? {};
   return {
     type: 'runner_call_warning',
     ts: 1_100,
@@ -102,11 +111,8 @@ function runnerWarning(
     role: 'implementer',
     backendKind: 'cli',
     sequence: 2,
-    warning: {
-      code: 'stderr',
-      message: 'warn',
-    },
-    ...overrides,
+    warning: normalizeRunnerCallWarning(warning ?? { code: 'stderr', message: 'warn' }),
+    ...eventOverrides,
   };
 }
 
@@ -262,8 +268,98 @@ describe('operationsStore', () => {
     );
 
     expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
-      'same warning',
-      'second warning',
+      expect.objectContaining({
+        count: 2,
+        latestMessage: 'same warning',
+        firstTs: 1_100,
+        lastTs: 1_150,
+      }),
+      expect.objectContaining({
+        count: 1,
+        latestMessage: 'second warning',
+      }),
+    ]);
+  });
+
+  it('groups transcript-off warnings by safe metadata without hidden message fingerprints', () => {
+    addEvent(runnerStarted());
+    const first = protectedRunnerWarning(
+      runnerWarning({
+        warning: {
+          code: 'provider_retry',
+          source: 'provider',
+          surface: 'status',
+          message: 'hidden retry detail one',
+        },
+      }),
+    );
+    const second = protectedRunnerWarning(
+      runnerWarning({
+        ts: 1_150,
+        sequence: 3,
+        warning: {
+          code: 'provider_retry',
+          source: 'provider',
+          surface: 'status',
+          message: 'hidden retry detail two',
+        },
+      }),
+    );
+
+    addEvent(first);
+    addEvent(second);
+
+    expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
+      expect.objectContaining({
+        code: 'provider_retry',
+        fingerprint: expect.stringMatching(/^rw-safe:/),
+        count: 2,
+        latestMessage: TRANSCRIPT_OMITTED_MESSAGE,
+      }),
+    ]);
+    expect(JSON.stringify(operationsStore.get().byCallId.get('call-1')?.warnings)).not.toContain(
+      'hidden retry detail',
+    );
+  });
+
+  it('does not merge different warnings that reuse a caller-supplied fingerprint', () => {
+    addEvent(runnerStarted());
+    addEvent(
+      runnerWarning({
+        warning: {
+          code: 'first_warning',
+          source: 'provider',
+          fingerprint: 'rw:shared',
+          message: 'first warning',
+        },
+      }),
+    );
+    addEvent(
+      runnerWarning({
+        ts: 1_150,
+        sequence: 3,
+        warning: {
+          code: 'second_warning',
+          source: 'provider',
+          fingerprint: 'rw:shared',
+          message: 'second warning',
+        },
+      }),
+    );
+
+    expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
+      expect.objectContaining({
+        code: 'first_warning',
+        fingerprint: 'rw:shared',
+        count: 1,
+        latestMessage: 'first warning',
+      }),
+      expect.objectContaining({
+        code: 'second_warning',
+        fingerprint: 'rw:shared',
+        count: 1,
+        latestMessage: 'second warning',
+      }),
     ]);
   });
 
@@ -276,6 +372,80 @@ describe('operationsStore', () => {
       status: 'cancelled',
       warnings: [],
       reason: 'user_cancelled',
+    });
+  });
+
+  it('caps completed operation history while preserving running calls', () => {
+    for (let index = 0; index < MAX_COMPLETED_OPERATIONS + 5; index += 1) {
+      const callId = `call-${index}`;
+      const startedAt = 1_000 + index * 10;
+      addEvent(runnerStarted({ ts: startedAt, callId, sequence: index * 2 + 1 }));
+      addEvent(
+        runnerCompleted({
+          ts: startedAt + 5,
+          callId,
+          sequence: index * 2 + 2,
+          startedAt,
+          endedAt: startedAt + 5,
+          durationMs: 5,
+        }),
+      );
+    }
+
+    addEvent(
+      runnerStarted({
+        ts: 5_000,
+        callId: 'still-running',
+        sequence: 10_000,
+      }),
+    );
+
+    const state = operationsStore.get();
+    expect(state.byCallId.size).toBe(MAX_COMPLETED_OPERATIONS + 1);
+    expect(state.byCallId.has('call-0')).toBe(false);
+    expect(state.byCallId.has(`call-${MAX_COMPLETED_OPERATIONS + 4}`)).toBe(true);
+    expect(state.active).toMatchObject({ callId: 'still-running', status: 'running' });
+    expect(state.last).toMatchObject({
+      callId: `call-${MAX_COMPLETED_OPERATIONS + 4}`,
+      status: 'completed',
+    });
+  });
+
+  it('keeps late terminal events idempotent for a recent cancelled call after capping', () => {
+    for (let index = 0; index < MAX_COMPLETED_OPERATIONS + 2; index += 1) {
+      const callId = `old-call-${index}`;
+      const startedAt = 1_000 + index * 10;
+      addEvent(runnerStarted({ ts: startedAt, callId, sequence: index * 2 + 1 }));
+      addEvent(
+        runnerCompleted({
+          ts: startedAt + 5,
+          callId,
+          sequence: index * 2 + 2,
+          startedAt,
+          endedAt: startedAt + 5,
+          durationMs: 5,
+        }),
+      );
+    }
+    addEvent(runnerStarted({ ts: 5_000, callId: 'recent-call', sequence: 10_001 }));
+    markCancellationRequested({ ts: 5_100 });
+
+    addEvent(
+      runnerAborted({
+        ts: 5_200,
+        callId: 'recent-call',
+        sequence: 10_002,
+        startedAt: 5_000,
+        endedAt: 5_200,
+        durationMs: 200,
+      }),
+    );
+
+    expect(operationsStore.get().byCallId.get('recent-call')).toMatchObject({
+      callId: 'recent-call',
+      status: 'cancelled',
+      endedAt: 5_100,
+      durationMs: 100,
     });
   });
 
@@ -326,9 +496,27 @@ describe('operationsStore', () => {
       label: 'implementer implementing (codex sk-***REDACTED*** xhigh sk-ant-***REDACTED***)',
       runnerName: 'codex sk-***REDACTED***',
       model: 'xhigh sk-ant-***REDACTED***',
-      warnings: ['warnred token sk-or-***REDACTED***'],
+      warnings: [
+        expect.objectContaining({
+          latestMessage: 'warnred token sk-or-***REDACTED***',
+          count: 1,
+        }),
+      ],
       reason: 'cancellednow token sk-***REDACTED***',
     });
     expect(JSON.stringify(operation)).not.toContain('abcdefghijklmnopqrst');
   });
 });
+
+function protectedRunnerWarning(
+  event: EngineEventOf<'runner_call_warning'>,
+): EngineEventOf<'runner_call_warning'> {
+  const protectedEvent = protectEngineEventForConsumer(event, {
+    context: 'ipc',
+    persistTranscript: false,
+  });
+  if (protectedEvent?.type !== 'runner_call_warning') {
+    throw new Error('Expected protected runner_call_warning event');
+  }
+  return protectedEvent;
+}

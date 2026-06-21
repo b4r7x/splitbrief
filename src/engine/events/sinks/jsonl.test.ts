@@ -7,7 +7,7 @@ import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
-import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../calls/consumer-policy.js';
+import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/consumer-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
 
 describe('jsonlSink', () => {
@@ -193,8 +193,8 @@ describe('jsonlSink', () => {
       activityId: 'call-1:tool:tool-1',
       stage: 'completed',
       kind: 'command',
-      label: 'running echo sk-***REDACTED***',
-      target: 'echo sk-***REDACTED***',
+      label: 'running echo private-runner-output-92741',
+      target: 'echo private-runner-output-92741',
       redacted: true,
     });
 
@@ -204,15 +204,17 @@ describe('jsonlSink', () => {
       type: 'runner_call_activity',
       data: {
         activityId: 'call-1:tool:tool-1',
-        label: TRANSCRIPT_OMITTED_MESSAGE,
-        target: TRANSCRIPT_OMITTED_MESSAGE,
+        label: 'running command',
         redacted: true,
       },
     });
+    expect(lines[0]?.['data']).not.toHaveProperty('target');
+    expect(lines[0]?.['data']).not.toHaveProperty('expandId');
     expect(JSON.stringify(lines)).not.toContain('abcdefghijklmnopqrst');
+    expect(JSON.stringify(lines)).not.toContain('private-runner-output-92741');
   });
 
-  it('omits runner error message content while preserving terminal metadata', () => {
+  it('omits runner error message and native session content while preserving terminal metadata', () => {
     const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({
       type: 'runner_call_error',
@@ -229,7 +231,7 @@ describe('jsonlSink', () => {
       endedAt: 120,
       durationMs: 20,
       usage: { inputTokens: 3, outputTokens: 4 },
-      nativeSessionId: 'native-1',
+      nativeSessionId: 'native-secret-session-123',
     });
 
     const lines = readLog();
@@ -240,10 +242,11 @@ describe('jsonlSink', () => {
         partial: true,
         durationMs: 20,
         usage: { inputTokens: 3, outputTokens: 4 },
-        nativeSessionId: 'native-1',
+        nativeSessionId: null,
         error: { code: 'failed', message: TRANSCRIPT_OMITTED_MESSAGE },
       },
     });
+    expect(JSON.stringify(lines)).not.toContain('native-secret-session-123');
   });
 
   it('projects transcript-derived structured event fields before appending', () => {

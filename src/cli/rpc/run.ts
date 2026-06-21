@@ -8,7 +8,10 @@ import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { Planner } from '../../engine/planners/types.js';
 import type { Implementer } from '../../engine/implementers/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
-import { runWorkflow } from '../../engine/orchestrator/run/workflow.js';
+import {
+  runWorkflow,
+  WORKFLOW_REWIND_ABORT_REASON,
+} from '../../engine/orchestrator/run/workflow.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import { loadState } from '../../core/state/persistence.js';
@@ -24,8 +27,8 @@ import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { error } from '../../utils/error.js';
-import { resolveRunConfig } from '../build-overrides.js';
+import { error, matches } from '../../utils/error.js';
+import { resolveRunConfigWithBase } from '../build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from './gates.js';
 import { createCommandReader } from './reader.js';
@@ -78,6 +81,18 @@ function pendingGateType(
   return null;
 }
 
+function activeTurnGateError(reason: unknown): Error {
+  const reasonText = String(reason ?? 'aborted');
+  if (reasonText === WORKFLOW_REWIND_ABORT_REASON) {
+    return error('operation-aborted', WORKFLOW_REWIND_ABORT_REASON);
+  }
+  return rpcShutdownError.shuttingDown(reasonText);
+}
+
+function isWorkflowRewindAbortError(err: unknown): boolean {
+  return matches('operation-aborted')(err) && err.message === WORKFLOW_REWIND_ABORT_REASON;
+}
+
 export async function runRpc(options: RunRpcOptions): Promise<void> {
   const {
     feature,
@@ -92,7 +107,10 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     deps = {},
   } = options;
   installTerminalOutputErrorGuard();
-  let config = resolveRunConfig({ projectDir, opts, readiness });
+  const resolvedConfig = resolveRunConfigWithBase({ projectDir, opts, readiness });
+  let config = resolvedConfig.config;
+  let persistedConfig = resolvedConfig.persistedConfig;
+  let sessionApprovalEnabled = config.approval?.enabled !== false;
   let rpcClosed = false;
 
   const writer = createResponseWriter({
@@ -105,25 +123,38 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const approvalGate = createApprovalGate();
   const messageGate = createGate<string>();
   const recoveryGate = createGate<string>();
-  const abortController = new AbortController();
+  const transportController = new AbortController();
   const runWorkflowImpl = deps.runWorkflow ?? runWorkflow;
   let activeSessionId = currentSessionId(projectDir, sessionId);
   let currentPhase: Phase = savedState?.phase ?? 'idle';
   let queueHandler: QueueHandler | null = null;
   let clearQueueHandler: ClearQueueHandler | null = null;
   let abortTurnHandler: (() => void) | null = null;
+  let activeTurnController: AbortController | null = null;
 
   const shutdownRpc = (reason: string) => {
     if (rpcClosed) return;
     rpcClosed = true;
-    abortTurnHandler?.();
-    abortController.abort(rpcShutdownError.shuttingDown(reason));
+    abortActiveTurn(reason);
+    transportController.abort(rpcShutdownError.shuttingDown(reason));
     // biome-ignore-start lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
     approvalGate.reject(rpcShutdownError.shuttingDown(reason));
     messageGate.reject(rpcShutdownError.shuttingDown(reason));
     recoveryGate.reject(rpcShutdownError.shuttingDown(reason));
     // biome-ignore-end lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
   };
+
+  function abortActiveTurn(reason?: unknown): void {
+    abortTurnHandler?.();
+    const abortReason = reason ?? 'aborted';
+    activeTurnController?.abort(abortReason);
+    const gateError = activeTurnGateError(abortReason);
+    // biome-ignore-start lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
+    approvalGate.reject(gateError);
+    messageGate.reject(gateError);
+    recoveryGate.reject(gateError);
+    // biome-ignore-end lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
+  }
 
   bus.subscribe((event) => {
     if (!isInfrastructurePhaseEvent(event)) {
@@ -147,7 +178,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       queueDepth: pendingQueueDepth(state),
       queueReady: queueHandler !== null,
       pending: pendingGateType(approvalGate, messageGate, recoveryGate),
-      aborted: abortController.signal.aborted,
+      aborted: transportController.signal.aborted,
     });
   };
 
@@ -158,7 +189,10 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
   const receiveRecoveryAction = (action: string): boolean => {
     if (!recoveryGate.isPending()) {
-      writer.error(`No pending recovery prompt for action: ${action}`);
+      writer.error(`No pending recovery prompt for action: ${action}`, {
+        transcriptSensitive: true,
+        summary: 'Recovery command rejected.',
+      });
       return false;
     }
     const state = readCurrentState();
@@ -169,15 +203,24 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     }
     const parsed = RecoveryActionSchema.safeParse(action);
     if (!parsed.success) {
-      writer.error(`Invalid recovery action: ${action}`);
+      writer.error(`Invalid recovery action: ${action}`, {
+        transcriptSensitive: true,
+        summary: 'Recovery command rejected.',
+      });
       return false;
     }
     if (!issue.availableActions.includes(parsed.data)) {
-      writer.error(`Recovery action is not available for this issue: ${action}`);
+      writer.error(`Recovery action is not available for this issue: ${action}`, {
+        transcriptSensitive: true,
+        summary: 'Recovery command rejected.',
+      });
       return false;
     }
     if (!recoveryGate.resolve(action)) {
-      writer.error(`Recovery action already resolved: ${action}`);
+      writer.error(`Recovery action already resolved: ${action}`, {
+        transcriptSensitive: true,
+        summary: 'Recovery command rejected.',
+      });
       return false;
     }
     return true;
@@ -223,7 +266,10 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     const applyAction = async (action: string) => {
       const parsed = RecoveryActionSchema.safeParse(action);
       if (!parsed.success) {
-        writer.error(`Invalid recovery action: ${action}`);
+        writer.error(`Invalid recovery action: ${action}`, {
+          transcriptSensitive: true,
+          summary: 'Recovery command rejected.',
+        });
         return null;
       }
 
@@ -287,8 +333,16 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     publishRecoveryPrompted(bus, pending.issue);
     writer.status({ pending: 'recovery', issue: pending.issue });
 
-    while (!abortController.signal.aborted) {
-      const action = await waitForRecoveryAction();
+    while (!transportController.signal.aborted) {
+      let action: string;
+      try {
+        action = await waitForRecoveryAction();
+      } catch (err) {
+        if (isWorkflowRewindAbortError(err)) {
+          return { shouldRun: true, state: readCurrentState() ?? state };
+        }
+        throw err;
+      }
       const applied = await applyAction(action);
       if (!applied) continue;
       return applied;
@@ -301,18 +355,28 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     shutdownRpc(reason != null ? String(reason) : 'aborted');
   };
 
+  let rewindFeedback: string | undefined;
   const handleCommand = createCommandHandler({
     projectDir,
     getSessionId: () => activeSessionId,
     getState: readCurrentState,
     getConfig: () => config,
+    getPersistedConfig: () => persistedConfig,
     setConfig: (next) => {
       config = next;
+    },
+    setPersistedConfig: (next) => {
+      persistedConfig = next;
+    },
+    getApprovalEnabled: () => sessionApprovalEnabled,
+    setApprovalEnabled: (enabled) => {
+      sessionApprovalEnabled = enabled;
     },
     getPhase: () => currentPhase,
     getQueueHandler: () => queueHandler,
     getClearQueueHandler: () => clearQueueHandler,
     abort: triggerAbort,
+    abortTurn: abortActiveTurn,
     bus,
     approvalGate,
     messageGate,
@@ -320,12 +384,16 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     writeStatus,
     writer,
     pendingQueueDepth,
+    setRewindFeedback: (feedback) => {
+      rewindFeedback = feedback;
+    },
   });
 
   const reader = createCommandReader({
     stream: deps.input ?? process.stdin,
     onCommand: handleCommand,
-    onError: (message) => writer.error(message),
+    onError: (message) =>
+      writer.error(message, { transcriptSensitive: true, summary: 'Invalid RPC frame.' }),
     onClose: () => shutdownRpc('stdin closed unexpectedly'),
   });
 
@@ -333,7 +401,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     let stateForRun = savedState;
     let retryProfileOverride: string | undefined;
     let retryProfileOverrideTaskId: TaskId | undefined;
-    while (!abortController.signal.aborted) {
+    while (!transportController.signal.aborted) {
       if (stateForRun?.pendingRecovery) {
         const recovery = await requestRecoveryAction(stateForRun);
         if (!recovery.shouldRun) return;
@@ -351,11 +419,16 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       const latestState = readCurrentState();
       if (latestState) stateForRun = latestState;
 
+      const turnController = new AbortController();
+      activeTurnController = turnController;
+      const rewindFeedbackForRun = rewindFeedback;
+      rewindFeedback = undefined;
       await runWorkflowImpl({
         feature,
         plannerContext,
         projectDir,
         config,
+        getApprovalEnabled: () => sessionApprovalEnabled,
         eventBus: bus,
         allowHooks: opts.allowHooks ?? false,
         sinks: {
@@ -371,19 +444,21 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         },
         modelCache: modelCacheStore,
         drainPendingAttachments: () => attachmentsStore.drain(),
-        signal: abortController.signal,
+        signal: turnController.signal,
         callbacks,
         savedState: stateForRun,
         sessionId: activeSessionId,
         _planner: planner,
         _implementer: implementer,
+        ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
         ...(retryProfileOverride !== undefined && { retryProfileOverride }),
         ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       });
+      if (activeTurnController === turnController) activeTurnController = null;
       retryProfileOverride = undefined;
       retryProfileOverrideTaskId = undefined;
 
-      if (abortController.signal.aborted) return;
+      if (transportController.signal.aborted) return;
       const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
       const state = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
       if (!state?.pendingRecovery && !state?.rewindPending) return;

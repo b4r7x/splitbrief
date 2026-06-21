@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  DEFAULT_PROCESS_LINE_MAX_BYTES,
+  DEFAULT_PROCESS_STDERR_MAX_BYTES,
+} from '../../lib/process/spawn.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandBasedRunner } from './command-based.js';
 
@@ -114,6 +118,30 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stderr).toContain('error');
   });
 
+  it('returns bounded stderr on the non-timeout branch', async () => {
+    const result = await invokeCommandBasedRunner({
+      command: 'node',
+      args: [
+        '-e',
+        [
+          'process.stderr.write("stderr-head\\n");',
+          'process.stderr.write("x".repeat(2 * 1024 * 1024));',
+          'process.stderr.write("\\nstderr-tail\\n");',
+        ].join(''),
+      ],
+      prompt: '',
+      projectDir: process.cwd(),
+    });
+
+    expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThanOrEqual(
+      DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    );
+    expect(result.stderr).toContain('output truncated');
+    expect(result.stderr).toContain('stderr-tail');
+    expect(result.stderr).not.toContain('stderr-head');
+    expect(result.stderr).not.toContain('x'.repeat(1024 * 1024));
+  });
+
   it('records stderr activity on the timeout branch', async () => {
     const events: RunnerCallEvent[] = [];
     const result = await invokeCommandBasedRunner({
@@ -132,9 +160,7 @@ describe('invokeCommandBasedRunner', () => {
           event.type === 'call_stderr_delta' && event.text.includes('timeout-branch-progress'),
       ),
     ).toBe(true);
-    expect(result.callResult.warnings).toEqual([
-      { code: 'stderr', message: 'timeout-branch-progress' },
-    ]);
+    expect(result.callResult.warnings).toEqual([]);
   });
 
   it('returns stdout and stderr', async () => {
@@ -346,5 +372,31 @@ describe('invokeCommandBasedRunner', () => {
     ]);
     expect(events.some((event) => event.type === 'call_session_id')).toBe(true);
     expect(events.some((event) => event.type === 'call_tool_use_done')).toBe(true);
+  });
+
+  it('bounds timeout-branch live stdout lines before parsing', async () => {
+    const chunks: string[] = [];
+    const result = await invokeCommandBasedRunner({
+      command: 'node',
+      args: ['-e', `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`],
+      outputFormat: 'text',
+      timeout: 30_000,
+      prompt: '',
+      projectDir: process.cwd(),
+      onOutput: (chunk) => chunks.push(chunk),
+    });
+
+    expect(result.stdout).toBe('');
+    expect(chunks).toEqual([]);
+    expect(result.callResult).toMatchObject({
+      status: 'truncated',
+      error: { code: 'stdout_line_overflow' },
+    });
+    expect(result.callResult.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stdout_line_overflow',
+        message: expect.stringContaining('stdout line exceeded'),
+      }),
+    ]);
   });
 });

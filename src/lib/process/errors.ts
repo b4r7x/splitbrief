@@ -1,5 +1,5 @@
 import { error, matches } from '../../utils/error.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 
 export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
@@ -26,37 +26,53 @@ export interface ExitCodeErrorOptions {
 }
 
 export const processError = {
-  notFound: (command: string, message?: string) =>
-    error('command-not-found', message ?? `Command not found: ${command}`, { command, message }),
+  notFound: (command: string, message?: string) => {
+    const safeCommand = sanitizeTerminalDiagnosticText(command);
+    return error(
+      'command-not-found',
+      sanitizeTerminalDiagnosticText(message ?? `Command not found: ${safeCommand}`),
+      {
+        command: safeCommand,
+        message: message === undefined ? undefined : sanitizeTerminalDiagnosticText(message),
+      },
+    );
+  },
 
   timeout: (opts: TimeoutErrorOptions) => {
-    const subject = opts.label ?? opts.command;
+    const command = sanitizeTerminalDiagnosticText(opts.command);
+    const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
+    const subject = label ?? command;
     const seconds = Math.round(opts.timeoutMs / 1000);
     return error('command-timeout', `${subject} timed out after ${seconds}s`, {
-      command: opts.command,
-      label: opts.label,
+      command,
+      label,
       timeoutMs: opts.timeoutMs,
-      output: opts.output,
+      output: sanitizeTerminalDiagnosticText(opts.output),
     });
   },
 
   exitCode: (opts: ExitCodeErrorOptions) => {
-    const subject = opts.label ?? opts.command;
-    const detail = opts.stderr?.trim() || opts.detail?.trim();
-    const message = `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`;
-    return error('process-output', redactSecrets(message), {
-      command: opts.command,
-      label: opts.label,
+    const command = sanitizeTerminalDiagnosticText(opts.command);
+    const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
+    const subject = label ?? command;
+    const stderr = sanitizeTerminalDiagnosticText(opts.stderr ?? '');
+    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr ?? '');
+    const detail = stderr.trim() || sanitizeTerminalDiagnosticText(opts.detail ?? '').trim();
+    const message = sanitizeTerminalDiagnosticText(
+      `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`,
+    );
+    return error('process-output', message, {
+      command,
+      label,
       code: opts.code,
-      stderr: redactSecrets(opts.stderr ?? ''),
-      output: redactSecrets(opts.output ?? opts.detail ?? opts.stderr ?? ''),
+      stderr,
+      output,
     });
   },
 
   isNotFound: matches('command-not-found'),
   isTimeout: matches('command-timeout'),
-  isExitCode: (err: unknown): err is ProcessOutputError =>
-    err instanceof Error && (err as { kind?: unknown }).kind === 'process-output',
+  isExitCode: (err: unknown): err is ProcessOutputError => isProcessOutputError(err),
 } as const;
 
 export interface ProcessOutputErrorData {
@@ -71,3 +87,5 @@ export type ProcessOutputError = Error & {
   readonly kind: 'process-output';
   readonly data: ProcessOutputErrorData;
 };
+
+const isProcessOutputError = matches('process-output');

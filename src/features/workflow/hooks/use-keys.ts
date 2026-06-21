@@ -8,6 +8,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
+import { resolveScrollKey } from '../../../core/keybindings/scroll.js';
 import { findLatestExpandableActivityBatchKey } from '../conversation-rows/activity-batch-key.js';
 import {
   handleWorkflowCtrlChords,
@@ -52,16 +53,15 @@ function applyAction(action: WorkflowKeyAction) {
   }
 }
 
-function isConversationScrollKey(key: Key): boolean {
-  if (key.shift && (key.upArrow || key.downArrow)) return true;
-  if (key.pageUp || key.pageDown) return true;
-  return key.home || key.end;
+function isConversationScrollKey(input: string, key: Key): boolean {
+  return resolveScrollKey({ input, key, lineKeys: 'shifted' }) !== null;
 }
 
-function getReviewScrollAction(key: Key): WorkflowKeyAction {
+function getReviewScrollAction(input: string, key: Key): WorkflowKeyAction {
   const review = reviewStore.get();
   if (!review.filePath) return { type: 'none' };
   return handleReviewScroll({
+    input,
     key,
     reviewScrollOffset: review.scrollOffset,
     reviewLineCount: review.renderedLineCount,
@@ -69,12 +69,13 @@ function getReviewScrollAction(key: Key): WorkflowKeyAction {
   });
 }
 
-function getConversationScrollAction(key: Key): WorkflowKeyAction {
-  if (!isConversationScrollKey(key)) return { type: 'none' };
+function getConversationScrollAction(input: string, key: Key): WorkflowKeyAction {
+  if (!isConversationScrollKey(input, key)) return { type: 'none' };
 
   const { maxOffset, renderableCount, totalHeight, viewportHeight } =
     readConversationScrollSnapshot();
   return handleConversationScroll({
+    input,
     key,
     renderableCount,
     maxOffset,
@@ -83,7 +84,7 @@ function getConversationScrollAction(key: Key): WorkflowKeyAction {
   });
 }
 
-export function useWorkflowKeys(isActive: boolean) {
+export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
   const [overlay, { isSmall }] = useStores(overlayStore, terminalSizeStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
@@ -115,7 +116,7 @@ export function useWorkflowKeys(isActive: boolean) {
         }
       }
 
-      const reviewScroll = getReviewScrollAction(key);
+      const reviewScroll = getReviewScrollAction(input, key);
       if (reviewScroll.type !== 'none') {
         applyAction(reviewScroll);
         return;
@@ -128,7 +129,7 @@ export function useWorkflowKeys(isActive: boolean) {
         return;
       }
 
-      const scroll = getConversationScrollAction(key);
+      const scroll = getConversationScrollAction(input, key);
       if (scroll.type !== 'none') {
         applyAction(scroll);
         return;

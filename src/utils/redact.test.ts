@@ -19,6 +19,10 @@ describe('redactSecrets', () => {
     ['token: github_pat_ABCDEFGHIJKLMNOPQRSTUV22', 'token: github_pat_***REDACTED***'],
     ['aws_key: AKIAIOSFODNN7EXAMPLE', 'aws_key: AKIA***REDACTED***'],
     ['slack: xoxb-abcdefghijklmnop', 'slack: xoxb-***REDACTED***'],
+    [
+      'jwt: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      'jwt: ***REDACTED***',
+    ],
   ])('redacts known secret shapes', (input, expected) => {
     expect(redactSecrets(input)).toBe(expected);
   });
@@ -44,6 +48,14 @@ describe('redactSecrets', () => {
     const result = redactSecretsWithMetadata('password="hunter2"', { marker: '[REDACTED]' });
 
     expect(result).toEqual({ text: 'password="[REDACTED]"', redacted: true });
+  });
+
+  it('reports metadata for bare JWT-like tokens through the shared policy', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = redactSecretsWithMetadata(`token=${jwt}`, { marker: '[SECRET]' });
+
+    expect(result).toEqual({ text: 'token=[SECRET]', redacted: true });
   });
 
   it('redacts URL credentials and private keys through the shared policy', () => {

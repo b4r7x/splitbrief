@@ -13,10 +13,13 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import {
   createSessionAttemptCallContext,
   createSessionResumeState,
+  isSessionExpiredError,
   runWithResumeFallback,
+  sessionResumeMismatchError,
 } from '../session-expiry.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
+import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 
 export function createClaudeCodePlanner(opts: {
   model?: string | undefined;
@@ -47,20 +50,40 @@ export function createClaudeCodePlanner(opts: {
     const effectiveSignal = composeAbortSignal(signal, timeout);
     return runWithResumeFallback(
       session,
-      (resumeId, attempt) =>
-        runClaudePlannerStream({
-          prompt,
-          projectDir,
-          sessionId: resumeId ?? null,
-          onOutput: callbacks.onOutput,
-          onQuestion: callbacks.onQuestion,
-          onCallEvent: callbacks.onCallEvent,
-          callContext: createSessionAttemptCallContext(callContext, attempt),
-          model: resolvedModel,
-          ...(effort !== undefined && { effort }),
-          ...(images && images.length > 0 ? { images } : {}),
-          ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
-        }),
+      async (resumeId, attempt) => {
+        const callbackBuffer =
+          resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
+        const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
+        try {
+          const result = await runClaudePlannerStream({
+            prompt,
+            projectDir,
+            sessionId: resumeId ?? null,
+            onOutput: attemptCallbacks.onOutput,
+            onSessionId: attemptCallbacks.onSessionId,
+            onQuestion: attemptCallbacks.onQuestion,
+            onCallEvent: attemptCallbacks.onCallEvent,
+            callContext: createSessionAttemptCallContext(callContext, attempt),
+            model: resolvedModel,
+            ...(effort !== undefined && { effort }),
+            ...(images && images.length > 0 ? { images } : {}),
+            ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
+          });
+          const returnedSessionId = result.sessionId ?? result.nativeSessionId;
+          if (
+            resumeId !== undefined &&
+            returnedSessionId !== null &&
+            returnedSessionId !== resumeId
+          ) {
+            throw sessionResumeMismatchError(resumeId, returnedSessionId);
+          }
+          callbackBuffer?.flush();
+          return result;
+        } catch (err) {
+          if (resumeId === undefined || !isSessionExpiredError(err)) callbackBuffer?.flush();
+          throw err;
+        }
+      },
       () => {
         if (priorId) callbacks.onSessionExpired?.(priorId);
       },
@@ -81,9 +104,6 @@ export function createClaudeCodePlanner(opts: {
       );
       const nextSessionId = result.sessionId ?? result.nativeSessionId;
       session.capture(nextSessionId);
-      if (nextSessionId) {
-        callbacks.onSessionId?.(nextSessionId);
-      }
       return result;
     },
 
@@ -110,21 +130,35 @@ export function createClaudeCodePlanner(opts: {
       const sessionId = session.getResumeId();
       if (!sessionId) return null;
       const effectiveSignal = composeAbortSignal(injection.signal, timeout);
-      const result = await runClaudePlannerStream({
-        prompt: injection.text,
-        projectDir: injection.projectDir,
-        sessionId,
+      const callbackBuffer = createRunnerAttemptCallbackBuffer({
         onOutput: () => {},
-        ...(injection.callbacks?.onCallEvent !== undefined && {
-          onCallEvent: injection.callbacks.onCallEvent,
-        }),
-        ...(injection.callContext !== undefined && { callContext: injection.callContext }),
-        model: resolvedModel,
-        ...(effort !== undefined && { effort }),
-        ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
+        onCallEvent: injection.callbacks?.onCallEvent,
       });
-      session.capture(result.sessionId ?? result.nativeSessionId);
-      return toTokenDelta(result.usage);
+      let flushCallbacks = true;
+      try {
+        const result = await runClaudePlannerStream({
+          prompt: injection.text,
+          projectDir: injection.projectDir,
+          sessionId,
+          onOutput: callbackBuffer.callbacks.onOutput,
+          onCallEvent: callbackBuffer.callbacks.onCallEvent,
+          ...(injection.callContext !== undefined && { callContext: injection.callContext }),
+          model: resolvedModel,
+          ...(effort !== undefined && { effort }),
+          ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
+        });
+        const returnedSessionId = result.sessionId ?? result.nativeSessionId;
+        if (returnedSessionId !== null && returnedSessionId !== sessionId) {
+          flushCallbacks = false;
+          throw sessionResumeMismatchError(sessionId, returnedSessionId);
+        }
+        session.capture(returnedSessionId);
+        callbackBuffer.flush();
+        return toTokenDelta(result.usage);
+      } catch (err) {
+        if (flushCallbacks && !isSessionExpiredError(err)) callbackBuffer.flush();
+        throw err;
+      }
     },
 
     capabilities: CONVERSATIONAL_CAPS,

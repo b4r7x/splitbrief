@@ -8,21 +8,22 @@ import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { TieredApprovalRequest } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+import type { IpcServer } from '../../engine/ipc/server.js';
+import { WorkflowScreen } from './screen.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from './prompt-grace.js';
 
-const runWorkflow = vi.hoisted(() => vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>());
+const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
+const workflowDeps = { runWorkflow };
 
-vi.mock('../../engine/orchestrator/run/workflow.js', () => ({
-  runWorkflow,
-  WORKFLOW_REWIND_ABORT_REASON: 'workflow-rewind',
-}));
-
-const { WorkflowScreen } = await import('./screen.js');
+const { createEventBus } = await import('../../engine/events/bus.js');
+const { startIpcServer } = await import('../../engine/ipc/server.js');
 const { configStore } = await import('../../stores/project/config.js');
 const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
 const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
+const { eventsStore } = await import('../../stores/workflow/events.js');
 const { planEditorStore } = await import('../../stores/workflow/plan-editor.js');
 const { openApprovalPrompt } = await import('../../stores/approval-prompt/prompt.js');
 const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prompt.js');
@@ -31,6 +32,8 @@ const { saveState } = await import('../../core/state/persistence.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const ENTER = '\r';
+const ipcServers: IpcServer[] = [];
+const ipcTempDirs: string[] = [];
 
 function readyReadiness(projectDir: string): ReadinessReport {
   return {
@@ -62,7 +65,9 @@ function mountWorkflow(rows = 60) {
     feature: 'screen test feature',
     readiness: readyReadiness(projectDir),
   });
-  return renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+  return renderFeature(
+    <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+  );
 }
 
 function workflowStateInResearching(feature: string) {
@@ -86,7 +91,11 @@ describe('WorkflowScreen key arbitration', () => {
     runWorkflow.mockReturnValue(new Promise<never>(() => {}));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const server of ipcServers.splice(0)) {
+      await server.close().catch(() => undefined);
+    }
+    for (const dir of ipcTempDirs.splice(0)) cleanupTempDir(dir);
     resetAllStores();
     routerStore.init({ screen: 'home' });
   });
@@ -111,6 +120,94 @@ describe('WorkflowScreen key arbitration', () => {
     // The composer's input row never received the 's' (it stayed on the placeholder hint).
     expect(frame).not.toMatch(/>\s+s(\s|$)/m);
 
+    ui.unmount();
+  });
+
+  it('protects attached IPC events before storing them in workflow stores', async () => {
+    const projectDir = createTempDir('workflow-screen-attached');
+    ipcTempDirs.push(projectDir);
+    const bus = createEventBus();
+    const server = await startIpcServer({
+      sessionId: 'attached-session',
+      sessionDir: projectDir,
+      startedAt: 1_000,
+      mode: 'standard',
+      feature: 'attached feature',
+      authToken: 'token',
+      bus,
+      onUserInput: vi.fn(),
+      persistTranscript: false,
+    });
+    ipcServers.push(server);
+    let attached = false;
+    const unsubscribeAttached = bus.subscribe((event) => {
+      if (event.type === 'ipc_client_attached') attached = true;
+    });
+    const sentinel = 'attached-ipc-raw-secret-24561';
+    configStore.__testReset({
+      config: makeConfig({ workflow: { persistTranscript: false } }),
+      projectDir,
+    });
+    terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+    routerStore.navigate({
+      to: 'workflow',
+      feature: 'attached feature',
+      sessionId: 'attached-session',
+      attach: { sockPath: server.sockPath, authToken: 'token' },
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(attached).toBe(true);
+    });
+    unsubscribeAttached();
+
+    bus.publish({
+      type: 'runner_call_activity',
+      ts: 1,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 1,
+      activityId: 'activity-1',
+      stage: 'updated',
+      kind: 'command',
+      label: `running ${sentinel}`,
+      target: `target ${sentinel}`,
+      textPartial: `text ${sentinel}`,
+      diagnosticPartial: `diagnostic ${sentinel}`,
+      rawAvailable: true,
+      expandId: `expand-${sentinel}`,
+      redacted: false,
+    });
+    await vi.waitFor(() => {
+      expect(eventsStore.get().events.some((event) => event.type === 'runner_call_activity')).toBe(
+        true,
+      );
+    });
+
+    const event = eventsStore
+      .get()
+      .events.find((entry): entry is Extract<EngineEvent, { type: 'runner_call_activity' }> => {
+        return entry.type === 'runner_call_activity';
+      });
+    expect(event).toMatchObject({
+      type: 'runner_call_activity',
+      label: 'running command',
+    });
+    expect(event).not.toHaveProperty('rawAvailable');
+    expect(event).not.toHaveProperty('target');
+    expect(event).not.toHaveProperty('textPartial');
+    expect(event).not.toHaveProperty('diagnosticPartial');
+    expect(event).not.toHaveProperty('expandId');
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(`target ${sentinel}`);
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(`text ${sentinel}`);
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(`diagnostic ${sentinel}`);
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(`expand-${sentinel}`);
+    expect(JSON.stringify(eventsStore.get().events)).not.toContain(sentinel);
     ui.unmount();
   });
 
@@ -227,7 +324,9 @@ describe('WorkflowScreen key arbitration', () => {
         readiness: readyReadiness(projectDir),
       });
 
-      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
 
       await vi.waitFor(() => {
         expect(routerStore.get().screen).toBe('summary');
@@ -270,7 +369,9 @@ describe('WorkflowScreen key arbitration', () => {
         readiness: readyReadiness(projectDir),
       });
 
-      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
 
       await vi.waitFor(() => {
         expect(routerStore.get().screen).toBe('summary');
@@ -304,7 +405,9 @@ describe('WorkflowScreen key arbitration', () => {
         readiness: readyReadiness(projectDir),
       });
 
-      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 
@@ -344,7 +447,9 @@ describe('WorkflowScreen key arbitration', () => {
         readiness: readyReadiness(projectDir),
       });
 
-      const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 

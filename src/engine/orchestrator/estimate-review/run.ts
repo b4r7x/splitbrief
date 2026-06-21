@@ -202,7 +202,7 @@ export async function reviewPlannerEstimate(
     return { state: result.state, review: completedReview(decision) };
   } catch (err) {
     const message = labelError('Planner estimate review failed', err);
-    publishWarning({ bus: opts.bus, phase: opts.state.phase }, message);
+    publishWarning({ bus: opts.bus, phase: opts.state.phase, message: message });
     publishPlannerStatus(opts.bus, opts.state, 'done', {
       duration: Date.now() - start,
       summary: 'Planner estimate review unavailable',

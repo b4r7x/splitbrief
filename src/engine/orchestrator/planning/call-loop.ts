@@ -73,7 +73,8 @@ export async function runPlannerCallInContinuationLoop(
             recordOutput(text);
             textHandler(text);
           },
-          onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase }, message),
+          onWarning: (message) =>
+            publishWarning({ bus: wctx.bus, phase: state.phase, message: message }),
           onSessionId: (id) => {
             state = transitionAndSave({ projectDir, sessionId }, state, {
               type: 'SET_PLANNER_SESSION_ID',

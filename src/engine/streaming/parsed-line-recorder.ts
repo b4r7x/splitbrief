@@ -1,6 +1,11 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RunnerCallRecorder } from '../calls/recorder.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
+import {
+  createRunnerCallDeltaLimiter,
+  finishRunnerCallOutputLimit,
+  type RunnerCallDeltaLimitResult,
+} from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
 import { accumulateUsage } from './token-usage.js';
 
@@ -20,6 +25,66 @@ export function createParsedLineRecorder(opts: {
   let usage: TokenDelta | null = null;
   let sessionId: string | null = null;
   let activeToolUse: { id: string | null; name: string } | null = null;
+  const textLimiter = createRunnerCallDeltaLimiter({
+    code: 'runner_output_text_limit',
+    label: 'runner output text',
+  });
+
+  function acceptTextDelta(textDelta: string): RunnerCallDeltaLimitResult {
+    return textLimiter.accept(textDelta);
+  }
+
+  function finishLimitIfNeeded(result: RunnerCallDeltaLimitResult): boolean {
+    if (result.limit === null) return false;
+    finishRunnerCallOutputLimit(opts.recorder, result.limit, {
+      usage,
+      nativeSessionId: sessionId,
+    });
+    return true;
+  }
+
+  function applyResultText(resultText: string): void {
+    const reconciliation = reconcileFinalText(text, resultText);
+    if (reconciliation.kind === 'none') return;
+
+    const accepted = acceptTextDelta(reconciliation.text);
+    if (reconciliation.kind === 'full') {
+      text = accepted.text;
+      if (accepted.text.length > 0) {
+        opts.onText?.(accepted.text);
+        opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+      }
+      finishLimitIfNeeded(accepted);
+      return;
+    }
+    if (reconciliation.kind === 'suffix') {
+      text += accepted.text;
+      if (accepted.text.length > 0) {
+        opts.onText?.(accepted.text);
+        opts.recorder.text({ channel: 'assistant', text: accepted.text });
+      }
+      finishLimitIfNeeded(accepted);
+      return;
+    }
+
+    text = accepted.text;
+    if (accepted.text.length > 0) {
+      opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
+    }
+    finishLimitIfNeeded(accepted);
+  }
+
+  function applyDeltaText(channel: ParsedTextChannel, textDelta: string): void {
+    const accepted = acceptTextDelta(textDelta);
+    if (accepted.text.length > 0) {
+      if (contributesToRunnerResult(channel)) {
+        text += accepted.text;
+        opts.onText?.(accepted.text);
+      }
+      opts.recorder.text({ channel, text: accepted.text, semantics: 'delta' });
+    }
+    finishLimitIfNeeded(accepted);
+  }
 
   return {
     get text() {
@@ -35,23 +100,9 @@ export function createParsedLineRecorder(opts: {
       if (parsed.text) {
         const channel = parsed.channel ?? inferredTextChannel(parsed);
         if (channel === 'result') {
-          const reconciliation = reconcileFinalText(text, parsed.text);
-          text = parsed.text;
-          if (reconciliation.kind === 'full') {
-            opts.onText?.(reconciliation.text);
-            opts.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
-          } else if (reconciliation.kind === 'suffix') {
-            opts.onText?.(reconciliation.text);
-            opts.recorder.text({ channel: 'assistant', text: reconciliation.text });
-          } else if (reconciliation.kind === 'replace') {
-            opts.recorder.text({ channel: 'result', text: parsed.text, semantics: 'final' });
-          }
+          applyResultText(parsed.text);
         } else {
-          if (contributesToRunnerResult(channel)) {
-            text += parsed.text;
-            opts.onText?.(parsed.text);
-          }
-          opts.recorder.text({ channel, text: parsed.text, semantics: 'delta' });
+          applyDeltaText(channel, parsed.text);
         }
       }
 

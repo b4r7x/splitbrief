@@ -6,7 +6,7 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import {
   featureForTranscriptPolicy,
   generateSessionId,
@@ -195,6 +195,16 @@ function shouldPreserveActiveSession(
   );
 }
 
+function loadPersistedRewindState(opts: {
+  projectDir: string;
+  sessionId: string;
+  signal: AbortSignal | undefined;
+}): WorkflowState | null {
+  if (opts.signal?.reason !== WORKFLOW_REWIND_ABORT_REASON) return null;
+  const persisted = loadState({ projectDir: opts.projectDir, sessionId: opts.sessionId });
+  return persisted?.rewindPending !== undefined ? persisted : null;
+}
+
 // Every run (TUI, headless, RPC) writes a liveness lockfile + heartbeat so checkServerStatus
 // can see an in-flight interactive run and refuse a concurrent resume/continue. The detached
 // server already owns an authenticated lockfile for the session; do not clobber it.
@@ -283,6 +293,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let workflowBus: WorkflowContext['bus'] | undefined;
   let workflowPhase: WorkflowState['phase'] | undefined;
   let cancellationPublished = false;
+  let transientRewindFeedback = opts.rewindFeedback;
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
     const bus = wctx?.bus ?? workflowBus;
@@ -342,6 +353,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               bus: init.wctx.bus,
               getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
             }),
+            setRewindFeedback: (feedback) => {
+              transientRewindFeedback = feedback;
+            },
           };
           trackedState = init.state;
           const phaseTimings: Record<string, number> = {};
@@ -360,44 +374,68 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
 
-          const planning = await runPlanningPhases({
-            wctx,
-            state: init.state,
-            savedState,
-            selectedSkills,
-            phaseTimings,
-            startTime,
-            setTrackedState: (s) => {
-              trackedState = s;
-            },
-          });
-          if (planning.cancelled) {
-            if (planning.failed) sessionStatus = 'failed';
-            result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+          let stateForPlanning = init.state;
+          let savedStateForPlanning = savedState;
+          while (true) {
+            const feedbackForPlanning = transientRewindFeedback;
+            transientRewindFeedback = undefined;
+            const planning = await runPlanningPhases({
+              wctx,
+              state: stateForPlanning,
+              savedState: savedStateForPlanning,
+              selectedSkills,
+              phaseTimings,
+              startTime,
+              setTrackedState: (s) => {
+                trackedState = s;
+              },
+              ...(feedbackForPlanning !== undefined && { rewindFeedback: feedbackForPlanning }),
+            });
+            if (planning.cancelled) {
+              if (planning.failed) sessionStatus = 'failed';
+              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+              return;
+            }
+
+            if (opts.signal?.aborted) {
+              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+              return;
+            }
+
+            const taskRun = await runTasksAndReview({
+              wctx,
+              state: planning.state,
+              summaryBase,
+              phaseTimings,
+              setTrackedState: (s) => {
+                trackedState = s;
+              },
+              setCurrentTask: (t) => {
+                currentTask = t;
+              },
+            });
+            result = taskRun.summary;
+            sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
+            if (
+              !taskRun.completed &&
+              taskRun.state.rewindPending !== undefined &&
+              !opts.signal?.aborted
+            ) {
+              stateForPlanning = taskRun.state;
+              savedStateForPlanning = taskRun.state;
+              continue;
+            }
             return;
           }
-
-          if (opts.signal?.aborted) {
-            result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
-            return;
-          }
-
-          const taskRun = await runTasksAndReview({
-            wctx,
-            state: planning.state,
-            summaryBase,
-            phaseTimings,
-            setTrackedState: (s) => {
-              trackedState = s;
-            },
-            setCurrentTask: (t) => {
-              currentTask = t;
-            },
-          });
-          result = taskRun.summary;
-          sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
         } catch (err) {
-          if (trackedState) {
+          const persistedRewindState = loadPersistedRewindState({
+            projectDir,
+            sessionId,
+            signal: opts.signal,
+          });
+          if (persistedRewindState) {
+            trackedState = persistedRewindState;
+          } else if (trackedState) {
             try {
               saveState({ projectDir, sessionId }, trackedState);
             } catch (saveErr) {
@@ -414,7 +452,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             sessionStatus = 'interrupted';
           } else {
             if (wctx && trackedState)
-              publishError({ bus: wctx.bus, phase: trackedState.phase }, toErrorMessage(err));
+              publishError({
+                bus: wctx.bus,
+                phase: trackedState.phase,
+                message: toErrorMessage(err),
+              });
             sessionStatus = 'failed';
           }
           result = buildSummary({

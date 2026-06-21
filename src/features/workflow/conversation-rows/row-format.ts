@@ -1,4 +1,4 @@
-import { sanitizeWorkflowDisplayText } from '../display/safe-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import type {
   ConversationRow,
@@ -31,8 +31,12 @@ export function rowText(rowValue: ConversationRow): string {
   return rowValue.segments.map((segment) => segment.text).join('');
 }
 
-function wrapText(text: string, width: number): string[] {
+export function wrappedRowTexts(text: string, width: number): string[] {
   return wrapHard(sanitizeRowDisplayText(text), Math.max(MIN_ROW_WIDTH, width)).split('\n');
+}
+
+export function countWrappedRowTexts(text: string, width: number): number {
+  return wrappedRowTexts(text, width).length;
 }
 
 function segmentedRow(
@@ -51,10 +55,10 @@ function segmentedRow(
 }
 
 export function sanitizeRowDisplayText(text: string): string {
-  if (!text.includes('\n')) return sanitizeWorkflowDisplayText(text);
+  if (!text.includes('\n')) return sanitizeTerminalDisplayText(text);
 
   const placeholder = unusedLineBreakPlaceholder(text);
-  return sanitizeWorkflowDisplayText(text.replaceAll('\n', placeholder)).replaceAll(
+  return sanitizeTerminalDisplayText(text.replaceAll('\n', placeholder)).replaceAll(
     placeholder,
     '\n',
   );
@@ -70,30 +74,6 @@ function unusedLineBreakPlaceholder(text: string): string {
   return placeholder;
 }
 
-export interface EventRowsInput {
-  keyPrefix: string;
-  text: string;
-  width: number;
-  tone: ConversationRowTone;
-  bold?: boolean;
-  kind?: ConversationRowKind;
-}
-
-export function eventWrappedRows(input: EventRowsInput): ConversationRow[] {
-  const { keyPrefix, text, width, tone, bold = false, kind = 'message' } = input;
-  const rows: ConversationRow[] = [];
-  const cleanText = sanitizeRowDisplayText(text);
-
-  for (const rawLine of cleanText.split('\n')) {
-    const wrapped = wrapText(rawLine, width);
-    for (const wrappedLine of wrapped) {
-      rows.push(row({ key: `${keyPrefix}-${rows.length}`, text: wrappedLine, tone, bold, kind }));
-    }
-  }
-
-  return rows;
-}
-
 export interface CardRowsInput {
   keyPrefix: string;
   label: string;
@@ -104,14 +84,23 @@ export interface CardRowsInput {
   kind?: ConversationRowKind;
 }
 
-export function cardRows(input: CardRowsInput): ConversationRow[] {
+export interface CardRowsWindowInput extends CardRowsInput {
+  windowStart: number;
+  windowEnd: number;
+}
+
+export function cardRowsWindow(input: CardRowsWindowInput): ConversationRow[] {
   const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim', kind = 'card' } = input;
   const cleanLabel = sanitizeRowDisplayText(label);
   const cleanValue = value === undefined ? undefined : sanitizeRowDisplayText(value);
   const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
   const text = `${labelText}${cleanValue ?? ''}`;
-  const wrapped = wrapText(text, width);
-  return wrapped.map((line, index) => {
+  const wrapped = wrappedRowTexts(text, width);
+  const start = Math.max(0, input.windowStart);
+  const end = Math.min(wrapped.length, Math.max(start, input.windowEnd));
+
+  return wrapped.slice(start, end).map((line, offset) => {
+    const index = start + offset;
     if (index > 0 || !cleanValue) {
       return row({
         key: `${keyPrefix}-${index}`,
@@ -135,7 +124,7 @@ export function wrapRows(rows: ConversationRow[], width: number): ConversationRo
   const next: ConversationRow[] = [];
   for (const sourceRow of rows) {
     const text = rowText(sourceRow);
-    const wrapped = wrapText(text, width);
+    const wrapped = wrappedRowTexts(text, width);
     for (const line of wrapped) {
       next.push(
         row({

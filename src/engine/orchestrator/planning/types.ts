@@ -15,6 +15,7 @@ export type PlanningPhaseOptions = {
   feature: string;
   selectedSkills?: SkillMeta[] | undefined;
   rewindPending?: { target: 'spec' | 'plan'; comment?: string | undefined } | undefined;
+  rewindFeedback?: string | undefined;
   codebaseContext?: string | undefined;
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
