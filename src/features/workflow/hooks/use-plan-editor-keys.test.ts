@@ -31,6 +31,24 @@ const noKey: Key = {
   numLock: false,
 };
 
+const EMOJI = String.fromCodePoint(0x1f600);
+const CTRL_SLASH_LEGACY = String.fromCharCode(0x1f);
+
+function hasLoneSurrogate(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      const prev = value.charCodeAt(i - 1);
+      if (!(prev >= 0xd800 && prev <= 0xdbff)) return true;
+    }
+  }
+  return false;
+}
+
 describe('handlePlanEditorInput', () => {
   beforeEach(() => planEditorStore.__testReset());
 
@@ -88,10 +106,17 @@ describe('handlePlanEditorInput', () => {
     { label: 'return', input: '', key: { return: true }, expected: { type: 'toggle-expand' } },
     { label: '?', input: '?', expected: { type: 'open-help' } },
     { label: 'Y', input: 'Y', expected: { type: 'save' } },
+    { label: 'N', input: 'N', expected: { type: 'reject' } },
     { label: 'q', input: 'q', expected: { type: 'discard' } },
     { label: 'lowercase y', input: 'y', expected: { type: 'none' } },
+    { label: 'lowercase r', input: 'r', expected: { type: 'none' } },
+    { label: 'lowercase e', input: 'e', expected: { type: 'none' } },
     { label: 'x flags task', input: 'x', expected: { type: 'toggle-flag' } },
-    { label: 'R regenerates flagged', input: 'R', expected: { type: 'regenerate-flagged' } },
+    {
+      label: 'R prompts for flagged regen reason',
+      input: 'R',
+      expected: { type: 'prompt-regenerate-flagged' },
+    },
     { label: 'unrecognized input', input: 'z', expected: { type: 'none' } },
     { label: 'empty input', input: '', expected: { type: 'none' } },
   ])('$label maps to $expected.type', ({ input, key, expected }) => {
@@ -108,6 +133,9 @@ describe('handlePlanEditorInput', () => {
     { label: 'k', input: 'k', expected: { type: 'move-section-cursor', direction: 'up' } },
     { label: 'e', input: 'e', expected: { type: 'start-section-edit' } },
     { label: 'c', input: 'c', expected: { type: 'copy-selection' } },
+    { label: 'Y', input: 'Y', expected: { type: 'save' } },
+    { label: 'N', input: 'N', expected: { type: 'reject' } },
+    { label: 'lowercase y', input: 'y', expected: { type: 'none' } },
     { label: 'esc', input: '', key: { escape: true }, expected: { type: 'leave-section-list' } },
   ])('section-list $label maps to $expected.type', ({ input, key, expected }) => {
     planEditorStore.__testReset({ focus: 'section-list' });
@@ -141,6 +169,91 @@ describe('handlePlanEditorInput', () => {
     });
 
     expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
+  });
+
+  it.each<{
+    label: string;
+    input: string;
+    key?: Partial<Key>;
+    reason?: string;
+    expected: PlanEditorAction;
+  }>([
+    {
+      label: 'typing appends reason text',
+      input: 'a',
+      reason: 'split ',
+      expected: { type: 'update-regenerate-reason', value: 'split a' },
+    },
+    {
+      label: 'backspace removes one character',
+      input: '',
+      key: { backspace: true },
+      reason: 'split',
+      expected: { type: 'update-regenerate-reason', value: 'spli' },
+    },
+    {
+      label: 'enter submits regeneration',
+      input: '',
+      key: { return: true },
+      expected: { type: 'submit-regenerate-flagged' },
+    },
+    {
+      label: 'escape cancels reason prompt',
+      input: '',
+      key: { escape: true },
+      expected: { type: 'cancel-regenerate-reason' },
+    },
+  ])('regen-reason $label', ({ input, key, reason, expected }) => {
+    planEditorStore.__testReset({
+      focus: 'regen-reason',
+      flaggedIds: new Set(['T001']),
+      regenReason: reason ?? '',
+    });
+
+    expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
+  });
+
+  it('regen-reason backspace removes an emoji without leaving a surrogate', () => {
+    planEditorStore.__testReset({
+      focus: 'regen-reason',
+      flaggedIds: new Set(['T001']),
+      regenReason: `split ${EMOJI}`,
+    });
+
+    const action = handlePlanEditorInput('', { ...noKey, backspace: true });
+
+    expect(action).toEqual({ type: 'update-regenerate-reason', value: 'split ' });
+    if (action.type === 'update-regenerate-reason') {
+      expect(hasLoneSurrogate(action.value)).toBe(false);
+    }
+  });
+
+  it('regen-reason ignores C0 controls while preserving printable input', () => {
+    planEditorStore.__testReset({
+      focus: 'regen-reason',
+      flaggedIds: new Set(['T001']),
+      regenReason: 'split ',
+    });
+
+    expect(handlePlanEditorInput(CTRL_SLASH_LEGACY, noKey)).toEqual({ type: 'none' });
+    expect(handlePlanEditorInput(`a${CTRL_SLASH_LEGACY}b`, noKey)).toEqual({
+      type: 'update-regenerate-reason',
+      value: 'split ab',
+    });
+  });
+
+  it('regen-reason still caps appended text at 160 code units', () => {
+    const reason = 'x'.repeat(159);
+    planEditorStore.__testReset({
+      focus: 'regen-reason',
+      flaggedIds: new Set(['T001']),
+      regenReason: reason,
+    });
+
+    expect(handlePlanEditorInput('yz', noKey)).toEqual({
+      type: 'update-regenerate-reason',
+      value: `${reason}y`,
+    });
   });
 });
 
@@ -201,5 +314,28 @@ describe('applyPlanEditorAction', () => {
       dirty: true,
     });
     expect(planEditorStore.get().tasks[0]?.title).toBe('Edited title');
+  });
+
+  it('opens and cancels the targeted regeneration reason prompt through the store', () => {
+    const task = makeTask({ id: 'T001' });
+    planEditorStore.initEditor([task]);
+    planEditorStore.toggleFlag(task.id);
+
+    applyPlanEditorAction({ type: 'prompt-regenerate-flagged' }, () => Promise.resolve());
+    applyPlanEditorAction({ type: 'update-regenerate-reason', value: 'split by file' }, () =>
+      Promise.resolve(),
+    );
+
+    expect(planEditorStore.get()).toMatchObject({
+      focus: 'regen-reason',
+      regenReason: 'split by file',
+    });
+
+    applyPlanEditorAction({ type: 'cancel-regenerate-reason' }, () => Promise.resolve());
+
+    expect(planEditorStore.get()).toMatchObject({
+      focus: 'task-list',
+      regenReason: '',
+    });
   });
 });

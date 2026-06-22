@@ -29,6 +29,41 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('reviewTaskIfNeeded task-review actions', () => {
+  it('abort returns an abort decision without mutating state', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', title: 'Abort after review' });
+    const state = {
+      ...makeImplState([task]),
+      tasks: [{ ...task, status: 'done' as const }],
+      currentTaskIndex: 1,
+    };
+    const setTrackedState = vi.fn();
+    const { callbacks } = makeCallbacks({
+      onTaskReviewNeeded: async () => ({ action: 'abort' }),
+    });
+    const { bus } = makeBusRecorder();
+
+    const result = await reviewTaskIfNeeded({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { taskReview: 'every' } }),
+        callbacks,
+        bus,
+      }),
+      state,
+      setTrackedState,
+      task,
+      taskIndex: 0,
+      filesTouched: ['src/a.ts'],
+      taskBreakdowns: [],
+    });
+
+    expect(result).toEqual({ state, decision: 'abort' });
+    expect(setTrackedState).not.toHaveBeenCalled();
+    expect(loadState({ projectDir, sessionId })).toBeNull();
+  });
+
   it('revise-plan rewinds to planning with rewindPending persisted', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', title: 'Split task' });

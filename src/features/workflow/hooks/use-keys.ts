@@ -1,10 +1,10 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { getSections } from '../../../stores/workflow/actions.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
@@ -17,19 +17,21 @@ import {
   type WorkflowKeyAction,
 } from '../keyboard.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
+import type { KeyAttachState } from '../../../core/keybindings/resolver.js';
+import type { InputMode, OverlayType } from '../../../core/navigation/types.js';
 
 function applyAction(action: WorkflowKeyAction) {
   switch (action.type) {
     case 'none':
-      return;
-    case 'toggle-sidebar':
-      controlsStore.toggleSidebar();
       return;
     case 'toggle-diff':
       conversationScrollStore.toggleDiff(action.key);
       return;
     case 'toggle-activity-batch':
       conversationScrollStore.toggleActivityBatch(action.key);
+      return;
+    case 'open-cost-drilldown':
+      overlayStore.open('cost-drilldown');
       return;
     case 'review-scroll':
       reviewStore.setScrollOffset(action.offset);
@@ -57,19 +59,39 @@ function isConversationScrollKey(input: string, key: Key): boolean {
   return resolveScrollKey({ input, key, lineKeys: 'shifted' }) !== null;
 }
 
-function getReviewScrollAction(input: string, key: Key): WorkflowKeyAction {
+interface ReviewScrollContext {
+  inputMode: InputMode;
+  overlay: OverlayType;
+  attachState: KeyAttachState;
+  composerFocus: boolean;
+}
+
+function getReviewScrollAction(
+  input: string,
+  key: Key,
+  context: ReviewScrollContext,
+): WorkflowKeyAction {
   const review = reviewStore.get();
   if (!review.filePath) return { type: 'none' };
   return handleReviewScroll({
     input,
     key,
+    inputMode: context.inputMode,
+    overlay: context.overlay,
+    attachState: context.attachState,
+    composerFocus: context.composerFocus,
+    focus: context.inputMode === 'review' ? 'review' : 'workflow',
     reviewScrollOffset: review.scrollOffset,
     reviewLineCount: review.renderedLineCount,
     visibleHeight: readReviewContentHeight(),
   });
 }
 
-function getConversationScrollAction(input: string, key: Key): WorkflowKeyAction {
+function getConversationScrollAction(
+  input: string,
+  key: Key,
+  composerFocus: boolean,
+): WorkflowKeyAction {
   if (!isConversationScrollKey(input, key)) return { type: 'none' };
 
   const { maxOffset, renderableCount, totalHeight, viewportHeight } =
@@ -81,13 +103,15 @@ function getConversationScrollAction(input: string, key: Key): WorkflowKeyAction
     maxOffset,
     viewportHeight,
     totalHeight,
+    composerFocus,
   });
 }
 
 export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
-  const [overlay, { isSmall }] = useStores(overlayStore, terminalSizeStore);
+  const [overlay, route] = useStores(overlayStore, routerStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
+  const isAttachedClient = route.screen === 'workflow' && route.attach !== undefined;
 
   useInput(
     (_input, _key) => {
@@ -100,12 +124,17 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
     (input, key) => {
       const sections = getSections();
       const inputMode = controlsStore.get().inputMode;
+      const composerFocus = inputMode === 'normal';
+      const attachState = isAttachedClient ? 'attached' : 'local';
 
       if (inputMode === 'normal') {
         const chord = handleWorkflowCtrlChords({
           input,
           key,
-          isSmall,
+          inputMode,
+          overlay: overlayActive,
+          attachState,
+          composerFocus,
           sections,
           findLatestDiff: findLatestRenderableDiffKey,
           findLatestActivityBatch: findLatestExpandableActivityBatchKey,
@@ -116,7 +145,12 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
         }
       }
 
-      const reviewScroll = getReviewScrollAction(input, key);
+      const reviewScroll = getReviewScrollAction(input, key, {
+        inputMode,
+        overlay: overlayActive,
+        attachState,
+        composerFocus,
+      });
       if (reviewScroll.type !== 'none') {
         applyAction(reviewScroll);
         return;
@@ -124,12 +158,7 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
 
       if (inputMode !== 'normal') return;
 
-      if (key.ctrl && input === 'g') {
-        overlayStore.open('cost-drilldown');
-        return;
-      }
-
-      const scroll = getConversationScrollAction(input, key);
+      const scroll = getConversationScrollAction(input, key, composerFocus);
       if (scroll.type !== 'none') {
         applyAction(scroll);
         return;

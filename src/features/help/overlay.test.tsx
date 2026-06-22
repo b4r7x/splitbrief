@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { controlsStore } from '../../stores/ui/controls.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { HelpOverlay } from './overlay.js';
@@ -59,6 +60,7 @@ describe('HelpOverlay', () => {
         commands={[
           command('/scroll', ['workflow']),
           command('/activity', ['workflow']),
+          command('/sidebar', ['workflow']),
           command('/skills', ['home']),
         ]}
       />,
@@ -68,12 +70,30 @@ describe('HelpOverlay', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/scroll');
     expect(frame).toContain('/activity');
-    expect(frame).toContain('Shift+↑/↓, PgUp/PgDn, Home/End, Ctrl+B/F');
+    expect(frame).toContain('/sidebar');
+    expect(frame).toContain('Shift+↑/↓, PgUp/PgDn, Home/End');
     expect(frame).toContain('PageUp/PageDown');
     expect(frame).toContain('/scroll top|bottom');
-    expect(frame).toContain('Alt+A, /activity');
+    expect(frame).toContain('/activity, Ctrl+A');
     expect(frame).toContain('Expand activity rows');
-    expect(frame).not.toContain('Ctrl+A');
+    expect(frame).not.toContain('Alt+A');
+    expect(frame).not.toContain('Ctrl+B/F');
+    expect(frame).not.toContain('Ctrl+E');
+
+    ui.unmount();
+  });
+
+  it('shows Ctrl+E only when workflow help opens in review mode', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    controlsStore.setInputMode('review');
+    const ui = renderFeature(
+      <HelpOverlay currentScreen="workflow" commands={[command('/scroll', ['workflow'])]} />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Ctrl+E');
+    expect(frame).toContain('Open editor in review mode only');
 
     ui.unmount();
   });

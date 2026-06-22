@@ -4,12 +4,14 @@ import { isProviderId } from '../../schemas/enums.js';
 import type { Config } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
+import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { missingRunnerCredential } from '../accessors/runner-credentials.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
 import { pickDefaultProfileName } from '../accessors/implementer-profiles.js';
 import { apiBaseValidationError } from '../api-base.js';
 import {
   customEndpointCredentialSourceError,
+  customProviderEnvApiKeyReferenceError,
   isInlineApiKey,
   missingEnvRefError,
   parseApiKeyEnvRef,
@@ -34,6 +36,8 @@ const KEY_FORMAT_HINTS: Record<string, { pattern: RegExp; example: string }> = {
   openrouter: { pattern: /^sk-or-/, example: 'sk-or-...' },
   deepseek: { pattern: /^sk-/, example: 'sk-...' },
 };
+
+const PROMPT_PLACEHOLDER = '{prompt}';
 
 function missingApiKeyError(opts: {
   role: 'planner' | 'implementer';
@@ -85,6 +89,9 @@ function runnerBoundaryErrors(opts: {
 
   const credentialSourceError = customEndpointCredentialSourceError(opts);
   if (credentialSourceError) errors.push(credentialSourceError);
+
+  const customProviderEnvRefError = customProviderEnvApiKeyReferenceError(opts);
+  if (customProviderEnvRefError) errors.push(customProviderEnvRefError);
 
   return errors;
 }
@@ -230,9 +237,70 @@ export function securityWarnings(config: Config): string[] {
     warnings.push(...keyInfoWarnings(`implementer profile ${name}`, implementerKeyInfo(profile)));
   }
 
+  warnings.push(...promptPlaceholderArgWarnings(config));
   warnings.push(...profileCredentialWarnings(config));
 
   return warnings;
+}
+
+function promptPlaceholderArgWarnings(config: Config): string[] {
+  const warnings: string[] = [];
+  warnings.push(...runnerPromptPlaceholderArgWarnings('planner', config.planner));
+  warnings.push(...runnerPromptPlaceholderArgWarnings('implementer', config.implementer));
+
+  for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
+    warnings.push(...runnerPromptPlaceholderArgWarnings(`implementer profile ${name}`, profile));
+  }
+
+  return warnings;
+}
+
+function runnerPromptPlaceholderArgWarnings(
+  label: string,
+  runner: PlannerConfig | ImplementerConfig,
+): string[] {
+  if (runner.kind !== 'shell' && runner.kind !== 'agent') return [];
+  const args = runner.args ?? [];
+  if (!args.some((arg) => arg.includes(PROMPT_PLACEHOLDER))) return [];
+
+  if (isShellEvaluatedPromptArg(runner.command, args)) {
+    return [
+      `${label}.args passes {prompt} through ${commandName(runner.command)} -c. Placeholder-enabled runs shell-evaluate prompt text there; prefer stdin or a non-shell argv placeholder.`,
+    ];
+  }
+
+  return [
+    `${label}.args contains {prompt}. Placeholder args are allowed, but placeholder-enabled runners pass prompt text through argv; prefer stdin when possible.`,
+  ];
+}
+
+function isShellEvaluatedPromptArg(command: string, args: readonly string[]): boolean {
+  const name = commandName(command);
+  if (name !== 'sh' && name !== 'bash') return false;
+  return (
+    shellArgsEvaluateCommandString(args) && args.some((arg) => arg.includes(PROMPT_PLACEHOLDER))
+  );
+}
+
+function shellArgsEvaluateCommandString(args: readonly string[]): boolean {
+  for (const arg of args) {
+    if (arg === '--') return false;
+    if (arg === '-c') return true;
+    if (isCombinedShellCommandFlag(arg)) return true;
+    if (!arg.startsWith('-') || arg === '-') return false;
+  }
+  return false;
+}
+
+function isCombinedShellCommandFlag(arg: string): boolean {
+  return (
+    arg.startsWith('-') && !arg.startsWith('--') && arg.length > 2 && arg.slice(1).includes('c')
+  );
+}
+
+function commandName(command: string): string {
+  const executable = parseShellCommand(command)[0] ?? command;
+  return executable.split(/[\\/]/).pop() ?? executable;
 }
 
 function profileCredentialWarnings(config: Config): string[] {

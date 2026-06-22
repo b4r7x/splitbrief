@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -30,6 +30,18 @@ function lineIndexContaining(frame: string, text: string): number {
   const index = frame.split('\n').findIndex((line) => line.includes(text));
   expect(index).toBeGreaterThanOrEqual(0);
   return index;
+}
+
+async function focusRecentSessions(ui: RenderFeatureResult): Promise<string> {
+  ui.stdin.write(CTRL_R);
+  let focused = '';
+  await vi.waitFor(() => {
+    focused = ui.lastFrame() ?? '';
+    expect(focused).toContain(CURSOR_GLYPH);
+    expect(focused).toContain(RECENT_SESSIONS_HINT);
+  });
+  await tick();
+  return focused;
 }
 
 describe('home navigation flow (through real App)', () => {
@@ -71,12 +83,7 @@ describe('home navigation flow (through real App)', () => {
     expect(boot).toContain('__| (_)');
     expect(boot).toContain('Recent sessions');
 
-    ui.stdin.write(CTRL_R);
-    await tick(20);
-
-    const focused = ui.lastFrame() ?? '';
-    expect(focused).toContain(CURSOR_GLYPH);
-    expect(focused).toContain(RECENT_SESSIONS_HINT);
+    await focusRecentSessions(ui);
 
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
@@ -110,10 +117,7 @@ describe('home navigation flow (through real App)', () => {
     const ui = renderFeature(<App />);
     await tick(20);
 
-    ui.stdin.write(CTRL_R);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
-    });
+    await focusRecentSessions(ui);
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('summary');
@@ -155,11 +159,7 @@ describe('home navigation flow (through real App)', () => {
     const ui = renderFeature(<App />);
     await tick(20);
 
-    ui.stdin.write(CTRL_R);
-    await tick(20);
-    const focused = ui.lastFrame() ?? '';
-    expect(focused).toContain(CURSOR_GLYPH);
-    expect(focused).toContain(RECENT_SESSIONS_HINT);
+    const focused = await focusRecentSessions(ui);
     const before = lineIndexContaining(focused, CURSOR_GLYPH);
 
     ui.stdin.write(ARROW_DOWN);
@@ -225,8 +225,7 @@ describe('home navigation flow (through real App)', () => {
     const ui = renderFeature(<App />);
     await tick(20);
 
-    ui.stdin.write(CTRL_R);
-    await tick(20);
+    await focusRecentSessions(ui);
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';

@@ -474,7 +474,7 @@ git init && git config user.email x@x.com && git config user.name X
 npm run dev -- --project /tmp/smoke-tui start "smoke tui test"
 ```
 
-Verify: the fullscreen Ink TUI renders, phases progress visually, and the workflow completes with a `workflow_complete` banner. For keyboard changes, also verify workflow scroll with `Shift+↑` / `Shift+↓`, `PageUp` / `PageDown`, `Home` / `End`, fallback `Ctrl+B` / `Ctrl+F`, `/scroll top`, `/scroll bottom`, `/scroll page-up`, `/scroll page-down`, and `Alt+A` plus `/activity` on a compact activity block. `Ctrl+A` should stay in the composer as line-start editing.
+Verify: the fullscreen Ink TUI renders, phases progress visually, and the workflow completes with a `workflow_complete` banner. For keyboard changes, also verify workflow scroll with `Shift+↑` / `Shift+↓`, `PageUp` / `PageDown`, `Home` / `End`, `/scroll top`, `/scroll bottom`, `/scroll page-up`, `/scroll page-down`, and `Ctrl+A` plus `/activity` on a compact activity block. `Ctrl+B`, `Ctrl+E`, and `Ctrl+F` should stay in the composer during normal workflow input; `/scroll` is the reliable path.
 
 If a terminal does not deliver a key as expected, rerun the smoke with key logging enabled:
 

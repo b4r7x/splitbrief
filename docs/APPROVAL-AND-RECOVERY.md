@@ -1,6 +1,6 @@
 # diptych — Approval gates, escalation, and recovery
 
-How diptych keeps the user in control during a workflow run. Three systems work together: approval gates decide what the implementer is allowed to do, escalation handles validation failures automatically, and recovery gives the user the final say when automation runs out of options. Budget enforcement and drift detection run alongside these systems as continuous checks.
+How diptych keeps the user in control during a workflow run. Three systems work together: document gates pause on spec, plan, and brief review; tiered approval reviews declared file writes; escalation handles validation failures automatically; and recovery gives the user the final say when automation runs out of options. Budget enforcement and drift detection run alongside these systems as continuous checks.
 
 For the workflow state machine, see `docs/WORKFLOW.md`. For the event model, see `docs/ARCHITECTURE.md`.
 
@@ -58,9 +58,9 @@ The `validation` and `network` classes remain part of the action-class enum and 
 
 `sticky` — Check `.diptych/approvals.json` for a matching grant. If a grant exists with the right pattern and action class, allow silently. If not, prompt the user through `onTieredApproval`. The user can grant once (this action only), for the session (this run), or always (persisted to `approvals.json`). The gate function in `src/engine/orchestrator/approval/tiered-approval.ts` calls `gateAction()`, which reads the grants store, tries to match against `always` grants first, then `session` grants scoped to the current session ID.
 
-`confirm` — Always prompt the user, regardless of prior grants. The user must type the literal phrase "I confirm" and provide a reason (`src/engine/orchestrator/approval/tiered-approval.ts`). This is deliberately high-friction for destructive and network actions.
+`confirm` — Always prompt the user, regardless of prior grants. The user must type the literal phrase "I confirm" and provide a reason (`src/engine/orchestrator/approval/tiered-approval.ts`). This is deliberately high-friction for control-plane writes, package-manifest writes, and any produced file-write class you configure as `confirm`.
 
-Override the default tier map per action class in config via `approval.tiers`. Disable tiered approval entirely with `approval.enabled: false`. `/approval list` shows active sticky grants. `/approval clear` removes them. `/yolo` toggles action-level tiered approvals off or back on for the rest of the session.
+Override the default tier map per action class in config via `approval.tiers`. Disable tiered approval entirely with `approval.enabled: false`. `/approval list` shows active sticky grants. `/approval clear` removes them. `/yolo` toggles file-write tiered approval prompts off or back on for the rest of the session.
 
 ---
 

@@ -7,6 +7,7 @@ import { render } from 'ink-testing-library';
 import { useState, useEffect } from 'react';
 import { Text } from 'ink';
 import { tick } from '#testing/helpers/ink.js';
+import { allowedSettlingBriefReviewCommandsForPrompt } from '../../../core/schemas/brief-review-command.js';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
 import { MAX_ATTEMPTS } from '../../../engine/ipc/client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -194,6 +195,7 @@ describe('useIpcClient', () => {
           kind: 'approval_needed',
           approvalType: 'spec',
           filePath: '/tmp/spec.md',
+          allowedCommands: [],
         },
       };
       send(connectedSocket, msg);
@@ -261,6 +263,7 @@ describe('useIpcClient', () => {
           kind: 'approval_needed',
           approvalType: 'briefs',
           filePath: '/tmp/tasks.md',
+          allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt('briefs')],
         },
       };
       send(connectedSocket, msg);

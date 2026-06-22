@@ -200,5 +200,9 @@ export function createRpcCommandContext(opts: {
       status: 'unavailable',
       message: 'Activity expansion is not available in RPC mode.',
     }),
+    toggleSidebar: () => ({
+      status: 'unavailable',
+      message: 'Sidebar is not available in RPC mode.',
+    }),
   });
 }

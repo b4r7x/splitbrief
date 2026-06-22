@@ -152,6 +152,43 @@ describe('createRunnerConfigSchema', () => {
     expect(schema.safeParse({ kind: 'api', provider: 'openai', model: 'x' }).success).toBe(false);
   });
 
+  it('rejects {prompt} in shell and agent command strings', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    for (const kind of ['shell', 'agent'] as const) {
+      const result = schema.safeParse({
+        kind,
+        command: `./run-{prompt}`,
+        model: 'local-command',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(['command']);
+      expect(result.error?.issues[0]?.message).toContain('must not contain {prompt}');
+    }
+  });
+
+  it('allows {prompt} in shell and agent args', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'shell',
+        command: './run',
+        args: ['--prompt', '{prompt}'],
+        model: 'local-shell',
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        kind: 'agent',
+        command: './agent',
+        args: ['--prompt={prompt}'],
+        model: 'local-agent',
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects unknown keys so misspelled config does not silently pass', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
     const result = schema.safeParse({

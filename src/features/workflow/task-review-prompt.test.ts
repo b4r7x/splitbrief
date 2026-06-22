@@ -89,6 +89,18 @@ describe('task review prompt', () => {
     expect(parseTaskReviewAnswer('abort')).toEqual({ action: 'abort' });
   });
 
+  it('rejects commands outside the request-scoped available command set', () => {
+    expect(parseTaskReviewAnswer('', ['abort'])).toBeNull();
+    expect(parseTaskReviewAnswer('redo', ['continue'])).toBeNull();
+    expect(parseTaskReviewAnswer('revise-plan split this task', ['continue'])).toBeNull();
+    expect(parseTaskReviewAnswer('abort', ['continue'])).toBeNull();
+    expect(parseTaskReviewAnswer('notes keep this context', ['continue'])).toBeNull();
+    expect(parseTaskReviewAnswer('notes keep this context', ['edit-notes'])).toEqual({
+      action: 'continue',
+      notes: 'keep this context',
+    });
+  });
+
   it('returns null for unrecognized non-empty input instead of accepting', () => {
     expect(parseTaskReviewAnswer('rdo')).toBeNull();
     expect(parseTaskReviewAnswer('redo it please')).toBeNull();

@@ -1,12 +1,28 @@
 import { error, matches } from '../../utils/error.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { protectConsumerPayload } from '../../core/consumer-policy.js';
 import type { RunnerCallRecorder } from './recorder.js';
-import type { RunnerCallResult, RunnerCallUsage } from './types.js';
+import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
+import type {
+  RunnerCallEvent,
+  RunnerCallResult,
+  RunnerCallUsage,
+  RunnerCallWarningInput,
+} from './types.js';
 
 export const RUNNER_CALL_OUTPUT_MAX_BYTES = 1024 * 1024;
 export const RUNNER_CALL_OUTPUT_MAX_EVENTS = 4096;
+export const RUNNER_CALL_STDERR_MAX_BYTES = 64 * 1024;
+export const RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES = 256 * 1024;
+export const RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES = 256 * 1024;
+export const RUNNER_CALL_TOOL_USE_MAX_ITEMS = 256;
+export const RUNNER_CALL_ARTIFACT_MAX_ITEMS = 64;
+export const RUNNER_CALL_WARNING_MAX_ITEMS = 256;
+export const RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS = 128;
 export const RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES = 256 * 1024;
 export const RUNNER_CALL_SSE_EVENT_MAX_BYTES = 1024 * 1024;
+export const RUNNER_CALL_PAYLOAD_TRUNCATED_KEY = '_truncated';
 
 export interface RunnerCallOutputLimit {
   code: string;
@@ -19,6 +35,14 @@ export interface RunnerCallOutputLimit {
 
 export interface RunnerCallDeltaLimitResult {
   text: string;
+  limit: RunnerCallOutputLimit | null;
+}
+
+type RunnerCallToolUse = Extract<RunnerCallEvent, { type: 'call_tool_use_done' }>['toolUse'];
+type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
+
+export interface RunnerCallBoundedValue<T> {
+  value: T;
   limit: RunnerCallOutputLimit | null;
 }
 
@@ -103,6 +127,66 @@ export function runnerCallLineOutputLimit(opts: {
   };
 }
 
+export function runnerCallLimitWarning(limit: RunnerCallOutputLimit): RunnerCallWarningInput {
+  return {
+    code: limit.code,
+    severity: 'warning',
+    source: 'system',
+    surface: 'activity',
+    message: limit.message,
+  };
+}
+
+export function sanitizeRunnerCallRawPreview(rawPreview: string): string {
+  return sanitizeTerminalDiagnosticText(rawPreview, {
+    maxChars: UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH,
+  });
+}
+
+export function boundRunnerCallToolUse(
+  toolUse: RunnerCallToolUse,
+): RunnerCallBoundedValue<RunnerCallToolUse> {
+  const input = boundRunnerCallRecordPayload(
+    toolUse.input,
+    RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
+    'tool input payload',
+    'runner_call_tool_input_limit',
+  );
+  const output =
+    toolUse.output === undefined
+      ? null
+      : boundRunnerCallPayload(
+          toolUse.output,
+          RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
+          'tool output payload',
+          'runner_call_tool_output_limit',
+        );
+  return {
+    value: {
+      ...toolUse,
+      input: input.value,
+      ...(output !== null && { output: output.value }),
+    },
+    limit: input.limit ?? output?.limit ?? null,
+  };
+}
+
+export function boundRunnerCallArtifact(
+  artifact: RunnerCallArtifact,
+): RunnerCallBoundedValue<RunnerCallArtifact> {
+  if (artifact.text === null) return { value: artifact, limit: null };
+  const bounded = boundRunnerCallStringPayload(
+    artifact.text,
+    RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
+    'artifact text',
+    'runner_call_artifact_text_limit',
+  );
+  return {
+    value: { ...artifact, text: bounded.value },
+    limit: bounded.limit,
+  };
+}
+
 export function runnerCallOutputLimitError(limit: RunnerCallOutputLimit): Error {
   return error('runner-output-limit', limit.message, limit);
 }
@@ -170,4 +254,70 @@ export function takeUtf8PrefixBytes(text: string, maxBytes: number): string {
 
 function normalizeLimit(value: number): number {
   return Math.max(0, Math.floor(value));
+}
+
+function boundRunnerCallRecordPayload(
+  value: Record<string, unknown>,
+  maxBytes: number,
+  label: string,
+  code: string,
+): RunnerCallBoundedValue<Record<string, unknown>> {
+  const bounded = boundRunnerCallPayload(value, maxBytes, label, code);
+  if (isRecord(bounded.value)) {
+    return { value: bounded.value, limit: bounded.limit };
+  }
+  return {
+    value: { [RUNNER_CALL_PAYLOAD_TRUNCATED_KEY]: bounded.value },
+    limit: bounded.limit,
+  };
+}
+
+function boundRunnerCallStringPayload(
+  value: string,
+  maxBytes: number,
+  label: string,
+  code: string,
+): RunnerCallBoundedValue<string> {
+  const bounded = protectConsumerPayload({
+    context: 'session-log',
+    payload: value,
+    overrides: { maxBytes, maxStringBytes: maxBytes },
+  });
+  return {
+    value: typeof bounded.payload === 'string' ? bounded.payload : String(bounded.payload),
+    limit:
+      bounded.truncated || bounded.oversized
+        ? {
+            code,
+            message: `${label} exceeded ${maxBytes} bytes and was truncated`,
+            bytesSeen: bounded.bytes,
+            maxBytes,
+          }
+        : null,
+  };
+}
+
+function boundRunnerCallPayload(
+  value: unknown,
+  maxBytes: number,
+  label: string,
+  code: string,
+): RunnerCallBoundedValue<unknown> {
+  const bounded = protectConsumerPayload({
+    context: 'session-log',
+    payload: value,
+    overrides: { maxBytes, maxStringBytes: maxBytes },
+  });
+  return {
+    value: bounded.payload,
+    limit:
+      bounded.truncated || bounded.oversized
+        ? {
+            code,
+            message: `${label} exceeded ${maxBytes} bytes and was truncated`,
+            bytesSeen: bounded.bytes,
+            maxBytes,
+          }
+        : null,
+  };
 }

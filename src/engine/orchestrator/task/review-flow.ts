@@ -11,7 +11,7 @@ import { enqueueUserMessage } from '../queue.js';
 import { transition } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 
-export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task';
+export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task' | 'abort';
 
 function applyTaskReviewRewind(
   projectDir: string,
@@ -130,7 +130,7 @@ export async function reviewTaskIfNeeded(opts: {
     opts.setTrackedState(next);
     return { state: next, decision: 'stop' };
   }
-  if (response.action !== 'continue') return { state: opts.state, decision: 'stop' };
+  if (response.action === 'abort') return { state: opts.state, decision: 'abort' };
 
   const notes = response.notes?.trim();
   if (!notes) return { state: opts.state, decision: 'continue' };

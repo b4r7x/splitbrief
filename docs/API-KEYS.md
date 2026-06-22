@@ -51,7 +51,7 @@ diptych takes several steps to protect your API keys:
 
 - **Restrictive file permissions** — `.diptych/` directories are created with `0700` (owner-only access) and config files with `0600` (owner-only read/write). **Note (Windows):** File permission modes (0600/0700) are Unix-specific. On Windows, file access is managed through OS-level ACLs. Ensure your config directory is in a user-private location.
 - **Automatic redaction** — error messages and logs are passed through `redactSecrets()`, which strips patterns matching API keys (`sk-ant-...`, `sk-...`, Bearer tokens, and generic key/token assignments)
-- **No key logging** — API keys are never written to console output, state files, or session files
+- **No intentional key persistence** — Diptych does not intentionally persist configured provider keys to state/session output, and protected outputs redact known secret patterns. Do not paste secrets into prompts or rely on this for external runner logs.
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — known providers (e.g., Anthropic keys starting with `sk-ant-`) are validated against expected formats; mismatches produce warnings, not errors, since key formats may change over time

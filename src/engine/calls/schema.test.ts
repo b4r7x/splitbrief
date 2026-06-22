@@ -123,7 +123,13 @@ describe('RunnerCallEventSchema', () => {
         type: 'call_warning',
         ts: 1,
         ...context,
-        warning: { code: 'slow_stream', message: 'stream slowed' },
+        warning: {
+          code: 'slow_stream',
+          message: 'stream slowed',
+          parser: 'jsonl',
+          upstreamType: 'mystery',
+          channel: 'stdout',
+        },
       },
       {
         type: 'call_error',

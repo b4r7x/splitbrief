@@ -5,6 +5,7 @@ import { parseCopilotLine } from '../streaming/parse-copilot.js';
 import { parseOpencodeLine } from '../streaming/parse-opencode.js';
 import { parseTextLine } from '../streaming/parse-text.js';
 import type { CliToolId, EffortLevel } from '../../core/schemas/enums.js';
+import { CLI_TOOL_TRUST, type RunnerRoleTrustMetadata } from '../../core/schemas/runner-fields.js';
 import type { InvokeResult } from './types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 
@@ -50,6 +51,7 @@ export interface CliToolEntry {
   command: string;
   description: string;
   notFoundMessage: string;
+  trust: RunnerRoleTrustMetadata;
   /**
    * Upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified
    * against. These tools ship breaking CLI changes with no compatibility guarantee, so
@@ -68,12 +70,14 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     command: 'claude',
     description: 'Claude Code CLI',
     notFoundMessage: 'Claude Code CLI not found. Install it from https://claude.ai/code',
+    trust: CLI_TOOL_TRUST['claude-code'],
     testedVersion: '2.0.0',
   },
   codex: {
     command: 'codex',
     description: 'OpenAI Codex CLI',
     notFoundMessage: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
+    trust: CLI_TOOL_TRUST.codex,
     testedVersion: '0.40.0',
     planner: {
       supportsSessionResume: true,
@@ -125,6 +129,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     command: 'opencode',
     description: 'OpenCode CLI',
     notFoundMessage: 'OpenCode CLI not found. Install it from https://opencode.ai',
+    trust: CLI_TOOL_TRUST.opencode,
     testedVersion: '0.5.0',
     planner: {
       buildArgs: ({ prompt, model }) => {
@@ -148,6 +153,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     command: 'aider',
     description: 'Aider CLI',
     notFoundMessage: 'Aider not found. Install it from https://aider.chat',
+    trust: CLI_TOOL_TRUST.aider,
     testedVersion: '0.86.0',
     planner: {
       buildArgs: ({ prompt, model, projectDir, mode }) => {
@@ -193,6 +199,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     description: 'GitHub Copilot CLI',
     notFoundMessage:
       'Copilot CLI not found. Install: npm install -g @github/copilot — or see https://github.com/github/copilot-cli',
+    trust: CLI_TOOL_TRUST.copilot,
     testedVersion: '0.3.0',
     planner: {
       buildArgs: ({ prompt, model }) => {
@@ -214,6 +221,7 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     command: 'kilo',
     description: 'Kilo Code CLI',
     notFoundMessage: 'Kilo Code CLI not found. Install it with: npm install -g @kilocode/cli',
+    trust: CLI_TOOL_TRUST['kilo-code'],
     testedVersion: '0.1.0',
     planner: {
       buildArgs: ({ prompt, model }) => {

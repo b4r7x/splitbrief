@@ -1,5 +1,10 @@
 import { wrapHard } from '../../utils/wrap.js';
+import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
+import { resolveTextEditingKeyAction } from '../../core/keybindings/text.js';
+import type { TextEditingKeyAction } from '../../core/keybindings/text.js';
 import { normalizeLineEndings } from './segments.js';
+
+const RAW_BACKSPACE = '\x7f';
 
 export interface EditResult {
   value: string;
@@ -30,7 +35,7 @@ export function dropLastCodePoint(value: string): string {
   return value.slice(0, prevCodePointIndex(value, value.length));
 }
 
-export type EditAction = 'delete-word-backward' | 'delete-line-backward' | 'move-line-start' | null;
+export type EditAction = TextEditingKeyAction | null;
 
 export function deleteWordBackward(value: string, cursor: number): EditResult {
   if (cursor === 0) return { value, cursor };
@@ -111,17 +116,45 @@ export function moveToLineStart(value: string, cursor: number, columns?: number)
   return { value: nfc.value, cursor: lineStart };
 }
 
+export function moveToLineEnd(value: string, cursor: number): EditResult {
+  const nfc = toNfc(value, cursor);
+  const nextNewline = nfc.value.indexOf('\n', nfc.cursor);
+  return { value: nfc.value, cursor: nextNewline === -1 ? nfc.value.length : nextNewline };
+}
+
+export function moveCharBackward(value: string, cursor: number): EditResult {
+  return { value, cursor: prevCodePointIndex(value, cursor) };
+}
+
+export function moveCharForward(value: string, cursor: number): EditResult {
+  return { value, cursor: nextCodePointIndex(value, cursor) };
+}
+
+export function deleteCharBackward(value: string, cursor: number): EditResult {
+  if (cursor <= 0) return { value, cursor };
+  const prev = prevCodePointIndex(value, cursor);
+  return {
+    value: value.slice(0, prev) + value.slice(cursor),
+    cursor: prev,
+  };
+}
+
+export function deleteCharForward(value: string, cursor: number): EditResult {
+  if (cursor >= value.length) return { value, cursor };
+  const next = nextCodePointIndex(value, cursor);
+  return {
+    value: value.slice(0, cursor) + value.slice(next),
+    cursor,
+  };
+}
+
 export function resolveEditAction(
   input: string,
   key: { ctrl: boolean; meta: boolean; super: boolean; backspace: boolean; delete: boolean },
 ): EditAction {
-  if (key.ctrl && input === 'w') return 'delete-word-backward';
-  if (key.ctrl && input === 'u') return 'delete-line-backward';
-  if (key.ctrl && input === 'a') return 'move-line-start';
-  if (key.super && (key.backspace || key.delete)) return 'delete-line-backward';
-  if (key.meta && (key.backspace || key.delete)) return 'delete-word-backward';
-  if (key.ctrl && (key.backspace || key.delete)) return 'delete-word-backward';
-  return null;
+  const keyForEditing =
+    input === RAW_BACKSPACE && !key.backspace ? { ...key, backspace: true } : key;
+  return resolveTextEditingKeyAction(normalizeKeySignature({ input, key: keyForEditing }));
 }
 
 const editHandlers: Record<
@@ -131,6 +164,11 @@ const editHandlers: Record<
   'delete-word-backward': deleteWordBackward,
   'delete-line-backward': deleteLineBackward,
   'move-line-start': moveToLineStart,
+  'move-line-end': moveToLineEnd,
+  'move-char-backward': moveCharBackward,
+  'move-char-forward': moveCharForward,
+  'delete-char-backward': deleteCharBackward,
+  'delete-char-forward': deleteCharForward,
 };
 
 export function applyEditAction(

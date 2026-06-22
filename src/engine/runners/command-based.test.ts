@@ -27,7 +27,7 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout.trim()).toBe('hello world');
   });
 
-  it('substitutes {prompt} placeholder in command', async () => {
+  it('substitutes {prompt} placeholder in args', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'sh',
       args: ['-c', 'echo "{prompt}"'],
@@ -36,6 +36,31 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
     expect(result.stdout.trim()).toBe('substituted text');
+  });
+
+  it('rejects {prompt} placeholder in the executable command string', async () => {
+    await expect(
+      invokeCommandBasedRunner({
+        command: 'echo-{prompt}',
+        supportPromptPlaceholder: true,
+        prompt: 'unsafe',
+        projectDir: process.cwd(),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-command-prompt-placeholder',
+    });
+  });
+
+  it('rejects {prompt} placeholder in the executable command string without placeholder support', async () => {
+    await expect(
+      invokeCommandBasedRunner({
+        command: 'echo-{prompt}',
+        prompt: 'unsafe',
+        projectDir: process.cwd(),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-command-prompt-placeholder',
+    });
   });
 
   it('keeps $-replacement patterns in the prompt inert', async () => {

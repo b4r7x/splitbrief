@@ -149,7 +149,16 @@ export function loadState(ref: SessionRef): WorkflowState | null {
 
 export type SessionLogAppender = (entry: SessionLogMessageEntry | SessionLogEventEntry) => void;
 
-export function createSessionLogAppender(ref: SessionRef): SessionLogAppender {
+export type SessionLogAppendFailure =
+  | 'invalid-entry'
+  | 'oversized-entry'
+  | 'symlink-write'
+  | 'write-failed';
+
+export function createSessionLogAppender(
+  ref: SessionRef,
+  opts: { onFailure?: ((failure: SessionLogAppendFailure) => void) | undefined } = {},
+): SessionLogAppender {
   const sessionRel = join(DIPTYCH_DIR, SESSIONS_DIR, ref.sessionId);
   const logRel = join(sessionRel, SESSION_LOG_FILE);
   const logFile = resolve(ref.projectDir, logRel);
@@ -163,11 +172,13 @@ export function createSessionLogAppender(ref: SessionRef): SessionLogAppender {
       }
       const parsed = SessionLogEntrySchema.safeParse(entry);
       if (!parsed.success) {
+        opts.onFailure?.('invalid-entry');
         warnStderr('Warning: failed to persist invalid log entry');
         return;
       }
       const line = JSON.stringify(parsed.data) + '\n';
       if (Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) {
+        opts.onFailure?.('oversized-entry');
         warnStderr(
           `Warning: failed to persist oversized log entry exceeding ${SESSION_LOG_MAX_ENTRY_BYTES} bytes`,
         );
@@ -176,7 +187,11 @@ export function createSessionLogAppender(ref: SessionRef): SessionLogAppender {
       rejectSymlinkTarget(logFile);
       confinedAppendFileSync(ref.projectDir, logRel, line);
     } catch (err) {
-      if (fsError.isSymlinkWrite(err)) throw err;
+      if (fsError.isSymlinkWrite(err)) {
+        opts.onFailure?.('symlink-write');
+        throw err;
+      }
+      opts.onFailure?.('write-failed');
       warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
     }
   };

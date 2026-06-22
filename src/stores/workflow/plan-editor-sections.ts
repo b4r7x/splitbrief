@@ -6,6 +6,7 @@ export const TASK_BRIEF_SECTIONS = [
   'implementationSteps',
   'constraints',
   'tests',
+  'evidence',
   'escalation',
   'scope.inBounds',
   'scope.outOfBounds',
@@ -26,6 +27,8 @@ export function getTaskBriefSectionLabel(section: TaskBriefSection): string {
       return 'Constraints';
     case 'tests':
       return 'Tests';
+    case 'evidence':
+      return 'Evidence';
     case 'escalation':
       return 'Escalation';
     case 'scope.inBounds':
@@ -49,6 +52,8 @@ export function getTaskBriefSectionText(task: Task, section: TaskBriefSection): 
       return task.constraints.join('\n');
     case 'tests':
       return task.tests.join('\n');
+    case 'evidence':
+      return (task.evidence ?? []).join('\n');
     case 'escalation':
       return (task.escalation ?? []).join('\n');
     case 'scope.inBounds':
@@ -72,6 +77,10 @@ export function updateTaskBriefSection(task: Task, section: TaskBriefSection, va
       return { ...task, constraints: parseListValue(value) };
     case 'tests':
       return { ...task, tests: parseListValue(value) };
+    case 'evidence': {
+      const evidence = parseListValue(value);
+      return evidence.length === 0 ? stripOptionalArray(task, 'evidence') : { ...task, evidence };
+    }
     case 'escalation': {
       const escalation = parseListValue(value);
       return escalation.length === 0
@@ -99,7 +108,7 @@ function parseListValue(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function stripOptionalArray(task: Task, key: 'escalation'): Task {
+function stripOptionalArray(task: Task, key: 'escalation' | 'evidence'): Task {
   const next = { ...task };
   delete next[key];
   return next;

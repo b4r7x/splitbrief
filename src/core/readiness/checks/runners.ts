@@ -1,6 +1,8 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
+import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
+import { getRunnerTrustMeta, type RunnerTrustMetadata } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { capitalize } from '../../../utils/capitalize.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -34,6 +36,7 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
       },
     });
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
+    checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles));
   } catch (err) {
     checks.push({
       id: 'runners.implementer.profiles-invalid',
@@ -57,6 +60,115 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
   });
 
   return checks;
+}
+
+function buildRunnerTrustBoundaryChecks(
+  config: Config,
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+): ReadinessCheck[] {
+  const mode = resolveMode({ config });
+  const approve = resolveApproveLevel({
+    mode,
+    configApprove: config.workflow.approve,
+    legacyAutoFlag:
+      config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
+  });
+  const specPlanAutoApproved = approve === 'none';
+  const fileWriteApprovalDisabled = config.approval?.enabled === false;
+
+  const checks: ReadinessCheck[] = [];
+  checks.push(
+    ...runnerTrustBoundaryCheck({
+      id: 'runners.planner.trust-boundary',
+      role: 'planner',
+      label: `Planner ${formatRunner(config.planner)}`,
+      trust: getRunnerTrustMeta('planner', config.planner),
+      kind: config.planner.kind,
+      approve,
+      specPlanAutoApproved,
+      fileWriteApprovalDisabled,
+    }),
+  );
+
+  for (const profile of profiles) {
+    checks.push(
+      ...runnerTrustBoundaryCheck({
+        id: 'runners.implementer.trust-boundary',
+        role: 'implementer',
+        label: profile.isDefault
+          ? `Default implementer ${formatRunner(profile.config)}`
+          : `Implementer profile ${profile.name} ${formatRunner(profile.config)}`,
+        profile: profile.name,
+        trust: getRunnerTrustMeta('implementer', profile.config),
+        kind: profile.config.kind,
+        approve,
+        specPlanAutoApproved,
+        fileWriteApprovalDisabled,
+      }),
+    );
+  }
+
+  return checks;
+}
+
+function runnerTrustBoundaryCheck(opts: {
+  id: string;
+  role: 'planner' | 'implementer';
+  label: string;
+  profile?: string | undefined;
+  trust: RunnerTrustMetadata;
+  kind: Config['planner']['kind'];
+  approve: string;
+  specPlanAutoApproved: boolean;
+  fileWriteApprovalDisabled: boolean;
+}): ReadinessCheck[] {
+  if (!opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length === 0) return [];
+
+  const approvalAutomationActive = opts.specPlanAutoApproved || opts.fileWriteApprovalDisabled;
+  const autoAllowCommandRunner =
+    opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length > 0;
+  if (!approvalAutomationActive && !autoAllowCommandRunner) return [];
+
+  const automation = [
+    opts.specPlanAutoApproved ? 'spec/plan approval is auto-approved' : null,
+    opts.fileWriteApprovalDisabled ? 'file-write approval prompts are disabled' : null,
+  ].filter((entry): entry is string => entry !== null);
+  const details = [
+    `Spec/plan approval level: ${opts.approve}.`,
+    `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled' : 'enabled'}.`,
+    'Diptych approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+  ];
+  if (automation.length > 0) {
+    details.push(`Approval automation: ${automation.join('; ')}.`);
+  }
+  if (opts.trust.autoAllowFlags.length > 0) {
+    details.push(`Runner auto/allow flags: ${opts.trust.autoAllowFlags.join(', ')}`);
+  }
+  if (opts.trust.mayWriteFilesDirectly) {
+    details.push('Runner may write project files directly.');
+  }
+
+  return [
+    {
+      id: opts.id,
+      severity: 'warning',
+      summary: approvalAutomationActive
+        ? `${opts.label} can execute commands while approval automation is active.`
+        : `${opts.label} can execute commands and uses auto/allow runner flags.`,
+      details,
+      metadata: {
+        role: opts.role,
+        ...(opts.profile !== undefined && { profile: opts.profile }),
+        kind: opts.kind,
+        approve: opts.approve,
+        executesLocalCommand: opts.trust.executesLocalCommand,
+        mayUseNetwork: opts.trust.mayUseNetwork,
+        mayWriteFilesDirectly: opts.trust.mayWriteFilesDirectly,
+        autoAllowFlags: [...opts.trust.autoAllowFlags],
+        fileWriteApprovalEnabled: !opts.fileWriteApprovalDisabled,
+      },
+    },
+  ];
 }
 
 function buildImplementerProfileMetadataChecks(

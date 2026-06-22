@@ -196,8 +196,10 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     callbacks: wctx.callbacks,
     bus,
     state,
+    config: wctx.config,
     metadata: wctx.metadata,
     signal: wctx.signal,
+    sinks: wctx.sinks,
   });
   state = briefsLoop.state;
   tasks = briefsLoop.tasks;

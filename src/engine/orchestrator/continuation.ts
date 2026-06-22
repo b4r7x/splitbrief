@@ -1,4 +1,5 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { QueuedMessage } from '../../core/schemas/workflow.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
@@ -12,10 +13,11 @@ import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import { buildProjectContextMarkdown } from '../planners/context.js';
 import { transitionAndSave } from './state-ops.js';
-import { publishWarning } from './events.js';
+import { publishPlannerStatus, publishWarning } from './events.js';
 import { runPlannerReview } from './planner-review.js';
-import { drainQueue, formatDrainedMessages } from './queue.js';
+import { commitQueueMessagesDrained, formatDrainedMessages, readQueueForPrompt } from './queue.js';
 import { readPersistedTasks } from './planning/io.js';
+import type { Phase } from '../../core/schemas/enums.js';
 
 export function buildContinuationPrompt(partialResponse: string, userMessage: string): string {
   const instruction = userMessage.trim() || 'Please continue from where you left off.';
@@ -128,10 +130,25 @@ export type RegenerateFromFeedbackCtx = {
   signal?: AbortSignal | undefined;
   skillsContext?: string | undefined;
   planOverride?: string | undefined;
+  queuedMessages?: readonly QueuedMessage[] | undefined;
+  commitQueue?: boolean | undefined;
+  statusPhase?: Phase | undefined;
+  statusSummary?: string | undefined;
+  sinks?: WorkflowSinks | undefined;
 };
 
-type PlanRegenResult = { kind: 'plan'; state: WorkflowState; plan: string };
-type TasksRegenResult = { kind: 'tasks'; state: WorkflowState; tasks: Task[] };
+type PlanRegenResult = {
+  kind: 'plan';
+  state: WorkflowState;
+  plan: string;
+  queuedMessages: readonly QueuedMessage[];
+};
+type TasksRegenResult = {
+  kind: 'tasks';
+  state: WorkflowState;
+  tasks: Task[];
+  queuedMessages: readonly QueuedMessage[];
+};
 
 export async function regenerateFromFeedback(
   kind: 'plan',
@@ -145,12 +162,15 @@ export async function regenerateFromFeedback(
   kind: 'plan' | 'tasks',
   ctx: RegenerateFromFeedbackCtx,
 ): Promise<PlanRegenResult | TasksRegenResult> {
-  const { projectDir, sessionId, planner, bus, metadata, skillsContext, planOverride } = ctx;
+  const { projectDir, sessionId, bus, skillsContext, planOverride } = ctx;
   let { state } = ctx;
 
-  const drain = drainQueue({ projectDir, sessionId, state, bus });
-  state = drain.state;
-  const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
+  const queued =
+    ctx.queuedMessages === undefined
+      ? readQueueForPrompt({ projectDir, sessionId, state })
+      : { state, messages: [...ctx.queuedMessages] };
+  state = queued.state;
+  const prefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
 
   const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
   const languageContext = buildProjectLanguageContext(
@@ -166,18 +186,15 @@ export async function regenerateFromFeedback(
       skillsContext,
       languageContext,
     );
-    const result = await runPlannerReview({
-      planner,
-      prompt: prefix ? prefix + basePrompt : basePrompt,
-      projectDir,
-      sessionId,
-      bus,
+    const result = await runRegenerationReview({
+      kind,
+      ctx,
       state,
-      metadata,
+      prompt: prefix ? prefix + basePrompt : basePrompt,
       writeTo: PLAN_FILE,
-      signal: ctx.signal,
     });
-    return { kind: 'plan', state: result.state, plan: result.text };
+    state = maybeCommitQueue(ctx, result.state, queued.messages);
+    return { kind: 'plan', state, plan: result.text, queuedMessages: queued.messages };
   }
 
   const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
@@ -187,22 +204,83 @@ export async function regenerateFromFeedback(
   );
   const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
   const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
-  const result = await runPlannerReview({
-    planner,
-    prompt: prefix ? prefix + basePrompt : basePrompt,
-    projectDir,
-    sessionId,
-    bus,
+  const result = await runRegenerationReview({
+    kind,
+    ctx,
     state,
-    metadata,
+    prompt: prefix ? prefix + basePrompt : basePrompt,
     writeTo: TASKS_FILE,
-    signal: ctx.signal,
   });
+  const tasks = parseTasksStrict(result.text, (message) =>
+    publishWarning({ bus, phase: state.phase, message }),
+  );
+  state = maybeCommitQueue(ctx, result.state, queued.messages);
   return {
     kind: 'tasks',
-    state: result.state,
-    tasks: parseTasksStrict(result.text, (message) =>
-      publishWarning({ bus, phase: state.phase, message }),
-    ),
+    state,
+    tasks,
+    queuedMessages: queued.messages,
   };
+}
+
+function maybeCommitQueue(
+  ctx: RegenerateFromFeedbackCtx,
+  state: WorkflowState,
+  messages: readonly QueuedMessage[],
+): WorkflowState {
+  if (ctx.commitQueue === false || messages.length === 0) return state;
+  return commitQueueMessagesDrained({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    state,
+    messages,
+    bus: ctx.bus,
+  }).state;
+}
+
+async function runRegenerationReview(opts: {
+  kind: 'plan' | 'tasks';
+  ctx: RegenerateFromFeedbackCtx;
+  state: WorkflowState;
+  prompt: string;
+  writeTo: typeof PLAN_FILE | typeof TASKS_FILE;
+}): Promise<{ state: WorkflowState; text: string }> {
+  const statusPhase = opts.ctx.statusPhase ?? 'planning';
+  const summary =
+    opts.ctx.statusSummary ??
+    (opts.kind === 'plan' ? 'regenerating plan from feedback' : 'regenerating Task Briefs');
+  const controller = opts.ctx.sinks ? new AbortController() : null;
+  const signal = controller
+    ? opts.ctx.signal === undefined
+      ? controller.signal
+      : AbortSignal.any([opts.ctx.signal, controller.signal])
+    : opts.ctx.signal;
+
+  if (controller) opts.ctx.sinks?.setAbortHandler(() => controller.abort());
+  publishPlannerStatus(opts.ctx.bus, { ...opts.state, phase: statusPhase }, 'running');
+  opts.ctx.bus.publish({
+    type: 'planner_heartbeat',
+    ts: Date.now(),
+    phase: statusPhase,
+    elapsedMs: 0,
+    accumulatedTokens: 0,
+    phaseHint: summary,
+  });
+
+  try {
+    return await runPlannerReview({
+      planner: opts.ctx.planner,
+      prompt: opts.prompt,
+      projectDir: opts.ctx.projectDir,
+      sessionId: opts.ctx.sessionId,
+      bus: opts.ctx.bus,
+      state: opts.state,
+      metadata: opts.ctx.metadata,
+      writeTo: opts.writeTo,
+      signal,
+    });
+  } finally {
+    opts.ctx.sinks?.setAbortHandler(null);
+    publishPlannerStatus(opts.ctx.bus, { ...opts.state, phase: statusPhase }, 'done');
+  }
 }

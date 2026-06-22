@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useInput, type Key } from 'ink';
+import { useEffect, useRef, useState } from 'react';
+import { useInput, useStdin, type Key } from 'ink';
 import { normalizeLineEndings } from './segments.js';
 import {
   resolveEditAction,
@@ -15,6 +15,7 @@ import {
 import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
+const RAW_BACKSPACE = '\x7f';
 
 const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
 
@@ -35,6 +36,24 @@ function parseDroppedImagePath(input: string): string | null {
   return unquoted;
 }
 
+function useLatestInputSequence() {
+  const sequenceRef = useRef('');
+  const { internal_eventEmitter } = useStdin();
+
+  useEffect(() => {
+    function recordSequence(input: string) {
+      sequenceRef.current = input;
+    }
+
+    internal_eventEmitter.on('input', recordSequence);
+    return () => {
+      internal_eventEmitter.off('input', recordSequence);
+    };
+  }, [internal_eventEmitter]);
+
+  return sequenceRef;
+}
+
 interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
@@ -43,7 +62,9 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   keyBindings?: {
     submit?: (key: Key) => boolean;
     newline?: (key: Key) => boolean;
+    shortcut?: (input: string, key: Key) => boolean;
   };
+  onShortcut?: () => void;
   highlightPastedText?: boolean;
   focus?: boolean;
   onBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
@@ -54,6 +75,7 @@ export function MultilineInput({
   onChange,
   onSubmit,
   onFileDrop,
+  onShortcut,
   columns,
   keyBindings,
   showCursor = true,
@@ -67,6 +89,7 @@ export function MultilineInput({
   // Suppress rapid-fire key events after delete-line-backward (Cmd+Backspace
   // in non-Kitty terminals sends multiple raw bytes parsed as separate events)
   const suppressUntilRef = useRef(0);
+  const latestInputSequenceRef = useLatestInputSequence();
 
   const cursorIndex = Math.min(rawCursorIndex, value.length);
 
@@ -92,6 +115,11 @@ export function MultilineInput({
         return;
       }
 
+      if (keyBindings?.shortcut?.(input, key)) {
+        onShortcut?.();
+        return;
+      }
+
       if (key.tab || (key.shift && key.tab) || (key.ctrl && input === 'c')) {
         return;
       }
@@ -104,7 +132,11 @@ export function MultilineInput({
         }
       }
 
-      const action = resolveEditAction(input, key);
+      const editKey =
+        latestInputSequenceRef.current === RAW_BACKSPACE && key.delete && !key.backspace
+          ? { ...key, backspace: true, delete: false }
+          : key;
+      const action = resolveEditAction(input, editKey);
       const editResult = applyEditAction(action, value, cursorIndex, columns);
       if (editResult) {
         onChange(editResult.value);
@@ -116,7 +148,7 @@ export function MultilineInput({
         return;
       }
 
-      if (key.ctrl) return;
+      if (key.ctrl || key.meta || key.super || key.hyper) return;
 
       let nextPasteLength = 0;
       if (input.length > 1) {

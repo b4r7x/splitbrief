@@ -73,7 +73,7 @@ npm link
 #   Codex: npm install -g @openai/codex
 #   Copilot: npm install -g @github/copilot
 #   Kilo Code: npm install -g @kilocode/cli
-#   Any CLI tool: configure as shell planner
+#   Any stdin/stdout CLI tool: configure as shell planner
 
 # Have an implementer ready (pick one):
 #   Ollama (default): ollama pull qwen2.5-coder:7b
@@ -131,7 +131,7 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 | `diptych status` | Show current workflow state |
 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to new layout |
 
-`--auto` auto-approves spec/plan review gates. Briefs review and action-level gates still follow workflow and approval config; use `--yolo` or approval tiers for unattended writes.
+`--auto` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
 
 ## Slash commands
 
@@ -197,7 +197,7 @@ Eight built-in, plus anything via shell:
 
 #### Shell planner
 
-Use any CLI tool that reads stdin and writes stdout:
+Use any CLI tool that reads stdin and writes stdout. Diptych does not sandbox shell or network access for that command; it runs with normal user permissions.
 
 ```yaml
 planner:
@@ -252,6 +252,8 @@ implementer:
 ```
 
 #### Shell implementer
+
+Shell implementers use the same stdin/stdout subprocess contract. Diptych parses stdout for changes; it does not sandbox shell or network access for the command.
 
 ```yaml
 implementer:
@@ -321,7 +323,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 - **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/ARCHITECTURE.md#eventbus).
 - **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/REPOMAP.md).
-- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; tiered sticky/confirm approvals fail closed unless their tiers allow the action.
+- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 - **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
 - **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/OTEL.md).
 

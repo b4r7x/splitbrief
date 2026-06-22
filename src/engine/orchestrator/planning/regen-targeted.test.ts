@@ -24,4 +24,14 @@ describe('buildTargetedRejectionComment', () => {
       ].join('\n'),
     );
   });
+
+  it('includes the user reason while preserving non-flagged tasks', () => {
+    const task = makeTask({ id: 'T003', title: 'Split broad task', file: 'src/broad.ts' });
+
+    const comment = buildTargetedRejectionComment([task], 'too broad for one worker');
+
+    expect(comment).toContain('- T003: "Split broad task" (src/broad.ts)');
+    expect(comment).toContain('User reason: too broad for one worker');
+    expect(comment).toContain('Keep every other task unchanged');
+  });
 });

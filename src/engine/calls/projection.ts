@@ -36,10 +36,5 @@ export function applyInvokeResultProjection(
 
 export function toTokenDelta(usage: RunnerCallResult['usage']): TokenDelta | null {
   if (usage === null) return null;
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    ...(usage.cacheReadTokens !== undefined && { cacheReadTokens: usage.cacheReadTokens }),
-    ...(usage.cacheCreateTokens !== undefined && { cacheCreateTokens: usage.cacheCreateTokens }),
-  };
+  return toTokenDeltaFromRunnerCallUsage(usage);
 }

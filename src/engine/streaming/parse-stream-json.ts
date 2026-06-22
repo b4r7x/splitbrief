@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type {
+  ParsedUsageSemantics,
   ParsedTextChannel,
   ParsedWarningInfo,
   ToolUseDeltaInfo,
@@ -7,8 +8,8 @@ import type {
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { toTokenDelta } from './token-usage.js';
-import { warnError } from '../../lib/warn.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
+import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 export interface StreamParseResult {
   text?: string | undefined;
@@ -17,6 +18,7 @@ export interface StreamParseResult {
   isResult?: boolean | undefined;
   isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
+  usageSemantics?: ParsedUsageSemantics | undefined;
   toolUse?: ToolUseInfo[] | undefined;
   toolUseStart?: ToolUseInfo[] | undefined;
   toolUseDelta?: ToolUseDeltaInfo[] | undefined;
@@ -50,11 +52,6 @@ const ResultEvent = z.object({
 const SessionEvent = z.object({
   session_id: z.string(),
 });
-
-const MALFORMED_STREAM_JSON_WARNING = {
-  code: 'malformed_stream_json',
-  message: 'Malformed stream-json line skipped',
-} as const;
 
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -111,7 +108,7 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
 
   if (streamType === 'message_delta' && isRecord(streamEvent.usage)) {
     const usage = toTokenDelta(streamEvent.usage);
-    return usage ? { sessionId, usage } : { sessionId };
+    return usage ? { sessionId, usage, usageSemantics: 'cumulative' } : { sessionId };
   }
 
   return { sessionId };
@@ -175,13 +172,14 @@ export function parseStreamLine(line: string): StreamParseResult {
 
     const result = ResultEvent.safeParse(event);
     if (result.success) {
+      const usage = toTokenDelta(result.data.usage ?? undefined) ?? undefined;
       return {
         text: result.data.result ?? undefined,
         channel: result.data.result !== undefined ? 'result' : undefined,
         sessionId: result.data.session_id ?? undefined,
         isResult: true,
-        isError: result.data.is_error ?? undefined,
-        usage: toTokenDelta(result.data.usage ?? undefined) ?? undefined,
+        ...(result.data.is_error !== undefined && { isError: result.data.is_error }),
+        ...(usage !== undefined && { usage, usageSemantics: 'final' }),
       };
     }
 
@@ -197,9 +195,17 @@ export function parseStreamLine(line: string): StreamParseResult {
       return { sessionId: session.data.session_id };
     }
 
-    return EMPTY_RESULT;
-  } catch (err) {
-    warnError('output-parser: malformed stream-json line', err);
-    return { warning: [MALFORMED_STREAM_JSON_WARNING] };
+    const warning = parsedUnknownRecordWarning({ parser: 'stream-json', value: event });
+    return warning === null ? EMPTY_RESULT : { warning: [warning] };
+  } catch {
+    return {
+      warning: [
+        parsedMalformedRecordWarning({
+          parser: 'stream-json',
+          line,
+          message: 'Malformed stream-json line skipped',
+        }),
+      ],
+    };
   }
 }

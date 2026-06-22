@@ -8,7 +8,7 @@ import {
   ScrollableDocument,
 } from '../../../components/scrollable-document.js';
 import { useTheme } from '../../../components/theme.js';
-import { getReviewContentLayout } from '../layout/rect.js';
+import { getReviewColumnWidth, getReviewContentLayout } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -24,7 +24,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const [{ filePath, scrollOffset: offset }] = useStores(reviewStore);
   const content = useReviewContent(filePath);
   const containerHeight = height ?? 20;
-  const documentWidth = Math.max(1, width ?? 80);
+  const documentWidth = Math.max(1, getReviewColumnWidth(width ?? 80));
   const rows = renderMarkdownRows({
     source: content,
     width: documentWidth,
@@ -43,31 +43,33 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   return (
     <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
-      <Box height={1} overflow="hidden">
-        <Text color={t.review.file}>
-          {truncateTerminalDisplayTextStart(filePath, documentWidth)}
-        </Text>
+      <Box flexDirection="column" width={documentWidth} overflow="hidden">
+        <Box height={1} overflow="hidden">
+          <Text color={t.review.file}>
+            {truncateTerminalDisplayTextStart(filePath, documentWidth)}
+          </Text>
+        </Box>
+        <Box height={1} overflow="hidden">
+          <Text color={t.border}>{'─'.repeat(documentWidth)}</Text>
+        </Box>
+        {contentHeight > 0 && (
+          <ScrollableDocument
+            rows={rows}
+            height={contentHeight}
+            isActive={false}
+            scrollOffset={offset}
+            onScrollOffsetChange={reviewStore.setScrollOffset}
+          />
+        )}
+        {showFooter && (
+          <Text color={t.textDim}>
+            {truncateTerminalDisplayTextStart(
+              getFooterText(renderedLineCount, clampedOffset, contentHeight),
+              documentWidth,
+            )}
+          </Text>
+        )}
       </Box>
-      <Box height={1} overflow="hidden">
-        <Text color={t.border}>{'─'.repeat(documentWidth)}</Text>
-      </Box>
-      {contentHeight > 0 && (
-        <ScrollableDocument
-          rows={rows}
-          height={contentHeight}
-          isActive={false}
-          scrollOffset={offset}
-          onScrollOffsetChange={reviewStore.setScrollOffset}
-        />
-      )}
-      {showFooter && (
-        <Text color={t.textDim}>
-          {truncateTerminalDisplayTextStart(
-            getFooterText(renderedLineCount, clampedOffset, contentHeight),
-            documentWidth,
-          )}
-        </Text>
-      )}
     </Box>
   );
 }

@@ -6,6 +6,7 @@ import { labelError } from '../../../utils/format-errors.js';
 
 export function useReviewContent(filePath: string | null): string {
   const [content, setContent] = useState('');
+  const revision = reviewStore.use((s) => s.revision);
 
   useEffect(() => {
     if (!filePath) {
@@ -15,6 +16,7 @@ export function useReviewContent(filePath: string | null): string {
     }
 
     const controller = new AbortController();
+    setContent('');
     fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' })
       .then((data) => {
         setContent(data);
@@ -29,7 +31,7 @@ export function useReviewContent(filePath: string | null): string {
     return () => {
       controller.abort();
     };
-  }, [filePath]);
+  }, [filePath, revision]);
 
   return content;
 }

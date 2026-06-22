@@ -152,6 +152,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         projectDir,
         sessionId,
         persistTranscript: config.workflow.persistTranscript,
+        onDegraded: (warning) => bus.publish(warning),
       }),
     ),
   );

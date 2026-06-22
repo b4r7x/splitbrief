@@ -24,6 +24,7 @@ import { buildSummary } from '../orchestrator/summary.js';
 import { runPricingIdentity } from '../../core/providers/pricing-identity.js';
 import type { EventBus } from '../events/types.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
+import { briefReviewCommandToApprovalReviewResult } from '../../core/schemas/brief-review-command.js';
 
 export type WorkflowLoopContext = {
   projectDir: string;
@@ -42,6 +43,12 @@ const ipcWorkflowLoopError = {
       'ipc-prompt-response-kind-mismatch',
       `IPC prompt response kind mismatch: expected ${expected}, got ${actual}`,
       { expected, actual },
+    ),
+  nonSettlingApprovalCommand: (action: string) =>
+    error(
+      'ipc-non-settling-approval-command',
+      `IPC approval command does not resolve the prompt: ${action}`,
+      { action },
     ),
 } as const;
 
@@ -62,11 +69,28 @@ export function makeCallbacks(ipcServer: IpcServer): OrchestratorCallbacks {
         await ipcServer.requestClientPrompt({ kind: 'approval_needed', approvalType, filePath }),
         'approval_needed',
       );
-      return {
-        approved: response.approved,
-        ...(response.comment !== undefined && { comment: response.comment }),
-        ...(response.action !== undefined && { action: response.action }),
-      };
+      if ('command' in response) {
+        const result = briefReviewCommandToApprovalReviewResult(response.command);
+        if (result === null) {
+          throw ipcWorkflowLoopError.nonSettlingApprovalCommand(response.command.action);
+        }
+        return result;
+      }
+      if (response.approved) return { approved: true };
+      if (response.action === 'edit') {
+        return response.comment !== undefined
+          ? { approved: false, action: response.action, comment: response.comment }
+          : { approved: false, action: response.action };
+      }
+      if (response.action === 'revise') {
+        return {
+          approved: false,
+          action: response.action,
+          comment: response.comment,
+          ...(response.taskIds !== undefined && { taskIds: response.taskIds }),
+        };
+      }
+      return { approved: false };
     },
     onUserEditConflict: async (conflict) => {
       const response = assertPromptResponse(

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
 import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
 import { isRecord, narrowRecord, optionalString } from '../../utils/type-guards.js';
-import { warnError } from '../../lib/warn.js';
+import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 const JsonlTextBlock = z.object({
   type: z.enum(['text', 'output_text']),
@@ -32,11 +32,6 @@ const CodexItemEvent = z.object({
   type: z.enum(['item.started', 'item.completed']),
   item: z.record(z.string(), z.unknown()),
 });
-
-const MALFORMED_JSONL_WARNING = {
-  code: 'malformed_jsonl',
-  message: 'Malformed JSONL line skipped',
-} as const;
 
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -122,6 +117,7 @@ export function parseJsonlLine(line: string): ParsedLine {
         if (texts.length > 0) return { text: texts.join(''), channel: 'assistant' };
       }
       if (item.data.item.text) return { text: item.data.item.text, channel: 'assistant' };
+      return {};
     }
 
     const codexToolItem = parseCodexToolItem(event);
@@ -130,7 +126,7 @@ export function parseJsonlLine(line: string): ParsedLine {
     const turn = TurnCompletedEvent.safeParse(event);
     if (turn.success) {
       const usage = toTokenDelta(turn.data.usage);
-      if (usage) return { usage };
+      if (usage) return { usage, usageSemantics: 'final' };
     }
 
     const e = narrowRecord(event);
@@ -141,11 +137,20 @@ export function parseJsonlLine(line: string): ParsedLine {
           text: typeof e.content === 'string' ? e.content : JSON.stringify(e.content),
           channel: 'assistant',
         };
+      if (e.type === 'turn.completed') return {};
     }
 
-    return {};
-  } catch (err) {
-    warnError('output-parser: malformed JSONL line', err);
-    return { warning: [MALFORMED_JSONL_WARNING] };
+    const warning = parsedUnknownRecordWarning({ parser: 'jsonl', value: event });
+    return warning === null ? {} : { warning: [warning] };
+  } catch {
+    return {
+      warning: [
+        parsedMalformedRecordWarning({
+          parser: 'jsonl',
+          line,
+          message: 'Malformed JSONL line skipped',
+        }),
+      ],
+    };
   }
 }

@@ -1,6 +1,7 @@
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
 export const WORKFLOW_CONTENT_PADDING_X = 1;
+export const MAX_REVIEW_COLUMN_WIDTH = 120;
 
 export function hasWorkflowConfig(events: readonly { type: string }[]): boolean {
   return events.some((event) => event.type === 'workflow_config');
@@ -23,6 +24,23 @@ function getWorkflowContentPaneWidth(input: SidebarWidthInput): number {
 
 export function getWorkflowContentWidth(input: SidebarWidthInput): number {
   return Math.max(0, getWorkflowContentPaneWidth(input) - WORKFLOW_CONTENT_PADDING_X * 2);
+}
+
+export function getReviewColumnWidth(contentWidth: number): number {
+  return Math.max(0, Math.min(contentWidth, MAX_REVIEW_COLUMN_WIDTH));
+}
+
+export interface WorkflowReviewColumn {
+  leftOffset: number;
+  width: number;
+}
+
+export function getWorkflowReviewColumn(input: SidebarWidthInput): WorkflowReviewColumn {
+  const sidebarWidth = getWorkflowSidebarWidth(input);
+  return {
+    leftOffset: sidebarWidth + WORKFLOW_CONTENT_PADDING_X,
+    width: getReviewColumnWidth(getWorkflowContentWidth(input)),
+  };
 }
 
 export interface WorkflowContentRect {
@@ -131,7 +149,11 @@ export function getWorkflowViewportHeight(
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
   const { cols, rows, inputRows, hasConfig, sidebarVisible, isSmall, promptRows = 0 } = input;
-  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
+  const sidebarWidth = getWorkflowSidebarWidth({
+    cols,
+    sidebarVisible,
+    isSmall,
+  });
   const width = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
   const height = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows, cols);
   const left = sidebarWidth + WORKFLOW_CONTENT_PADDING_X + 1;

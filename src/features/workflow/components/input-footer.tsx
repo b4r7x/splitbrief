@@ -55,8 +55,21 @@ function buildQueueText(
   isCompact: boolean,
 ): string | null {
   if (!queueCountText) return null;
-  if (isCompact || !queuePreviewText) return queueCountText;
-  return `${queueCountText} - ${queuePreviewText}`;
+  if (isCompact) return queueCountText;
+  const pendingText = `${queueCountText} pending`;
+  if (!queuePreviewText) return pendingText;
+  return `${pendingText} - ${queuePreviewText}`;
+}
+
+function formatQueuePreviewText(
+  previews: readonly { preview: string }[],
+  maxPreviewCount = 2,
+): string | null {
+  if (previews.length === 0) return null;
+  const visible = previews.slice(-maxPreviewCount).map((entry) => entry.preview);
+  const hiddenCount = Math.max(0, previews.length - visible.length);
+  const suffix = hiddenCount > 0 ? `, +${hiddenCount} older` : '';
+  return `${visible.join('; ')}${suffix}`;
 }
 
 function buildRightStatus(input: InputFooterLayoutInput, contentWidth: number): string {
@@ -127,7 +140,7 @@ export function buildInputFooterLayout(input: InputFooterLayoutInput): InputFoot
   };
 }
 
-export function InputFooter() {
+export function InputFooter({ width }: { width?: number | undefined }) {
   const t = useTheme();
   const [{ queueDepth, queuePreviews }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const isAttachedClient = routerStore.use(
@@ -141,17 +154,16 @@ export function InputFooter() {
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
   const taskText = `Task ${currentTask}/${totalTasks}${etaText ? ` · ${etaText}` : ''}`;
-  const latestQueuePreview =
-    queuePreviews.length > 0 ? (queuePreviews[queuePreviews.length - 1]?.preview ?? null) : null;
-  const queueCountText = queueDepth > 0 ? `queue: ${queueDepth}` : null;
+  const queuePreviewText = formatQueuePreviewText(queuePreviews);
+  const queueCountText = queueDepth > 0 ? `queued: ${queueDepth}` : null;
   const layout = buildInputFooterLayout({
-    cols,
+    cols: width ?? cols,
     isAttachedClient,
     advisoryText:
       advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
     taskText,
     queueCountText,
-    queuePreviewText: latestQueuePreview,
+    queuePreviewText,
     gitLabel,
   });
 

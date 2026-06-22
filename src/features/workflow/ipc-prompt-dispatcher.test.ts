@@ -3,6 +3,8 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { IpcPromptRequest } from '../../engine/ipc/protocol.js';
+import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_FILE_PATH_MAX_BYTES } from '../../core/sessions/confinement.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -52,13 +54,16 @@ function inputModeWith(prompts: string[], answer: string | string[]): UseInputMo
   };
 }
 
-function reviewInputMode(reviewPaths: string[]): UseInputModeResult {
+function reviewInputMode(
+  reviewPaths: string[],
+  result: ApprovalReviewResult = { approved: true },
+): UseInputModeResult {
   return {
     mode: 'normal',
     hint: '',
     setReviewMode: async () => {
       reviewPaths.push(reviewStore.get().filePath ?? '');
-      return { approved: true };
+      return result;
     },
     setQuestionMode: async () => '',
     resolve: () => {},
@@ -80,6 +85,7 @@ function approvalRequest(filePath: string): IpcPromptRequest {
     kind: 'approval_needed',
     approvalType: 'spec',
     filePath,
+    allowedCommands: [],
   };
 }
 
@@ -187,6 +193,30 @@ describe('createIpcPromptDispatcher approval_needed path confinement', () => {
     expect(reviewStore.get().filePath).toBeNull();
   });
 
+  it('maps external edit completion to the approval edit response used by the re-read loop', async () => {
+    const sessionDir = makeSessionDir();
+    const tasksPath = join(sessionDir, 'tasks.md');
+    writeFileSync(tasksPath, '# tasks\n');
+    const calls: string[] = [];
+    const dispatch = createIpcPromptDispatcher(
+      reviewInputMode(calls, { approved: false, action: 'edit' }),
+      {
+        sessionDirPath: sessionDir,
+      },
+    );
+
+    const response = await dispatch({
+      requestId: 'approval-briefs',
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: 'tasks.md',
+      allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt('briefs')],
+    });
+
+    expect(response).toEqual({ kind: 'approval_needed', approved: false, action: 'edit' });
+    expect(calls).toEqual([tasksPath]);
+  });
+
   it('rejects escaped, control-character, and oversized approval paths before review state changes', async () => {
     const sessionDir = makeSessionDir();
     const outside = join(sessionDir, '..', 'outside.md');
@@ -247,4 +277,50 @@ describe('createIpcPromptDispatcher approval_needed path confinement', () => {
       expect(calls).toHaveLength(0);
     },
   );
+});
+
+describe('createIpcPromptDispatcher task_review', () => {
+  it('uses the full task-review prompt and re-prompts on unavailable commands', async () => {
+    const prompts: string[] = [];
+    const dispatch = createIpcPromptDispatcher(inputModeWith(prompts, ['abort', 'continue']));
+
+    const response = await dispatch({
+      requestId: 'review-1',
+      kind: 'task_review',
+      request: {
+        taskId: taskId('T001'),
+        taskTitle: 'Attached task',
+        status: 'done',
+        filesTouched: ['src/attached.ts'],
+        validation: { passed: true, summary: 'validation passed', stages: [] },
+        evidence: { summary: 'evidence recorded', expected: [], observed: [] },
+        cost: {
+          tokenUsage: {
+            plannerInput: 0,
+            plannerOutput: 0,
+            implementerInput: 10,
+            implementerOutput: 5,
+            escalationInput: 0,
+            escalationOutput: 0,
+          },
+        },
+        availableCommands: ['continue'],
+      },
+    });
+
+    expect(response).toEqual({
+      kind: 'task_review',
+      response: { action: 'continue' },
+    });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('Task review: T001 - Attached task');
+    expect(prompts[0]).toContain('Status: done');
+    expect(prompts[0]).toContain('Files: src/attached.ts');
+    expect(prompts[0]).toContain('Commands: continue');
+    expect(prompts[0]).not.toContain('abort');
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Unrecognized task review command. Use: continue.',
+    });
+  });
 });

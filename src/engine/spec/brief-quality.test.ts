@@ -96,6 +96,30 @@ describe('evaluateBriefQuality — pure unit tests', () => {
     expect(issue?.severity).toBe('error');
   });
 
+  it('points missing evidence to the editable Evidence field and clears when evidence is added', () => {
+    const missing = evaluateBriefQuality([
+      makeTask({
+        tests: ['validates email format'],
+        implementationSteps: ['1. Add function'],
+        typeDefs: 'function foo(): void',
+        scope: { inBounds: ['foo'] },
+      }),
+    ]);
+    const issue = missing.issues.find((item) => item.code === 'missing_evidence');
+    expect(issue?.message).toContain('Evidence field');
+
+    const fixed = evaluateBriefQuality([
+      makeTask({
+        tests: ['validates email format'],
+        implementationSteps: ['1. Add function'],
+        typeDefs: 'function foo(): void',
+        scope: { inBounds: ['foo'] },
+        evidence: ['validation output is saved'],
+      }),
+    ]);
+    expect(fixed.issues.find((item) => item.code === 'missing_evidence')).toBeUndefined();
+  });
+
   it.each([
     [
       'same file path twice does not flag multi_file_task',

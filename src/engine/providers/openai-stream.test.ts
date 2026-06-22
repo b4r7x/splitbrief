@@ -26,6 +26,7 @@ interface MockChunk {
     prompt_tokens?: number;
     completion_tokens?: number;
     prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
   };
 }
 
@@ -150,6 +151,26 @@ describe('streamCompletion', () => {
     });
 
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('preserves OpenAI reasoning tokens in usage', async () => {
+    const client = makeMockClient([
+      { finishReason: 'stop' },
+      {
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          completion_tokens_details: { reasoning_tokens: 20 },
+        },
+      },
+    ]);
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 30, reasoningTokens: 20 });
   });
 
   it('records invalid stream chunks as unknown upstream diagnostics and continues', async () => {
@@ -384,6 +405,31 @@ describe('streamCompletion', () => {
         onProgress: () => controller.abort(new Error('cancelled')),
       }),
     ).rejects.toThrow('cancelled');
+  });
+
+  it('preserves streamed usage when aborted after usage arrives', async () => {
+    const controller = new AbortController();
+    const events: RunnerCallEvent[] = [];
+    const client = makeMockClient([
+      { usage: { prompt_tokens: 100, completion_tokens: 50 } },
+      { content: 'partial' },
+      { content: ' must-not-complete' },
+    ]);
+
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        signal: controller.signal,
+        onProgress: () => controller.abort(new Error('cancelled')),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow('cancelled');
+
+    const terminal = expectOneErrorClosesOperation(events);
+    expect(terminal).toMatchObject({
+      status: 'aborted',
+      usage: { inputTokens: 100, outputTokens: 50 },
+    });
   });
 
   it('maps a refused connection from the OpenAI SDK to the Ollama hint', async () => {

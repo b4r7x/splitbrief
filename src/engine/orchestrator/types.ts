@@ -9,7 +9,11 @@ import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation.js';
 import type { EventBus } from '../events/types.js';
-import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
+import type {
+  ApprovalReviewResult,
+  TieredApprovalRequest,
+  TieredApprovalResponse,
+} from '../../core/approval/types.js';
 import type {
   UserEditConflict,
   TaskReviewRequest,
@@ -46,7 +50,7 @@ export interface OrchestratorCallbacks {
   onApprovalNeeded: (
     type: 'spec' | 'plan' | 'briefs',
     filePath: string,
-  ) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
+  ) => Promise<ApprovalReviewResult>;
   onUserEditConflict?:
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
     | undefined;

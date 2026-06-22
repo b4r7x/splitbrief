@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../calls/output-limit.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
@@ -67,6 +68,28 @@ describe('createParsedLineRecorder', () => {
     );
   });
 
+  it('records cumulative usage semantics without double-counting local totals', () => {
+    const { events, parsed } = createHarness();
+
+    parsed.apply({
+      usage: { inputTokens: 10, outputTokens: 2 },
+      usageSemantics: 'cumulative',
+    });
+    parsed.apply({
+      usage: { inputTokens: 12, outputTokens: 4 },
+      usageSemantics: 'cumulative',
+    });
+
+    expect(parsed.usage).toEqual({ inputTokens: 12, outputTokens: 4 });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_usage',
+        semantics: 'cumulative',
+        usage: { inputTokens: 12, outputTokens: 4 },
+      }),
+    );
+  });
+
   it('replaces assistant draft text with final result text', () => {
     const { events, parsed, text } = createHarness();
 
@@ -80,6 +103,23 @@ describe('createParsedLineRecorder', () => {
         type: 'call_text_delta',
         channel: 'result',
         text: 'final text',
+        semantics: 'final',
+      }),
+    );
+  });
+
+  it('records final result text after a full-size assistant draft', () => {
+    const { events, parsed } = createHarness();
+
+    parsed.apply({ text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES), channel: 'assistant' });
+    parsed.apply({ text: 'final ok', channel: 'result' });
+
+    expect(parsed.text).toBe('final ok');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        channel: 'result',
+        text: 'final ok',
         semantics: 'final',
       }),
     );

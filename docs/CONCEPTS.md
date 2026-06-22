@@ -62,8 +62,8 @@ Both the planner and the implementer are configured with a `kind` field. There a
 |------|-----------|---------|-------------|
 | `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` | Default planner path; uses existing subscriptions |
 | `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, DeepSeek, OpenRouter, Together | Default implementer path |
-| `shell` | An arbitrary command. Prompt → stdin, code → stdout | Any custom script | Users who want to plug in a tool we don't know |
-| `agent` | A command that writes files directly to disk (no stdout code extraction) | A complete coding agent used as an implementer | When the tool handles file writing itself |
+| `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | Users who want to plug in a tool we don't know |
+| `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | When the tool handles file writing itself |
 | `agent-sdk` | Programmatic call into the Anthropic Agent SDK (no subprocess) | `@anthropic-ai/claude-agent-sdk` | When you want SDK-level control and already have `ANTHROPIC_API_KEY` |
 
 All five kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
@@ -265,7 +265,7 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 ## Headless mode
 
-`diptych start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. Action-level tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the action. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`diptych start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 

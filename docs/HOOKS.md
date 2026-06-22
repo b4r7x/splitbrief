@@ -57,7 +57,7 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Mouse-wheel binding to conversation/review scroll. |
 | `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
-| `use-keys.ts` | Workflow-only keyboard: scroll, review chords, sidebar toggle. Mounted only when `screen === 'workflow'`. |
+| `use-keys.ts` | Workflow-only keyboard: conversation/review scroll, diff/activity expansion, and cost drilldown. Mounted only when `screen === 'workflow'`. |
 
 ## Pure helpers that are not hooks
 

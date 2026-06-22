@@ -32,6 +32,7 @@ import {
   CallIdSchema,
   RunnerCallErrorSchema,
   RunnerCallFailureStatusSchema,
+  RunnerCallTextSemanticsSchema,
   RunnerCallToolUseSchema,
   RunnerCallUsageSchema,
   RunnerCallUsageSemanticsSchema,
@@ -297,6 +298,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   strictCallPhaseEvent('runner_call_text_delta').extend({
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
+    semantics: RunnerCallTextSemanticsSchema.optional(),
   }),
   strictCallPhaseEvent('runner_call_usage').extend({
     usage: RunnerCallUsageSchema,
@@ -525,7 +527,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('message_queued').extend({ id: z.string(), preview: z.string().optional() }),
   phaseEvent('message_injected_native').extend({ id: z.string(), preview: z.string().optional() }),
-  phaseEvent('queue_drained').extend({ count: z.number().int().nonnegative() }),
+  phaseEvent('queue_drained').extend({
+    count: z.number().int().nonnegative(),
+    ids: z.array(z.string()).optional(),
+  }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
   phaseEvent('user_message').extend({ text: z.string() }),
   phaseEvent('planner_attachments_dropped').extend({

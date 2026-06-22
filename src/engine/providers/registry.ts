@@ -17,6 +17,8 @@ import { warnError } from '../../lib/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
+import { error } from '../../utils/error.js';
+import { redactSecrets } from '../../utils/redact.js';
 
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
@@ -64,12 +66,26 @@ export function getProvider(name: string, overrides?: ProviderOverrides): Provid
   }
   if (!overrides?.apiBase) throw providerError.unknownNeedsApiBase(name);
   if (!overrides.apiKey) throw providerError.unknownNeedsApiKey(name);
+  rejectUnknownProviderEnvApiKeyReference(name, overrides);
   return createOpenAICompatProvider({
     name,
     defaultBaseURL: overrides.apiBase,
     envKeyName: '',
     overrides,
   });
+}
+
+function rejectUnknownProviderEnvApiKeyReference(name: string, overrides: ProviderOverrides): void {
+  const envVar = apiKeyEnvReference(overrides.apiKey);
+  if (!envVar) return;
+
+  const apiBase = redactSecrets(overrides.apiBase ?? '');
+  throw error(
+    'provider-custom-env-api-key-exfiltration',
+    `Custom/unknown provider '${name}' cannot use env apiKey reference env:${envVar} with apiBase '${apiBase}'. ` +
+      `This is an API key exfiltration risk; use an inline apiKey for this custom provider.`,
+    { provider: name, apiBase, envVar },
+  );
 }
 
 function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): void {

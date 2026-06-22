@@ -15,6 +15,7 @@ import { runPlanningPhase } from '../../src/engine/orchestrator/planning/run.js'
 import { createEvidenceLedger, writeEvidenceLedger } from '../../src/core/evidence/ledger.js';
 import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/approval.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
+import type { ApprovalReviewResult } from '../../src/core/approval/types.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { Attachment } from '../../src/core/schemas/attachment.js';
@@ -36,6 +37,12 @@ Add JWT-based authentication.
 
 - passes tsc
 
+### Type Definitions
+
+\`\`\`ts
+type AuthTask = { userId: string };
+\`\`\`
+
 ### Implementation Steps
 
 1. Implement the authentication module.
@@ -43,7 +50,7 @@ Add JWT-based authentication.
 ### Scope
 
 **In bounds:**
-- authentication plumbing in src/auth.ts
+- src/auth.ts
 **Out of bounds:**
 - unrelated UI or persistence changes
 
@@ -140,7 +147,7 @@ export function seedRejectionEvidence(projectDir: string, sessionId: string): vo
 }
 
 export function sequencedApproval(
-  responses: Array<{ approved: boolean; comment?: string; action?: 'edit' }>,
+  responses: readonly ApprovalReviewResult[],
 ): OrchestratorCallbacks['onApprovalNeeded'] {
   const fn = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
   for (const r of responses) fn.mockResolvedValueOnce(r);

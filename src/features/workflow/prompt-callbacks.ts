@@ -3,13 +3,12 @@ import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
-import { REVIEW_HINT } from './review-parser.js';
+import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
 } from './user-edit-conflict-prompt.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
-import { requestCancel, requestRewind } from './handlers.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 interface BuildCallbacksOptions {
@@ -23,9 +22,10 @@ export function buildPromptCallbacks(): (opts: BuildCallbacksOptions) => Orchest
   return (opts: BuildCallbacksOptions): OrchestratorCallbacks => {
     const { inputMode, abortedRef, controller, onComplete } = opts;
     return {
-      onApprovalNeeded: async (_type, filePath) => {
+      onApprovalNeeded: async (type, filePath) => {
         reviewStore.setReviewFile(filePath);
-        const result = await inputMode.setReviewMode(REVIEW_HINT);
+        const hint = type === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
+        const result = await inputMode.setReviewMode(hint);
         reviewStore.clearReview();
         return result;
       },
@@ -41,28 +41,18 @@ export function buildPromptCallbacks(): (opts: BuildCallbacksOptions) => Orchest
       onTieredApproval: (request) => openApprovalPrompt(request),
       onTaskReviewNeeded: async (request) => {
         const prompt = formatTaskReviewPrompt(request);
-        let decision = parseTaskReviewAnswer(await inputMode.setQuestionMode(prompt));
+        let decision = parseTaskReviewAnswer(
+          await inputMode.setQuestionMode(prompt),
+          request.availableCommands,
+        );
         while (!decision) {
           feedbackStore.setError(
-            'Unrecognized task review command. Use: continue, redo, notes <text>, revise-plan <notes>, or abort.',
+            `Unrecognized task review command. Use: ${request.availableCommands.join(', ')}.`,
           );
-          decision = parseTaskReviewAnswer(await inputMode.setQuestionMode(prompt));
-        }
-        if (decision.action === 'redo-task') {
-          if (!requestRewind({ target: 'task', taskId: request.taskId })) {
-            feedbackStore.setError('Cannot redo task: no active workflow.');
-          }
-        } else if (decision.action === 'revise-plan') {
-          if (
-            !requestRewind({
-              target: 'plan',
-              ...(decision.notes ? { comment: decision.notes } : {}),
-            })
-          ) {
-            feedbackStore.setError('Cannot revise plan: no active workflow.');
-          }
-        } else if (decision.action === 'abort') {
-          requestCancel();
+          decision = parseTaskReviewAnswer(
+            await inputMode.setQuestionMode(prompt),
+            request.availableCommands,
+          );
         }
         return decision;
       },

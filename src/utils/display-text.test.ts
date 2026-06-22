@@ -3,6 +3,7 @@ import {
   DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
   getTerminalCellWidth,
   padTerminalDisplayTextEnd,
+  sanitizeTerminalDisplayText,
   sanitizeTerminalDiagnosticText,
   stripTerminalControls,
   truncateTerminalDisplayText,
@@ -15,6 +16,17 @@ describe('stripTerminalControls', () => {
     const text = 'a\u001b[31mb\u001b[0mc\u0007d\u001b]0;owned\u0007e\u009b2Kf\u009dtitle\u009cg\nh';
 
     expect(stripTerminalControls(text)).toBe('abcdefgh');
+  });
+});
+
+describe('sanitizeTerminalDisplayText', () => {
+  it('preserves line breaks for prompt and markdown display text', () => {
+    const text =
+      'first\u001b[31m line\u001b[0m\nTOKEN=abcdefghijklmnopqrstuvwxyz1234567890abcdef\nlast';
+
+    expect(sanitizeTerminalDisplayText(text, { preserveLineBreaks: true })).toBe(
+      'first line\nTOKEN=***REDACTED***\nlast',
+    );
   });
 });
 

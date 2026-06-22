@@ -295,11 +295,35 @@ describe('parseEngineEvent', () => {
         sequence: 1,
         channel: 'assistant',
         text: 'assistant output',
+        semantics: 'final',
       }),
     ).toEqual(
       expect.objectContaining({
         type: 'runner_call_text_delta',
         channel: 'assistant',
+        semantics: 'final',
+      }),
+    );
+  });
+
+  it('accepts legacy runner text deltas without semantics', () => {
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_text_delta',
+        ts: 1,
+        phase: 'planning',
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'cli',
+        sequence: 1,
+        channel: 'assistant',
+        text: 'assistant output',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'runner_call_text_delta',
+        channel: 'assistant',
+        text: 'assistant output',
       }),
     );
   });

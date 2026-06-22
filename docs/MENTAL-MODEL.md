@@ -113,9 +113,9 @@ Both planner and implementer are pluggable. The same five backend kinds work for
 
 **api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic direct.
 
-**shell** — Runs an arbitrary command with stdin/stdout piping.
+**shell** — Runs an arbitrary command with stdin/stdout piping; no shell/network sandbox.
 
-**agent** — Subprocess that writes files directly to disk (no code extraction from response).
+**agent** — Subprocess that writes files directly to disk (no code extraction from response); no shell/network sandbox.
 
 **agent-sdk** — Anthropic Agent SDK library call with thread persistence.
 
@@ -144,7 +144,7 @@ The workflow pauses at defined points for human review:
 - **Spec gate** — After the planner writes the spec. Approve, comment (planner regenerates), or reject.
 - **Plan gate** — After the planner writes the plan (speckit mode by default).
 - **Briefs gate** — After Task Briefs pass the quality gate. The user reviews tasks.md before any code is written.
-- **Tiered approval** — During implementation, individual file writes are classified by risk (in-scope, out-of-scope, destructive, network, package change) and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask).
+- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask). `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Cost gate** — Before tasks start, if the predicted cost exceeds the budget.
 
 `--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: instant/quick skip spec/plan gates, standard gates on spec, speckit gates on spec and plan.

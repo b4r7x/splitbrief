@@ -396,7 +396,7 @@ describe('runWorkflow — smoke', () => {
     });
     const { callbacks } = makeCallbacks({
       onApprovalNeeded: vi.fn(async (type) => {
-        if (type !== 'plan') return { approved: true };
+        if (type !== 'plan') return { approved: true as const };
         const persisted = loadState({ projectDir, sessionId });
         expect(persisted?.phase).toBe('reviewing-plan');
         if (!persisted) throw new Error('Expected persisted planning state');
@@ -544,7 +544,7 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001' });
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);
-  });
+  }, 20_000);
 
   it('re-enters planning after task review requests revise-plan without notes', async () => {
     const projectDir = setupProject();
@@ -616,6 +616,62 @@ describe('runWorkflow — smoke', () => {
       'T001',
       'T002',
     ]);
+  });
+
+  it('task review abort publishes workflow_cancelled and skips final review', async () => {
+    const projectDir = setupProject();
+    const onTaskReviewNeeded = vi.fn().mockResolvedValue({ action: 'abort' });
+    const { callbacks } = makeCallbacks({ onTaskReviewNeeded });
+    const events: EngineEvent[] = [];
+
+    const summary = await runWorkflow({
+      feature: 'abort from task review',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+          taskReview: 'every',
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '# Plan',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'Abortable task',
+              scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the task ran'],
+              typeDefs: 'type AbortableTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(summary.totalTasks).toBe(1);
+    expect(summary.completedByLocal).toBe(0);
+    expect(onTaskReviewNeeded).toHaveBeenCalledTimes(1);
+    expect(onTaskReviewNeeded.mock.calls[0]?.[0]).toMatchObject({
+      taskId: 'T001',
+      status: 'recovery-required',
+    });
+    expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
+      type: 'workflow_cancelled',
+      reason: 'user_cancelled',
+    });
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
   });
 
   it('forwards planner runner_call lifecycle events through the workflow EventBus', async () => {

@@ -7,6 +7,7 @@ import { runPlanningPhase } from './run.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Planner } from '../../planners/types.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import {
   TEST_METADATA,
   setupProject,
@@ -132,7 +133,7 @@ describe('runPlanningPhase — rejection paths', () => {
   const rejectCases: Array<{
     name: string;
     workflow: Partial<Config['workflow']>;
-    approvals: Array<{ approved: boolean }>;
+    approvals: readonly ApprovalReviewResult[];
     expectPhase?: WorkflowState['phase'];
   }> = [
     {
@@ -146,7 +147,7 @@ describe('runPlanningPhase — rejection paths', () => {
       workflow: manual('speckit'),
       approvals: [{ approved: true }, { approved: false }],
     },
-  ];
+  ] as const;
 
   it.each(rejectCases)('$name', async ({ workflow, approvals, expectPhase }) => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded: sequencedApproval(approvals) });

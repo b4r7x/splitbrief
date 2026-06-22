@@ -293,7 +293,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const approvalTypes: string[] = [];
     const onApprovalNeeded = vi.fn(async (type: string) => {
       approvalTypes.push(type);
-      return { approved: true };
+      return { approved: true as const };
     });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
 

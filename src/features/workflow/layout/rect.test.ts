@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
+  getReviewColumnWidth,
   getWorkflowConversationRect,
   getWorkflowContentRect,
   getWorkflowContentWidth,
+  getWorkflowReviewColumn,
   getWorkflowRuntimeLayout,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
@@ -67,8 +69,16 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(0);
     expect(getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(cols - 2);
 
-    const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: false });
-    const content = getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: false });
+    const sidebar = getWorkflowSidebarWidth({
+      cols,
+      sidebarVisible: true,
+      isSmall: false,
+    });
+    const content = getWorkflowContentWidth({
+      cols,
+      sidebarVisible: true,
+      isSmall: false,
+    });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
     expect(sidebar + content).toBe(cols - 2);
@@ -96,6 +106,32 @@ describe('workflow viewport layout', () => {
   });
 });
 
+describe('review column layout', () => {
+  it('caps review width and offsets it to the workflow content column', () => {
+    expect(getReviewColumnWidth(180)).toBe(120);
+    expect(getReviewColumnWidth(80)).toBe(80);
+
+    expect(
+      getWorkflowReviewColumn({
+        cols: 180,
+        sidebarVisible: false,
+        isSmall: false,
+      }),
+    ).toEqual({
+      leftOffset: 1,
+      width: 120,
+    });
+
+    const withSidebar = getWorkflowReviewColumn({
+      cols: 180,
+      sidebarVisible: true,
+      isSmall: false,
+    });
+    expect(withSidebar.leftOffset).toBeGreaterThan(1);
+    expect(withSidebar.width).toBe(120);
+  });
+});
+
 describe('getWorkflowContentRect', () => {
   it('produces a geometrically consistent rect that agrees with the width/height helpers', () => {
     const cols = 120;
@@ -120,7 +156,11 @@ describe('getWorkflowContentRect', () => {
     expect(rect.right).toBe(rect.left + rect.width - 1);
     expect(rect.bottom).toBe(rect.top + rect.height - 1);
 
-    const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
+    const sidebarWidth = getWorkflowSidebarWidth({
+      cols,
+      sidebarVisible,
+      isSmall,
+    });
     expect(rect.left).toBe(sidebarWidth + 2);
   });
 
@@ -173,7 +213,10 @@ describe('getReviewContentLayout', () => {
   });
 
   it('does not show a footer when the container only has room for review chrome', () => {
-    expect(getReviewContentLayout(2, 20)).toEqual({ contentHeight: 0, showFooter: false });
+    expect(getReviewContentLayout(2, 20)).toEqual({
+      contentHeight: 0,
+      showFooter: false,
+    });
     expect(getReviewContentLayout(1, 20).contentHeight).toBe(0);
     expect(getReviewContentLayout(0, 0).contentHeight).toBe(0);
   });

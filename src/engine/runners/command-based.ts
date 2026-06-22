@@ -17,7 +17,10 @@ import {
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { error } from '../../utils/error.js';
 import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
+
+const PROMPT_PLACEHOLDER = '{prompt}';
 
 export interface CommandBasedOptions {
   command: string;
@@ -38,6 +41,16 @@ export interface CommandBasedResult {
 
 let commandCallSequence = 0;
 
+function rejectPromptPlaceholderCommand(command: string): void {
+  if (!command.includes(PROMPT_PLACEHOLDER)) return;
+
+  throw error(
+    'runner-command-prompt-placeholder',
+    'Runner command must not contain {prompt}; pass the prompt through stdin or args instead.',
+    { command },
+  );
+}
+
 function createCommandCallContext(opts: {
   command: string;
   callContext?: RunnerCallContext | undefined;
@@ -57,16 +70,15 @@ function substitutePromptPlaceholder(
   args: string[],
   prompt: string,
 ): { command: string; args: string[]; useStdin: boolean } {
-  const commandHasPlaceholder = command.includes('{prompt}');
-  const argsHavePlaceholder = args.some((a) => a.includes('{prompt}'));
+  const argsHavePlaceholder = args.some((a) => a.includes(PROMPT_PLACEHOLDER));
 
-  if (!commandHasPlaceholder && !argsHavePlaceholder) {
+  if (!argsHavePlaceholder) {
     return { command, args, useStdin: true };
   }
 
   return {
-    command: commandHasPlaceholder ? command.replaceAll('{prompt}', () => prompt) : command,
-    args: argsHavePlaceholder ? args.map((a) => a.replaceAll('{prompt}', () => prompt)) : args,
+    command,
+    args: args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt)),
     useStdin: false,
   };
 }
@@ -85,6 +97,8 @@ export async function invokeCommandBasedRunner(
   const { prompt, projectDir, onOutput, signal } = opts;
   const rawArgs = opts.args ?? [];
   const format: OutputFormat = opts.outputFormat ?? 'text';
+
+  rejectPromptPlaceholderCommand(opts.command);
 
   let finalCommand = opts.command;
   let finalArgs = rawArgs;

@@ -49,6 +49,7 @@ import { useStores } from '../../stores/use-stores.js';
 import {
   clampWorkflowPromptRows,
   getWorkflowContentWidth,
+  getWorkflowReviewColumn,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
@@ -154,7 +155,9 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
     authToken: attach?.authToken ?? '',
     enabled: isAttachedClient,
     onEvent: (event) =>
-      addTuiEvent(event, { persistTranscript: config.workflow.persistTranscript }),
+      addTuiEvent(event, {
+        persistTranscript: config.workflow.persistTranscript,
+      }),
     onPromptRequest: handleIpcPrompt,
   });
 
@@ -167,29 +170,47 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
   const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const costApprovalState = costApprovalStore.use((s) => s);
+  const briefReview = config.workflow.briefReview ?? 'simple';
+  const runtimeRichMode = planEditorStore.use((s) => s.runtimeRichMode);
+  const useRichEditor = briefReview === 'rich' || runtimeRichMode;
+  const useRichEditorActive = phase === 'reviewing-briefs' && useRichEditor;
+  const footerInputRows = useRichEditorActive ? 0 : inputRows;
   const promptPending =
     approvalPromptState.status === 'pending' || costApprovalState.status === 'pending';
 
-  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible, isSmall });
+  const sidebarWidth = getWorkflowSidebarWidth({
+    cols,
+    sidebarVisible,
+    isSmall,
+  });
   const showSidebar = sidebarWidth > 0;
   const approvalRows = getApprovalPromptRows(approvalPromptState, cols);
   const costRows = getCostApprovalPromptRows(costApprovalState, cols);
   const promptRows = clampWorkflowPromptRows(
     rows,
-    inputRows,
+    footerInputRows,
     hasConfig,
     approvalRows + costRows,
     cols,
   );
   const promptBoxRows = promptPending ? Math.max(1, promptRows) : promptRows;
-  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptBoxRows, cols);
-  const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
+  const contentHeight = getWorkflowViewportHeight(
+    rows,
+    footerInputRows,
+    hasConfig,
+    promptBoxRows,
+    cols,
+  );
+  const contentWidth = getWorkflowContentWidth({
+    cols,
+    sidebarVisible,
+    isSmall,
+  });
+  const reviewColumn =
+    inputMode.mode === 'review'
+      ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
+      : undefined;
 
-  const briefReview = config.workflow.briefReview ?? 'simple';
-  const runtimeRichMode = planEditorStore.use((s) => s.runtimeRichMode);
-  const useRichEditor = briefReview === 'rich' || runtimeRichMode;
-
-  const useRichEditorActive = phase === 'reviewing-briefs' && useRichEditor;
   useWorkflowKeys({ isActive: !useRichEditorActive });
 
   useEffect(() => {
@@ -263,15 +284,26 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
       }
     : onRuntimeCommand;
 
-  const inputHint = isAttachedClient
-    ? resolveAttachInputHint(ipcState.status)
-    : resolveInputHint({
-        cancelled,
-        canResumeCancelled: canResumeCancelledSession,
-        inputHint: inputMode.hint,
-        inputMode: inputMode.mode,
-        phase,
-      });
+  const reviewEditShortcutActive =
+    inputMode.mode === 'review' &&
+    reviewFilePath !== null &&
+    (phase === 'reviewing-spec' || phase === 'reviewing-plan' || phase === 'reviewing-briefs');
+  const handleReviewEditShortcut = reviewEditShortcutActive
+    ? () => {
+        void review.handleInput('edit');
+      }
+    : undefined;
+
+  const inputHint =
+    isAttachedClient && inputMode.mode === 'normal'
+      ? resolveAttachInputHint(ipcState.status)
+      : resolveInputHint({
+          cancelled,
+          canResumeCancelled: canResumeCancelledSession,
+          inputHint: inputMode.hint,
+          inputMode: inputMode.mode,
+          phase,
+        });
 
   if (!isAttachedClient && !readinessLoaded) {
     return (
@@ -289,20 +321,21 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
     <ScreenShell
       header={<WorkflowHeader startedAt={runner.startedAt} />}
       footer={
-        <WorkflowFooter
-          handleInput={handleInput}
-          onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
-          onRuntimeCommand={handleRuntimeCommand}
-          commands={commands}
-          mode={inputMode.mode}
-          inputHint={inputHint}
-          disabled={
-            hasOverlay ||
-            promptPending ||
-            useRichEditorActive ||
-            (isAttachedClient && ipcState.status !== 'connected')
-          }
-        />
+        useRichEditorActive ? null : (
+          <WorkflowFooter
+            handleInput={handleInput}
+            onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
+            onRuntimeCommand={handleRuntimeCommand}
+            commands={commands}
+            mode={inputMode.mode}
+            inputHint={inputHint}
+            reviewColumn={reviewColumn}
+            {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
+            disabled={
+              hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
+            }
+          />
+        )
       }
     >
       <WorkflowBody

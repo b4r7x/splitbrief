@@ -199,6 +199,23 @@ describe('operationsStore', () => {
     });
   });
 
+  it('does not start a planner_status fallback while waiting on review', () => {
+    addEvent(makePlannerStatus({ ts: 1_000, phase: 'planning', status: 'running' }));
+    expect(operationsStore.get().active).toMatchObject({
+      phase: 'planning',
+      status: 'running',
+    });
+
+    addEvent(makePlannerStatus({ ts: 1_200, phase: 'reviewing-spec', status: 'running' }));
+
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().last).toMatchObject({
+      phase: 'planning',
+      status: 'completed',
+      endedAt: 1_200,
+    });
+  });
+
   it('closes stale planner_status fallbacks when a new phase fallback starts', () => {
     addEvent(makePlannerStatus({ ts: 1_000, phase: 'researching', status: 'running' }));
     addEvent(makePlannerStatus({ ts: 1_200, phase: 'planning', status: 'running' }));

@@ -1,5 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Planner, PlanResult, PriorMessage } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
@@ -63,8 +64,10 @@ export type BriefsApprovalLoopOptions = {
   callbacks: import('../types.js').OrchestratorCallbacks;
   bus: import('../../events/types.js').EventBus;
   state: WorkflowState;
+  config: Config;
   metadata: import('../../../core/paths-io.js').SpecMetadata;
   signal?: AbortSignal | undefined;
+  sinks?: import('../types.js').WorkflowSinks | undefined;
 };
 
 export type BriefsApprovalLoopResult = {

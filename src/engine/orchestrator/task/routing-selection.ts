@@ -26,7 +26,7 @@ export type RoutingSelectionResult =
       selectedModel: string | undefined;
       routingDecision: RoutingDecision;
     }
-  | { ok: false; state: WorkflowState };
+  | { ok: false; state: WorkflowState; cancelled: boolean };
 
 export async function selectRoutingProfile(opts: {
   wctx: WorkflowContext;
@@ -59,7 +59,7 @@ export async function selectRoutingProfile(opts: {
       createdAt: nowIso(),
     });
     state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-    return { ok: false, state };
+    return { ok: false, state, cancelled: false };
   }
 
   const routingDecision = routeTaskToImplementerProfile(
@@ -91,7 +91,7 @@ export async function selectRoutingProfile(opts: {
       createdAt: nowIso(),
     });
     state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-    state = await stopWithReview({
+    const review = await stopWithReview({
       wctx,
       state,
       setTrackedState,
@@ -101,7 +101,7 @@ export async function selectRoutingProfile(opts: {
       taskBreakdowns,
       routingDecision,
     });
-    return { ok: false, state };
+    return { ok: false, state: review.state, cancelled: review.cancelled };
   }
 
   return { ok: true, state, selectedProfile, selectedModel, routingDecision };

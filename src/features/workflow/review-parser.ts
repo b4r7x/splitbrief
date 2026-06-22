@@ -6,39 +6,22 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { resolveEditorArgv } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
+import { briefReviewCommandToApprovalReviewResult } from '../../core/schemas/brief-review-command.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
   resumeTerminalAfterEditor,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import {
+  REVIEW_HINT,
+  BRIEFS_REVIEW_HINT,
+  REVIEW_UNKNOWN_COMMAND_MESSAGE,
+  parseReviewCommand,
+  reviewOpeningPromptMessage,
+} from './review-commands.js';
 
-export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
-export const BRIEFS_REVIEW_HINT = 'approve | e/edit | E/edit-file | comment <text> | reject';
-
-const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
-const QUIT_ALIASES = new Set(['quit', 'reject', 'no', 'n']);
-
-export type ReviewAction =
-  | { action: 'approve'; comment?: string }
-  | { action: 'quit' }
-  | { action: 'edit' }
-  | { action: 'edit-file' }
-  | null;
-
-export function parseReviewCommand(text: string): ReviewAction {
-  const raw = text.trim();
-  const cmd = raw.toLowerCase();
-  if (APPROVE_ALIASES.has(cmd)) return { action: 'approve' };
-  if (QUIT_ALIASES.has(cmd)) return { action: 'quit' };
-  if (cmd === 'edit-file' || raw === 'E') return { action: 'edit-file' };
-  if (cmd === 'edit' || cmd === 'e') return { action: 'edit' };
-  if (cmd.startsWith('comment ')) {
-    const trimmed = text.trim();
-    return { action: 'approve', comment: trimmed.slice(8).trim() };
-  }
-  return null;
-}
+export { REVIEW_HINT, BRIEFS_REVIEW_HINT, parseReviewCommand };
 
 function openInEditor(filePath: string): Promise<void> {
   const { command, args } = resolveEditorArgv();
@@ -85,8 +68,15 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
             feedbackStore.setError('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
             feedbackStore.setError(result.message);
+          } else {
+            feedbackStore.setMessage('Message queued for the next planner turn.');
           }
         }
+      } else if (
+        text.trim() &&
+        (phase === 'reviewing-spec' || phase === 'reviewing-plan' || phase === 'reviewing-briefs')
+      ) {
+        feedbackStore.setError(reviewOpeningPromptMessage(phase));
       }
       return;
     }
@@ -94,14 +84,23 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
     if (inputMode.mode === 'review') {
       const parsed = parseReviewCommand(text);
       if (!parsed) {
-        feedbackStore.setError('Unknown command. Use: approve, edit, comment <text>, or quit');
+        feedbackStore.setError(REVIEW_UNKNOWN_COMMAND_MESSAGE);
         return;
       }
-      if (parsed.action === 'approve') {
-        inputMode.resolve({ approved: true, comment: parsed.comment });
-      } else if (parsed.action === 'quit') {
-        inputMode.resolve({ approved: false });
-      } else if (parsed.action === 'edit') {
+      if (parsed.kind === 'brief-review-command') {
+        const result = briefReviewCommandToApprovalReviewResult(parsed.command);
+        if (result) {
+          inputMode.resolve(result);
+          return;
+        }
+        if (parsed.command.action === 'save_draft') {
+          feedbackStore.setError('Draft save is only available in the rich Task Brief editor.');
+          return;
+        }
+        feedbackStore.setMessage('Review prompt is still pending.');
+        return;
+      }
+      if (parsed.kind === 'open-rich-editor') {
         const phase = lifecycleStore.get().phase;
         if (phase === 'reviewing-briefs') {
           planEditorStore.setRuntimeRichMode(true);
@@ -112,18 +111,24 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
         if (filePath) {
           try {
             await openInEditor(filePath);
+            reviewStore.reloadReviewFile();
           } catch (err) {
             feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
           }
         }
-      } else if (parsed.action === 'edit-file') {
+      } else if (parsed.kind === 'open-external-editor') {
         const filePath = reviewStore.get().filePath;
         if (filePath) {
           try {
             await openInEditor(filePath);
             const phase = lifecycleStore.get().phase;
             if (phase === 'reviewing-briefs') {
-              inputMode.resolve({ approved: false, action: 'edit' });
+              const result = briefReviewCommandToApprovalReviewResult({
+                action: 'external_edit_applied',
+              });
+              if (result) inputMode.resolve(result);
+            } else {
+              reviewStore.reloadReviewFile();
             }
           } catch (err) {
             feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);

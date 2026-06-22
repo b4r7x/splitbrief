@@ -93,4 +93,37 @@ describe('Markdown', () => {
 
     ui.unmount();
   });
+
+  it('redacts secret-looking markdown text while preserving document line breaks', async () => {
+    const rows = renderMarkdownRows({
+      source: [
+        '# Token Review',
+        'Use TOKEN=abcdefghijklmnopqrstuvwxyz1234567890abcdef',
+        '```sh',
+        'curl -H "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"',
+        '```',
+      ].join('\n'),
+      width: 80,
+      theme: getTheme(),
+    });
+    const ui = renderFeature(
+      <Box flexDirection="column">
+        {rows.map((row) => (
+          <Box key={row.key} flexDirection="column">
+            {row.node}
+          </Box>
+        ))}
+      </Box>,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Token Review');
+    expect(frame).toContain('TOKEN=REDACTED');
+    expect(frame).toContain('Authorization: Bearer ***REDACTED***');
+    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890abcdef');
+    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
+
+    ui.unmount();
+  });
 });

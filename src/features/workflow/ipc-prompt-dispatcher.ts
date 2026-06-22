@@ -16,6 +16,7 @@ import {
   formatRecoveryActionChoice,
   formatRecoveryActionText,
 } from './recovery-prompt.js';
+import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
@@ -81,12 +82,27 @@ export function createIpcPromptDispatcher(
       const hint = request.approvalType === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
       const result = await inputMode.setReviewMode(hint);
       reviewStore.clearReview();
-      return {
-        kind: 'approval_needed',
-        approved: result.approved,
-        ...(result.comment !== undefined && { comment: result.comment }),
-        ...(result.action !== undefined && { action: result.action }),
-      };
+      if (result.approved) {
+        return { kind: 'approval_needed', approved: true };
+      }
+      if (result.action === 'edit') {
+        return {
+          kind: 'approval_needed',
+          approved: false,
+          action: result.action,
+          ...(result.comment !== undefined && { comment: result.comment }),
+        };
+      }
+      if (result.action === 'revise') {
+        return {
+          kind: 'approval_needed',
+          approved: false,
+          action: result.action,
+          comment: result.comment,
+          ...(result.taskIds !== undefined && { taskIds: result.taskIds }),
+        };
+      }
+      return { kind: 'approval_needed', approved: false };
     }
 
     if (request.kind === 'user_edit_conflict') {
@@ -119,10 +135,15 @@ export function createIpcPromptDispatcher(
     }
 
     if (request.kind === 'task_review') {
-      const result = await inputMode.setReviewMode(
-        `Review task ${request.request.taskId}: continue / abort`,
-      );
-      return { kind: 'task_review', response: { action: result.approved ? 'continue' : 'abort' } };
+      const prompt = formatTaskReviewPrompt(request.request);
+      while (true) {
+        const answer = await inputMode.setQuestionMode(prompt);
+        const response = parseTaskReviewAnswer(answer, request.request.availableCommands);
+        if (response !== null) return { kind: 'task_review', response };
+        feedbackStore.setError(
+          `Unrecognized task review command. Use: ${request.request.availableCommands.join(', ')}.`,
+        );
+      }
     }
 
     if (request.kind === 'tiered_approval') {

@@ -6,7 +6,7 @@ import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
-import { PlanReviewHeader } from '../brief-review-view.js';
+import { PlanReviewHeader } from '../brief-review-header.js';
 import { usePlanEditorKeys } from '../../hooks/use-plan-editor-keys.js';
 import { createSaveHandler } from '../../plan-editor/save.js';
 import { loadPlanEditorData } from '../../plan-editor/loader.js';
@@ -21,7 +21,8 @@ interface PlanEditorComponentProps {
   width?: number;
   sessionDirPath?: string;
   onApprove?: () => void;
-  onRegenerateFlagged?: () => Promise<void>;
+  onReject?: () => void;
+  onRegenerateFlagged?: (reason?: string | undefined) => Promise<void>;
 }
 
 export function PlanEditorComponent({
@@ -30,6 +31,7 @@ export function PlanEditorComponent({
   width,
   sessionDirPath: sessionDirProp,
   onApprove,
+  onReject,
   onRegenerateFlagged,
 }: PlanEditorComponentProps) {
   const t = useTheme();
@@ -37,7 +39,10 @@ export function PlanEditorComponent({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [quality, setQuality] = useState<BriefQualityReport | null>(null);
   const [isPacketPreviewOpen, setIsPacketPreviewOpen] = useState(false);
-  const rawSave = createSaveHandler(sessionDirPath, onApprove);
+  const rawSave = createSaveHandler(sessionDirPath, {
+    onApprove,
+    onQualityUpdated: setQuality,
+  });
   const save = async () => {
     if (loadError !== null) {
       planEditorStore.setSaveError(loadError);
@@ -51,6 +56,7 @@ export function PlanEditorComponent({
     sessionDir: sessionDirPath,
     onTogglePacketPreview: () => setIsPacketPreviewOpen((open) => !open),
     onRegenerateFlagged,
+    onReject,
   });
 
   const tasks = planEditorStore.use((s) => s.tasks);
@@ -62,6 +68,7 @@ export function PlanEditorComponent({
   const statusMessage = planEditorStore.use((s) => s.statusMessage);
   const focus = planEditorStore.use((s) => s.focus);
   const editing = planEditorStore.use((s) => s.editing);
+  const regenReason = planEditorStore.use((s) => s.regenReason);
   const reviewMetadata = planEditorStore.use((s) => s.reviewMetadata);
   const configState = configStore.use((s) => s);
 
@@ -79,7 +86,7 @@ export function PlanEditorComponent({
         if (!signal.aborted) {
           const message = `Failed to load Task Briefs: ${toErrorMessage(err)}`;
           setLoadError(message);
-          planEditorStore.setSaveError(message);
+          planEditorStore.setLoadFailure(message);
         }
       });
 
@@ -97,8 +104,13 @@ export function PlanEditorComponent({
       : Math.min(8, Math.max(7, Math.floor((height ?? 24) / 3)))
     : 0;
   const chromeRows =
-    8 + previewRows + (dirty ? 1 : 0) + (saveError !== null ? 1 : 0) + (statusMessage ? 1 : 0);
-  const taskRowBudget = Math.max(1, (height ?? 24) - chromeRows);
+    8 +
+    previewRows +
+    (dirty ? 1 : 0) +
+    (saveError !== null ? 1 : 0) +
+    (statusMessage ? 1 : 0) +
+    (focus === 'regen-reason' ? 1 : 0);
+  const taskRowBudget = Math.max(0, (height ?? 24) - chromeRows);
   const { scrollOffset, visibleTasks } = getVisibleTaskWindow({
     tasks,
     cursor,
@@ -109,6 +121,7 @@ export function PlanEditorComponent({
     editing,
   });
   const isNarrow = (width ?? 80) < 70;
+  const rowWidth = Math.max(1, width ?? 80);
   const packetPreview = usePacketPreview({
     isOpen: isPacketPreviewOpen,
     selectedTask,
@@ -145,6 +158,7 @@ export function PlanEditorComponent({
               isExpanded={expandedIds.has(task.id)}
               isFlagged={flaggedIds.has(task.id)}
               issues={issuesForTask}
+              width={rowWidth}
             />
           );
         })}
@@ -153,6 +167,11 @@ export function PlanEditorComponent({
         <WorkerPacketPreviewPanel preview={packetPreview} rows={previewRows} />
       )}
       {dirty && <Text color={t.warning}>unsaved changes</Text>}
+      {focus === 'regen-reason' && (
+        <Text color={t.accent} wrap="truncate">
+          regen reason: {regenReason || '(optional, Enter to skip)'}
+        </Text>
+      )}
       {saveError !== null && (
         <Text color={t.error} wrap="truncate">
           {saveError}
@@ -164,7 +183,12 @@ export function PlanEditorComponent({
         </Text>
       )}
       <Box height={1} />
-      <PlanEditorFooter isPacketPreviewOpen={isPacketPreviewOpen} isNarrow={isNarrow} />
+      <PlanEditorFooter
+        isPacketPreviewOpen={isPacketPreviewOpen}
+        isNarrow={isNarrow}
+        width={rowWidth}
+        loadFailed={loadError !== null}
+      />
     </Box>
   );
 }

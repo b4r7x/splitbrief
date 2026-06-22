@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
@@ -43,7 +43,7 @@ function borderColorForMode(
 
 function placeholderForMode(mode: InputMode, hint?: string): string {
   if (hint) return hint;
-  if (mode === 'review') return 'approve / edit / comment ... / quit';
+  if (mode === 'review') return 'approve | Ctrl+E/e edit | comment ... | quit';
   if (mode === 'question') return 'type your answer...';
   return 'describe your feature...';
 }
@@ -161,6 +161,7 @@ interface ComposerProps {
   disabled?: boolean;
   homeHint?: string | undefined;
   onEmptySubmit?: (() => void) | undefined;
+  onEditShortcut?: (() => void) | undefined;
 }
 
 export function Composer({
@@ -174,6 +175,7 @@ export function Composer({
   disabled,
   homeHint,
   onEmptySubmit,
+  onEditShortcut,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -195,10 +197,11 @@ export function Composer({
     persistTranscript,
   });
 
+  const completionValue = mode === 'normal' ? value : '';
   const command = useCommandCompletion({
     commands,
     currentScreen,
-    value,
+    value: completionValue,
     setValue: onChange,
     onRuntimeCommand,
     disabled,
@@ -206,7 +209,7 @@ export function Composer({
 
   const reference = useReferenceCompletion({
     files: projectFiles,
-    value,
+    value: completionValue,
     setValue: onChange,
     disabled,
   });
@@ -224,6 +227,14 @@ export function Composer({
   };
 
   const handleSubmit = (text: string) => {
+    if (mode !== 'normal') {
+      onSubmit(text);
+      setValue('');
+      resetHistory();
+      bumpEpoch();
+      return;
+    }
+
     if (showCommandSuggestions || showReferenceSuggestions) return;
     const trimmed = text.trim();
     if (!trimmed) {
@@ -242,6 +253,9 @@ export function Composer({
     resetHistory();
     bumpEpoch();
   };
+
+  const isEditShortcut = (input: string, key: Key): boolean =>
+    mode === 'review' && key.ctrl && input === 'e';
 
   const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
     if (showCommandSuggestions || showReferenceSuggestions) return true;
@@ -342,7 +356,9 @@ export function Composer({
               keyBindings={{
                 submit: (key: { return: boolean; shift: boolean }) => key.return && !key.shift,
                 newline: (key: { return: boolean; shift: boolean }) => key.return && key.shift,
+                ...(onEditShortcut ? { shortcut: isEditShortcut } : {}),
               }}
+              {...(onEditShortcut ? { onShortcut: onEditShortcut } : {})}
               onBoundaryNavigate={handleInputBoundaryNavigate}
             />
           </Box>

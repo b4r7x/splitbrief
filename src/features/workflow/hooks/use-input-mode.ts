@@ -1,19 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../../../core/navigation/types.js';
+import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-
-type ReviewResult = {
-  approved: boolean;
-  comment?: string | undefined;
-  action?: 'edit' | undefined;
-};
 
 export interface UseInputModeResult {
   mode: InputMode;
   hint: string;
-  setReviewMode: (h: string) => Promise<ReviewResult>;
+  setReviewMode: (h: string) => Promise<ApprovalReviewResult>;
   setQuestionMode: (h: string) => Promise<string>;
-  resolve: (value: ReviewResult | string) => void;
+  resolve: (value: ApprovalReviewResult | string) => void;
   resetMode: () => void;
 }
 
@@ -27,7 +22,7 @@ export function useInputMode(): UseInputModeResult {
   // closure value would go stale across intervening renders/mode changes.
   const modeRef = useRef(modeState.mode);
   modeRef.current = modeState.mode;
-  const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
+  const reviewResolverRef = useRef<((value: ApprovalReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
 
   const supersedePending = (): void => {
@@ -39,7 +34,7 @@ export function useInputMode(): UseInputModeResult {
     questionResolver?.('');
   };
 
-  const setReviewMode = (h: string): Promise<ReviewResult> => {
+  const setReviewMode = (h: string): Promise<ApprovalReviewResult> => {
     supersedePending();
     return new Promise((resolve) => {
       reviewResolverRef.current = resolve;
@@ -57,7 +52,7 @@ export function useInputMode(): UseInputModeResult {
     });
   };
 
-  const resolve = (value: ReviewResult | string): void => {
+  const resolve = (value: ApprovalReviewResult | string): void => {
     const currentMode = modeRef.current;
     setModeState({ mode: 'normal', hint: '' });
     controlsStore.clearInputMode();

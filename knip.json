@@ -1,10 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "src/engine/ipc/server-entry.ts",
-    "testing/e2e/scenarios/**/*.test.ts",
-    "testing/e2e/vitest.e2e.config.ts"
-  ],
+  "entry": ["src/engine/ipc/server-entry.ts", "testing/e2e/scenarios/**/*.test.ts"],
   "project": [
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",
@@ -12,9 +8,10 @@
     "testing/**/*.ts",
     "!**/*.test.ts",
     "!evals/fixtures/**",
-    "!testing/fixtures/**"
+    "!testing/fixtures/**",
+    "!testing/e2e/vitest.e2e.config.ts"
   ],
-  "ignoreDependencies": ["tree-sitter-typescript", "@anthropic-ai/claude-agent-sdk"],
+  "ignoreDependencies": ["@anthropic-ai/claude-agent-sdk"],
   "ignoreExportsUsedInFile": true,
   "includeEntryExports": true
 }

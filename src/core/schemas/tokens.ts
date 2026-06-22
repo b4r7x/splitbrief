@@ -11,6 +11,7 @@ export interface TokenDelta {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreateTokens?: number;
+  reasoningTokens?: number;
 }
 
 export const TokenUsageSchema = z.object({

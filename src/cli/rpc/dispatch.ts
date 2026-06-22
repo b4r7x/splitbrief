@@ -9,6 +9,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';
 import type { RpcCommand } from './types.js';
 import type { RpcErrorOptions } from './writer.js';
+import type { ApprovalGatePrompt, BriefReviewGateResult } from './gates.js';
 
 export function createCommandHandler(deps: {
   projectDir: string;
@@ -26,18 +27,26 @@ export function createCommandHandler(deps: {
   abort: (reason?: unknown) => void;
   abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
-  approvalGate: { handle: (cmd: RpcCommand) => boolean };
+  approvalGate: {
+    handle: (cmd: RpcCommand) => boolean;
+    handleBriefReview: (
+      command: Extract<RpcCommand, { type: 'brief_review' }>['command'],
+      promptId?: string | undefined,
+    ) => Promise<BriefReviewGateResult>;
+  };
   messageGate: { resolve: (value: string) => boolean };
   receiveRecoveryAction: (action: string) => boolean;
   writeStatus: () => void;
   writer: {
     ack: (command: string, data?: unknown) => void;
     error: (message: string, options?: RpcErrorOptions) => void;
+    status: (data: unknown) => void;
   };
   pendingQueueDepth: (state: WorkflowState | null) => number;
   setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
 }): (cmd: RpcCommand) => void {
   let runtimeChain: Promise<void> = Promise.resolve();
+  let briefReviewChain: Promise<void> = Promise.resolve();
 
   const executeRpcRuntimeCommand = async (raw: string) => {
     const messages: string[] = [];
@@ -77,6 +86,65 @@ export function createCommandHandler(deps: {
     deps.writer.ack('slash', { command: raw, messages });
   };
 
+  const briefReviewEcho = (
+    cmd: Extract<RpcCommand, { type: 'brief_review' }>,
+    prompt: ApprovalGatePrompt | null,
+  ) => ({
+    ...(cmd.id !== undefined && { id: cmd.id }),
+    ...(cmd.operationId !== undefined && { operationId: cmd.operationId }),
+    promptId: cmd.promptId ?? prompt?.promptId ?? null,
+    action: cmd.command.action,
+  });
+
+  const writeBriefReviewStatus = (
+    cmd: Extract<RpcCommand, { type: 'brief_review' }>,
+    result: Extract<BriefReviewGateResult, { status: 'status' }>,
+  ) => {
+    const prompt = result.prompt;
+    deps.writer.status({
+      ...briefReviewEcho(cmd, prompt),
+      pending: prompt?.approvalType === 'briefs' ? 'brief_review' : null,
+      approvalType: prompt?.approvalType ?? null,
+      allowedCommands: prompt?.allowedCommands ?? [],
+    });
+  };
+
+  const writeBriefReviewResult = (
+    cmd: Extract<RpcCommand, { type: 'brief_review' }>,
+    result: BriefReviewGateResult,
+  ) => {
+    if (result.status === 'status') {
+      writeBriefReviewStatus(cmd, result);
+      return;
+    }
+    if (result.status === 'saved') {
+      deps.writer.ack('brief_review', {
+        ...briefReviewEcho(cmd, result.prompt),
+        status: 'saved',
+        qualityPassed: result.draft.qualityPassed,
+        qualityScore: result.draft.qualityScore,
+        issueCount: result.draft.issueCount,
+        taskCount: result.draft.taskCount,
+      });
+      return;
+    }
+    if (result.status === 'settled') {
+      deps.writer.ack('brief_review', {
+        ...briefReviewEcho(cmd, result.prompt),
+        status: 'accepted',
+      });
+      return;
+    }
+    deps.writer.error(result.message, {
+      transcriptSensitive: true,
+      summary: 'Brief review command rejected.',
+      data: {
+        ...briefReviewEcho(cmd, result.prompt),
+        status: 'rejected',
+      },
+    });
+  };
+
   return (cmd: RpcCommand) => {
     if (cmd.type === 'approve' || cmd.type === 'reject' || cmd.type === 'regenerate') {
       if (deps.approvalGate.handle(cmd)) {
@@ -84,6 +152,23 @@ export function createCommandHandler(deps: {
         return;
       }
       deps.writer.error(`No pending approval gate for ${cmd.type}.`);
+      return;
+    }
+
+    if (cmd.type === 'brief_review') {
+      briefReviewChain = briefReviewChain
+        .then(() => deps.approvalGate.handleBriefReview(cmd.command, cmd.promptId))
+        .then((result) => writeBriefReviewResult(cmd, result))
+        .catch((err) => {
+          deps.writer.error(toErrorMessage(err), {
+            transcriptSensitive: true,
+            summary: 'Brief review command rejected.',
+            data: {
+              ...briefReviewEcho(cmd, null),
+              status: 'rejected',
+            },
+          });
+        });
       return;
     }
 

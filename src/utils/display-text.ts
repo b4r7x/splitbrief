@@ -8,6 +8,7 @@ const STRING_TERMINATOR = '\\u009c';
 const CSI = '\\u009b';
 const OSC = '\\u009d';
 const C0_CONTROL_RANGE = '\\u0000-\\u001f';
+const C0_CONTROL_RANGE_EXCEPT_LINE_BREAK = '\\u0000-\\u0009\\u000b-\\u001f';
 const C1_CONTROL_RANGE = '\\u007f-\\u009f';
 const EMOJI_VARIATION_SELECTOR = '\ufe0f';
 
@@ -25,6 +26,10 @@ const CSI_SEQUENCE_PATTERN = new RegExp(
 );
 const ESCAPE_SEQUENCE_PATTERN = new RegExp(`${ESC}(?:[ -/]*[@-~]|[@-Z\\\\-_])`, 'g');
 const CONTROL_CHARACTER_PATTERN = new RegExp(`[${C0_CONTROL_RANGE}${C1_CONTROL_RANGE}]`, 'g');
+const CONTROL_CHARACTER_EXCEPT_LINE_BREAK_PATTERN = new RegExp(
+  `[${C0_CONTROL_RANGE_EXCEPT_LINE_BREAK}${C1_CONTROL_RANGE}]`,
+  'g',
+);
 const KEYCAP_SEQUENCE_PATTERN = /^[#*0-9]\ufe0f?\u20e3$/u;
 const DEFAULT_EMOJI_PRESENTATION_PATTERN = /\p{Emoji_Presentation}/u;
 const EMOJI_VARIATION_BASE_PATTERN = /\p{Extended_Pictographic}/u;
@@ -35,17 +40,31 @@ export interface TerminalDiagnosticTextOptions {
   maxChars?: number | undefined;
 }
 
-export function stripTerminalControls(text: string): string {
-  return text
+export interface TerminalDisplayTextOptions {
+  preserveLineBreaks?: boolean | undefined;
+}
+
+export function stripTerminalControls(text: string): string;
+export function stripTerminalControls(text: string, opts: TerminalDisplayTextOptions): string;
+export function stripTerminalControls(text: string, opts: TerminalDisplayTextOptions = {}): string {
+  const controlPattern = opts.preserveLineBreaks
+    ? CONTROL_CHARACTER_EXCEPT_LINE_BREAK_PATTERN
+    : CONTROL_CHARACTER_PATTERN;
+  const normalized = opts.preserveLineBreaks ? text.replace(/\r\n?/g, '\n') : text;
+
+  return normalized
     .replace(OSC_SEQUENCE_PATTERN, '')
     .replace(STRING_CONTROL_SEQUENCE_PATTERN, '')
     .replace(CSI_SEQUENCE_PATTERN, '')
     .replace(ESCAPE_SEQUENCE_PATTERN, '')
-    .replace(CONTROL_CHARACTER_PATTERN, '');
+    .replace(controlPattern, '');
 }
 
-export function sanitizeTerminalDisplayText(text: string): string {
-  return redactSecrets(stripTerminalControls(text));
+export function sanitizeTerminalDisplayText(
+  text: string,
+  opts: TerminalDisplayTextOptions = {},
+): string {
+  return redactSecrets(stripTerminalControls(text, opts));
 }
 
 export function sanitizeTerminalDiagnosticText(

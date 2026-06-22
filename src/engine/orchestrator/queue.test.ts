@@ -6,11 +6,13 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import {
+  commitQueueMessagesDrained,
   createClearQueueHandler,
   createQueueHandler,
   drainQueue,
   formatDrainedMessages,
   formatMessage,
+  readQueueForPrompt,
 } from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
@@ -514,6 +516,62 @@ describe('clear', () => {
 });
 
 describe('drain', () => {
+  it('can read pending messages for a prompt without marking them drained', () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeStateWithQueue([
+      {
+        id: 'msg-1',
+        text: 'retryable message',
+        queuedAt: new Date().toISOString(),
+        phase: 'researching',
+      },
+    ]);
+
+    const result = readQueueForPrompt({ projectDir, sessionId, state });
+
+    expect(result.messages).toEqual([expect.objectContaining({ text: 'retryable message' })]);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
+  });
+
+  it('commits only successfully applied queue messages as drained', () => {
+    const { projectDir, sessionId } = setupProject();
+    const drainedAt = new Date().toISOString();
+    const first = {
+      id: 'msg-1',
+      text: 'applied',
+      queuedAt: new Date().toISOString(),
+      phase: 'researching' as const,
+    };
+    const second = {
+      id: 'msg-2',
+      text: 'already drained',
+      queuedAt: new Date().toISOString(),
+      phase: 'researching' as const,
+      drainedAt,
+    };
+    const state = makeStateWithQueue([first, second]);
+    const { bus, events } = makeBusRecorder();
+    const firstMessage = state.messageQueue[0];
+    const secondMessage = state.messageQueue[1];
+    if (firstMessage === undefined || secondMessage === undefined) {
+      throw new Error('expected queued messages');
+    }
+
+    const result = commitQueueMessagesDrained({
+      projectDir,
+      sessionId,
+      state,
+      messages: [firstMessage, secondMessage],
+      bus,
+    });
+
+    expect(result.count).toBe(1);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
+    expect(result.state.messageQueue[1]?.drainedAt).toBe(drainedAt);
+    const drained = events.find((event) => event.type === 'queue_drained');
+    expect(drained).toMatchObject({ type: 'queue_drained', count: 1, ids: ['msg-1'] });
+  });
+
   it('returns empty messages and unchanged state when queue is empty', () => {
     const { projectDir, sessionId } = setupProject();
     let state = createInitialState('test-feature');

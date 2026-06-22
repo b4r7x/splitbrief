@@ -24,7 +24,7 @@ graph TD
 
 **`--detach`** spawns a background server via `spawnServer()` (`src/engine/ipc/spawn-server.ts`), prints the session ID and PID, then exits. The user attaches later with `diptych attach`.
 
-**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; tiered sticky/confirm approvals fail closed unless their tiers allow the action.
+**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 
 **`--rpc`** runs via `runRpc()` (`src/cli/rpc/run.ts`). Bidirectional NDJSON — the caller sends gate responses, diptych sends events back. Gates are interactive.
 
@@ -130,7 +130,7 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 **Execution** — `runSingleTask()` (`src/engine/orchestrator/task/step.ts`) runs the task:
 
 1. Transitions state to `START_TASK` and refreshes the file's current code from disk
-2. Runs the tiered approval gate — classifies the action by risk (in-scope, out-of-scope, destructive) and gates it at the appropriate tier
+2. Runs the tiered file-write approval gate, classifying declared changed paths by scope/risk (in-scope, out-of-scope, control-plane, package change) and gating those writes at the configured tier
 3. Runs pre-task hooks if configured
 4. Calls `runImplementation()` — the implementer receives the task brief and produces code
 5. Applies changed files — for `api` and `shell` backends, code is extracted from the response; for `cli`, `agent`, and `agent-sdk` backends, changes are detected via git diff

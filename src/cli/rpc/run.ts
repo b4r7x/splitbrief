@@ -1,6 +1,7 @@
 import type { Readable, Writable } from 'node:stream';
 import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
 import { RecoveryActionSchema, type Phase } from '../../core/schemas/enums.js';
+import type { BriefReviewPromptKind } from '../../core/schemas/brief-review-command.js';
 import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -24,13 +25,19 @@ import {
   loadPendingRecoveryState,
 } from '../../engine/orchestrator/recovery/driver.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
+import { runBriefQualityGate } from '../../engine/orchestrator/planning/brief-quality-gate.js';
+import { readPersistedTasks } from '../../engine/orchestrator/planning/io.js';
+import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { truncateByChars } from '../../utils/truncate.js';
 import { error, matches } from '../../utils/error.js';
+import { isRecord } from '../../utils/type-guards.js';
 import { resolveRunConfigWithBase } from '../build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from './gates.js';
+import type { ApprovalGatePrompt, BriefReviewDraftSaveResult } from './gates.js';
 import { createCommandReader } from './reader.js';
 import { createResponseWriter } from './writer.js';
 import { rpcError } from './errors.js';
@@ -38,6 +45,8 @@ import { createWorkflowCallbacks } from './callbacks.js';
 import { createCommandHandler } from './dispatch.js';
 
 type RunWorkflowFn = (opts: RunWorkflowOptions) => Promise<unknown>;
+
+const RPC_DRAFT_SAVE_ERROR_MAX_CHARS = 2000;
 
 export interface RunRpcDeps {
   input?: Readable | NodeJS.ReadableStream | undefined;
@@ -68,6 +77,33 @@ function currentSessionId(projectDir: string, sessionId: string | undefined): st
 
 function pendingQueueDepth(state: WorkflowState | null): number {
   return state?.messageQueue.filter(isQueuedMessagePendingDelivery).length ?? 0;
+}
+
+function approvalTypeFromStatus(data: unknown): BriefReviewPromptKind | undefined {
+  if (!isRecord(data)) return undefined;
+  const approvalType = data.approvalType;
+  if (approvalType === 'spec' || approvalType === 'plan' || approvalType === 'briefs') {
+    return approvalType;
+  }
+  return undefined;
+}
+
+function approvalFilePathFromStatus(data: unknown): string | undefined {
+  if (!isRecord(data)) return undefined;
+  return typeof data.filePath === 'string' ? data.filePath : undefined;
+}
+
+function boundedDraftSaveError(message: string): string {
+  return truncateByChars(message, RPC_DRAFT_SAVE_ERROR_MAX_CHARS);
+}
+
+function withApprovalPromptStatus(data: unknown, prompt: ApprovalGatePrompt | null): unknown {
+  if (!isRecord(data) || prompt === null) return data;
+  return {
+    ...data,
+    promptId: prompt.promptId,
+    allowedCommands: prompt.allowedCommands,
+  };
 }
 
 function pendingGateType(
@@ -171,6 +207,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
   const writeStatus = () => {
     const state = readCurrentState();
+    const approvalPrompt = approvalGate.pendingPrompt();
     writer.status({
       sessionId: activeSessionId ?? null,
       phase: state?.phase ?? currentPhase,
@@ -178,6 +215,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       queueDepth: pendingQueueDepth(state),
       queueReady: queueHandler !== null,
       pending: pendingGateType(approvalGate, messageGate, recoveryGate),
+      approvalPrompt,
       aborted: transportController.signal.aborted,
     });
   };
@@ -226,10 +264,61 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     return true;
   };
 
+  const saveBriefDraft = async (tasksFilePath: string): Promise<BriefReviewDraftSaveResult> => {
+    const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
+    if (!id) {
+      return {
+        ok: false,
+        message: 'No active session is available for Task Brief draft save.',
+      };
+    }
+
+    const state = readCurrentState();
+    if (!state) {
+      return {
+        ok: false,
+        message: 'No active workflow state is available for Task Brief draft save.',
+      };
+    }
+
+    const persisted = await readPersistedTasks(tasksFilePath);
+    if (!persisted.ok) {
+      return { ok: false, message: boundedDraftSaveError(persisted.message) };
+    }
+
+    activeSessionId = id;
+    const { report } = runBriefQualityGate({
+      tasks: persisted.tasks,
+      projectDir,
+      sessionId: id,
+      bus,
+      phase: state.phase,
+    });
+    transitionAndSave({ projectDir, sessionId: id }, state, {
+      type: 'BRIEFS_READY',
+      tasks: persisted.tasks,
+    });
+
+    return {
+      ok: true,
+      qualityPassed: report.passed,
+      qualityScore: report.score,
+      issueCount: report.issues.length,
+      taskCount: persisted.tasks.length,
+    };
+  };
+
   const waitForApproval = async (data: unknown) => {
     if (rpcClosed) throw rpcError.transportClosed();
-    const pending = approvalGate.wait();
-    writer.status(data);
+    const approvalType = approvalTypeFromStatus(data);
+    const filePath = approvalFilePathFromStatus(data);
+    const pending = approvalGate.wait({
+      approvalType,
+      ...(approvalType === 'briefs' && filePath !== undefined
+        ? { onSaveDraft: () => saveBriefDraft(filePath) }
+        : {}),
+    });
+    writer.status(withApprovalPromptStatus(data, approvalGate.pendingPrompt()));
     return pending;
   };
 
@@ -414,7 +503,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         waitForApproval,
         waitForMessage,
         reportError: (message) => writer.error(message),
-        abort: triggerAbort,
       });
       const latestState = readCurrentState();
       if (latestState) stateForRun = latestState;

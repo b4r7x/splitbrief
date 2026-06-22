@@ -84,6 +84,7 @@ describe('parseJsonlLine', () => {
     const event = { type: 'turn.completed', usage: { input_tokens: 100, output_tokens: 50 } };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    expect(result.usageSemantics).toBe('final');
   });
 
   it('parses turn.completed with usage (prompt_tokens/completion_tokens)', () => {
@@ -107,7 +108,17 @@ describe('parseJsonlLine', () => {
 
   it('returns a bounded warning for invalid JSON', () => {
     expect(parseJsonlLine('not json {{')).toEqual({
-      warning: [{ code: 'malformed_jsonl', message: 'Malformed JSONL line skipped' }],
+      warning: [
+        expect.objectContaining({
+          code: 'malformed_jsonl',
+          source: 'jsonl',
+          parser: 'jsonl',
+          upstreamType: 'malformed_json',
+          channel: 'stdout',
+          message: expect.stringContaining('Malformed jsonl record'),
+          fingerprint: expect.stringMatching(/^rw:/),
+        }),
+      ],
     });
   });
 
@@ -323,10 +334,20 @@ describe('parseJsonlLine', () => {
     expect(result).toEqual({});
   });
 
-  it('returns empty for event with no recognizable fields', () => {
+  it('returns a bounded warning for event with no recognizable fields', () => {
     const event = { type: 'unknown', metadata: {} };
     const result = parseJsonlLine(JSON.stringify(event));
-    expect(result).toEqual({});
+    expect(result).toEqual({
+      warning: [
+        expect.objectContaining({
+          code: 'unknown_jsonl_record',
+          source: 'jsonl',
+          parser: 'jsonl',
+          upstreamType: 'unknown',
+          channel: 'stdout',
+        }),
+      ],
+    });
   });
 });
 
@@ -381,14 +402,25 @@ describe('parseOpencodeLine', () => {
     expect(result.usage).toEqual({
       inputTokens: 64328,
       outputTokens: 34,
+      reasoningTokens: 32,
       cacheReadTokens: 0,
       cacheCreateTokens: 0,
     });
     expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
 
-  it('returns empty for invalid JSON', () => {
-    expect(parseOpencodeLine('broken')).toEqual({});
+  it('returns a bounded warning for invalid JSON', () => {
+    expect(parseOpencodeLine('broken')).toEqual({
+      warning: [
+        expect.objectContaining({
+          code: 'malformed_opencode',
+          source: 'opencode',
+          parser: 'opencode',
+          upstreamType: 'malformed_json',
+          channel: 'stdout',
+        }),
+      ],
+    });
   });
 
   it('keeps session ids on otherwise ignored step_start events', () => {
@@ -457,12 +489,16 @@ describe('parseOpencodeLine', () => {
   });
 
   it('ignores the legacy top-level text/usage shapes that opencode never emits', () => {
-    expect(parseOpencodeLine(JSON.stringify({ type: 'text', text: 'generated code' }))).toEqual({});
+    expect(parseOpencodeLine(JSON.stringify({ type: 'text', text: 'generated code' }))).toEqual({
+      warning: [expect.objectContaining({ code: 'unknown_opencode_record' })],
+    });
     expect(
       parseOpencodeLine(
         JSON.stringify({ type: 'step_finish', usage: { tokens: { input: 500, output: 200 } } }),
       ),
-    ).toEqual({});
+    ).toEqual({
+      warning: [expect.objectContaining({ code: 'unknown_opencode_record' })],
+    });
   });
 });
 

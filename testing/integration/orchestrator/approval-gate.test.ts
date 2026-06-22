@@ -4,6 +4,7 @@ import { SPEC_FILE } from '../../../src/core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../../src/core/paths-io.js';
 import { runApprovalLoop } from '../../../src/engine/orchestrator/approval/loop.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import {
   makeCallbacks,
   makeBusRecorder,
@@ -11,7 +12,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 
-type ApprovalResolution = { approved: boolean; comment?: string | undefined };
+type ApprovalResolution = ApprovalReviewResult;
 
 const dirs: string[] = [];
 

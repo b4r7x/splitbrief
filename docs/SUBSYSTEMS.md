@@ -157,13 +157,14 @@ The ledger is consumed during the final review phase indirectly: `analyzeBriefDr
 
 Activated via `diptych start --rpc`. The workflow runs headlessly with a machine-readable command interface over stdin/stdout. Both directions use newline-delimited JSON -- one object per line.
 
-**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. Eight command types:
+**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. Nine command types:
 
 | `type` | Fields | What it does |
 |---|---|---|
 | `approve` | optional `confirmationPhrase`, `confirmationReason` | Resolves a pending approval gate (spec, plan, briefs). For confirm-tier approvals, the client must supply a valid confirmation phrase and reason. |
 | `reject` | -- | Terminally rejects a pending approval gate without feedback |
 | `regenerate` | `comment` (required) | Rejects a pending approval gate with feedback so the planner can regenerate |
+| `brief_review` | `command`, optional `id`, `operationId`, `promptId` | Prompt-scoped Task Brief review command. `command.action` is `approve`, `reject`, `revise`, `external_edit_applied`, `save_draft`, or `status`. Settling commands require a pending briefs prompt; `status` reports the current prompt; `save_draft` re-reads the active `tasks.md`, updates draft quality/state, and leaves the prompt pending. |
 | `message` | `text` | Sends a user message -- resolves a pending message gate, or queues for the next planner drain |
 | `recovery` | `action` | Picks a recovery action (retry, skip, abort, etc.) |
 | `status` | -- | Requests current workflow state |
@@ -172,6 +173,6 @@ Activated via `diptych start --rpc`. The workflow runs headlessly with a machine
 
 **Server responses** (stdout). Each response has a `type` field: `ack` (command accepted, with optional `command` and `data`), `error` (with `error` message), `status` (current workflow state in `data`), or `event` (a forwarded `EngineEvent`).
 
-**How gates work.** When the engine hits an approval callback (`onApprovalNeeded`), it publishes a status event and blocks. The client sees the status, sends `approve`, `reject`, or `message`. The dispatch handler (`src/cli/rpc/dispatch.ts`) resolves the gate's promise and acks. If no gate is pending, the command returns an error. Message gates work the same way -- if no gate is pending, the message goes to the queue instead.
+**How gates work.** When the engine hits an approval callback (`onApprovalNeeded`), it publishes a status event and blocks. The client sees the status, sends legacy `approve` / `reject` / `regenerate`, or sends `brief_review` for Task Brief prompts. The dispatch handler (`src/cli/rpc/dispatch.ts`) resolves the gate's promise for settling commands and acks. Non-settling `brief_review` commands report status or save draft state while keeping the prompt open. If no matching gate is pending, the command returns an error. Message gates work the same way -- if no gate is pending, the message goes to the queue instead.
 
-**Difference from `--json`.** Both are headless. `--json` auto-approves workflow review gates and streams events to stdout -- it's observe-only; action-level tiered approvals still follow approval config and can fail closed. `--rpc` keeps gates interactive -- the client must explicitly approve or reject. Use `--json` for CI pipelines that just want to watch. Use `--rpc` for programmatic clients that need to make decisions.
+**Difference from `--json`.** Both are headless. `--json` auto-approves workflow review gates and streams events to stdout -- it's observe-only; file-write tiered approvals still follow approval config and can fail closed. `--rpc` keeps gates interactive -- the client must explicitly approve or reject. Use `--json` for CI pipelines that just want to watch. Use `--rpc` for programmatic clients that need to make decisions.

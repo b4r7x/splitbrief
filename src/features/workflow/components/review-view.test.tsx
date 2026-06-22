@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -128,6 +128,53 @@ describe('ReviewView', () => {
       expect(frame).toContain('# not a heading');
       expect(frame).toContain('- not a list');
     });
+  });
+
+  it('caps very wide review documents to a readable column', async () => {
+    openReviewFile(
+      'wide.md',
+      [
+        '# Wide Review',
+        'This line should render in a readable review column instead of stretching across the full terminal width.',
+      ].join('\n'),
+    );
+
+    ui = renderFeature(<ReviewView height={10} width={180} />);
+
+    await vi.waitFor(() => {
+      const frame = ui?.lastFrame() ?? '';
+      expect(frame).toContain('Wide Review');
+      expect(frame).toContain('─'.repeat(120));
+      expect(frame).not.toContain('─'.repeat(121));
+    });
+  });
+
+  it('redacts review markdown display without changing the raw file', async () => {
+    const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+    const file = openReviewFile(
+      'secret-plan.md',
+      [
+        '# Plan\u001b[31m Review\u001b[0m',
+        `Use TOKEN=${rawToken}`,
+        '```sh',
+        `curl -H "Authorization: Bearer ${rawToken}"`,
+        '```',
+      ].join('\n'),
+    );
+
+    ui = renderFeature(<ReviewView height={10} width={80} />);
+
+    await vi.waitFor(() => {
+      const frame = ui?.lastFrame() ?? '';
+      expect(frame).toContain('Plan Review');
+      expect(frame).toContain('TOKEN=REDACTED');
+      expect(frame).toContain('Authorization: Bearer ***REDACTED***');
+    });
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(rawToken);
+    expect(frame).not.toContain('\u001b');
+    expect(readFileSync(file, 'utf-8')).toContain(rawToken);
   });
 
   it('fits wide-character file paths and strips controls from review markdown', async () => {

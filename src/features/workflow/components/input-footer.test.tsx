@@ -43,13 +43,13 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: 'advisor: likely instant · trivial edit',
       taskText: 'Task 2/8',
-      queueCountText: 'queue: 3',
+      queueCountText: 'queued: 3',
       queuePreviewText: null,
       gitLabel: 'git: branch+task',
     });
 
     expect(layout.left).toBe('Ctrl+C abort');
-    expect(layout.right).toBe('Task 2/8 · queue: 3');
+    expect(layout.right).toBe('Task 2/8 · queued: 3');
   });
 
   it('keeps wide footers split between left controls and right status', () => {
@@ -58,7 +58,7 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: 'advisor: likely instant · trivial edit',
       taskText: 'Task 2/8 · 4m left',
-      queueCountText: 'queue: 3',
+      queueCountText: 'queued: 3',
       queuePreviewText: null,
       gitLabel: 'git: branch+task',
     });
@@ -66,7 +66,7 @@ describe('buildInputFooterLayout', () => {
     expect(layout.left).toContain('Ctrl+C abort');
     expect(layout.left).toContain('Ctrl+C again exit');
     expect(layout.left).toContain('advisor:');
-    expect(layout.right).toBe('Task 2/8 · 4m left · queue: 3 · git: branch+task');
+    expect(layout.right).toBe('Task 2/8 · 4m left · queued: 3 pending · git: branch+task');
   });
 
   it('drops queue preview before queue count when compact', () => {
@@ -75,12 +75,12 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: null,
       taskText: 'Task 2/8',
-      queueCountText: 'queue: 3',
+      queueCountText: 'queued: 3',
       queuePreviewText: 'latest pending change',
       gitLabel: 'git: branch+task',
     });
 
-    expect(layout.right).toBe('Task 2/8 · queue: 3');
+    expect(layout.right).toBe('Task 2/8 · queued: 3');
     expect(layout.right).not.toContain('latest pending change');
   });
 
@@ -91,12 +91,12 @@ describe('buildInputFooterLayout', () => {
       isAttachedClient: false,
       advisoryText: null,
       taskText: 'Task 2/8',
-      queueCountText: 'queue: 3',
+      queueCountText: 'queued: 3',
       queuePreviewText: '界語🙂界語🙂界語🙂界語🙂',
       gitLabel: 'git: branch+task',
     });
 
-    expect(layout.right).toContain('queue: 3');
+    expect(layout.right).toContain('queued: 3');
     expect(
       getTerminalCellWidth(layout.left) + getTerminalCellWidth(layout.right) + 4,
     ).toBeLessThanOrEqual(getChromeContentWidth(cols));
@@ -176,7 +176,7 @@ describe('InputFooter advisory display', () => {
     ui.unmount();
   });
 
-  it('renders the latest pending queue preview', () => {
+  it('renders multiple pending queue previews with context', () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
       phase: 'planning',
@@ -190,8 +190,30 @@ describe('InputFooter advisory display', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('queue: 2 - latest redacted preview');
-    expect(frame).not.toContain('older preview');
+    expect(frame).toContain('queued: 2 pending - older preview; latest redacted preview');
+
+    ui.unmount();
+  });
+
+  it('summarizes older queue previews when more than two are pending', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'planning',
+      queueDepth: 4,
+      queuePreviews: [
+        { id: 'q1', preview: 'first preview' },
+        { id: 'q2', preview: 'second preview' },
+        { id: 'q3', preview: 'third preview' },
+        { id: 'q4', preview: 'fourth preview' },
+      ],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('queued: 4 pending - third preview; fourth preview, +2 older');
+    expect(frame).not.toContain('first preview');
+    expect(frame).not.toContain('second preview');
 
     ui.unmount();
   });

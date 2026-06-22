@@ -118,6 +118,11 @@ function getImplementer(tool: keyof typeof CLI_TOOLS) {
   return impl;
 }
 
+function argsContainPhrase(args: string[], phrase: string): boolean {
+  const parts = phrase.split(' ');
+  return args.some((_, index) => parts.every((part, offset) => args[index + offset] === part));
+}
+
 describe('CLI_TOOLS planner buildArgs', () => {
   it.each(PLANNER_SCENARIOS)('$tool: produces bare args without --model', ({
     tool,
@@ -169,6 +174,36 @@ describe('CLI_TOOLS implementer buildArgs', () => {
     const model = extractModel(implementerWithModel);
     const args = getImplementer(tool).buildArgs({ prompt: 'prompt', model });
     expect(args).toEqual(implementerWithModel);
+  });
+});
+
+describe('CLI_TOOLS trust metadata', () => {
+  it('marks built-in CLI implementers as local command, network, and direct-write capable', () => {
+    for (const tool of Object.keys(CLI_TOOLS) as (keyof typeof CLI_TOOLS)[]) {
+      const trust = CLI_TOOLS[tool].trust.implementer;
+      expect(trust.executesLocalCommand).toBe(true);
+      expect(trust.mayUseNetwork).toBe(true);
+      expect(trust.mayWriteFilesDirectly).toBe(true);
+    }
+  });
+
+  it('records the claude-code accept-edits direct-write path', () => {
+    expect(CLI_TOOLS['claude-code'].trust.implementer.autoAllowFlags).toEqual([
+      '--permission-mode acceptEdits',
+    ]);
+  });
+
+  it('keeps auto/allow metadata aligned with built implementer args', () => {
+    for (const tool of Object.keys(CLI_TOOLS) as (keyof typeof CLI_TOOLS)[]) {
+      if (tool === 'claude-code') continue;
+      const entry = CLI_TOOLS[tool];
+      if (!entry.implementer) continue;
+
+      const args = entry.implementer.buildArgs({ prompt: 'prompt', model: undefined });
+      for (const flag of entry.trust.implementer.autoAllowFlags) {
+        expect(argsContainPhrase(args, flag)).toBe(true);
+      }
+    }
   });
 });
 
@@ -420,9 +455,11 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
     expect(result.usage).toBeUndefined();
   });
 
-  it('returns empty for unknown event types and blank lines', () => {
+  it('returns bounded warnings for unknown event types and empty for blank lines', () => {
     expect(copilot.parseLine('')).toEqual({});
-    expect(parse({ type: 'future.event', data: {} })).toEqual({});
+    expect(parse({ type: 'future.event', data: {} })).toEqual({
+      warning: [expect.objectContaining({ code: 'unknown_copilot_record' })],
+    });
   });
 });
 

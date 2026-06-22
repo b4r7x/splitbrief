@@ -17,7 +17,7 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseTasks } from '../../spec/parser.js';
 import { createValidator } from '../validation.js';
-import type { WorkflowSinks } from '../types.js';
+import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -47,6 +47,15 @@ const TEST_SINKS: WorkflowSinks = {
   setQueueHandler: () => {},
 };
 
+function profileImplementerRuntime(
+  implementer = makeImplementer(),
+): Pick<WorkflowContext, 'implementer' | 'createImplementer'> {
+  return {
+    implementer,
+    createImplementer: vi.fn().mockReturnValue(implementer),
+  };
+}
+
 let dirs: string[] = [];
 
 afterEach(() => {
@@ -64,6 +73,60 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('runTasksAndReview', { timeout: 30_000 }, () => {
+  it('refuses to continue a resumed reviewing-briefs state without restoring an approval prompt', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state: WorkflowState = { ...makeImplState([task]), phase: 'reviewing-briefs' };
+    const planner = makePlanner();
+    const implementer = makeImplementer();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = makeNoValidationConfig({ workflow: { commitStrategy: 'none' } });
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        ...profileImplementerRuntime(implementer),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const warning = events.find(
+      (event) => event.type === 'warning' && event.code === 'approval_prompt_not_restored',
+    );
+    expect(result.completed).toBe(false);
+    expect(result.summary.totalTasks).toBe(1);
+    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'cost_prediction')).toBe(false);
+    expect(events.some((event) => event.type === 'task_started')).toBe(false);
+    expect(warning).toMatchObject({
+      type: 'warning',
+      category: 'approval',
+      code: 'approval_prompt_not_restored',
+      transcriptSafe: true,
+      message: expect.stringContaining(join(sessionDir(projectDir, sessionId), TASKS_FILE)),
+    });
+  });
+
   it('publishes deterministic cost prediction before task execution', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
@@ -112,7 +175,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer,
+        ...profileImplementerRuntime(implementer),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
@@ -206,7 +269,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        ...profileImplementerRuntime(),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
@@ -306,7 +369,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        ...profileImplementerRuntime(),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
@@ -434,7 +497,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        ...profileImplementerRuntime(),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
@@ -547,7 +610,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer,
+        ...profileImplementerRuntime(implementer),
         metadata: {
           plannerTool: 'claude-code',
           implementerTool: 'deepseek',
@@ -862,7 +925,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        ...profileImplementerRuntime(),
         metadata: {
           plannerTool: 'claude-code',
           implementerTool: 'deepseek',
@@ -1069,7 +1132,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        ...profileImplementerRuntime(),
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
@@ -1233,13 +1296,15 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer({
-          implement: vi.fn().mockResolvedValue({
-            success: true,
-            output: 'code',
-            usage: { inputTokens: 50, outputTokens: 25 },
+        ...profileImplementerRuntime(
+          makeImplementer({
+            implement: vi.fn().mockResolvedValue({
+              success: true,
+              output: 'code',
+              usage: { inputTokens: 50, outputTokens: 25 },
+            }),
           }),
-        }),
+        ),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
@@ -1321,7 +1386,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer({ implement }),
+        ...profileImplementerRuntime(makeImplementer({ implement })),
         metadata: {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',

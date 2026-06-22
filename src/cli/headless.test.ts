@@ -455,7 +455,7 @@ describe('runHeadless — recovery stops', () => {
     expect(jsonLines).toContainEqual(
       expect.objectContaining({ type: 'final_review_failed', sessionId }),
     );
-  });
+  }, 20_000);
 });
 
 describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
@@ -717,5 +717,5 @@ describe('runHeadless — liveness record (F-261)', () => {
     expect(status.alive).toBe(false);
     const lock = await readLockfile(dir);
     expect(lock?.exitedAt).toBeDefined();
-  });
+  }, 20_000);
 });

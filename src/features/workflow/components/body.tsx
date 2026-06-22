@@ -5,12 +5,17 @@ import { ActivitySideRail } from './activity-side-rail.js';
 import { Sidebar } from './sidebar.js';
 import { BriefReviewView } from './brief-review-view.js';
 import { PlanEditorComponent } from './plan-editor/editor.js';
+import { PromptBody } from './prompt-body.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import { buildTargetedRejectionComment } from '../../../engine/orchestrator/planning/regen-targeted.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { getWorkflowRuntimeLayout, WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
+import {
+  getReviewColumnWidth,
+  getWorkflowRuntimeLayout,
+  WORKFLOW_CONTENT_PADDING_X,
+} from '../layout/rect.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -37,6 +42,7 @@ export function WorkflowBody({
   const runtimeLayout = isConversationMode
     ? getWorkflowRuntimeLayout({ contentWidth, terminalCols })
     : { activityRailWidth: 0, conversationWidth: contentWidth, contentWidth };
+  const reviewWidth = getReviewColumnWidth(contentWidth);
 
   return (
     <Box flexDirection="row" flexGrow={1}>
@@ -55,21 +61,24 @@ export function WorkflowBody({
           <PlanEditorComponent
             filePath={reviewFilePath}
             height={contentHeight}
-            width={contentWidth}
+            width={reviewWidth}
             sessionDirPath={dirname(reviewFilePath)}
             onApprove={() => inputMode.resolve({ approved: true })}
-            onRegenerateFlagged={async () => {
+            onReject={() => inputMode.resolve({ approved: false })}
+            onRegenerateFlagged={async (reason) => {
               const flagged = planEditorStore.getFlaggedTasks();
               if (flagged.length === 0) return;
-              const comment = buildTargetedRejectionComment(flagged);
+              const comment = buildTargetedRejectionComment(flagged, reason);
               planEditorStore.clearFlags();
-              inputMode.resolve({ approved: true, comment });
+              inputMode.resolve({ approved: false, action: 'revise', comment });
             }}
           />
         ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
-          <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />
+          <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={reviewWidth} />
         ) : inputMode.mode === 'review' && reviewFilePath ? (
-          <ReviewView height={contentHeight} width={contentWidth} />
+          <ReviewView height={contentHeight} width={reviewWidth} />
+        ) : inputMode.mode === 'question' ? (
+          <PromptBody prompt={inputMode.hint} height={contentHeight} width={contentWidth} />
         ) : (
           <Box flexDirection="row" width={contentWidth} height={contentHeight} overflow="hidden">
             <ConversationFlow height={contentHeight} width={runtimeLayout.conversationWidth} />

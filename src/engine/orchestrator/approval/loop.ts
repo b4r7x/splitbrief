@@ -9,6 +9,9 @@ import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { commitQueueMessagesDrained, formatDrainedMessages, readQueueForPrompt } from '../queue.js';
+import type { WorkflowSinks } from '../types.js';
+import type { EngineEventOf } from '../../events/types.js';
 
 type ApprovalLoopOptions = {
   type: 'spec' | 'plan';
@@ -22,6 +25,7 @@ type ApprovalLoopOptions = {
   signal?: AbortSignal | undefined;
   persistTranscript: boolean;
   specMetadata?: SpecMetadata | null | undefined;
+  sinks?: WorkflowSinks | undefined;
 };
 
 export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
@@ -48,19 +52,74 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
   const rejectedEvent = isSpec ? ('spec_rejected' as const) : ('plan_rejected' as const);
   const regeneratedEvent = isSpec ? ('spec_regenerated' as const) : ('plan_regenerated' as const);
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
+  const regenerationPhase = type === 'spec' ? ('specifying' as const) : ('planning' as const);
   let snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
 
   while (true) {
     if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
+    const queue = readQueueForPrompt({ projectDir, sessionId, state });
+    if (queue.messages.length > 0) {
+      state = queue.state;
+      const comment = formatDrainedMessages(queue.messages).trim();
+      const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+      const regenPrompt = buildRegeneratePrompt(type, current, comment);
+      createBusTextHandler({ bus, phase: state.phase })(
+        `\n[Applying ${queue.messages.length} queued message${
+          queue.messages.length === 1 ? '' : 's'
+        } before ${type} review]\n`,
+      );
+      let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
+      try {
+        regenResult = await runLiveRegenerate({
+          planner,
+          projectDir,
+          bus,
+          state,
+          statusPhase: regenerationPhase,
+          summary: `applying queued input before ${type} review`,
+          prompt: regenPrompt,
+          signal,
+          sinks: opts.sinks,
+        });
+      } catch (err) {
+        if (signal?.aborted || isAbortError(err))
+          return { state, rejected: false, regenerated, aborted: true };
+        throw err;
+      }
+      state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
+      writeSpecFile(
+        { projectDir, sessionId },
+        filename,
+        regenResult.text,
+        opts.specMetadata ?? null,
+      );
+      state = commitQueueMessagesDrained({
+        projectDir,
+        sessionId,
+        state,
+        messages: queue.messages,
+        bus,
+      }).state;
+      snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+      regenerated = true;
+      bus.publish({
+        type: regeneratedEvent,
+        ts: Date.now(),
+        phase: state.phase,
+        comment: `(queued input before ${type} review)`,
+      });
+      continue;
+    }
+
     const result = await callbacks.onApprovalNeeded(type, filePath);
     if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
-    if (!result.approved && !result.comment) {
+    if (!result.approved && result.action !== 'revise') {
       state = transitionAndSave({ projectDir, sessionId }, state, { type: rejectType });
       publishPlannerStatus(bus, state, 'done');
       bus.publish({ type: rejectedEvent, ts: Date.now(), phase: state.phase });
       return { state, rejected: true, regenerated };
     }
-    if (!result.comment) {
+    if (result.approved) {
       const edited = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
       if (edited !== snapshot) {
         regenerated = true;
@@ -74,30 +133,34 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       return { state, rejected: false, regenerated };
     }
 
+    const comment = result.comment;
     appendMessage(
       { projectDir, sessionId },
       {
         role: 'user',
         phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
-        text: result.comment,
+        text: comment,
       },
       persistTranscript,
     );
 
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
-    const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
+    const regenPrompt = buildRegeneratePrompt(type, current, comment);
     createBusTextHandler({ bus: bus, phase: state.phase })(
-      `\n[Regenerating ${type} with feedback: ${result.comment}]\n`,
+      `\n[Regenerating ${type} with feedback: ${comment}]\n`,
     );
     let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
     try {
-      regenResult = await planner.regenerate({
-        prompt: regenPrompt,
+      regenResult = await runLiveRegenerate({
+        planner,
         projectDir,
-        callbacks: {
-          onOutput: createBusTextHandler({ bus: bus, phase: state.phase }, { content: 'markdown' }),
-          signal,
-        },
+        bus,
+        state,
+        statusPhase: regenerationPhase,
+        summary: `regenerating ${type} from feedback`,
+        prompt: regenPrompt,
+        signal,
+        sinks: opts.sinks,
       });
     } catch (err) {
       if (signal?.aborted || isAbortError(err))
@@ -112,7 +175,54 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       type: regeneratedEvent,
       ts: Date.now(),
       phase: state.phase,
-      comment: result.comment,
+      comment,
     });
+  }
+}
+
+async function runLiveRegenerate(opts: {
+  planner: Planner;
+  projectDir: string;
+  bus: EventBus;
+  state: WorkflowState;
+  statusPhase: 'specifying' | 'planning';
+  summary: string;
+  prompt: string;
+  signal?: AbortSignal | undefined;
+  sinks?: WorkflowSinks | undefined;
+}): Promise<Awaited<ReturnType<Planner['regenerate']>>> {
+  const controller = opts.sinks ? new AbortController() : null;
+  const signal = controller
+    ? opts.signal === undefined
+      ? controller.signal
+      : AbortSignal.any([opts.signal, controller.signal])
+    : opts.signal;
+
+  if (controller) opts.sinks?.setAbortHandler(() => controller.abort());
+  publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'running');
+  opts.bus.publish({
+    type: 'planner_heartbeat',
+    ts: Date.now(),
+    phase: opts.statusPhase,
+    elapsedMs: 0,
+    accumulatedTokens: 0,
+    phaseHint: opts.summary,
+  } satisfies EngineEventOf<'planner_heartbeat'>);
+
+  try {
+    return await opts.planner.regenerate({
+      prompt: opts.prompt,
+      projectDir: opts.projectDir,
+      callbacks: {
+        onOutput: createBusTextHandler(
+          { bus: opts.bus, phase: opts.state.phase },
+          { content: 'markdown' },
+        ),
+        signal,
+      },
+    });
+  } finally {
+    opts.sinks?.setAbortHandler(null);
+    publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'done');
   }
 }

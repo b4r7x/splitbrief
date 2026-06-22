@@ -312,7 +312,7 @@ Because of that authority, diptych layers several guardrails:
 
 1. **No inline shell.** Schema rejects `command: "sh"` / `"bash"` (and absolute variants) with `args` containing `-c`. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
 2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
-3. **Same-cwd trust boundary.** Hooks run in `cwd: projectDir` — the same filesystem scope as the implementer subprocess. They cannot silently escape into other projects.
+3. **Project cwd start.** Hooks start in `cwd: projectDir`, matching the implementer subprocess. This is not a filesystem sandbox: hook commands retain normal user access and can read or write anywhere the user account can.
 4. **Transitive hook coverage.** Any shell spawned from a diptych hook is still subject to `block-git-commits.sh` (the PreToolUse hook wired through Claude Code). In this repository, hooks inherit the same prohibition against `git commit` / `git add` from inside a diptych run. Product-level commit hooks may exist for downstream users, but they are not this repo's agent workflow.
 
 ### Trust model

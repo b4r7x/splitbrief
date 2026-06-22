@@ -15,9 +15,16 @@ import {
   type RecoveryAction,
 } from '../../core/schemas/enums.js';
 import { ClarificationQuestionSchema } from '../../core/schemas/question.js';
-import type { TieredApprovalResponse } from '../../core/approval/types.js';
+import type { ApprovalReviewResult, TieredApprovalResponse } from '../../core/approval/types.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import {
+  BRIEF_REVIEW_COMMAND_ACTIONS,
+  BriefReviewCommandSchema,
+  allowedSettlingBriefReviewCommandsForPrompt,
+  type BriefReviewCommand,
+  type BriefReviewCommandAction,
+} from '../../core/schemas/brief-review-command.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -36,51 +43,75 @@ const TieredApprovalRequestSchema = z.object({
 
 const TaskReviewRequestSchema = z.looseObject(taskReviewRequestFields);
 
-const IpcPromptRequestSchema = z.discriminatedUnion('kind', [
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('approval_needed'),
-    approvalType: z.enum(['spec', 'plan', 'briefs']),
-    filePath: z.string(),
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('user_edit_conflict'),
-    conflict: userEditConflictSchema,
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('question_asked'),
-    question: ClarificationQuestionSchema,
-    num: z.number(),
-    total: z.number(),
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('continuation_needed'),
-    partialResponse: z.string(),
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('tiered_approval'),
-    request: TieredApprovalRequestSchema,
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('cost_approval'),
-    prediction: CostPredictionSchema,
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('task_review'),
-    request: TaskReviewRequestSchema,
-  }),
-  z.object({
-    requestId: z.string(),
-    kind: z.literal('recovery_needed'),
-    issue: IpcRecoveryIssueSchema,
-  }),
-]);
+const BriefReviewCommandActionSchema = z.enum(BRIEF_REVIEW_COMMAND_ACTIONS);
+
+const ApprovalNeededPromptRequestSchema = z.object({
+  requestId: z.string(),
+  kind: z.literal('approval_needed'),
+  approvalType: z.enum(['spec', 'plan', 'briefs']),
+  filePath: z.string(),
+  allowedCommands: z.array(BriefReviewCommandActionSchema),
+});
+
+const IpcPromptRequestSchema = z
+  .discriminatedUnion('kind', [
+    ApprovalNeededPromptRequestSchema,
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('user_edit_conflict'),
+      conflict: userEditConflictSchema,
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('question_asked'),
+      question: ClarificationQuestionSchema,
+      num: z.number(),
+      total: z.number(),
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('continuation_needed'),
+      partialResponse: z.string(),
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('tiered_approval'),
+      request: TieredApprovalRequestSchema,
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('cost_approval'),
+      prediction: CostPredictionSchema,
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('task_review'),
+      request: TaskReviewRequestSchema,
+    }),
+    z.object({
+      requestId: z.string(),
+      kind: z.literal('recovery_needed'),
+      issue: IpcRecoveryIssueSchema,
+    }),
+  ])
+  .superRefine((request, ctx) => {
+    if (request.kind !== 'approval_needed') return;
+    const expected = allowedSettlingBriefReviewCommandsForPrompt(request.approvalType);
+    if (sameAllowedCommands(request.allowedCommands, expected)) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['allowedCommands'],
+      message: 'allowedCommands must match the approval prompt kind',
+    });
+  });
+
+function sameAllowedCommands(
+  actual: readonly BriefReviewCommandAction[],
+  expected: readonly BriefReviewCommandAction[],
+): boolean {
+  if (actual.length !== expected.length) return false;
+  return actual.every((command, index) => command === expected[index]);
+}
 
 const ServerMessageSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -102,8 +133,13 @@ const ServerMessageSchema = z.discriminatedUnion('kind', [
 
 export type IpcPromptRequest = z.infer<typeof IpcPromptRequestSchema>;
 
+type IpcApprovalPromptRequestInput = Omit<
+  Extract<IpcPromptRequest, { kind: 'approval_needed' }>,
+  'requestId' | 'allowedCommands'
+>;
+
 export type IpcPromptRequestInput =
-  | Omit<Extract<IpcPromptRequest, { kind: 'approval_needed' }>, 'requestId'>
+  | IpcApprovalPromptRequestInput
   | Omit<Extract<IpcPromptRequest, { kind: 'user_edit_conflict' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'question_asked' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'continuation_needed' }>, 'requestId'>
@@ -112,8 +148,12 @@ export type IpcPromptRequestInput =
   | Omit<Extract<IpcPromptRequest, { kind: 'task_review' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'recovery_needed' }>, 'requestId'>;
 
+type IpcApprovalPromptResponse =
+  | ({ kind: 'approval_needed' } & ApprovalReviewResult)
+  | { kind: 'approval_needed'; command: BriefReviewCommand };
+
 export type IpcPromptResponse =
-  | { kind: 'approval_needed'; approved: boolean; comment?: string; action?: 'edit' }
+  | IpcApprovalPromptResponse
   | { kind: 'user_edit_conflict'; selectedAction: UserEditConflictAction }
   | { kind: 'question_asked'; answer: string }
   | { kind: 'continuation_needed'; text: string }
@@ -150,16 +190,64 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
 
   switch (value.kind) {
     case 'approval_needed':
+      if (isRecord(value.command)) {
+        const command = BriefReviewCommandSchema.safeParse(value.command);
+        if (!command.success) return null;
+        return { kind: value.kind, command: command.data };
+      }
       if (typeof value.approved !== 'boolean') return null;
       if (value.comment !== undefined && !isBoundedString(value.comment, IPC_MAX_TEXT_BYTES)) {
         return null;
       }
-      if (value.action !== undefined && value.action !== 'edit') return null;
+      if (value.action !== undefined && value.action !== 'edit' && value.action !== 'revise') {
+        return null;
+      }
+      if (
+        value.action === 'revise' &&
+        (!isBoundedString(value.comment, IPC_MAX_TEXT_BYTES) || value.comment.trim().length === 0)
+      ) {
+        return null;
+      }
+      if (value.approved) {
+        if (value.action !== undefined) return null;
+        if (value.comment !== undefined) return null;
+        return { kind: value.kind, approved: true };
+      }
+      if (value.action === 'edit') {
+        return {
+          kind: value.kind,
+          approved: false,
+          action: value.action,
+          ...(value.comment !== undefined && { comment: value.comment }),
+        };
+      }
+      if (value.action === 'revise') {
+        const comment = value.comment;
+        if (!isBoundedString(comment, IPC_MAX_TEXT_BYTES)) return null;
+        if (value.taskIds === undefined) {
+          return {
+            kind: value.kind,
+            approved: false,
+            action: value.action,
+            comment,
+          };
+        }
+        const taskIds = parseTaskIdList(value.taskIds);
+        if (taskIds === null) return null;
+        return {
+          kind: value.kind,
+          approved: false,
+          action: value.action,
+          comment,
+          taskIds,
+        };
+      }
+      if (value.comment !== undefined) {
+        return null;
+      }
       return {
         kind: value.kind,
-        approved: value.approved,
-        ...(value.comment !== undefined && { comment: value.comment }),
-        ...(value.action !== undefined && { action: value.action }),
+        approved: false,
       };
     case 'user_edit_conflict': {
       const selectedAction = UserEditConflictActionSchema.safeParse(value.selectedAction);
@@ -215,6 +303,12 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
 
 function isBoundedString(value: unknown, maxBytes: number): value is string {
   return typeof value === 'string' && Buffer.byteLength(value, 'utf8') <= maxBytes;
+}
+
+function parseTaskIdList(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const taskIds = z.array(TaskIdSchema).min(1).safeParse(value);
+  return taskIds.success ? taskIds.data : null;
 }
 
 export function parseClientMessage(value: unknown): ClientMessage | null {

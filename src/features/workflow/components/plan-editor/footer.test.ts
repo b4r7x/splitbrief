@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getContextualBindings } from './footer.js';
+import { formatPlanEditorFooterLines, getContextualBindings } from './footer.js';
 import type { ContextualBindingsInput } from './footer.js';
 
 function makeState(overrides: Partial<ContextualBindingsInput> = {}): ContextualBindingsInput {
@@ -54,11 +54,11 @@ describe('getContextualBindings', () => {
     expect(two.find((b) => b.key === 'R')!.label).toBe('regen 2 flagged');
   });
 
-  it('shows save when dirty, approve when clean', () => {
+  it('shows draft save when dirty and gated approve when clean', () => {
     const clean = getContextualBindings(makeState({ dirty: false }));
     const dirty = getContextualBindings(makeState({ dirty: true }));
-    expect(clean.find((b) => b.key === 'Y')!.label).toBe('approve');
-    expect(dirty.find((b) => b.key === 'Y')!.label).toBe('save');
+    expect(clean.find((b) => b.key === 'Y')!.label).toBe('approve checks');
+    expect(dirty.find((b) => b.key === 'Y')!.label).toBe('save draft');
   });
 
   it('shows close preview when packet preview is open', () => {
@@ -68,8 +68,9 @@ describe('getContextualBindings', () => {
     expect(open.find((b) => b.key === 'p')!.label).toBe('close preview');
   });
 
-  it('always shows discard and help', () => {
+  it('always shows reject, discard, and help', () => {
     const bindings = getContextualBindings(makeState());
+    expect(bindings.map((b) => b.key)).toContain('N');
     expect(bindings.map((b) => b.key)).toContain('q');
     expect(bindings.map((b) => b.key)).toContain('?');
   });
@@ -81,11 +82,39 @@ describe('getContextualBindings', () => {
       'c',
       'esc',
       'Y',
+      'N',
       'q',
       '?',
     ]);
     expect(
       getContextualBindings(makeState({ focus: 'editing-section' })).map((b) => b.key),
     ).toEqual(['enter', '^enter', 'esc']);
+  });
+
+  it('shows submit and cancel while collecting a targeted regeneration reason', () => {
+    expect(getContextualBindings(makeState({ focus: 'regen-reason' }))).toEqual([
+      { key: 'enter', label: 'regen flagged' },
+      { key: 'esc', label: 'cancel regen' },
+    ]);
+  });
+
+  it('limits load-failed rich review to safe exit/help actions', () => {
+    expect(getContextualBindings(makeState({ loadFailed: true }))).toEqual([
+      { key: 'N', label: 'reject' },
+      { key: 'q', label: 'discard' },
+      { key: '?', label: 'help' },
+    ]);
+  });
+
+  it('packs narrow footer lines by measured width while preserving priority exits', () => {
+    const bindings = getContextualBindings(makeState({ flaggedIds: new Set(['t1', 't2']) }));
+
+    const lines = formatPlanEditorFooterLines({ bindings, width: 48, isNarrow: true });
+    const secondLine = lines[1] ?? '';
+
+    expect(lines).toHaveLength(2);
+    expect(secondLine).toContain('Y app');
+    expect(secondLine).toContain('N rej');
+    expect(secondLine).toContain('q dis');
   });
 });

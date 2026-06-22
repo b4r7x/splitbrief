@@ -7,6 +7,11 @@ import type {
 import { TASK_BRIEF_SECTIONS } from '../../../../stores/workflow/plan-editor-sections.js';
 import { clampIndex } from '../../../../utils/indexing.js';
 
+const COLLAPSED_TASK_ROW_HEIGHT = 3;
+const EXPANDED_SCOPE_ROW_HEIGHT = 1;
+const REVIEW_DETAIL_ITEM_COUNT = 5;
+const MAX_EDITING_INPUT_ROWS = 6;
+
 export interface VisibleTaskWindow {
   scrollOffset: number;
   visibleTasks: Task[];
@@ -24,7 +29,7 @@ export function getTaskEditorRowHeight(
   metadata?: PlanTaskReviewMetadata | undefined,
   options: TaskEditorRowHeightOptions = {},
 ): number {
-  if (!isExpanded) return 3;
+  if (!isExpanded) return COLLAPSED_TASK_ROW_HEIGHT;
   const scopeItems =
     (task.scope?.inBounds?.length ?? 0) +
     (task.scope?.outOfBounds?.length ?? 0) +
@@ -37,16 +42,23 @@ export function getTaskEditorRowHeight(
     metadata?.conflict?.note,
     metadata?.stale,
   ].filter(Boolean).length;
-  const detailListRows = [
-    4,
-    scopeItems,
-    task.implementationSteps.length,
-    task.constraints.length,
-    task.tests.length,
-    task.escalation?.length ?? 0,
-    routingItems,
-  ].reduce((sum, count) => sum + (count > 0 ? count + 1 : 0), 0);
-  return 3 + 1 + detailListRows + getSectionControlRows(task, options);
+  const detailRows =
+    EXPANDED_SCOPE_ROW_HEIGHT +
+    [
+      REVIEW_DETAIL_ITEM_COUNT,
+      scopeItems,
+      task.implementationSteps.length,
+      task.constraints.length,
+      task.tests.length,
+      task.evidence?.length ?? 0,
+      task.escalation?.length ?? 0,
+      routingItems,
+    ].reduce((sum, count) => sum + getDetailListRowCount(count), 0);
+  return COLLAPSED_TASK_ROW_HEIGHT + detailRows + getSectionControlRows(task, options);
+}
+
+function getDetailListRowCount(itemCount: number): number {
+  return itemCount > 0 ? itemCount + 1 : 0;
 }
 
 function getSectionControlRows(task: Task, options: TaskEditorRowHeightOptions): number {
@@ -60,8 +72,8 @@ function getSectionControlRows(task: Task, options: TaskEditorRowHeightOptions):
   return listRows + getEditingInputRows(options.editing.value);
 }
 
-function getEditingInputRows(value: string): number {
-  return Math.max(1, value.split(/\r?\n/).length);
+export function getEditingInputRows(value: string): number {
+  return Math.min(MAX_EDITING_INPUT_ROWS, Math.max(1, value.split(/\r?\n/).length));
 }
 
 export interface VisibleTaskWindowInput {
@@ -76,7 +88,7 @@ export interface VisibleTaskWindowInput {
 
 export function getVisibleTaskWindow(input: VisibleTaskWindowInput): VisibleTaskWindow {
   const { tasks, cursor, expandedIds, metadata, rowBudget, focus, editing } = input;
-  if (tasks.length === 0) return { scrollOffset: 0, visibleTasks: [] };
+  if (tasks.length === 0 || rowBudget <= 0) return { scrollOffset: 0, visibleTasks: [] };
 
   const clampedCursor = clampIndex(cursor, tasks.length);
   const heightFor = (task: Task, index: number) =>

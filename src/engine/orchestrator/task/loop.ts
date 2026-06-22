@@ -35,7 +35,7 @@ type RunTaskLoopOptions = {
 export type TaskLoopResult = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
-  status: 'complete' | 'stopped';
+  status: 'complete' | 'stopped' | 'cancelled';
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {
@@ -104,7 +104,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskBreakdowns,
     });
     state = depGate.state;
-    if (depGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
+    if (depGate.stopped) {
+      return { state, taskBreakdowns, status: depGate.cancelled ? 'cancelled' : 'stopped' };
+    }
 
     syncBaselineIntoState();
     const preEditGate = await checkUserEditGate({
@@ -119,7 +121,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskBreakdowns,
     });
     state = preEditGate.state;
-    if (preEditGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
+    if (preEditGate.stopped) {
+      return { state, taskBreakdowns, status: preEditGate.cancelled ? 'cancelled' : 'stopped' };
+    }
 
     let refreshedTask = task;
     ({ task: refreshedTask, state } = await refreshAndPersistCode(task, wctx, state));
@@ -136,7 +140,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       getRunnerModelName,
     });
     state = routing.state;
-    if (!routing.ok) return { state, taskBreakdowns, status: 'stopped' };
+    if (!routing.ok) {
+      return { state, taskBreakdowns, status: routing.cancelled ? 'cancelled' : 'stopped' };
+    }
     const { selectedProfile, selectedModel, routingDecision } = routing;
     const selectedTaskConfig = configForProfile(config, selectedProfile);
 
@@ -213,6 +219,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       implementerProfile: selectedProfile.name,
     });
     state = reviewDecision.state;
+    if (reviewDecision.decision === 'abort') {
+      setCurrentTask(undefined);
+      return { state, taskBreakdowns, status: 'cancelled' };
+    }
     if (reviewDecision.decision === 'stop' || wctx.signal?.aborted) {
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };

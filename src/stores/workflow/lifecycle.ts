@@ -178,7 +178,19 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
   }
   if (event.type === 'queue_drained') {
     if (state.queueDepth === 0) return state;
-    return { ...state, queueDepth: 0, queuePreviews: [] };
+    const ids = event.ids === undefined ? null : new Set(event.ids);
+    const drainedCount = ids?.size ?? event.count;
+    const next = Math.max(0, state.queueDepth - drainedCount);
+    return {
+      ...state,
+      queueDepth: next,
+      queuePreviews:
+        next === 0
+          ? []
+          : ids
+            ? state.queuePreviews.filter((entry) => !ids.has(entry.id))
+            : state.queuePreviews.slice(Math.min(event.count, state.queuePreviews.length)),
+    };
   }
   if (event.type === 'queue_cleared') {
     const next = Math.max(0, state.queueDepth - event.count);

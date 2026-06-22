@@ -18,14 +18,24 @@ import {
   getTaskStatusSymbol,
   hasTaskReviewWarning,
 } from '../../brief-review-format.js';
+import { formatTaskIdentityParts } from '../../layout/task-row.js';
+import { getEditingInputRows } from './virtualization.js';
+import {
+  sanitizeTaskDisplayBlock,
+  sanitizeTaskDisplayItems,
+  sanitizeTaskDisplayText,
+} from './task-format.js';
+
+const MAX_SECTION_EDIT_ROWS = 6;
 
 function DetailList({ label, items }: { label: string; items: string[] }) {
   const t = useTheme();
-  if (items.length === 0) return null;
+  const displayItems = sanitizeTaskDisplayItems(items);
+  if (displayItems.length === 0) return null;
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{label}:</Text>
-      {items.map((item, i) => (
+      {displayItems.map((item, i) => (
         <Box key={`${label}-${i}`} flexDirection="row" paddingLeft={2}>
           <Text color={t.textDim}>- </Text>
           <Text color={t.text} wrap="truncate">
@@ -41,10 +51,12 @@ function TaskEditorDetail({
   task,
   metadata,
   isCursor,
+  width,
 }: {
   task: Task;
   metadata?: PlanTaskReviewMetadata | undefined;
   isCursor: boolean;
+  width: number;
 }) {
   const t = useTheme();
   const focus = planEditorStore.use((s) => s.focus);
@@ -70,13 +82,14 @@ function TaskEditorDetail({
     metadata?.conflict?.note ? metadata.conflict.note : null,
     metadata?.stale ? 'stale input marker present' : null,
   ].filter((item): item is string => item !== null);
+  const description = sanitizeTaskDisplayText(task.description);
 
   return (
     <Box flexDirection="column" paddingLeft={4}>
       <Box flexDirection="row">
         <Text color={t.textDim}>scope: </Text>
         <Text color={t.text} wrap="truncate">
-          {task.description}
+          {description}
         </Text>
       </Box>
       <DetailList label="review" items={reviewItems} />
@@ -84,6 +97,7 @@ function TaskEditorDetail({
       <DetailList label="steps" items={task.implementationSteps} />
       <DetailList label="constraints" items={task.constraints} />
       <DetailList label="tests" items={task.tests} />
+      <DetailList label="evidence" items={task.evidence ?? []} />
       <DetailList label="escalation" items={task.escalation ?? []} />
       <DetailList label="routing" items={routingItems} />
       {isCursor && focus !== 'task-list' && (
@@ -96,6 +110,7 @@ function TaskEditorDetail({
               section={section}
               selected={sectionCursor === index}
               editing={editing?.section === section ? editing : null}
+              width={width}
             />
           ))}
         </Box>
@@ -109,17 +124,21 @@ function TaskBriefSectionRow({
   section,
   selected,
   editing,
+  width,
 }: {
   task: Task;
   section: TaskBriefSection;
   selected: boolean;
   editing: { value: string } | null;
+  width: number;
 }) {
   const t = useTheme();
   const label = getTaskBriefSectionLabel(section);
   const value = getTaskBriefSectionText(task, section);
   const preview = firstPreviewLine(value);
   const marker = selected ? '› ' : '  ';
+  const editColumns = Math.max(20, width - 10);
+  const editRows = editing ? getEditingInputRows(editing.value) : 1;
 
   return (
     <Box flexDirection="column" paddingLeft={2}>
@@ -138,7 +157,9 @@ function TaskBriefSectionRow({
             value={editing.value}
             onChange={planEditorStore.updateEditingValue}
             onSubmit={() => planEditorStore.saveEditingSection()}
-            columns={72}
+            columns={editColumns}
+            rows={editRows}
+            maxRows={MAX_SECTION_EDIT_ROWS}
             focus
             keyBindings={{
               submit: (key) => key.ctrl && key.return,
@@ -153,7 +174,7 @@ function TaskBriefSectionRow({
 
 function firstPreviewLine(value: string): string {
   return (
-    value
+    sanitizeTaskDisplayBlock(value)
       .split(/\r?\n/)
       .map((line) => line.trim())
       .find((line) => line.length > 0) ?? ''
@@ -167,6 +188,7 @@ export function TaskEditorRow({
   isExpanded,
   isFlagged,
   issues,
+  width,
 }: {
   task: Task;
   metadata?: PlanTaskReviewMetadata | undefined;
@@ -174,6 +196,7 @@ export function TaskEditorRow({
   isExpanded: boolean;
   isFlagged: boolean;
   issues: BriefQualityIssue[];
+  width: number;
 }) {
   const t = useTheme();
   const hasConflict = metadata?.conflict !== undefined;
@@ -186,26 +209,43 @@ export function TaskEditorRow({
       : hasWarning
         ? t.warning
         : t.success;
-  const detailLine = buildTaskDetailParts(task);
-  const reviewLine = formatTaskReviewLine(task, issues, metadata);
+  const detailLine = sanitizeTaskDisplayText(buildTaskDetailParts(task));
+  const reviewLine = sanitizeTaskDisplayText(formatTaskReviewLine(task, issues, metadata));
+  const taskFile = sanitizeTaskDisplayText(task.file);
+  const taskTitle = sanitizeTaskDisplayText(task.title);
   const prefix = isCursor ? '> ' : '  ';
+  const flag = isFlagged ? '✗ ' : '';
+  const identity = formatTaskIdentityParts({
+    width,
+    prefix,
+    flag,
+    statusSymbol,
+    taskId: task.id,
+    status: task.status,
+    file: taskFile,
+    title: taskTitle,
+  });
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row">
-        <Text color={isCursor ? t.accent : t.text}>{prefix}</Text>
-        {isFlagged && <Text color={t.error}>✗ </Text>}
-        <Text color={statusColor}>{statusSymbol} </Text>
+      <Box flexDirection="row" width={width} overflow="hidden">
+        <Text color={isCursor ? t.accent : t.text}>{identity.prefix}</Text>
+        {identity.flag !== '' && <Text color={t.error}>{identity.flag}</Text>}
+        <Text color={statusColor}>{identity.statusSymbol}</Text>
         <Text bold color={t.accent}>
-          {task.id}
+          {identity.taskId}
         </Text>
         <Text> </Text>
-        <Text color={t.textDim}>{task.status}</Text>
-        <Text> </Text>
-        <Text color={t.textDim}>{task.file}</Text>
+        <Text color={t.textDim}>{identity.status}</Text>
+        {identity.file !== '' && (
+          <>
+            <Text> </Text>
+            <Text color={t.textDim}>{identity.file}</Text>
+          </>
+        )}
         <Text> </Text>
         <Text bold={isCursor} color={t.text}>
-          {task.title}
+          {identity.title}
         </Text>
       </Box>
       <Box paddingLeft={4}>
@@ -218,7 +258,9 @@ export function TaskEditorRow({
           {reviewLine}
         </Text>
       </Box>
-      {isExpanded && <TaskEditorDetail task={task} metadata={metadata} isCursor={isCursor} />}
+      {isExpanded && (
+        <TaskEditorDetail task={task} metadata={metadata} isCursor={isCursor} width={width} />
+      )}
     </Box>
   );
 }

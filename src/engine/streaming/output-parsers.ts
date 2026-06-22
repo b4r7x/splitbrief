@@ -12,6 +12,7 @@ function wrapStreamParser(line: string): ParsedLine {
     ...(r.text !== undefined ? { text: r.text } : {}),
     ...(r.channel !== undefined ? { channel: r.channel } : {}),
     ...(r.usage !== undefined ? { usage: r.usage } : {}),
+    ...(r.usageSemantics !== undefined ? { usageSemantics: r.usageSemantics } : {}),
     ...(r.isResult !== undefined ? { isResult: r.isResult } : {}),
     ...(r.isError !== undefined ? { isError: r.isError } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),

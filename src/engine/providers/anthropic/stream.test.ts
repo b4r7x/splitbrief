@@ -3,6 +3,8 @@ import { streamAnthropicCompletion } from './stream.js';
 import type { StreamMessage } from '../dispatch-stream.js';
 import {
   RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES,
+  RUNNER_CALL_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_OUTPUT_MAX_EVENTS,
   RUNNER_CALL_SSE_EVENT_MAX_BYTES,
 } from '../../calls/output-limit.js';
 import { RunnerCallEventSchema } from '../../calls/schema.js';
@@ -30,6 +32,13 @@ function makeStreamResponse(text: string, status = 200): Response {
     }),
     { status, headers: { 'Content-Type': 'text/event-stream' } },
   );
+}
+
+function textDeltaEvent(text: string): string {
+  return `event: content_block_delta\ndata: ${JSON.stringify({
+    type: 'content_block_delta',
+    delta: { type: 'text_delta', text },
+  })}\n\n`;
 }
 
 const MINIMAL_SSE = ['event: message_stop\ndata: {"type":"message_stop"}\n\n'];
@@ -174,6 +183,70 @@ describe('streamAnthropicCompletion', () => {
         }),
       }),
     );
+  });
+
+  it('caps many Anthropic text deltas before recorder storage', async () => {
+    const events = Array.from(
+      { length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 },
+      () =>
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"x"}}\n\n',
+    );
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([...events, 'event: message_stop\ndata: {"type":"message_stop"}\n\n']),
+    );
+    const progress: string[] = [];
+    const callEvents: RunnerCallEvent[] = [];
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: (text) => progress.push(text),
+      onCallEvent: (event) => callEvents.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS),
+      error: { code: 'provider_text_delta_limit' },
+    });
+    expect(progress).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+    expect(callEvents.filter((event) => event.type === 'call_text_delta')).toHaveLength(
+      RUNNER_CALL_OUTPUT_MAX_EVENTS,
+    );
+  });
+
+  it('caps a large Anthropic text delta at the provider text limit before the SSE frame limit', async () => {
+    const prefixEvents = Array.from({ length: 4000 }, () => textDeltaEvent('x'.repeat(250)));
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        ...prefixEvents,
+        textDeltaEvent('y'.repeat(64 * 1024)),
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    );
+    const callEvents: RunnerCallEvent[] = [];
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: () => {},
+      onCallEvent: (event) => callEvents.push(event),
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'provider_text_delta_limit' },
+    });
+    expect(Buffer.byteLength(result.text, 'utf8')).toBe(RUNNER_CALL_OUTPUT_MAX_BYTES);
+    expect(result.text).toContain('y'.repeat(1024));
+    expect(result.error?.code).not.toBe('provider_sse_event_limit');
+    expect(callEvents.filter((event) => event.type === 'call_text_delta')).toHaveLength(4001);
   });
 
   it('parses Anthropic cache usage fields', async () => {

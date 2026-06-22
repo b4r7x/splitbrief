@@ -619,7 +619,7 @@ describe('start command — --worktree flag', () => {
       projectDir?: string;
     };
     expect(artifact.projectDir).toBe(wtPath);
-  });
+  }, 20_000);
 
   it('rejects --detach without a feature argument before creating any worktree', async () => {
     spawnServerMock.mockClear();

@@ -1,5 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
+import { isLivePhase } from '../../core/phases.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { createStore, storeBase } from '../create-store.js';
@@ -180,6 +181,10 @@ function updatePlannerStatusFallback(
   state: OperationsState,
   event: EngineEventOf<'planner_status'>,
 ): OperationsState {
+  if (event.status === 'running' && !isLivePhase(event.phase)) {
+    return closePlannerStatusFallbacks(state, event.ts);
+  }
+
   const callId = legacyPlannerStatusCallId(event.phase);
   if (event.status === 'done') {
     const operation = state.byCallId.get(callId);

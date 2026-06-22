@@ -7,7 +7,11 @@ import {
 } from '../../../stores/approval-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getApprovalPromptRows } from '../prompt-rows.js';
+import {
+  formatApprovalActionDescription,
+  getApprovalConfirmLabel,
+  getApprovalPromptRows,
+} from '../prompt-rows.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
@@ -121,6 +125,7 @@ export function ApprovalPrompt() {
 
   const { request } = state;
   const promptRows = getApprovalPromptRows(state, cols);
+  const actionDescription = formatApprovalActionDescription(request.actionDescription);
 
   if (request.tier === 'sticky') {
     return (
@@ -134,9 +139,7 @@ export function ApprovalPrompt() {
         overflow="hidden"
         flexShrink={0}
       >
-        <Text
-          color={t.warning}
-        >{`[?] Write outside task scope: ${request.actionDescription}`}</Text>
+        <Text color={t.warning}>{`[?] Write outside task scope: ${actionDescription}`}</Text>
         <Text color={t.text}>{'  [A] Approve once'}</Text>
         <Text color={t.text}>{'  [S] Approve for this session'}</Text>
         <Text color={t.textDim}>{'  [W] Always approve (saved to .diptych/approvals.json)'}</Text>
@@ -157,7 +160,9 @@ export function ApprovalPrompt() {
         overflow="hidden"
         flexShrink={0}
       >
-        <Text color={t.error}>{`[!] Destructive action: ${request.actionDescription}`}</Text>
+        <Text
+          color={t.error}
+        >{`[!] ${getApprovalConfirmLabel(request.actionClass)}: ${actionDescription}`}</Text>
         {confirmStep === 'phrase' && (
           <>
             <Text color={t.textDim}>

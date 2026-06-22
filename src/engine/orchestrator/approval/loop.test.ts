@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
 import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './loop.js';
+import { enqueueUserMessage } from '../queue.js';
+import type { WorkflowSinks } from '../types.js';
 
 let dirs: string[] = [];
 
@@ -90,7 +92,7 @@ describe('runApprovalLoop', () => {
     let approvalPrompts = 0;
     const onApprovalNeeded = async () => {
       approvalPrompts++;
-      return { approved: true };
+      return { approved: true as const };
     };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
@@ -117,7 +119,7 @@ describe('runApprovalLoop', () => {
     const onApprovalNeeded = async () => {
       approvalPrompts++;
       controller.abort();
-      return { approved: false };
+      return { approved: false as const };
     };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
@@ -139,10 +141,10 @@ describe('runApprovalLoop', () => {
 
   it('regenerate on feedback: planner.regenerate receives prompt containing user comment, loop continues until approval', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const approvalPrompts: Array<{ approved: boolean; comment?: string }> = [
-      { approved: false, comment: 'please add auth section' },
+    const approvalPrompts = [
+      { approved: false, action: 'revise', comment: 'please add auth section' },
       { approved: true },
-    ];
+    ] as const;
     let approvalCalls = 0;
     const onApprovalNeeded = async () => {
       const next = approvalPrompts[approvalCalls++];
@@ -180,12 +182,62 @@ describe('runApprovalLoop', () => {
     expect(approvalCalls).toBe(2);
   });
 
+  it('applies pending queued planner input before showing the approval prompt', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const { bus, events } = makeBusRecorder();
+    const queued = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: prepareState(),
+      text: 'keep this brief-only and do not write spec.md',
+      phase: 'researching',
+      bus,
+      persistTranscript: false,
+    });
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const regenCalls: string[] = [];
+    const planner = makePlanner({
+      regenerate: async (opts) => {
+        regenCalls.push(opts.prompt);
+        return { text: '# Spec\n\nRegenerated from queued input.\n', usage: null };
+      },
+    });
+
+    const result = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: queued.state,
+      persistTranscript: false,
+    });
+
+    expect(result.rejected).toBe(false);
+    expect(result.regenerated).toBe(true);
+    expect(regenCalls).toHaveLength(1);
+    expect(regenCalls[0]).toContain('keep this brief-only');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.type === 'queue_drained' && e.count === 1)).toBe(true);
+    expect(
+      events.some(
+        (e) =>
+          e.type === 'spec_regenerated' &&
+          'comment' in e &&
+          e.comment === '(queued input before spec review)',
+      ),
+    ).toBe(true);
+  });
+
   it('writes regenerated spec text to disk before downstream planning reads it', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const { callbacks } = makeCallbacks({
       onApprovalNeeded: vi
         .fn()
-        .mockResolvedValueOnce({ approved: false, comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
         .mockResolvedValueOnce({ approved: true }),
     });
     const { bus } = makeBusRecorder();
@@ -216,7 +268,7 @@ describe('runApprovalLoop', () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const onApprovalNeeded = async () => {
       writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nEdited by user.\n', null);
-      return { approved: true };
+      return { approved: true as const };
     };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
@@ -241,7 +293,7 @@ describe('runApprovalLoop', () => {
   it('spec gate: approving without an on-disk edit does not regenerate', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true as const }),
     });
     const { bus, events } = makeBusRecorder();
 
@@ -266,7 +318,7 @@ describe('runApprovalLoop', () => {
     writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nFirst draft.\n', null);
     const onApprovalNeeded = async () => {
       writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nEdited by user.\n', null);
-      return { approved: true };
+      return { approved: true as const };
     };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
@@ -294,7 +346,7 @@ describe('runApprovalLoop', () => {
     const { callbacks } = makeCallbacks({
       onApprovalNeeded: vi
         .fn()
-        .mockResolvedValueOnce({ approved: false, comment: 'revise' })
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'revise' })
         .mockResolvedValueOnce({ approved: true }),
     });
     const { bus } = makeBusRecorder();
@@ -320,5 +372,48 @@ describe('runApprovalLoop', () => {
     });
 
     expect(capturedSignal).toBe(controller.signal);
+  });
+
+  it('wires live regeneration to the workflow abort handler', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    let abortTurn: (() => void) | null = null;
+    const sinks = {
+      setAbortHandler: (handler) => {
+        abortTurn = handler;
+      },
+      setQueueHandler: () => {},
+    } satisfies WorkflowSinks;
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'revise' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      regenerate: async (opts) => {
+        const handler = abortTurn;
+        if (!handler) throw new Error('expected abort handler');
+        handler();
+        expect(opts.callbacks.signal?.aborted).toBe(true);
+        return { text: 'regenerated', usage: null };
+      },
+    });
+
+    const result = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+      sinks,
+    });
+
+    expect(result.rejected).toBe(false);
+    expect(abortTurn).toBeNull();
   });
 });
