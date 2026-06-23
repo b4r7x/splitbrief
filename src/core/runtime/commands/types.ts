@@ -53,6 +53,10 @@ export type ToggleLatestActivityBatchResult =
   | { status: 'toggled'; expanded: boolean }
   | { status: 'unavailable'; message: string };
 
+export type ToggleSidebarResult =
+  | { status: 'toggled'; visible: boolean }
+  | { status: 'unavailable'; message: string };
+
 interface RuntimeCommandBase {
   name: string;
   aliases?: string[];
@@ -100,6 +104,7 @@ export interface RuntimeCommandContext {
   exportSession: () => Promise<ExportSessionResult>;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
+  toggleSidebar: () => ToggleSidebarResult;
 }
 
 export interface CommandPaletteItem {

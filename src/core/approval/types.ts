@@ -17,3 +17,9 @@ export type TieredApprovalResponse =
   | { decision: 'allow'; scope: 'once' | 'session' | 'always' }
   | { decision: 'deny'; reason: string }
   | { decision: 'confirm'; phrase: string; reason: string };
+
+export type ApprovalReviewResult =
+  | { approved: true; action?: undefined; comment?: undefined }
+  | { approved: false; action: 'edit'; comment?: string | undefined }
+  | { approved: false; action: 'revise'; comment: string; taskIds?: TaskId[] | undefined }
+  | { approved: false; action?: undefined; comment?: undefined };

@@ -73,7 +73,7 @@ If you query session JSONL files programmatically:
 
 ## Headless mode (--json flag)
 
-New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, and emits recovery before exiting non-zero on budget pauses or budget exceedance.
+New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, keeps file-write tiered approvals under approval config, and emits recovery before exiting non-zero on budget pauses or budget exceedance.
 
 Exit codes:
 - `0` — workflow completed successfully (`workflow_complete` emitted).

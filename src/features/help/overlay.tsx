@@ -9,6 +9,7 @@ import type { Screen } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { controlsStore } from '../../stores/ui/controls.js';
 
 const PADDING_BORDER = 6;
 const HELP_CHROME_ROWS = 11;
@@ -21,10 +22,11 @@ interface HelpOverlayProps {
 export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const t = useTheme();
   const rows = terminalSizeStore.use((s) => s.rows);
+  const inputMode = controlsStore.use((s) => s.inputMode);
   const visibleCommands = commands.filter((command) =>
     command.validScreens.includes(currentScreen),
   );
-  const shortcuts = getShortcutsForScreen(currentScreen);
+  const shortcuts = getShortcutsForScreen(currentScreen, { inputMode });
   const labelColWidth =
     Math.max(
       0,

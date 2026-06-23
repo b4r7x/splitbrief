@@ -2,6 +2,8 @@ import { join } from 'node:path';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
+import { controlsStore } from '../stores/ui/controls.js';
+import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
@@ -162,5 +164,12 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation,
     toggleLatestActivityBatch,
+    toggleSidebar: () => {
+      if (terminalSizeStore.get().isSmall) {
+        return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
+      }
+      controlsStore.toggleSidebar();
+      return { status: 'toggled', visible: controlsStore.get().sidebarVisible };
+    },
   });
 }

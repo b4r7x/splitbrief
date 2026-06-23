@@ -30,4 +30,103 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(details.some((d) => d.includes('runner CLI'))).toBe(true);
     expect(details.some((d) => d.includes('API key, endpoint, and model'))).toBe(false);
   });
+
+  it('warns when a command-capable implementer runs with approval auto mode', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+      },
+      implementer: { kind: 'cli', tool: 'copilot', model: 'auto' },
+      workflow: { approve: 'none' },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.trust-boundary',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: {
+        role: 'implementer',
+        kind: 'cli',
+        executesLocalCommand: true,
+        mayUseNetwork: true,
+        mayWriteFilesDirectly: true,
+        autoAllowFlags: ['--allow-all'],
+      },
+    });
+    expect(check?.details?.join('\n')).toContain('not sandbox shell commands or network access');
+  });
+
+  it('warns when a command-capable implementer uses auto/allow flags in default standard mode', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+      },
+      implementer: { kind: 'cli', tool: 'copilot', model: 'auto' },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.trust-boundary',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: {
+        approve: 'spec',
+        fileWriteApprovalEnabled: true,
+        autoAllowFlags: ['--allow-all'],
+      },
+    });
+    expect(check?.details).toContain('Spec/plan approval level: spec.');
+    expect(check?.details).toContain('File-write approval prompts: enabled.');
+    expect(check?.summary).toContain('uses auto/allow runner flags');
+  });
+
+  it('includes claude-code accept-edits metadata in trust warnings', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+      },
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto' },
+      workflow: { approve: 'none' },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.trust-boundary',
+    );
+
+    expect(check?.details).toContain('Runner auto/allow flags: --permission-mode acceptEdits');
+    expect(check?.metadata?.autoAllowFlags).toEqual(['--permission-mode acceptEdits']);
+  });
+
+  it('warns when command-capable runners run with file-write approvals disabled', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+      },
+      implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
+      approval: { enabled: false, feedRejectionsToPlanner: true },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.trust-boundary',
+    );
+
+    expect(check?.severity).toBe('warning');
+    expect(check?.details?.join('\n')).toContain('file-write approval prompts are disabled');
+    expect(check?.metadata?.fileWriteApprovalEnabled).toBe(false);
+  });
 });

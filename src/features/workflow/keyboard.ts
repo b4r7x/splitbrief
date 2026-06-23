@@ -2,12 +2,19 @@ import type { Key } from 'ink';
 import type { Section } from '../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
+import type { InputMode, OverlayType } from '../../core/navigation/types.js';
+import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
+import {
+  resolveKeyOwner,
+  type FocusedKeySurface,
+  type KeyAttachState,
+} from '../../core/keybindings/resolver.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
-  | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; key: string }
   | { type: 'toggle-activity-batch'; key: string }
+  | { type: 'open-cost-drilldown' }
   | { type: 'review-scroll'; offset: number }
   | {
       type: 'conversation-scroll-up';
@@ -24,35 +31,50 @@ const NONE: WorkflowKeyAction = { type: 'none' };
 export interface WorkflowCtrlChordsInput {
   input: string;
   key: Key;
-  isSmall: boolean;
+  inputMode?: InputMode | undefined;
+  overlay?: OverlayType | undefined;
+  attachState?: KeyAttachState | undefined;
+  composerFocus?: boolean | undefined;
   sections: Section<EngineEvent>[];
   findLatestDiff: (sections: Section<EngineEvent>[]) => string | null;
   findLatestActivityBatch: (sections: Section<EngineEvent>[]) => string | null;
 }
 
 export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
-  const { input, key, isSmall, sections, findLatestDiff, findLatestActivityBatch } = options;
-  if (!key.ctrl && (key.meta || key.super) && input.toLowerCase() === 'a') {
-    const key = findLatestActivityBatch(sections);
-    if (key != null) return { type: 'toggle-activity-batch', key };
+  const { input, key, sections, findLatestDiff, findLatestActivityBatch } = options;
+  const owner = resolveKeyOwner({
+    screen: 'workflow',
+    inputMode: options.inputMode ?? 'normal',
+    focus: 'workflow',
+    overlay: options.overlay ?? 'none',
+    attachState: options.attachState ?? 'local',
+    composerFocus: options.composerFocus ?? false,
+    key: normalizeKeySignature({ input, key }),
+  });
+  if (owner?.owner !== 'workflow') return NONE;
+
+  if (owner.action === 'toggle-activity') {
+    const activityKey = findLatestActivityBatch(sections);
+    if (activityKey != null) return { type: 'toggle-activity-batch', key: activityKey };
     return NONE;
   }
-  if (!key.ctrl) return NONE;
-  if (input === 'e') {
-    if (!isSmall) return { type: 'toggle-sidebar' };
+  if (owner.action === 'toggle-diff') {
+    const diffKey = findLatestDiff(sections);
+    if (diffKey != null) return { type: 'toggle-diff', key: diffKey };
     return NONE;
   }
-  if (input === 'd') {
-    const key = findLatestDiff(sections);
-    if (key != null) return { type: 'toggle-diff', key };
-    return NONE;
-  }
+  if (owner.action === 'cost') return { type: 'open-cost-drilldown' };
   return NONE;
 }
 
 export interface ReviewScrollInput {
   input: string;
   key: Key;
+  inputMode?: InputMode | undefined;
+  overlay?: OverlayType | undefined;
+  attachState?: KeyAttachState | undefined;
+  composerFocus?: boolean | undefined;
+  focus?: FocusedKeySurface | undefined;
   reviewScrollOffset: number;
   reviewLineCount: number;
   visibleHeight: number;
@@ -82,6 +104,17 @@ function reviewScrollOffsetForAction(
 
 export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyAction {
   const { input, key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
+  const owner = resolveKeyOwner({
+    screen: 'workflow',
+    inputMode: options.inputMode ?? 'review',
+    focus: options.focus ?? 'review',
+    overlay: options.overlay ?? 'none',
+    attachState: options.attachState ?? 'local',
+    composerFocus: options.composerFocus ?? false,
+    key: normalizeKeySignature({ input, key }),
+  });
+  if (owner?.owner !== 'review') return NONE;
+
   const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
   if (scrollKey === null) return NONE;
 
@@ -96,6 +129,10 @@ export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyActio
 export interface ConversationScrollInput {
   input: string;
   key: Key;
+  inputMode?: InputMode | undefined;
+  overlay?: OverlayType | undefined;
+  attachState?: KeyAttachState | undefined;
+  composerFocus?: boolean | undefined;
   renderableCount: number;
   maxOffset: number;
   viewportHeight: number;
@@ -104,6 +141,17 @@ export interface ConversationScrollInput {
 
 export function handleConversationScroll(options: ConversationScrollInput): WorkflowKeyAction {
   const { input, key, renderableCount, maxOffset, viewportHeight, totalHeight } = options;
+  const owner = resolveKeyOwner({
+    screen: 'workflow',
+    inputMode: options.inputMode ?? 'normal',
+    focus: 'workflow',
+    overlay: options.overlay ?? 'none',
+    attachState: options.attachState ?? 'local',
+    composerFocus: options.composerFocus ?? false,
+    key: normalizeKeySignature({ input, key }),
+  });
+  if (owner?.owner !== 'conversation-scroll') return NONE;
+
   const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
   if (scrollKey === null) return NONE;
 

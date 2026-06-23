@@ -36,6 +36,7 @@ describe('parseStreamLine', () => {
         sessionId: 'sess-2',
         isResult: true,
         usage: { inputTokens: 1000, outputTokens: 500 },
+        usageSemantics: 'final',
       },
     ],
     [
@@ -113,7 +114,17 @@ describe('parseStreamLine', () => {
       'malformed JSON',
       'not valid json {{{',
       {
-        warning: [{ code: 'malformed_stream_json', message: 'Malformed stream-json line skipped' }],
+        warning: [
+          expect.objectContaining({
+            code: 'malformed_stream_json',
+            source: 'stream-json',
+            parser: 'stream-json',
+            upstreamType: 'malformed_json',
+            channel: 'stdout',
+            message: expect.stringContaining('Malformed stream-json record'),
+            fingerprint: expect.stringMatching(/^rw:/),
+          }),
+        ],
       },
     ],
     ['empty line', '', {}],
@@ -222,6 +233,7 @@ describe('getLineParser("stream-json")', () => {
         text: 'done',
         channel: 'result',
         usage: { inputTokens: 10, outputTokens: 5 },
+        usageSemantics: 'final',
         isResult: true,
       },
     ],
@@ -231,7 +243,15 @@ describe('getLineParser("stream-json")', () => {
 
   it('wraps malformed stream-json lines as warnings', () => {
     expect(parse('not valid json {{{')).toEqual({
-      warning: [{ code: 'malformed_stream_json', message: 'Malformed stream-json line skipped' }],
+      warning: [
+        expect.objectContaining({
+          code: 'malformed_stream_json',
+          source: 'stream-json',
+          parser: 'stream-json',
+          upstreamType: 'malformed_json',
+          channel: 'stdout',
+        }),
+      ],
     });
   });
 });

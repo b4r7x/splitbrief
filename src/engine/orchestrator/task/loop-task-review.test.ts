@@ -151,7 +151,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(log).toContain('tighten the follow-up assertions');
   }, 20_000);
 
-  it('taskReview every can abort safely after a successful task review', async () => {
+  it('taskReview every reports cancellation after a task review abort', async () => {
     const { projectDir, sessionId } = setupProject();
     const first = makeTask({ id: 'T001', file: 'src/review-first.ts' });
     const second = makeTask({ id: 'T002', file: 'src/review-second.ts' });
@@ -176,7 +176,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.status).toBe('stopped');
+    expect(result.status).toBe('cancelled');
     expect(result.state.currentTaskIndex).toBe(1);
     expect(implementer.implement).toHaveBeenCalledTimes(1);
     expect(events.find((event) => event.type === 'task_review_needed')).toMatchObject({
@@ -246,7 +246,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.status).toBe('stopped');
+    expect(result.status).toBe('cancelled');
     expect(result.state.tasks[0]?.status).toBe('done');
     expect(events.find((event) => event.type === 'task_review_needed')).toMatchObject({
       taskId: 'T001',

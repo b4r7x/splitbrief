@@ -13,6 +13,7 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { createLatestEventByTypeSelector } from '../latest-event-selector.js';
 import { getWorkflowConfigDensity, WorkflowConfigCard } from './event-cards/config.js';
 import { getChromeContentWidth, INLINE_CONFIG_MIN_COLS } from '../layout/chrome-rows.js';
+import type { WorkflowReviewColumn } from '../layout/rect.js';
 
 const selectLatestWorkflowConfig = createLatestEventByTypeSelector('workflow_config');
 
@@ -76,6 +77,8 @@ export function WorkflowFooter({
   mode,
   inputHint,
   disabled,
+  onEditShortcut,
+  reviewColumn,
 }: {
   handleInput: (text: string) => void;
   onEmptySubmit?: (() => void) | undefined;
@@ -84,10 +87,14 @@ export function WorkflowFooter({
   mode: InputMode;
   inputHint: string;
   disabled: boolean;
+  onEditShortcut?: (() => void) | undefined;
+  reviewColumn?: WorkflowReviewColumn | undefined;
 }) {
-  return (
+  const composerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
+  const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
+  const footer = (
     <>
-      <FeedbackRow />
+      <FeedbackRow inputHint={inputHint} />
       <Composer
         onSubmit={handleInput}
         onEmptySubmit={onEmptySubmit}
@@ -97,8 +104,25 @@ export function WorkflowFooter({
         hint={inputHint}
         currentScreen="workflow"
         disabled={disabled}
+        {...composerWidthProps}
+        {...(onEditShortcut ? { onEditShortcut } : {})}
       />
-      <InputFooter />
+      <InputFooter {...footerWidthProps} />
     </>
+  );
+
+  if (mode !== 'review' || reviewColumn === undefined) return footer;
+
+  return (
+    <Box width="100%" flexDirection="column" flexShrink={0}>
+      <Box
+        flexDirection="column"
+        marginLeft={reviewColumn.leftOffset}
+        width={reviewColumn.width}
+        overflow="hidden"
+      >
+        {footer}
+      </Box>
+    </Box>
   );
 }

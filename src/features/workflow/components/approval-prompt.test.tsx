@@ -4,6 +4,8 @@ import { tick } from '#testing/helpers/ink.js';
 import { ApprovalPrompt } from './approval-prompt.js';
 import { openApprovalPrompt, approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { getApprovalPromptRows } from '../prompt-rows.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 
@@ -11,10 +13,13 @@ const ENTER = '\r';
 const ESC = '\u001b';
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
-function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
+function makeConfirmRequest(
+  actionDescription: string,
+  actionClass: TieredApprovalRequest['actionClass'] = 'destructive',
+): TieredApprovalRequest {
   return {
     tier: 'confirm',
-    actionClass: 'destructive',
+    actionClass,
     actionDescription,
     phase: 'implementing',
   };
@@ -37,9 +42,57 @@ beforeEach(() => {
 afterEach(() => {
   approvalPromptStore.__testReset();
   overlayStore.reset();
+  terminalSizeStore.reset();
 });
 
 describe('ApprovalPrompt', () => {
+  it('labels confirm prompts by action class', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const first = openApprovalPrompt(makeConfirmRequest('.diptych/state.json', 'destructive'));
+    await tick(PAST_GRACE);
+
+    expect(ui.lastFrame() ?? '').toContain('[!] Control-plane file write: .diptych/state.json');
+
+    const second = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
+    await expect(first).resolves.toEqual({ decision: 'deny', reason: 'superseded' });
+    await tick(PAST_GRACE);
+
+    expect(ui.lastFrame() ?? '').toContain('[!] Package manifest write: package.json');
+
+    const third = openApprovalPrompt(makeConfirmRequest('src/feature.ts', 'write_out_of_scope'));
+    await expect(second).resolves.toEqual({ decision: 'deny', reason: 'superseded' });
+    await tick(PAST_GRACE);
+
+    expect(ui.lastFrame() ?? '').toContain('[!] Confirm file write: src/feature.ts');
+
+    ui.stdin.write(ESC);
+    await expect(third).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('sanitizes action descriptions before rendering and measuring rows', async () => {
+    terminalSizeStore.__testReset({ cols: 34, rows: 24, isSmall: true });
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(
+      makeStickyRequest(
+        'write src/secret.ts \u001b]52;c;clipboard\u0007\u0000 token=abcdefghijklmnopqrstuvwxyz1234567890abcdef',
+      ),
+    );
+    await tick(PAST_GRACE);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('write src/secret.ts');
+    expect(frame).toContain('token=***REDACTED***');
+    expect(frame).not.toContain('clipboard');
+    expect(frame).not.toContain('\u001b');
+    expect(frame).not.toContain('\u0000');
+    expect(frame.split('\n')).toHaveLength(getApprovalPromptRows(approvalPromptStore.get(), 34));
+
+    ui.stdin.write(ESC);
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
   it('resets confirmation progress when a pending request is superseded', async () => {
     const ui = render(<ApprovalPrompt />);
     const first = openApprovalPrompt(makeConfirmRequest('delete temp files'));

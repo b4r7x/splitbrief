@@ -102,7 +102,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let approvalResult: { approved: boolean; comment?: string | undefined } | undefined;
+    let approvalResult: { approved: boolean } | undefined;
     const pending = inputMode.setReviewMode('approve / quit?').then((v) => {
       approvalResult = v;
     });
@@ -111,10 +111,10 @@ describe('useInputMode — mode transitions', () => {
     expect(controlsStore.get().inputMode).toBe('review');
     expect(ui.lastFrame()).toContain('approve / quit?');
 
-    requireRef(ref).resolve({ approved: true, comment: 'lgtm' });
+    requireRef(ref).resolve({ approved: true });
     await pending;
 
-    expect(approvalResult).toEqual({ approved: true, comment: 'lgtm' });
+    expect(approvalResult).toEqual({ approved: true });
     expect(controlsStore.get().inputMode).toBe('normal');
     ui.unmount();
   });

@@ -9,6 +9,20 @@ import { error } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { formatZodIssues, runnerCallUnknownUpstreamPreview } from './unknown-upstream.js';
+import {
+  boundRunnerCallArtifact,
+  boundRunnerCallToolUse,
+  createRunnerCallDeltaLimiter,
+  runnerCallLimitWarning,
+  sanitizeRunnerCallRawPreview,
+  RUNNER_CALL_ARTIFACT_MAX_ITEMS,
+  RUNNER_CALL_STDERR_MAX_BYTES,
+  RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+  RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
+  RUNNER_CALL_WARNING_MAX_ITEMS,
+  type RunnerCallOutputLimit,
+} from './output-limit.js';
+import { normalizeRunnerCallWarning } from './warnings.js';
 import type {
   RunnerCallContext,
   RunnerCallError,
@@ -86,6 +100,24 @@ export function createRunnerCallRecorder(opts: {
   const startedAt = opts.startedAt ?? Date.now();
   const events: RunnerCallEvent[] = [];
   let hasTerminalEvent = false;
+  let resultLimit: RunnerCallOutputLimit | null = null;
+  let toolUseDoneCount = 0;
+  let artifactCount = 0;
+  let warningCount = 0;
+  let unknownUpstreamCount = 0;
+  let stderrPreview = '';
+  let stderrWarningEmitted = false;
+  const emittedLimitWarnings = new Set<string>();
+  let textLimiter = createTextLimiter();
+  const stderrLimiter = createRunnerCallDeltaLimiter({
+    code: 'runner_call_stderr_limit',
+    label: 'runner call stderr diagnostics',
+    maxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
+  });
+  const toolDeltaLimiter = createRunnerCallDeltaLimiter({
+    code: 'runner_call_tool_delta_limit',
+    label: 'runner call tool deltas',
+  });
 
   function emit(input: RunnerCallEventInput): void {
     const event = validateRunnerCallEvent(input);
@@ -128,6 +160,16 @@ export function createRunnerCallRecorder(opts: {
   ): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
+    if (resultLimit !== null) {
+      return finishFailed({
+        status: 'truncated',
+        error: { code: resultLimit.code, message: resultLimit.message },
+        usage: defaults.usage,
+        nativeSessionId: defaults.nativeSessionId,
+        partial: true,
+        endedAt: finishOpts.endedAt,
+      });
+    }
     emit(
       runnerCallCompletedEvent(opts.context, {
         startedAt,
@@ -149,6 +191,7 @@ export function createRunnerCallRecorder(opts: {
   }): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
+    emitStderrFailureWarning();
     emit(
       runnerCallErrorEvent(opts.context, {
         startedAt,
@@ -213,45 +256,145 @@ export function createRunnerCallRecorder(opts: {
 
   emit({ type: 'call_started', ts: startedAt, ...opts.context });
 
+  function noteLimit(limit: RunnerCallOutputLimit, resultIncomplete: boolean): void {
+    if (resultIncomplete && resultLimit === null) resultLimit = limit;
+    if (emittedLimitWarnings.has(limit.code)) return;
+    emittedLimitWarnings.add(limit.code);
+    emit({
+      type: 'call_warning',
+      ts: Date.now(),
+      ...opts.context,
+      warning: runnerCallLimitWarning(limit),
+    });
+  }
+
+  function itemLimit(opts: {
+    code: string;
+    label: string;
+    maxItems: number;
+    nextItemCount: number;
+  }): RunnerCallOutputLimit {
+    return {
+      code: opts.code,
+      message: `${opts.label} exceeded ${opts.maxItems} items and was truncated`,
+      eventsSeen: opts.nextItemCount,
+      maxEvents: opts.maxItems,
+    };
+  }
+
+  function appendStderrPreview(text: string): void {
+    const clean = sanitizeTerminalDiagnosticText(text, { maxChars: RUNNER_CALL_STDERR_MAX_BYTES });
+    stderrPreview = sanitizeTerminalDiagnosticText(`${stderrPreview}${clean}\n`, {
+      maxChars: RUNNER_CALL_STDERR_MAX_BYTES,
+    });
+  }
+
+  function stderrLooksWarningLike(text: string): boolean {
+    return /\b(error|failed|failure|fatal|exception|warning|warn|deprecated)\b/i.test(text);
+  }
+
+  function emitStderrDiagnosticWarning(code: string, message: string): void {
+    if (stderrWarningEmitted) return;
+    stderrWarningEmitted = true;
+    emit({
+      type: 'call_warning',
+      ts: Date.now(),
+      ...opts.context,
+      warning: {
+        code,
+        severity: 'warning',
+        source: 'stderr',
+        surface: 'status',
+        channel: 'stderr',
+        message: sanitizeTerminalDiagnosticText(message),
+      },
+    });
+  }
+
+  function emitStderrFailureWarning(): void {
+    if (stderrPreview.trim().length === 0) return;
+    emitStderrDiagnosticWarning('stderr_on_failure', stderrPreview);
+  }
+
   return {
     context: opts.context,
     startedAt,
     hasTerminal: () => hasTerminalEvent,
-    text: (eventOpts) =>
-      emit({
-        type: 'call_text_delta',
-        ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
-        channel: eventOpts.channel,
-        text: eventOpts.text,
-        ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
-      }),
-    stderr: (eventOpts) =>
-      emit({
-        type: 'call_stderr_delta',
-        ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
-        channel: 'stderr',
-        text: eventOpts.text,
-      }),
-    toolUseDelta: (eventOpts) =>
-      emit({
-        type: 'call_tool_use_delta',
-        ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
-        channel: 'tool',
-        toolUseId: eventOpts.toolUseId,
-        name: eventOpts.name,
-        inputDelta: eventOpts.inputDelta,
-      }),
-    toolUseDone: (eventOpts) =>
+    text: (eventOpts) => {
+      if (eventOpts.semantics === 'final') textLimiter = createTextLimiter();
+      const accepted = textLimiter.accept(eventOpts.text);
+      const eventText = accepted.text;
+      if (accepted.limit === null && resultLimit?.code === 'runner_call_text_limit') {
+        resultLimit = null;
+      }
+      if (eventText.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null)) {
+        emit({
+          type: 'call_text_delta',
+          ts: eventOpts.ts ?? Date.now(),
+          ...opts.context,
+          channel: eventOpts.channel,
+          text: eventText,
+          ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
+        });
+      }
+      if (accepted.limit !== null) noteLimit(accepted.limit, true);
+    },
+    stderr: (eventOpts) => {
+      const accepted = stderrLimiter.accept(eventOpts.text);
+      if (accepted.text.length > 0) {
+        appendStderrPreview(accepted.text);
+        if (stderrLooksWarningLike(accepted.text)) {
+          emitStderrDiagnosticWarning('stderr_diagnostic', accepted.text);
+        }
+        emit({
+          type: 'call_stderr_delta',
+          ts: eventOpts.ts ?? Date.now(),
+          ...opts.context,
+          channel: 'stderr',
+          text: accepted.text,
+        });
+      }
+      if (accepted.limit !== null) noteLimit(accepted.limit, false);
+    },
+    toolUseDelta: (eventOpts) => {
+      const accepted = toolDeltaLimiter.accept(eventOpts.inputDelta, { countEvent: true });
+      if (accepted.text.length > 0 || accepted.limit === null) {
+        emit({
+          type: 'call_tool_use_delta',
+          ts: eventOpts.ts ?? Date.now(),
+          ...opts.context,
+          channel: 'tool',
+          toolUseId: eventOpts.toolUseId,
+          name: eventOpts.name,
+          inputDelta: accepted.text,
+        });
+      }
+      if (accepted.limit !== null) noteLimit(accepted.limit, true);
+    },
+    toolUseDone: (eventOpts) => {
+      if (toolUseDoneCount >= RUNNER_CALL_TOOL_USE_MAX_ITEMS) {
+        noteLimit(
+          itemLimit({
+            code: 'runner_call_tool_use_count_limit',
+            label: 'runner call tool results',
+            maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+            nextItemCount: toolUseDoneCount + 1,
+          }),
+          true,
+        );
+        return;
+      }
+      const bounded = boundRunnerCallToolUse(eventOpts.toolUse);
+      toolUseDoneCount += 1;
+      if (bounded.limit !== null) noteLimit(bounded.limit, true);
       emit({
         type: 'call_tool_use_done',
         ts: eventOpts.ts ?? Date.now(),
         ...opts.context,
         channel: 'tool',
-        toolUse: eventOpts.toolUse,
-      }),
+        toolUse: bounded.value,
+      });
+    },
     usage: (eventOpts) =>
       emit({
         type: 'call_usage',
@@ -267,28 +410,74 @@ export function createRunnerCallRecorder(opts: {
         ...opts.context,
         nativeSessionId: eventOpts.nativeSessionId,
       }),
-    artifact: (eventOpts) =>
+    artifact: (eventOpts) => {
+      if (artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
+        noteLimit(
+          itemLimit({
+            code: 'runner_call_artifact_count_limit',
+            label: 'runner call artifacts',
+            maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
+            nextItemCount: artifactCount + 1,
+          }),
+          true,
+        );
+        return;
+      }
+      const bounded = boundRunnerCallArtifact(eventOpts.artifact);
+      artifactCount += 1;
+      if (bounded.limit !== null) noteLimit(bounded.limit, true);
       emit({
         type: 'call_artifact',
         ts: eventOpts.ts ?? Date.now(),
         ...opts.context,
-        artifact: eventOpts.artifact,
-      }),
-    warning: (eventOpts) =>
+        artifact: bounded.value,
+      });
+    },
+    warning: (eventOpts) => {
+      if (warningCount >= RUNNER_CALL_WARNING_MAX_ITEMS) {
+        noteLimit(
+          itemLimit({
+            code: 'runner_call_warning_count_limit',
+            label: 'runner call warnings',
+            maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
+            nextItemCount: warningCount + 1,
+          }),
+          false,
+        );
+        return;
+      }
+      const warning = normalizeRunnerCallWarning(eventOpts.warning);
+      warningCount += 1;
+      if (warning.source === 'stderr') stderrWarningEmitted = true;
       emit({
         type: 'call_warning',
         ts: eventOpts.ts ?? Date.now(),
         ...opts.context,
-        warning: eventOpts.warning,
-      }),
-    unknownUpstream: (eventOpts) =>
+        warning,
+      });
+    },
+    unknownUpstream: (eventOpts) => {
+      if (unknownUpstreamCount >= RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS) {
+        noteLimit(
+          itemLimit({
+            code: 'runner_call_unknown_upstream_count_limit',
+            label: 'runner call unknown upstream diagnostics',
+            maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
+            nextItemCount: unknownUpstreamCount + 1,
+          }),
+          false,
+        );
+        return;
+      }
+      unknownUpstreamCount += 1;
       emit({
         type: 'call_unknown_upstream',
         ts: eventOpts.ts ?? Date.now(),
         ...opts.context,
-        rawPreview: eventOpts.rawPreview,
+        rawPreview: sanitizeRunnerCallRawPreview(eventOpts.rawPreview),
         backendMetadata: eventOpts.backendMetadata,
-      }),
+      });
+    },
     finishCompleted,
     finishFailed,
     finishIncomplete,
@@ -317,6 +506,13 @@ function metadataString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const clean = sanitizeTerminalDiagnosticText(value, { maxChars: 256 }).trim();
   return clean.length > 0 ? clean : undefined;
+}
+
+function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
+  return createRunnerCallDeltaLimiter({
+    code: 'runner_call_text_limit',
+    label: 'runner call text',
+  });
 }
 
 function hasPartialResult(result: RunnerCallResult): boolean {

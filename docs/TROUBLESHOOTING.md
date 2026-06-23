@@ -322,8 +322,8 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
-2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the action. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `diptych continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so they do not prompt.
-3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For action-level control, see the `approval.tiers` config block.
+2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `diptych continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so file writes do not prompt.
+3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For file-write tiered approval, see the `approval.tiers` config block.
 
 **Prevention:** Decide up front whether a run is interactive, `--json`, or `--rpc`; configure approval policy to match.
 
@@ -351,11 +351,11 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `APPROVAL_REQUIRED` (headless run paused, or stuck on a sticky/confirm tier)
 
-**Likely cause:** A `--json` run hit a tiered approval that has no reply channel; an RPC client did not answer the prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
+**Likely cause:** A `--json` run hit a file-write tiered approval that has no reply channel; an RPC client did not answer the prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
 
 **Fix:**
 1. If the session is resumable, continue it with an interactive TUI (`diptych continue <session-id>`) or RPC (`diptych continue --rpc <session-id>`).
-2. Or set the offending tier to `auto` in `.diptych/config.yaml` under `approval.tiers.<class>: auto`.
+2. Or set the offending file-write tier to `auto` in `.diptych/config.yaml` under `approval.tiers.<class>: auto`.
 3. For CI runs that should never prompt, make sure every tier is set to `auto` (or remove the `approval` block entirely for fully non-interactive runs). Set `approval.headless: true` only when you want fail-closed behaviour on unexpected prompts.
 
 **Prevention:** Audit `approval.tiers` before running `--json` or unattended RPC. Any tier left at `sticky` or `confirm` can require an approval response.

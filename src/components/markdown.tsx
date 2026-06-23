@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 import { parseMarkdownBlocks } from '../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../utils/markdown/layout.js';
 import { assertNever } from '../utils/type-guards.js';
@@ -43,7 +43,8 @@ export interface RenderMarkdownRowsOptions {
 
 export function renderMarkdownRows(options: RenderMarkdownRowsOptions): ScrollableDocumentRow[] {
   const { source, width, theme, decorateSegment } = options;
-  const layout = layoutMarkdown(parseMarkdownBlocks(source), { width });
+  const safeSource = sanitizeTerminalDisplayText(source, { preserveLineBreaks: true });
+  const layout = layoutMarkdown(parseMarkdownBlocks(safeSource), { width });
   return layout.rows.map((row) => ({
     key: row.key,
     lines: row.height,
@@ -126,7 +127,7 @@ function mergeSegmentStyle(
 
 function renderTextSegment(input: { key: string; text: string; style: SegmentStyle }): ReactNode {
   const { key, text, style } = input;
-  const cleanText = stripTerminalControls(text);
+  const cleanText = sanitizeTerminalDisplayText(text);
   if (style.bold && style.italic) {
     return (
       <Text key={key} color={style.color} bold italic>

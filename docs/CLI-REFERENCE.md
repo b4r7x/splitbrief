@@ -81,8 +81,8 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. `full` is a legacy alias for `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
-| `--auto` | boolean | `false` | Auto-approve spec and plan. Equivalent to `--approve none`. |
-| `--approve <level>` | enum | `default` | Approval gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
+| `--auto` | boolean | `false` | Auto-approve spec and plan document gates. Equivalent to `--approve none`. |
+| `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
 | `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `shell`, `agent`, `agent-sdk`. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
@@ -103,7 +103,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
-| `--yolo` | boolean | `false` | Disable action-level tiered approval prompts for the session. Workflow review gates still follow `--approve` / mode policy. |
+| `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
 | `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
@@ -565,7 +565,7 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 |---|---|---|---|
 | `<session-id-or-number>` | string \| number (positional) | active/single running | Session ID, numeric alias from `ps`, or omitted to use `.diptych/active` or the only running session. |
 | `--project <dir>` | path | cwd | Project directory. |
-| `--auto` / `--approve <level>` | approval | mode default | Workflow review approval mode. |
+| `--auto` / `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
 | `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; rejected for live detached sessions. |
@@ -1567,7 +1567,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `migrate`, `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
-| `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases `--approve none`. |
+| `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases spec/plan `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | Public NDJSON record stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
 | `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
@@ -1594,11 +1594,11 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, recovery pauses such as unknown paid pricing exit non-zero, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, recovery pauses such as unknown paid pricing exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
 
 ### RPC stream (`--rpc`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `regenerate`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command. Live `continue` / `last` targets reject `--rpc` rather than attaching.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `regenerate`, `brief_review`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. `brief_review` is prompt-scoped for Task Brief gates; optional `id` / `operationId` values are echoed in ack, error, and status data. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command. Live `continue` / `last` targets reject `--rpc` rather than attaching.
 
 ### Workflow modes (`--mode`)
 
@@ -1617,11 +1617,11 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
 | `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `openrouter`, `deepseek`, `groq`, `together`, `anthropic` |
-| `shell` | Arbitrary command (stdin → stdout) | Custom scripts via `--planner-command` / `--implementer-command` |
-| `agent` | Subprocess that writes files directly (no stdout extraction) | Custom file-writing tools |
+| `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
+| `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
 | `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
 
-Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGURATION.md](./CONFIGURATION.md). Built-in CLI tools may run their own auto/permission modes according to their upstream behavior; diptych surfaces warnings but does not sandbox shell or network access.
 
 ### Getting help
 

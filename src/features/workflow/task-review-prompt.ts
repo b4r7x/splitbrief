@@ -46,24 +46,45 @@ export function formatTaskReviewPrompt(request: TaskReviewRequest): string {
   return lines.filter(Boolean).join('\n');
 }
 
-export function parseTaskReviewAnswer(input: string): TaskReviewResponse | null {
+export function parseTaskReviewAnswer(
+  input: string,
+  availableCommands?: readonly TaskReviewCommand[] | undefined,
+): TaskReviewResponse | null {
   const trimmed = input.trim();
-  if (!trimmed) return { action: 'continue' };
+  if (!trimmed) return taskReviewResponseAllowed({ action: 'continue' }, availableCommands);
 
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('notes ') || lower.startsWith('note ') || lower.startsWith('edit ')) {
-    return { action: 'continue', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() };
+    return taskReviewResponseAllowed(
+      { action: 'continue', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() },
+      availableCommands,
+    );
   }
   if (
     lower.startsWith('revise-plan ') ||
     lower.startsWith('revise ') ||
     lower.startsWith('plan ')
   ) {
-    return { action: 'revise-plan', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() };
+    return taskReviewResponseAllowed(
+      { action: 'revise-plan', notes: trimmed.slice(trimmed.indexOf(' ') + 1).trim() },
+      availableCommands,
+    );
   }
 
   const action = COMMAND_ALIASES[lower];
-  return action ? { action } : null;
+  return action ? taskReviewResponseAllowed({ action }, availableCommands) : null;
+}
+
+export function taskReviewResponseAllowed(
+  response: TaskReviewResponse,
+  availableCommands?: readonly TaskReviewCommand[] | undefined,
+): TaskReviewResponse | null {
+  if (availableCommands === undefined) return response;
+  const available = new Set<TaskReviewCommand>(availableCommands);
+  if (response.notes !== undefined && response.action === 'continue') {
+    return available.has('edit-notes') ? response : null;
+  }
+  return available.has(response.action) ? response : null;
 }
 
 function formatEvidenceLines(request: TaskReviewRequest): string[] {

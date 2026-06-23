@@ -1,6 +1,8 @@
 import { wrapHard } from '../../utils/wrap.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
+import type { ActionClass } from '../../core/schemas/enums.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ApprovalPromptState } from '../../stores/approval-prompt/prompt.js';
 import type { CostApprovalState } from '../../stores/cost-approval/prompt.js';
@@ -23,11 +25,22 @@ function costTextWidth(cols: number): number {
   return Math.max(MIN_TEXT_WIDTH, cols - COST_HORIZONTAL_CHROME);
 }
 
+export function getApprovalConfirmLabel(actionClass: ActionClass): string {
+  if (actionClass === 'destructive') return 'Control-plane file write';
+  if (actionClass === 'package_change') return 'Package manifest write';
+  return 'Confirm file write';
+}
+
+export function formatApprovalActionDescription(actionDescription: string): string {
+  return sanitizeTerminalDisplayText(actionDescription);
+}
+
 function getStickyRows(actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
+  const safeActionDescription = formatApprovalActionDescription(actionDescription);
   return (
     BORDER_ROWS +
-    wrappedRows(`[?] Write outside task scope: ${actionDescription}`, width) +
+    wrappedRows(`[?] Write outside task scope: ${safeActionDescription}`, width) +
     wrappedRows('  [A] Approve once', width) +
     wrappedRows('  [S] Approve for this session', width) +
     wrappedRows('  [W] Always approve (saved to .diptych/approvals.json)', width) +
@@ -35,9 +48,13 @@ function getStickyRows(actionDescription: string, cols: number): number {
   );
 }
 
-function getConfirmRows(actionDescription: string, cols: number): number {
+function getConfirmRows(actionClass: ActionClass, actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
-  const actionRows = wrappedRows(`[!] Destructive action: ${actionDescription}`, width);
+  const safeActionDescription = formatApprovalActionDescription(actionDescription);
+  const actionRows = wrappedRows(
+    `[!] ${getApprovalConfirmLabel(actionClass)}: ${safeActionDescription}`,
+    width,
+  );
   const phraseStepRows =
     wrappedRows(`    Type "${CONFIRM_PHRASE}" to proceed, or press Escape to cancel.`, width) +
     1 +
@@ -54,7 +71,7 @@ export function getApprovalPromptRows(state: ApprovalPromptState, cols: number):
   if (state.status !== 'pending') return 0;
   return state.request.tier === 'sticky'
     ? getStickyRows(state.request.actionDescription, cols)
-    : getConfirmRows(state.request.actionDescription, cols);
+    : getConfirmRows(state.request.actionClass, state.request.actionDescription, cols);
 }
 
 export function getCostApprovalPromptRows(state: CostApprovalState, cols: number): number {

@@ -194,7 +194,7 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
         taskId: task.id,
         severity: 'error',
         code: 'missing_evidence',
-        message: `Task ${task.id} has no evidence defined`,
+        message: `Task ${task.id} has no Evidence field entries`,
       });
     }
 

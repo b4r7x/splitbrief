@@ -20,13 +20,13 @@ export async function checkDependencyGate(opts: {
   task: Task;
   taskIndex: number;
   taskBreakdowns: TaskTokenUsage[];
-}): Promise<{ state: WorkflowState; stopped: boolean }> {
+}): Promise<{ state: WorkflowState; stopped: boolean; cancelled: boolean }> {
   const { wctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
   let state = opts.state;
   const failedTaskIds = getFailedTaskIds(state);
   const skippedTaskIds = getSkippedTaskIds(state);
   if (!hasDependencyFailed(task, failedTaskIds, skippedTaskIds)) {
-    return { state, stopped: false };
+    return { state, stopped: false, cancelled: false };
   }
   const blockedByTaskIds = task.dependsOn.filter(
     (id) => failedTaskIds.includes(id) || skippedTaskIds.includes(id),
@@ -40,7 +40,7 @@ export async function checkDependencyGate(opts: {
     createdAt: nowIso(),
   });
   state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-  state = await stopWithReview({
+  const review = await stopWithReview({
     wctx,
     state,
     setTrackedState,
@@ -49,5 +49,5 @@ export async function checkDependencyGate(opts: {
     filesTouched: issue.files,
     taskBreakdowns,
   });
-  return { state, stopped: true };
+  return { state: review.state, stopped: true, cancelled: review.cancelled };
 }

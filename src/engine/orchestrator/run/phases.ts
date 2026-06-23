@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -20,6 +21,7 @@ import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { transitionAndSave } from '../state-ops.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
+import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 
 export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
@@ -168,11 +170,31 @@ function predictTasksCost(opts: {
 
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
-): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
+): Promise<{ summary: Summary; completed: boolean; cancelled: boolean; state: WorkflowState }> {
   const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
   let { summaryBase } = opts;
   let { state } = opts;
   const { callbacks } = wctx;
+
+  if (state.phase === 'reviewing-briefs') {
+    const tasksFilePath = join(sessionDir(wctx.projectDir, wctx.sessionId), TASKS_FILE);
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      safety: {
+        category: 'approval',
+        code: 'approval_prompt_not_restored',
+        transcriptSafe: true,
+      },
+      message: `Refusing to continue from reviewing-briefs without a restored approval prompt. Review artifact: ${tasksFilePath}`,
+    });
+    return {
+      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+      completed: false,
+      cancelled: false,
+      state,
+    };
+  }
 
   // On resume the task loop continues from currentTaskIndex, so the pre-task cost
   // gauntlet must predict over the remaining tasks only and must not re-gate, re-run
@@ -233,6 +255,7 @@ export async function runTasksAndReview(
           return {
             summary: buildSummary({ ...summaryBase, state, phaseTimings }),
             completed: false,
+            cancelled: false,
             state,
           };
         }
@@ -265,6 +288,7 @@ export async function runTasksAndReview(
           return {
             summary: buildSummary({ ...summaryBase, state, phaseTimings }),
             completed: false,
+            cancelled: false,
             state,
           };
         }
@@ -301,6 +325,7 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
+      cancelled: false,
       state,
     };
   }
@@ -318,6 +343,7 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
+      cancelled: taskResult.status === 'cancelled',
       state,
     };
   }
@@ -342,6 +368,7 @@ export async function runTasksAndReview(
   return {
     summary: finalReview.summary,
     completed: !wctx.signal?.aborted && finalReview.state.phase === 'complete',
+    cancelled: false,
     state: finalReview.state,
   };
 }

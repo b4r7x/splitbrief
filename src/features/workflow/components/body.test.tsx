@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { renderFeature } from '#testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { TASKS_FILE } from '../../../core/paths.js';
@@ -50,6 +50,14 @@ function normalInputMode(): UseInputModeResult {
   };
 }
 
+function questionInputMode(hint: string): UseInputModeResult {
+  return {
+    ...reviewInputMode(),
+    mode: 'question',
+    hint,
+  };
+}
+
 describe('WorkflowBody brief review rendering', () => {
   it('pads conversation content inside the main workflow body', () => {
     const ui = renderFeature(
@@ -71,6 +79,40 @@ describe('WorkflowBody brief review rendering', () => {
 
     expect(row.startsWith(' ')).toBe(true);
     expect(row.trimStart()).toContain('No events yet');
+
+    ui.unmount();
+  });
+
+  it('renders question prompts as a sanitized multiline body surface', () => {
+    const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={questionInputMode(
+          [
+            'Task review: T001 - Run command',
+            'Validation: npm test \u001b]52;c;clipboard\u0007token=' + rawToken,
+            '',
+            'Commands: continue, redo, notes <text>, abort',
+          ].join('\n'),
+        )}
+        reviewFilePath={null}
+        phase="implementing"
+        useRichEditor={false}
+        contentHeight={8}
+        contentWidth={80}
+        terminalCols={100}
+      />,
+    );
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Task review: T001 - Run command');
+    expect(frame).toContain('Validation: npm test token=***REDACTED***');
+    expect(frame).toContain('Commands: continue, redo, notes <text>, abort');
+    expect(frame).not.toContain(rawToken);
+    expect(frame).not.toContain('clipboard');
+    expect(frame).not.toContain('\u001b');
 
     ui.unmount();
   });
@@ -97,6 +139,86 @@ describe('WorkflowBody brief review rendering', () => {
       expect(ui.lastFrame() ?? '').toContain('tab sections');
     });
     expect(ui.lastFrame() ?? '').not.toContain('approve | e/edit');
+
+    ui.unmount();
+  });
+
+  it('resolves configured rich brief review rejection from the editor footer', async () => {
+    const filePath = join(tmpDir, TASKS_FILE);
+    await writeFile(filePath, formatTasks([makeTask({ id: 'T001', title: 'Rejectable task' })]));
+    const inputMode = reviewInputMode();
+
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={inputMode}
+        reviewFilePath={filePath}
+        phase="reviewing-briefs"
+        useRichEditor
+        contentHeight={24}
+        contentWidth={120}
+        terminalCols={140}
+      />,
+    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('N reject');
+    });
+
+    ui.stdin.write('N');
+    await tick();
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false });
+    ui.unmount();
+  });
+
+  it('resolves flagged regeneration as revise feedback with the entered reason', async () => {
+    const filePath = join(tmpDir, TASKS_FILE);
+    await writeFile(
+      filePath,
+      formatTasks([
+        makeTask({ id: 'T001', title: 'Split auth work', file: 'src/auth.ts' }),
+        makeTask({ id: 'T002', title: 'Keep logging work', file: 'src/log.ts' }),
+      ]),
+    );
+    const inputMode = reviewInputMode();
+
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={inputMode}
+        reviewFilePath={filePath}
+        phase="reviewing-briefs"
+        useRichEditor
+        contentHeight={24}
+        contentWidth={120}
+        terminalCols={140}
+      />,
+    );
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Split auth work');
+    });
+
+    ui.stdin.write('x');
+    ui.stdin.write('R');
+    await tick();
+    ui.stdin.write('too broad');
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(inputMode.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approved: false,
+          action: 'revise',
+          comment: expect.stringContaining('User reason: too broad'),
+        }),
+      );
+    });
+    const result = vi.mocked(inputMode.resolve).mock.calls[0]?.[0];
+    expect(typeof result === 'object' ? result.comment : '').toContain('T001');
+    expect(typeof result === 'object' ? result.comment : '').not.toContain('T002');
 
     ui.unmount();
   });

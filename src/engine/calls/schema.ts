@@ -38,7 +38,7 @@ export const RunnerCallActivityStageSchema = z.enum(RUNNER_CALL_ACTIVITY_STAGES)
 export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 
 export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
-const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
+export const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
 
 export const CallIdSchema = boundedId;
 
@@ -82,8 +82,12 @@ export const RunnerCallWarningSchema = z
     severity: RunnerCallWarningSeveritySchema.default('warning'),
     source: boundedName.default('provider'),
     surface: RunnerCallWarningSurfaceSchema.default('activity'),
+    parser: boundedName.optional(),
+    upstreamType: boundedName.optional(),
+    channel: RunnerCallChannelSchema.optional(),
     fingerprint: boundedName.optional(),
     message: boundedMessage,
+    redacted: z.boolean().optional(),
     rawRef: z.string().min(1).max(512).optional(),
   })
   .transform((warning) => ({

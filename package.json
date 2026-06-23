@@ -36,7 +36,7 @@
     "format:check": "biome format .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --maxWorkers=2",
     "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
     "test:e2e:record": "DIPTYCH_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
     "eval": "tsx evals/cli.ts",

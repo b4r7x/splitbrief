@@ -108,8 +108,8 @@ Both planner and implementer accept five runner kinds. The `kind` field is the d
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
 | `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic |
-| `shell` | Arbitrary command (stdin → stdout) | Custom scripts |
-| `agent` | Subprocess that writes files directly (no stdout extraction) | Custom file-writing tools |
+| `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
+| `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
 | `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
 
 Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` dispatch by `kind`.

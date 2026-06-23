@@ -79,6 +79,12 @@ const StreamUsageSchema = z
       })
       .nullable()
       .optional(),
+    completion_tokens_details: z
+      .looseObject({
+        reasoning_tokens: z.number().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
   })
   .nullable();
 
@@ -273,6 +279,13 @@ function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
             prompt_tokens_details: {
               ...(chunk.usage.prompt_tokens_details.cached_tokens !== undefined && {
                 cached_tokens: chunk.usage.prompt_tokens_details.cached_tokens,
+              }),
+            },
+          }),
+          ...(chunk.usage.completion_tokens_details && {
+            completion_tokens_details: {
+              ...(chunk.usage.completion_tokens_details.reasoning_tokens !== undefined && {
+                reasoning_tokens: chunk.usage.completion_tokens_details.reasoning_tokens,
               }),
             },
           }),
@@ -561,6 +574,7 @@ export async function streamCompletion(
       recorder.finishFailed({
         status: runnerCallInterruptedStatus(opts.signal),
         error: { code: 'runner_interrupted', message: toErrorMessage(err) },
+        usage,
         nativeSessionId: null,
       });
       throwIfAborted(opts.signal);
@@ -569,6 +583,7 @@ export async function streamCompletion(
       recorder.finishFailed({
         status: 'timeout',
         error: { code: 'stream_idle_timeout', message: toErrorMessage(err) },
+        usage,
         nativeSessionId: null,
       });
       throw err;

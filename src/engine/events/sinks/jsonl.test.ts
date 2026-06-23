@@ -1,14 +1,16 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createJsonlSink } from './jsonl.js';
+import { createEventBus } from '../bus.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
 import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/consumer-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
+import type { EngineEvent } from '../types.js';
 
 describe('jsonlSink', () => {
   let projectDir: string;
@@ -432,5 +434,38 @@ describe('jsonlSink', () => {
     } finally {
       stderr.mockRestore();
     }
+  });
+
+  it('publishes one degraded warning when session.jsonl appends fail and keeps the bus running', () => {
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    symlinkSync(join(projectDir, 'outside-session.jsonl'), logPath);
+    const bus = createEventBus();
+    const events: EngineEvent[] = [];
+    bus.subscribe((event) => events.push(event));
+    bus.subscribe(
+      createJsonlSink({
+        projectDir,
+        sessionId,
+        persistTranscript: true,
+        onDegraded: (warning) => bus.publish(warning),
+      }),
+    );
+
+    expect(() => {
+      bus.publish({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'x' });
+      bus.publish({ type: 'workflow_complete', ts: 200, phase: 'idle' });
+    }).not.toThrow();
+
+    const degradedWarnings = events.filter(
+      (event) => event.type === 'warning' && event.code === 'session_log_degraded',
+    );
+    expect(degradedWarnings).toHaveLength(1);
+    expect(degradedWarnings[0]).toMatchObject({
+      type: 'warning',
+      category: 'jsonl',
+      code: 'session_log_degraded',
+      transcriptSafe: true,
+    });
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(true);
   });
 });

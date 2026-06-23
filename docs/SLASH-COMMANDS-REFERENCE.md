@@ -21,7 +21,7 @@ Three rewind-family commands also enforce a `phaseGuard`. The guards are the sin
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, wired up for the TUI in `src/app/command-context.ts`. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-There are 28 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, scroll and activity controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
+There are 29 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -80,18 +80,28 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Example**: `/scroll top`, `/scroll bottom`, `/scroll page-up`, `/scroll page-down`.
 - **Behavior**: Dispatches the same row-based scroll actions as the keyboard path. This is the guaranteed route when a terminal does not forward `Home`, `End`, `PageUp`, or `PageDown`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context reads the conversation scroll snapshot and writes `conversationScrollStore`.
-- **See also**: `/activity`.
+- **See also**: `/activity`, `/sidebar`.
 
 ### `/activity`
 
 - **Purpose**: Toggle the latest expandable runner-activity block in the workflow conversation.
 - **Screens**: `workflow`.
 - **Args**: none.
-- **Shortcut**: `Alt+A` / `Option+A` when the terminal forwards it; `/activity` is the guaranteed command path.
+- **Shortcut**: `/activity` is the guaranteed command path; `Ctrl+A` is the workflow shortcut.
 - **Example**: `/activity`
-- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show the `Alt+A /activity` affordance when earlier rows are hidden. If no activity block has hidden rows, there is nothing to expand.
+- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show the `/activity, Ctrl+A` affordance when earlier rows are hidden. If no activity block has hidden rows, there is nothing to expand.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context uses `findLatestExpandableActivityBatchKey()` and `conversationScrollStore.toggleActivityBatch()`.
-- **See also**: `/scroll`.
+- **See also**: `/scroll`, `/sidebar`.
+
+### `/sidebar`
+
+- **Purpose**: Show or hide the workflow sidebar.
+- **Screens**: `workflow`.
+- **Args**: none.
+- **Example**: `/sidebar`
+- **Behavior**: Toggles the workflow sidebar and reports `"Sidebar shown"` or `"Sidebar hidden"` on the feedback line. On small terminals the command reports that the sidebar is hidden instead of claiming it was shown. There is no global shortcut so normal composer text-editing chords stay unclaimed.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context toggles `controlsStore.sidebarVisible`.
+- **See also**: `/scroll`, `/activity`.
 
 ### `/accept-run`
 
@@ -298,7 +308,7 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
 
 ### `/approval [list|clear]`
 
-- **Purpose**: Inspect or revoke sticky approval grants — the persistent "always approve this pattern" decisions you have made during prior runs (e.g. always allow `git status`, always allow writes under `src/foo/**`).
+- **Purpose**: Inspect or revoke sticky approval grants — the persistent "always approve this file-write pattern" decisions you have made during prior runs (e.g. always allow writes under `src/foo/**`).
 - **Screens**: `workflow`, `summary`.
 - **Args**: optional. `list` (default) shows the current grants; `clear` revokes all grants.
 - **Example**: `/approval`, `/approval list`, `/approval clear`
@@ -311,11 +321,11 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
 
 ### `/yolo`
 
-- **Purpose**: Toggle action-level tiered approvals off or back on for the current session.
+- **Purpose**: Toggle file-write tiered approvals off or back on for the current session.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/yolo`
-- **Behavior**: Flips the approval-enabled state and prints either `YOLO mode ON — action-level tiered approvals disabled` or `YOLO mode OFF — action-level tiered approvals restored`.
+- **Behavior**: Flips the approval-enabled state and prints either `YOLO mode ON — file-write tiered approvals disabled` or `YOLO mode OFF — file-write tiered approvals restored`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; approval state wiring in `src/app/command-context.ts`.
 - **See also**: `/approval`, `/settings`.
 
@@ -397,29 +407,26 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 
 ### Workflow screen
 
-These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. Conversation keys take effect only when no overlay is open and the input mode is `normal` (i.e. you are not typing in a prompt field). `Ctrl+A` remains composer line-start editing, not a workflow activity shortcut.
+These keys are handled in `src/features/workflow/hooks/use-keys.ts` and routed through pure functions in `src/features/workflow/keyboard.ts`. Conversation keys take effect only when no overlay is open and the input mode is `normal`.
 
-macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or `End` without an `Fn` layer. `Ctrl+B` and `Ctrl+F` are the fallback page keys, and `/scroll` is the reliable command path.
+macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or `End` without an `Fn` layer. In normal workflow input, the composer owns text-editing chords such as `Ctrl+B`, `Ctrl+E`, and `Ctrl+F`, so `/scroll` is the reliable command path for conversation paging.
 
 | Key | Action | Source |
 |---|---|---|
 | `Ctrl+G` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:118` |
-| `Ctrl+E` | Toggle the sidebar (only when terminal is wide enough) | `keyboard.ts:33` |
-| `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts:37` |
+| `Ctrl+D` | Toggle the most recent diff in the conversation; in an attached client, detach instead | `keyboard.ts` `handleWorkflowCtrlChords` |
 | `Esc` | Navigate home (only when the workflow has been cancelled) | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
 | `PageDown` | Scroll conversation down by one page | `keyboard.ts` `handleConversationScroll` |
-| `Ctrl+B` | Fallback scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
-| `Ctrl+F` | Fallback scroll conversation down by one page | `keyboard.ts` `handleConversationScroll` |
 | `Home` | Jump to top of conversation | `keyboard.ts` `handleConversationScroll` |
 | `End` | Jump to bottom of conversation | `keyboard.ts` `handleConversationScroll` |
 | `/scroll top` | Command path to jump to top of conversation | runtime command registry |
 | `/scroll bottom` | Command path to jump to bottom of conversation | runtime command registry |
 | `/scroll page-up` | Command path to scroll conversation up by one page | runtime command registry |
 | `/scroll page-down` | Command path to scroll conversation down by one page | runtime command registry |
-| `Alt+A` / `Option+A` | Expand or collapse the latest hidden activity rows | `keyboard.ts` `handleWorkflowCtrlChords` |
+| `Ctrl+A` | Expand or collapse the latest hidden activity rows | `keyboard.ts` `handleWorkflowCtrlChords` |
 | `/activity` | Expand or collapse the latest hidden activity rows | runtime command registry |
 
 ### Review pane (workflow screen, when a file is open)
@@ -444,9 +451,9 @@ During simple Task Brief review, typed commands use `src/features/workflow/revie
 | Command | Action |
 |---|---|
 | `approve` / `y` | Approve briefs |
-| `e` / `edit` | Enter rich brief review for the current session |
+| `Ctrl+E` / `e` / `edit` | Enter rich brief review for the current session |
 | `E` / `edit-file` | Open `tasks.md` in `$EDITOR` |
-| `comment <text>` | Approve with a comment |
+| `comment <text>` | Send revise feedback |
 | `reject` / `q` / `quit` | Reject briefs |
 
 Once the rich editor is open, keys are handled by `src/features/workflow/hooks/use-plan-editor-keys.ts`:
@@ -492,10 +499,10 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `skills` | `Ctrl+S` | Skills picker | home |
 | `settings` | `Ctrl+,` | Settings | all |
 | `close-overlay` | `Esc` | Close overlay | all |
-| `toggle-sidebar` | `Ctrl+E` | Toggle sidebar | workflow |
-| `toggle-diff` | `Ctrl+D` | Toggle diff | workflow |
-| `scroll` | `Shift+↑/↓, PgUp/PgDn, Home/End, Ctrl+B/F` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
-| `activity` | `Alt+A, /activity` | Expand activity rows | workflow |
+| `toggle-diff` | `Ctrl+D` | Toggle diff; attached detaches | workflow |
+| `scroll` | `Shift+↑/↓, PgUp/PgDn, Home/End` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
+| `review-edit` | `Ctrl+E` | Open editor in review mode only | workflow |
+| `activity` | `/activity, Ctrl+A` | Expand activity rows | workflow |
 | `continue` | `Enter` | Continue | summary |
 
 ---
@@ -531,8 +538,9 @@ Alphabetical, for fast lookup:
 - [`/sessions`](#sessions) — browse past sessions.
 - [`/settings`](#settings-alias-config) — open the settings overlay.
 - [`/scroll`](#scroll-topbottompage-uppage-down) — move the workflow conversation by command.
+- [`/sidebar`](#sidebar) — show or hide the workflow sidebar.
 - [`/skills`](#skills) — pick planner skills (home only).
-- [`/yolo`](#yolo) — toggle action-level tiered approvals for the session.
+- [`/yolo`](#yolo) — toggle file-write tiered approvals for the session.
 
 ---
 

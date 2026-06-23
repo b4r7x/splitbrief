@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { USER_EDIT_CONFLICT_ACTIONS } from '../../core/schemas/enums.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseClientMessage, parseIpcPromptResponse, parseServerMessage } from './protocol.js';
 
@@ -69,6 +70,149 @@ describe('parseIpcPromptResponse — cost_approval', () => {
 
   it('rejects cost_approval with missing approved', () => {
     expect(parseIpcPromptResponse({ kind: 'cost_approval' })).toBeNull();
+  });
+});
+
+describe('parseIpcPromptResponse — approval_needed', () => {
+  it('parses command-form brief review approval responses', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: { action: 'approve' },
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      command: { action: 'approve' },
+    });
+  });
+
+  it('parses command-form brief review revise responses with task ids', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: { action: 'revise', comment: 'split the task', taskIds: ['T001'] },
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      command: { action: 'revise', comment: 'split the task', taskIds: ['T001'] },
+    });
+  });
+
+  it('parses command-form external edit and save draft responses', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: { action: 'external_edit_applied' },
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      command: { action: 'external_edit_applied' },
+    });
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: { action: 'save_draft' },
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      command: { action: 'save_draft' },
+    });
+  });
+
+  it('rejects command-form revise responses with invalid task ids', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: { action: 'revise', comment: 'split', taskIds: ['task-1'] },
+      }),
+    ).toBeNull();
+  });
+
+  it('parses revise feedback as an approval prompt response action', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        action: 'revise',
+        comment: 'add evidence',
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      approved: false,
+      action: 'revise',
+      comment: 'add evidence',
+    });
+  });
+
+  it('parses non-command revise feedback with targeted task ids', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        action: 'revise',
+        comment: 'add evidence',
+        taskIds: ['T001', 'T002'],
+      }),
+    ).toEqual({
+      kind: 'approval_needed',
+      approved: false,
+      action: 'revise',
+      comment: 'add evidence',
+      taskIds: ['T001', 'T002'],
+    });
+  });
+
+  it('rejects non-command revise feedback with invalid task ids', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        action: 'revise',
+        comment: 'add evidence',
+        taskIds: ['task-1'],
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects revise feedback without a comment', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        action: 'revise',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects revise feedback with an empty comment', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        action: 'revise',
+        comment: '  ',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects approved responses with review comments', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: true,
+        comment: 'approve but also revise',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects comment-only review feedback', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        approved: false,
+        comment: 'add evidence',
+      }),
+    ).toBeNull();
   });
 });
 
@@ -281,12 +425,62 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage({ kind: 'event', payload: { type: 'foo' } })).toBeNull();
   });
 
-  it('parses valid prompt_request message', () => {
+  it('parses approval prompt requests with prompt-scoped allowed commands', () => {
     const msg = {
       kind: 'prompt_request',
-      request: { requestId: 'req-1', kind: 'approval_needed', approvalType: 'spec', filePath: 's' },
+      request: {
+        requestId: 'req-1',
+        kind: 'approval_needed',
+        approvalType: 'briefs',
+        filePath: 'tasks.md',
+        allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt('briefs')],
+      },
     };
     expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('parses non-brief approval prompt requests with an explicit empty allowed-command list', () => {
+    const msg = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'req-1',
+        kind: 'approval_needed',
+        approvalType: 'spec',
+        filePath: 'spec.md',
+        allowedCommands: [],
+      },
+    };
+
+    expect(parseServerMessage(msg)).toEqual(msg);
+  });
+
+  it('rejects approval prompt requests without prompt-scoped allowed commands', () => {
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-1',
+          kind: 'approval_needed',
+          approvalType: 'briefs',
+          filePath: 'tasks.md',
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects approval prompt requests with commands outside the shared prompt contract', () => {
+    expect(
+      parseServerMessage({
+        kind: 'prompt_request',
+        request: {
+          requestId: 'req-1',
+          kind: 'approval_needed',
+          approvalType: 'spec',
+          filePath: 'spec.md',
+          allowedCommands: ['approve'],
+        },
+      }),
+    ).toBeNull();
   });
 
   it('parses recovery prompt requests with IPC-safe context fields only', () => {

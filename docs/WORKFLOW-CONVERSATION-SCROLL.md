@@ -61,11 +61,10 @@ Conversation scrolling uses one semantic set of actions over the row window:
 
 - `Shift+↑` / `Shift+↓` move by one rendered row.
 - `PageUp` / `PageDown` move by one viewport page.
-- `Ctrl+B` / `Ctrl+F` are macOS-safe fallback page keys for terminals that do not forward physical page keys.
 - `Home` / `End` jump to the top or bottom.
 - `/scroll top`, `/scroll bottom`, `/scroll page-up`, and `/scroll page-down` provide the same actions through the runtime command path.
 
-Review panes use the same line, page, top, and bottom semantics while a review file is open. Activity expansion is deliberately separate from text editing: `Ctrl+A` remains composer line-start, while `Alt+A` and `/activity` expand or collapse the latest activity batch with hidden rows. The visible collapsed-row affordance is `Alt+A /activity`.
+Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` expand or collapse the latest activity batch with hidden rows. The visible collapsed-row affordance is `/activity, Ctrl+A`.
 
 ## Projection Performance
 
@@ -127,7 +126,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - requested windows materialize only requested rows
 - `src/features/workflow/conversation-rows/build.test.ts`
   - render blocks are materialized only when they intersect the requested row window
-  - compact activity rows dedupe and expose the `Alt+A /activity` affordance
+  - compact activity rows dedupe and expose the `/activity, Ctrl+A` affordance
 - `src/features/workflow/conversation-rows/markdown-rows.test.ts`
   - markdown layout is cached by identity and width
   - active cache entries survive cache-cap pressure
@@ -137,8 +136,9 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - warnings/errors stay pinned
   - expanded mode materializes all deduped rows
 - `src/features/workflow/keyboard.test.ts`
-  - conversation and review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
-  - `Alt+A` toggles activity and `Ctrl+A` stays available for composer editing
+  - conversation panes support Shift+arrow, PageUp/PageDown, Home/End, and `/scroll`
+  - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
+  - `/activity` and `Ctrl+A` toggle activity
 - `src/features/workflow/layout/scroll-window.test.ts`
   - banner rows stay inside the visible height
 - `src/features/workflow/layout/rect.test.ts`

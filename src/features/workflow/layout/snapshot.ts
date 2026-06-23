@@ -8,6 +8,7 @@ import {
   getWorkflowViewportHeight,
   hasWorkflowConfig,
 } from './rect.js';
+import { getSimpleBriefTaskRowBudget, getSimpleBriefVisibleTaskCount } from './brief-review.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -16,6 +17,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { getWorkflowPromptRows } from '../prompt-rows.js';
@@ -55,6 +57,16 @@ export function readReviewContentHeight(): number {
     0,
     terminalSizeStore.get().rows - readWorkflowChromeHeight() - readWorkflowPromptRows(),
   );
+  if (lifecycleStore.get().phase === 'reviewing-briefs') {
+    const rowBudget = getSimpleBriefTaskRowBudget({
+      containerHeight: viewportHeight,
+      hasLoadError: false,
+    });
+    return getSimpleBriefVisibleTaskCount({
+      rowBudget,
+      taskCount: reviewStore.get().renderedLineCount,
+    });
+  }
   return getReviewContentLayout(viewportHeight, reviewStore.get().renderedLineCount).contentHeight;
 }
 
@@ -72,8 +84,15 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     cols,
   );
   const sidebarVisible = controlsStore.get().sidebarVisible;
-  const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
-  const runtimeLayout = getWorkflowRuntimeLayout({ contentWidth, terminalCols: cols });
+  const contentWidth = getWorkflowContentWidth({
+    cols,
+    sidebarVisible,
+    isSmall,
+  });
+  const runtimeLayout = getWorkflowRuntimeLayout({
+    contentWidth,
+    terminalCols: cols,
+  });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,

@@ -15,6 +15,8 @@ import { activityBatchKey } from '../features/workflow/conversation-rows/activit
 import { configStore } from '../stores/project/config.js';
 import { addEvent } from '../stores/workflow/actions.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
+import { controlsStore } from '../stores/ui/controls.js';
+import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { buildCommandContext } from './command-context.js';
 
 let projectDir = '';
@@ -116,5 +118,25 @@ describe('buildCommandContext', () => {
 
     expect(result).toEqual({ status: 'toggled', expanded: true });
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(true);
+  });
+
+  it('toggles the workflow sidebar through the controls store', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const ctx = buildCommandContext({ exit: () => {} });
+
+    expect(ctx.toggleSidebar()).toEqual({ status: 'toggled', visible: true });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+    expect(ctx.toggleSidebar()).toEqual({ status: 'toggled', visible: false });
+    expect(controlsStore.get().sidebarVisible).toBe(false);
+  });
+
+  it('does not report the workflow sidebar as shown on small terminals', () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 24, isSmall: true });
+
+    expect(buildCommandContext({ exit: () => {} }).toggleSidebar()).toEqual({
+      status: 'unavailable',
+      message: 'Sidebar is hidden on small terminals.',
+    });
+    expect(controlsStore.get().sidebarVisible).toBe(false);
   });
 });

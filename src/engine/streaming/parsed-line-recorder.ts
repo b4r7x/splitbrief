@@ -25,12 +25,14 @@ export function createParsedLineRecorder(opts: {
   let usage: TokenDelta | null = null;
   let sessionId: string | null = null;
   let activeToolUse: { id: string | null; name: string } | null = null;
-  const textLimiter = createRunnerCallDeltaLimiter({
-    code: 'runner_output_text_limit',
-    label: 'runner output text',
-  });
+  let textLimiter = createTextLimiter();
 
   function acceptTextDelta(textDelta: string): RunnerCallDeltaLimitResult {
+    return textLimiter.accept(textDelta);
+  }
+
+  function acceptFinalText(textDelta: string): RunnerCallDeltaLimitResult {
+    textLimiter = createTextLimiter();
     return textLimiter.accept(textDelta);
   }
 
@@ -47,11 +49,16 @@ export function createParsedLineRecorder(opts: {
     const reconciliation = reconcileFinalText(text, resultText);
     if (reconciliation.kind === 'none') return;
 
-    const accepted = acceptTextDelta(reconciliation.text);
+    const accepted =
+      reconciliation.kind === 'suffix'
+        ? acceptTextDelta(reconciliation.text)
+        : acceptFinalText(reconciliation.text);
     if (reconciliation.kind === 'full') {
       text = accepted.text;
       if (accepted.text.length > 0) {
         opts.onText?.(accepted.text);
+      }
+      if (accepted.text.length > 0 || accepted.limit === null) {
         opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
       }
       finishLimitIfNeeded(accepted);
@@ -68,7 +75,7 @@ export function createParsedLineRecorder(opts: {
     }
 
     text = accepted.text;
-    if (accepted.text.length > 0) {
+    if (accepted.text.length > 0 || accepted.limit === null) {
       opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
     }
     finishLimitIfNeeded(accepted);
@@ -107,7 +114,9 @@ export function createParsedLineRecorder(opts: {
       }
 
       if (parsed.usage) {
-        const semantics = parsed.isResult || parsed.channel === 'result' ? 'final' : 'delta';
+        const semantics =
+          parsed.usageSemantics ??
+          (parsed.isResult || parsed.channel === 'result' ? 'final' : 'delta');
         usage = accumulateUsage(usage, parsed.usage, semantics);
         opts.recorder.usage({ usage: parsed.usage, semantics });
       }
@@ -201,4 +210,11 @@ function inferredTextChannel(parsed: ParsedLine): ParsedTextChannel {
 
 function contributesToRunnerResult(channel: ParsedTextChannel): boolean {
   return channel === 'assistant' || channel === 'result' || channel === 'stdout';
+}
+
+function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
+  return createRunnerCallDeltaLimiter({
+    code: 'runner_output_text_limit',
+    label: 'runner output text',
+  });
 }

@@ -71,6 +71,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
+    toggleSidebar: () => ({ status: 'toggled', visible: true }),
   };
   return createRuntimeCommands(ctx);
 }

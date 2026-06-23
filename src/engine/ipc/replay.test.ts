@@ -69,6 +69,38 @@ describe('readReplayEvents', () => {
     expect(result.lastTs).toBe(3000);
   });
 
+  it('preserves runner text semantics through session replay', async () => {
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
+    const filePath = join(dir, 'session.jsonl');
+    writeFileSync(
+      filePath,
+      `${makeSessionEntry({
+        type: 'runner_call_text_delta',
+        ts: 1000,
+        phase: 'planning',
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'cli',
+        sequence: 1,
+        channel: 'result',
+        text: 'final answer',
+        semantics: 'final',
+      })}\n`,
+    );
+
+    const result = await readReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        type: 'runner_call_text_delta',
+        channel: 'result',
+        text: 'final answer',
+        semantics: 'final',
+      }),
+    ]);
+  });
+
   it('skips malformed JSON lines and returns valid events around them', async () => {
     const dir = createTempDir('replay-test');
     tmpDirs.push(dir);

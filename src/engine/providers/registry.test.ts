@@ -135,6 +135,16 @@ describe('apiBase exfiltration guard', () => {
     expect(p.baseURL).toBe('https://custom.example.com/v1');
   });
 
+  it('rejects unknown provider with env apiKey reference and custom apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-real-key';
+    expect(() =>
+      getProvider('my-custom-provider', {
+        apiBase: 'https://custom.example.com/v1',
+        apiKey: 'env:OPENAI_API_KEY',
+      }),
+    ).toThrow(/custom\/unknown provider.*env apiKey reference.*apiBase.*exfiltration risk/i);
+  });
+
   it('allows known provider with default apiBase', () => {
     process.env.OPENAI_API_KEY = 'sk-real-key';
     const p = getProvider('openai', { apiBase: 'https://api.openai.com/v1' });

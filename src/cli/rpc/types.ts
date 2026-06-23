@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { BriefReviewCommandSchema } from '../../core/schemas/brief-review-command.js';
 
 export const RPC_MAX_FRAME_BYTES = 1024 * 1024;
 export const RPC_MAX_TEXT_BYTES = 256 * 1024;
 
 const RpcTextSchema = z.string().min(1).max(RPC_MAX_TEXT_BYTES);
+const RpcIdSchema = z.string().min(1).max(512);
 
 export const RpcCommandSchema = z.discriminatedUnion('type', [
   z.object({
@@ -18,6 +20,13 @@ export const RpcCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('status') }),
   z.object({ type: z.literal('abort') }),
   z.object({ type: z.literal('slash'), command: RpcTextSchema }),
+  z.object({
+    type: z.literal('brief_review'),
+    id: RpcIdSchema.optional(),
+    operationId: RpcIdSchema.optional(),
+    promptId: RpcIdSchema.optional(),
+    command: BriefReviewCommandSchema,
+  }),
 ]);
 
 export type RpcCommand = z.infer<typeof RpcCommandSchema>;

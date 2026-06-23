@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createElement } from 'react';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import {
   formatQualityDisplay,
   formatTaskReviewLine,
@@ -17,10 +19,19 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { configStore } from '../../../stores/project/config.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { reviewStore } from '../../../stores/workflow/review.js';
+import { formatTasks } from '../../../engine/spec/formatter.js';
+import { TASKS_FILE } from '../../../core/paths.js';
+import { BriefReviewView } from './brief-review-view.js';
 
 describe('formatQualityDisplay', () => {
   it('returns quality score formatted to 2 decimal places when report is present', () => {
-    const report: BriefQualityReport = { version: 1, passed: true, score: 0.91, issues: [] };
+    const report: BriefQualityReport = {
+      version: 1,
+      passed: true,
+      score: 0.91,
+      issues: [],
+    };
     expect(formatQualityDisplay(report)).toBe('quality 0.91');
   });
 
@@ -29,12 +40,22 @@ describe('formatQualityDisplay', () => {
   });
 
   it('returns quality 1.00 for perfect score', () => {
-    const report: BriefQualityReport = { version: 1, passed: true, score: 1, issues: [] };
+    const report: BriefQualityReport = {
+      version: 1,
+      passed: true,
+      score: 1,
+      issues: [],
+    };
     expect(formatQualityDisplay(report)).toBe('quality 1.00');
   });
 
   it('returns quality 0.00 for zero score', () => {
-    const report: BriefQualityReport = { version: 1, passed: false, score: 0, issues: [] };
+    const report: BriefQualityReport = {
+      version: 1,
+      passed: false,
+      score: 0,
+      issues: [],
+    };
     expect(formatQualityDisplay(report)).toBe('quality 0.00');
   });
 });
@@ -57,7 +78,12 @@ describe('getTaskStatusSymbol', () => {
 
   it('returns ✓ when issues are only warnings', () => {
     const issues: BriefQualityIssue[] = [
-      { taskId: taskId('T001'), severity: 'warning', code: 'missing_scope', message: 'no scope' },
+      {
+        taskId: taskId('T001'),
+        severity: 'warning',
+        code: 'missing_scope',
+        message: 'no scope',
+      },
     ];
     expect(getTaskStatusSymbol(issues)).toBe('✓');
   });
@@ -76,7 +102,12 @@ describe('getTaskStatusSymbol', () => {
 
   it('returns ⚠ when issues contain both errors and warnings', () => {
     const issues: BriefQualityIssue[] = [
-      { taskId: taskId('T001'), severity: 'warning', code: 'missing_scope', message: 'no scope' },
+      {
+        taskId: taskId('T001'),
+        severity: 'warning',
+        code: 'missing_scope',
+        message: 'no scope',
+      },
       {
         taskId: taskId('T001'),
         severity: 'error',
@@ -152,6 +183,195 @@ describe('buildTaskDetailParts', () => {
   });
 });
 
+describe('BriefReviewView', () => {
+  it('renders simple task rows with sanitized task and review metadata text', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-sanitize-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(
+        filePath,
+        formatTasks([
+          makeTask({
+            id: 'T001',
+            file: 'src/\u001b]52;c;clipboard\u0007secret.ts',
+            title: `Sanitize token=${rawToken}`,
+            evidence: ['review proof'],
+            scope: { inBounds: ['src/secret.ts'], outOfBounds: [] },
+          }),
+        ]),
+        'utf-8',
+      );
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 16, width: 120 }),
+      );
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Sanitize token=***REDACTED***');
+      });
+      planEditorStore.setReviewMetadata([
+        {
+          taskId: taskId('T001'),
+          workerProfile: `token=${rawToken}`,
+          contextFit: 'fits',
+          conflict: {
+            kind: 'current-task-conflict',
+            files: ['src/\u001b]52;c;clipboard\u0007conflict.ts'],
+            affectedTaskIds: ['T001'],
+          },
+        },
+      ]);
+      await tick();
+
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('src/secret.ts');
+      expect(frame).toContain('Sanitize token=***REDACTED***');
+      expect(frame).toContain('worker token=***REDACTED***');
+      expect(frame).toContain('conflict src/conflict.ts');
+      expect(frame).not.toContain(rawToken);
+      expect(frame).not.toContain('clipboard');
+      expect(frame).not.toContain('\u001b');
+      ui.unmount();
+    } finally {
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('scrolls hidden task lists to later task ids', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-scroll-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      reviewStore.setReviewFile(join(projectDir, TASKS_FILE));
+      const tasks = Array.from({ length: 20 }, (_, index) =>
+        makeTask({
+          id: `T${String(index + 1).padStart(3, '0')}`,
+          title: `Task ${index + 1}`,
+          file: `src/task-${index + 1}.ts`,
+          evidence: ['reviewable proof'],
+          scope: { inBounds: [`src/task-${index + 1}.ts`], outOfBounds: [] },
+        }),
+      );
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(filePath, formatTasks(tasks), 'utf-8');
+
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 14, width: 120 }),
+      );
+      await tick(20);
+      expect(ui.lastFrame() ?? '').toContain('T001');
+
+      reviewStore.setScrollOffset(12);
+      await tick();
+
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('T013');
+      expect(frame).not.toContain('T001');
+      expect(frame).toContain('PageDown/PageUp inspect all');
+      expect(frame).toContain('Ctrl+E/e');
+      ui.unmount();
+    } finally {
+      reviewStore.clearReview();
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps compact command affordances visible at 48 columns', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-narrow-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const tasks = Array.from({ length: 6 }, (_, index) =>
+        makeTask({
+          id: `T${String(index + 1).padStart(3, '0')}`,
+          title: `Task ${index + 1}`,
+          file: `src/task-${index + 1}.ts`,
+          evidence: ['reviewable proof'],
+          scope: { inBounds: [`src/task-${index + 1}.ts`], outOfBounds: [] },
+        }),
+      );
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(filePath, formatTasks(tasks), 'utf-8');
+
+      const ui = renderFeature(createElement(BriefReviewView, { filePath, height: 13, width: 48 }));
+      await vi.waitFor(() => {
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain('PgDn/PgUp');
+        expect(frame).toContain('e rich');
+        expect(frame).toContain('reject');
+      });
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).not.toContain('PageDown/PageUp inspect all');
+      expect(frame.split('\n').length).toBeLessThanOrEqual(13);
+      ui.unmount();
+    } finally {
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the bottom hint visible when simple review load fails', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-load-error-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+
+      const ui = renderFeature(createElement(BriefReviewView, { filePath, height: 8, width: 48 }));
+      await vi.waitFor(() => {
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain('Failed to load Task Briefs');
+        expect(frame).toContain('approve');
+        expect(frame).toContain('reject');
+      });
+      expect((ui.lastFrame() ?? '').split('\n').length).toBeLessThanOrEqual(8);
+      ui.unmount();
+    } finally {
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the task title when the simple row path is long', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-long-path-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(
+        filePath,
+        formatTasks([
+          makeTask({
+            id: 'T001',
+            file: 'src/features/workflow/components/extremely/deep/path/to/generated/review/file.ts',
+            title: 'KeepTitleVisible',
+            evidence: ['reviewable proof'],
+            scope: {
+              inBounds: ['src/features/workflow/components'],
+              outOfBounds: [],
+            },
+          }),
+        ]),
+        'utf-8',
+      );
+
+      const ui = renderFeature(createElement(BriefReviewView, { filePath, height: 14, width: 56 }));
+      await vi.waitFor(() => {
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain('KeepTitleVisible');
+        expect(frame).toContain('…');
+      });
+      ui.unmount();
+    } finally {
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('buildRoutingPreviewMetadata', () => {
   it('returns refreshed metadata without writing it to the plan editor store', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-refresh-test-'));
@@ -209,7 +429,10 @@ describe('buildRoutingPreviewMetadata', () => {
       };
       const task = makeTask({ action: 'modify', file: 'target.ts' });
 
-      const metadata = await buildRoutingPreviewMetadata([task], { config, projectDir });
+      const metadata = await buildRoutingPreviewMetadata([task], {
+        config,
+        projectDir,
+      });
 
       expect(metadata[0]).toMatchObject({
         taskId: task.id,

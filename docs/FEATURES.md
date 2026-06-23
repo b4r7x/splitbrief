@@ -66,8 +66,8 @@ diptych start "add endpoint" @api-spec.yaml @existing-handler.ts
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
 | `api` | OpenAI-compatible HTTP endpoint | Anthropic, OpenRouter, DeepSeek, Groq, Together, Ollama, LM Studio |
-| `shell` | Arbitrary stdin → stdout subprocess | Custom scripts |
-| `agent` | Subprocess that writes files directly | File-writing tools (no stdout extraction) |
+| `shell` | Arbitrary stdin → stdout subprocess; no shell/network sandbox | Custom scripts |
+| `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 | `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
 
 **Auto-detection.** `diptych init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available.
@@ -249,15 +249,15 @@ Rich review also has a read-only Worker Packet Preview for the selected task. Th
 | `x` | Flag/unflag task for rejection |
 | `R` | Regenerate flagged tasks (sends back to planner for targeted regen) |
 | `p` | Toggle Worker Packet Preview |
-| `e` | Open task in `$EDITOR` |
+| `E` | Raw external edit for selected task |
 | `Ctrl+J` / `Ctrl+K` | Reorder down / up (also `Ctrl+N` / `Ctrl+P`) |
 | `Y` | Save: write `tasks.md`, re-run quality gate, dispatch `APPROVE_BRIEFS` |
 | `q` | Discard edits, return to simple view |
-| `?` | Open help overlay |
+| `?` | Open rich editor help overlay |
 
 While the rich editor is open, `Ctrl+K` belongs to it (reorder up): the global command-palette shortcut releases that chord so a single press never both reorders a task and opens the palette. The palette is still reachable everywhere else, and the editor's other global shortcuts (help, settings, quit) keep working.
 
-**Contextual footer keybindings.** The footer dynamically shows keybindings relevant to the current cursor position and editor state. For example: `Enter: expand | e: edit | d: delete | Y: approve all` when a task is selected, or `x: flag | R: regen flagged` when tasks are flagged. The footer updates as context changes — no hidden `?` overlay needed for basic discovery.
+**Contextual footer keybindings.** The footer dynamically shows keybindings relevant to the current cursor position and editor state. For example: `Enter: expand | E: raw edit | d: delete | Y: save draft/approve checks` when a task is selected, or `x: flag | R: regen flagged` when tasks are flagged. The footer updates as context changes, while `?` opens rich editor help for the current editor surface.
 
 If the saved tasks fail brief-quality validation, the editor stays open with the error.
 
@@ -371,7 +371,7 @@ diptych stats --rebuild
 
 ### Tiered approval gates (auto / sticky / confirm)
 
-**What it does.** Every implementer write is classified into one of three tiers and gated before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.diptych/approvals.json`), `confirm` (always require typed confirmation phrase). Action classes: `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `network`, `package_change`. Composes orthogonally with the document-level approval loop.
+**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.diptych/approvals.json`), `confirm` (always require typed confirmation phrase). The current classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`; retained config keys such as `validation` and `network` do not sandbox shell commands or network access. Composes orthogonally with the document-level approval loop.
 
 **How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
 
@@ -704,7 +704,7 @@ diptych continue 2
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
 | `/reject-run confirm` | Restore diptych-written files from the run baseline |
-| `/yolo` | Toggle action-level tiered approvals off/on for the session |
+| `/yolo` | Toggle file-write tiered approvals off/on for the session |
 | `/quit` | Exit application (Ctrl+Q) |
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
@@ -725,9 +725,9 @@ palette:
       command: /handoff claude-code
 ```
 
-### Help overlay (`?`)
+### Help overlay (`Ctrl+/`)
 
-**What it does.** Shows key bindings and slash commands valid for the current screen. Press `?` from any screen.
+**What it does.** Shows key bindings and slash commands valid for the current screen. Press `Ctrl+/` from any screen. Inside the rich plan editor, `?` opens the scoped editor help overlay.
 
 ### Sessions picker
 
@@ -828,7 +828,7 @@ Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
 
 ### `diptych start --json`
 
-**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. Action-level tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 
@@ -848,7 +848,7 @@ The first line is `{ type: "readiness_report", report: ... }`. After that, `stdo
 
 ### `diptych start --rpc`
 
-**What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`.
+**What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `regenerate`, `brief_review`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`. `brief_review` is prompt-scoped for the Task Brief gate and echoes optional `id` / `operationId` values in status, ack, or error data.
 
 **How to use.**
 

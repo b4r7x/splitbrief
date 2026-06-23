@@ -145,9 +145,9 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.approve',
-    label: 'Approval Gates',
+    label: 'Spec/Plan Gates',
     section: 'Workflow',
-    description: 'Which approval gates block the workflow ("default" follows mode)',
+    description: 'Which spec/plan document gates block the workflow ("default" follows mode)',
     kind: 'enum',
     options: [...APPROVE_LEVELS],
   },

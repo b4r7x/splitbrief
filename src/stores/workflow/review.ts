@@ -4,12 +4,14 @@ export interface ReviewState {
   filePath: string | null;
   scrollOffset: number;
   renderedLineCount: number;
+  revision: number;
 }
 
 const initial: ReviewState = {
   filePath: null,
   scrollOffset: 0,
   renderedLineCount: 0,
+  revision: 0,
 };
 
 const store = createStore<ReviewState>(initial);
@@ -18,7 +20,13 @@ function setReviewFile(path: string | null, renderedLineCount?: number) {
   store.set((s) =>
     s.filePath === path
       ? s
-      : { ...s, filePath: path, scrollOffset: 0, renderedLineCount: renderedLineCount ?? 0 },
+      : {
+          ...s,
+          filePath: path,
+          scrollOffset: 0,
+          renderedLineCount: renderedLineCount ?? 0,
+          revision: 0,
+        },
   );
 }
 
@@ -30,6 +38,14 @@ function setRenderedLineCount(count: number) {
   store.set((s) => (s.renderedLineCount === count ? s : { ...s, renderedLineCount: count }));
 }
 
+function reloadReviewFile() {
+  store.set((s) =>
+    s.filePath === null
+      ? s
+      : { ...s, revision: s.revision + 1, scrollOffset: 0, renderedLineCount: 0 },
+  );
+}
+
 function clearReview() {
   store.set((s) => (s.filePath === null ? s : initial));
 }
@@ -39,5 +55,6 @@ export const reviewStore = {
   setReviewFile,
   setScrollOffset,
   setRenderedLineCount,
+  reloadReviewFile,
   clearReview,
 };

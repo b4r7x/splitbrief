@@ -3,6 +3,10 @@ import {
   deleteWordBackward,
   deleteLineBackward,
   moveToLineStart,
+  moveToLineEnd,
+  moveCharBackward,
+  moveCharForward,
+  deleteCharForward,
   findVisualLineStart,
   resolveEditAction,
   applyEditAction,
@@ -82,6 +86,29 @@ describe('moveToLineStart', () => {
 
   it('stays at 0 when already at start', () => {
     expect(moveToLineStart('hello', 0)).toEqual({ value: 'hello', cursor: 0 });
+  });
+});
+
+describe('moveToLineEnd', () => {
+  it('moves to the end of a single line', () => {
+    expect(moveToLineEnd('hello', 2)).toEqual({ value: 'hello', cursor: 5 });
+  });
+
+  it('moves to the end of the current line in multiline text', () => {
+    expect(moveToLineEnd('line1\nline2', 2)).toEqual({ value: 'line1\nline2', cursor: 5 });
+  });
+});
+
+describe('character movement and forward deletion', () => {
+  it('moves backward and forward by code point', () => {
+    const value = `a${EMOJI}b`;
+    expect(moveCharBackward(value, value.length)).toEqual({ value, cursor: 3 });
+    expect(moveCharForward(value, 1)).toEqual({ value, cursor: 3 });
+  });
+
+  it('deletes the next whole code point', () => {
+    const value = `a${EMOJI}b`;
+    expect(deleteCharForward(value, 1)).toEqual({ value: 'ab', cursor: 1 });
   });
 });
 
@@ -174,8 +201,34 @@ describe('resolveEditAction', () => {
     expect(resolveEditAction('a', { ...noMods, ctrl: true })).toBe('move-line-start');
   });
 
-  it('leaves Ctrl+E unbound so the workflow screen owns the toggle-sidebar chord', () => {
-    expect(resolveEditAction('e', { ...noMods, ctrl: true })).toBeNull();
+  it('returns move-line-end for Ctrl+E', () => {
+    expect(resolveEditAction('e', { ...noMods, ctrl: true })).toBe('move-line-end');
+  });
+
+  it('returns character movement for Ctrl+B and Ctrl+F', () => {
+    expect(resolveEditAction('b', { ...noMods, ctrl: true })).toBe('move-char-backward');
+    expect(resolveEditAction('f', { ...noMods, ctrl: true })).toBe('move-char-forward');
+  });
+
+  it('reserves modifier deletion chords for text editing', () => {
+    expect(resolveEditAction('', { ...noMods, meta: true, backspace: true })).toBe(
+      'delete-word-backward',
+    );
+    expect(resolveEditAction('', { ...noMods, ctrl: true, delete: true })).toBe(
+      'delete-word-backward',
+    );
+    expect(resolveEditAction('', { ...noMods, super: true, delete: true })).toBe(
+      'delete-line-backward',
+    );
+  });
+
+  it('keeps plain Backspace and Delete as directional character deletion', () => {
+    expect(resolveEditAction('', { ...noMods, backspace: true })).toBe('delete-char-backward');
+    expect(resolveEditAction('', { ...noMods, delete: true })).toBe('delete-char-forward');
+  });
+
+  it('maps the raw terminal DEL byte to Backspace when Ink does not set a key flag', () => {
+    expect(resolveEditAction('\x7f', noMods)).toBe('delete-char-backward');
   });
 
   it('returns null for no special combo', () => {
@@ -186,6 +239,18 @@ describe('resolveEditAction', () => {
 describe('applyEditAction', () => {
   it('returns null for null action', () => {
     expect(applyEditAction(null, 'hello', 5)).toBeNull();
+  });
+
+  it('applies forward deletion reached from the Delete key', () => {
+    const action = resolveEditAction('', {
+      ctrl: false,
+      meta: false,
+      super: false,
+      backspace: false,
+      delete: true,
+    });
+
+    expect(applyEditAction(action, 'abc', 1)).toEqual({ value: 'ac', cursor: 1 });
   });
 });
 

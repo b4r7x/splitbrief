@@ -16,6 +16,7 @@ import type { RpcResponse } from './types.js';
 export interface RpcErrorOptions {
   transcriptSensitive?: boolean | undefined;
   summary?: string | undefined;
+  data?: unknown;
 }
 
 export function createResponseWriter(deps: {
@@ -59,7 +60,12 @@ export function createResponseWriter(deps: {
       write({ type: 'ack', command, data: protectAckData(command, data, persistTranscript()) });
     },
     error(message: string, options: RpcErrorOptions = {}): void {
-      write({ type: 'error', error: protectErrorMessage(message, options, persistTranscript()) });
+      const persist = persistTranscript();
+      write({
+        type: 'error',
+        error: protectErrorMessage(message, options, persist),
+        ...(options.data !== undefined && { data: protectStatusData(options.data, persist) }),
+      });
     },
     status(data: unknown): void {
       write({ type: 'status', data: protectStatusData(data, persistTranscript()) });

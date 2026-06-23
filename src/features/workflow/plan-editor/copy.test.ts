@@ -47,6 +47,16 @@ describe('plan editor copy helpers', () => {
     );
   });
 
+  it('serializes Evidence through the section copy path', () => {
+    const task = makeTask({
+      evidence: ['brief-quality.json passes', 'focused test output saved'],
+    });
+
+    expect(formatTaskSectionCopyText(task, 'evidence')).toBe(
+      'brief-quality.json passes\nfocused test output saved',
+    );
+  });
+
   it('writes session-local fallback selection text when clipboard commands fail', async () => {
     const task = makeTask({ id: 'T001', title: 'Fallback task' });
     const runClipboardCommand = vi.fn().mockResolvedValue(false);

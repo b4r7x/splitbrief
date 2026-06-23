@@ -37,6 +37,7 @@ interface ActivityDetails {
   label: string;
   target?: string | undefined;
   rawAvailable?: boolean | undefined;
+  redacted?: boolean | undefined;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
 }
@@ -163,6 +164,7 @@ function warningActivity(
     label: `${labelPrefix} ${warning.code}`,
     diagnosticPartial: warning.message,
     rawAvailable: warning.rawRef !== undefined,
+    redacted: warning.redacted,
   });
 }
 
@@ -177,6 +179,7 @@ function buildActivity(opts: {
   label: string;
   target?: string | undefined;
   rawAvailable?: boolean | undefined;
+  redacted?: boolean | undefined;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
 }): RunnerCallActivityProjection | null {
@@ -207,6 +210,7 @@ function buildActivity(opts: {
     ...(diagnosticPartial !== undefined &&
       diagnosticPartial !== null && { diagnosticPartial: diagnosticPartial.text }),
     redacted:
+      opts.redacted === true ||
       label.redacted ||
       target?.redacted === true ||
       textPartial?.redacted === true ||

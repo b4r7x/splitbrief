@@ -11,5 +11,7 @@ describe('PlanEditorHelpOverlay', () => {
     expect(rows).toContainEqual({ context: 'Sections', key: 'e', label: 'edit section' });
     expect(rows).toContainEqual({ context: 'Sections', key: 'c', label: 'copy section' });
     expect(rows).toContainEqual({ context: 'Editing', key: 'Ctrl+Enter', label: 'save field' });
+    expect(rows).toContainEqual({ context: 'Tasks', key: 'Y', label: 'approve checks' });
+    expect(rows).toContainEqual({ context: 'Regen', key: 'enter', label: 'regen flagged' });
   });
 });

@@ -13,6 +13,8 @@ const CompletionTokensDetailsSchema = z.looseObject({
   reasoning_tokens: tokenCount.optional(),
 });
 
+export const RUNNER_CALL_REASONING_TOKEN_POLICY = 'preserve_reasoning_metadata' as const;
+
 export const BackendTokenUsageSchema = z.looseObject({
   input_tokens: tokenCount.optional(),
   output_tokens: tokenCount.optional(),
@@ -72,6 +74,7 @@ export function toTokenDeltaFromRunnerCallUsage(usage: RunnerCallUsage): TokenDe
     outputTokens: usage.outputTokens,
     ...(usage.cacheReadTokens !== undefined && { cacheReadTokens: usage.cacheReadTokens }),
     ...(usage.cacheCreateTokens !== undefined && { cacheCreateTokens: usage.cacheCreateTokens }),
+    ...(usage.reasoningTokens !== undefined && { reasoningTokens: usage.reasoningTokens }),
   };
 }
 
@@ -138,8 +141,12 @@ function normalizeParsedUsage(raw: BackendTokenUsage): RunnerCallUsage | null {
       ? undefined
       : Math.max(0, raw.prompt_tokens - (raw.prompt_tokens_details?.cached_tokens ?? 0));
   const inputTokens = codexInputTokens ?? promptInputTokens ?? raw.inputTokens;
-  const outputTokens = raw.output_tokens ?? raw.completion_tokens ?? raw.outputTokens;
   const reasoningTokens = raw.completion_tokens_details?.reasoning_tokens ?? raw.reasoningTokens;
+  const providerOutputTokens = raw.output_tokens ?? raw.completion_tokens;
+  const outputTokens =
+    providerOutputTokens === undefined
+      ? raw.outputTokens
+      : Math.max(0, providerOutputTokens - (reasoningTokens ?? 0));
 
   if (
     inputTokens === undefined &&

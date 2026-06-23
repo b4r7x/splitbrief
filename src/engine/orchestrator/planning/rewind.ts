@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
@@ -10,7 +10,7 @@ import { createBusTextHandler, publishPlannerStatus, publishPlanApproved } from 
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { runApprovalLoop } from '../approval/loop.js';
-import { drainAndFormat } from './queue-drain.js';
+import { commitQueueMessagesDrained, formatDrainedMessages, readQueueForPrompt } from '../queue.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
@@ -49,6 +49,7 @@ async function finishPlanAndBriefsApproval(args: {
       signal,
       persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
+      sinks: wctx.sinks,
     });
     state = planLoop.state;
     if (planLoop.rejected || planLoop.aborted) return { state, tasks: [], cancelled: true };
@@ -63,6 +64,7 @@ async function finishPlanAndBriefsApproval(args: {
       tasks,
       metadata,
       signal,
+      sinks: wctx.sinks,
     });
     state = regen.state;
     finalTasks = regen.tasks;
@@ -83,8 +85,10 @@ async function finishPlanAndBriefsApproval(args: {
     callbacks,
     bus: wctx.bus,
     state,
+    config,
     metadata,
     signal,
+    sinks: wctx.sinks,
   });
   state = briefsLoop.state;
   finalTasks = briefsLoop.tasks;
@@ -118,14 +122,11 @@ export async function handleRewindSpec(args: {
       config.workflow.persistTranscript,
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(
-      projectDir,
-      sessionId,
-      state,
-      wctx.bus,
-    );
-    state = drainedState;
-    const regenPrompt = drainPrefix + buildRegeneratePrompt('spec', current, rewindPending.comment);
+    const queued = readQueueForPrompt({ projectDir, sessionId, state });
+    state = queued.state;
+    const regenPrompt =
+      formatDrainedMessages(queued.messages) +
+      buildRegeneratePrompt('spec', current, rewindPending.comment);
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
       `\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`,
     );
@@ -142,6 +143,7 @@ export async function handleRewindSpec(args: {
     });
     state = addUsageAndSave(wctx, state, 'planner', regenResult.usage);
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, regenResult.text, metadata);
+    state = commitRewindQueue({ projectDir, sessionId, state, bus: wctx.bus }, queued.messages);
     wctx.bus.publish({
       type: 'spec_regenerated',
       ts: Date.now(),
@@ -167,6 +169,7 @@ export async function handleRewindSpec(args: {
       signal,
       persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
+      sinks: wctx.sinks,
     });
     state = specLoop.state;
     if (specLoop.rejected || specLoop.aborted) return { state, tasks: [], cancelled: true };
@@ -185,6 +188,7 @@ export async function handleRewindSpec(args: {
     metadata,
     skillsContext,
     signal,
+    sinks: wctx.sinks,
   });
   state = planAndTasksState;
 
@@ -211,14 +215,11 @@ export async function handleRewindPlan(args: {
       config.workflow.persistTranscript,
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
-    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(
-      projectDir,
-      sessionId,
-      state,
-      wctx.bus,
-    );
-    state = drainedState;
-    const regenPrompt = drainPrefix + buildRegeneratePrompt('plan', current, rewindPending.comment);
+    const queued = readQueueForPrompt({ projectDir, sessionId, state });
+    state = queued.state;
+    const regenPrompt =
+      formatDrainedMessages(queued.messages) +
+      buildRegeneratePrompt('plan', current, rewindPending.comment);
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
       `\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`,
     );
@@ -235,6 +236,7 @@ export async function handleRewindPlan(args: {
     });
     state = addUsageAndSave(wctx, state, 'planner', regenResult.usage);
     writeSpecFile({ projectDir, sessionId }, PLAN_FILE, regenResult.text, metadata);
+    state = commitRewindQueue({ projectDir, sessionId, state, bus: wctx.bus }, queued.messages);
     wctx.bus.publish({
       type: 'plan_regenerated',
       ts: Date.now(),
@@ -252,6 +254,7 @@ export async function handleRewindPlan(args: {
     state,
     metadata,
     signal,
+    sinks: wctx.sinks,
   });
   state = taskRegen.state;
   const rewindTasks: Task[] = taskRegen.tasks;
@@ -264,4 +267,23 @@ export async function handleRewindPlan(args: {
     skipPlanApproval,
     metadata,
   });
+}
+
+function commitRewindQueue(
+  ctx: {
+    projectDir: string;
+    sessionId: string;
+    state: WorkflowState;
+    bus: PlannerCallbacksContext['bus'];
+  },
+  messages: readonly QueuedMessage[],
+): WorkflowState {
+  if (messages.length === 0) return ctx.state;
+  return commitQueueMessagesDrained({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    state: ctx.state,
+    messages,
+    bus: ctx.bus,
+  }).state;
 }

@@ -38,7 +38,7 @@ the subsystem docs (`ARCHITECTURE.md`, `HOOKS-CONFIG.md`, `REPOMAP.md`,
 - **EventBus** — single typed `EngineEvent` discriminated union (50 variants); engine emits via `bus.publish()` and UI/persistence/hooks subscribe as sinks. Replaces ad-hoc `callbacks.onEvent` + direct `appendEvent` calls. ([ARCHITECTURE.md §Design decisions](docs/ARCHITECTURE.md))
 - **Hook system** — 11 workflow lifecycle hooks (`pre_task`, `post_commit`, etc.). Shell-spawned commands (`kind: "command"`) and in-process JS modules (`kind: "module"`). Trust prompt + `--allow-hooks` flag for CI. 2 built-ins: `prettier-on-change`, `block-secrets`. ([HOOKS-CONFIG.md](docs/HOOKS-CONFIG.md))
 - **Repo-map context** — Aider-style codebase symbol summary auto-injected into the planner. Tree-sitter parsing, PageRank ranking, SQLite cache. ([REPOMAP.md](docs/REPOMAP.md))
-- **Headless `--json` mode** — `diptych start --json "..."` and `diptych resume --json` emit each EngineEvent as NDJSON to stdout. TUI render skipped. Auto-approves all gates.
+- **Headless `--json` mode** — `diptych start --json "..."` and `diptych resume --json` emit each EngineEvent as NDJSON to stdout. TUI render skipped. Auto-approves workflow review gates; file-write sticky/confirm approvals fail closed unless configured or granted.
 - **OpenTelemetry sink** — opt-in (`otel.enabled: true`) span emission for workflow lifecycle, phases, and tasks. Per-cost attributes. Users register their own exporter. ([OTEL.md](docs/OTEL.md))
 - **`/repomap rebuild`** slash command — clears the SQLite cache.
 - **`pre_planning` hooks** — fire before planner phases.

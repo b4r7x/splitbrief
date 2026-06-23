@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { configStore } from '../../../stores/project/config.js';
 import { TASKS_FILE, BRIEF_QUALITY_FILE, DIPTYCH_DIR, SESSIONS_DIR } from '../../../core/paths.js';
 import { parseTasks } from '../../../engine/spec/parser.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 let projectDir: string;
 let sessionDirPath: string;
@@ -17,6 +19,7 @@ beforeEach(async () => {
   projectDir = await mkdtemp(join(tmpdir(), 'plan-editor-save-test-'));
   sessionDirPath = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
   await mkdir(sessionDirPath, { recursive: true });
+  configStore.__testReset({ config: makeConfig(), projectDir });
 });
 
 afterEach(async () => {
@@ -26,6 +29,7 @@ afterEach(async () => {
     /* ignore */
   }
   vi.restoreAllMocks();
+  configStore.__testReset();
 });
 
 import { createSaveHandler } from './save.js';
@@ -43,7 +47,7 @@ function makePassingTask(overrides?: Parameters<typeof makeTask>[0]) {
 }
 
 describe('createSaveHandler', () => {
-  it('writes tasks.md and brief-quality.json, marks clean, and calls onApprove', async () => {
+  it('dirty save writes tasks.md and brief-quality.json without approving', async () => {
     const task = makePassingTask({
       implementationSteps: ['step one'],
       tests: ['returns correct value'],
@@ -64,8 +68,28 @@ describe('createSaveHandler', () => {
     expect(typeof quality.passed).toBe('boolean');
     expect(typeof quality.score).toBe('number');
 
-    expect(onApprove).toHaveBeenCalledOnce();
+    expect(onApprove).not.toHaveBeenCalled();
     expect(planEditorStore.get().dirty).toBe(false);
+    expect(planEditorStore.get().statusMessage).toBe('draft saved');
+  });
+
+  it('clean save approves after quality and readiness pass', async () => {
+    const task = makePassingTask({
+      implementationSteps: ['step one'],
+      tests: ['returns correct value'],
+    });
+    planEditorStore.initEditor([task]);
+
+    const onApprove = vi.fn();
+    const save = createSaveHandler(sessionDirPath, onApprove);
+    await save();
+
+    expect(onApprove).toHaveBeenCalledOnce();
+    expect(planEditorStore.get().saveError).toBeNull();
+    expect(planEditorStore.get().reviewMetadata.get(task.id)).toMatchObject({
+      taskId: task.id,
+      contextFit: 'fits',
+    });
   });
 
   it('round-trip: written tasks.md parses back to same count and IDs', async () => {
@@ -113,7 +137,7 @@ describe('createSaveHandler', () => {
     const onApprove = vi.fn();
     await createSaveHandler(sessionDirPath, onApprove)();
 
-    expect(onApprove).toHaveBeenCalledOnce();
+    expect(onApprove).not.toHaveBeenCalled();
     const written = await readFile(join(sessionDirPath, TASKS_FILE), 'utf-8');
     const parsed = parseTasks(written);
     expect(parsed.map((task) => task.title)).toEqual(['Beta', 'Alpha']);
@@ -156,7 +180,7 @@ describe('createSaveHandler', () => {
     }
   });
 
-  it('does not save, approve, or mark clean when brief quality fails', async () => {
+  it('dirty save persists parsable drafts even when brief quality fails', async () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
     planEditorStore.setTasks([{ ...task, title: 'Invalid edited title' }]);
@@ -164,11 +188,51 @@ describe('createSaveHandler', () => {
     const onApprove = vi.fn();
     await createSaveHandler(sessionDirPath, onApprove)();
 
-    await expect(readFile(join(sessionDirPath, TASKS_FILE), 'utf-8')).rejects.toThrow();
-    await expect(readFile(join(sessionDirPath, BRIEF_QUALITY_FILE), 'utf-8')).rejects.toThrow();
+    const written = await readFile(join(sessionDirPath, TASKS_FILE), 'utf-8');
+    expect(written).toContain('Invalid edited title');
+    const quality = JSON.parse(await readFile(join(sessionDirPath, BRIEF_QUALITY_FILE), 'utf-8'));
+    expect(quality.passed).toBe(false);
     expect(onApprove).not.toHaveBeenCalled();
-    expect(planEditorStore.get().dirty).toBe(true);
+    expect(planEditorStore.get().dirty).toBe(false);
+    expect(planEditorStore.get().saveError).toBeNull();
+    expect(planEditorStore.get().statusMessage).toContain('draft saved');
+  });
+
+  it('clean approval blocks on brief quality without using draft-save semantics', async () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+
+    const onApprove = vi.fn();
+    await createSaveHandler(sessionDirPath, onApprove)();
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(planEditorStore.get().dirty).toBe(false);
     expect(planEditorStore.get().saveError).toContain('Brief quality failed');
+  });
+
+  it('clean approval refreshes readiness metadata and blocks overflow', async () => {
+    configStore.__testReset({
+      config: makeConfig({
+        implementer: { contextLength: 200 },
+      }),
+      projectDir,
+    });
+    const task = makePassingTask({
+      description: 'Create a large module',
+      implementationSteps: [Array.from({ length: 200 }, (_, i) => `step ${i}`).join(' ')],
+    });
+    planEditorStore.initEditor([task]);
+
+    const onApprove = vi.fn();
+    await createSaveHandler(sessionDirPath, onApprove)();
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(planEditorStore.get().reviewMetadata.get(task.id)).toMatchObject({
+      taskId: task.id,
+      contextFit: 'overflow',
+    });
+    expect(planEditorStore.get().saveError).toContain('approval blocked');
+    expect(planEditorStore.get().saveError).toContain('Next best action');
   });
 
   it('catches parse errors and surfaces them as saveError', async () => {

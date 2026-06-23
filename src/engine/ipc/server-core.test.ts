@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createConnection, type Socket } from 'node:net';
 import { createEventBus } from '../events/bus.js';
+import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import type { EngineEvent } from '../events/types.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
 import { startIpcServer, type IpcServer } from './server.js';
@@ -417,6 +418,12 @@ describe('startIpcServer', () => {
     expect(prompt).toBeDefined();
     if (prompt?.kind !== 'prompt_request') throw new Error('missing prompt_request');
     expect(prompt.request.kind).toBe('approval_needed');
+    expect(prompt.request).toMatchObject({
+      kind: 'approval_needed',
+      approvalType: 'spec',
+      filePath: '/tmp/spec.md',
+      allowedCommands: [],
+    });
 
     socket.write(
       JSON.stringify({
@@ -478,9 +485,13 @@ describe('startIpcServer', () => {
       }),
     ).rejects.toMatchObject({
       kind: 'ipc-prompt-no-client-headless',
-      data: { promptKind: 'approval_needed' },
+      data: {
+        promptKind: 'approval_needed',
+        approvalType: 'briefs',
+        artifactPath: '/tmp/briefs.md',
+      },
       message:
-        'IPC prompt cannot be answered in explicit headless mode without an attached client: approval_needed',
+        'IPC prompt cannot be answered in explicit headless mode without an attached client: approval_needed briefs artifact=/tmp/briefs.md',
     });
   });
 
@@ -614,6 +625,7 @@ describe('startIpcServer', () => {
       kind: 'approval_needed',
       approvalType: 'briefs',
       filePath: '/tmp/tasks.md',
+      allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt('briefs')],
     });
 
     socket.write(

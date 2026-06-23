@@ -129,6 +129,23 @@ describe('activityStore', () => {
     });
   });
 
+  it('sanitizes activity display fields before storing them', () => {
+    addEvent(
+      activity({
+        label:
+          '\u001b]8;;https://evil.example\u0007running sk-abcdefghijklmnopqrstuvwxyz\u001b]8;;\u0007',
+        target: 'token=sk-abcdefghijklmnopqrstuvwxyz',
+        diagnosticPartial: 'failed with sk-abcdefghijklmnopqrstuvwxyz',
+      }),
+    );
+
+    const serialized = JSON.stringify(activityStore.get().items);
+    expect(serialized).toContain('sk-***REDACTED***');
+    expect(serialized).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(serialized).not.toContain('\u001b]8');
+    expect(activityStore.get().items[0]?.redacted).toBe(true);
+  });
+
   it('retires running activity when a runner call completes or fails', () => {
     addEvent(activity({ callId: 'call-1', activityId: 'call-1:tool:Bash', stage: 'updated' }));
     addEvent(

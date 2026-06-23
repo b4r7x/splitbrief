@@ -124,14 +124,22 @@ describe('spawnAndCollect', () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it('flushes trailing stderr without promoting it to a result warning', async () => {
+  it('flushes warning-like trailing stderr as a bounded status warning', async () => {
     const result = await spawnAndCollect({
       command: 'node',
       args: ['-e', 'process.stderr.write("trailing warning")'],
       cwd: process.cwd(),
     });
 
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stderr_diagnostic',
+        source: 'stderr',
+        surface: 'status',
+        channel: 'stderr',
+        message: 'trailing warning',
+      }),
+    ]);
   });
 
   it('bounds oversized stderr lines and emits an overflow warning', async () => {
@@ -248,9 +256,12 @@ describe('CLI implementer JSONL parsing', () => {
       expect.objectContaining({
         code: 'malformed_jsonl',
         severity: 'warning',
-        source: 'provider',
+        source: 'jsonl',
         surface: 'activity',
-        message: 'Malformed JSONL line skipped',
+        parser: 'jsonl',
+        upstreamType: 'malformed_json',
+        channel: 'stdout',
+        message: expect.stringContaining('Malformed jsonl record'),
       }),
     ]);
   });

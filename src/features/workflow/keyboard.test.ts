@@ -104,6 +104,25 @@ describe('handleConversationScroll', () => {
       step: 10,
     });
   });
+
+  it('does not claim Ctrl+B or Ctrl+F while the composer owns text focus', () => {
+    expect(
+      handleConversationScroll({
+        ...base,
+        input: 'b',
+        key: { ctrl: true } as Key,
+        composerFocus: true,
+      }),
+    ).toEqual({ type: 'none' });
+    expect(
+      handleConversationScroll({
+        ...base,
+        input: 'f',
+        key: { ctrl: true } as Key,
+        composerFocus: true,
+      }),
+    ).toEqual({ type: 'none' });
+  });
 });
 
 describe('handleReviewScroll', () => {
@@ -163,7 +182,7 @@ describe('handleReviewScroll', () => {
     });
   });
 
-  it('maps Ctrl+B and Ctrl+F to page review scroll actions', () => {
+  it('maps Ctrl+B and Ctrl+F to page review scroll actions when review owns focus', () => {
     expect(
       handleReviewScroll({
         ...base,
@@ -188,6 +207,31 @@ describe('handleReviewScroll', () => {
     });
   });
 
+  it('does not claim Ctrl+B or Ctrl+F from normal composer focus', () => {
+    expect(
+      handleReviewScroll({
+        ...base,
+        input: 'b',
+        key: { ctrl: true } as Key,
+        inputMode: 'normal',
+        focus: 'workflow',
+        composerFocus: true,
+        reviewScrollOffset: 20,
+      }),
+    ).toEqual({ type: 'none' });
+    expect(
+      handleReviewScroll({
+        ...base,
+        input: 'f',
+        key: { ctrl: true } as Key,
+        inputMode: 'normal',
+        focus: 'workflow',
+        composerFocus: true,
+        reviewScrollOffset: 20,
+      }),
+    ).toEqual({ type: 'none' });
+  });
+
   it('ignores the plain printable G key', () => {
     expect(handleReviewScroll({ ...base, key: { end: false } as Key })).toEqual({
       type: 'none',
@@ -196,12 +240,12 @@ describe('handleReviewScroll', () => {
 });
 
 describe('handleWorkflowCtrlChords', () => {
-  it('maps Alt/Meta+A to the latest expandable activity batch', () => {
+  it('maps Ctrl+A to the latest expandable activity batch', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'a',
-        key: key({ meta: true }),
-        isSmall: false,
+        key: key({ ctrl: true }),
+        composerFocus: true,
         sections,
         findLatestDiff: () => null,
         findLatestActivityBatch: () => 'activity-batch:0:call-1',
@@ -209,15 +253,53 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' });
   });
 
-  it('leaves Ctrl+A for composer line-start editing', () => {
+  it('does not map Alt+A to activity expansion', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'a',
-        key: key({ ctrl: true }),
-        isSmall: false,
+        key: key({ meta: true }),
+        composerFocus: true,
         sections,
         findLatestDiff: () => null,
         findLatestActivityBatch: () => 'activity-batch:0:call-1',
+      }),
+    ).toEqual({ type: 'none' });
+  });
+
+  it('leaves Ctrl+E for composer line-end editing while the composer owns focus', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'e',
+        key: key({ ctrl: true }),
+        composerFocus: true,
+        sections,
+        findLatestDiff: () => null,
+        findLatestActivityBatch: () => null,
+      }),
+    ).toEqual({ type: 'none' });
+  });
+
+  it('does not map Ctrl+E to a sidebar action outside composer focus', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'e',
+        key: key({ ctrl: true }),
+        sections,
+        findLatestDiff: () => null,
+        findLatestActivityBatch: () => null,
+      }),
+    ).toEqual({ type: 'none' });
+  });
+
+  it('reserves attached Ctrl+D for the attach client instead of toggling diff', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'd',
+        key: key({ ctrl: true }),
+        attachState: 'attached',
+        sections,
+        findLatestDiff: () => 'implementer_generate_done:1',
+        findLatestActivityBatch: () => null,
       }),
     ).toEqual({ type: 'none' });
   });
@@ -228,7 +310,6 @@ describe('handleWorkflowCtrlChords', () => {
         handleWorkflowCtrlChords({
           input,
           key: key({}),
-          isSmall: false,
           sections,
           findLatestDiff: () => null,
           findLatestActivityBatch: () => 'activity-batch:0:call-1',

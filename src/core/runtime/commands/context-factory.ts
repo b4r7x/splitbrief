@@ -73,6 +73,7 @@ interface CommandContextFactoryOptions {
   ) => ReturnType<RuntimeCommandContext['exportSession']>;
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
+  toggleSidebar: RuntimeCommandContext['toggleSidebar'];
 }
 
 export function createCommandContext(opts: CommandContextFactoryOptions): RuntimeCommandContext {
@@ -169,5 +170,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     },
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
+    toggleSidebar: opts.toggleSidebar,
   };
 }

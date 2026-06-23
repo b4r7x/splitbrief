@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
-import type { TieredApprovalRequest } from '../../core/approval/types.js';
+import type { ApprovalReviewResult, TieredApprovalRequest } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import type { EngineEvent } from '../../engine/events/types.js';
@@ -13,6 +16,8 @@ import type { IpcServer } from '../../engine/ipc/server.js';
 import { WorkflowScreen } from './screen.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from './prompt-grace.js';
+import { formatTasks } from '../../engine/spec/formatter.js';
+import { sessionDir } from '../../core/paths.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -32,6 +37,7 @@ const { saveState } = await import('../../core/state/persistence.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const ENTER = '\r';
+const CTRL_E = '\x05';
 const ipcServers: IpcServer[] = [];
 const ipcTempDirs: string[] = [];
 
@@ -70,6 +76,23 @@ function mountWorkflow(rows = 60) {
   );
 }
 
+function writeFakeReviewEditor(projectDir: string): { editorPath: string; logPath: string } {
+  const editorPath = join(projectDir, 'fake-review-editor.cjs');
+  const logPath = join(projectDir, 'fake-review-editor.log');
+  writeFileSync(
+    editorPath,
+    `#!/usr/bin/env node
+const { appendFileSync, writeFileSync } = require('node:fs');
+const filePath = process.argv[2];
+appendFileSync(process.env.FAKE_REVIEW_EDITOR_LOG, filePath + '\\n');
+writeFileSync(filePath, process.env.FAKE_REVIEW_EDITOR_CONTENT);
+`,
+    'utf-8',
+  );
+  chmodSync(editorPath, 0o700);
+  return { editorPath, logPath };
+}
+
 function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
 }
@@ -92,6 +115,7 @@ describe('WorkflowScreen key arbitration', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     for (const server of ipcServers.splice(0)) {
       await server.close().catch(() => undefined);
     }
@@ -208,6 +232,87 @@ describe('WorkflowScreen key arbitration', () => {
     expect(JSON.stringify(eventsStore.get().events)).not.toContain(`diagnostic ${sentinel}`);
     expect(JSON.stringify(eventsStore.get().events)).not.toContain(`expand-${sentinel}`);
     expect(JSON.stringify(eventsStore.get().events)).not.toContain(sentinel);
+    ui.unmount();
+  });
+
+  it('shows active approval commands instead of the queue hint while attached', async () => {
+    const projectDir = createTempDir('workflow-screen-attached-prompt');
+    ipcTempDirs.push(projectDir);
+    const attachedSessionId = 'attached-prompt-session';
+    const attachedSessionDir = sessionDir(projectDir, attachedSessionId);
+    mkdirSync(attachedSessionDir, { recursive: true });
+    writeFileSync(
+      join(attachedSessionDir, 'tasks.md'),
+      formatTasks([
+        makeTask({
+          id: 'T001',
+          title: 'Attached prompt task',
+          file: 'src/attached-prompt.ts',
+          evidence: ['reviewable proof'],
+          scope: { inBounds: ['src/attached-prompt.ts'], outOfBounds: [] },
+        }),
+      ]),
+      'utf-8',
+    );
+    const bus = createEventBus();
+    const serverDir = createTempDir('wsa');
+    ipcTempDirs.push(serverDir);
+    const server = await startIpcServer({
+      sessionId: attachedSessionId,
+      sessionDir: serverDir,
+      startedAt: 1_000,
+      mode: 'standard',
+      feature: 'attached prompt feature',
+      authToken: 'token',
+      bus,
+      onUserInput: vi.fn(),
+      persistTranscript: false,
+    });
+    ipcServers.push(server);
+    let attached = false;
+    const unsubscribeAttached = bus.subscribe((event) => {
+      if (event.type === 'ipc_client_attached') attached = true;
+    });
+    configStore.__testReset({
+      config: makeConfig({ workflow: { persistTranscript: false } }),
+      projectDir,
+    });
+    terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+    routerStore.navigate({
+      to: 'workflow',
+      feature: 'attached prompt feature',
+      sessionId: attachedSessionId,
+      attach: { sockPath: server.sockPath, authToken: 'token' },
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(attached).toBe(true);
+    });
+    unsubscribeAttached();
+
+    const response = server.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: 'tasks.md',
+    });
+
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('approve | Ctrl+E/e edit');
+      expect(frame).not.toContain('queue message to running workflow');
+    });
+
+    ui.stdin.write('reject');
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await expect(response).resolves.toEqual({
+      kind: 'approval_needed',
+      approved: false,
+    });
+
     ui.unmount();
   });
 
@@ -489,6 +594,145 @@ describe('WorkflowScreen key arbitration', () => {
     expect(ui.lastFrame() ?? '').not.toMatch(/>\s+j(\s|$)/m);
 
     ui.unmount();
+  });
+
+  it('rich brief review uses the plan-editor footer instead of the generic workflow footer', async () => {
+    const projectDir = createTempDir('workflow-screen-rich-footer');
+    try {
+      const tasksPath = join(projectDir, 'tasks.md');
+      writeFileSync(
+        tasksPath,
+        formatTasks([
+          makeTask({
+            id: 'T001',
+            title: 'Rich footer task',
+            file: 'src/rich-footer.ts',
+            evidence: ['reviewable proof'],
+            scope: { inBounds: ['src/rich-footer.ts'], outOfBounds: [] },
+          }),
+        ]),
+        'utf-8',
+      );
+      configStore.__testReset({
+        config: makeConfig({ workflow: { briefReview: 'rich' } }),
+        projectDir,
+      });
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        feature: 'rich footer review',
+        readiness: readyReadiness(projectDir),
+      });
+      runWorkflow.mockImplementationOnce(async (opts) => {
+        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+        await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        return makeSummary({ feature: 'rich footer review' });
+      });
+
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
+
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Rich footer task');
+        expect(ui.lastFrame() ?? '').toContain('Y approve checks');
+      });
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('N reject');
+      expect(frame).not.toContain('Ctrl+C abort');
+      expect(frame).not.toContain('Task 0/0');
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('Ctrl+E opens rich brief review through the workflow review prompt', async () => {
+    const projectDir = createTempDir('workflow-screen-brief-shortcut');
+    ipcTempDirs.push(projectDir);
+    const tasksPath = join(projectDir, 'tasks.md');
+    writeFileSync(
+      tasksPath,
+      formatTasks([
+        makeTask({
+          id: 'T001',
+          title: 'Review shortcut task',
+          file: 'src/review-shortcut.ts',
+          evidence: ['reviewable proof'],
+          scope: { inBounds: ['src/review-shortcut.ts'], outOfBounds: [] },
+        }),
+      ]),
+      'utf-8',
+    );
+    runWorkflow.mockImplementationOnce(async (opts) => {
+      lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+      return makeSummary();
+    });
+    const ui = mountWorkflow();
+
+    await vi.waitFor(() => {
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+      expect(lifecycleStore.get().phase).toBe('reviewing-briefs');
+    });
+
+    ui.stdin.write(CTRL_E);
+
+    await vi.waitFor(() => {
+      expect(planEditorStore.get().runtimeRichMode).toBe(true);
+    });
+
+    ui.unmount();
+  });
+
+  it.each([
+    ['spec', 'reviewing-spec'],
+    ['plan', 'reviewing-plan'],
+  ] as const)('Ctrl+E opens $EDITOR for %s review and refreshes before approval', async (type, phase) => {
+    const projectDir = createTempDir(`workflow-screen-${type}-editor`);
+    try {
+      const reviewPath = join(projectDir, `${type}.md`);
+      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
+      const editedText = `# Edited ${type} review\n\nfresh editor content\n`;
+      writeFileSync(reviewPath, `# Original ${type} review\n\nstale content\n`, 'utf-8');
+      vi.stubEnv('EDITOR', editorPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
+      let approvalResult: ApprovalReviewResult | undefined;
+
+      runWorkflow.mockImplementationOnce(async (opts) => {
+        lifecycleStore.__testReset({ phase });
+        approvalResult = await opts.callbacks.onApprovalNeeded(type, reviewPath);
+        return makeSummary({ feature: `${type} review editor` });
+      });
+
+      const ui = mountWorkflow();
+
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
+      });
+
+      ui.stdin.write(CTRL_E);
+
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
+      });
+      expect(readFileSync(logPath, 'utf-8')).toContain(reviewPath);
+      expect(approvalResult).toBeUndefined();
+
+      ui.stdin.write('approve');
+      await tick(20);
+      ui.stdin.write(ENTER);
+
+      await vi.waitFor(() => {
+        expect(approvalResult).toEqual({ approved: true });
+      });
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 
   it('does not carry runtime rich brief-review mode into the next workflow', async () => {

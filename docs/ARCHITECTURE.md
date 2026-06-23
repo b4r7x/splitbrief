@@ -153,7 +153,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
    `saveState()` writes to `.diptych/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
-8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
+8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, file-write tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
 10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow after state is saved; continue later with an explicit session id if the saved state is resumable. Esc Esc also aborts via a two-press ladder: the first Esc arms an `interrupt` (live phase) or `cancel` (question prompt) intent, the second fires it (`src/app/keys.ts`); a lone Esc with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, updates cumulative stats, clears `.diptych/active`, and the UI unmounts.
@@ -362,7 +362,7 @@ The bus is synchronous by design so fan-out order matches the pre-bus `addEvent`
 
 ### Headless mode (--json)
 
-`diptych start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Non-interactive stubs in `src/cli/headless.ts` auto-approve workflow review gates, answer questions with empty strings, and exit non-zero for recovery. Action-level tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log for the run.
+`diptych start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Non-interactive stubs in `src/cli/headless.ts` auto-approve workflow review gates, answer questions with empty strings, and exit non-zero for recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log for the run.
 
 ```bash
 diptych start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
@@ -372,7 +372,7 @@ diptych start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
 
 `diptych start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
 
-RPC keeps engine gates bidirectional. Approval, question, continuation, cost, tiered approval, user-edit conflict, task-review, and recovery prompts publish status/event responses and wait until the client sends `approve`, `reject`, `message`, or `recovery`. The `message` command feeds either the active prompt or the workflow message queue. The `status` command reads the current persisted `WorkflowState`; `abort` trips the workflow abort signal.
+RPC keeps engine gates bidirectional. Approval, question, continuation, cost, tiered approval, user-edit conflict, task-review, and recovery prompts publish status/event responses and wait until the client sends `approve`, `reject`, `regenerate`, prompt-scoped `brief_review`, `message`, or `recovery`. The `message` command feeds either the active prompt or the workflow message queue. The `status` command reads the current persisted `WorkflowState`; `abort` trips the workflow abort signal.
 
 ## Architecture decision records
 
@@ -427,7 +427,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **MCP server** (`src/engine/mcp/`) — exposes session artifacts (sessions index, manifest, spec, plan, tasks, evidence, drift report, state, and summary) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
 - **Worktree management** (`src/engine/worktree.ts`) — `diptych worktree list / switch / remove` for isolated parallel sessions under `.trees/<name>/`.
-- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts`) — every implementer write goes through `auto` / `sticky` / `confirm` tiers per action class, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`.
+- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
@@ -617,8 +617,8 @@ src/
 │   │                              agent-sdk-backend (Anthropic Agent SDK
 │   │                              wrapper), claude-invoke (Claude-Code CLI
 │   │                              subprocess driver), cli-tools (CLI-tool
-│   │                              spawn helpers), sandbox-env (sandbox
-│   │                              environment setup), trust (runner trust
+│   │                              spawn helpers), sandbox-env (HOME/XDG/cache
+│   │                              env redirect; not shell/network sandbox), trust (runner trust
 │   │                              prompts)
 │   ├── session-expiry.ts          Session-expired error detection +
 │   │                              resume-fallback (runWithResumeFallback)
@@ -870,7 +870,7 @@ Adding a new EngineEvent variant without adding it to this switch is a compile e
 
 ### Headless mode
 
-`diptych start --json` skips Ink, replaces `tuiSink` with `stdoutJsonSink`, and stubs workflow host callbacks non-interactively: review gates approve, questions answer empty, and recovery exits non-zero. Tiered approvals still use approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
+`diptych start --json` skips Ink, replaces `tuiSink` with `stdoutJsonSink`, and stubs workflow host callbacks non-interactively: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still use approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
 
 ---
 
@@ -945,8 +945,8 @@ The `kind` discriminant is required in every planner / implementer config. Facto
 |---|---|---|---|
 | `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | claude-code, codex, opencode, aider, copilot, kilo-code |
 | `api` | `planners/api.ts` | `implementers/api.ts` | anthropic, openrouter, deepseek, openai, groq, together (any OpenAI-compatible) |
-| `shell` | `planners/shell.ts` | `implementers/shell.ts` | arbitrary subprocess, stdin-prompt → stdout-response |
-| `agent` | `planners/agent.ts` | `implementers/agent.ts` | subprocess that writes files directly (no stdout extraction) |
+| `shell` | `planners/shell.ts` | `implementers/shell.ts` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
+| `agent` | `planners/agent.ts` | `implementers/agent.ts` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
 | `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `@anthropic-ai/claude-agent-sdk` library call |
 
 Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared pipeline; only `invoke*` differs per backend. The orchestrator branches on `PlannerCapabilities` (declared per backend), never on backend identity. See Part 1 §Capability matrix for the full capability table and fallback strategy.
@@ -1176,7 +1176,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | `/approval` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
 | `/reject-run confirm` | Restore diptych-written files from the run baseline |
-| `/yolo` | Toggle action-level tiered approvals off/on for the session |
+| `/yolo` | Toggle file-write tiered approvals off/on for the session |
 | `/quit` | Exit application |
 
 ---

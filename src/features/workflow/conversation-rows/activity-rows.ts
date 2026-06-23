@@ -2,6 +2,7 @@ import {
   fitCompactActivityDisplayLine,
   type ActivityDisplayValueFit,
 } from '../display/activity-display-text.js';
+import { getShortcutKey } from '../../../core/keybindings/registry.js';
 import {
   buildActivityBatchViewModel,
   type ActivityBatchViewModel,
@@ -11,7 +12,7 @@ import { row } from './row-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
 const ACTIVITY_PREFIX_CELLS = 2;
-const ACTIVITY_EXPAND_ACTION = 'Alt+A /activity';
+const ACTIVITY_EXPAND_ACTION = getShortcutKey('activity') ?? '/activity';
 
 type RunnerActivityBatchRowsInput = {
   events: readonly RunnerActivityEvent[];

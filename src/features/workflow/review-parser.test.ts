@@ -11,7 +11,11 @@ import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from './handlers.js';
-import { createReviewInputHandler, parseReviewCommand } from './review-parser.js';
+import {
+  BRIEFS_REVIEW_HINT,
+  createReviewInputHandler,
+  parseReviewCommand,
+} from './review-parser.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
@@ -117,6 +121,10 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     await handleInput('add error handling');
 
     expect(enqueue).toHaveBeenCalledWith('add error handling', 'researching');
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Message queued for the next planner turn.',
+    });
   });
 
   it('queues user input while the planner is specifying', async () => {
@@ -128,6 +136,10 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     await handleInput('make it simpler');
 
     expect(enqueue).toHaveBeenCalledWith('make it simpler', 'specifying');
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Message queued for the next planner turn.',
+    });
   });
 
   it('shows feedback when the queue handler rejects planner input', async () => {
@@ -173,34 +185,96 @@ describe('createReviewInputHandler – idle / other phases', () => {
     // feedbackStore should not be set with error
     expect(feedbackStore.get().isError).toBe(false);
   });
+
+  it('shows review feedback instead of silently ignoring normal input during spec review', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('why is nothing happening');
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: expect.stringContaining('Review prompt is opening'),
+    });
+  });
+
+  it('uses brief-specific command metadata while a brief review prompt is opening', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+
+    await handleInput('why is nothing happening');
+
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: `Review prompt is opening. Once active, use: ${BRIEFS_REVIEW_HINT}`,
+    });
+  });
 });
 
 describe('parseReviewCommand', () => {
   it('parses approve', () => {
-    expect(parseReviewCommand('approve')).toEqual({ action: 'approve' });
-    expect(parseReviewCommand('yes')).toEqual({ action: 'approve' });
+    expect(parseReviewCommand('approve')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'approve' },
+    });
+    expect(parseReviewCommand('yes')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'approve' },
+    });
   });
 
   it('parses reject/quit aliases', () => {
-    expect(parseReviewCommand('reject')).toEqual({ action: 'quit' });
-    expect(parseReviewCommand('quit')).toEqual({ action: 'quit' });
+    expect(parseReviewCommand('reject')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'reject' },
+    });
+    expect(parseReviewCommand('quit')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'reject' },
+    });
+    expect(parseReviewCommand('q')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'reject' },
+    });
   });
 
   it('parses comment with text', () => {
     expect(parseReviewCommand('comment add more tests')).toEqual({
-      action: 'approve',
-      comment: 'add more tests',
+      kind: 'brief-review-command',
+      command: { action: 'revise', comment: 'add more tests' },
+    });
+    expect(parseReviewCommand('revise split the first task')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'revise', comment: 'split the first task' },
     });
   });
 
   it('parses edit', () => {
-    expect(parseReviewCommand('edit')).toEqual({ action: 'edit' });
-    expect(parseReviewCommand('e')).toEqual({ action: 'edit' });
+    expect(parseReviewCommand('edit')).toEqual({ kind: 'open-rich-editor' });
+    expect(parseReviewCommand('e')).toEqual({ kind: 'open-rich-editor' });
   });
 
   it('parses explicit external edit commands', () => {
-    expect(parseReviewCommand('E')).toEqual({ action: 'edit-file' });
-    expect(parseReviewCommand('edit-file')).toEqual({ action: 'edit-file' });
+    expect(parseReviewCommand('E')).toEqual({ kind: 'open-external-editor' });
+    expect(parseReviewCommand('edit-file')).toEqual({ kind: 'open-external-editor' });
+    expect(parseReviewCommand('external_edit_applied')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'external_edit_applied' },
+    });
+  });
+
+  it('parses non-settling brief review commands', () => {
+    expect(parseReviewCommand('save_draft')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'save_draft' },
+    });
+    expect(parseReviewCommand('status')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'status' },
+    });
   });
 
   it('returns null for unknown input', () => {
@@ -209,6 +283,41 @@ describe('parseReviewCommand', () => {
 });
 
 describe('createReviewInputHandler – brief review edit mode', () => {
+  it('resolves q as a brief review rejection', async () => {
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('q');
+
+    expect(resolve).toHaveBeenCalledWith({ approved: false });
+  });
+
+  it('resolves review comments as revise feedback, not approval', async () => {
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('comment add more evidence');
+
+    expect(resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      comment: 'add more evidence',
+    });
+  });
+
+  it('resolves revise feedback as revise feedback, not approval', async () => {
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('revise add more evidence');
+
+    expect(resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      comment: 'add more evidence',
+    });
+  });
+
   it.each([
     'e',
     'edit',

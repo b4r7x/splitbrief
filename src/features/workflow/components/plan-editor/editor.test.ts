@@ -74,6 +74,24 @@ async function writeTasksFile() {
 describe('PlanEditorComponent review metadata', () => {
   it('surfaces tasks.md read failures in the rich editor instead of loading an empty plan', async () => {
     const missingPath = join(tmpDir, TASKS_FILE);
+    const staleTask = completeTask('T999', 'src/stale.ts');
+    planEditorStore.__testReset({
+      tasks: [staleTask],
+      savedTasks: [staleTask],
+      cursor: 3,
+      dirty: true,
+      expandedIds: new Set(['T999']),
+      flaggedIds: new Set(['T999']),
+      reviewMetadata: new Map([
+        [
+          'T999',
+          {
+            taskId: taskId('T999'),
+            workerProfile: 'stale-worker',
+          },
+        ],
+      ]),
+    });
 
     const ui = renderComponent(
       createElement(PlanEditorComponent, {
@@ -88,6 +106,11 @@ describe('PlanEditorComponent review metadata', () => {
       expect(ui.lastFrame() ?? '').toContain('Failed to load Task Briefs');
     });
     expect(planEditorStore.get().tasks).toEqual([]);
+    expect(planEditorStore.get().flaggedIds.size).toBe(0);
+    expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+    expect(planEditorStore.get().dirty).toBe(false);
+    expect(ui.lastFrame() ?? '').not.toContain('T999');
+    expect(ui.lastFrame() ?? '').toContain('N reject');
 
     ui.stdin.write('Y');
     await tick(20);
@@ -176,6 +199,93 @@ describe('PlanEditorComponent review metadata', () => {
         'Create a hello world module with inline description updates',
       );
     });
+  });
+
+  it('saves dirty edits before submitting targeted regeneration', async () => {
+    const projectDir = join(tmpDir, 'regen-project');
+    const sessionDir = join(projectDir, '.diptych', 'sessions', 'regen-session');
+    await mkdir(sessionDir, { recursive: true });
+    const tasks = [completeTask('T001', 'src/a.ts'), completeTask('T002', 'src/b.ts')];
+    await writeFile(join(sessionDir, TASKS_FILE), formatTasks(tasks), 'utf-8');
+    let persistedAtRegeneration = '';
+    const onRegenerateFlagged = vi.fn(async () => {
+      persistedAtRegeneration = await readFile(join(sessionDir, TASKS_FILE), 'utf-8');
+    });
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(sessionDir, TASKS_FILE),
+        sessionDirPath: sessionDir,
+        height: 30,
+        width: 120,
+        onRegenerateFlagged,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Task T001');
+    });
+
+    const firstTask = tasks[0];
+    const secondTask = tasks[1];
+    if (!firstTask || !secondTask) throw new Error('expected two tasks');
+    planEditorStore.setTasks([{ ...firstTask, title: 'Edited baseline task' }, secondTask]);
+    planEditorStore.toggleFlag('T001');
+    await tick();
+    ui.stdin.write('R');
+    await tick();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(onRegenerateFlagged).toHaveBeenCalledTimes(1);
+    });
+    expect(persistedAtRegeneration).toContain('Edited baseline task');
+    expect(planEditorStore.get().dirty).toBe(false);
+  });
+
+  it('exposes an explicit rich reject action separate from discard', async () => {
+    await writeTasksFile();
+    const onReject = vi.fn();
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 120,
+        onReject,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('N reject');
+    });
+
+    ui.stdin.write('N');
+    await tick();
+
+    expect(onReject).toHaveBeenCalledTimes(1);
+    expect(planEditorStore.get().runtimeRichMode).toBe(false);
+  });
+
+  it('shows Evidence in expanded task details', async () => {
+    await writeTasksFile();
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 24,
+        width: 120,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Task T001');
+    });
+
+    planEditorStore.toggleExpand('T001');
+    await tick();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('evidence:');
+    expect(frame).toContain('focused tests pass');
   });
 
   it('renders the plan review scorecard in the rich editor', async () => {
@@ -394,6 +504,77 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('Selected cheapest capable profile local-qwen');
   });
 
+  it('sanitizes task fields in rich rows, expanded details, and section previews', async () => {
+    const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+    await writeFile(
+      join(tmpDir, TASKS_FILE),
+      formatTasks([
+        makeTask({
+          id: 'T001',
+          file: 'src/\u001b]52;c;clipboard\u0007target.ts',
+          title: `Do token=${rawToken}`,
+          description: `Describe \u001b[31mtoken=${rawToken}\u001b[0m`,
+          implementationSteps: [`Run tests \u001b]52;c;clipboard\u0007token=${rawToken}`],
+          constraints: [`Keep token=${rawToken} hidden`],
+          tests: [`npm test token=${rawToken}`],
+          evidence: [`evidence token=${rawToken}`],
+          escalation: [`escalate token=${rawToken}`],
+          scope: {
+            inBounds: ['src/\u001b]52;c;clipboard\u0007target.ts'],
+            outOfBounds: [`token=${rawToken}`],
+          },
+          typeDefs: '',
+        }),
+      ]),
+      'utf-8',
+    );
+
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 46,
+        width: 160,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Do token=***REDACTED***');
+    });
+
+    planEditorStore.setReviewMetadata([
+      {
+        taskId: taskId('T001'),
+        workerProfile: `token=${rawToken}`,
+        selectedCostTier: 'local',
+        contextFit: 'fits',
+        routingReason: `route token=${rawToken}`,
+        conflict: {
+          kind: 'current-task-conflict',
+          files: ['src/\u001b]52;c;clipboard\u0007target.ts'],
+          affectedTaskIds: ['T001'],
+          note: `note token=${rawToken}`,
+        },
+      },
+    ]);
+    await tick();
+    planEditorStore.toggleExpand('T001');
+    planEditorStore.enterSectionList();
+    await tick();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('src/target.ts');
+    expect(frame).toContain('Describe token=***REDACTED***');
+    expect(frame).toContain('Description: Describe token=***REDACTED***');
+    expect(frame).toContain('Run tests token=***REDACTED***');
+    expect(frame).toContain('Keep token=***REDACTED*** hidden');
+    expect(frame).toContain('evidence token=***REDACTED***');
+    expect(frame).toContain('route token=***REDACTED***');
+    expect(frame).toContain('note token=***REDACTED***');
+    expect(frame).not.toContain(rawToken);
+    expect(frame).not.toContain('clipboard');
+    expect(frame).not.toContain('\u001b');
+  });
+
   it('keeps footer visible when task rows take multiple terminal lines', async () => {
     const tasks = [
       completeTask('T001', 'src/a.ts'),
@@ -419,9 +600,29 @@ describe('PlanEditorComponent review metadata', () => {
     await tick();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Y approve');
+    expect(frame).toContain('Y approve checks');
     expect(frame).toContain('T004 pending src/d.ts');
     expect(frame).not.toContain('T001 pending src/a.ts');
+  });
+
+  it('keeps rich footer commands visible when no task rows fit', async () => {
+    await writeTasksFile();
+
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 7,
+        width: 80,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Y approve checks');
+    });
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('N reject');
+    expect(frame).toContain('q discard');
   });
 
   it('shows conflict and stale markers in selected task detail', async () => {
@@ -431,7 +632,7 @@ describe('PlanEditorComponent review metadata', () => {
       createElement(PlanEditorComponent, {
         filePath: join(tmpDir, TASKS_FILE),
         sessionDirPath: tmpDir,
-        height: 34,
+        height: 42,
         width: 100,
       }),
     );
@@ -519,13 +720,13 @@ describe('PlanEditorComponent review metadata', () => {
       }),
     );
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('+ 5 more tasks');
+      expect(ui.lastFrame() ?? '').toContain('5 more tasks (PageUp/PageDown, Ctrl+E/e)');
     });
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('approve | e/edit');
+    expect(frame).toContain('PageDown/PageUp inspect all');
     expect(frame).toContain('T001');
-    expect(frame).toContain('+ 5 more tasks');
+    expect(frame).toContain('5 more tasks (PageUp/PageDown, Ctrl+E/e)');
     expect(frame).not.toContain('T006 pending src/f.ts');
   });
 
@@ -634,6 +835,55 @@ describe('PlanEditorComponent review metadata', () => {
 
     frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain('Packet Preview T001');
+  });
+
+  it('sanitizes selected-task packet preview excerpts', async () => {
+    const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+    await mkdir(join(tmpDir, 'src'), { recursive: true });
+    await writeFile(
+      join(tmpDir, 'src/a.ts'),
+      `export const secret = "token=${rawToken}";`,
+      'utf-8',
+    );
+    await writeFile(
+      join(tmpDir, TASKS_FILE),
+      formatTasks([
+        completeTask('T001', 'src/a.ts'),
+        makeTask({
+          id: 'T002',
+          file: 'src/\u001b]52;c;clipboard\u0007b.ts',
+          title: `Packet token=${rawToken}`,
+          action: 'modify',
+          currentCode: '',
+          implementationSteps: [`Use token=${rawToken}`],
+          typeDefs: '',
+        }),
+      ]),
+      'utf-8',
+    );
+
+    const ui = renderComponent(
+      createElement(PlanEditorComponent, {
+        filePath: join(tmpDir, TASKS_FILE),
+        sessionDirPath: tmpDir,
+        height: 30,
+        width: 180,
+      }),
+    );
+    await tick(20);
+    ui.stdin.write('j');
+    await tick();
+    ui.stdin.write('p');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Packet Preview T002');
+    });
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('task ## Project: unknown / ## Task: Packet token=');
+    expect(frame).toContain('REDACTED');
+    expect(frame).not.toContain(rawToken);
+    expect(frame).not.toContain('clipboard');
+    expect(frame).not.toContain('\u001b');
   });
 
   it('renders packet preview with current code refreshed from disk instead of stale Task Brief currentCode', async () => {
@@ -819,7 +1069,7 @@ describe('PlanEditorComponent review metadata', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('packet preview collapsed');
     expect(frame).toContain('j/k navigate');
-    expect(frame).toContain('Y approve');
+    expect(frame).toContain('Y approve checks');
   });
 
   it('shows both system and task excerpts when packet preview is expanded at medium height', async () => {
@@ -842,7 +1092,7 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('Packet Preview T001');
     expect(frame).toContain('system ');
     expect(frame).toContain('task ## Project: unknown');
-    expect(frame).toContain('Y approve');
+    expect(frame).toContain('Y approve checks');
   });
 
   it('keeps save and edit labels visible in a narrow layout', async () => {
@@ -879,13 +1129,13 @@ describe('PlanEditorComponent review metadata', () => {
       }),
     );
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('+ 2 more tasks');
+      expect(ui.lastFrame() ?? '').toContain('2 more tasks (PgUp/PgDn, e)');
     });
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('ready 0');
-    expect(frame).toContain('approve | e/edit');
+    expect(frame).toContain('PgDn/PgUp');
     expect(frame).toContain('T001');
-    expect(frame).toContain('+ 2 more tasks');
+    expect(frame).toContain('2 more tasks (PgUp/PgDn, e)');
   });
 });

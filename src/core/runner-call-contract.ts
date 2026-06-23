@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { RUNNER_KINDS } from './schemas/enums.js';
 
+// Primitive runner-call vocabulary only. The canonical event/result schemas live
+// in `src/engine/calls/schema.ts`.
 export const RUNNER_CALL_ROLES = [
   'planner',
   'implementer',

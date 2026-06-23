@@ -41,6 +41,8 @@ const COMMANDS: RuntimeCommandDef[] = [
 const DOWN = '\u001b[B';
 const TAB = '\t';
 const ENTER = '\r';
+const CTRL_B = '\x02';
+const CTRL_E = '\x05';
 
 function renderDockedComposer(props: ComponentProps<typeof Composer>) {
   return renderFeature(
@@ -253,6 +255,137 @@ describe('composer integration: completions', () => {
     } finally {
       cleanupTempDir(projectDir);
     }
+  });
+
+  it('routes Ctrl+E to the review edit shortcut only in review mode', async () => {
+    const edit = vi.fn();
+    const submits: string[] = [];
+    const ui = renderDockedComposer({
+      commands: COMMANDS,
+      currentScreen: 'workflow',
+      mode: 'review',
+      hint: 'approve | Ctrl+E/e edit',
+      onSubmit: (text) => submits.push(text),
+      onRuntimeCommand: () => {},
+      onEditShortcut: edit,
+    });
+
+    ui.stdin.write(CTRL_E);
+    await tick(20);
+
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(submits).toEqual([]);
+
+    ui.unmount();
+  });
+
+  it('keeps Ctrl+E as text editing in normal mode even when an edit shortcut callback exists', async () => {
+    const edit = vi.fn();
+    const submits: string[] = [];
+    const ui = renderDockedComposer({
+      commands: COMMANDS,
+      currentScreen: 'workflow',
+      mode: 'normal',
+      hint: '',
+      onSubmit: (text) => submits.push(text),
+      onRuntimeCommand: () => {},
+      onEditShortcut: edit,
+    });
+
+    ui.stdin.write('ab');
+    await tick(20);
+    ui.stdin.write(CTRL_B);
+    await tick(20);
+    ui.stdin.write(CTRL_E);
+    await tick(20);
+    ui.stdin.write('!');
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(edit).not.toHaveBeenCalled();
+    expect(submits).toEqual(['ab!']);
+
+    ui.unmount();
+  });
+
+  it('routes slash-prefixed question answers to the prompt instead of runtime commands', async () => {
+    const submits: string[] = [];
+    const commandCalls: string[] = [];
+    const commands: RuntimeCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/tmp/path',
+        label: 'Tmp path',
+        description: 'Test path-shaped command',
+        validScreens: ['workflow'],
+        handler: () => {},
+      },
+    ];
+    const ui = renderDockedComposer({
+      commands,
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: 'Question 1/1: path?',
+      onSubmit: (text) => submits.push(text),
+      onRuntimeCommand: (command) => commandCalls.push(command),
+    });
+
+    ui.stdin.write('/tmp/path');
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(submits).toEqual(['/tmp/path']);
+    expect(commandCalls).toEqual([]);
+
+    ui.unmount();
+  });
+
+  it('routes an empty question answer so continuation can use its default retry path', async () => {
+    const submits: string[] = [];
+    const emptySubmits: string[] = [];
+    const ui = renderDockedComposer({
+      commands: COMMANDS,
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: 'Task interrupted. Enter instructions to continue (or press Enter to retry):',
+      onSubmit: (text) => submits.push(text),
+      onRuntimeCommand: () => {},
+      onEmptySubmit: () => emptySubmits.push('empty'),
+    });
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(submits).toEqual(['']);
+    expect(emptySubmits).toEqual([]);
+
+    ui.unmount();
+  });
+
+  it('routes whitespace-only question answers so recovery prompts can pause', async () => {
+    const submits: string[] = [];
+    const emptySubmits: string[] = [];
+    const ui = renderDockedComposer({
+      commands: COMMANDS,
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: 'Recovery needed',
+      onSubmit: (text) => submits.push(text),
+      onRuntimeCommand: () => {},
+      onEmptySubmit: () => emptySubmits.push('empty'),
+    });
+
+    ui.stdin.write('   ');
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(submits).toEqual(['   ']);
+    expect(emptySubmits).toEqual([]);
+
+    ui.unmount();
   });
 
   it('treats @ inside a word as plain text instead of opening file suggestions', async () => {

@@ -1,16 +1,25 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { PassThrough, Writable } from 'node:stream';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  CONFIG_FILE,
+  DIPTYCH_DIR,
+  sessionDir,
+  TASKS_FILE,
+} from '../../core/paths.js';
 import { loadConfig } from '../../core/config/load/io.js';
+import type { EventBus } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
+import { formatTasks } from '../../engine/spec/formatter.js';
 import { runRpc, rpcShutdownError } from './run.js';
 
 let dirs: string[] = [];
@@ -114,6 +123,10 @@ function parseLines(
     );
 }
 
+function isTestRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 async function waitForLine(
   chunks: string[],
   predicate: (line: { type?: string; data?: unknown; command?: string; error?: string }) => boolean,
@@ -195,6 +208,281 @@ describe('runRpc', () => {
       }),
     );
     expect(approved).toBe(true);
+  });
+
+  it('correlates prompt-scoped brief review command ids across interleaved events', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let approved: boolean | undefined;
+    let bus: EventBus | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      bus = workflowOpts.eventBus;
+      const result = await workflowOpts.callbacks.onApprovalNeeded(
+        'briefs',
+        join(projectDir, 'tasks.md'),
+      );
+      approved = result.approved;
+    };
+
+    const run = runRpc({
+      feature: 'brief rpc correlation',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-brief-review-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        line.data.approvalType === 'briefs' &&
+        typeof line.data.promptId === 'string',
+    );
+    const pendingLine = parseLines(chunks).find(
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        line.data.approvalType === 'briefs' &&
+        typeof line.data.promptId === 'string',
+    );
+    if (!isTestRecord(pendingLine?.data) || typeof pendingLine.data.promptId !== 'string') {
+      throw new Error('missing prompt id');
+    }
+    const promptId = pendingLine.data.promptId;
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-status',
+        operationId: 'op-status',
+        promptId,
+        command: { action: 'status' },
+      })}\n`,
+    );
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.id === 'cmd-status' &&
+        line.data.operationId === 'op-status' &&
+        line.data.promptId === promptId &&
+        line.data.pending === 'brief_review',
+    );
+
+    bus?.publish({
+      type: 'warning',
+      ts: 2,
+      phase: 'reviewing-briefs',
+      message: 'interleaved event',
+    });
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-approve',
+        operationId: 'op-approve',
+        promptId,
+        command: { action: 'approve' },
+      })}\n`,
+    );
+    await run;
+
+    const lines = parseLines(chunks);
+    const statusIndex = lines.findIndex(
+      (line) => line.type === 'status' && isTestRecord(line.data) && line.data.id === 'cmd-status',
+    );
+    const eventIndex = lines.findIndex(
+      (line) => line.type === 'event' && isTestRecord(line.data) && line.data.type === 'warning',
+    );
+    const ackIndex = lines.findIndex(
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'brief_review' &&
+        isTestRecord(line.data) &&
+        line.data.id === 'cmd-approve' &&
+        line.data.operationId === 'op-approve' &&
+        line.data.promptId === promptId &&
+        line.data.action === 'approve',
+    );
+
+    expect(statusIndex).toBeGreaterThanOrEqual(0);
+    expect(eventIndex).toBeGreaterThan(statusIndex);
+    expect(ackIndex).toBeGreaterThan(eventIndex);
+    expect(approved).toBe(true);
+  });
+
+  it('saves an RPC Task Brief draft without settling the brief prompt', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-brief-save-session';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('brief rpc save draft'), phase: 'reviewing-briefs' },
+    );
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    writeFileSync(
+      tasksPath,
+      formatTasks([
+        makeTask({
+          title: 'Saved through RPC',
+          scope: { inBounds: ['src/hello.ts'] },
+          evidence: ['Focused test output is captured'],
+        }),
+      ]),
+    );
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let approved: boolean | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      const result = await workflowOpts.callbacks.onApprovalNeeded('briefs', tasksPath);
+      approved = result.approved;
+    };
+
+    const run = runRpc({
+      feature: 'brief rpc save draft',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        typeof line.data.promptId === 'string',
+    );
+    const pendingLine = parseLines(chunks).find(
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        typeof line.data.promptId === 'string',
+    );
+    if (!isTestRecord(pendingLine?.data) || typeof pendingLine.data.promptId !== 'string') {
+      throw new Error('missing prompt id');
+    }
+    const promptId = pendingLine.data.promptId;
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-save',
+        operationId: 'op-save',
+        promptId,
+        command: { action: 'save_draft' },
+      })}\n`,
+    );
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'ack' &&
+        line.command === 'brief_review' &&
+        isTestRecord(line.data) &&
+        line.data.id === 'cmd-save' &&
+        line.data.operationId === 'op-save' &&
+        line.data.promptId === promptId &&
+        line.data.action === 'save_draft' &&
+        line.data.status === 'saved' &&
+        line.data.qualityPassed === true &&
+        line.data.taskCount === 1,
+    );
+    expect(approved).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.tasks[0]?.title).toBe('Saved through RPC');
+    expect(
+      JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE), 'utf8'))
+        .passed,
+    ).toBe(true);
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-approve',
+        promptId,
+        command: { action: 'approve' },
+      })}\n`,
+    );
+    await run;
+
+    expect(approved).toBe(true);
+  });
+
+  it('maps RPC external_edit_applied to the workflow edit action', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let approved: boolean | undefined;
+    let action: string | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      const result = await workflowOpts.callbacks.onApprovalNeeded(
+        'briefs',
+        join(projectDir, 'tasks.md'),
+      );
+      approved = result.approved;
+      action = result.action;
+    };
+
+    const run = runRpc({
+      feature: 'brief rpc external edit',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-brief-edit-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        typeof line.data.promptId === 'string',
+    );
+    const pendingLine = parseLines(chunks).find(
+      (line) =>
+        line.type === 'status' &&
+        isTestRecord(line.data) &&
+        line.data.pending === 'approval' &&
+        typeof line.data.promptId === 'string',
+    );
+    if (!isTestRecord(pendingLine?.data) || typeof pendingLine.data.promptId !== 'string') {
+      throw new Error('missing prompt id');
+    }
+    const promptId = pendingLine.data.promptId;
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-edit',
+        promptId,
+        command: { action: 'external_edit_applied' },
+      })}\n`,
+    );
+    await run;
+
+    expect(approved).toBe(false);
+    expect(action).toBe('edit');
+    expect(parseLines(chunks)).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'brief_review',
+        data: expect.objectContaining({
+          id: 'cmd-edit',
+          promptId,
+          action: 'external_edit_applied',
+          status: 'accepted',
+        }),
+      }),
+    );
   });
 
   it('answers status commands with the persisted workflow state', async () => {
@@ -330,6 +618,7 @@ describe('runRpc', () => {
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let approved: boolean | undefined;
+    let action: string | undefined;
     let comment: string | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
       const result = await workflowOpts.callbacks.onApprovalNeeded(
@@ -337,6 +626,7 @@ describe('runRpc', () => {
         join(projectDir, 'spec.md'),
       );
       approved = result.approved;
+      action = result.action;
       comment = result.comment;
     };
 
@@ -363,6 +653,7 @@ describe('runRpc', () => {
     await run;
 
     expect(approved).toBe(false);
+    expect(action).toBe('revise');
     expect(comment).toBe('needs work');
     expect(parseLines(chunks)).toContainEqual({ type: 'ack', command: 'regenerate' });
   });

@@ -1,5 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
+import { taskId } from '../../core/schemas/task.js';
 import { createCommandReader } from './reader.js';
 import { RPC_MAX_FRAME_BYTES, type RpcCommand } from './types.js';
 
@@ -12,6 +13,13 @@ const validCommands: RpcCommand[] = [
   { type: 'status' },
   { type: 'abort' },
   { type: 'slash', command: '/mode quick' },
+  {
+    type: 'brief_review',
+    id: 'cmd-1',
+    operationId: 'op-1',
+    promptId: 'approval-1',
+    command: { action: 'revise', comment: 'split T001', taskIds: [taskId('T001')] },
+  },
 ];
 
 function createReadableInput(): PassThrough {

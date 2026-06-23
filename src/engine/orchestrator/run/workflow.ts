@@ -416,6 +416,10 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             });
             result = taskRun.summary;
             sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
+            if (taskRun.cancelled) {
+              publishWorkflowCancellation(WORKFLOW_CANCEL_REASON_USER);
+              return;
+            }
             if (
               !taskRun.completed &&
               taskRun.state.rewindPending !== undefined &&

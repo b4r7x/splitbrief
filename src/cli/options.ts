@@ -136,5 +136,5 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config',
     )
     .option('--worktree [name]', 'run in a new linked git worktree (.trees/<name>)')
-    .option('--yolo', 'Skip action-level tiered approval prompts for this session', false);
+    .option('--yolo', 'Skip file-write tiered approval prompts for this session', false);
 }

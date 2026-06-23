@@ -207,7 +207,7 @@ describe('buildConversationRows', () => {
     expect(text).toContain('READ  b.ts');
     expect(text).toContain('READ  c.ts');
     expect(text).toContain('READ  d.ts');
-    expect(text).toContain('+     1 earlier  Alt+A /activity');
+    expect(text).toContain('+     1 earlier  /activity, Ctrl+A');
 
     const expanded = buildConversationRows({
       sections,
@@ -219,7 +219,7 @@ describe('buildConversationRows', () => {
     });
     const expandedText = expanded.rows.map(rowText).join('\n');
 
-    expect(expandedText).toContain('less  Alt+A /activity');
+    expect(expandedText).toContain('less  /activity, Ctrl+A');
     expect(expandedText).toContain('READ  a.ts');
   });
 

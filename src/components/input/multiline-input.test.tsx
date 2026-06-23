@@ -7,6 +7,10 @@ import { MultilineInput } from './multiline-input.js';
 
 const CTRL_R = '\x12';
 const CTRL_U = '\x15';
+const CTRL_B = '\x02';
+const CTRL_E = '\x05';
+const CTRL_F = '\x06';
+const ALT_A = '\x1ba';
 // Ctrl+/ as the legacy control byte on terminals without the kitty protocol.
 const CTRL_SLASH_LEGACY = '\x1f';
 // Kitty CSI-u encodings ink parses: codepoint 13 = Enter, modifier 2 = Shift.
@@ -15,11 +19,16 @@ const SHIFT_ENTER = '\x1b[13;2u';
 
 interface HarnessProps {
   onFileDrop?: (path: string) => void;
-  keyBindings?: { submit?: (key: Key) => boolean; newline?: (key: Key) => boolean };
+  keyBindings?: {
+    submit?: (key: Key) => boolean;
+    newline?: (key: Key) => boolean;
+    shortcut?: (input: string, key: Key) => boolean;
+  };
+  onShortcut?: () => void;
   onSubmit?: (value: string) => void;
 }
 
-function Harness({ onFileDrop, keyBindings, onSubmit }: HarnessProps) {
+function Harness({ onFileDrop, keyBindings, onShortcut, onSubmit }: HarnessProps) {
   const [value, setValue] = useState('');
   return (
     <Box flexDirection="column">
@@ -29,6 +38,7 @@ function Harness({ onFileDrop, keyBindings, onSubmit }: HarnessProps) {
         onChange={setValue}
         {...(onFileDrop ? { onFileDrop } : {})}
         {...(keyBindings ? { keyBindings } : {})}
+        {...(onShortcut ? { onShortcut } : {})}
         {...(onSubmit ? { onSubmit } : {})}
         showCursor={false}
         rows={1}
@@ -85,6 +95,22 @@ describe('MultilineInput modifier chords', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('value:ab');
     expect(frame).not.toContain(CTRL_SLASH_LEGACY);
+  });
+
+  it('swallows unhandled Alt/Meta printable chords without inserting text', async () => {
+    const ui = renderFeature(<Harness />);
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write('ab');
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('value:ab');
+
+    ui.stdin.write(ALT_A);
+    await tick(20);
+
+    expect(ui.lastFrame() ?? '').toContain('value:ab');
+    expect(ui.lastFrame() ?? '').not.toContain('value:aba');
   });
 
   it('ignores Home and End so they pass through to the conversation scroll handler', async () => {
@@ -170,6 +196,7 @@ describe('MultilineInput keyBinding precedence (composer bindings)', () => {
 });
 
 const BACKSPACE = '\x7f';
+const DELETE = '\x1b[3~';
 const LEFT = '\x1b[D';
 const RIGHT = '\x1b[C';
 const EMOJI = '😀';
@@ -231,6 +258,87 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write('y');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
+    });
+  });
+
+  it('delete removes the next whole emoji instead of backspacing', async () => {
+    const ui = renderFeature(<CursorHarness />);
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write(`a${EMOJI}b`);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}b]`);
+    });
+
+    ui.stdin.write(LEFT);
+    await tick(20);
+    ui.stdin.write(LEFT);
+    await tick(20);
+    ui.stdin.write(DELETE);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+    });
+  });
+
+  it('keeps Ctrl+B, Ctrl+F, and Ctrl+E as composer text editing chords', async () => {
+    const ui = renderFeature(<CursorHarness />);
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write('ab');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+    });
+
+    ui.stdin.write(CTRL_B);
+    await tick(20);
+    ui.stdin.write('X');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXb]');
+    });
+
+    ui.stdin.write(CTRL_F);
+    await tick(20);
+    ui.stdin.write('Y');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXbY]');
+    });
+
+    ui.stdin.write(CTRL_B);
+    await tick(20);
+    ui.stdin.write(CTRL_B);
+    await tick(20);
+    ui.stdin.write(CTRL_E);
+    await tick(20);
+    ui.stdin.write('!');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXbY!]');
+    });
+  });
+
+  it('lets callers override Ctrl+E with an explicit shortcut binding', async () => {
+    const shortcut = vi.fn();
+    const ui = renderFeature(
+      <Harness
+        keyBindings={{ shortcut: (input, key) => key.ctrl && input === 'e' }}
+        onShortcut={shortcut}
+      />,
+    );
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write('ab');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:ab');
+    });
+
+    ui.stdin.write(CTRL_E);
+    await tick(20);
+    ui.stdin.write('!');
+    await vi.waitFor(() => {
+      expect(shortcut).toHaveBeenCalledTimes(1);
+      expect(ui.lastFrame() ?? '').toContain('value:ab!');
     });
   });
 });

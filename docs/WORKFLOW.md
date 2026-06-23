@@ -369,7 +369,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 12. phase: implementing → BRIEFS_READY → reviewing-briefs
     callbacks.onApprovalNeeded('briefs', tasksPath)
     Approval reads tasks.md from disk, reparses, re-runs quality gate.
-    In simple review, e/edit switches to rich review without opening $EDITOR;
+    In simple review, Ctrl+E/e/edit switches to rich review without opening $EDITOR;
     E/edit-file explicitly opens tasks.md in $EDITOR.
     In rich review, tab opens semantic sections for the selected task,
     e edits a section, Ctrl+Enter saves it, and c copies source text.

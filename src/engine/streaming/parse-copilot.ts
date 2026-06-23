@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
 import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
-import { warnError } from '../../lib/warn.js';
+import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 const TextBlock = z.object({
   type: z.literal('text'),
@@ -64,9 +64,16 @@ export function parseCopilotLine(line: string): ParsedLine {
   let event: unknown;
   try {
     event = JSON.parse(trimmed);
-  } catch (err) {
-    warnError('output-parser: malformed copilot JSON', err);
-    return {};
+  } catch {
+    return {
+      warning: [
+        parsedMalformedRecordWarning({
+          parser: 'copilot',
+          line: trimmed,
+          message: 'Malformed copilot JSON line skipped',
+        }),
+      ],
+    };
   }
 
   const session = SessionStartEvent.safeParse(event);
@@ -106,5 +113,6 @@ export function parseCopilotLine(line: string): ParsedLine {
     }
   }
 
-  return {};
+  const warning = parsedUnknownRecordWarning({ parser: 'copilot', value: event });
+  return warning === null ? {} : { warning: [warning] };
 }

@@ -15,7 +15,7 @@ export async function stopWithReview(opts: {
   taskBreakdowns: TaskTokenUsage[];
   routingDecision?: RoutingDecision | undefined;
   implementerProfile?: string | undefined;
-}): Promise<WorkflowState> {
+}): Promise<{ state: WorkflowState; cancelled: boolean }> {
   const review = await reviewTaskIfNeeded({
     wctx: opts.wctx,
     state: opts.state,
@@ -27,5 +27,5 @@ export async function stopWithReview(opts: {
     routingDecision: opts.routingDecision,
     implementerProfile: opts.implementerProfile,
   });
-  return review.state;
+  return { state: review.state, cancelled: review.decision === 'abort' };
 }

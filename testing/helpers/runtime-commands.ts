@@ -107,6 +107,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
+    toggleSidebar: () => ({ status: 'toggled', visible: true }),
     ...overrides,
   };
 }

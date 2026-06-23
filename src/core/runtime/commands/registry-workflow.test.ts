@@ -463,6 +463,120 @@ describe('/activity command', () => {
 
     expect(commands.find((command) => command.name === '/scroll')?.label).toBe('Scroll');
     expect(commands.find((command) => command.name === '/activity')?.label).toBe('Activity');
+    expect(commands.find((command) => command.name === '/activity')?.shortcut).toBe(
+      '/activity, Ctrl+A',
+    );
+  });
+});
+
+describe('/queue command', () => {
+  it('shows the pending queue depth', () => {
+    let feedback: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        getQueueDepth: () => 2,
+        setFeedbackMessage: (message) => {
+          feedback = message;
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/queue show', 'workflow', noop);
+
+    expect(feedback).toBe('Queue: 2 messages pending');
+  });
+
+  it('clears pending queue messages', () => {
+    let feedback: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        clearQueue: () => ({ status: 'cleared', count: 3 }),
+        setFeedbackMessage: (message) => {
+          feedback = message;
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/queue clear', 'workflow', noop);
+
+    expect(feedback).toBe('Cleared 3 queued messages');
+  });
+
+  it('surfaces unknown queue subcommands before clearing', () => {
+    let error: string | undefined;
+    let cleared = false;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        clearQueue: () => {
+          cleared = true;
+          return { status: 'cleared', count: 1 };
+        },
+        setFeedbackError: (message) => {
+          error = message;
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/queue purge', 'workflow', noop);
+
+    expect(cleared).toBe(false);
+    expect(error).toBe('Unknown queue command: purge. Use: /queue show or /queue clear');
+  });
+});
+
+describe('/sidebar command', () => {
+  it('toggles the workflow sidebar through the command context', () => {
+    let visible = false;
+    let feedback: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        toggleSidebar: () => {
+          visible = !visible;
+          return { status: 'toggled', visible };
+        },
+        setFeedbackMessage: (message) => {
+          feedback = message;
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+    expect(visible).toBe(true);
+    expect(feedback).toBe('Sidebar shown');
+
+    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+    expect(visible).toBe(false);
+    expect(feedback).toBe('Sidebar hidden');
+  });
+
+  it('surfaces unavailable sidebar feedback from non-UI contexts', () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        toggleSidebar: () => ({
+          status: 'unavailable',
+          message: 'Sidebar is not available here.',
+        }),
+        setFeedbackError: (message) => {
+          error = message;
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+
+    expect(error).toBe('Sidebar is not available here.');
+  });
+
+  it('labels sidebar for palette and help surfaces without claiming a shortcut', () => {
+    const command = createRuntimeCommands(makeCtx()).find((entry) => entry.name === '/sidebar');
+
+    expect(command).toMatchObject({
+      label: 'Sidebar',
+      description: 'Show or hide workflow sidebar',
+      validScreens: ['workflow'],
+    });
+    expect(command?.shortcut).toBeUndefined();
   });
 });
 

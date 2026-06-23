@@ -11,7 +11,7 @@ import {
   type TaskBriefSection,
 } from './plan-editor-sections.js';
 
-export type PlanEditorFocus = 'task-list' | 'section-list' | 'editing-section';
+export type PlanEditorFocus = 'task-list' | 'section-list' | 'editing-section' | 'regen-reason';
 
 export interface PlanEditorSectionEdit {
   taskId: string;
@@ -49,6 +49,7 @@ export interface PlanEditorState {
   focus: PlanEditorFocus;
   sectionCursor: number;
   editing: PlanEditorSectionEdit | null;
+  regenReason: string;
   statusMessage: string | null;
 }
 
@@ -70,6 +71,7 @@ function makeInitialState(): PlanEditorState {
     focus: 'task-list',
     sectionCursor: 0,
     editing: null,
+    regenReason: '',
     statusMessage: null,
   };
 }
@@ -111,6 +113,7 @@ function __testReset(next?: Partial<PlanEditorState>): void {
       : base.reviewMetadata,
     flaggedIds: next.flaggedIds ? new Set(next.flaggedIds) : base.flaggedIds,
     editing: next.editing ? { ...next.editing } : base.editing,
+    regenReason: next.regenReason ?? base.regenReason,
   });
 }
 
@@ -127,6 +130,7 @@ function initEditor(tasks: Task[]): void {
     focus: 'task-list',
     sectionCursor: 0,
     editing: null,
+    regenReason: '',
     statusMessage: null,
     dirty: false,
     saveError: null,
@@ -185,10 +189,11 @@ function setTasks(tasks: Task[]): void {
       dirty: true,
       saveError: null,
       statusMessage: null,
-      focus: s.editing ? 'editing-section' : s.focus,
+      focus: s.editing ? 'editing-section' : s.focus === 'regen-reason' ? 'task-list' : s.focus,
       expandedIds: stableTaskIds(s.tasks, nextTasks, s.expandedIds),
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
       flaggedIds: stableTaskIds(s.tasks, nextTasks, s.flaggedIds),
+      regenReason: '',
     };
   });
 }
@@ -335,6 +340,32 @@ function clearFlags(): void {
   });
 }
 
+function startRegenerateReason(): void {
+  store.set((s) => {
+    if (s.flaggedIds.size === 0) return s;
+    return {
+      ...s,
+      focus: 'regen-reason',
+      editing: null,
+      regenReason: '',
+      saveError: null,
+      statusMessage: 'reason optional; press Enter to regenerate flagged tasks',
+    };
+  });
+}
+
+function updateRegenerateReason(value: string): void {
+  store.set((s) => (s.focus === 'regen-reason' ? { ...s, regenReason: value } : s));
+}
+
+function cancelRegenerateReason(): void {
+  store.set((s) =>
+    s.focus === 'regen-reason'
+      ? { ...s, focus: 'task-list', regenReason: '', statusMessage: null }
+      : s,
+  );
+}
+
 function getFlaggedTasks(): Task[] {
   const { tasks, flaggedIds } = store.get();
   return tasks.filter((t) => flaggedIds.has(t.id));
@@ -421,6 +452,7 @@ function discardEdits(): void {
       focus: 'task-list',
       sectionCursor: 0,
       editing: null,
+      regenReason: '',
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
       flaggedIds: new Set<string>(),
     };
@@ -429,6 +461,27 @@ function discardEdits(): void {
 
 function resetSessionState(): void {
   store.set(makeInitialState());
+}
+
+function setLoadFailure(message: string): void {
+  store.set((s) => ({
+    ...s,
+    tasks: [],
+    savedTasks: [],
+    cursor: 0,
+    revision:
+      s.tasks.length > 0 || s.savedTasks.length > 0 || s.dirty ? s.revision + 1 : s.revision,
+    expandedIds: new Set<string>(),
+    dirty: false,
+    saveError: message,
+    reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+    flaggedIds: new Set<string>(),
+    focus: 'task-list',
+    sectionCursor: 0,
+    editing: null,
+    regenReason: '',
+    statusMessage: null,
+  }));
 }
 
 export const planEditorStore = {
@@ -449,9 +502,13 @@ export const planEditorStore = {
   cancelEditingSection,
   toggleFlag,
   clearFlags,
+  startRegenerateReason,
+  updateRegenerateReason,
+  cancelRegenerateReason,
   getFlaggedTasks,
   setRuntimeRichMode,
   setSaveError,
+  setLoadFailure,
   setStatusMessage,
   setReviewMetadata,
   upsertTaskReviewMetadata,

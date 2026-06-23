@@ -72,4 +72,26 @@ describe('useReviewContent', () => {
       expect(feedbackStore.get().message).toBeNull();
     });
   });
+
+  it('reloads the same file when the review revision changes', async () => {
+    const file = join(tmp, 'spec.md');
+    writeFileSync(file, 'before edit\n');
+    reviewStore.setReviewFile(file);
+
+    ui = renderFeature(<Harness filePath={file} />);
+
+    await vi.waitFor(() => {
+      expect(ui?.lastFrame()).toContain('content=before edit');
+    });
+
+    reviewStore.setScrollOffset(9);
+    reviewStore.setRenderedLineCount(30);
+    writeFileSync(file, 'after edit\n');
+    reviewStore.reloadReviewFile();
+
+    await vi.waitFor(() => {
+      expect(ui?.lastFrame()).toContain('content=after edit');
+      expect(reviewStore.get()).toMatchObject({ scrollOffset: 0, renderedLineCount: 0 });
+    });
+  });
 });

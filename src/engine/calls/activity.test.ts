@@ -291,12 +291,19 @@ describe('projectRunnerCallActivity', () => {
   });
 
   it('keeps safe warning detail separate from text partials', () => {
+    const warning = runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' });
+
+    expect(warning).toMatchObject({
+      message: 'line one sk-***REDACTED***',
+      redacted: true,
+    });
+    expect(JSON.stringify(warning)).not.toContain('abcdefghijklmnopqrst');
     expect(
       projectRunnerCallActivity(
         {
           ...runnerCallBase,
           type: 'call_warning',
-          warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
+          warning,
         },
         12,
       ),

@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import type { TaskReviewRequest, UserEditConflict } from '../../engine/events/workflow-events.js';
+import {
+  TASK_REVIEW_COMMANDS,
+  type TaskReviewRequest,
+  type UserEditConflict,
+} from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -18,8 +24,12 @@ function makeInputMode(answers: string | string[]): UseInputModeResult {
 }
 
 function makeCallbacks(answers: string | string[]) {
+  return makeCallbacksWithInputMode(makeInputMode(answers));
+}
+
+function makeCallbacksWithInputMode(inputMode: UseInputModeResult) {
   return buildPromptCallbacks()({
-    inputMode: makeInputMode(answers),
+    inputMode,
     abortedRef: { current: false },
     controller: new AbortController(),
     onComplete: () => {},
@@ -54,14 +64,52 @@ function makeReviewRequest(): TaskReviewRequest {
         escalationOutput: 0,
       },
     },
-    availableCommands: ['continue', 'redo-task', 'revise-plan', 'abort'],
+    availableCommands: [...TASK_REVIEW_COMMANDS],
   };
 }
+
+describe('buildPromptCallbacks onApprovalNeeded', () => {
+  it('uses the brief review hint for brief approvals', async () => {
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockResolvedValue({ approved: false });
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setReviewMode,
+    });
+
+    await callbacks.onApprovalNeeded('briefs', '/tmp/tasks.md');
+
+    expect(setReviewMode).toHaveBeenCalledWith(BRIEFS_REVIEW_HINT);
+  });
+
+  it.each([
+    'spec',
+    'plan',
+  ] as const)('uses the generic review hint for %s approvals', async (type) => {
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockResolvedValue({ approved: false });
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setReviewMode,
+    });
+
+    await callbacks.onApprovalNeeded(type, '/tmp/review.md');
+
+    expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
+  });
+});
 
 describe('buildPromptCallbacks onUserEditConflict', () => {
   it('maps the "continue" answer to the continue-unrelated action', async () => {
     const result = await makeCallbacks('continue').onUserEditConflict?.(conflict);
     expect(result).toBe('continue-unrelated');
+  });
+
+  it('maps a whitespace-only answer to pause', async () => {
+    const result = await makeCallbacks('   ').onUserEditConflict?.(conflict);
+    expect(result).toBe('pause');
   });
 
   it('falls back to pause for an unrecognised answer', async () => {
@@ -78,6 +126,7 @@ describe('buildPromptCallbacks onUserEditConflict', () => {
 describe('buildPromptCallbacks onTaskReviewNeeded', () => {
   beforeEach(() => {
     feedbackStore.reset();
+    lifecycleStore.__testReset();
   });
 
   it('parses an empty answer as continue', async () => {
@@ -100,5 +149,30 @@ describe('buildPromptCallbacks onTaskReviewNeeded', () => {
     expect(result).toEqual({ action: 'continue' });
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('Unrecognized task review command');
+  });
+
+  it('re-prompts when the answer was not advertised by availableCommands', async () => {
+    const result = await makeCallbacks(['abort', 'continue']).onTaskReviewNeeded?.({
+      ...makeReviewRequest(),
+      availableCommands: ['continue'],
+    });
+
+    expect(result).toEqual({ action: 'continue' });
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('Use: continue');
+  });
+
+  it('returns task review abort without mutating workflow state', async () => {
+    const result = await makeCallbacks('abort').onTaskReviewNeeded?.(makeReviewRequest());
+
+    expect(result).toEqual({ action: 'abort' });
+    expect(lifecycleStore.get().cancelled).toBe(false);
+  });
+});
+
+describe('buildPromptCallbacks onContinuationNeeded', () => {
+  it('returns an empty answer so the continuation loop can use its default retry text', async () => {
+    const result = await makeCallbacks('').onContinuationNeeded?.('partial output');
+    expect(result).toBe('');
   });
 });

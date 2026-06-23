@@ -125,6 +125,7 @@ async function runNewPlanning(
       metadata,
       skillsContext,
       signal,
+      sinks: wctx.sinks,
     }));
   }
 
@@ -146,6 +147,7 @@ async function runNewPlanning(
       signal,
       persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
+      sinks: wctx.sinks,
     });
     state = specLoop.state;
     if (specLoop.rejected || specLoop.aborted) return { state, tasks: [], cancelled: true };
@@ -160,6 +162,7 @@ async function runNewPlanning(
         metadata,
         skillsContext,
         signal,
+        sinks: wctx.sinks,
       }));
     }
   }
@@ -185,6 +188,7 @@ async function runNewPlanning(
       signal,
       persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
+      sinks: wctx.sinks,
     });
     state = planLoop.state;
     if (planLoop.rejected || planLoop.aborted) return { state, tasks: [], cancelled: true };
@@ -198,6 +202,7 @@ async function runNewPlanning(
         state,
         metadata,
         signal,
+        sinks: wctx.sinks,
       });
       state = taskRegen.state;
       tasks = taskRegen.tasks;
@@ -215,8 +220,10 @@ async function runNewPlanning(
       callbacks,
       bus: wctx.bus,
       state,
+      config,
       metadata,
       signal,
+      sinks: wctx.sinks,
     });
     state = briefsLoop.state;
     tasks = briefsLoop.tasks;

@@ -125,7 +125,7 @@ mode resolved: standard
 phase: researching
 phase: specifying      → spec.md
 phase: reviewing-spec  ← awaiting approval
-  approve / edit / comment <text> / quit
+  approve | Ctrl+E/e edit | comment <text> revises | quit
 > approve
 phase: planning        → plan.md, tasks.md
 phase: reviewing-briefs ← brief approval (simple view)
@@ -136,7 +136,7 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or `edit` / `e` to open `$EDITOR` for inline edits.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open `$EDITOR` for inline edits.
 
 **Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
@@ -473,9 +473,9 @@ snapshot_created · phase=implementing taskIndex=1  (auto preTask)
 
 ---
 
-### 14. Approve every destructive action explicitly
+### 14. Approve risky declared file writes explicitly
 
-**When:** you want diptych to confirm before the implementer runs `rm`, `npm install`, or anything outside the task's declared scope.
+**When:** you want diptych to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
 
 **Setup (`.diptych/config.yaml`):**
 
@@ -485,11 +485,9 @@ approval:
   tiers:
     read:               auto       # silent
     write_in_scope:     auto       # silent (task.file or task.scope.inBounds)
-    validation:         auto
     write_out_of_scope: confirm    # always prompt
-    destructive:        confirm    # rm, drop database, etc.
-    network:            sticky     # prompt once, remember for session
-    package_change:     confirm    # npm install / yarn add / etc.
+    destructive:        confirm    # control-plane paths
+    package_change:     confirm    # package manifests/lockfiles
   feedRejectionsToPlanner: true
 ```
 
@@ -513,7 +511,7 @@ approval_sticky_recorded
 
 Sticky grants persist to `.diptych/approvals.json`; revoke with `diptych approval clear`.
 
-**Variations:** Set every class to `auto` for legacy YOLO behavior; set everything to `confirm` for paranoid mode. `approval.headless: true` fails closed in CI when a `confirm` would have prompted.
+**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. `approval.headless: true` fails closed in CI when a `confirm` would have prompted.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipes 15, 25.
 
@@ -570,11 +568,11 @@ phase: reviewing-briefs
   T001 add validator     create  src/auth/validate.ts
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
-  approve | e/edit | comment <text> | reject
-> e
+  approve | Ctrl+E/e edit | E/edit-file | comment <text> revises | reject
+> Ctrl+E
 ```
 
-Pressing `e` opens `$EDITOR` with the brief markdown. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+Pressing `Ctrl+E` or typing `e` enters rich brief review. Typing `E` / `edit-file` opens `$EDITOR` with the brief markdown. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
@@ -651,7 +649,7 @@ diptych start "add login form"
   Use ↑↓ to select, Enter to expand, ? for keys
 ```
 
-Per-task editor lets you rewrite signature, implementationSteps, constraints, and validation evidence inline. Press `e` to open `$EDITOR` for the selected task, `Y` to save and approve, and `q` to discard edits.
+Per-task editor lets you rewrite signature, implementationSteps, constraints, and validation evidence inline. Press `Tab` to focus a section, then `e` to edit that section inline. Press `E` for raw external edit, `Y` to save the draft when dirty or approve when clean, and `q` to discard edits.
 
 **Variations:** The rich editor is opt-in because most briefs only need approve / comment. Set it as the default with `briefReview: rich` if you typically need to tweak.
 
@@ -1217,6 +1215,8 @@ diptych start --rpc --allow-hooks "add auth audit logging"
 ```json
 {"type":"status"}
 {"type":"approve"}
+{"type":"brief_review","id":"cmd-1","command":{"action":"status"}}
+{"type":"brief_review","id":"cmd-2","promptId":"approval-2","command":{"action":"external_edit_applied"}}
 {"type":"message","text":"Use the existing audit logger."}
 {"type":"recovery","action":"retry-same-worker"}
 ```
@@ -1230,7 +1230,7 @@ diptych start --rpc --allow-hooks "add auth audit logging"
 {"type":"ack","command":"approve"}
 ```
 
-`--rpc` is mutually exclusive with `--json`. Workflow events are wrapped in `event` responses; command failures use `error` responses and do not crash the stream.
+`brief_review` commands are scoped to a pending Task Brief prompt. `save_draft` re-reads `tasks.md`, parses the Task Briefs, runs brief quality checks, persists the updated `BRIEFS_READY` and brief quality state, and returns `ack` / `status` responses marked `saved` with the original correlation ids. It does not approve, reject, or resolve the prompt. `--rpc` is mutually exclusive with `--json`. Workflow events are wrapped in `event` responses; command failures use `error` responses and do not crash the stream.
 
 ---
 
@@ -1497,15 +1497,15 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 ---
 
-### 43. Confirm a destructive action (confirm tier)
+### 43. Confirm a destructive file write (confirm tier)
 
-**When:** an implementer action is classified as `destructive` (e.g. `rm`, `drop table`) and the `approval.tiers.destructive` is set to `confirm`.
+**When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.diptych/**`) and `approval.tiers.destructive` is set to `confirm`.
 
 **You'll see:**
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ [!] Destructive action: remove legacy migration files   │
+│ [!] Control-plane file write: .diptych/session state    │
 │     Type "I confirm" to proceed, or press Escape to     │
 │     cancel.                                             │
 │     Phrase: _                                           │
@@ -1521,7 +1521,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 │     Reason: _                                           │
 ```
 
-3. Type a non-empty reason (e.g. `files superseded by new schema`) and press Enter.
+3. Type a non-empty reason (e.g. `repairing session metadata`) and press Enter.
 
 **Rejection cases:**
 - Wrong phrase → `Incorrect phrase. Try again.` — input cleared, try again.

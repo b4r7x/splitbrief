@@ -33,6 +33,18 @@ describe('toInvokeResult', () => {
     });
   });
 
+  it('preserves reasoning-token metadata in legacy InvokeResult projections', () => {
+    expect(
+      toInvokeResult({
+        ...result,
+        usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 3 },
+      }),
+    ).toEqual({
+      text: 'done',
+      usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 3 },
+    });
+  });
+
   it('rejects non-completed call results', () => {
     expect(() =>
       toInvokeResult({
@@ -119,6 +131,33 @@ describe('projectRunnerCallEvent', () => {
       sequence: 4,
       channel: 'assistant',
       text: 'assistant answer',
+      semantics: 'delta',
+    });
+  });
+
+  it('preserves final text semantics when projecting runner call events', () => {
+    const event: RunnerCallEvent = {
+      type: 'call_text_delta',
+      ts: 11,
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      channel: 'result',
+      text: 'final answer',
+      semantics: 'final',
+    };
+
+    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 4 })).toEqual({
+      type: 'runner_call_text_delta',
+      ts: 11,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 4,
+      channel: 'result',
+      text: 'final answer',
+      semantics: 'final',
     });
   });
 
@@ -355,6 +394,40 @@ describe('projectRunnerCallEvent', () => {
     });
   });
 
+  it('projects unknown-upstream diagnostics as redacted warnings with parser metadata', () => {
+    const projected = projectRunnerCallEvent(
+      {
+        type: 'call_unknown_upstream',
+        ts: 10,
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'cli',
+        rawPreview: 'payload sk-abcdefghijklmnopqrstuvwxyz',
+        backendMetadata: {
+          backendKind: 'cli',
+          source: 'jsonl',
+          parser: 'jsonl',
+          channel: 'stdout',
+          upstreamType: 'future',
+        },
+      },
+      { phase: 'planning', sequence: 5 },
+    );
+
+    expect(projected).toMatchObject({
+      type: 'runner_call_warning',
+      warning: {
+        code: 'unknown_upstream',
+        source: 'jsonl',
+        parser: 'jsonl',
+        channel: 'stdout',
+        upstreamType: 'future',
+        message: expect.stringContaining('sk-***REDACTED***'),
+      },
+    });
+    expect(JSON.stringify(projected)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+
   it('bounds projected runner call error messages to the engine event schema limit', () => {
     const projected = projectRunnerCallEvent(
       {
@@ -410,6 +483,7 @@ describe('runnerCallEventToSessionLogEntry', () => {
         sequence: 1,
         channel: 'assistant',
         text: 'hello',
+        semantics: 'delta',
       },
     });
   });

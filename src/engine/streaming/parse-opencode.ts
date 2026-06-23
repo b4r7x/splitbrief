@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
-import { warnError } from '../../lib/warn.js';
+import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 const OpencodeBaseEvent = z.looseObject({
   sessionID: z.string().optional(),
@@ -22,6 +22,7 @@ const OpencodeStepFinishEvent = z.object({
     tokens: z.object({
       input: z.number(),
       output: z.number(),
+      reasoning: z.number().optional(),
       cache: z
         .object({
           read: z.number().optional(),
@@ -62,9 +63,16 @@ export function parseOpencodeLine(line: string): ParsedLine {
   let event: unknown;
   try {
     event = JSON.parse(trimmed);
-  } catch (err) {
-    warnError('output-parser: malformed opencode JSON', err);
-    return {};
+  } catch {
+    return {
+      warning: [
+        parsedMalformedRecordWarning({
+          parser: 'opencode',
+          line: trimmed,
+          message: 'Malformed opencode JSON line skipped',
+        }),
+      ],
+    };
   }
 
   const text = OpencodeTextEvent.safeParse(event);
@@ -78,6 +86,7 @@ export function parseOpencodeLine(line: string): ParsedLine {
         usage: {
           inputTokens: tokens.input,
           outputTokens: tokens.output,
+          ...(tokens.reasoning !== undefined && { reasoningTokens: tokens.reasoning }),
           ...(tokens.cache?.read !== undefined && { cacheReadTokens: tokens.cache.read }),
           ...(tokens.cache?.write !== undefined && { cacheCreateTokens: tokens.cache.write }),
         },
@@ -107,5 +116,19 @@ export function parseOpencodeLine(line: string): ParsedLine {
     }
   }
 
-  return withSession({}, event);
+  const warning = parsedUnknownRecordWarning({
+    parser: 'opencode',
+    value: event,
+    benign: isBenignOpencodeEvent(event),
+  });
+  return withSession(warning === null ? {} : { warning: [warning] }, event);
+}
+
+function isBenignOpencodeEvent(event: unknown): boolean {
+  const parsed = z
+    .looseObject({
+      type: z.enum(['step_start', 'step-start']),
+    })
+    .safeParse(event);
+  return parsed.success;
 }

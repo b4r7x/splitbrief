@@ -167,6 +167,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/activity',
       label: 'Activity',
       description: 'Expand or collapse the latest activity batch',
+      shortcut: getShortcutKey('activity'),
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleLatestActivityBatch();
@@ -177,6 +178,21 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
         ctx.setFeedbackMessage(
           result.expanded ? 'Expanded latest activity batch' : 'Collapsed latest activity batch',
         );
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/sidebar',
+      label: 'Sidebar',
+      description: 'Show or hide workflow sidebar',
+      validScreens: ['workflow'],
+      handler: () => {
+        const result = ctx.toggleSidebar();
+        if (result.status === 'unavailable') {
+          ctx.setFeedbackError(result.message);
+          return;
+        }
+        ctx.setFeedbackMessage(result.visible ? 'Sidebar shown' : 'Sidebar hidden');
       },
     },
     {
@@ -500,16 +516,16 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/yolo',
       label: 'YOLO',
-      description: 'Toggle action-level tiered approvals off/on',
+      description: 'Toggle file-write tiered approvals off/on',
       validScreens: ALL_SCREENS,
       handler: () => {
         const current = ctx.getApprovalEnabled();
         const next = !current;
         ctx.setApprovalEnabled(next);
         if (!next) {
-          ctx.setFeedbackMessage('YOLO mode ON — action-level tiered approvals disabled');
+          ctx.setFeedbackMessage('YOLO mode ON — file-write tiered approvals disabled');
         } else {
-          ctx.setFeedbackMessage('YOLO mode OFF — action-level tiered approvals restored');
+          ctx.setFeedbackMessage('YOLO mode OFF — file-write tiered approvals restored');
         }
       },
     },

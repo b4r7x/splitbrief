@@ -1,5 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { createStore, storeBase } from '../create-store.js';
 
 const MAX_ACTIVITY_ITEMS = 8;
@@ -10,6 +11,19 @@ type ActivityEvent =
   | EngineEventOf<'runner_call_completed'>
   | EngineEventOf<'runner_call_error'>
   | EngineEventOf<'workflow_cancelled'>;
+
+const SAFE_RUNNER_ACTIVITY: unique symbol = Symbol('safeRunnerActivity');
+
+type SafeRunnerActivityEvent = Omit<
+  EngineEventOf<'runner_call_activity'>,
+  'label' | 'target' | 'textPartial' | 'diagnosticPartial'
+> & {
+  readonly [SAFE_RUNNER_ACTIVITY]: true;
+  label: string;
+  target?: string | undefined;
+  textPartial?: string | undefined;
+  diagnosticPartial?: string | undefined;
+};
 
 export interface WorkflowActivityItem {
   id: string;
@@ -58,29 +72,34 @@ export function updateActivity(state: ActivityState, event: EngineEvent): Activi
     return retireRunningCallActivity(state, event.callId);
   }
 
-  const isSessionActivity = event.kind === 'session';
-  const rawAvailable = isSessionActivity ? false : (event.rawAvailable ?? false);
+  const safeEvent = safeRunnerActivityEvent(event);
+  if (safeEvent === null) return state;
+
+  const isSessionActivity = safeEvent.kind === 'session';
+  const rawAvailable = isSessionActivity ? false : (safeEvent.rawAvailable ?? false);
   const item: WorkflowActivityItem = {
-    id: event.activityId,
-    callId: event.callId,
-    ...(event.taskId !== undefined && { taskId: event.taskId }),
-    phase: event.phase,
-    role: event.role,
-    stage: event.stage,
-    kind: event.kind,
-    label: isSessionActivity ? SESSION_ACTIVITY_LABEL : event.label,
-    ...(!isSessionActivity && event.target !== undefined && { target: event.target }),
-    ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
-    ...(event.model !== undefined && { model: event.model }),
-    redacted: event.redacted,
+    id: safeEvent.activityId,
+    callId: safeEvent.callId,
+    ...(safeEvent.taskId !== undefined && { taskId: safeEvent.taskId }),
+    phase: safeEvent.phase,
+    role: safeEvent.role,
+    stage: safeEvent.stage,
+    kind: safeEvent.kind,
+    label: isSessionActivity ? SESSION_ACTIVITY_LABEL : safeEvent.label,
+    ...(!isSessionActivity && safeEvent.target !== undefined && { target: safeEvent.target }),
+    ...(safeEvent.runnerName !== undefined && { runnerName: safeEvent.runnerName }),
+    ...(safeEvent.model !== undefined && { model: safeEvent.model }),
+    redacted: safeEvent.redacted,
     rawAvailable,
-    ...(rawAvailable && { expandId: event.expandId ?? event.activityId }),
+    ...(rawAvailable && { expandId: safeEvent.expandId ?? safeEvent.activityId }),
     ...(!isSessionActivity &&
-      event.textPartial !== undefined && { textPartial: event.textPartial }),
+      safeEvent.textPartial !== undefined && { textPartial: safeEvent.textPartial }),
     ...(!isSessionActivity &&
-      event.diagnosticPartial !== undefined && { diagnosticPartial: event.diagnosticPartial }),
-    sequence: event.sequence,
-    ts: event.ts,
+      safeEvent.diagnosticPartial !== undefined && {
+        diagnosticPartial: safeEvent.diagnosticPartial,
+      }),
+    sequence: safeEvent.sequence,
+    ts: safeEvent.ts,
   };
 
   const items = [...state.items.filter((current) => current.id !== item.id), item].slice(
@@ -96,6 +115,48 @@ function isActivityEvent(event: EngineEvent): event is ActivityEvent {
     event.type === 'runner_call_error' ||
     event.type === 'workflow_cancelled'
   );
+}
+
+function safeRunnerActivityEvent(
+  event: EngineEventOf<'runner_call_activity'>,
+): SafeRunnerActivityEvent | null {
+  const label = cleanRequiredActivityText(event.label);
+  if (label === null) return null;
+  const target = cleanOptionalActivityText(event.target);
+  const textPartial = cleanOptionalActivityText(event.textPartial);
+  const diagnosticPartial = cleanOptionalActivityText(event.diagnosticPartial);
+  const redacted =
+    event.redacted ||
+    label.changed ||
+    target?.changed === true ||
+    textPartial?.changed === true ||
+    diagnosticPartial?.changed === true;
+
+  return {
+    ...event,
+    [SAFE_RUNNER_ACTIVITY]: true,
+    label: label.text,
+    ...(target !== undefined && { target: target.text }),
+    ...(textPartial !== undefined && { textPartial: textPartial.text }),
+    ...(diagnosticPartial !== undefined && { diagnosticPartial: diagnosticPartial.text }),
+    redacted,
+  };
+}
+
+function cleanRequiredActivityText(
+  value: string,
+): { readonly text: string; readonly changed: boolean } | null {
+  const text = sanitizeTerminalDisplayText(value).replace(/\s+/g, ' ').trim();
+  if (text.length === 0) return null;
+  return { text, changed: text !== value };
+}
+
+function cleanOptionalActivityText(
+  value: string | undefined,
+): { readonly text: string; readonly changed: boolean } | undefined {
+  if (value === undefined) return undefined;
+  const text = sanitizeTerminalDisplayText(value).replace(/\s+/g, ' ').trim();
+  return text.length === 0 ? undefined : { text, changed: text !== value };
 }
 
 function retireRunningCallActivity(state: ActivityState, callId: string): ActivityState {

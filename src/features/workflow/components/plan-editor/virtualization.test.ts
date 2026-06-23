@@ -1,126 +1,81 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
+import { taskId } from '../../../../core/schemas/task.js';
 import { TASK_BRIEF_SECTIONS } from '../../../../stores/workflow/plan-editor-sections.js';
-import { getTaskEditorRowHeight, getVisibleTaskWindow } from './virtualization.js';
-
-function tasks(count: number) {
-  return Array.from({ length: count }, (_, i) =>
-    makeTask({
-      id: `T${String(i + 1).padStart(3, '0')}`,
-      title: `Task ${i + 1}`,
-    }),
-  );
-}
+import {
+  getEditingInputRows,
+  getTaskEditorRowHeight,
+  getVisibleTaskWindow,
+} from './virtualization.js';
 
 describe('plan editor virtualization', () => {
-  it('returns an empty window for empty task lists', () => {
+  it('counts rendered expanded detail rows including evidence and routing metadata', () => {
+    const task = makeTask({
+      id: 'T001',
+      scope: { inBounds: ['src/a.ts'], outOfBounds: ['src/b.ts'], approvedOutOfBounds: [] },
+      implementationSteps: ['step one', 'step two'],
+      constraints: ['keep api'],
+      tests: ['npm test'],
+      evidence: ['proof one', 'proof two'],
+      escalation: ['stop on conflict'],
+    });
+    const height = getTaskEditorRowHeight(
+      task,
+      true,
+      {
+        taskId: taskId('T001'),
+        workerProfile: 'local',
+        contextFit: 'fits',
+        routingReason: 'selected local worker',
+        conflict: {
+          kind: 'current-task-conflict',
+          files: ['src/a.ts'],
+          affectedTaskIds: ['T001'],
+          note: 'manual review required',
+        },
+      },
+      { isCursor: false, focus: 'task-list' },
+    );
+
+    expect(height).toBe(3 + 1 + 6 + 3 + 3 + 2 + 2 + 3 + 2 + 4);
+  });
+
+  it('uses bounded multiline edit rows in the selected expanded task height', () => {
+    const task = makeTask({
+      id: 'T001',
+      implementationSteps: [],
+      constraints: [],
+      tests: [],
+      evidence: [],
+      escalation: [],
+      scope: undefined,
+    });
+    const editing = {
+      taskId: 'T001',
+      section: 'description' as const,
+      value: ['one', 'two', 'three', 'four', 'five', 'six', 'seven'].join('\n'),
+    };
+
+    expect(getEditingInputRows(editing.value)).toBe(6);
+    const sectionListRows = 1 + TASK_BRIEF_SECTIONS.length;
+    expect(
+      getTaskEditorRowHeight(task, true, undefined, {
+        isCursor: true,
+        focus: 'editing-section',
+        editing,
+      }),
+    ).toBe(3 + 1 + 6 + sectionListRows + 6);
+  });
+
+  it('returns no visible tasks when the row budget is zero', () => {
     expect(
       getVisibleTaskWindow({
-        tasks: [],
+        tasks: [makeTask({ id: 'T001' })],
         cursor: 0,
         expandedIds: new Set(),
         metadata: new Map(),
-        rowBudget: 10,
+        rowBudget: 0,
       }),
-    ).toEqual({
-      scrollOffset: 0,
-      visibleTasks: [],
-    });
-  });
-
-  it('keeps the cursor visible while filling rows around it', () => {
-    const list = tasks(5);
-
-    const result = getVisibleTaskWindow({
-      tasks: list,
-      cursor: 3,
-      expandedIds: new Set(),
-      metadata: new Map(),
-      rowBudget: 9,
-    });
-
-    expect(result.scrollOffset).toBe(1);
-    expect(result.visibleTasks.map((task) => task.id)).toEqual(['T002', 'T003', 'T004']);
-  });
-
-  it('accounts for expanded task detail rows', () => {
-    const [task] = tasks(1);
-    if (!task) throw new Error('expected task');
-    const metadata: PlanTaskReviewMetadata = {
-      taskId: task.id,
-      workerProfile: 'local-qwen',
-      selectedCostTier: 'local',
-      contextFit: 'tight',
-      checkpoint: 'pre-task T001',
-      routingReason: 'selected local profile',
-    };
-
-    expect(getTaskEditorRowHeight(task, false, metadata)).toBe(3);
-    expect(getTaskEditorRowHeight(task, true, metadata)).toBeGreaterThan(3);
-  });
-
-  it('accounts for section-list controls on the focused expanded task', () => {
-    const list = tasks(2);
-    const [selected] = list;
-    if (!selected) throw new Error('expected task');
-
-    const taskListHeight = getTaskEditorRowHeight(selected, true, undefined, {
-      isCursor: true,
-      focus: 'task-list',
-    });
-    const sectionListHeight = getTaskEditorRowHeight(selected, true, undefined, {
-      isCursor: true,
-      focus: 'section-list',
-    });
-
-    expect(sectionListHeight).toBe(taskListHeight + 1 + TASK_BRIEF_SECTIONS.length);
-    expect(
-      getVisibleTaskWindow({
-        tasks: list,
-        cursor: 0,
-        expandedIds: new Set([selected.id]),
-        metadata: new Map(),
-        rowBudget: sectionListHeight,
-        focus: 'section-list',
-      }).visibleTasks.map((task) => task.id),
-    ).toEqual([selected.id]);
-  });
-
-  it('accounts for multiline editing controls on the focused expanded task', () => {
-    const list = tasks(2);
-    const [selected] = list;
-    if (!selected) throw new Error('expected task');
-
-    const sectionListHeight = getTaskEditorRowHeight(selected, true, undefined, {
-      isCursor: true,
-      focus: 'section-list',
-    });
-    const editingHeight = getTaskEditorRowHeight(selected, true, undefined, {
-      isCursor: true,
-      focus: 'editing-section',
-      editing: {
-        taskId: selected.id,
-        section: 'description',
-        value: 'line 1\nline 2\nline 3',
-      },
-    });
-
-    expect(editingHeight).toBe(sectionListHeight + 3);
-    expect(
-      getVisibleTaskWindow({
-        tasks: list,
-        cursor: 0,
-        expandedIds: new Set([selected.id]),
-        metadata: new Map(),
-        rowBudget: editingHeight,
-        focus: 'editing-section',
-        editing: {
-          taskId: selected.id,
-          section: 'description',
-          value: 'line 1\nline 2\nline 3',
-        },
-      }).visibleTasks.map((task) => task.id),
-    ).toEqual([selected.id]);
+    ).toEqual({ scrollOffset: 0, visibleTasks: [] });
   });
 });

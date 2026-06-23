@@ -243,6 +243,141 @@ describe('validateConfig', () => {
       validateConfig(withKey).errors.find((e) => e.path === 'implementer.apiKey'),
     ).toBeUndefined();
   });
+
+  it('rejects unknown planner provider env apiKey references with arbitrary apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-test-env';
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'custom-planner',
+        model: 'm',
+        apiBase: 'https://custom-planner.example.com/v1',
+        apiKey: 'env:OPENAI_API_KEY',
+      },
+    });
+
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'planner.apiKey',
+      message: expect.stringMatching(
+        /custom\/unknown provider.*env apiKey reference.*apiBase.*exfiltration risk/i,
+      ),
+    });
+  });
+
+  it('rejects unknown implementer profile env apiKey references with arbitrary apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-test-env';
+    const config = {
+      ...makeConfig(),
+      implementerProfiles: {
+        default: 'custom-remote',
+        profiles: {
+          'custom-remote': {
+            kind: 'api',
+            provider: 'custom-implementer',
+            model: 'm',
+            apiBase: 'https://custom-implementer.example.com/v1',
+            apiKey: 'env:OPENAI_API_KEY',
+          },
+        },
+      },
+    };
+
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'implementerProfiles.profiles.custom-remote.apiKey',
+      message: expect.stringMatching(
+        /custom\/unknown provider.*env apiKey reference.*apiBase.*exfiltration risk/i,
+      ),
+    });
+  });
+
+  it('allows known provider env apiKey references with official same-origin apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-test-env';
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        model: 'gpt-5.1',
+        apiBase: 'https://api.openai.com/',
+        apiKey: 'env:OPENAI_API_KEY',
+      },
+    });
+
+    expect(validateConfig(config).errors.find((e) => e.path === 'planner.apiKey')).toBeUndefined();
+  });
+
+  it('rejects {prompt} in command strings', () => {
+    const result = validateConfig({
+      ...makeConfig(),
+      implementer: {
+        kind: 'agent',
+        command: './agent-{prompt}',
+        model: 'agent-default',
+      },
+    });
+
+    expect(result.errors).toContainEqual({
+      path: 'implementer.command',
+      message: expect.stringContaining('must not contain {prompt}'),
+    });
+  });
+
+  it('warns when agent args contain {prompt}', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command: './agent',
+        args: ['--prompt', '{prompt}'],
+        model: 'agent-default',
+      },
+    });
+
+    const { errors, warnings } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toContainEqual(expect.stringContaining('implementer.args contains {prompt}'));
+  });
+
+  it('uses a stronger warning when bash -c args contain {prompt}', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command: 'bash',
+        args: ['-c', 'printf "%s" "{prompt}"'],
+        model: 'agent-default',
+      },
+    });
+
+    const { errors, warnings } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toContainEqual(
+      expect.stringContaining('implementer.args passes {prompt} through bash -c'),
+    );
+    expect(warnings).toContainEqual(expect.stringContaining('shell-evaluate prompt text'));
+  });
+
+  it.each([
+    ['bash with options before -c', 'bash', ['--noprofile', '-c', 'printf "%s" "{prompt}"']],
+    ['bash combined flags', 'bash', ['-lc', 'printf "%s" "{prompt}"']],
+    ['sh combined flags', 'sh', ['-ec', 'printf "%s" "{prompt}"']],
+  ])('uses a stronger warning for %s', (_name, command, args) => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command,
+        args,
+        model: 'agent-default',
+      },
+    });
+
+    const { errors, warnings } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toContainEqual(
+      expect.stringContaining(`implementer.args passes {prompt} through ${command} -c`),
+    );
+    expect(warnings).toContainEqual(expect.stringContaining('shell-evaluate prompt text'));
+  });
 });
 
 describe('securityWarnings', () => {

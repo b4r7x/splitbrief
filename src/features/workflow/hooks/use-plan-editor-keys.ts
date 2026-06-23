@@ -10,8 +10,12 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { TASK_BRIEF_SECTIONS } from '../../../stores/workflow/plan-editor-sections.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { normalizeKeySignature } from '../../../core/keybindings/normalize.js';
+import { resolveKeyOwner, type FocusedKeySurface } from '../../../core/keybindings/resolver.js';
+import { dropLastCodePoint } from '../../../components/input/text-editing.js';
 
 const mountedStore = createStore<boolean>(false);
+const MAX_REGEN_REASON_CHARS = 160;
 
 // True only while the rich plan editor's key layer is mounted. The global shortcut
 // layer reads this to release Ctrl+K (its command-palette binding) back to the editor's
@@ -29,7 +33,10 @@ export type PlanEditorAction =
   | { type: 'merge-task' }
   | { type: 'toggle-expand' }
   | { type: 'toggle-flag' }
-  | { type: 'regenerate-flagged' }
+  | { type: 'prompt-regenerate-flagged' }
+  | { type: 'submit-regenerate-flagged' }
+  | { type: 'update-regenerate-reason'; value: string }
+  | { type: 'cancel-regenerate-reason' }
   | { type: 'toggle-packet-preview' }
   | { type: 'open-help' }
   | { type: 'open-editor'; mode: 'edit' | 'split' }
@@ -41,10 +48,75 @@ export type PlanEditorAction =
   | { type: 'cancel-section-edit' }
   | { type: 'copy-selection' }
   | { type: 'save' }
+  | { type: 'reject' }
   | { type: 'discard' };
+
+function focusSurface(): FocusedKeySurface {
+  const focus = planEditorStore.get().focus;
+  switch (focus) {
+    case 'task-list':
+      return 'plan-editor-task-list';
+    case 'section-list':
+      return 'plan-editor-section-list';
+    case 'editing-section':
+      return 'plan-editor-editing-section';
+    case 'regen-reason':
+      return 'plan-editor-regen-reason';
+  }
+}
+
+function isC0Control(ch: string): boolean {
+  const code = ch.codePointAt(0);
+  return code !== undefined && (code < 0x20 || code === 0x7f);
+}
+
+function stripC0Controls(value: string): string {
+  let result = '';
+  for (const ch of value) {
+    if (!isC0Control(ch)) result += ch;
+  }
+  return result;
+}
+
+function truncateRegenerateReason(value: string): string {
+  if (value.length <= MAX_REGEN_REASON_CHARS) return value;
+  const truncated = value.slice(0, MAX_REGEN_REASON_CHARS);
+  const last = truncated.charCodeAt(truncated.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? dropLastCodePoint(truncated) : truncated;
+}
 
 export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction {
   const state = planEditorStore.get();
+  const owner = resolveKeyOwner({
+    screen: 'workflow',
+    inputMode: 'review',
+    focus: focusSurface(),
+    overlay: 'none',
+    attachState: 'local',
+    composerFocus: false,
+    key: normalizeKeySignature({ input, key }),
+  });
+  if (owner?.owner !== 'plan-editor' && owner?.owner !== 'text-editing') {
+    return { type: 'none' };
+  }
+
+  if (state.focus === 'regen-reason') {
+    if (key.escape) return { type: 'cancel-regenerate-reason' };
+    if (key.return) return { type: 'submit-regenerate-flagged' };
+    if (key.backspace || key.delete) {
+      return { type: 'update-regenerate-reason', value: dropLastCodePoint(state.regenReason) };
+    }
+    if (!key.ctrl && !key.meta && !key.super && !key.hyper && input.length > 0) {
+      const text = stripC0Controls(input);
+      if (!text) return { type: 'none' };
+      return {
+        type: 'update-regenerate-reason',
+        value: truncateRegenerateReason(`${state.regenReason}${text}`),
+      };
+    }
+    return { type: 'none' };
+  }
+
   if (state.focus === 'editing-section') {
     if (key.escape) return { type: 'cancel-section-edit' };
     if (key.ctrl && key.return) return { type: 'save-section-edit' };
@@ -58,6 +130,7 @@ export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction
     if (input === 'e') return { type: 'start-section-edit' };
     if (input === 'c') return { type: 'copy-selection' };
     if (input === 'Y') return { type: 'save' };
+    if (input === 'N') return { type: 'reject' };
     if (input === 'q') return { type: 'discard' };
     if (input === '?') return { type: 'open-help' };
     return { type: 'none' };
@@ -77,13 +150,14 @@ export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction
   if (input === 'd') return { type: 'delete-task' };
   if (input === 'm') return { type: 'merge-task' };
   if (input === 'x') return { type: 'toggle-flag' };
-  if (input === 'R') return { type: 'regenerate-flagged' };
+  if (input === 'R') return { type: 'prompt-regenerate-flagged' };
   if (input === 'p') return { type: 'toggle-packet-preview' };
   if (input === 's') return { type: 'open-editor', mode: 'split' };
   if (input === 'E') return { type: 'open-editor', mode: 'edit' };
   if (input === 'c') return { type: 'copy-selection' };
   if (input === '?') return { type: 'open-help' };
   if (input === 'Y') return { type: 'save' };
+  if (input === 'N') return { type: 'reject' };
   if (input === 'q') return { type: 'discard' };
   return { type: 'none' };
 }
@@ -100,7 +174,10 @@ function applyTaskResult(
 
 type StoreEditorAction = Exclude<
   PlanEditorAction,
-  { type: 'open-editor' } | { type: 'regenerate-flagged' } | { type: 'copy-selection' }
+  | { type: 'open-editor' }
+  | { type: 'submit-regenerate-flagged' }
+  | { type: 'copy-selection' }
+  | { type: 'reject' }
 >;
 
 export function applyPlanEditorAction(
@@ -167,6 +244,15 @@ export function applyPlanEditorAction(
       if (task) planEditorStore.toggleFlag(task.id);
       return;
     }
+    case 'prompt-regenerate-flagged':
+      planEditorStore.startRegenerateReason();
+      return;
+    case 'update-regenerate-reason':
+      planEditorStore.updateRegenerateReason(action.value);
+      return;
+    case 'cancel-regenerate-reason':
+      planEditorStore.cancelRegenerateReason();
+      return;
     case 'toggle-packet-preview':
       onTogglePacketPreview?.();
       return;
@@ -189,11 +275,12 @@ export interface PlanEditorKeysOptions {
   onSave: () => Promise<void>;
   sessionDir: string;
   onTogglePacketPreview?: (() => void) | undefined;
-  onRegenerateFlagged?: (() => Promise<void>) | undefined;
+  onRegenerateFlagged?: ((reason?: string | undefined) => Promise<void>) | undefined;
+  onReject?: (() => void) | undefined;
 }
 
 export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
-  const { onSave, sessionDir, onTogglePacketPreview, onRegenerateFlagged } = options;
+  const { onSave, sessionDir, onTogglePacketPreview, onRegenerateFlagged, onReject } = options;
   const isOverlayOpen = overlayStore.use((s) => s.active !== 'none');
 
   useEffect(() => {
@@ -208,6 +295,17 @@ export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
     { isActive: overlayStore.use((s) => s.active === 'plan-editor-help') },
   );
 
+  async function submitRegenerateFlagged(): Promise<void> {
+    const reason = planEditorStore.get().regenReason.trim();
+    if (planEditorStore.get().dirty) {
+      await onSave();
+      const afterSave = planEditorStore.get();
+      if (afterSave.dirty || afterSave.saveError !== null) return;
+    }
+    planEditorStore.cancelRegenerateReason();
+    if (onRegenerateFlagged) await onRegenerateFlagged(reason || undefined);
+  }
+
   useInput(
     (input, key) => {
       const action = handlePlanEditorInput(input, key);
@@ -218,12 +316,16 @@ export function usePlanEditorKeys(options: PlanEditorKeysOptions): void {
         openExternalEditor({ task, mode: action.mode, sessionDirPath: sessionDir });
         return;
       }
-      if (action.type === 'regenerate-flagged') {
-        if (onRegenerateFlagged) void onRegenerateFlagged();
+      if (action.type === 'submit-regenerate-flagged') {
+        void submitRegenerateFlagged();
         return;
       }
       if (action.type === 'copy-selection') {
         void copyCurrentPlanEditorSelection(sessionDir);
+        return;
+      }
+      if (action.type === 'reject') {
+        onReject?.();
         return;
       }
       applyPlanEditorAction(action, onSave, onTogglePacketPreview);

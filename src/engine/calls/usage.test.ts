@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BackendTokenUsageSchema,
+  RUNNER_CALL_REASONING_TOKEN_POLICY,
   accumulateRunnerCallUsage,
   accumulateRunnerCallUsageSamples,
   applyRunnerCallUsageSample,
@@ -66,7 +67,8 @@ describe('normalizeRunnerCallUsage', () => {
     });
   });
 
-  it('preserves reasoning tokens for call usage but strips them from legacy token deltas', () => {
+  it('preserves already-normalized reasoning tokens for call usage and legacy token deltas', () => {
+    expect(RUNNER_CALL_REASONING_TOKEN_POLICY).toBe('preserve_reasoning_metadata');
     const raw = {
       inputTokens: 1,
       outputTokens: 2,
@@ -81,6 +83,21 @@ describe('normalizeRunnerCallUsage', () => {
     expect(toTokenDelta(raw)).toEqual({
       inputTokens: 1,
       outputTokens: 2,
+      reasoningTokens: 3,
+    });
+  });
+
+  it('subtracts provider reasoning tokens from raw output totals', () => {
+    expect(
+      normalizeRunnerCallUsage({
+        input_tokens: 1,
+        output_tokens: 5,
+        completion_tokens_details: { reasoning_tokens: 3 },
+      }),
+    ).toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      reasoningTokens: 3,
     });
   });
 

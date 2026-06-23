@@ -35,6 +35,7 @@ export function createRecoveryBus(opts: {
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       persistTranscript: opts.persistTranscript,
+      onDegraded: (warning) => bus.publish(warning),
     }),
   );
   return bus;

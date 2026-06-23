@@ -1,7 +1,7 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { IpcClientStatus } from '../../engine/ipc/client.js';
-import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
+import { reviewHintForPhase } from './review-commands.js';
 
 export interface InputHintInput {
   cancelled: boolean;
@@ -18,9 +18,9 @@ export function resolveInputHint(input: InputHintInput): string {
       ? 'Enter to resume, ESC for home, /quit to exit'
       : 'ESC for home, /quit to exit';
   }
+  if (inputMode === 'question') return 'answer prompt shown above';
   if (inputHint) return inputHint;
-  if (inputMode === 'review')
-    return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
+  if (inputMode === 'review') return reviewHintForPhase(phase);
   return '';
 }
 

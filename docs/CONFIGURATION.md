@@ -160,7 +160,7 @@ planner:
 
 ### `kind: shell`
 
-Arbitrary `stdin → stdout` command. Diptych writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser.
+Arbitrary `stdin → stdout` command. Diptych writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
@@ -187,7 +187,7 @@ Set `supportsSelfSummarisation: true` only for planner wrappers that can summari
 
 ### `kind: agent`
 
-Same shape as `shell`, but the contract is different: the subprocess **writes files directly to the working tree** and we don't extract anything from stdout. Diptych reads the dirty filesystem after the call returns.
+Same shape as `shell`, but the contract is different: the subprocess **writes files directly to the working tree** and we don't extract anything from stdout. Diptych reads the dirty filesystem after the call returns. It runs as a normal child process too; diptych does not sandbox its shell or network access.
 
 ```yaml
 implementer:
@@ -407,13 +407,13 @@ Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `li
 
 ## 5. `workflow`
 
-Mode, approval gates, retries, budget, git strategy, and brief-review style.
+Mode, spec/plan document gates, retries, budget, git strategy, and brief-review style.
 
 ### Schema
 
 ```ts
 workflow: {
-  // Approval gates
+  // Spec/plan document gates
   approve?:               'none' | 'spec' | 'plan' | 'all' | 'default';
   autoApproveSpec?:       boolean;  // deprecated v2 — use approve
   autoApprovePlan?:       boolean;  // deprecated v2 — use approve
@@ -454,14 +454,14 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `mode` | enum | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` is accepted as a one-time alias for `speckit`. |
-| `approve` | enum | `default` | Approval gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
+| `approve` | enum | `default` | Spec/plan document gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
 | `autoApproveSpec` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `autoApprovePlan` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
-| `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` / `edit` from simple brief review to enter rich review for the current session; use `E` / `edit-file` when you explicitly want `$EDITOR` on `tasks.md`. |
+| `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `Ctrl+E` or type `e` / `edit` from simple brief review to enter rich review for the current session; use `E` / `edit-file` when you explicitly want `$EDITOR` on `tasks.md`. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
 | `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
@@ -804,7 +804,7 @@ Leave this off unless you trust the repository. `diptych handoff --list` can dis
 
 ## 12. `approval`
 
-Tiered approval system for fine-grained operation gating. Sits orthogonal to `workflow.approve` (which controls spec/plan gates).
+Tiered approval system for declared file writes. It sits orthogonal to `workflow.approve`, which controls spec/plan gates.
 
 ### Schema
 
@@ -829,7 +829,7 @@ type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Master toggle for tiered approval |
+| `enabled` | boolean | `true` | Master toggle for file-write tiered approval |
 | `headless` | boolean | unset | Force `confirm` tiers to default-deny rather than block. Use in CI. |
 | `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt every time) |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
@@ -855,7 +855,7 @@ Supported glob patterns: exact match (`src/config.ts`), recursive directory (`sr
 
 Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`), not the *tier*. If you override `approval.tiers.write_in_scope: 'sticky'`, writes to allowed paths will still prompt once per session.
 
-**Operation tiers:** `read`, `write_in_scope` (writing files inside the brief's scope), `validation` (running tsc/lint/test), `write_out_of_scope`, `destructive` (rm/git reset), `network` (curl/fetch), `package_change` (npm install / package.json edits).
+**Tier keys:** `read`, `write_in_scope`, `validation`, `write_out_of_scope`, `destructive`, `network`, `package_change`. The current file-write classifier emits `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`. `validation` and `network` remain accepted config keys for compatibility; they do not sandbox validation, shell commands, or network access.
 
 YAML — strict:
 
@@ -866,14 +866,12 @@ approval:
   tiers:
     read: auto
     write_in_scope: sticky
-    validation: auto
     write_out_of_scope: confirm
     destructive: confirm
-    network: confirm
     package_change: confirm
 ```
 
-**When to use:** untrusted projects, demoing diptych on production code, or onboarding where you want explicit visibility into every dangerous op.
+**When to use:** new projects, production codebases, or onboarding where you want explicit visibility into out-of-scope, control-plane, or package-file writes.
 
 ---
 
@@ -985,8 +983,8 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--auto` | Alias for `--approve none` | start, resume, continue, last |
-| `--approve <level>` | `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
+| `--auto` | Alias for `--approve none` on spec/plan document gates | start, resume, continue, last |
+| `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
 | `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last |
 | `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
@@ -1017,7 +1015,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
 | `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
 | `--worktree [name]` | Run in a linked git worktree | start |
-| `--yolo` | Skip action-level tiered approval prompts for this session | start, resume, continue, last |
+| `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue, last |
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |
 | `--history` | Show cost history across sessions | status |
@@ -1165,17 +1163,15 @@ otel:
   enabled: true
   serviceName: diptych-prod
 
-# ---------- Tiered approval: prompt on dangerous ops ----------
+# ---------- Tiered approval: prompt on out-of-scope/control-plane writes ----------
 approval:
   enabled: true
   feedRejectionsToPlanner: true
   tiers:
     read: auto
     write_in_scope: sticky
-    validation: auto
     write_out_of_scope: confirm
     destructive: confirm
-    network: confirm
     package_change: confirm
 
 # ---------- Custom palette actions ----------

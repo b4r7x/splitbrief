@@ -16,12 +16,14 @@ import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../c
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';
 import { runnerCallUnknownUpstreamPreview } from '../../calls/unknown-upstream.js';
 import {
+  createRunnerCallDeltaLimiter,
   finishRunnerCallOutputLimit,
   runnerCallOutputLimitError,
   runnerCallOutputLimitFromError,
   takeUtf8PrefixBytes,
   RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES,
   RUNNER_CALL_SSE_EVENT_MAX_BYTES,
+  type RunnerCallDeltaLimitResult,
   type RunnerCallOutputLimit,
 } from '../../calls/output-limit.js';
 import type {
@@ -362,8 +364,14 @@ function getStopReason(
   return payload.delta?.stop_reason ?? null;
 }
 
-function emitText(recorder: RunnerCallRecorder, text: string): void {
-  recorder.text({ channel: 'assistant', text });
+function emitText(
+  recorder: RunnerCallRecorder,
+  text: string,
+  limiter: ReturnType<typeof createRunnerCallDeltaLimiter>,
+): RunnerCallDeltaLimitResult {
+  const accepted = limiter.accept(text);
+  if (accepted.text.length > 0) recorder.text({ channel: 'assistant', text: accepted.text });
+  return accepted;
 }
 
 function emitUsageUpdate(
@@ -558,6 +566,11 @@ export async function streamAnthropicCompletion(
   let usage: RunnerCallUsage | null = null;
   let stopReason: string | null = null;
   let sawMessageStop = false;
+  const textLimiter = createRunnerCallDeltaLimiter({
+    code: 'provider_text_delta_limit',
+    label: 'provider text deltas',
+  });
+  let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
 
   try {
     for await (const event of withIdleTimeout(
@@ -578,8 +591,12 @@ export async function streamAnthropicCompletion(
         case 'content_block_delta': {
           const text = getDeltaText(payload);
           if (!text) break;
-          emitText(recorder, text);
-          opts.onProgress(text);
+          const accepted = emitText(recorder, text, textLimiter);
+          if (accepted.text.length > 0) opts.onProgress(accepted.text);
+          if (accepted.limit !== null) {
+            outputLimit = accepted.limit;
+            break;
+          }
           break;
         }
         case 'message_delta': {
@@ -601,6 +618,7 @@ export async function streamAnthropicCompletion(
         default:
           assertNever(eventType);
       }
+      if (outputLimit !== null) break;
     }
   } catch (err: unknown) {
     if (opts.signal?.aborted) {
@@ -616,6 +634,7 @@ export async function streamAnthropicCompletion(
       recorder.finishFailed({
         status: 'timeout',
         error: { code: 'stream_idle_timeout', message: toErrorMessage(err) },
+        usage,
         nativeSessionId: null,
       });
       throw err;
@@ -639,6 +658,11 @@ export async function streamAnthropicCompletion(
       throw mapped;
     }
     finishAnthropicFailure(recorder, err, endpoint, usage);
+  }
+
+  if (outputLimit !== null) {
+    finishRunnerCallOutputLimit(recorder, outputLimit, { usage, nativeSessionId: null });
+    return recorder.finalResult();
   }
 
   emitAnthropicTerminal(recorder, stopReason, sawMessageStop, usage);

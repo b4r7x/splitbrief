@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
+import { RUNNER_CALL_OUTPUT_MAX_BYTES, RUNNER_CALL_WARNING_MAX_ITEMS } from './output-limit.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
@@ -200,6 +201,79 @@ describe('collectRunnerCallResult', () => {
     expect(result.text).toBe('final text');
   });
 
+  it('replaces a full-size draft with final result text', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'assistant',
+        text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES),
+      },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'result',
+        text: 'final ok',
+        semantics: 'final',
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('final ok');
+    expect(result.error).toBeNull();
+  });
+
+  it('treats missing text semantics as delta for backward compatibility', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'one ' },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'two' },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.text).toBe('one two');
+  });
+
+  it('marks direct oversized result text as truncated', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'assistant',
+        text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10),
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      partial: true,
+      error: { code: 'runner_call_text_limit' },
+      warnings: [expect.objectContaining({ code: 'runner_call_text_limit' })],
+    });
+    expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(
+      RUNNER_CALL_OUTPUT_MAX_BYTES,
+    );
+  });
+
   it('keeps stderr diagnostics out of result warnings by default', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },
@@ -218,6 +292,76 @@ describe('collectRunnerCallResult', () => {
     ]);
 
     expect(result.warnings).toEqual([]);
+  });
+
+  it('surfaces bounded stderr on failure', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_stderr_delta',
+        ...base,
+        channel: 'stderr',
+        text: 'background progress',
+      },
+      {
+        type: 'call_error',
+        ...base,
+        status: 'failed',
+        error: { code: 'failed', message: 'runner failed' },
+        startedAt: 1,
+        endedAt: 10,
+        durationMs: 9,
+        partial: true,
+        usage: null,
+        nativeSessionId: null,
+      },
+    ]);
+
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'stderr_on_failure',
+        source: 'stderr',
+        surface: 'status',
+        channel: 'stderr',
+        message: expect.stringContaining('background progress'),
+      }),
+    );
+  });
+
+  it('redacts direct unknown-upstream previews before result warnings', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_unknown_upstream',
+        ...base,
+        rawPreview: 'token sk-abcdefghijklmnopqrstuvwxyz',
+        backendMetadata: {
+          backendKind: 'cli',
+          source: 'jsonl',
+          parser: 'jsonl',
+          channel: 'stdout',
+          upstreamType: 'mystery',
+        },
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown_upstream',
+        source: 'jsonl',
+        parser: 'jsonl',
+        upstreamType: 'mystery',
+        channel: 'stdout',
+        message: expect.stringContaining('sk-***REDACTED***'),
+      }),
+    );
+    expect(JSON.stringify(result)).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 
   it('bounds explicit warnings to the schema message limit', () => {
@@ -243,6 +387,62 @@ describe('collectRunnerCallResult', () => {
       code: 'provider_warning',
       message: `${'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`,
     });
+  });
+
+  it('redacts direct warning messages before returning result warnings', () => {
+    const secret = 'fakesecret1234567890';
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_warning',
+        ...base,
+        warning: {
+          code: 'provider_warning',
+          severity: 'warning',
+          source: 'provider',
+          surface: 'activity',
+          message: `Authorization: Bearer ${secret}`,
+          fingerprint: 'rw:test',
+        },
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.warnings[0]?.message).toContain('Authorization: Bearer ***REDACTED***');
+    expect(JSON.stringify(result.warnings)).not.toContain(secret);
+  });
+
+  it('caps warnings emitted for events after a terminal event', () => {
+    const postTerminalEvents: RunnerCallEvent[] = Array.from({ length: 5000 }, (_, index) => ({
+      type: 'call_text_delta',
+      ...base,
+      ts: 30 + index,
+      channel: 'assistant',
+      text: 'late text',
+    }));
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+      ...postTerminalEvents,
+    ]);
+
+    expect(
+      result.warnings.filter((warning) => warning.code === 'event_after_terminal'),
+    ).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS);
+    expect(
+      result.warnings.filter((warning) => warning.code === 'runner_call_warning_count_limit'),
+    ).toHaveLength(1);
+    expect(result.warnings).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS + 1);
   });
 
   it('rejects mixed call events', () => {

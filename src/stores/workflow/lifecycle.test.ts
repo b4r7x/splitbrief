@@ -74,6 +74,34 @@ describe('lifecycleStore', () => {
     expect(lifecycleStore.get().queuePreviews).toEqual([]);
   });
 
+  it('removes only drained queue previews when queue_drained carries ids', () => {
+    addEvent({
+      type: 'message_queued',
+      ts: Date.now(),
+      id: 'm1',
+      phase: 'researching',
+      preview: 'first',
+    });
+    addEvent({
+      type: 'message_queued',
+      ts: Date.now(),
+      id: 'm2',
+      phase: 'researching',
+      preview: 'second',
+    });
+
+    addEvent({
+      type: 'queue_drained',
+      ts: Date.now(),
+      count: 1,
+      ids: ['m1'],
+      phase: 'researching',
+    });
+
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    expect(lifecycleStore.get().queuePreviews.map((entry) => entry.preview)).toEqual(['second']);
+  });
+
   it('decrements queueDepth on queue_cleared by count (clamped at 0)', () => {
     addEvent({
       type: 'message_queued',

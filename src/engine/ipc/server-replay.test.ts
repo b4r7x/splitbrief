@@ -240,6 +240,70 @@ describe('startIpcServer replay', () => {
     }
   });
 
+  it('client receives a bounded warning when replay skips unknown future events', async () => {
+    const tmpDir = createTempDir('ipc-test');
+    tmpDirs.push(tmpDir);
+    const sessionJsonlPath = join(tmpDir, 'session.jsonl');
+    const unknownLine = JSON.stringify({
+      kind: 'event',
+      ts: new Date(500).toISOString(),
+      type: 'future_event',
+      phase: 'idle',
+      data: {},
+    });
+    writeFileSync(
+      sessionJsonlPath,
+      [
+        unknownLine,
+        makeSessionLogLine({
+          type: 'workflow_started',
+          ts: 1000,
+          phase: 'idle',
+          feature: 'feat',
+        }),
+      ].join('\n') + '\n',
+    );
+
+    const bus = createEventBus();
+    const srv = await startIpcServer({
+      sessionId: 'unknown-replay-test',
+      sessionDir: tmpDir,
+      startedAt: 1000,
+      mode: 'standard',
+      feature: 'feat',
+      authToken: AUTH_TOKEN,
+      bus,
+      onUserInput: vi.fn(),
+      sessionJsonlPath,
+    });
+    servers.push(srv);
+
+    const socket = await connectAuthenticated(srv.sockPath);
+    const msgs = await readLines(socket, 5);
+    const warning = msgs.find(
+      (m): m is Extract<ServerMessage, { kind: 'event' }> =>
+        m.kind === 'event' &&
+        m.payload.type === 'warning' &&
+        m.payload.code === 'replay_unknown_events_skipped',
+    );
+
+    expect(warning?.payload).toMatchObject({
+      type: 'warning',
+      category: 'ipc',
+      code: 'replay_unknown_events_skipped',
+      transcriptSafe: true,
+      message: 'IPC replay skipped 1 unknown future event(s). Upgrade diptych to display them.',
+    });
+    const complete = msgs.find(
+      (m): m is Extract<ServerMessage, { kind: 'event' }> =>
+        m.kind === 'event' && m.payload.type === 'replay_complete',
+    );
+    expect(
+      (complete?.payload as { diagnostics?: { skippedUnknown: number } } | undefined)?.diagnostics
+        ?.skippedUnknown,
+    ).toBe(1);
+  });
+
   it('replayed events arrive in order before replay_complete', async () => {
     const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
