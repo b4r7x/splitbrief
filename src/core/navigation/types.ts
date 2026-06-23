@@ -13,5 +13,4 @@ export type OverlayType =
   | 'planner-picker'
   | 'implementer-picker'
   | 'sessions'
-  | 'cost-drilldown'
-  | 'plan-editor-help';
+  | 'cost-drilldown';

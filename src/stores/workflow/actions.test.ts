@@ -6,7 +6,6 @@ import { tokensStore } from './tokens.js';
 import { lifecycleStore } from './lifecycle.js';
 import { abortStore } from './abort.js';
 import { activityStore } from './activity.js';
-import { planEditorStore } from './plan-editor.js';
 import { approvalPromptStore, openApprovalPrompt } from '../approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../cost-approval/prompt.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -196,20 +195,6 @@ describe('resetWorkflow', () => {
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
     expect(activityStore.get().items).toEqual([]);
-  });
-
-  it('clears session-scoped plan editor state', () => {
-    planEditorStore.setRuntimeRichMode(true);
-    planEditorStore.setStatusMessage('updated title');
-    planEditorStore.setSaveError('failed save');
-
-    resetWorkflow();
-
-    expect(planEditorStore.get()).toMatchObject({
-      runtimeRichMode: false,
-      saveError: null,
-      statusMessage: null,
-    });
   });
 
   it('restores observable workflow state from a persisted resume snapshot', () => {

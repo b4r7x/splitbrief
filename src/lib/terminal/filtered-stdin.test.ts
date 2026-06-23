@@ -108,10 +108,15 @@ async function readFiltered(
 
 describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
   let originalWrite: typeof process.stdout.write;
+  let written: string[];
 
   beforeEach(() => {
     originalWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (() => true) as typeof process.stdout.write;
+    written = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
   });
 
   afterEach(() => {
@@ -133,6 +138,23 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     expect(events).toEqual([
       { type: 'wheel-up', x: 10, y: 20, button: 64, shift: false, meta: false, ctrl: false },
     ]);
+
+    filtered.disable();
+  });
+
+  it('can be created without activating terminal input modes until requested', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin, { activate: false });
+
+    fakeStdin.emit('data', Buffer.from('before'));
+    expect(await readFiltered(filtered.stdin, 'before'.length, 20)).toBe('');
+    expect(written).not.toContain(terminalSequences.enableMouseTracking);
+
+    filtered.activate();
+    fakeStdin.emit('data', Buffer.from('after'));
+
+    expect(await readFiltered(filtered.stdin, 'after'.length)).toBe('after');
+    expect(written).toContain(terminalSequences.enableMouseTracking);
 
     filtered.disable();
   });

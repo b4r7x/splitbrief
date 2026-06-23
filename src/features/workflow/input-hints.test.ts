@@ -56,6 +56,6 @@ describe('resolveInputHint', () => {
         inputMode: 'review',
         phase: 'reviewing-briefs',
       }),
-    ).toBe('approve | Ctrl+E/e edit | E/edit-file | comment <text> revises | reject/q');
+    ).toBe('approve | Ctrl+E/e edit-file | comment <text> revises | reject/q');
   });
 });

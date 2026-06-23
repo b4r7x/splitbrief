@@ -5,6 +5,7 @@ import { countNoun } from '../../utils/pluralize.js';
 import { STALE_ESTIMATE_STATUSES, hasStaleOrConflict } from '../../core/plan-review/predicates.js';
 import type { PlanReviewRisk, PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 
 const COST_TIER_ORDER: ImplementerCostTier[] = [
   'local',
@@ -17,16 +18,6 @@ const COST_TIER_ORDER: ImplementerCostTier[] = [
 export function formatQualityDisplay(quality: BriefQualityReport | null): string {
   if (quality === null) return 'quality n/a';
   return `quality ${quality.score.toFixed(2)}`;
-}
-
-export function hasTaskReviewWarning(
-  issues: BriefQualityIssue[],
-  metadata?: PlanTaskReviewMetadata | undefined,
-): boolean {
-  return (
-    issues.some((i) => i.severity === 'error' || i.severity === 'warning') ||
-    hasBlockingReviewState(metadata)
-  );
 }
 
 function hasBlockingReviewState(metadata?: PlanTaskReviewMetadata | undefined): boolean {
@@ -156,4 +147,8 @@ export function formatPlanReviewSummary(
   const tokens = tokenTotal > 0 ? `tokens ${tokenTotal}` : 'tokens pending';
   const workerText = workers.length > 0 ? `workers ${workers.join(',')}` : 'workers auto';
   return `context ${context} · ${cost} · ${tokens} · ${workerText}`;
+}
+
+export function sanitizeTaskDisplayText(text: string): string {
+  return sanitizeTerminalDisplayText(text);
 }

@@ -29,7 +29,6 @@ const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
 const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
 const { eventsStore } = await import('../../stores/workflow/events.js');
-const { planEditorStore } = await import('../../stores/workflow/plan-editor.js');
 const { openApprovalPrompt } = await import('../../stores/approval-prompt/prompt.js');
 const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prompt.js');
 const { createInitialState, transition } = await import('../../core/state/machine.js');
@@ -400,7 +399,7 @@ describe('WorkflowScreen key arbitration', () => {
     ui.unmount();
   });
 
-  it('the composer captures a printable key while no rich editor is mounted', async () => {
+  it('the composer captures a printable key while no review prompt is active', async () => {
     const ui = mountWorkflow();
     await tick(20);
 
@@ -577,26 +576,22 @@ describe('WorkflowScreen key arbitration', () => {
     }
   });
 
-  it('the focused composer does not capture the rich plan editor keymap during brief review', async () => {
+  it('the focused composer still captures printable keys while no review prompt is active', async () => {
     const ui = mountWorkflow();
     await tick(20);
 
-    // The runner's resetWorkflow runs on mount; drive the rich brief-review surface afterwards.
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    planEditorStore.setRuntimeRichMode(true);
     await tick(20);
 
-    // 'j' is a plain-printable plan-editor key (move cursor down). The composer must be
-    // disabled while the rich editor is active so it never appends 'j' to the input box.
     ui.stdin.write('j');
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').not.toMatch(/>\s+j(\s|$)/m);
+    expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
 
     ui.unmount();
   });
 
-  it('rich brief review uses the plan-editor footer instead of the generic workflow footer', async () => {
+  it('configured rich brief review still uses the simple review surface and workflow footer', async () => {
     const projectDir = createTempDir('workflow-screen-rich-footer');
     try {
       const tasksPath = join(projectDir, 'tasks.md');
@@ -635,12 +630,11 @@ describe('WorkflowScreen key arbitration', () => {
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Rich footer task');
-        expect(ui.lastFrame() ?? '').toContain('Y approve checks');
+        expect(ui.lastFrame() ?? '').toContain('approve | Ctrl+E/e edit-file');
       });
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('N reject');
-      expect(frame).not.toContain('Ctrl+C abort');
-      expect(frame).not.toContain('Task 0/0');
+      expect(frame).toContain('Ctrl+C abort');
+      expect(frame).not.toContain('tab sections');
 
       ui.unmount();
     } finally {
@@ -648,42 +642,61 @@ describe('WorkflowScreen key arbitration', () => {
     }
   });
 
-  it('Ctrl+E opens rich brief review through the workflow review prompt', async () => {
+  it('Ctrl+E opens $EDITOR for brief review and resolves the edit action', async () => {
     const projectDir = createTempDir('workflow-screen-brief-shortcut');
-    ipcTempDirs.push(projectDir);
-    const tasksPath = join(projectDir, 'tasks.md');
-    writeFileSync(
-      tasksPath,
-      formatTasks([
+    try {
+      const tasksPath = join(projectDir, 'tasks.md');
+      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
+      const editedText = formatTasks([
         makeTask({
           id: 'T001',
-          title: 'Review shortcut task',
+          title: 'Review shortcut task edited',
           file: 'src/review-shortcut.ts',
           evidence: ['reviewable proof'],
           scope: { inBounds: ['src/review-shortcut.ts'], outOfBounds: [] },
         }),
-      ]),
-      'utf-8',
-    );
-    runWorkflow.mockImplementationOnce(async (opts) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-      return makeSummary();
-    });
-    const ui = mountWorkflow();
+      ]);
+      writeFileSync(
+        tasksPath,
+        formatTasks([
+          makeTask({
+            id: 'T001',
+            title: 'Review shortcut task',
+            file: 'src/review-shortcut.ts',
+            evidence: ['reviewable proof'],
+            scope: { inBounds: ['src/review-shortcut.ts'], outOfBounds: [] },
+          }),
+        ]),
+        'utf-8',
+      );
+      vi.stubEnv('EDITOR', editorPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
+      let approvalResult: ApprovalReviewResult | undefined;
 
-    await vi.waitFor(() => {
-      expect(runWorkflow).toHaveBeenCalledTimes(1);
-      expect(lifecycleStore.get().phase).toBe('reviewing-briefs');
-    });
+      runWorkflow.mockImplementationOnce(async (opts) => {
+        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+        approvalResult = await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        return makeSummary();
+      });
+      const ui = mountWorkflow();
 
-    ui.stdin.write(CTRL_E);
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Review shortcut task');
+      });
 
-    await vi.waitFor(() => {
-      expect(planEditorStore.get().runtimeRichMode).toBe(true);
-    });
+      ui.stdin.write(CTRL_E);
 
-    ui.unmount();
+      await vi.waitFor(() => {
+        expect(approvalResult).toEqual({ approved: false, action: 'edit' });
+      });
+      expect(readFileSync(logPath, 'utf-8')).toContain(tasksPath);
+      expect(readFileSync(tasksPath, 'utf-8')).toContain('Review shortcut task edited');
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 
   it.each([
@@ -733,22 +746,5 @@ describe('WorkflowScreen key arbitration', () => {
     } finally {
       cleanupTempDir(projectDir);
     }
-  });
-
-  it('does not carry runtime rich brief-review mode into the next workflow', async () => {
-    planEditorStore.setRuntimeRichMode(true);
-    const ui = mountWorkflow();
-    await tick(20);
-
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    await tick(20);
-
-    ui.stdin.write('j');
-    await tick(20);
-
-    expect(planEditorStore.get().runtimeRichMode).toBe(false);
-    expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
-
-    ui.unmount();
   });
 });

@@ -136,7 +136,7 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open `$EDITOR` for inline edits.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor (`VISUAL`, then `EDITOR`, then `vi`) for the review file.
 
 **Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
@@ -572,7 +572,7 @@ phase: reviewing-briefs
 > Ctrl+E
 ```
 
-Pressing `Ctrl+E` or typing `e` enters rich brief review. Typing `E` / `edit-file` opens `$EDITOR` with the brief markdown. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. The editor command resolves as `VISUAL`, then `EDITOR`, then `vi`. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
@@ -620,38 +620,38 @@ A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 ---
 
-### 18. Edit a single task in the rich plan editor
+### 18. Migrate away from rich brief review
 
-**When:** the brief is 80% right but one task needs its scope or evidence rewritten.
+**When:** an older project config still sets `workflow.briefReview: rich`.
 
 **Setup (`.diptych/config.yaml`):**
 
 ```yaml
 workflow:
-  briefReview: rich      # default is 'simple'
+  briefReview: simple    # 'rich' is deprecated and maps to simple review
 ```
 
 **Run:**
 
 ```bash
 diptych start "add login form"
-# opens rich review when the run reaches reviewing-briefs
+# opens the simple review gate when the run reaches reviewing-briefs
 ```
 
 **You'll see:**
 
 ```
-[plan editor]
-  ▶ T001 add validator     │ scope: src/auth/validate.ts
-    T002 wire validator    │ scope: src/auth/middleware.ts
-    T003 add tests         │ scope: src/auth/validate.test.ts
+phase: reviewing-briefs
+  T001 add validator     create  src/auth/validate.ts
+  T002 wire validator    modify  src/auth/middleware.ts
+  T003 add tests         create  src/auth/validate.test.ts
 
-  Use ↑↓ to select, Enter to expand, ? for keys
+  approve | Ctrl+E/e/edit | E/edit-file | comment <text> revises | reject
 ```
 
-Per-task editor lets you rewrite signature, implementationSteps, constraints, and validation evidence inline. Press `Tab` to focus a section, then `e` to edit that section inline. Press `E` for raw external edit, `Y` to save the draft when dirty or approve when clean, and `q` to discard edits.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.diptych/sessions/<id>/tasks.md` in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
-**Variations:** The rich editor is opt-in because most briefs only need approve / comment. Set it as the default with `briefReview: rich` if you typically need to tweak.
+**Variations:** Leaving `briefReview: rich` in a legacy config is safe, but it no longer opens an inline plan editor. Prefer changing it to `simple` so the config matches the runtime behavior.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.briefReview`.
 

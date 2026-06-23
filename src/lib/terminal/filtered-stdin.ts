@@ -142,6 +142,7 @@ export function stripPasteMarkers(
 
 export interface FilteredStdin {
   stdin: NodeJS.ReadStream;
+  activate: () => void;
   onMouse: (listener: MouseListener) => () => void;
   isPasteActive: () => boolean;
   disable: () => void;
@@ -205,13 +206,17 @@ function splitMouseChunk(raw: string): { processable: string; partial: string } 
   return { processable: raw, partial: '' };
 }
 
-export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
+export function createFilteredStdin(
+  stdin: NodeJS.ReadStream,
+  opts?: { activate?: boolean | undefined },
+): FilteredStdin {
   const filtered = bridgeTty(new PassThrough(), stdin);
   const decoder = new StringDecoder('utf8');
   let mouseListeners: MouseListener[] = [];
   let partial = '';
   let pastePartial = '';
   let pasteActive = false;
+  let active = false;
   let disabled = false;
   let heldPrefixTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -260,11 +265,18 @@ export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
     scheduleHeldPrefixFlush();
   };
 
-  setTerminalInputModes('enable');
-  stdin.on('data', dataHandler);
+  const activate = () => {
+    if (active || disabled) return;
+    active = true;
+    setTerminalInputModes('enable');
+    stdin.on('data', dataHandler);
+  };
+
+  if (opts?.activate !== false) activate();
 
   return {
     stdin: filtered,
+    activate,
     onMouse: (listener: MouseListener) => {
       mouseListeners.push(listener);
       return () => {
@@ -276,8 +288,11 @@ export function createFilteredStdin(stdin: NodeJS.ReadStream): FilteredStdin {
       if (disabled) return;
       disabled = true;
       clearHeldPrefixTimer();
-      stdin.off('data', dataHandler);
-      setTerminalInputModes('disable');
+      if (active) {
+        active = false;
+        stdin.off('data', dataHandler);
+        setTerminalInputModes('disable');
+      }
       // Flush any withheld bytes (e.g. a lone trailing ESC held for one chunk) so a final
       // keypress with no follow-up chunk still reaches the consumer instead of being dropped.
       const leftover = partial + pastePartial;

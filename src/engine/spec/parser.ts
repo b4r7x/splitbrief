@@ -58,10 +58,6 @@ export function parseTasksStrict(
   });
 }
 
-export function parseTaskBlocksStrict(tasksMarkdown: string): Task[] {
-  return parseTaskBlocksFromMarkdown(tasksMarkdown, { strict: true });
-}
-
 function parseTaskBlocksFromMarkdown(
   tasksMarkdown: string,
   opts: { strict: boolean; onWarning?: (message: string) => void },

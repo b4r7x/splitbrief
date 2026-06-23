@@ -277,7 +277,7 @@ Lower-confidence cleanup that should not happen blindly:
 - Do not delete snapshots before deciding how checkpoint UX should work.
 - Do not delete worktree support if future isolated execution may need it.
 - Do not delete handoff packs until the product decides whether external runner handoff remains a useful escape hatch.
-- Do not remove the plan editor just because it is complex; first simplify its purpose around "edit Task Briefs before cheap tokens are spent."
+- Do not reintroduce inline Task Brief editing just because an external editor round-trip feels less integrated; preserve the simple review plus persisted `tasks.md` editor contract unless product direction changes.
 
 ## Implemented build order
 

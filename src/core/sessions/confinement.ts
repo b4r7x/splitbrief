@@ -1,4 +1,5 @@
-import { realpathSync, lstatSync } from 'node:fs';
+import { constants, realpathSync, lstatSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { resolve, dirname, sep, isAbsolute, relative } from 'node:path';
 import { isInsideRoot } from '../../lib/path-confinement.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
@@ -11,10 +12,13 @@ export const sessionConfinementError = {
     error('session-io-invalid-path', `Invalid session path: ${reason}`, { path, reason }),
   symlinkRead: (path: string) =>
     error('session-io-read', `Refusing to read through symlink: ${path}`, { path }),
+  hardlinkRead: (path: string) =>
+    error('session-io-hardlink-read', `Refusing to read through hardlink: ${path}`, { path }),
   escapesRoot: (path: string, root: string) =>
     error('session-io-escape', `Path escapes session root`, { path, root }),
   isInvalidPath: matches('session-io-invalid-path'),
   isSymlinkRead: matches('session-io-read'),
+  isHardlinkRead: matches('session-io-hardlink-read'),
   isEscapesRoot: matches('session-io-escape'),
 } as const;
 
@@ -22,6 +26,7 @@ function isSessionConfinementError(err: unknown): boolean {
   return (
     sessionConfinementError.isInvalidPath(err) ||
     sessionConfinementError.isSymlinkRead(err) ||
+    sessionConfinementError.isHardlinkRead(err) ||
     sessionConfinementError.isEscapesRoot(err)
   );
 }
@@ -125,4 +130,27 @@ export function resolveSessionFilePath(filePath: string, sessionDir: string): st
   const resolved = isAbsolute(filePath) ? filePath : resolve(sessionDir, filePath);
   assertSessionConfinement(resolved, sessionDir);
   return resolved;
+}
+
+export async function readSessionFileConfined(
+  sessionDir: string,
+  filePath: string,
+): Promise<string | null> {
+  const resolvedPath = resolveSessionFilePath(filePath, sessionDir);
+  const relativePath = relative(sessionDir, resolvedPath);
+  const st = lstatSync(resolvedPath, { throwIfNoEntry: false });
+  if (st === undefined) return null;
+  if (st.isSymbolicLink()) throw sessionConfinementError.symlinkRead(resolvedPath);
+  if (!st.isFile()) return null;
+  if (st.nlink > 1) throw sessionConfinementError.hardlinkRead(relativePath);
+
+  const handle = await open(resolvedPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const openedStats = await handle.stat();
+    if (!openedStats.isFile()) return null;
+    if (openedStats.nlink > 1) throw sessionConfinementError.hardlinkRead(relativePath);
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close();
+  }
 }

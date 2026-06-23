@@ -5,17 +5,17 @@ import { useTheme } from '../../../components/theme.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { Task } from '../../../core/schemas/task.js';
+import type { PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../../engine/spec/brief-quality.js';
-import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import {
   buildTaskDetailParts,
   formatTaskReviewLine,
   getTaskStatusSymbol,
+  sanitizeTaskDisplayText,
 } from '../brief-review-format.js';
-import { loadPlanEditorData } from '../plan-editor/loader.js';
+import { loadBriefReviewData } from '../brief-review-loader.js';
 import { BRIEFS_REVIEW_HINT } from '../review-parser.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
-import { sanitizeTaskDisplayText } from './plan-editor/task-format.js';
 import {
   getSimpleBriefMaxTaskOffset,
   getSimpleBriefTaskRowBudget,
@@ -25,9 +25,9 @@ import { formatTaskIdentityParts } from '../layout/task-row.js';
 import { PlanReviewHeader } from './brief-review-header.js';
 
 const SIMPLE_REVIEW_OVERFLOW_HINT =
-  'PageDown/PageUp inspect all | Ctrl+E/e rich edit | E/edit-file | comment <text> revises | reject';
-const SIMPLE_REVIEW_COMPACT_HINT = 'approve | e rich | E file | comment | reject';
-const SIMPLE_REVIEW_COMPACT_OVERFLOW_HINT = 'PgDn/PgUp | e rich | E file | comment | reject';
+  'PageDown/PageUp inspect all | Ctrl+E/e edit-file | comment <text> revises | reject';
+const SIMPLE_REVIEW_COMPACT_HINT = 'approve | e edit | comment | reject';
+const SIMPLE_REVIEW_COMPACT_OVERFLOW_HINT = 'PgDn/PgUp | e edit | comment | reject';
 
 interface BriefReviewViewProps {
   filePath: string;
@@ -38,6 +38,7 @@ interface BriefReviewViewProps {
 interface BriefData {
   tasks: Task[];
   quality: BriefQualityReport | null;
+  reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   loadError: string | null;
 }
 
@@ -45,6 +46,7 @@ function useBriefData(filePath: string): BriefData {
   const [data, setData] = useState<BriefData>({
     tasks: [],
     quality: null,
+    reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
     loadError: null,
   });
 
@@ -53,14 +55,13 @@ function useBriefData(filePath: string): BriefData {
     const { signal } = controller;
 
     async function load() {
-      const { tasks, quality } = await loadPlanEditorData({
+      const { tasks, quality, reviewMetadata } = await loadBriefReviewData({
         filePath,
         sessionDirPath: dirname(filePath),
         signal,
-        skipInitEditor: true,
       });
       if (signal.aborted) return;
-      setData({ tasks, quality, loadError: null });
+      setData({ tasks, quality, reviewMetadata, loadError: null });
     }
 
     load().catch((err) => {
@@ -69,6 +70,7 @@ function useBriefData(filePath: string): BriefData {
         setData({
           tasks: [],
           quality: null,
+          reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
           loadError: `Failed to load Task Briefs: ${message}`,
         });
       }
@@ -97,15 +99,15 @@ function getBriefReviewHint(input: { hasOverflow: boolean; width: number }): str
 function TaskRow({
   task,
   issues,
+  metadata,
   width,
 }: {
   task: Task;
   issues: BriefQualityIssue[];
+  metadata: PlanTaskReviewMetadata | undefined;
   width: number;
 }) {
   const t = useTheme();
-  const reviewMetadata = planEditorStore.use((s) => s.reviewMetadata);
-  const metadata = reviewMetadata.get(task.id);
   const hasError = issues.some((i) => i.severity === 'error');
   const hasWarning = issues.some((i) => i.severity === 'warning');
   const hasConflict = metadata?.conflict !== undefined;
@@ -240,8 +242,7 @@ function getVisibleBriefTaskWindow(
 
 export function BriefReviewView({ filePath, height, width }: BriefReviewViewProps) {
   const t = useTheme();
-  const { tasks, quality, loadError } = useBriefData(filePath);
-  const reviewMetadata = planEditorStore.use((s) => s.reviewMetadata);
+  const { tasks, quality, reviewMetadata, loadError } = useBriefData(filePath);
   const reviewScrollOffset = reviewStore.use((s) => s.scrollOffset);
   const containerHeight = height ?? 24;
   const rowWidth = Math.max(1, width ?? 80);
@@ -273,8 +274,8 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
   const reviewHint = getBriefReviewHint({ hasOverflow, width: rowWidth });
   const overflowHint =
     rowWidth < 72
-      ? `${overflowNotice ?? ''} tasks (PgUp/PgDn, e)`
-      : `${overflowNotice ?? ''} tasks (PageUp/PageDown, Ctrl+E/e)`;
+      ? `${overflowNotice ?? ''} tasks (PgUp/PgDn, e edit)`
+      : `${overflowNotice ?? ''} tasks (PageUp/PageDown, Ctrl+E/e edit)`;
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">
@@ -293,7 +294,15 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
       <Box flexDirection="column" height={taskRowBudget} overflow="hidden">
         {visibleTasks.map((task) => {
           const issuesForTask = quality?.issues.filter((i) => i.taskId === task.id) ?? [];
-          return <TaskRow key={task.id} task={task} issues={issuesForTask} width={rowWidth} />;
+          return (
+            <TaskRow
+              key={task.id}
+              task={task}
+              issues={issuesForTask}
+              metadata={reviewMetadata.get(task.id)}
+              width={rowWidth}
+            />
+          );
         })}
         {overflowNotice !== null && (
           <Text color={t.textDim}>{fitBriefReviewText(overflowHint, rowWidth)}</Text>

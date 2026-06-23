@@ -43,7 +43,6 @@ import {
 } from './operations.js';
 import { _activityInternal, activityStore, updateActivity } from './activity.js';
 import { streamingOutputStore } from './streaming-output.js';
-import { planEditorStore } from './plan-editor.js';
 
 export function addEvent(event: EngineEvent): void {
   // Fast path: cost_update only touches token state, but still needs the
@@ -124,7 +123,6 @@ export function resetWorkflow(resume?: WorkflowState): void {
   operationsStore.reset();
   activityStore.reset();
   streamingOutputStore.reset();
-  planEditorStore.resetSessionState();
   cachedEvents = null;
   cachedSections = [];
   if (resume) {

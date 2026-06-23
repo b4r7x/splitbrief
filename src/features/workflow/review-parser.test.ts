@@ -7,7 +7,6 @@ import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from './handlers.js';
@@ -60,7 +59,6 @@ beforeEach(async () => {
   vi.clearAllMocks();
   lifecycleStore.__testReset();
   reviewStore.clearReview();
-  planEditorStore.__testReset();
 });
 
 afterEach(async () => {
@@ -253,8 +251,8 @@ describe('parseReviewCommand', () => {
   });
 
   it('parses edit', () => {
-    expect(parseReviewCommand('edit')).toEqual({ kind: 'open-rich-editor' });
-    expect(parseReviewCommand('e')).toEqual({ kind: 'open-rich-editor' });
+    expect(parseReviewCommand('edit')).toEqual({ kind: 'open-external-editor' });
+    expect(parseReviewCommand('e')).toEqual({ kind: 'open-external-editor' });
   });
 
   it('parses explicit external edit commands', () => {
@@ -321,21 +319,6 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it.each([
     'e',
     'edit',
-  ])('switches to rich brief review without resolving approval for %s', async (command) => {
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile('/tmp/tasks.md');
-    feedbackStore.setError('stale command error');
-    const resolve = vi.fn();
-    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
-
-    await handleInput(command);
-
-    expect(planEditorStore.get().runtimeRichMode).toBe(true);
-    expect(resolve).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(false);
-  });
-
-  it.each([
     'E',
     'edit-file',
   ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
@@ -347,7 +330,6 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
     await handleInput(command);
 
-    expect(planEditorStore.get().runtimeRichMode).toBe(false);
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get().isError).toBe(false);
   });
@@ -360,7 +342,6 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
     await handleInput('edit');
 
-    expect(planEditorStore.get().runtimeRichMode).toBe(false);
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('Failed to open editor');
   });

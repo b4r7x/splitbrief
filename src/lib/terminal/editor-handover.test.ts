@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PassThrough } from 'node:stream';
 import { terminalSequences } from './control.js';
 import {
   resumeTerminalAfterEditor,
@@ -8,12 +7,27 @@ import {
   type TerminalHandoverConfig,
 } from './editor-handover.js';
 
+type HandoverSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP' | 'SIGTSTP' | 'SIGCONT';
+
+const HANDOVER_SIGNALS: readonly HandoverSignal[] = [
+  'SIGINT',
+  'SIGTERM',
+  'SIGHUP',
+  'SIGTSTP',
+  'SIGCONT',
+];
+
 let originalWrite: typeof process.stdout.write;
 
-function makeFakeStdin() {
-  const stdin = new PassThrough();
+function shouldHaveMask(signal: HandoverSignal): boolean {
+  return signal === 'SIGINT' || signal === 'SIGTERM' || signal === 'SIGHUP';
+}
+
+function makeFakeStdin(raw = false) {
   const calls: string[] = [];
-  Object.assign(stdin, {
+  const rawModes: boolean[] = [];
+  const stdin = {
+    isRaw: raw,
     pause: () => {
       calls.push('pause');
       return stdin;
@@ -22,8 +36,13 @@ function makeFakeStdin() {
       calls.push('resume');
       return stdin;
     },
-  });
-  return { stdin: stdin as unknown as NodeJS.ReadStream, calls };
+    setRawMode: (mode: boolean) => {
+      rawModes.push(mode);
+      stdin.isRaw = mode;
+      return stdin;
+    },
+  };
+  return { stdin, calls, rawModes };
 }
 
 function captureStdout(): string[] {
@@ -68,6 +87,71 @@ describe('terminal handover for $EDITOR', () => {
     expect(resumeWrites).toContain(terminalSequences.enableMouseTracking);
 
     expect(calls).toEqual(['pause', 'resume']);
+  });
+
+  it('disables source stdin raw mode for the handoff and restores it afterward', () => {
+    const { stdin, rawModes } = makeFakeStdin(true);
+    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+
+    suspendTerminalForEditor(config);
+    expect(stdin.isRaw).toBe(false);
+
+    resumeTerminalAfterEditor(config);
+
+    expect(stdin.isRaw).toBe(true);
+    expect(rawModes).toEqual([false, true]);
+  });
+
+  it('leaves raw mode untouched when source stdin was not raw', () => {
+    const { stdin, rawModes } = makeFakeStdin(false);
+    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+
+    suspendTerminalForEditor(config);
+    resumeTerminalAfterEditor(config);
+
+    expect(stdin.isRaw).toBe(false);
+    expect(rawModes).toEqual([]);
+  });
+
+  it('masks parent signal handlers during handoff and restores them afterward', () => {
+    const { stdin } = makeFakeStdin();
+    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+    const handledSignals: HandoverSignal[] = [];
+    const testHandlers = HANDOVER_SIGNALS.map((signal) => {
+      const listener: NodeJS.SignalsListener = () => {
+        handledSignals.push(signal);
+      };
+      process.on(signal, listener);
+      return { signal, listener };
+    });
+    const before = HANDOVER_SIGNALS.map((signal) => ({
+      signal,
+      listeners: process.listeners(signal),
+    }));
+    let suspended = false;
+
+    try {
+      suspendTerminalForEditor(config);
+      suspended = true;
+
+      for (const { signal, listener } of testHandlers) {
+        const listeners = process.listeners(signal);
+        expect(listeners).not.toContain(listener);
+        expect(listeners).toHaveLength(shouldHaveMask(signal) ? 1 : 0);
+        process.emit(signal, signal);
+      }
+      expect(handledSignals).toEqual([]);
+
+      resumeTerminalAfterEditor(config);
+      suspended = false;
+
+      for (const snapshot of before) {
+        expect(process.listeners(snapshot.signal)).toEqual(snapshot.listeners);
+      }
+    } finally {
+      if (suspended) resumeTerminalAfterEditor(config);
+      for (const { signal, listener } of testHandlers) process.off(signal, listener);
+    }
   });
 
   it('skips alt-buffer and mouse sequences when no handover is active but still pauses stdin', () => {

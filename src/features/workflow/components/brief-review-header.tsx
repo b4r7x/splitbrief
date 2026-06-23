@@ -11,8 +11,8 @@ import {
   formatPlanReviewSummary,
   formatQualityDisplay,
   formatTaskCount,
+  sanitizeTaskDisplayText,
 } from '../brief-review-format.js';
-import { sanitizeTaskDisplayText } from './plan-editor/task-format.js';
 
 function getScorecardColor(
   entries: PlanReviewScorecardEntry[],

@@ -1,12 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { TASKS_FILE } from '../../../core/paths.js';
+import { readSessionFileConfined } from '../../../core/sessions/confinement.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parseTasksStrict } from '../../spec/parser.js';
 import { labelError } from '../../../utils/format-errors.js';
-import { isENOENT } from '../../../lib/process/errors.js';
 import type { PlanResult } from '../../planners/types.js';
 
 export function persistPhases(
@@ -24,28 +24,46 @@ export type PersistedTasksResult =
   | { ok: true; tasks: Task[] }
   | { ok: false; reason: 'missing' | 'unreadable' | 'parse' | 'empty'; message: string };
 
+type ConfinedReadResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: 'missing' | 'unreadable' };
+
+async function readConfinedSessionText(filePath: string): Promise<ConfinedReadResult> {
+  const sessionDirPath = dirname(filePath);
+  const text = await readSessionFileConfined(sessionDirPath, filePath);
+  return text === null ? { ok: false, reason: 'missing' } : { ok: true, text };
+}
+
 export async function readPersistedTasks(
   tasksFilePath: string,
   onWarning?: (message: string) => void,
 ): Promise<PersistedTasksResult> {
-  let text: string;
+  let result: ConfinedReadResult;
   try {
-    text = await readFile(tasksFilePath, 'utf8');
+    result = await readConfinedSessionText(tasksFilePath);
   } catch (err) {
-    if (isENOENT(err)) {
-      return {
-        ok: false,
-        reason: 'missing',
-        message: `Task Brief file is missing: ${tasksFilePath}`,
-      };
-    }
     return {
       ok: false,
       reason: 'unreadable',
       message: labelError('Failed to read Task Brief file', err),
     };
   }
+  if (!result.ok && result.reason === 'missing') {
+    return {
+      ok: false,
+      reason: 'missing',
+      message: `Task Brief file is missing: ${tasksFilePath}`,
+    };
+  }
+  if (!result.ok) {
+    return {
+      ok: false,
+      reason: 'unreadable',
+      message: `Failed to read Task Brief file: ${tasksFilePath}`,
+    };
+  }
 
+  const text = result.text;
   if (text.trim() === '') {
     return { ok: false, reason: 'empty', message: `Task Brief file is empty: ${tasksFilePath}` };
   }
