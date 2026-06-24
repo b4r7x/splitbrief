@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getChromeHeight } from './chrome-rows.js';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
@@ -98,6 +99,18 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowViewportHeight(30, 2, false)).toBeGreaterThan(
       getWorkflowViewportHeight(30, 2, true),
     );
+  });
+
+  it('reserves the footer divider so body height is not one row too tall', () => {
+    const rows = 24;
+    const inputRows = 2;
+    const viewport = getWorkflowViewportHeight(rows, inputRows, false);
+
+    expect(viewport).toBe(rows - getChromeHeight(inputRows, false));
+
+    const legacyBottomFixedWithoutDivider = 2;
+    const legacyViewport = rows - 3 - legacyBottomFixedWithoutDivider - inputRows;
+    expect(viewport).toBe(legacyViewport - 1);
   });
 
   it('caps prompt rows to the available middle area', () => {

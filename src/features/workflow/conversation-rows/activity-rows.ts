@@ -9,9 +9,9 @@ import {
   type RunnerActivityEvent,
 } from './activity-batch-model.js';
 import { row } from './row-format.js';
+import { rowMarkerCells } from './row-markers.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
-const ACTIVITY_PREFIX_CELLS = 2;
 const ACTIVITY_EXPAND_ACTION = getShortcutKey('activity') ?? '/activity';
 
 type RunnerActivityBatchRowsInput = {
@@ -81,7 +81,7 @@ export function runnerActivityBatchWindowRows(input: {
         text: fitCompactActivityDisplayLine({
           label: headerText,
           rowCells: width,
-          prefixCells: ACTIVITY_PREFIX_CELLS,
+          prefixCells: rowMarkerCells('activity'),
         }).text,
         tone: model.tone,
         bold: true,
@@ -90,7 +90,13 @@ export function runnerActivityBatchWindowRows(input: {
     );
   }
 
+  const visibleCount = model.visibleItems.length;
+  const hasHidden = model.hiddenCount > 0;
+  const lastItemIndex = visibleCount - 1;
+  const loneItem = headerText === null && visibleCount === 1;
+
   for (const [index, item] of model.visibleItems.entries()) {
+    const isLastVisible = index === lastItemIndex;
     appendVisibleRow(() =>
       activityCardRow({
         key: `${model.batchKey}-item-${index}`,
@@ -101,12 +107,14 @@ export function runnerActivityBatchWindowRows(input: {
         valueTone: item.valueTone,
         fitMode: item.fitMode,
         rawMarker: item.rawMarker,
+        kind: loneItem ? 'activity' : isLastVisible ? 'activity-child-last' : 'activity-child',
+        ...(loneItem ? { prefixCells: rowMarkerCells('activity') } : {}),
       }),
     );
     if (rowIndex >= end) return rows;
   }
 
-  if (model.hiddenCount > 0) {
+  if (hasHidden) {
     appendVisibleRow(() =>
       activityCardRow({
         key: `${model.batchKey}-hidden`,
@@ -118,6 +126,7 @@ export function runnerActivityBatchWindowRows(input: {
         labelTone: 'textDim',
         valueTone: 'textDim',
         fitMode: 'end',
+        kind: 'activity-more',
       }),
     );
   }
@@ -157,14 +166,17 @@ function activityCardRow(input: {
   valueTone: ConversationRowTone;
   fitMode: ActivityDisplayValueFit;
   rawMarker?: string | null | undefined;
+  kind?: 'activity' | 'activity-child' | 'activity-child-last' | 'activity-more';
+  prefixCells?: number;
 }): ConversationRow {
   const rawMarker = input.rawMarker ?? null;
   const rawMarkerText = rawMarker ? `  ${rawMarker}` : '';
+  const kind = input.kind ?? 'activity-child';
   const line = fitCompactActivityDisplayLine({
     label: input.label.padEnd(4),
     value: input.value,
     rowCells: input.width - rawMarkerText.length,
-    prefixCells: ACTIVITY_PREFIX_CELLS,
+    prefixCells: input.prefixCells ?? rowMarkerCells(kind),
     valueFit: input.fitMode,
   });
   const labelText = line.value === undefined ? line.label : `${line.label}  `;
@@ -172,7 +184,7 @@ function activityCardRow(input: {
   if (line.value !== undefined && line.text.startsWith(labelText)) {
     return {
       key: input.key,
-      kind: 'activity-child',
+      kind,
       segments: [
         { text: labelText, tone: input.labelTone },
         { text: line.value, tone: input.valueTone },
@@ -185,6 +197,6 @@ function activityCardRow(input: {
     key: input.key,
     text: `${line.text}${rawMarkerText}`,
     tone: line.value === undefined ? input.labelTone : input.valueTone,
-    kind: 'activity-child',
+    kind,
   });
 }

@@ -29,6 +29,7 @@ export interface RunnerOperationLineSegment {
   text: string;
   role: RunnerOperationLineSegmentRole;
   tone?: RunnerTerminalTone;
+  bold?: boolean;
 }
 
 const DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS = 80;
@@ -90,13 +91,15 @@ export function runnerTerminalOperationLine(
 ): RunnerOperationLineSegment[] {
   const statusDisplay = runnerOperationStatusDisplay(operation.status);
   const warning = operationWarningDisplay(operation);
+  const statusLabel = statusDisplay.label;
   const fixedSegments: RunnerOperationLineSegment[] = [
     { text: operation.role, role: 'role' },
     {
-      text: ` ${statusDisplay.marker} ${terminalHeadline(operation, statusDisplay)}`,
+      text: ` ${statusDisplay.marker}${statusLabel ? ` ${statusLabel}` : ''}`,
       role: 'status',
       tone: statusDisplay.tone,
     },
+    { text: ` ${operation.phase}`, role: 'role', bold: true },
     { text: ` ${formatDuration(operation.durationMs)}`, role: 'dim' },
     ...(warning ? [{ text: ` ${warning.count}`, role: 'dim' as const }] : []),
     ...(operation.partial ? [{ text: ' partial output', role: 'dim' as const }] : []),
@@ -134,12 +137,14 @@ function insertFlexibleSegments(
 ): RunnerOperationLineSegment[] {
   const role = fixedSegments[0];
   const status = fixedSegments[1];
-  const duration = fixedSegments[2];
-  if (role === undefined || status === undefined || duration === undefined) return fixedSegments;
+  const phase = fixedSegments[2];
+  const duration = fixedSegments[3];
+  if (role === undefined || status === undefined || phase === undefined || duration === undefined)
+    return fixedSegments;
 
-  const segments: RunnerOperationLineSegment[] = [role, status, duration];
+  const segments: RunnerOperationLineSegment[] = [role, status, phase, duration];
   if (reason) segments.push({ text: reason, role: 'dim' });
-  const tail = fixedSegments.slice(3);
+  const tail = fixedSegments.slice(4);
   if (tail.length === 0) return segments;
 
   const [firstTail, ...restTail] = tail;
@@ -206,13 +211,6 @@ function toolSuffixSegments(
     maxCells === undefined ? undefined : Math.min(TOOL_SUFFIX_MAX_CELLS, Math.max(1, maxCells - 2));
   const fittedTool = toolCells === undefined ? tool : truncateTerminalDisplayText(tool, toolCells);
   return [{ text: ` [${fittedTool}]`, role: 'dim' }];
-}
-
-function terminalHeadline(
-  operation: TerminalOperation,
-  statusDisplay: RunnerOperationStatusDisplay,
-): string {
-  return statusDisplay.label ? `${statusDisplay.label} ${operation.phase}` : operation.phase;
 }
 
 function operationWarningDisplay(

@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { computeEta } from './cost/compute-eta.js';
@@ -12,7 +13,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 
-const FOOTER_SEPARATOR = ' · ';
+const FOOTER_SEPARATOR = SOFT_SEP;
 const FOOTER_GAP_CELLS = 4;
 const FOOTER_COMPACT_CONTENT_WIDTH = 88;
 
@@ -153,7 +154,7 @@ export function InputFooter({ width }: { width?: number | undefined }) {
   const commitStrategy = workflow.git?.commitStrategy ?? 'none';
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
-  const taskText = `Task ${currentTask}/${totalTasks}${etaText ? ` · ${etaText}` : ''}`;
+  const taskText = `Task ${currentTask}/${totalTasks}${etaText ? `${SOFT_SEP}${etaText}` : ''}`;
   const queuePreviewText = formatQueuePreviewText(queuePreviews);
   const queueCountText = queueDepth > 0 ? `queued: ${queueDepth}` : null;
   const layout = buildInputFooterLayout({

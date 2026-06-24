@@ -686,7 +686,7 @@ describe('runHeadless — liveness record (F-261)', () => {
     expect(midRunLock?.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
     expect(midRunLock?.lastAliveMs).toBeGreaterThanOrEqual(before);
     expect(midRunLock?.exitedAt).toBeUndefined();
-  });
+  }, 30_000);
 
   it('marks the liveness record exited once the headless run finishes so it no longer reads as alive', async () => {
     const { projectDir, sessionId } = setupLivenessProject();

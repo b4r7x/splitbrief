@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOTTOM_FIXED_CHROME_ROWS,
+  BOTTOM_FOOTER_DIVIDER_ROWS,
   CONFIG_CHROME_ROWS,
   INLINE_CONFIG_MIN_COLS,
   TOP_FIXED_CHROME_ROWS,
@@ -44,6 +45,19 @@ describe('getChromeHeight', () => {
   it('each additional input row increases chrome height by exactly 1', () => {
     const base = getChromeHeight(1, false);
     expect(getChromeHeight(4, false) - base).toBe(3);
+  });
+});
+
+describe('bottom footer chrome', () => {
+  it('reserves divider, feedback, and composer rows before variable input footer rows', () => {
+    expect(BOTTOM_FOOTER_DIVIDER_ROWS).toBe(1);
+    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(3);
+    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(2 + BOTTOM_FOOTER_DIVIDER_ROWS);
+
+    const inputRows = 2;
+    expect(getChromeHeight(inputRows, false)).toBe(
+      TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS + inputRows,
+    );
   });
 });
 

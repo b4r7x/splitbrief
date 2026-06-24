@@ -451,8 +451,8 @@ During simple Task Brief review, typed commands use `src/features/workflow/revie
 | Command | Action |
 |---|---|
 | `approve` / `y` | Approve briefs |
-| `Ctrl+E` / `e` / `edit` | Open persisted `tasks.md` in the external editor (`VISUAL`, then `EDITOR`, then `vi`) |
-| `E` / `edit-file` | Open persisted `tasks.md` in the external editor (`VISUAL`, then `EDITOR`, then `vi`) |
+| `Ctrl+E` / `e` / `edit` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
+| `E` / `edit-file` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 | `comment <text>` | Send revise feedback |
 | `reject` / `q` / `quit` | Reject briefs |
 

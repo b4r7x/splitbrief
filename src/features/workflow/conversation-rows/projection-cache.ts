@@ -112,7 +112,12 @@ function typeSpecificEventKey(event: EngineEvent): string {
     case 'runner_call_activity':
       return objectContentKey(event);
     case 'planner_text':
-      return [event.content ?? 'plain', event.role ?? '', textKey(event.text)].join('\u0004');
+      return [
+        event.content ?? 'plain',
+        event.phase ?? '',
+        event.role ?? '',
+        textKey(event.text),
+      ].join('\u0004');
     default:
       return objectContentKey(event);
   }

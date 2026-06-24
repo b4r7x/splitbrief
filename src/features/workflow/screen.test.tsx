@@ -92,6 +92,11 @@ writeFileSync(filePath, process.env.FAKE_REVIEW_EDITOR_CONTENT);
   return { editorPath, logPath };
 }
 
+function stubReviewEditor(editorPath: string) {
+  vi.stubEnv('VISUAL', '');
+  vi.stubEnv('EDITOR', editorPath);
+}
+
 function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
 }
@@ -642,7 +647,7 @@ describe('WorkflowScreen key arbitration', () => {
     }
   });
 
-  it('Ctrl+E opens $EDITOR for brief review and resolves the edit action', async () => {
+  it('Ctrl+E opens the external editor for brief review and resolves the edit action', async () => {
     const projectDir = createTempDir('workflow-screen-brief-shortcut');
     try {
       const tasksPath = join(projectDir, 'tasks.md');
@@ -669,7 +674,7 @@ describe('WorkflowScreen key arbitration', () => {
         ]),
         'utf-8',
       );
-      vi.stubEnv('EDITOR', editorPath);
+      stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
       let approvalResult: ApprovalReviewResult | undefined;
@@ -702,14 +707,14 @@ describe('WorkflowScreen key arbitration', () => {
   it.each([
     ['spec', 'reviewing-spec'],
     ['plan', 'reviewing-plan'],
-  ] as const)('Ctrl+E opens $EDITOR for %s review and refreshes before approval', async (type, phase) => {
+  ] as const)('Ctrl+E opens the external editor for %s review and refreshes before approval', async (type, phase) => {
     const projectDir = createTempDir(`workflow-screen-${type}-editor`);
     try {
       const reviewPath = join(projectDir, `${type}.md`);
       const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
       const editedText = `# Edited ${type} review\n\nfresh editor content\n`;
       writeFileSync(reviewPath, `# Original ${type} review\n\nstale content\n`, 'utf-8');
-      vi.stubEnv('EDITOR', editorPath);
+      stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
       let approvalResult: ApprovalReviewResult | undefined;

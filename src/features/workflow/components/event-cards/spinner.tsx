@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import { useTheme } from './theme.js';
+import { useTheme } from '../../../../components/theme.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const STILL_WAITING_THRESHOLD_SECONDS = 60;
 
 type SpinnerProps = {
-  label: string;
+  label: ReactNode;
   color?: string;
 } & (
   | { startTime: number; elapsedMs?: never }
@@ -41,7 +42,7 @@ export function Spinner(props: SpinnerProps) {
     <Box>
       <Text color={resolvedColor}>{SPINNER_FRAMES[frame]}</Text>
       <Text color={resolvedColor}> {label}</Text>
-      {elapsedSeconds > 0 && <Text color={resolvedColor}> {elapsedSeconds}s</Text>}
+      {elapsedSeconds > 0 && <Text color={t.textDim}> {elapsedSeconds}s</Text>}
       {staticElapsedMs == null &&
         startTime != null &&
         elapsedSeconds > STILL_WAITING_THRESHOLD_SECONDS && (

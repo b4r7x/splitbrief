@@ -79,14 +79,26 @@ export function sanitizeTerminalDiagnosticText(
 
 export function getTerminalCellWidth(text: string): number {
   let width = 0;
-  for (const grapheme of splitTerminalGraphemes(text)) {
+  for (const grapheme of iterateTerminalGraphemes(text)) {
     width += getGraphemeWidth(grapheme);
   }
   return width;
 }
 
-export function splitTerminalGraphemes(text: string): string[] {
-  return graphemes(stripTerminalControls(text));
+export function* iterateTerminalGraphemes(
+  text: string,
+  opts: TerminalDisplayTextOptions = {},
+): IterableIterator<string> {
+  for (const part of graphemeSegmenter.segment(stripTerminalControls(text, opts))) {
+    yield part.segment;
+  }
+}
+
+export function splitTerminalGraphemes(
+  text: string,
+  opts: TerminalDisplayTextOptions = {},
+): string[] {
+  return Array.from(iterateTerminalGraphemes(text, opts));
 }
 
 export function truncateTerminalDisplayText(text: string, maxCells: number): string {

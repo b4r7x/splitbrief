@@ -18,13 +18,19 @@ export type ConversationRowTone =
   | 'markdownBlockquote'
   | 'markdownList'
   | 'markdownRule'
-  | 'reviewFile';
+  | 'reviewFile'
+  | 'border';
 
 export type ConversationRowKind =
   | 'message'
   | 'card'
+  | 'card-top'
+  | 'card-body'
+  | 'card-bottom'
   | 'activity'
   | 'activity-child'
+  | 'activity-child-last'
+  | 'activity-more'
   | 'task-header'
   | 'diff-header'
   | 'diff-line'

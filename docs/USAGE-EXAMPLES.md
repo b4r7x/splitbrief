@@ -136,7 +136,7 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor (`VISUAL`, then `EDITOR`, then `vi`) for the review file.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor for the review file. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
 
 **Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
@@ -572,7 +572,7 @@ phase: reviewing-briefs
 > Ctrl+E
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. The editor command resolves as `VISUAL`, then `EDITOR`, then `vi`. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
@@ -649,7 +649,7 @@ phase: reviewing-briefs
   approve | Ctrl+E/e/edit | E/edit-file | comment <text> revises | reject
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.diptych/sessions/<id>/tasks.md` in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.diptych/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **Variations:** Leaving `briefReview: rich` in a legacy config is safe, but it no longer opens an inline plan editor. Prefer changing it to `simple` so the config matches the runtime behavior.
 

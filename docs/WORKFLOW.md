@@ -168,6 +168,8 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
+**Planner markdown headers** — `planner_text` events with `content: 'markdown'` prepend a phase label before the rendered markdown body. During `researching`, the label is the literal `RESEARCH` (codebase research output, not the later Task Brief). `specifying` uses `SPEC`, `planning` uses `PLAN`, and `escalating` uses `ESCALATION`. Task Brief markdown is produced later in `planning` and at the `reviewing-briefs` gate, not during the research phase.
+
 **Override:** `awaitingContinue: true` makes any phase resumable regardless of the table above. The user explicitly aborted and is expected to return.
 
 ---
@@ -343,7 +345,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Repo map built from codebase config.
 
  6. phase: idle → START → researching
-    Planner streams codebase research. Output → session.jsonl + workflow store → UI.
+    Planner streams codebase research. Markdown planner text renders with a `RESEARCH` header.
+    Output → session.jsonl + workflow store → UI.
     Planner session ID captured → SET_PLANNER_SESSION_ID → state.json.
 
  7. phase: researching → RESEARCH_DONE → specifying
@@ -353,7 +356,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     callbacks.onApprovalNeeded('spec', specPath)
       approve  → re-read spec.md; if edited on disk, regenerate plan + tasks
                  from the edited spec, then APPROVE_SPEC
-      edit     → open $EDITOR on spec.md, then re-prompt the gate
+      edit     → open the external editor on spec.md, then re-prompt the gate
       comment  → planner.regenerate() → loop back to reviewing-spec
       reject   → REJECT_SPEC → idle. Workflow ends.
 
@@ -370,7 +373,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     callbacks.onApprovalNeeded('briefs', tasksPath)
     Approval reads tasks.md from disk, reparses, re-runs quality gate.
     Ctrl+E/e/edit/E/edit-file opens tasks.md in the external editor
-    resolved as VISUAL, then EDITOR, then vi.
+    resolved as VISUAL, non-terminal EDITOR, detected GUI editor from safe absolute PATH, macOS open, terminal EDITOR, then vi.
 
 13. phase: reviewing-briefs → APPROVE_BRIEFS → implementing
     Prompt-input cost prediction published. Cost gate checked. Runtime output,

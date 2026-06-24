@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
@@ -115,8 +116,8 @@ function SummaryCompactRunDetails({
     <Box flexDirection="column" marginTop={1} overflow="hidden">
       <Text wrap="truncate-end">Feature: {summary.feature}</Text>
       <Text color={theme.textDim} wrap="truncate-end">
-        {routeSummary ? `${routeSummary} · ` : ''}
-        {runParts.join(' · ')}
+        {routeSummary ? `${routeSummary}${SOFT_SEP}` : ''}
+        {runParts.join(SOFT_SEP)}
       </Text>
     </Box>
   );
@@ -142,9 +143,10 @@ function SummaryCompactLowerSections({
           <Text bold color={theme.text}>
             Evidence:
           </Text>{' '}
-          {compactPacketPath(evidence.path)} · {evidence.tasksWithValidationEvidence}/
-          {evidence.totalTasks} validated
-          {ledger?.finalReview ? ` · final review: ${ledger.finalReview.status}` : ''}
+          {compactPacketPath(evidence.path)}
+          {SOFT_SEP}
+          {evidence.tasksWithValidationEvidence}/{evidence.totalTasks} validated
+          {ledger?.finalReview ? `${SOFT_SEP}final review: ${ledger.finalReview.status}` : ''}
         </Text>
       )}
       {checkpointSummary && (
@@ -152,10 +154,10 @@ function SummaryCompactLowerSections({
           <Text bold color={theme.text}>
             Checkpoints:
           </Text>{' '}
-          {compactCount(checkpointSummary.count, 'ckpt')} · latest:{' '}
-          {checkpointSummary.latestId ?? 'n/a'}
+          {compactCount(checkpointSummary.count, 'ckpt')}
+          {SOFT_SEP}latest: {checkpointSummary.latestId ?? 'n/a'}
           {checkpointSummary.preFinalReviewId
-            ? ` · pre: ${checkpointSummary.preFinalReviewId}`
+            ? `${SOFT_SEP}pre: ${checkpointSummary.preFinalReviewId}`
             : ''}
         </Text>
       )}
@@ -176,9 +178,10 @@ function SummaryCompactLowerSections({
             color={reviewPacket.finalReviewStatus === 'written' ? theme.textDim : theme.warning}
             wrap="truncate-end"
           >
-            final review: {reviewPacket.finalReviewStatus} · evidence:{' '}
-            {reviewPacket.evidenceValidatedTasks}/{reviewPacket.evidenceTotalTasks} · missing:{' '}
-            {reviewPacket.missingArtifactCount}
+            final review: {reviewPacket.finalReviewStatus}
+            {SOFT_SEP}evidence: {reviewPacket.evidenceValidatedTasks}/
+            {reviewPacket.evidenceTotalTasks}
+            {SOFT_SEP}missing: {reviewPacket.missingArtifactCount}
           </Text>
         </>
       )}
@@ -322,7 +325,9 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           <Box justifyContent="center" width="100%">
             <Text color={theme.textDim} wrap="truncate-end">
               {routeSummary}
-              {mode ? ` · ${mode}` : ''} · {formatTime(summary.totalTime)}
+              {mode ? `${SOFT_SEP}${mode}` : ''}
+              {SOFT_SEP}
+              {formatTime(summary.totalTime)}
             </Text>
           </Box>
         )}
@@ -335,7 +340,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
         <Box justifyContent="center" width="100%">
           <Text color={theme.textDim} wrap="truncate-end">
             Implementer completed {localCount} locally
-            {escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
+            {escalatedCount > 0 ? `${SOFT_SEP}${escalatedCount} escalated` : ''}
           </Text>
         </Box>
 

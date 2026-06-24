@@ -841,17 +841,17 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: `Failed to open editor: …` or `Editor exited with …` (when editing at a review gate)
 
-**Likely cause:** Spec, plan, and brief review edits use the external editor command resolved as `VISUAL`, then `EDITOR`, then `vi`, and then spawn it. The failure is in launching or running that resolved command, not a missing variable:
+**Likely cause:** Spec, plan, and brief review edits use the external editor resolver and then spawn the resolved command. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. The failure is in launching or running that resolved command, not a missing variable:
 - The resolved binary is not on `PATH` (e.g. `VISUAL=code` or `EDITOR=code` on a machine without VS Code) — the spawn errors and you get `Failed to open editor: …`.
 - The editor exits non-zero or is killed by a signal — you get `Editor exited with status … . Edit cancelled.` or `Failed to open editor: Editor exited with …` depending on the review gate.
 - A GUI editor returns immediately without blocking (e.g. `code` without `--wait`), so the edit is treated as cancelled.
 
 **Fix:**
-1. Confirm the resolved editor command is installed and on `PATH`. Check `VISUAL` first, then `EDITOR`; if both are empty, diptych uses `vi`.
-2. For GUI editors, use the blocking flag so diptych waits for you to save and close: `export VISUAL='code --wait'`.
-3. For a one-off run with a known-good editor: `VISUAL=vi diptych start "..."`.
+1. Confirm the resolved editor command is installed and on `PATH`. Check `VISUAL` first, then `EDITOR`, then common GUI CLIs such as `cursor` or `code`; implicit GUI discovery skips empty, `.`, and relative `PATH` entries.
+2. For an explicit GUI editor, use the blocking flag so diptych waits for you to save and close: `export VISUAL='code --wait'`.
+3. For a one-off run with a known terminal editor: `VISUAL=vi diptych start "..."`.
 
-**Prevention:** Point `VISUAL` or `EDITOR` at a terminal editor (`vi`, `nano`) or a GUI editor with its wait flag in your `.bashrc` / `.zshrc`; leaving both unset is fine — diptych uses `vi`.
+**Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), diptych will try safely detected GUI editors first so Task Brief editing does not stay inside the TUI terminal when a GUI editor is available.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §Review gates.
 

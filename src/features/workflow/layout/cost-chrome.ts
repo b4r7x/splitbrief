@@ -1,8 +1,8 @@
 import { formatCost } from '../../../core/formatting.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import type { CostBreakdown, CostPrediction } from '../../../core/schemas/summary.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 
-const STATUS_SEPARATOR = ' \u00b7 ';
 const STATUS_SPLIT_GAP = 4;
 const NARROW_STATUS_WIDTH = 60;
 
@@ -71,7 +71,7 @@ export function formatPlanPct(plannerInput: number, totalInput: number): number 
 }
 
 export function buildStatusLine(parts: string[]): string {
-  return parts.filter((p) => p.length > 0).join(STATUS_SEPARATOR);
+  return parts.filter((p) => p.length > 0).join(SOFT_SEP);
 }
 
 function fitStatusParts(parts: string[], maxWidth: number): string {

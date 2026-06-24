@@ -1,4 +1,6 @@
 import { Box, Text } from 'ink';
+import type { ReactNode } from 'react';
+import { SOFT_SEP } from '../../../../components/separators.js';
 import { useTheme } from '../../../../components/theme.js';
 import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import { configStore } from '../../../../stores/project/config.js';
@@ -7,6 +9,39 @@ import { buildCostStatusLineLayout } from '../../layout/cost-chrome.js';
 import { formatSpentText, useCostStats } from '../../hooks/use-cost-stats.js';
 
 const DEFAULT_PADDING_X = 1;
+
+function renderCostSegments(line: string, prominentColor: string, dimColor: string): ReactNode[] {
+  return line.split(SOFT_SEP).flatMap((part, index) => {
+    const nodes: ReactNode[] = [];
+    if (index > 0) {
+      nodes.push(
+        <Text key={`sep-${index}`} color={dimColor}>
+          {SOFT_SEP}
+        </Text>,
+      );
+    }
+    const boundary = part.indexOf(' ');
+    if (boundary === -1) {
+      nodes.push(
+        <Text key={`label-${index}`} color={dimColor}>
+          {part}
+        </Text>,
+      );
+    } else {
+      nodes.push(
+        <Text key={`label-${index}`} color={dimColor}>
+          {part.slice(0, boundary)}
+        </Text>,
+      );
+      nodes.push(
+        <Text key={`value-${index}`} color={prominentColor} bold>
+          {part.slice(boundary)}
+        </Text>,
+      );
+    }
+    return nodes;
+  });
+}
 
 interface CostStatusLineProps {
   maxWidth?: number | undefined;
@@ -69,7 +104,7 @@ export function CostStatusLine({
         paddingX={paddingX}
         justifyContent="space-between"
       >
-        <Text color={t.textDim}>{layout.left}</Text>
+        <Box overflow="hidden">{renderCostSegments(layout.left, t.accent, t.textDim)}</Box>
         <Text color={t.textDim}>{layout.right}</Text>
       </Box>
     );
@@ -83,7 +118,7 @@ export function CostStatusLine({
       paddingX={paddingX}
       justifyContent={align === 'right' ? 'flex-end' : 'flex-start'}
     >
-      <Text color={t.textDim}>{layout.line}</Text>
+      <Box overflow="hidden">{renderCostSegments(layout.line, t.accent, t.textDim)}</Box>
     </Box>
   );
 }

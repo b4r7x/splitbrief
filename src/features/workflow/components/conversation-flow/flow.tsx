@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
+import { Divider } from '../divider.js';
 import { TaskSummary } from '../task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getCompletedTaskSummaryRows } from '../../../../core/sections/completed-task-summary-rows.js';
@@ -16,13 +17,13 @@ interface ConversationFlowProps {
   width: number;
 }
 
-function computeScrollBannerText(
+function computeScrollBannerLabel(
   linesAbove: number,
   linesBelow: number,
 ): { above: string; below: string } {
   return {
-    above: linesAbove > 0 ? `─── ${countNoun(linesAbove, 'line')} above ───` : '',
-    below: linesBelow > 0 ? `─── ${countNoun(linesBelow, 'line')} below ───` : '',
+    above: linesAbove > 0 ? `${countNoun(linesAbove, 'line')} above` : '',
+    below: linesBelow > 0 ? `${countNoun(linesBelow, 'line')} below` : '',
   };
 }
 
@@ -71,7 +72,7 @@ export function ConversationFlow({ height, width }: ConversationFlowProps) {
     scrollOffset,
     hasNewEvents,
   });
-  const { above, below } = computeScrollBannerText(windowState.linesAbove, windowState.linesBelow);
+  const { above, below } = computeScrollBannerLabel(windowState.linesAbove, windowState.linesBelow);
   const { newEventRows, innerHeight } = windowState;
 
   return (
@@ -89,11 +90,7 @@ export function ConversationFlow({ height, width }: ConversationFlowProps) {
           />
         </Box>
       ))}
-      {above !== '' && (
-        <Box justifyContent="center" height={1} flexShrink={0} width="100%">
-          <Text color={t.textDim}>{above}</Text>
-        </Box>
-      )}
+      {above !== '' && <Divider width={width} label={above} tone="textDim" />}
       <Box height={innerHeight} overflow="hidden" flexDirection="column" flexShrink={0}>
         <Box width="100%" flexDirection="column" flexShrink={0}>
           {rows.length === 0 && completedItems.length === 0 && (
@@ -104,17 +101,13 @@ export function ConversationFlow({ height, width }: ConversationFlowProps) {
           ))}
         </Box>
       </Box>
-      {below !== '' && (
-        <Box justifyContent="center" height={1} flexShrink={0} width="100%">
-          <Text color={t.textDim}>{below}</Text>
-        </Box>
-      )}
+      {below !== '' && <Divider width={width} label={below} tone="textDim" />}
       {newEventRows > 0 && (
-        <Box justifyContent="center" height={1} flexShrink={0}>
-          <Text
-            color={t.textDim}
-          >{`─── ↓ ${newEventCount} new ${pluralize(newEventCount, 'event')} ───`}</Text>
-        </Box>
+        <Divider
+          width={width}
+          label={`↓ ${newEventCount} new ${pluralize(newEventCount, 'event')}`}
+          tone="textDim"
+        />
       )}
     </Box>
   );

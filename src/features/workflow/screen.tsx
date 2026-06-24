@@ -15,6 +15,7 @@ import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
 import { ScreenShell } from '../../components/screen-shell.js';
+import { Divider } from './components/divider.js';
 import { WorkflowBody } from './components/body.js';
 import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
@@ -316,19 +317,22 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
     <ScreenShell
       header={<WorkflowHeader startedAt={runner.startedAt} />}
       footer={
-        <WorkflowFooter
-          handleInput={handleInput}
-          onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
-          onRuntimeCommand={handleRuntimeCommand}
-          commands={commands}
-          mode={inputMode.mode}
-          inputHint={inputHint}
-          reviewColumn={reviewColumn}
-          {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
-          disabled={
-            hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
-          }
-        />
+        <>
+          <Divider width={cols} />
+          <WorkflowFooter
+            handleInput={handleInput}
+            onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
+            onRuntimeCommand={handleRuntimeCommand}
+            commands={commands}
+            mode={inputMode.mode}
+            inputHint={inputHint}
+            reviewColumn={reviewColumn}
+            {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
+            disabled={
+              hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
+            }
+          />
+        </>
       }
     >
       <WorkflowBody

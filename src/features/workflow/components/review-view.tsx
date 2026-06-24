@@ -7,6 +7,7 @@ import {
   getScrollableDocumentLineCount,
   ScrollableDocument,
 } from '../../../components/scrollable-document.js';
+import { Divider } from './divider.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
@@ -49,9 +50,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
             {truncateTerminalDisplayTextStart(filePath, documentWidth)}
           </Text>
         </Box>
-        <Box height={1} overflow="hidden">
-          <Text color={t.border}>{'─'.repeat(documentWidth)}</Text>
-        </Box>
+        <Divider width={documentWidth} />
         {contentHeight > 0 && (
           <ScrollableDocument
             rows={rows}

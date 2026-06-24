@@ -181,6 +181,47 @@ describe('conversation rows projection cache', () => {
     expect(second.rows.map(rowText).join('\n')).toContain('changed visible line');
   });
 
+  it('invalidates when planner phase changes for markdown content with the same text', () => {
+    const base = {
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 10,
+      streaming,
+      windowStart: 0,
+      windowEnd: 5,
+    };
+    const planning = getConversationRowsWindowProjection({
+      ...base,
+      sections: eventSections([
+        {
+          type: 'planner_text',
+          ts: 1,
+          phase: 'planning',
+          text: '### Heading',
+          role: 'planner',
+          content: 'markdown',
+        },
+      ]),
+    });
+    const researching = getConversationRowsWindowProjection({
+      ...base,
+      sections: eventSections([
+        {
+          type: 'planner_text',
+          ts: 1,
+          phase: 'researching',
+          text: '### Heading',
+          role: 'planner',
+          content: 'markdown',
+        },
+      ]),
+    });
+
+    expect(planning.rows.map(rowText)).toEqual(['PLAN', 'Heading']);
+    expect(researching.rows.map(rowText)).toEqual(['RESEARCH', 'Heading']);
+  });
+
   it('invalidates when planner text content mode or role changes', () => {
     const plain = getConversationRowsWindowProjection({
       sections: eventSections([
@@ -215,7 +256,7 @@ describe('conversation rows projection cache', () => {
     });
 
     expect(plain.rows.map(rowText)).toEqual(['### Heading']);
-    expect(markdown.rows.map(rowText)).toEqual(['Heading']);
+    expect(markdown.rows.map(rowText)).toEqual(['PLAN', 'Heading']);
   });
 
   it('invalidates when activity role or runner metadata changes', () => {
