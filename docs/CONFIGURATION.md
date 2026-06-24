@@ -461,7 +461,7 @@ workflow: {
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
-| `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`. |
+| `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
 | `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
@@ -973,8 +973,8 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 | `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
-| `VISUAL` | Preferred external editor for spec/plan/brief review. Takes precedence over `EDITOR`. |
-| `EDITOR` | External editor fallback when `VISUAL` is unset or empty. `vi` is used when both are unset or empty. |
+| `VISUAL` | Explicit external editor for spec/plan/brief review. Takes precedence over every other editor source, including detected GUI editors. |
+| `EDITOR` | External editor fallback when `VISUAL` is unset or empty. Non-terminal values are used before auto-detected GUI editors; terminal editors such as `vim` or `nano` are used only after GUI detection and macOS `open -W -t` fail. Implicit GUI detection probes only safe absolute `PATH` segments and honors Windows `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 
 ---
 

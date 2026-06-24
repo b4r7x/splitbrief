@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { dirname } from 'node:path';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -269,7 +270,7 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
           nextCount > 0 ? `${nextCount} more` : null,
         ]
           .filter((part): part is string => part !== null)
-          .join(' · ')
+          .join(SOFT_SEP)
       : null;
   const reviewHint = getBriefReviewHint({ hasOverflow, width: rowWidth });
   const overflowHint =

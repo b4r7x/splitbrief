@@ -1,4 +1,10 @@
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  iterateTerminalGraphemes,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+  truncateTerminalDisplayTextMiddle,
+} from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import type {
   ConversationRow,
@@ -39,7 +45,7 @@ export function countWrappedRowTexts(text: string, width: number): number {
   return wrappedRowTexts(text, width).length;
 }
 
-function segmentedRow(
+export function segmentedRow(
   key: string,
   segments: ConversationRowSegment[],
   kind: ConversationRowKind,
@@ -138,4 +144,242 @@ export function wrapRows(rows: ConversationRow[], width: number): ConversationRo
     }
   }
   return next;
+}
+
+const CARD_MIN_WIDTH = 10;
+
+function displayWidth(text: string): number {
+  return getTerminalCellWidth(text);
+}
+
+interface WrappedDisplayLine {
+  offset: number;
+  text: string;
+}
+
+interface WrappedDisplayLineWindow {
+  lines: WrappedDisplayLine[];
+  totalRows: number;
+  exhausted: boolean;
+}
+
+function countHardWrappedDisplayLines(text: string, width: number): number {
+  return wrappedDisplayLineWindow(text, width, 0, Number.POSITIVE_INFINITY).totalRows;
+}
+
+function wrappedDisplayLineWindow(
+  text: string,
+  width: number,
+  windowStart: number,
+  windowEnd: number,
+): WrappedDisplayLineWindow {
+  const maxWidth = Math.max(1, width);
+  const start = Math.max(0, windowStart);
+  const end = Math.max(start, windowEnd);
+  const lines: WrappedDisplayLine[] = [];
+  let offset = 0;
+  let line = '';
+  let lineWidth = 0;
+
+  const emitLine = (): boolean => {
+    if (offset >= start && offset < end) {
+      lines.push({ offset, text: line });
+    }
+    offset += 1;
+    line = '';
+    lineWidth = 0;
+    return offset >= end;
+  };
+
+  for (const grapheme of iterateTerminalGraphemes(text, { preserveLineBreaks: true })) {
+    if (grapheme === '\n') {
+      if (emitLine()) {
+        return { lines, totalRows: offset, exhausted: false };
+      }
+      continue;
+    }
+
+    const graphemeWidth = displayWidth(grapheme);
+    if (line.length > 0 && lineWidth + graphemeWidth > maxWidth) {
+      if (emitLine()) {
+        return { lines, totalRows: offset, exhausted: false };
+      }
+    }
+    line += grapheme;
+    lineWidth += graphemeWidth;
+  }
+
+  emitLine();
+  return { lines, totalRows: offset, exhausted: true };
+}
+
+export interface CardBodyLineInput {
+  text: string;
+  tone?: ConversationRowTone;
+  bold?: boolean;
+}
+
+export interface CardMetaSegmentInput {
+  text: string;
+  tone?: ConversationRowTone;
+}
+
+export interface CardBlockInput {
+  keyPrefix: string;
+  label: string;
+  labelTone?: ConversationRowTone;
+  metaSegments?: CardMetaSegmentInput[];
+  bodyLines: CardBodyLineInput[];
+  width: number;
+}
+
+export function countCardRows(input: CardBlockInput): number {
+  const bodyWrapWidth = Math.max(1, Math.max(0, Math.max(CARD_MIN_WIDTH, input.width) - 4));
+  let count = 2;
+  for (const body of input.bodyLines) {
+    const cleanBody = sanitizeRowDisplayText(body.text);
+    count += countHardWrappedDisplayLines(cleanBody, bodyWrapWidth);
+  }
+  return count;
+}
+
+function fittedCardHeaderSegments(input: {
+  label: string;
+  labelTone: ConversationRowTone;
+  metaSegments: CardMetaSegmentInput[] | undefined;
+  width: number;
+}): ConversationRowSegment[] {
+  if (input.width <= 0) return [];
+  if (input.metaSegments === undefined || input.metaSegments.length === 0) {
+    const text = truncateTerminalDisplayText(input.label, input.width);
+    return [
+      {
+        text: `${text}${' '.repeat(Math.max(0, input.width - displayWidth(text)))}`,
+        tone: input.labelTone,
+        bold: true,
+      },
+    ];
+  }
+
+  const separator = '  ';
+  const separatorWidth = displayWidth(separator);
+  const metaWidth = input.metaSegments.reduce(
+    (sum, segment) => sum + displayWidth(segment.text),
+    0,
+  );
+  const labelBudget =
+    metaWidth + separatorWidth < input.width
+      ? input.width - metaWidth - separatorWidth
+      : Math.max(1, Math.floor(input.width / 2));
+  const segments: ConversationRowSegment[] = [];
+  const label = truncateTerminalDisplayTextMiddle(input.label, labelBudget);
+  let used = displayWidth(label);
+
+  segments.push({ text: label, tone: input.labelTone, bold: true });
+  if (used < input.width) {
+    const fittedSeparator = ' '.repeat(Math.min(separatorWidth, input.width - used));
+    segments.push({ text: fittedSeparator, tone: input.labelTone, bold: true });
+    used += displayWidth(fittedSeparator);
+  }
+
+  for (const segment of input.metaSegments) {
+    if (used >= input.width) break;
+    const text = truncateTerminalDisplayText(segment.text, input.width - used);
+    if (text.length === 0) continue;
+    segments.push({ text, tone: segment.tone ?? 'textDim' });
+    used += displayWidth(text);
+  }
+
+  if (used < input.width) {
+    segments.push({ text: ' '.repeat(input.width - used) });
+  }
+
+  return segments;
+}
+
+export function cardRowsWindowSlice(
+  input: CardBlockInput & { windowStart: number; windowEnd: number },
+): ConversationRow[] {
+  const width = Math.max(CARD_MIN_WIDTH, input.width);
+  const inner = Math.max(0, width - 4);
+  const label = sanitizeRowDisplayText(input.label);
+  const metaSegments =
+    input.metaSegments === undefined
+      ? undefined
+      : input.metaSegments.map((segment) => ({
+          text: sanitizeRowDisplayText(segment.text),
+          ...(segment.tone !== undefined ? { tone: segment.tone } : {}),
+        }));
+  const labelTone: ConversationRowTone = input.labelTone ?? 'accent';
+
+  const rows: ConversationRow[] = [];
+  const start = Math.max(0, input.windowStart);
+  const end = Math.max(start, input.windowEnd);
+  let rowIndex = 0;
+
+  const appendTop = (): void => {
+    if (rowIndex < start || rowIndex >= end) {
+      rowIndex += 1;
+      return;
+    }
+    const segments: ConversationRowSegment[] = [];
+    segments.push({ text: '┌─ ', tone: 'border' });
+    segments.push(...fittedCardHeaderSegments({ label, labelTone, metaSegments, width: inner }));
+    segments.push({ text: ' ─┐', tone: 'border' });
+    rows.push(segmentedRow(`${input.keyPrefix}-top`, segments, 'card-top'));
+    rowIndex += 1;
+  };
+
+  appendTop();
+
+  const bodyWrapWidth = Math.max(1, inner);
+  for (const [index, body] of input.bodyLines.entries()) {
+    if (rowIndex >= end) return rows;
+    const cleanBody = sanitizeRowDisplayText(body.text);
+    const bodyWindow = wrappedDisplayLineWindow(
+      cleanBody,
+      bodyWrapWidth,
+      start - rowIndex,
+      end - rowIndex,
+    );
+    for (const { offset, text } of bodyWindow.lines) {
+      const padLength = Math.max(0, inner - displayWidth(text));
+      rows.push(
+        segmentedRow(
+          `${input.keyPrefix}-body-${index}-${offset}`,
+          [
+            { text: '│ ', tone: 'border' },
+            {
+              text,
+              tone: body.tone ?? 'text',
+              ...(body.bold === true ? { bold: true } : {}),
+            },
+            { text: ' '.repeat(padLength) },
+            { text: ' │', tone: 'border' },
+          ],
+          'card-body',
+        ),
+      );
+    }
+    if (!bodyWindow.exhausted) return rows;
+    rowIndex += bodyWindow.totalRows;
+  }
+
+  if (rowIndex >= end) return rows;
+  if (rowIndex >= start) {
+    const bottomPadLength = Math.max(0, inner);
+    rows.push(
+      segmentedRow(
+        `${input.keyPrefix}-bottom`,
+        [
+          { text: '└─', tone: 'border' },
+          { text: '─'.repeat(bottomPadLength), tone: 'border' },
+          { text: '─┘', tone: 'border' },
+        ],
+        'card-bottom',
+      ),
+    );
+  }
+
+  return rows;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
   getTerminalCellWidth,
+  iterateTerminalGraphemes,
   padTerminalDisplayTextEnd,
   sanitizeTerminalDisplayText,
   sanitizeTerminalDiagnosticText,
@@ -77,6 +78,14 @@ describe('getTerminalCellWidth', () => {
 
   it('keeps text-presentation symbols at one cell', () => {
     expect(getTerminalCellWidth('❤1⚙©™')).toBe(5);
+  });
+});
+
+describe('iterateTerminalGraphemes', () => {
+  it('preserves line breaks on demand without splitting grapheme clusters', () => {
+    expect(
+      Array.from(iterateTerminalGraphemes('e\u0301\n👩‍💻', { preserveLineBreaks: true })),
+    ).toEqual(['e\u0301', '\n', '👩‍💻']);
   });
 });
 

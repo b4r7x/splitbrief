@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
@@ -41,7 +42,7 @@ export function PlanReviewScorecardLine({
 }) {
   const t = useTheme();
   const scorecard = buildPlanReviewScorecard(tasks, quality, metadata);
-  const text = scorecard.buckets.map((entry) => entry.label).join(' · ');
+  const text = scorecard.buckets.map((entry) => entry.label).join(SOFT_SEP);
 
   return (
     <Text color={getScorecardColor(scorecard.buckets, t)} wrap="truncate">

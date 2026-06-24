@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../../components/theme.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import type { WorkflowActivityItem } from '../../../stores/workflow/activity.js';
 import { activityStore } from '../../../stores/workflow/activity.js';
 import { fitCompactActivityDisplayLine } from '../display/activity-display-text.js';
@@ -32,6 +33,21 @@ function toneColor(tone: RunnerActivityLedgerTone, t: Theme): string {
   }
 }
 
+function roleColor(role: WorkflowActivityItem['role'], t: Theme): string {
+  switch (role) {
+    case 'planner':
+    case 'review':
+    case 'summary':
+    case 'compaction':
+    case 'escalation':
+      return t.planner;
+    case 'implementer':
+      return t.implementer;
+    default:
+      return assertNever(role);
+  }
+}
+
 interface RailDisplayItem {
   item: WorkflowActivityItem;
   display: RunnerActivityLedgerItem;
@@ -50,6 +66,7 @@ export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
   const current = currentItems.at(-1);
   const summary = current ? currentCallSummary(current) : null;
   const groups = groupSummary(displayItems);
+  const latestDisplayItem = displayItems.at(-1) ?? null;
   const pinned = highestSeverityPinnedItem(displayItems);
   const fixedRows = (summary ? 1 : 0) + (groups ? 1 : 0) + (pinned ? 1 : 0);
   const tailLimit = Math.max(0, bodyHeight - fixedRows);
@@ -89,6 +106,8 @@ export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
                 displayItem={pinned}
                 textWidth={textWidth}
                 theme={t}
+                pinned
+                active={pinned === latestDisplayItem}
               />
             )}
             {recent.map((displayItem) => (
@@ -97,6 +116,7 @@ export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
                 displayItem={displayItem}
                 textWidth={textWidth}
                 theme={t}
+                active={displayItem === latestDisplayItem}
               />
             ))}
           </>
@@ -106,10 +126,10 @@ export function ActivitySideRail({ height, width }: ActivitySideRailProps) {
   );
 }
 
-function RailText({ text, color }: { text: string; color: string }) {
+function RailText({ text, color, bold = false }: { text: string; color: string; bold?: boolean }) {
   return (
     <Box height={1} overflow="hidden" flexShrink={0}>
-      <Text color={color} wrap="truncate-end">
+      <Text color={color} bold={bold} wrap="truncate-end">
         {text}
       </Text>
     </Box>
@@ -120,16 +140,41 @@ function RailActivityRow({
   displayItem,
   textWidth,
   theme,
+  active = false,
+  pinned = false,
 }: {
   displayItem: RailDisplayItem;
   textWidth: number;
   theme: Theme;
+  active?: boolean;
+  pinned?: boolean;
 }) {
   const text = activityText(displayItem.display, textWidth);
-  const color = displayItem.item.redacted
-    ? theme.warning
-    : toneColor(displayItem.display.valueTone, theme);
-  return <RailText text={text} color={color} />;
+  const { color, bold } = railActivityRowStyle({
+    item: displayItem.item,
+    display: displayItem.display,
+    active,
+    pinned,
+    theme,
+  });
+  return <RailText text={text} color={color} bold={bold} />;
+}
+
+export function railActivityRowStyle(input: {
+  item: WorkflowActivityItem;
+  display: RunnerActivityLedgerItem;
+  active: boolean;
+  pinned: boolean;
+  theme: Theme;
+}): { color: string; bold: boolean } {
+  const color = input.item.redacted
+    ? input.theme.warning
+    : input.active
+      ? roleColor(input.item.role, input.theme)
+      : input.pinned
+        ? toneColor(input.display.valueTone, input.theme)
+        : input.theme.textDim;
+  return { color, bold: input.active };
 }
 
 function currentCallItems(items: readonly WorkflowActivityItem[]): WorkflowActivityItem[] {

@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
 import {
@@ -30,6 +31,22 @@ function statusColor(status: WorkflowTask['status'], t: Theme): string {
     case 'pending':
     case 'skipped':
       return t.textDim;
+    default:
+      return assertNever(status);
+  }
+}
+
+function titleColor(status: WorkflowTask['status'], t: Theme): string {
+  switch (status) {
+    case 'in_progress':
+      return t.accent;
+    case 'done':
+    case 'skipped':
+      return t.textDim;
+    case 'pending':
+    case 'failed':
+    case 'escalated':
+      return t.text;
     default:
       return assertNever(status);
   }
@@ -71,9 +88,7 @@ export function Sidebar({ width }: SidebarProps) {
         {tasks.map((task) => (
           <Box key={task.id}>
             <Text color={statusColor(task.status, t)}>{STATUS_GLYPH[task.status]} </Text>
-            <Text
-              color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}
-            >
+            <Text color={titleColor(task.status, t)} bold={task.status === 'in_progress'}>
               {truncateTerminalDisplayText(
                 sanitizeTerminalDisplayText(task.title),
                 Math.max(labelWidth - 2, 10),
@@ -90,7 +105,8 @@ export function Sidebar({ width }: SidebarProps) {
         )}
         {escalatedCount > 0 && (
           <Text color={t.textDim}>
-            {localCount} local · {escalatedCount} escalated
+            {localCount} local{SOFT_SEP}
+            {escalatedCount} escalated
           </Text>
         )}
         <Text bold color={t.text}>

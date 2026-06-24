@@ -39,8 +39,10 @@ describe('eventRows', () => {
     const text = rows.map(rowText).join('\n');
     const heading = rows.find((rowValue) => rowText(rowValue).includes('Description'));
 
-    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
-    expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'accent', bold: true });
+    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('PLAN');
+    expect(rows[0]?.segments).toContainEqual({ text: 'PLAN', tone: 'planner', bold: true });
+    expect(rowText(rows[1] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
+    expect(rows[1]?.segments).toContainEqual({ text: 'T001', tone: 'accent', bold: true });
     expect(text).toContain('Description');
     expect(text).toContain('// No exported signature.');
     expect(text).not.toContain('│');
@@ -146,11 +148,11 @@ describe('eventRows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows[0]?.segments[0]?.tone).toBe(tone);
-    expect(rows[0]?.segments[1]?.tone).toBe(tone);
-    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toContain(
-      `${outcome} via retry-same-worker`,
-    );
+    const topRow = rows.find((rowValue) => rowValue.kind === 'card-top');
+    expect(topRow).toBeDefined();
+    expect(topRow?.segments[0]?.tone).toBe('border');
+    expect(topRow?.segments[1]?.tone).toBe(tone);
+    expect(rows.map(rowText).join('\n')).toContain(`${outcome} via retry-same-worker`);
   });
 
   it('redacts secrets in planner, warning, and user display rows', () => {
@@ -315,7 +317,7 @@ describe('eventRows', () => {
       { text: 'RUN   ', tone: 'info' },
       { text: 'npm run typecheck', tone: 'textDim' },
     ]);
-    expect(rows[0]?.kind).toBe('activity-child');
+    expect(rows[0]?.kind).toBe('activity');
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 

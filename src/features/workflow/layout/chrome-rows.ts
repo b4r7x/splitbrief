@@ -2,7 +2,9 @@
 export const TOP_FIXED_CHROME_ROWS = 3;
 // ConfigLine is optional and tracked separately from the fixed top chrome.
 export const CONFIG_CHROME_ROWS = 1;
-export const BOTTOM_FIXED_CHROME_ROWS = 2;
+// Footer divider (1) + feedback row (1) + composer + input footer rows.
+export const BOTTOM_FOOTER_DIVIDER_ROWS = 1;
+export const BOTTOM_FIXED_CHROME_ROWS = 2 + BOTTOM_FOOTER_DIVIDER_ROWS;
 export const INLINE_CONFIG_MIN_COLS = 88;
 
 export function getChromeContentWidth(cols: number): number {

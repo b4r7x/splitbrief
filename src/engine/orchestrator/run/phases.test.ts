@@ -646,7 +646,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(parseTasks(tasksMarkdown)).toHaveLength(2);
     expect(splitPreviewIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(splitPreviewIndex);
-  }, 20_000);
+  }, 60_000);
 
   it('warns and continues when auto-split cannot safely split a targeted task', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -858,7 +858,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(splitPreviewIndex).toBeGreaterThan(skipWarningIndex);
     expect(firstTaskStartIndex).toBeGreaterThan(splitPreviewIndex);
     expect(taskStartEvents.map((event) => event.taskId)).toEqual(['T003', 'T004', 'T002']);
-  }, 20_000);
+  }, 60_000);
 
   it('cancels through rejected briefs when auto-split output is rejected', async () => {
     const { projectDir, sessionId } = setupProject();

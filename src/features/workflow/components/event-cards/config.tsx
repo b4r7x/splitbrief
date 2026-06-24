@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
+import { SOFT_SEP, ARROW_SEP } from '../../../../components/separators.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
 import {
   getTerminalCellWidth,
@@ -29,22 +30,22 @@ function getWorkflowConfigSegments(
   if (density === 'tools') {
     return [
       { text: mode, role: 'mode' },
-      { text: ' · ', role: 'dim' },
+      { text: SOFT_SEP, role: 'dim' },
       { text: planner, role: 'planner' },
-      { text: ' → ', role: 'dim' },
+      { text: ARROW_SEP, role: 'dim' },
       { text: implementer, role: 'implementer' },
     ];
   }
 
   return [
     { text: mode, role: 'mode' },
-    { text: ' · ', role: 'dim' },
+    { text: SOFT_SEP, role: 'dim' },
     { text: 'Planner: ', role: 'dim' },
     { text: planner, role: 'planner' },
     ...(density === 'full' && plannerModel
       ? [{ text: ` (${plannerModel})`, role: 'dim' as const }]
       : []),
-    { text: ' · ', role: 'dim' },
+    { text: SOFT_SEP, role: 'dim' },
     { text: 'Implementer: ', role: 'dim' },
     { text: implementer, role: 'implementer' },
     ...(density === 'full' && implementerModel

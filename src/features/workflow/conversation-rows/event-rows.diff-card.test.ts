@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import { taskId } from '../../../core/schemas/task.js';
+import type { EngineEventOf } from '../../../engine/events/types.js';
+import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { eventRows } from './event-rows.js';
+import { rowText } from './row-format.js';
+import type { ConversationRow, ConversationRowSegment } from './types.js';
+
+const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
+
+function implementerDoneEvent(
+  overrides: Partial<EngineEventOf<'implementer_generate_done'>> = {},
+): EngineEventOf<'implementer_generate_done'> {
+  return {
+    type: 'implementer_generate_done',
+    ts: 0,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    file: 'README.md',
+    diff: '+ added line\n- removed line',
+    linesAdded: 1,
+    linesRemoved: 1,
+    duration: 1234,
+    ...overrides,
+  };
+}
+
+function rowsFor(
+  event: EngineEventOf<'implementer_generate_done'>,
+  expanded: boolean,
+  width = 80,
+): ConversationRow[] {
+  return eventRows({
+    event,
+    globalIndex: 0,
+    expanded,
+    ctx: { width, viewportRows: 24, streaming },
+  });
+}
+
+function requireRow(
+  rows: ConversationRow[],
+  matcher: (row: ConversationRow) => boolean,
+): ConversationRow {
+  const found = rows.find(matcher);
+  expect(found).toBeDefined();
+  if (found === undefined) {
+    throw new Error('requireRow: row not found');
+  }
+  return found;
+}
+
+function requireSegment(
+  segments: ConversationRowSegment[],
+  matcher: (segment: ConversationRowSegment) => boolean,
+): ConversationRowSegment {
+  const found = segments.find(matcher);
+  expect(found).toBeDefined();
+  if (found === undefined) {
+    throw new Error('requireSegment: segment not found');
+  }
+  return found;
+}
+
+function segmentTone(segment: ConversationRowSegment): string | undefined {
+  return segment.tone;
+}
+
+describe('implementer_generate_done diff card', () => {
+  it('renders expanded diff as a bordered card with file header and +N -M meta', () => {
+    const rows = rowsFor(implementerDoneEvent(), true);
+    const text = rows.map(rowText).join('\n');
+
+    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
+    expect(rowText(topRow)).toContain('┌─');
+    expect(rowText(topRow)).toContain('README.md');
+    expect(rowText(topRow)).toContain('+1');
+    expect(rowText(topRow)).toContain('-1');
+    expect(rowText(topRow)).toContain('1.2s');
+
+    const bottomRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-bottom');
+    expect(rowText(bottomRow)).toContain('└');
+
+    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
+    expect(bodyRows.length).toBeGreaterThan(0);
+
+    const addedBodyRow = requireRow(bodyRows, (rowValue) =>
+      rowText(rowValue).includes('added line'),
+    );
+    const addedTone = requireSegment(addedBodyRow.segments, (segment) => {
+      return segment.text.trim().length > 0 && segment.tone !== 'border';
+    });
+    expect(segmentTone(addedTone)).toBe('success');
+
+    const removedBodyRow = requireRow(bodyRows, (rowValue) =>
+      rowText(rowValue).includes('removed line'),
+    );
+    const removedTone = requireSegment(removedBodyRow.segments, (segment) => {
+      return segment.text.trim().length > 0 && segment.tone !== 'border';
+    });
+    expect(segmentTone(removedTone)).toBe('error');
+
+    requireRow(bodyRows, (rowValue) => rowText(rowValue).includes('Ctrl+D'));
+
+    expect(text).toContain('+ added line');
+    expect(text).toContain('- removed line');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
+  });
+
+  it('fits expanded diff card header with long file paths and metadata', () => {
+    const width = 48;
+    const rows = rowsFor(
+      implementerDoneEvent({
+        file: `src/features/workflow/conversation-rows/${'very/deep/'.repeat(8)}module.ts`,
+      }),
+      true,
+      width,
+    );
+
+    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
+    expect(rowText(topRow)).toContain('1.2s');
+    expect(rowText(topRow)).toContain('+1');
+    expect(rowText(topRow)).toContain('-1');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
+  });
+
+  it('renders collapsed diff flat without a card border (byte-identical to pre-change output)', () => {
+    const rows = rowsFor(implementerDoneEvent(), false);
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('▸ README.md (+1 -1)');
+    expect(text).toContain('Ctrl+D');
+    expect(rows.every((rowValue) => rowValue.kind !== 'card-top')).toBe(true);
+    expect(rows.every((rowValue) => rowValue.kind !== 'card-body')).toBe(true);
+    expect(rows.every((rowValue) => rowValue.kind !== 'card-bottom')).toBe(true);
+    expect(text).not.toContain('┌─');
+    expect(text).not.toContain('└');
+  });
+});

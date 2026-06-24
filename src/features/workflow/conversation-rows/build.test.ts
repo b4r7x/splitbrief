@@ -203,11 +203,14 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
+    expect(text).toContain('plan activity  4 updates  [Codex]');
     expect(text).not.toContain('a.ts');
-    expect(text).toContain('READ  b.ts');
-    expect(text).toContain('READ  c.ts');
-    expect(text).toContain('READ  d.ts');
-    expect(text).toContain('+     1 earlier  /activity, Ctrl+A');
+    expect(text).toContain('b.ts');
+    expect(text).toContain('c.ts');
+    expect(text).toContain('d.ts');
+    expect(text).toMatch(/\+\s+1 earlier\s+\/activity, Ctrl\+A/);
+    expect(text).not.toContain('┌─');
+    expect(text).not.toContain('└');
 
     const expanded = buildConversationRows({
       sections,
@@ -220,7 +223,7 @@ describe('buildConversationRows', () => {
     const expandedText = expanded.rows.map(rowText).join('\n');
 
     expect(expandedText).toContain('less  /activity, Ctrl+A');
-    expect(expandedText).toContain('READ  a.ts');
+    expect(expandedText).toContain('a.ts');
   });
 
   it('pins the highest-severity warning or error in collapsed activity blocks', () => {

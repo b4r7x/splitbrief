@@ -4,9 +4,9 @@ import { stripTerminalControls } from '../../../../utils/display-text.js';
 import type {
   ConversationRow,
   ConversationRowSegment,
-  ConversationRowKind,
   ConversationRowTone,
 } from '../../conversation-rows/types.js';
+import { rowMarker } from '../../conversation-rows/row-markers.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 
 function colorForTone(tone: ConversationRowTone | undefined, theme: Theme): string {
@@ -44,6 +44,8 @@ function colorForTone(tone: ConversationRowTone | undefined, theme: Theme): stri
       return theme.markdown.rule;
     case 'reviewFile':
       return theme.review.file;
+    case 'border':
+      return theme.border;
     default:
       return assertNever(tone);
   }
@@ -63,18 +65,12 @@ function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   );
 }
 
-function rowPrefix(kind: ConversationRowKind): string {
-  if (kind === 'task-header' || kind === 'activity') return '> ';
-  if (kind === 'activity-child') return '| ';
-  return '';
-}
-
 export function ConversationRowView({ row }: { row: ConversationRow }) {
   const t = useTheme();
-  const prefix = rowPrefix(row.kind);
+  const marker = rowMarker(row.kind);
   return (
     <Box height={1} overflow="hidden" flexShrink={0}>
-      {prefix !== '' && <Text color={t.textDim}>{prefix}</Text>}
+      {marker !== null && <Text color={t.textDim}>{marker}</Text>}
       <Text wrap="truncate-end">
         {row.segments.map((segment, index) => (
           <RowSegment key={index} segment={segment} />

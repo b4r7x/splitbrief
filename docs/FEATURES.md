@@ -225,7 +225,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`, then return to the gate on parse or quality errors.
+**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
 
 ```yaml
 workflow:
@@ -234,7 +234,7 @@ workflow:
 
 ### Task Brief external editor handoff
 
-**What it does.** Opens the persisted Task Brief markdown before any implementer token is spent, using the editor command resolved from `VISUAL`, then `EDITOR`, then `vi`. The inline rich plan editor is disabled; the external editor is the text-editing path for brief changes.
+**What it does.** Opens the persisted Task Brief markdown before any implementer token is spent. The editor resolver uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path. On Windows, implicit discovery also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. The inline rich plan editor is disabled; the external editor is the text-editing path for brief changes.
 
 After the editor exits successfully, diptych re-reads `.diptych/sessions/<id>/tasks.md`, parses the Task Brief contract, and re-runs brief-quality validation before letting implementation proceed. If parsing or quality checks fail, the review gate stays open so you can edit again or send feedback for regeneration.
 

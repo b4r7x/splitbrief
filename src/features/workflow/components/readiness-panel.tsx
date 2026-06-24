@@ -1,5 +1,6 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -32,7 +33,10 @@ export function ReadinessPanel({ report }: ReadinessPanelProps) {
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
           <Text color={statusColor(report.status, t)} bold>
-            {report.status} · {report.counts.blocker} blockers · {report.counts.warning} warnings
+            {report.status}
+            {SOFT_SEP}
+            {report.counts.blocker} blockers{SOFT_SEP}
+            {report.counts.warning} warnings
           </Text>
           <Text color={t.textDim}>
             {report.status === 'blocked'

@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
@@ -17,10 +18,10 @@ interface ModeDef {
 }
 
 const MODE_METADATA: Record<WorkflowMode, { cost: string; size: string }> = {
-  instant: { cost: '1 call · no approval', size: 'trivial edits' },
-  quick: { cost: '1 call · no approval', size: 'small fixes' },
-  standard: { cost: '4 calls · 1 approval', size: 'features' },
-  speckit: { cost: '6-7 calls · 2 approvals', size: 'large scope' },
+  instant: { cost: `1 call${SOFT_SEP}no approval`, size: 'trivial edits' },
+  quick: { cost: `1 call${SOFT_SEP}no approval`, size: 'small fixes' },
+  standard: { cost: `4 calls${SOFT_SEP}1 approval`, size: 'features' },
+  speckit: { cost: `6-7 calls${SOFT_SEP}2 approvals`, size: 'large scope' },
 };
 
 const MODES: readonly ModeDef[] = WORKFLOW_MODES.map((mode) => ({

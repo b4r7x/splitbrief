@@ -7,29 +7,30 @@ import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
+import { borderedCardRowsBlock } from './bordered-card-block.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import {
   formatExternalChangesValue,
   formatTaskStartedValue,
   validationRow,
 } from './event-format.js';
-import { getMaxVisibleDiffLines } from '../layout/diff-height.js';
 import type {
   ConversationRow,
   ConversationRowBlock,
-  ConversationRowKind,
   ConversationRowTone,
   RowBuildContext,
 } from './types.js';
+import { sanitizeRowDisplayText } from './row-format.js';
+import { implementerExpandedDiffCardBlock } from './implementer-diff-card-block.js';
+import { markdownPlannerTextRowBlock } from './planner-markdown-row-block.js';
 import {
-  cardRowsWindow,
-  countWrappedRowTexts,
-  row,
-  sanitizeRowDisplayText,
-  wrappedRowTexts,
-  type RowInput,
-} from './row-format.js';
-import { markdownConversationRowsProjection } from './markdown-rows.js';
+  cardRowsBlock,
+  compositeBlock,
+  rowSeedsBlock,
+  rowsBlock,
+  wrappedTextBlock,
+} from './row-block-compose.js';
+import { taskStartedRowBlock } from './task-started-row-block.js';
 
 export function eventRows(options: {
   event: EngineEvent;
@@ -104,7 +105,7 @@ export function eventRowBlock(options: {
         { key: `${keyPrefix}-title`, text: 'Workflow cancelled', tone: 'warning', bold: true },
       ]);
     case 'paused_external_changes':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'user edits',
         value: formatExternalChangesValue(event),
@@ -112,7 +113,7 @@ export function eventRowBlock(options: {
         labelTone: event.conflict?.safeToContinue ? 'warning' : 'error',
       });
     case 'recovery_prompted':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'recovery',
         value: `${event.reason}${event.taskId ? ` · ${event.taskId}` : ''} · recommended ${event.recommendedAction}`,
@@ -121,7 +122,7 @@ export function eventRowBlock(options: {
         valueTone: 'warning',
       });
     case 'recovery_action_selected':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'recovery',
         value: `selected ${event.action} for ${event.reason}`,
@@ -129,7 +130,7 @@ export function eventRowBlock(options: {
         labelTone: 'info',
       });
     case 'recovery_action_failed':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'recovery',
         value: `${event.action} blocked: ${event.message}`,
@@ -138,7 +139,7 @@ export function eventRowBlock(options: {
         valueTone: 'error',
       });
     case 'recovery_resolved':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'recovery',
         value: `${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
@@ -165,7 +166,7 @@ export function eventRowBlock(options: {
         labelTone: 'warning',
       });
     case 'brief_quality_passed':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'brief quality',
         value: formatScoreSummary(event.score, { errorCount: 0, warningCount: event.warningCount }),
@@ -173,7 +174,7 @@ export function eventRowBlock(options: {
         labelTone: 'success',
       });
     case 'brief_quality_failed':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'brief quality',
         value: formatScoreSummary(event.score, {
@@ -185,7 +186,7 @@ export function eventRowBlock(options: {
         valueTone: 'error',
       });
     case 'drift_report':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'drift',
         value: formatScoreSummary(event.score, {
@@ -204,13 +205,12 @@ export function eventRowBlock(options: {
         tone: 'warning',
       });
     case 'task_started':
-      return wrappedTextBlock({
+      return taskStartedRowBlock({
         keyPrefix,
-        text: `T${event.index + 1}: ${event.title}  ${formatTaskStartedValue(event)}`,
+        index: event.index,
+        title: event.title,
+        metadata: formatTaskStartedValue(event),
         width: ctx.width,
-        tone: 'text',
-        bold: true,
-        kind: 'task-header',
       });
     case 'task_skipped':
       return cardRowsBlock({
@@ -261,7 +261,7 @@ export function eventRowBlock(options: {
     case 'escalate':
       return escalateRowBlock(keyPrefix, event, ctx.width);
     case 'git_commit':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'committed',
         value: event.message,
@@ -269,7 +269,7 @@ export function eventRowBlock(options: {
         labelTone: 'success',
       });
     case 'git_checkpoint':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'checkpoint',
         value: event.tag,
@@ -334,7 +334,7 @@ export function eventRowBlock(options: {
         valueTone: 'warning',
       });
     case 'warning':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'warning',
         value: event.message,
@@ -343,7 +343,7 @@ export function eventRowBlock(options: {
         valueTone: 'warning',
       });
     case 'error':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'error',
         value: event.message,
@@ -354,7 +354,7 @@ export function eventRowBlock(options: {
     case 'cost_prediction':
       return rowsBlock(keyPrefix, costPredictionRows(keyPrefix, event, ctx.width));
     case 'budget_warning':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
@@ -363,7 +363,7 @@ export function eventRowBlock(options: {
         valueTone: 'warning',
       });
     case 'budget_paused':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
@@ -372,7 +372,7 @@ export function eventRowBlock(options: {
         valueTone: 'warning',
       });
     case 'budget_exceeded':
-      return cardRowsBlock({
+      return borderedCardRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `Exceeded: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
@@ -400,193 +400,6 @@ export function eventRowBlock(options: {
   }
 }
 
-function rowsBlock(key: string, rows: readonly ConversationRow[]): ConversationRowBlock | null {
-  if (rows.length === 0) return null;
-  const safeRows = rows.map((sourceRow) => ({
-    ...sourceRow,
-    segments: sourceRow.segments.map((segment) => ({
-      ...segment,
-      text: sanitizeRowDisplayText(segment.text),
-    })),
-  }));
-  return {
-    key,
-    rowCount: safeRows.length,
-    renderableUnits: 1,
-    createRows: (windowStart, windowEnd) => safeRows.slice(windowStart, windowEnd),
-  };
-}
-
-function rowSeedsBlock(key: string, seeds: readonly RowInput[]): ConversationRowBlock | null {
-  if (seeds.length === 0) return null;
-  const safeSeeds = seeds.map((seed) => ({
-    ...seed,
-    text: sanitizeRowDisplayText(seed.text),
-  }));
-  return {
-    key,
-    rowCount: safeSeeds.length,
-    renderableUnits: 1,
-    createRows: (windowStart, windowEnd) =>
-      safeSeeds.slice(windowStart, windowEnd).map((seed) => row(seed)),
-  };
-}
-
-function wrappedTextBlock(input: {
-  keyPrefix: string;
-  text: string;
-  width: number;
-  tone: ConversationRowTone;
-  bold?: boolean;
-  kind?: ConversationRowKind;
-}): ConversationRowBlock | null {
-  const keyPrefix = input.keyPrefix;
-  const text = sanitizeRowDisplayText(input.text);
-  const width = input.width;
-  const tone = input.tone;
-  const bold = input.bold;
-  const kind = input.kind;
-  const rowCount = countEventWrappedRows(text, width);
-  if (rowCount === 0) return null;
-
-  return {
-    key: keyPrefix,
-    rowCount,
-    renderableUnits: 1,
-    createRows: (windowStart, windowEnd) =>
-      eventWrappedRowsWindow({
-        keyPrefix,
-        text,
-        width,
-        tone,
-        ...(bold !== undefined && { bold }),
-        ...(kind !== undefined && { kind }),
-        windowStart,
-        windowEnd,
-      }),
-  };
-}
-
-function cardRowsBlock(input: {
-  keyPrefix: string;
-  label: string;
-  value: string | undefined;
-  width: number;
-  labelTone: ConversationRowTone;
-  valueTone?: ConversationRowTone;
-  kind?: ConversationRowKind;
-}): ConversationRowBlock | null {
-  const keyPrefix = input.keyPrefix;
-  const label = sanitizeRowDisplayText(input.label);
-  const value = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
-  const width = input.width;
-  const labelTone = input.labelTone;
-  const valueTone = input.valueTone;
-  const kind = input.kind;
-  const labelText = value ? `${label}  ` : label;
-  const rowCount = countWrappedRowTexts(`${labelText}${value ?? ''}`, width);
-  if (rowCount === 0) return null;
-
-  return {
-    key: keyPrefix,
-    rowCount,
-    renderableUnits: 1,
-    createRows: (windowStart, windowEnd) =>
-      cardRowsWindow({
-        keyPrefix,
-        label,
-        value,
-        width,
-        labelTone,
-        ...(valueTone !== undefined && { valueTone }),
-        ...(kind !== undefined && { kind }),
-        windowStart,
-        windowEnd,
-      }),
-  };
-}
-
-function compositeBlock(
-  key: string,
-  blocks: readonly (ConversationRowBlock | null)[],
-): ConversationRowBlock | null {
-  const children = blocks.filter((block): block is ConversationRowBlock => block !== null);
-  if (children.length === 0) return null;
-  const rowCount = children.reduce((count, block) => count + block.rowCount, 0);
-
-  return {
-    key,
-    rowCount,
-    renderableUnits: 1,
-    createRows: (windowStart, windowEnd) => {
-      const rows: ConversationRow[] = [];
-      const start = Math.max(0, windowStart);
-      const end = Math.max(start, windowEnd);
-      let cursor = 0;
-
-      for (const block of children) {
-        const blockStart = cursor;
-        const blockEnd = cursor + block.rowCount;
-        cursor = blockEnd;
-        if (blockEnd <= start) continue;
-        if (blockStart >= end) break;
-        rows.push(
-          ...block.createRows(
-            Math.max(0, start - blockStart),
-            Math.min(block.rowCount, end - blockStart),
-          ),
-        );
-      }
-
-      return rows;
-    },
-  };
-}
-
-function countEventWrappedRows(text: string, width: number): number {
-  return text
-    .split('\n')
-    .reduce((count, rawLine) => count + countWrappedRowTexts(rawLine, width), 0);
-}
-
-function eventWrappedRowsWindow(input: {
-  keyPrefix: string;
-  text: string;
-  width: number;
-  tone: ConversationRowTone;
-  bold?: boolean;
-  kind?: ConversationRowKind;
-  windowStart: number;
-  windowEnd: number;
-}): ConversationRow[] {
-  const rows: ConversationRow[] = [];
-  const start = Math.max(0, input.windowStart);
-  const end = Math.max(start, input.windowEnd);
-  const bold = input.bold ?? false;
-  const kind = input.kind ?? 'message';
-  let rowIndex = 0;
-
-  for (const rawLine of input.text.split('\n')) {
-    for (const wrappedLine of wrappedRowTexts(rawLine, input.width)) {
-      if (rowIndex >= start && rowIndex < end) {
-        rows.push(
-          row({
-            key: `${input.keyPrefix}-${rowIndex}`,
-            text: wrappedLine,
-            tone: input.tone,
-            bold,
-            kind,
-          }),
-        );
-      }
-      rowIndex += 1;
-      if (rowIndex >= end) return rows;
-    }
-  }
-
-  return rows;
-}
-
 function plannerTextRowBlock(options: {
   event: EngineEventOf<'planner_text'>;
   keyPrefix: string;
@@ -594,12 +407,22 @@ function plannerTextRowBlock(options: {
 }): ConversationRowBlock | null {
   const { event, keyPrefix, width } = options;
   if (isPlannerTextRenderedAsMarkdown(event)) {
-    return markdownPlannerTextRowBlock({ keyPrefix, text: event.text, width });
+    return markdownPlannerTextRowBlock({
+      keyPrefix,
+      text: event.text,
+      width,
+      phase: event.phase,
+    });
   }
 
   switch (event.content) {
     case 'markdown':
-      return markdownPlannerTextRowBlock({ keyPrefix, text: event.text, width });
+      return markdownPlannerTextRowBlock({
+        keyPrefix,
+        text: event.text,
+        width,
+        phase: event.phase,
+      });
     case 'plain':
     case undefined:
       return wrappedTextBlock({
@@ -611,21 +434,6 @@ function plannerTextRowBlock(options: {
     default:
       return assertNever(event.content);
   }
-}
-
-function markdownPlannerTextRowBlock(input: {
-  keyPrefix: string;
-  text: string;
-  width: number;
-}): ConversationRowBlock | null {
-  const projection = markdownConversationRowsProjection(input);
-  if (projection.rowCount === 0) return null;
-  return {
-    key: input.keyPrefix,
-    rowCount: projection.rowCount,
-    renderableUnits: 1,
-    createRows: projection.createRows,
-  };
 }
 
 export function isPlannerTextRenderedAsMarkdown(event: EngineEventOf<'planner_text'>): boolean {
@@ -733,35 +541,7 @@ function implementerDoneRowBlock(
     ]);
   }
 
-  const maxLines = getMaxVisibleDiffLines(ctx.viewportRows);
-  const visibleLines = diffLines.slice(0, maxLines);
-  const remaining = diffLines.length - visibleLines.length;
-
-  return compositeBlock(keyPrefix, [
-    header,
-    wrappedTextBlock({
-      keyPrefix: `${keyPrefix}-expanded-1`,
-      text: `▾ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
-      width: ctx.width,
-      tone: 'textDim',
-    }),
-    ...visibleLines.map((line, index) =>
-      wrappedTextBlock({
-        keyPrefix: `${keyPrefix}-diff-${index}-${index + 2}`,
-        text: `${String(index + 1).padStart(3, '0')} ${line}`,
-        width: ctx.width,
-        tone: diffLineTone(line),
-      }),
-    ),
-    remaining > 0
-      ? wrappedTextBlock({
-          keyPrefix: `${keyPrefix}-remaining-${visibleLines.length + 2}`,
-          text: `...${remaining} more lines`,
-          width: ctx.width,
-          tone: 'textDim',
-        })
-      : null,
-  ]);
+  return implementerExpandedDiffCardBlock(keyPrefix, event, ctx);
 }
 
 function validateRowBlock(
@@ -842,10 +622,4 @@ function recoveryResolvedTone(
     default:
       return assertNever(outcome);
   }
-}
-
-function diffLineTone(line: string): ConversationRowTone {
-  if (line.startsWith('+ ')) return 'success';
-  if (line.startsWith('- ')) return 'error';
-  return 'textDim';
 }

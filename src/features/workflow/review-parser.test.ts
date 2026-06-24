@@ -47,6 +47,11 @@ function makeInputMode(
   };
 }
 
+function stubReviewEditor(editor: string) {
+  vi.stubEnv('VISUAL', '');
+  vi.stubEnv('EDITOR', editor);
+}
+
 function setPhase(phase: Phase) {
   addEvent({ type: 'planner_status', ts: Date.now(), phase, status: 'running' });
 }
@@ -324,7 +329,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
-    vi.stubEnv('EDITOR', 'true');
+    stubReviewEditor('true');
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
@@ -337,7 +342,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it('keeps external editor behavior for non-brief reviews', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-plan' });
     reviewStore.setReviewFile('/tmp/supporting-spec.md');
-    vi.stubEnv('EDITOR', '/definitely/missing-diptych-editor');
+    stubReviewEditor('/definitely/missing-diptych-editor');
     const { handleInput } = createReviewInputHandler(makeInputMode('review'));
 
     await handleInput('edit');
@@ -349,7 +354,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it('opens the external editor for a non-brief review without resolving the gate', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-spec' });
     reviewStore.setReviewFile('/tmp/spec.md');
-    vi.stubEnv('EDITOR', 'true');
+    stubReviewEditor('true');
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
@@ -362,7 +367,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it('surfaces non-zero editor exit status and keeps brief review unresolved', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
-    vi.stubEnv('EDITOR', await writeFakeEditor(42));
+    stubReviewEditor(await writeFakeEditor(42));
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
@@ -376,7 +381,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it('brackets the async editor spawn with terminal handover and resumes stdin', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
-    vi.stubEnv('EDITOR', 'true');
+    stubReviewEditor('true');
 
     const stdinCalls: string[] = [];
     const sourceStdin = Object.assign(new PassThrough(), {

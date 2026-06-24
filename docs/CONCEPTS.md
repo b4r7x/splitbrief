@@ -172,7 +172,7 @@ User-facing pauses where the workflow waits for explicit input. Each gate asks: 
 On a gate:
 
 - Approve → if the artifact was edited on disk (via the `edit` action below), the change is treated as feedback and downstream artifacts are regenerated from it; otherwise advance.
-- Edit → open `$EDITOR` on the artifact, then re-prompt the gate so you can approve the edited file.
+- Edit → open the external editor on the artifact, then re-prompt the gate so you can approve the edited file.
 - Comment without approve → the planner regenerates the artifact using the comment as feedback, then loops back to the gate.
 - Reject without comment → cancel the workflow, return to idle.
 
