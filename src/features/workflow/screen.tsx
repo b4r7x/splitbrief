@@ -40,7 +40,6 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
@@ -170,11 +169,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
   const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const costApprovalState = costApprovalStore.use((s) => s);
-  const briefReview = config.workflow.briefReview ?? 'simple';
-  const runtimeRichMode = planEditorStore.use((s) => s.runtimeRichMode);
-  const useRichEditor = briefReview === 'rich' || runtimeRichMode;
-  const useRichEditorActive = phase === 'reviewing-briefs' && useRichEditor;
-  const footerInputRows = useRichEditorActive ? 0 : inputRows;
+  const footerInputRows = inputRows;
   const promptPending =
     approvalPromptState.status === 'pending' || costApprovalState.status === 'pending';
 
@@ -211,7 +206,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
       ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
       : undefined;
 
-  useWorkflowKeys({ isActive: !useRichEditorActive });
+  useWorkflowKeys({ isActive: true });
 
   useEffect(() => {
     if (!isAttachedClient) return;
@@ -321,21 +316,19 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
     <ScreenShell
       header={<WorkflowHeader startedAt={runner.startedAt} />}
       footer={
-        useRichEditorActive ? null : (
-          <WorkflowFooter
-            handleInput={handleInput}
-            onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
-            onRuntimeCommand={handleRuntimeCommand}
-            commands={commands}
-            mode={inputMode.mode}
-            inputHint={inputHint}
-            reviewColumn={reviewColumn}
-            {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
-            disabled={
-              hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
-            }
-          />
-        )
+        <WorkflowFooter
+          handleInput={handleInput}
+          onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
+          onRuntimeCommand={handleRuntimeCommand}
+          commands={commands}
+          mode={inputMode.mode}
+          inputHint={inputHint}
+          reviewColumn={reviewColumn}
+          {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
+          disabled={
+            hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
+          }
+        />
       }
     >
       <WorkflowBody
@@ -344,7 +337,6 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
         inputMode={inputMode}
         reviewFilePath={reviewFilePath}
         phase={phase}
-        useRichEditor={useRichEditor}
         contentHeight={contentHeight}
         contentWidth={contentWidth}
         terminalCols={cols}

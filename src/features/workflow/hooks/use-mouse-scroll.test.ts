@@ -21,6 +21,7 @@ function createMockFilteredStdin() {
           listener = undefined;
         };
       },
+      activate: () => {},
       isPasteActive: () => false,
       disable: () => {},
     } satisfies FilteredStdin,

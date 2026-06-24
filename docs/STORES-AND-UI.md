@@ -77,7 +77,6 @@ Runtime state of the active workflow run.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
 - **operationsStore** -- active/last normalized runner operation. This is the source of truth for `AgentStatusRow`; terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity.
 - **activityStore** -- bounded live runner/tool activity derived from safe structured metadata. Repeated visible activity identity replaces the prior item, so duplicate warning/tool updates do not inflate the side rail. Conversation rows render the same safe `runner_call_activity` events directly from the event stream.
-- **planEditorStore** -- rich brief editor state (flags, cursor, runtime mode toggle, section focus/editing state, copy/status messages).
 - **conversationScrollStore** -- scroll offset for the conversation view.
 - **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
 - **streamingOutputStore** -- live implementer output lines.
@@ -161,7 +160,7 @@ Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe
 
 Conversation scrolling is row-based. `planner_text` events with `content: 'markdown'` are parsed with the pure Markdown block/inline/layout utilities before they become conversation rows; unmarked planner/implementer text stays plain log output. Safe `runner_call_activity` events become batched styled activity blocks; raw runner-call text/tool/session/artifact events do not. See [`WORKFLOW-CONVERSATION-SCROLL.md`](./WORKFLOW-CONVERSATION-SCROLL.md) for the row renderer, prompt-row budgeting, terminal resize behavior, and scroll-window invariants.
 
-Brief review has two UI paths. Simple review is read-only until the user presses `Ctrl+E` or types `e` / `edit`, which flips `planEditorStore.runtimeRichMode` for the current session and mounts the rich editor; `E` / `edit-file` keeps the explicit external-editor path. The rich editor owns task-list, section-list, and inline section-edit focus. Copy uses the selected task/section source text and writes a session-local `selection.txt` fallback when an OS clipboard command is unavailable.
+Brief review has one text-editing path. `workflow.briefReview: rich` is deprecated and maps to simple review. Pressing `Ctrl+E` or typing `e`, `edit`, `E`, or `edit-file` opens the persisted `.diptych/sessions/<id>/tasks.md` in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`. After the editor exits, diptych re-reads `tasks.md`, re-runs brief-quality validation, and keeps the gate open on parse or quality errors.
 
 ---
 
@@ -169,7 +168,7 @@ Brief review has two UI paths. Simple review is read-only until the user presses
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `sessions`, `cost-drilldown`, `plan-editor-help`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `sessions`, `cost-drilldown`.
 
 Each type maps to a component in `renderOverlay()` in `src/app.tsx`.
 

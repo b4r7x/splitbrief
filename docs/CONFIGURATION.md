@@ -430,7 +430,7 @@ workflow: {
 
   // Mode + brief review
   mode?:                  'instant' | 'quick' | 'standard' | 'speckit';
-  briefReview?:           'simple' | 'rich';
+  briefReview?:           'simple' | 'rich'; // 'rich' is deprecated and maps to simple review
   taskReview?:            'none' | 'failed' | 'every';
 
   // Budget
@@ -461,7 +461,7 @@ workflow: {
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
-| `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `Ctrl+E` or type `e` / `edit` from simple brief review to enter rich review for the current session; use `E` / `edit-file` when you explicitly want `$EDITOR` on `tasks.md`. |
+| `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
 | `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
@@ -483,7 +483,7 @@ workflow: {
 
 `approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
 
-`briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). For `speckit` runs, `rich` is recommended; set it explicitly in config or press `e` from the simple view to opt in for the current session.
+`briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). `rich` is deprecated and ignored/mapped to `simple`; keep or set `simple` and use the external editor commands for text edits.
 
 ### Transcript persistence policy
 
@@ -510,7 +510,7 @@ workflow:
   mode: speckit
   approve: all
   maxRetries: 3
-  briefReview: rich
+  briefReview: simple
   maxBudget: 5.00
   budgetPauseThreshold: 0.8
   driftChainThreshold: 0.6
@@ -538,7 +538,7 @@ workflow:
 - `git.commitStrategy: none` — the default and recommended setting for manual review; diptych leaves changes unstaged so you can review and commit them yourself.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
-- `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed. In rich review, `tab` enters the section list, `e` edits the selected semantic section, `Ctrl+Enter` saves the field, `Esc` cancels/goes back, and `c` copies the selected task or section source text to the clipboard/fallback file.
+- `briefReview: simple` — the supported brief review mode. Legacy `briefReview: rich` configs are accepted but mapped to `simple`. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
 - `persistTranscript: true` — keep this enabled if you want stateless resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
 - `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, diptych input history, session names, generated commit messages, and raw runner expansion targets must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queue previews are stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
 
@@ -973,7 +973,8 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 | `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
-| `EDITOR` | External editor for spec/plan/brief review (`vi` fallback). |
+| `VISUAL` | Preferred external editor for spec/plan/brief review. Takes precedence over `EDITOR`. |
+| `EDITOR` | External editor fallback when `VISUAL` is unset or empty. `vi` is used when both are unset or empty. |
 
 ---
 
@@ -1097,7 +1098,7 @@ validation:
 workflow:
   mode: speckit
   approve: all
-  briefReview: rich
+  briefReview: simple
   maxRetries: 3
   maxBudget: 5.00
   budgetPauseThreshold: 0.8

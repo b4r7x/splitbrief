@@ -18,7 +18,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { configStore } from '../../../stores/project/config.js';
-import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { TASKS_FILE } from '../../../core/paths.js';
@@ -187,8 +186,25 @@ describe('BriefReviewView', () => {
   it('renders simple task rows with sanitized task and review metadata text', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-sanitize-test-'));
     try {
-      configStore.__testReset({ config: makeConfig(), projectDir });
       const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+      configStore.__testReset({
+        config: {
+          ...makeConfig(),
+          implementerProfiles: {
+            profiles: {
+              [`token=${rawToken}`]: {
+                kind: 'api' as const,
+                provider: 'ollama',
+                apiBase: 'http://localhost:11434/v1',
+                model: 'large',
+                contextLength: 40_000,
+                costTier: 'cheap' as const,
+              },
+            },
+          },
+        },
+        projectDir,
+      });
       const filePath = join(projectDir, TASKS_FILE);
       await writeFile(
         filePath,
@@ -209,32 +225,16 @@ describe('BriefReviewView', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Sanitize token=***REDACTED***');
       });
-      planEditorStore.setReviewMetadata([
-        {
-          taskId: taskId('T001'),
-          workerProfile: `token=${rawToken}`,
-          contextFit: 'fits',
-          conflict: {
-            kind: 'current-task-conflict',
-            files: ['src/\u001b]52;c;clipboard\u0007conflict.ts'],
-            affectedTaskIds: ['T001'],
-          },
-        },
-      ]);
-      await tick();
 
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('src/secret.ts');
       expect(frame).toContain('Sanitize token=***REDACTED***');
-      expect(frame).toContain('worker token=***REDACTED***');
-      expect(frame).toContain('conflict src/conflict.ts');
       expect(frame).not.toContain(rawToken);
       expect(frame).not.toContain('clipboard');
       expect(frame).not.toContain('\u001b');
       ui.unmount();
     } finally {
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });
@@ -274,7 +274,6 @@ describe('BriefReviewView', () => {
     } finally {
       reviewStore.clearReview();
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });
@@ -299,7 +298,7 @@ describe('BriefReviewView', () => {
       await vi.waitFor(() => {
         const frame = ui.lastFrame() ?? '';
         expect(frame).toContain('PgDn/PgUp');
-        expect(frame).toContain('e rich');
+        expect(frame).toContain('e edit');
         expect(frame).toContain('reject');
       });
       const frame = ui.lastFrame() ?? '';
@@ -308,7 +307,6 @@ describe('BriefReviewView', () => {
       ui.unmount();
     } finally {
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });
@@ -330,7 +328,6 @@ describe('BriefReviewView', () => {
       ui.unmount();
     } finally {
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });
@@ -366,18 +363,16 @@ describe('BriefReviewView', () => {
       ui.unmount();
     } finally {
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });
 });
 
 describe('buildRoutingPreviewMetadata', () => {
-  it('returns refreshed metadata without writing it to the plan editor store', async () => {
+  it('returns refreshed metadata for simple brief review display', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-refresh-test-'));
     try {
       configStore.__testReset({ config: makeConfig(), projectDir });
-      planEditorStore.__testReset();
       const task = makeTask({ action: 'modify', file: 'missing.ts' });
 
       const metadata = await refreshPlanReviewMetadata([task]);
@@ -388,10 +383,8 @@ describe('buildRoutingPreviewMetadata', () => {
         taskId: task.id,
         estimateStatus: 'missing-current-code',
       });
-      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
     } finally {
       configStore.__testReset();
-      planEditorStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }
   });

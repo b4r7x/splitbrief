@@ -225,41 +225,20 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. Pressing `e` opens `$EDITOR` against the persisted `tasks.md` contract and returns to the gate on parse or quality errors. Rich review opens the plan editor for the current session.
+**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor resolved as `VISUAL`, then `EDITOR`, then `vi`, then return to the gate on parse or quality errors.
 
 ```yaml
 workflow:
-  briefReview: rich
+  briefReview: simple
 ```
 
-### Plan editor screen (lazygit-style)
+### Task Brief external editor handoff
 
-**What it does.** A first-class interactive editor for sculpting Task Briefs before any implementer token is spent. Cursor navigation, delete, merge, split, reorder, external editor, atomic save with brief-quality re-validation.
+**What it does.** Opens the persisted Task Brief markdown before any implementer token is spent, using the editor command resolved from `VISUAL`, then `EDITOR`, then `vi`. The inline rich plan editor is disabled; the external editor is the text-editing path for brief changes.
 
-Rich review also has a read-only Worker Packet Preview for the selected task. The preview uses the same task formatter and review routing metadata that dispatch relies on, and shows worker/cost/write mode, fit/tokens/context, current-code reduction mode, system preamble, task prompt, and redaction/truncation notices. For modify tasks it refreshes current code from disk for preview; if the target file is missing or unreadable, stale Task Brief `currentCode` is omitted and the preview shows the missing/unavailable estimate state.
+After the editor exits successfully, diptych re-reads `.diptych/sessions/<id>/tasks.md`, parses the Task Brief contract, and re-runs brief-quality validation before letting implementation proceed. If parsing or quality checks fail, the review gate stays open so you can edit again or send feedback for regeneration.
 
-**How to use.** Activated when `workflow.briefReview: rich`. Operates in-memory until you save with `Y`. Press `p` to toggle the selected-task packet preview.
-
-| Key | Action |
-|---|---|
-| `j` / `k` / arrows | Move cursor |
-| `d` | Delete task |
-| `m` | Merge with previous task |
-| `s` | Split task |
-| `x` | Flag/unflag task for rejection |
-| `R` | Regenerate flagged tasks (sends back to planner for targeted regen) |
-| `p` | Toggle Worker Packet Preview |
-| `E` | Raw external edit for selected task |
-| `Ctrl+J` / `Ctrl+K` | Reorder down / up (also `Ctrl+N` / `Ctrl+P`) |
-| `Y` | Save: write `tasks.md`, re-run quality gate, dispatch `APPROVE_BRIEFS` |
-| `q` | Discard edits, return to simple view |
-| `?` | Open rich editor help overlay |
-
-While the rich editor is open, `Ctrl+K` belongs to it (reorder up): the global command-palette shortcut releases that chord so a single press never both reorders a task and opens the palette. The palette is still reachable everywhere else, and the editor's other global shortcuts (help, settings, quit) keep working.
-
-**Contextual footer keybindings.** The footer dynamically shows keybindings relevant to the current cursor position and editor state. For example: `Enter: expand | E: raw edit | d: delete | Y: save draft/approve checks` when a task is selected, or `x: flag | R: regen flagged` when tasks are flagged. The footer updates as context changes, while `?` opens rich editor help for the current editor surface.
-
-If the saved tasks fail brief-quality validation, the editor stays open with the error.
+**How to use.** At the `reviewing-briefs` gate, press `Ctrl+E` or type `e`, `edit`, `E`, or `edit-file`. Save and close the editor, then approve once the reloaded brief passes validation.
 
 ---
 
@@ -727,7 +706,7 @@ palette:
 
 ### Help overlay (`Ctrl+/`)
 
-**What it does.** Shows key bindings and slash commands valid for the current screen. Press `Ctrl+/` from any screen. Inside the rich plan editor, `?` opens the scoped editor help overlay.
+**What it does.** Shows key bindings and slash commands valid for the current screen. Press `Ctrl+/` from any screen.
 
 ### Sessions picker
 

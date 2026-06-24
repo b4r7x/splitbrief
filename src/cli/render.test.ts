@@ -5,8 +5,11 @@ import {
   createSuspendHandler,
   createSuspendListenerToggle,
   createTerminationHandler,
+  prepareInlineFallbackAfterFullscreenFailure,
   restoreTerminal,
+  startFullscreenThenActivateHandover,
 } from './render.js';
+import type { TerminalHandoverConfig } from '../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../lib/terminal/control.js';
 
 describe('createTerminationHandler', () => {
@@ -187,6 +190,81 @@ describe('createSuspendListenerToggle', () => {
     toggle.uninstall();
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe('startFullscreenThenActivateHandover', () => {
+  it('marks terminal handover only after fullscreen start succeeds', async () => {
+    const calls: string[] = [];
+    const handover: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: process.stdin,
+    };
+    let activeHandover: TerminalHandoverConfig | undefined;
+
+    await startFullscreenThenActivateHandover({
+      start: async () => {
+        calls.push('start');
+      },
+      activateFilteredStdin: () => {
+        calls.push('filtered-stdin');
+      },
+      handover,
+      setHandover: (config) => {
+        activeHandover = config;
+        calls.push('handover');
+      },
+    });
+
+    expect(activeHandover).toBe(handover);
+    expect(calls).toEqual(['start', 'filtered-stdin', 'handover']);
+  });
+
+  it('leaves terminal handover inactive when fullscreen start fails', async () => {
+    const calls: string[] = [];
+    const handover: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: process.stdin,
+    };
+    let activeHandover: TerminalHandoverConfig | undefined;
+
+    await expect(
+      startFullscreenThenActivateHandover({
+        start: async () => {
+          calls.push('start');
+          throw new Error('fullscreen unavailable');
+        },
+        activateFilteredStdin: () => {
+          calls.push('filtered-stdin');
+        },
+        handover,
+        setHandover: (config) => {
+          activeHandover = config;
+          calls.push('handover');
+        },
+      }),
+    ).rejects.toThrow('fullscreen unavailable');
+
+    expect(activeHandover).toBeUndefined();
+    expect(calls).toEqual(['start']);
+  });
+});
+
+describe('prepareInlineFallbackAfterFullscreenFailure', () => {
+  it('clears fullscreen input state before returning normal stdin for fallback', () => {
+    const calls: string[] = [];
+
+    const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
+      sourceStdin: process.stdin,
+      clearTerminalHandover: () => calls.push('clear-handover'),
+      clearFilteredStdin: () => calls.push('clear-filtered-stdin'),
+      disableFilteredStdin: () => calls.push('disable-filtered-stdin'),
+    });
+
+    expect(fallbackStdin).toBe(process.stdin);
+    expect(calls).toEqual(['clear-handover', 'clear-filtered-stdin', 'disable-filtered-stdin']);
   });
 });
 

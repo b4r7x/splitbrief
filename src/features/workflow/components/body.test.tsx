@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { formatTasks } from '../../../engine/spec/formatter.js';
-import { TASKS_FILE } from '../../../core/paths.js';
-import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { activityStore } from '../../../stores/workflow/activity.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -20,14 +16,12 @@ beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'workflow-body-test-'));
   eventsStore.__testReset();
   activityStore.__testReset();
-  planEditorStore.__testReset();
   configStore.__testReset({ config: makeConfig(), projectDir: tmpDir });
 });
 
 afterEach(async () => {
   eventsStore.__testReset();
   activityStore.__testReset();
-  planEditorStore.__testReset();
   configStore.__testReset();
   await rm(tmpDir, { recursive: true, force: true });
 });
@@ -67,7 +61,6 @@ describe('WorkflowBody brief review rendering', () => {
         inputMode={normalInputMode()}
         reviewFilePath={null}
         phase="implementing"
-        useRichEditor={false}
         contentHeight={4}
         contentWidth={40}
         terminalCols={80}
@@ -99,7 +92,6 @@ describe('WorkflowBody brief review rendering', () => {
         )}
         reviewFilePath={null}
         phase="implementing"
-        useRichEditor={false}
         contentHeight={8}
         contentWidth={80}
         terminalCols={100}
@@ -113,112 +105,6 @@ describe('WorkflowBody brief review rendering', () => {
     expect(frame).not.toContain(rawToken);
     expect(frame).not.toContain('clipboard');
     expect(frame).not.toContain('\u001b');
-
-    ui.unmount();
-  });
-
-  it('renders the rich plan editor when brief review opts into rich mode at runtime', async () => {
-    const filePath = join(tmpDir, TASKS_FILE);
-    await writeFile(filePath, formatTasks([makeTask({ id: 'T001', title: 'Rich body task' })]));
-
-    const ui = renderFeature(
-      <WorkflowBody
-        showSidebar={false}
-        sidebarWidth={0}
-        inputMode={reviewInputMode()}
-        reviewFilePath={filePath}
-        phase="reviewing-briefs"
-        useRichEditor
-        contentHeight={24}
-        contentWidth={120}
-        terminalCols={140}
-      />,
-    );
-
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('tab sections');
-    });
-    expect(ui.lastFrame() ?? '').not.toContain('approve | e/edit');
-
-    ui.unmount();
-  });
-
-  it('resolves configured rich brief review rejection from the editor footer', async () => {
-    const filePath = join(tmpDir, TASKS_FILE);
-    await writeFile(filePath, formatTasks([makeTask({ id: 'T001', title: 'Rejectable task' })]));
-    const inputMode = reviewInputMode();
-
-    const ui = renderFeature(
-      <WorkflowBody
-        showSidebar={false}
-        sidebarWidth={0}
-        inputMode={inputMode}
-        reviewFilePath={filePath}
-        phase="reviewing-briefs"
-        useRichEditor
-        contentHeight={24}
-        contentWidth={120}
-        terminalCols={140}
-      />,
-    );
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('N reject');
-    });
-
-    ui.stdin.write('N');
-    await tick();
-
-    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false });
-    ui.unmount();
-  });
-
-  it('resolves flagged regeneration as revise feedback with the entered reason', async () => {
-    const filePath = join(tmpDir, TASKS_FILE);
-    await writeFile(
-      filePath,
-      formatTasks([
-        makeTask({ id: 'T001', title: 'Split auth work', file: 'src/auth.ts' }),
-        makeTask({ id: 'T002', title: 'Keep logging work', file: 'src/log.ts' }),
-      ]),
-    );
-    const inputMode = reviewInputMode();
-
-    const ui = renderFeature(
-      <WorkflowBody
-        showSidebar={false}
-        sidebarWidth={0}
-        inputMode={inputMode}
-        reviewFilePath={filePath}
-        phase="reviewing-briefs"
-        useRichEditor
-        contentHeight={24}
-        contentWidth={120}
-        terminalCols={140}
-      />,
-    );
-
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Split auth work');
-    });
-
-    ui.stdin.write('x');
-    ui.stdin.write('R');
-    await tick();
-    ui.stdin.write('too broad');
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(inputMode.resolve).toHaveBeenCalledWith(
-        expect.objectContaining({
-          approved: false,
-          action: 'revise',
-          comment: expect.stringContaining('User reason: too broad'),
-        }),
-      );
-    });
-    const result = vi.mocked(inputMode.resolve).mock.calls[0]?.[0];
-    expect(typeof result === 'object' ? result.comment : '').toContain('T001');
-    expect(typeof result === 'object' ? result.comment : '').not.toContain('T002');
 
     ui.unmount();
   });
@@ -255,7 +141,6 @@ describe('WorkflowBody brief review rendering', () => {
         inputMode={normalInputMode()}
         reviewFilePath={null}
         phase="implementing"
-        useRichEditor={false}
         contentHeight={5}
         contentWidth={contentWidth}
         terminalCols={terminalCols}
@@ -302,7 +187,6 @@ describe('WorkflowBody brief review rendering', () => {
         inputMode={normalInputMode()}
         reviewFilePath={null}
         phase="implementing"
-        useRichEditor={false}
         contentHeight={5}
         contentWidth={contentWidth}
         terminalCols={terminalCols}

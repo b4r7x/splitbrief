@@ -62,7 +62,6 @@ src/stores/
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
-│   ├── plan-editor.ts        # Plan-editor draft state
 │   ├── streaming-output.ts   # Live streamed runner output
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Tiered approval request/response prompt
@@ -207,7 +206,6 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
-| `planEditorStore` | `workflow/plan-editor.ts` | `{ tasks, cursor, expandedIds, dirty, ... }` | `initEditor()`, `moveCursor()`, `setCursor()`, `setTasks()`, `toggleExpand()`, `toggleFlag()` |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `costApprovalStore` | `cost-approval/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', prediction, resolve }` | `openCostApprovalPrompt()`, `closeCostApprovalPrompt()` (via `channels/prompt`) |

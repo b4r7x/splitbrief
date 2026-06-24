@@ -265,7 +265,7 @@ Explicit non-goals, so you don't go looking:
 These features are active by default unless noted:
 
 - **Command palette (Ctrl+K)** — searchable overlay listing all slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
-- **Rich plan editor** — lazygit-style inline editor for the Task Brief. Set `briefReview: rich` in config or press `e` from the simple review view. See [FEATURES.md §Plan editor screen](./FEATURES.md#plan-editor-screen-lazygit-style).
+- **External Task Brief editor** — during brief review, `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted Task Brief in `VISUAL`, `EDITOR`, or `vi`. Legacy `briefReview: rich` configs are accepted but map to simple review. See [FEATURES.md §Task Brief external editor handoff](./FEATURES.md#task-brief-external-editor-handoff).
 - **Tiered approval gates** — `auto` / `sticky` / `confirm` per action class, composing with the document-level approval loop. See [FEATURES.md §Tiered approval gates](./FEATURES.md#tiered-approval-gates-auto--sticky--confirm).
 - **MCP resources and evidence tools server** — exposes session artifacts such as specs, plans, tasks, state, evidence, and drift reports to MCP-aware clients (Claude Code, Cursor), plus constrained evidence-recording tools. Start with `diptych mcp serve`. See [FEATURES.md §MCP resources and evidence tools server](./FEATURES.md#mcp-resources-and-evidence-tools-server-advanced).
 - **Parallel worktrees** — run multiple sessions in isolation with `diptych start --worktree <name>`. See [FEATURES.md §diptych start --worktree](./FEATURES.md#diptych-start---worktree-name) and [WORKTREES.md](./WORKTREES.md).

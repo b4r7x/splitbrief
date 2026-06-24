@@ -15,7 +15,6 @@ import {
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
 import { requestCancel, type InterruptResult } from '../features/workflow/handlers.js';
-import { planEditorKeysStore } from '../features/workflow/hooks/use-plan-editor-keys.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
@@ -100,7 +99,6 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
   const overlayHasStack = overlay.stack.length > 0;
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
   const completionOpen = completion.open;
-  const planEditorActive = planEditorKeysStore.use((mounted) => mounted);
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
@@ -204,7 +202,7 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
 
   useInput(
     (input, key) => {
-      const shortcut = handleShortcutKeys(input, key, route.screen, planEditorActive);
+      const shortcut = handleShortcutKeys(input, key, route.screen);
       if (shortcut.type !== 'none') {
         applyAction(shortcut, exit);
         return;
@@ -214,16 +212,8 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
   );
 }
 
-function handleShortcutKeys(
-  input: string,
-  key: Key,
-  screen: Screen,
-  planEditorActive: boolean,
-): AppKeyAction {
-  // While the rich plan editor owns the screen, Ctrl+K is its reorder chord, so the global
-  // command palette must not claim it — otherwise one press both reorders and opens the palette.
-  if (key.ctrl && input === 'k')
-    return planEditorActive ? NONE : { type: 'open-overlay', overlay: 'command-palette' };
+function handleShortcutKeys(input: string, key: Key, screen: Screen): AppKeyAction {
+  if (key.ctrl && input === 'k') return { type: 'open-overlay', overlay: 'command-palette' };
   if (key.ctrl && input === 's' && screen === 'home')
     return { type: 'open-overlay', overlay: 'skills' };
   if (input === '\x1f' || (key.ctrl && input === '/'))

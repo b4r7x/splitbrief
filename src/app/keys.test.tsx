@@ -15,10 +15,6 @@ import * as handlers from '../features/workflow/handlers.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
-import {
-  planEditorKeysStore,
-  usePlanEditorKeys,
-} from '../features/workflow/hooks/use-plan-editor-keys.js';
 import type { CostPrediction } from '../core/schemas/summary.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
@@ -67,29 +63,6 @@ function Harness({
   return (
     <Box>
       <Text>ready</Text>
-    </Box>
-  );
-}
-
-function EditorKeyLayer() {
-  usePlanEditorKeys({ onSave: () => Promise.resolve(), sessionDir: '/tmp/session' });
-  return null;
-}
-
-function EditorHarness({
-  exit,
-  interruptWorkflow,
-  mountEditor = true,
-}: {
-  exit: () => void;
-  interruptWorkflow?: () => InterruptResult;
-  mountEditor?: boolean;
-}) {
-  useAppKeys({ exit, interruptWorkflow });
-  return (
-    <Box>
-      <Text>ready</Text>
-      {mountEditor && <EditorKeyLayer />}
     </Box>
   );
 }
@@ -512,14 +485,12 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 describe('useAppKeys: keystroke binding', () => {
   beforeEach(() => {
     resetAllStores();
-    planEditorKeysStore.__testReset();
   });
 
   afterEach(() => {
     abortStore.clear();
     approvalPromptStore.__testReset();
     costApprovalStore.__testReset();
-    planEditorKeysStore.__testReset();
   });
 
   it.each([
@@ -552,50 +523,6 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
-    ui.unmount();
-  });
-
-  it('Ctrl+K does not open command-palette while the rich plan editor key layer is mounted', async () => {
-    const exit = vi.fn();
-    const ui = renderFeature(<EditorHarness exit={exit} />);
-    await tick(20);
-
-    // Mounting the editor's key hook publishes its active state; the global layer releases Ctrl+K.
-    expect(planEditorKeysStore.get()).toBe(true);
-    expect(overlayStore.get().active).toBe('none');
-
-    writeKey(ui, '\x0b');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
-  });
-
-  it('Ctrl+K reopens the command-palette once the rich plan editor key layer unmounts', async () => {
-    const exit = vi.fn();
-    const ui = renderFeature(<EditorHarness exit={exit} mountEditor={false} />);
-    await tick(20);
-
-    expect(planEditorKeysStore.get()).toBe(false);
-
-    writeKey(ui, '\x0b');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('command-palette');
-    ui.unmount();
-  });
-
-  it('Ctrl+/ still opens help while the rich plan editor key layer is mounted', async () => {
-    const exit = vi.fn();
-    const ui = renderFeature(<EditorHarness exit={exit} />);
-    await tick(20);
-
-    expect(planEditorKeysStore.get()).toBe(true);
-
-    writeKey(ui, '\x1f');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('help');
     ui.unmount();
   });
 

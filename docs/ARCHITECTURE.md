@@ -661,7 +661,7 @@ src/
 │   │                              persistence, terminal-size
 │   └── workflow/                  abort, actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
-│                                  operations, plan-editor, review, tasks, tokens
+│                                  operations, review, tasks, tokens
 │
 ├── features/                      TUI features (one folder per business slice)
 │   ├── help/                      overlay (global Ctrl-/ help overlay)
@@ -692,15 +692,13 @@ src/
 │       │                          event-cards/{operation-status,
 │       │                          config},
 │       │                          feedback-row, header, input-footer,
-│       │                          pipeline-bar, plan-editor +
-│       │                          plan-editor/{actions, external-editor},
-│       │                          plan-editor-help-overlay, review-view,
+│       │                          pipeline-bar, review-view,
 │       │                          sidebar, task-summary
 │       ├── handlers.ts            Runtime command context actions
 │       ├── hooks/                 use-advisory,
 │       │                          use-cost-stats, use-input-mode,
 │       │                          use-ipc-client, use-keys,
-│       │                          use-mouse-scroll, use-plan-editor-keys,
+│       │                          use-mouse-scroll,
 │       │                          use-readiness-fetch,
 │       │                          use-review-content, use-runner
 │       ├── keyboard.ts            Workflow keymap
@@ -783,7 +781,7 @@ Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`), `'ful
 | Mode | Planner calls | Approval gates | Brief quality gate | Brief approval (`reviewing-briefs`) | Artifacts |
 |------|:---:|:---:|:---:|:---:|---|
 | `instant` | 1 | none | yes | no | `tasks.md` |
-| `quick` | 1 | none | yes | no | `tasks.md` (+ inline plan summary) |
+| `quick` | 1 | none | yes | no | `tasks.md` (+ compact plan summary) |
 | `standard` (default) | 4 | optional spec | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md` |
 | `speckit` | 6–7 | optional spec + plan + constitution + analyze | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` |
 
@@ -1189,7 +1187,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 workflow:
   budgetPauseThreshold: 0.85   # 0.0–1.0; default 0.85; pause prompt at this fraction of maxBudget
   driftChainThreshold: 0.6     # 0.0–1.0; default 0.6; emit drift_chain_detected at/above this score
-  briefReview: simple          # 'simple' (default) | 'rich' — controls brief review UI (plan-editor-screen spec)
+  briefReview: simple          # 'simple' default; 'rich' is deprecated and maps to simple review
 
 snapshots:
   auto:

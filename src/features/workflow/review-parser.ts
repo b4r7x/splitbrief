@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
@@ -94,29 +93,13 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
           return;
         }
         if (parsed.command.action === 'save_draft') {
-          feedbackStore.setError('Draft save is only available in the rich Task Brief editor.');
+          feedbackStore.setError('Draft save is not available in the TUI. Use edit-file instead.');
           return;
         }
         feedbackStore.setMessage('Review prompt is still pending.');
         return;
       }
-      if (parsed.kind === 'open-rich-editor') {
-        const phase = lifecycleStore.get().phase;
-        if (phase === 'reviewing-briefs') {
-          planEditorStore.setRuntimeRichMode(true);
-          feedbackStore.setError(null);
-          return;
-        }
-        const filePath = reviewStore.get().filePath;
-        if (filePath) {
-          try {
-            await openInEditor(filePath);
-            reviewStore.reloadReviewFile();
-          } catch (err) {
-            feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
-          }
-        }
-      } else if (parsed.kind === 'open-external-editor') {
+      if (parsed.kind === 'open-external-editor') {
         const filePath = reviewStore.get().filePath;
         if (filePath) {
           try {

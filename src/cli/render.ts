@@ -23,6 +23,7 @@ import {
   resumeTerminalAfterEditor,
   setActiveTerminalHandover,
   suspendTerminalForEditor,
+  type TerminalHandoverConfig,
 } from '../lib/terminal/editor-handover.js';
 import { flushOtel } from '../lib/otel.js';
 import { awaitActiveWorkflowShutdown } from '../engine/orchestrator/session-lifecycle.js';
@@ -151,6 +152,29 @@ export function createSuspendListenerToggle(deps: { install: () => void; uninsta
   };
 }
 
+export async function startFullscreenThenActivateHandover(deps: {
+  start: () => Promise<void>;
+  activateFilteredStdin?: (() => void) | undefined;
+  handover: TerminalHandoverConfig;
+  setHandover: (config: TerminalHandoverConfig | undefined) => void;
+}): Promise<void> {
+  await deps.start();
+  deps.activateFilteredStdin?.();
+  deps.setHandover(deps.handover);
+}
+
+export function prepareInlineFallbackAfterFullscreenFailure(deps: {
+  sourceStdin: NodeJS.ReadStream;
+  clearTerminalHandover: () => void;
+  clearFilteredStdin: () => void;
+  disableFilteredStdin: () => void;
+}): NodeJS.ReadStream {
+  deps.clearTerminalHandover();
+  deps.clearFilteredStdin();
+  deps.disableFilteredStdin();
+  return deps.sourceStdin;
+}
+
 export async function renderApp(
   appElement: ReturnType<typeof createElement>,
   options: RenderOptions,
@@ -173,12 +197,7 @@ export async function renderApp(
   }
 
   if (useMouse) {
-    filteredStdin = createFilteredStdin(process.stdin);
-    setActiveFilteredStdin(filteredStdin);
-  }
-
-  if (fullscreen) {
-    setActiveTerminalHandover({ fullscreen, mouse: useMouse, sourceStdin: process.stdin });
+    filteredStdin = createFilteredStdin(process.stdin, { activate: false });
   }
 
   const disableFilteredStdin = () => {
@@ -258,14 +277,13 @@ export async function renderApp(
   suspendListener.install();
   process.on('SIGCONT', onResume);
 
-  const renderFallback = () => {
-    const inkStdin = filteredStdin?.stdin;
+  const renderFallback = (stdin?: NodeJS.ReadStream) => {
     return render(appElement, {
       exitOnCtrlC: false,
       incrementalRendering: true,
       maxFps: 30,
       kittyKeyboard,
-      ...(inkStdin ? { stdin: inkStdin } : {}),
+      ...(stdin ? { stdin } : {}),
     });
   };
 
@@ -274,16 +292,33 @@ export async function renderApp(
       const inkStdin = filteredStdin?.stdin;
       let ink: ReturnType<typeof withFullScreen> | undefined;
       try {
-        ink = withFullScreen(appElement, {
+        const fullscreenInk = withFullScreen(appElement, {
           exitOnCtrlC: false,
           kittyKeyboard,
           ...(inkStdin ? { stdin: inkStdin } : {}),
         });
-        await ink.start();
+        ink = fullscreenInk;
+        await startFullscreenThenActivateHandover({
+          start: () => fullscreenInk.start(),
+          activateFilteredStdin: filteredStdin
+            ? () => {
+                filteredStdin.activate();
+                setActiveFilteredStdin(filteredStdin);
+              }
+            : undefined,
+          handover: { fullscreen: true, mouse: useMouse, sourceStdin: process.stdin },
+          setHandover: setActiveTerminalHandover,
+        });
       } catch (err) {
         if (isBrokenOutputError(err)) return;
         warnError('Fullscreen init failed, falling back to inline mode', err);
-        const inst = renderFallback();
+        const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
+          sourceStdin: process.stdin,
+          clearTerminalHandover: () => setActiveTerminalHandover(undefined),
+          clearFilteredStdin: () => setActiveFilteredStdin(undefined),
+          disableFilteredStdin,
+        });
+        const inst = renderFallback(fallbackStdin);
         try {
           await inst.waitUntilExit();
         } catch (fallbackErr) {

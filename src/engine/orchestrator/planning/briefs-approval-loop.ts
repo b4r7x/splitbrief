@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
 import type { EventBus } from '../../events/types.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { createBusTextHandler, publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { isENOENT } from '../../../lib/process/errors.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -40,12 +38,9 @@ export async function runBriefsApprovalLoop(
 
   const tasksFilePath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
 
-  try {
-    await readFile(tasksFilePath, 'utf8');
-  } catch (err) {
-    if (isENOENT(err) && tasks.length > 0) {
-      writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks(tasks), metadata);
-    }
+  const initialTasksFile = await readPersistedTasks(tasksFilePath);
+  if (!initialTasksFile.ok && initialTasksFile.reason === 'missing' && tasks.length > 0) {
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks(tasks), metadata);
   }
 
   const pendingQueue = readQueueForPrompt({ projectDir, sessionId, state });

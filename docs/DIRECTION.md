@@ -26,7 +26,7 @@ Users should never think about session lifecycle. `diptych continue` (or `diptyc
 
 ### 5. Progressive disclosure everywhere
 
-Default output is minimal. Details expand on keypress. Config starts at 3 lines (planner + implementer) and grows only when needed. Help shows examples, not just flags. The plan editor footer shows contextual keybindings, not a hidden `?` overlay.
+Default output is minimal. Details expand on keypress. Config starts at 3 lines (planner + implementer) and grows only when needed. Help shows examples, not just flags. Brief review exposes the active commands inline and sends text edits to the user's external editor.
 
 ### 6. Cost-gated approval
 
