@@ -14,74 +14,216 @@ export interface MouseEvent {
 
 type MouseListener = (event: MouseEvent) => void;
 
-// biome-ignore-start lint/suspicious/noControlCharactersInRegex: matches ANSI escape (U+001B) in terminal input
-const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
-const PARTIAL_SGR_MOUSE_RE = /^(?:\u001b|\u001b\[|\u001b\[<[\d;]*)$/;
-const COMPLETE_SGR_MOUSE_RE = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/;
-// biome-ignore-end lint/suspicious/noControlCharactersInRegex: matches ANSI escape (U+001B) in terminal input
+const ESC = 0x1b;
+const CSI = 0x5b;
+const SS3 = 0x4f;
+const SGR_PREFIX = Buffer.from('\u001b[<', 'ascii');
+const X10_PREFIX = Buffer.from('\u001b[M', 'ascii');
 const PASTE_START = '\u001b[200~';
 const PASTE_END = '\u001b[201~';
+const PASTE_START_BYTES = Buffer.from(PASTE_START, 'ascii');
+const PASTE_END_BYTES = Buffer.from(PASTE_END, 'ascii');
+const EMPTY_BUFFER = Buffer.alloc(0);
 
-// How long a held paste-marker prefix (a lone trailing ESC or any longer `\x1b[2…` remainder)
-// waits for a continuation chunk before it is flushed as the real keypress it heads. Short
-// enough to stay below the consumer escape-debounce so the key still registers promptly, long
-// enough to let a split paste marker body arrive first.
-const HELD_PREFIX_FLUSH_MS = 4;
+const HELD_PREFIX_FLUSH_MS = 35;
+const BARE_ESCAPE_PREFIX_FLUSH_MS = 50;
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI escape (U+001B) sequences from a paste body
+// biome-ignore-start lint/suspicious/noControlCharactersInRegex: matches ANSI escape bytes in terminal input
+const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
+const X10_MOUSE_RE = /\u001b\[M([\s\S])([\s\S])([\s\S])/g;
 const PASTE_BODY_ESCAPE_RE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001bO[@-~]|\u001b/g;
+const PASTE_BODY_UNSAFE_CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+// biome-ignore-end lint/suspicious/noControlCharactersInRegex: matches ANSI escape bytes in terminal input
 
-// Inside a bracketed paste the terminal forwards the raw body, so an embedded carriage return or
-// stray escape byte must not survive: Ink would explode the body into synthetic keypresses and a
-// lone `\r` between two escape sequences reaches the consumer as a bare Return, firing submit /
-// approval mid-paste. Convert CR(LF) to LF, drop CSI/SS3 sequences, and drop any remaining bare
-// ESC while keeping the following printable text. The held-back paste-marker tail is excluded
-// before this runs, so dropping a bare ESC here never eats a split end-marker prefix.
 function sanitizePasteBody(body: string): string {
-  return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(PASTE_BODY_ESCAPE_RE, '');
+  return body
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(PASTE_BODY_ESCAPE_RE, '')
+    .replace(PASTE_BODY_UNSAFE_CONTROL_RE, '');
+}
+
+function sanitizePasteBytes(body: Buffer): Buffer {
+  const clean: number[] = [];
+  let i = 0;
+  while (i < body.length) {
+    const byte = body.readUInt8(i);
+    if (byte === 0x0d) {
+      if (i + 1 < body.length && body.readUInt8(i + 1) === 0x0a) i++;
+      clean.push(0x0a);
+    } else if (byte === 0x09 || byte === 0x0a || (byte >= 0x20 && byte !== 0x7f)) {
+      clean.push(byte);
+    }
+    i++;
+  }
+  return Buffer.from(clean);
+}
+
+function createMouseEvent(btn: number, x: number, y: number): MouseEvent | undefined {
+  const baseButton = btn & ~(4 | 8 | 16);
+  if (baseButton !== 64 && baseButton !== 65) return undefined;
+
+  return {
+    type: baseButton === 64 ? 'wheel-up' : 'wheel-down',
+    x,
+    y,
+    button: baseButton,
+    shift: (btn & 4) !== 0,
+    meta: (btn & 8) !== 0,
+    ctrl: (btn & 16) !== 0,
+  };
 }
 
 export function parseMouseEvents(chunk: string): { events: MouseEvent[]; clean: string } {
   const events: MouseEvent[] = [];
-  const clean = chunk.replace(SGR_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
-    const btn = parseInt(rawBtn, 10);
-    const baseButton = btn & ~(4 | 8 | 16);
+  const pushMouseEvent = (btn: number, x: number, y: number) => {
+    const event = createMouseEvent(btn, x, y);
+    if (event) events.push(event);
+  };
 
-    if (baseButton !== 64 && baseButton !== 65) return '';
-
-    const x = parseInt(rawX, 10);
-    const y = parseInt(rawY, 10);
-    const shift = (btn & 4) !== 0;
-    const meta = (btn & 8) !== 0;
-    const ctrl = (btn & 16) !== 0;
-
-    events.push({
-      type: baseButton === 64 ? 'wheel-up' : 'wheel-down',
-      x,
-      y,
-      button: baseButton,
-      shift,
-      meta,
-      ctrl,
+  const clean = chunk
+    .replace(SGR_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
+      pushMouseEvent(parseInt(rawBtn, 10), parseInt(rawX, 10), parseInt(rawY, 10));
+      return '';
+    })
+    .replace(X10_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
+      pushMouseEvent(rawBtn.charCodeAt(0) - 32, rawX.charCodeAt(0) - 32, rawY.charCodeAt(0) - 32);
+      return '';
     });
-    return '';
-  });
 
   return { events, clean };
 }
 
+function startsWithBytes(source: Buffer, expected: Buffer): boolean {
+  return source.length >= expected.length && source.subarray(0, expected.length).equals(expected);
+}
+
+function isPrefixOfBytes(source: Buffer, expected: Buffer): boolean {
+  return source.length < expected.length && expected.subarray(0, source.length).equals(source);
+}
+
+function isPasteMarkerPrefix(source: Buffer): boolean {
+  return isPrefixOfBytes(source, PASTE_START_BYTES) || isPrefixOfBytes(source, PASTE_END_BYTES);
+}
+
+function isDigitByte(byte: number): boolean {
+  return byte >= 0x30 && byte <= 0x39;
+}
+
+function isBareEscapePrefix(source: Buffer): boolean {
+  return source.length === 1 && source.readUInt8(0) === ESC;
+}
+
+type MouseRead =
+  | { kind: 'complete'; length: number; event: MouseEvent | undefined }
+  | { kind: 'incomplete' };
+
+function readX10Mouse(source: Buffer): MouseRead | undefined {
+  if (!startsWithBytes(source, X10_PREFIX)) return undefined;
+  if (source.length < 6) return { kind: 'incomplete' };
+  return {
+    kind: 'complete',
+    length: 6,
+    event: createMouseEvent(
+      source.readUInt8(3) - 32,
+      source.readUInt8(4) - 32,
+      source.readUInt8(5) - 32,
+    ),
+  };
+}
+
+function readSgrMouse(source: Buffer): MouseRead | undefined {
+  if (!startsWithBytes(source, SGR_PREFIX)) return undefined;
+
+  for (let i = SGR_PREFIX.length; i < source.length; i++) {
+    const byte = source.readUInt8(i);
+    if (byte === 0x4d || byte === 0x6d) {
+      const params = source.subarray(SGR_PREFIX.length, i).toString('ascii').split(';');
+      if (params.length !== 3 || params.some((param) => !/^\d+$/.test(param))) {
+        return undefined;
+      }
+      const [rawBtn, rawX, rawY] = params;
+      if (rawBtn === undefined || rawX === undefined || rawY === undefined) return undefined;
+      return {
+        kind: 'complete',
+        length: i + 1,
+        event: createMouseEvent(parseInt(rawBtn, 10), parseInt(rawX, 10), parseInt(rawY, 10)),
+      };
+    }
+    if (!isDigitByte(byte) && byte !== 0x3b) return undefined;
+  }
+
+  return { kind: 'incomplete' };
+}
+
+function readCsiSequenceLength(source: Buffer): number | 'incomplete' | undefined {
+  if (source.length < 2 || source.readUInt8(0) !== ESC || source.readUInt8(1) !== CSI) {
+    return undefined;
+  }
+  for (let i = 2; i < source.length; i++) {
+    const byte = source.readUInt8(i);
+    if (byte >= 0x40 && byte <= 0x7e) return i + 1;
+  }
+  return 'incomplete';
+}
+
+function readSs3SequenceLength(source: Buffer): number | 'incomplete' | undefined {
+  if (source.length < 2 || source.readUInt8(0) !== ESC || source.readUInt8(1) !== SS3) {
+    return undefined;
+  }
+  return source.length < 3 ? 'incomplete' : 3;
+}
+
+type EscapeDecision =
+  | { kind: 'hold' }
+  | { kind: 'paste-start'; length: number }
+  | { kind: 'paste-end'; length: number }
+  | { kind: 'mouse'; length: number; event: MouseEvent | undefined }
+  | { kind: 'skip'; length: number }
+  | { kind: 'text'; length: number };
+
+function readPasteEscape(source: Buffer): EscapeDecision {
+  const csiLength = readCsiSequenceLength(source);
+  if (csiLength === 'incomplete') return { kind: 'hold' };
+  if (typeof csiLength === 'number') return { kind: 'skip', length: csiLength };
+
+  const ss3Length = readSs3SequenceLength(source);
+  if (ss3Length === 'incomplete') return { kind: 'hold' };
+  if (typeof ss3Length === 'number') return { kind: 'skip', length: ss3Length };
+
+  return { kind: 'skip', length: 1 };
+}
+
+function readEscape(source: Buffer, pasteActive: boolean, mouseEnabled: boolean): EscapeDecision {
+  if (startsWithBytes(source, PASTE_START_BYTES)) {
+    return { kind: 'paste-start', length: PASTE_START_BYTES.length };
+  }
+  if (startsWithBytes(source, PASTE_END_BYTES)) {
+    return { kind: 'paste-end', length: PASTE_END_BYTES.length };
+  }
+  if (isPasteMarkerPrefix(source)) return { kind: 'hold' };
+  if (pasteActive) return readPasteEscape(source);
+
+  if (mouseEnabled) {
+    const x10 = readX10Mouse(source);
+    if (x10?.kind === 'incomplete') return { kind: 'hold' };
+    if (x10?.kind === 'complete') {
+      return { kind: 'mouse', length: x10.length, event: x10.event };
+    }
+
+    const sgr = readSgrMouse(source);
+    if (sgr?.kind === 'incomplete') return { kind: 'hold' };
+    if (sgr?.kind === 'complete') {
+      return { kind: 'mouse', length: sgr.length, event: sgr.event };
+    }
+  }
+
+  return { kind: 'text', length: 1 };
+}
+
 function prefixLengthHeldBack(text: string): number {
-  // Longest suffix of `text` that is a proper prefix of a paste marker, so a marker
-  // split across chunks is withheld until the next chunk completes it. The markers
-  // share `[20`, so checking against both prefixes covers start and end.
   const maxLen = Math.min(text.length, PASTE_START.length - 1);
-  // Hold a lone trailing ESC (len 1) one chunk so a paste marker whose leading `\x1b`
-  // arrives alone reassembles instead of leaking its `[200~`/`[201~` body into the stream
-  // (and leaving pasteActive stuck). The held ESC is re-prepended to the next chunk: if that
-  // chunk does not continue a marker the ESC flushes then, and disable() flushes it if no
-  // chunk follows, so a real Escape keypress is delayed at most one input byte, never lost.
-  const minLen = 1;
-  for (let len = maxLen; len >= minLen; len--) {
+  for (let len = maxLen; len >= 1; len--) {
     const suffix = text.slice(text.length - len);
     if (PASTE_START.startsWith(suffix) || PASTE_END.startsWith(suffix)) {
       return len;
@@ -115,9 +257,6 @@ export function stripPasteMarkers(
     }
   }
 
-  // The held-back tail (a paste-marker prefix split across chunks) is always a suffix of the last
-  // part. It must stay raw and unsanitized so a lone trailing ESC heading a split end-marker can
-  // reassemble next chunk; sanitizing only the body keeps the marker bytes out of the stream.
   const rawClean = parts.map((part) => part.text).join('');
   const held = prefixLengthHeldBack(rawClean);
   const partial = held === 0 ? '' : rawClean.slice(rawClean.length - held);
@@ -125,8 +264,9 @@ export function stripPasteMarkers(
   const bodyLengths: number[] = [];
   let remainingTail = held;
   for (let i = parts.length - 1; i >= 0; i--) {
-    const trim = Math.min(remainingTail, parts[i]?.text.length ?? 0);
-    bodyLengths[i] = (parts[i]?.text.length ?? 0) - trim;
+    const partLength = parts[i]?.text.length ?? 0;
+    const trim = Math.min(remainingTail, partLength);
+    bodyLengths[i] = partLength - trim;
     remainingTail -= trim;
   }
 
@@ -183,92 +323,124 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
       return filtered;
     },
   });
-  // Ink types require tty.ReadStream, while the filter must be a writable PassThrough.
-  // The TTY members Ink uses are bridged above; the cast is the interop boundary.
   return filtered as unknown as NodeJS.ReadStream;
-}
-
-function splitMouseChunk(raw: string): { processable: string; partial: string } {
-  const lastEsc = raw.lastIndexOf('\u001b');
-  if (lastEsc < 0) {
-    return { processable: raw, partial: '' };
-  }
-
-  const tail = raw.slice(lastEsc);
-  // A lone trailing ESC passes through to the paste layer, which decides whether to hold it
-  // (it may head a split paste marker) rather than the mouse layer second-guessing here. Only a
-  // partial that has advanced past the bare ESC (\x1b[, \x1b[<…) can head a mouse report whose
-  // body lands next chunk, so those — and only those — are withheld one chunk until completion.
-  if (tail !== '\u001b' && PARTIAL_SGR_MOUSE_RE.test(tail) && !COMPLETE_SGR_MOUSE_RE.test(tail)) {
-    return { processable: raw.slice(0, lastEsc), partial: tail };
-  }
-
-  return { processable: raw, partial: '' };
 }
 
 export function createFilteredStdin(
   stdin: NodeJS.ReadStream,
-  opts?: { activate?: boolean | undefined },
+  opts?: { activate?: boolean | undefined; mouse?: boolean | undefined },
 ): FilteredStdin {
   const filtered = bridgeTty(new PassThrough(), stdin);
   const decoder = new StringDecoder('utf8');
+  const mouseEnabled = opts?.mouse ?? true;
   let mouseListeners: MouseListener[] = [];
-  let partial = '';
-  let pastePartial = '';
+  let heldPrefix = EMPTY_BUFFER;
   let pasteActive = false;
   let active = false;
   let disabled = false;
   let heldPrefixTimer: ReturnType<typeof setTimeout> | null = null;
 
   const clearHeldPrefixTimer = () => {
-    if (heldPrefixTimer) {
-      clearTimeout(heldPrefixTimer);
-      heldPrefixTimer = null;
-    }
+    if (!heldPrefixTimer) return;
+    clearTimeout(heldPrefixTimer);
+    heldPrefixTimer = null;
   };
 
-  // A paste-marker prefix (`\x1b`, `\x1b[2`, `\x1b[20`, `\x1b[200`, `\x1b[201`) is held one
-  // chunk so a marker split across chunks can reassemble. But that same prefix can also be the
-  // start of a real keypress with no follow-up chunk; holding it indefinitely would freeze that
-  // key and then merge its bytes into the next chunk, re-parsing as a different key. So when a
-  // prefix is held and no paste is open, flush it as its own chunk after a short delay; the next
-  // chunk (which would complete a marker) cancels the timer before it fires.
+  const writeText = (text: string, paste: boolean) => {
+    const output = paste ? sanitizePasteBody(text) : text;
+    if (output.length > 0) filtered.write(output, 'utf8');
+  };
+
+  const writeBytes = (bytes: Buffer, paste: boolean) => {
+    const clean = paste ? sanitizePasteBytes(bytes) : bytes;
+    if (clean.length === 0) return;
+    writeText(decoder.write(clean), paste);
+  };
+
+  const dispatchMouse = (event: MouseEvent | undefined) => {
+    if (!event) return;
+    for (const listener of mouseListeners) listener(event);
+  };
+
+  const processBytes = (source: Buffer) => {
+    let cursor = 0;
+    let textStart = 0;
+
+    while (cursor < source.length) {
+      if (source.readUInt8(cursor) !== ESC) {
+        cursor++;
+        continue;
+      }
+
+      if (cursor > textStart) writeBytes(source.subarray(textStart, cursor), pasteActive);
+
+      const tail = source.subarray(cursor);
+      const decision = readEscape(tail, pasteActive, mouseEnabled);
+      switch (decision.kind) {
+        case 'hold':
+          heldPrefix = Buffer.from(tail);
+          return;
+        case 'paste-start':
+          pasteActive = true;
+          cursor += decision.length;
+          break;
+        case 'paste-end':
+          pasteActive = false;
+          cursor += decision.length;
+          break;
+        case 'mouse':
+          dispatchMouse(decision.event);
+          cursor += decision.length;
+          break;
+        case 'skip':
+          cursor += decision.length;
+          break;
+        case 'text':
+          writeBytes(source.subarray(cursor, cursor + decision.length), false);
+          cursor += decision.length;
+          break;
+      }
+      textStart = cursor;
+    }
+
+    if (textStart < source.length) writeBytes(source.subarray(textStart), pasteActive);
+  };
+
+  const flushHeldPrefix = () => {
+    if (heldPrefix.length === 0) return;
+    const held = heldPrefix;
+    heldPrefix = EMPTY_BUFFER;
+    if (pasteActive) return;
+    writeBytes(held, false);
+  };
+
   const scheduleHeldPrefixFlush = () => {
     clearHeldPrefixTimer();
-    if (pasteActive || pastePartial === '') return;
-    const held = pastePartial;
-    heldPrefixTimer = setTimeout(() => {
-      heldPrefixTimer = null;
-      if (disabled || pastePartial !== held) return;
-      pastePartial = '';
-      filtered.write(held, 'utf8');
-    }, HELD_PREFIX_FLUSH_MS);
+    if (heldPrefix.length === 0) return;
+    if (pasteActive) return;
+    const held = heldPrefix;
+    heldPrefixTimer = setTimeout(
+      () => {
+        heldPrefixTimer = null;
+        if (disabled || !heldPrefix.equals(held)) return;
+        flushHeldPrefix();
+      },
+      isBareEscapePrefix(held) ? BARE_ESCAPE_PREFIX_FLUSH_MS : HELD_PREFIX_FLUSH_MS,
+    );
   };
 
   const dataHandler = (chunk: Buffer) => {
     clearHeldPrefixTimer();
-    const raw = partial + decoder.write(chunk);
-    const next = splitMouseChunk(raw);
-    partial = next.partial;
-
-    const { events, clean } = parseMouseEvents(next.processable);
-    for (const event of events) {
-      for (const listener of mouseListeners) listener(event);
-    }
-
-    const paste = stripPasteMarkers(pastePartial + clean, pasteActive);
-    pasteActive = paste.pasteActive;
-    pastePartial = paste.partial;
-    if (paste.clean.length > 0) {
-      filtered.write(paste.clean, 'utf8');
-    }
+    const source = heldPrefix.length > 0 ? Buffer.concat([heldPrefix, chunk]) : chunk;
+    heldPrefix = EMPTY_BUFFER;
+    processBytes(source);
     scheduleHeldPrefixFlush();
   };
 
   const activate = () => {
     if (active || disabled) return;
     active = true;
-    setTerminalInputModes('enable');
+    setTerminalInputModes('enable', { mouse: mouseEnabled, paste: true });
     stdin.on('data', dataHandler);
   };
 
@@ -291,14 +463,11 @@ export function createFilteredStdin(
       if (active) {
         active = false;
         stdin.off('data', dataHandler);
-        setTerminalInputModes('disable');
+        setTerminalInputModes('disable', { mouse: mouseEnabled, paste: true });
       }
-      // Flush any withheld bytes (e.g. a lone trailing ESC held for one chunk) so a final
-      // keypress with no follow-up chunk still reaches the consumer instead of being dropped.
-      const leftover = partial + pastePartial;
-      if (leftover.length > 0) filtered.write(leftover, 'utf8');
-      partial = '';
-      pastePartial = '';
+      flushHeldPrefix();
+      writeText(decoder.end(), pasteActive);
+      heldPrefix = EMPTY_BUFFER;
       pasteActive = false;
       filtered.end();
     },

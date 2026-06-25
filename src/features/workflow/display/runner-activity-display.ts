@@ -1,4 +1,3 @@
-import { formatToolModel } from '../../../core/model-display.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import {
   sanitizeTerminalDisplayText,
@@ -106,10 +105,6 @@ export function runnerActivityDiagnosticPreview(
   if (clean.length === 0) return null;
 
   return truncateTerminalDisplayText(clean, maxCells);
-}
-
-export function runnerActivityToolLabel(input: RunnerActivityDisplayInput): string {
-  return cleanRunnerActivityText(formatToolModel(input.runnerName, input.model));
 }
 
 export function runnerActivityRoleLabel(

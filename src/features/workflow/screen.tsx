@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
@@ -166,6 +166,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
     reviewStore,
   );
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
+  const [scrollAboveLabel, setScrollAboveLabel] = useState('');
 
   const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
   const approvalPromptState = approvalPromptStore.use((s) => s);
@@ -315,7 +316,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
 
   return (
     <ScreenShell
-      header={<WorkflowHeader startedAt={runner.startedAt} />}
+      header={<WorkflowHeader startedAt={runner.startedAt} scrollAboveLabel={scrollAboveLabel} />}
       footer={
         <>
           <Divider width={cols} />
@@ -343,7 +344,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
         phase={phase}
         contentHeight={contentHeight}
         contentWidth={contentWidth}
-        terminalCols={cols}
+        onScrollAbove={setScrollAboveLabel}
       />
       <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
         {approvalPromptState.status === 'pending' && <ApprovalPrompt />}

@@ -68,6 +68,22 @@ describe('terminal control', () => {
     ]);
   });
 
+  it('can enable and disable bracketed paste without mouse tracking', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+
+    setTerminalInputModes('enable', { mouse: false, paste: true });
+    setTerminalInputModes('disable', { mouse: false, paste: true });
+
+    expect(written).toEqual([
+      terminalSequences.enableBracketedPaste,
+      terminalSequences.disableBracketedPaste,
+    ]);
+  });
+
   it('restores fullscreen, mouse, paste, and raw terminal modes', () => {
     const written: string[] = [];
     process.stdout.write = ((chunk: string) => {
@@ -86,6 +102,19 @@ describe('terminal control', () => {
       terminalSequences.showCursor,
     ]);
     expect(rawModes).toEqual([false]);
+  });
+
+  it('can restore paste mode without restoring mouse mode', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const { stdin } = makeFakeStdin();
+
+    restoreTerminalControl({ fullscreen: false, mouse: false, paste: true, stdin });
+
+    expect(written).toEqual([terminalSequences.disableBracketedPaste]);
   });
 
   it('ignores synchronous broken-pipe writes', () => {

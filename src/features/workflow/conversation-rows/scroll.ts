@@ -5,7 +5,11 @@ import {
   getConversationRowsProjection,
   getConversationRowsWindowProjection,
 } from './projection-cache.js';
-import type { ConversationRowScrollComputation, ConversationRowScrollInputs } from './types.js';
+import type {
+  ConversationRowsProjection,
+  ConversationRowScrollComputation,
+  ConversationRowScrollInputs,
+} from './types.js';
 
 interface AnchoredScrollOffsetInput {
   rawScrollOffset: number;
@@ -24,6 +28,58 @@ function computeAnchoredScrollOffset(input: AnchoredScrollOffsetInput): number {
   return clamp(rawScrollOffset + heightDelta, 0, maxOffset);
 }
 
+function findLastActiveRowKey(blocks: ConversationRowsProjection['blocks']): string | null {
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const activeRowKey = blocks[i]?.activeRowKey;
+    if (activeRowKey !== undefined) return activeRowKey;
+  }
+  return null;
+}
+
+export function computeConversationRowsWindowFromProjection(input: {
+  projection: ConversationRowsProjection;
+  viewportHeight: number;
+  rawScrollOffset: number;
+  renderableCountAtScroll: number;
+  heightAtScroll: number;
+}): Omit<ConversationRowScrollComputation, 'viewportHeight'> {
+  const { projection, viewportHeight } = input;
+  const renderableCount = projection.renderableCount;
+  const newEventCount =
+    input.rawScrollOffset > 0 ? Math.max(0, renderableCount - input.renderableCountAtScroll) : 0;
+  const totalDynamicHeight = projection.totalRows;
+  const maxOffset = computeScrollMaxOffset(totalDynamicHeight, viewportHeight, newEventCount > 0);
+  const scrollOffset = computeAnchoredScrollOffset({
+    rawScrollOffset: input.rawScrollOffset,
+    heightAtScroll: input.heightAtScroll,
+    totalDynamicHeight,
+    maxOffset,
+  });
+  const windowState = getScrollWindowState({
+    totalHeight: totalDynamicHeight,
+    viewportHeight,
+    scrollOffset,
+    hasNewEvents: newEventCount > 0,
+  });
+  const windowProjection = getConversationRowsWindowProjection({
+    projection,
+    windowStart: windowState.windowStart,
+    windowEnd: windowState.windowEnd,
+  });
+
+  return {
+    activeRowKey: findLastActiveRowKey(projection.blocks),
+    maxOffset,
+    newEventCount,
+    renderableCount,
+    rows: windowProjection.rows,
+    scrollOffset,
+    totalDynamicHeight,
+    windowEnd: windowState.windowEnd,
+    windowStart: windowState.windowStart,
+  };
+}
+
 export function computeConversationRowScroll(
   inputs: ConversationRowScrollInputs,
 ): ConversationRowScrollComputation {
@@ -40,42 +96,16 @@ export function computeConversationRowScroll(
     streaming: inputs.streaming,
   };
   const projection = getConversationRowsProjection(projectionInput);
-  const renderableCount = projection.renderableCount;
-  const newEventCount =
-    inputs.rawScrollOffset > 0 ? Math.max(0, renderableCount - inputs.renderableCountAtScroll) : 0;
-  const totalDynamicHeight = projection.totalRows;
-  const maxOffset = computeScrollMaxOffset(
-    totalDynamicHeight,
-    scrollViewportHeight,
-    newEventCount > 0,
-  );
-  const scrollOffset = computeAnchoredScrollOffset({
-    rawScrollOffset: inputs.rawScrollOffset,
-    heightAtScroll: inputs.heightAtScroll,
-    totalDynamicHeight,
-    maxOffset,
-  });
-  const windowState = getScrollWindowState({
-    totalHeight: totalDynamicHeight,
+  const windowResult = computeConversationRowsWindowFromProjection({
+    projection,
     viewportHeight: scrollViewportHeight,
-    scrollOffset,
-    hasNewEvents: newEventCount > 0,
-  });
-  const windowProjection = getConversationRowsWindowProjection({
-    ...projectionInput,
-    windowStart: windowState.windowStart,
-    windowEnd: windowState.windowEnd,
+    rawScrollOffset: inputs.rawScrollOffset,
+    renderableCountAtScroll: inputs.renderableCountAtScroll,
+    heightAtScroll: inputs.heightAtScroll,
   });
 
   return {
-    maxOffset,
-    newEventCount,
-    renderableCount,
-    rows: windowProjection.rows,
-    scrollOffset,
-    totalDynamicHeight,
+    ...windowResult,
     viewportHeight: scrollViewportHeight,
-    windowEnd: windowState.windowEnd,
-    windowStart: windowState.windowStart,
   };
 }

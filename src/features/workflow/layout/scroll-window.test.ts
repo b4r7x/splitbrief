@@ -6,17 +6,12 @@ import {
 } from './scroll-window.js';
 
 function renderedRows(state: ScrollWindowState): number {
-  return (
-    state.innerHeight +
-    state.newEventRows +
-    (state.linesAbove > 0 ? 1 : 0) +
-    (state.linesBelow > 0 ? 1 : 0)
-  );
+  return state.innerHeight + state.newEventRows + (state.linesBelow > 0 ? 1 : 0);
 }
 
 describe('computeScrollMaxOffset', () => {
-  it('reserves stable rows for scroll banners when content overflows', () => {
-    expect(computeScrollMaxOffset(20, 10, false)).toBe(12);
+  it('reserves stable rows for the below scroll banner when content overflows', () => {
+    expect(computeScrollMaxOffset(20, 10, false)).toBe(11);
   });
 
   it('clamps to zero when content fits in the viewport', () => {
@@ -24,7 +19,7 @@ describe('computeScrollMaxOffset', () => {
   });
 
   it('adds an extra row when the new-events banner is visible', () => {
-    expect(computeScrollMaxOffset(20, 10, true)).toBe(13);
+    expect(computeScrollMaxOffset(20, 10, true)).toBe(12);
   });
 });
 
@@ -38,9 +33,9 @@ describe('getScrollWindowState', () => {
         hasNewEvents: false,
       }),
     ).toMatchObject({
-      bannerRows: 2,
-      innerHeight: 8,
-      linesAbove: 12,
+      bannerRows: 1,
+      innerHeight: 9,
+      linesAbove: 11,
       linesBelow: 0,
     });
 
@@ -52,14 +47,14 @@ describe('getScrollWindowState', () => {
         hasNewEvents: false,
       }),
     ).toMatchObject({
-      bannerRows: 2,
-      innerHeight: 8,
+      bannerRows: 1,
+      innerHeight: 9,
       linesAbove: 0,
-      linesBelow: 12,
+      linesBelow: 11,
     });
   });
 
-  it('stabilizes when both scroll banners and the new-events banner are visible', () => {
+  it('stabilizes when the below scroll banner and the new-events banner are visible', () => {
     expect(
       getScrollWindowState({
         totalHeight: 40,
@@ -68,9 +63,9 @@ describe('getScrollWindowState', () => {
         hasNewEvents: true,
       }),
     ).toMatchObject({
-      bannerRows: 3,
-      innerHeight: 7,
-      linesAbove: 25,
+      bannerRows: 2,
+      innerHeight: 8,
+      linesAbove: 24,
       linesBelow: 8,
     });
   });
@@ -94,7 +89,7 @@ describe('getScrollWindowState', () => {
     expect(scrolled.linesBelow).toBe(1);
   });
 
-  it('reserves both scroll banners for shallow middle overflow', () => {
+  it('reserves the below scroll banner for shallow middle overflow', () => {
     const state = getScrollWindowState({
       totalHeight: 11,
       viewportHeight: 10,
@@ -103,9 +98,9 @@ describe('getScrollWindowState', () => {
     });
 
     expect(state).toMatchObject({
-      bannerRows: 2,
-      innerHeight: 8,
-      linesAbove: 2,
+      bannerRows: 1,
+      innerHeight: 9,
+      linesAbove: 1,
       linesBelow: 1,
     });
     expect(renderedRows(state)).toBe(10);
@@ -211,9 +206,9 @@ describe('getScrollWindowState', () => {
         hasNewEvents: true,
       }),
     ).toMatchObject({
-      windowStart: 12,
+      windowStart: 11,
       windowEnd: 20,
-      linesAbove: 12,
+      linesAbove: 11,
       linesBelow: 0,
       newEventRows: 0,
     });

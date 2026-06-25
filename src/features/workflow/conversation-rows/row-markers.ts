@@ -5,7 +5,7 @@ export function rowMarker(kind: ConversationRowKind): string | null {
   if (kind === 'task-header' || kind === 'activity') return '⏺ ';
   if (kind === 'activity-child') return '  │ ';
   if (kind === 'activity-child-last') return '  └ ';
-  if (kind === 'activity-more') return '  ⋯ ';
+  if (kind === 'activity-more') return '  ▾ ';
   return null;
 }
 

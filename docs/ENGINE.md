@@ -175,7 +175,7 @@ The split exists because events and callbacks solve different problems. Events p
 
 ## Transcript protection
 
-`protectEngineEventForConsumer()` is applied before events leave the engine through the session log, tree recorder, IPC/TUI, stdout JSON, or RPC. With `persistTranscript: true`, events still pass through public payload size/shape protection. With `persistTranscript: false`, full transcript-like event types are omitted: `planner_text`, `user_message`, clarification text events, `implementer_generate_done`, and runner text/tool/artifact payload events. Safe `runner_call_activity`, usage, lifecycle, and terminal status remain visible after redaction. Runner activity raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`; raw markers are only affordances, never inline raw text. `workflow_started.feature`, IPC `session_meta.feature`, queue previews, RPC status state, task titles/reasons, task-review prose, approval/revision comments, retry errors, cost-prediction task prose, native session ids, and other prompt-bearing metadata are stripped or replaced so lifecycle remains observable without exposing user text.
+`protectEngineEventForConsumer()` is applied before events leave the engine through the session log, tree recorder, IPC/TUI, stdout JSON, or RPC. With `persistTranscript: true`, events still pass through public payload size/shape protection. With `persistTranscript: false`, full transcript-like event types are omitted: `planner_text`, `user_message`, clarification text events, `implementer_generate_done`, and runner text/tool/artifact payload events. Safe `runner_call_activity`, usage, lifecycle, and terminal status remain visible after redaction. Runner activity raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`; raw markers are only affordances, never inline raw text. `workflow_started.feature`, IPC `session_meta.feature`, queued-message text, RPC status state, task titles/reasons, task-review prose, approval/revision comments, retry errors, cost-prediction task prose, native session ids, and other prompt-bearing metadata are stripped or replaced so lifecycle remains observable without exposing user text.
 
 Runner-call warning and error events remain structurally visible, but their message text is replaced with `[transcript omitted]` because backend diagnostics can contain prompt or transcript fragments. Ordinary operational `warning` and `error` events keep their bounded message text, so queue-full, queue-not-ready, IPC, replay, and protection diagnostics remain actionable in transcript-off mode.
 
@@ -193,12 +193,11 @@ The full path from engine to pixel:
    - `eventsStore` — appends the TUI-safe event-log projection
    - `tasksStore` — updates task progress (status, counts)
    - `tokensStore` — updates cost and token usage
-   - `lifecycleStore` — updates phase, queue depth/previews, terminal workflow timing
+   - `lifecycleStore` — updates phase, queue depth, terminal workflow timing
    - `operationsStore` — updates active/last runner operation lifecycle for compact status
-   - `activityStore` — updates bounded runner/tool activity from safe normalized metadata
 4. React components using `store.use(s => s.tasks)` re-render when their selector output changes
 
-**Ordering invariant:** safe retained event log, then tasks, then tokens, then lifecycle, then operations, then activity. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. `addEvent()` computes the safe event-log projection first, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
+**Ordering invariant:** safe retained event log, then tasks, then tokens, then lifecycle, then operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. `addEvent()` computes the safe event-log projection first, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
 
 `cost_update` events take a fast path: they skip the event log and task store and only update tokens. This avoids growing the event log with high-frequency cost ticks.
 

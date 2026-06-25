@@ -52,7 +52,7 @@ function currentSessionId(projectDir: string): string | null {
 }
 
 function conversationPageStep(viewportHeight: number): number {
-  return Math.max(1, viewportHeight - 2);
+  return Math.max(1, viewportHeight - 1);
 }
 
 function scrollConversation(target: ScrollCommandTarget): ScrollConversationResult {

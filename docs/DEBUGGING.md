@@ -56,7 +56,7 @@ For CI or programmatic inspection, bypass the Ink TUI entirely and emit NDJSON `
 diptych start --json "feature description" 2>/dev/null | jq .
 ```
 
-Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log. With `workflow.persistTranscript: false`, stdout JSON applies the same transcript protection as session logs, IPC, RPC, summaries, and telemetry: transcript events are omitted, queue previews are stripped, runner payload events are omitted, safe runner activity is kept, and feature prompt metadata is replaced or omitted.
+Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log. With `workflow.persistTranscript: false`, stdout JSON applies the same transcript protection as session logs, IPC, RPC, summaries, and telemetry: transcript events are omitted, queued-message text is stripped, runner payload events are omitted, safe runner activity is kept, and feature prompt metadata is replaced or omitted.
 
 `--json` requires a feature argument on `start`. `resume`, `continue`, and `last` rehydrate interrupted sessions from saved state.
 

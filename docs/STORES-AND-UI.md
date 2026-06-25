@@ -33,7 +33,6 @@ flowchart LR
   Tokens["tokensStore"]
   Lifecycle["lifecycleStore"]
   Operations["operationsStore"]
-  Activity["activityStore"]
   React["React components"]
 
   Engine -->|"publish(event)"| Sink
@@ -42,22 +41,20 @@ flowchart LR
   Sink --> Tokens
   Sink --> Lifecycle
   Sink --> Operations
-  Sink --> Activity
   Events -->|"store.use(selector)"| React
   Tasks -->|"store.use(selector)"| React
   Tokens -->|"store.use(selector)"| React
   Lifecycle -->|"store.use(selector)"| React
   Operations -->|"store.use(selector)"| React
-  Activity -->|"store.use(selector)"| React
 ```
 
-The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- a function in `src/stores/workflow/actions.ts` that dispatches each event synchronously to workflow sub-stores in a fixed order: safe event log, tasks, tokens, lifecycle, operations, activity. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
+The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- a function in `src/stores/workflow/actions.ts` that dispatches each event synchronously to workflow sub-stores in a fixed order: safe event log, tasks, tokens, lifecycle, and operations. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
 
 This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot or handoff functions — but engine events still flow into render state through stores, not direct component imports.
 
 Store modules may import engine types with `import type` (`EngineEvent`, detection service types), but they must not import engine values. Engine modules do not import store values; they publish events and receive explicit inputs.
 
-`runner_call_*` events are part of that same event stream. `addEvent()` projects the event-log copy before retaining it: raw `runner_call_text_delta`, tool-use, session-id, artifact, warning, error, and completion events are not stored in `eventsStore.events`. The same original event still reaches the operational stores in the same synchronous dispatch. `operationsStore` consumes runner-call lifecycle events as the canonical active-operation lifecycle for the status row: start, terminal status, duration, partial output flag, runner/model metadata, grouped warnings, and usage. Terminal operation fields are frozen once a call is cancelled/completed/failed, so late abort or warning telemetry cannot mutate the visible cancelled row. The engine separately projects safe `runner_call_activity` events from structured tool/action/session/artifact progress; conversation rows render that already-redacted activity surface as compact task/activity children, and wide terminals also render the bounded `ActivitySideRail` from `activityStore`. Raw runner text/tool/session/artifact payload events stay silent in conversation rows, and `tokensStore` does not count runner-call usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting.
+`runner_call_*` events are part of that same event stream. `addEvent()` projects the event-log copy before retaining it: raw `runner_call_text_delta`, tool-use, session-id, artifact, warning, error, and completion events are not stored in `eventsStore.events`. The same original event still reaches the operational stores in the same synchronous dispatch. `operationsStore` consumes runner-call lifecycle events as the canonical active-operation lifecycle for the status row: start, terminal status, duration, partial output flag, runner/model metadata, grouped warnings, and usage. Terminal operation fields are frozen once a call is cancelled/completed/failed, so late abort or warning telemetry cannot mutate the visible cancelled row. The engine separately projects safe `runner_call_activity` events from structured tool/action/session/artifact progress; conversation rows render that already-redacted activity surface as compact task/activity children. Raw runner text/tool/session/artifact payload events stay silent in conversation rows, and `tokensStore` does not count runner-call usage directly. `cost_update` remains the canonical user-facing token/cost projection, which avoids double-counting.
 
 Cancellation has the same shape in every path. UI cancel first records a local cancellation intent so the screen stops spinning immediately, then the engine publishes `workflow_cancelled` with a reason such as `user_cancelled`. Both paths terminalize running operations with `endedAt` and `durationMs`; late `runner_call_error(status: aborted)` or final cost events are accepted idempotently.
 
@@ -72,11 +69,10 @@ When the workflow needs a human decision -- approve a spec, answer a question, c
 Runtime state of the active workflow run.
 
 - **eventsStore** -- the TUI-safe event log. Array of projected `EngineEvent` objects, merged and capped. It keeps structural workflow/task events, safe planner/validation messages, and safe `runner_call_activity` display events. It does not retain raw runner text, tool-use, session-id, artifact, warning, error, or completion payloads. When capped, ordinary activity/log events are evicted before structural task/config events so completed-task summaries and active task grouping remain reconstructable.
-- **lifecycleStore** -- current phase (`researching`, `reviewing-spec`, `implementing`, etc.), cancellation flag, message queue depth, and sanitized pending queue previews.
+- **lifecycleStore** -- current phase (`researching`, `reviewing-spec`, `implementing`, etc.), cancellation flag, and message queue depth.
 - **tasksStore** -- task map, ordered task list, current/total counts, completion times.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
 - **operationsStore** -- active/last normalized runner operation. This is the source of truth for `AgentStatusRow`; terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity.
-- **activityStore** -- bounded live runner/tool activity derived from safe structured metadata. Repeated visible activity identity replaces the prior item, so duplicate warning/tool updates do not inflate the side rail. Conversation rows render the same safe `runner_call_activity` events directly from the event stream.
 - **conversationScrollStore** -- scroll offset for the conversation view.
 - **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
 - **streamingOutputStore** -- live implementer output lines.
@@ -154,7 +150,7 @@ The main screen during execution. Key hooks:
 
 Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
 
-`AgentStatusRow` reads `operationsStore.active ?? operationsStore.last` and renders only compact operation state: spinner, role, phase, elapsed/proof-of-life/tokens, terminal status, warning count, and runner/model when width allows. It never renders model answer text, raw stdout, prompts, or long activity strings. `ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerText`, and `tone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block shows the latest three distinct items, such as `run  npm run typecheck`, `read  src/app.ts`, `search  useWorkflowRunner`, `call  github/list_issues`, `session  captured`, or `artifact  plan.md`; when older distinct items are hidden, the batch shows an explicit `/activity, Ctrl+A` expand affordance for only that targetable batch. At 120+ columns the runtime body splits into transcript plus `ActivitySideRail`, which reads `activityStore` for a bounded live timeline; 80-100 column layouts keep the side rail hidden. Assistant/result text from runner streams is transcript/output content only. `InputFooter` reads `lifecycleStore.queueDepth` and `queuePreviews` so the pending queue remains visible near the composer. Queue previews are one-line, sanitized, bounded summaries, not source transcript.
+`AgentStatusRow` reads `operationsStore.active ?? operationsStore.last` and renders only compact operation state: spinner, role, phase, elapsed/proof-of-life/tokens, terminal status, warning count, and runner/model when width allows. It never renders model answer text, raw stdout, prompts, or long activity strings. `ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerText`, and `tone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block shows the latest three distinct items, such as `run  npm run typecheck`, `read  src/app.ts`, `search  useWorkflowRunner`, `call  github/list_issues`, `session  captured`, or `artifact  plan.md`; when older distinct items are hidden, the batch shows the compact `ctrl+a` affordance for only that targetable batch. `/activity` and `Ctrl+A` both toggle the latest expandable activity batch. Assistant/result text from runner streams is transcript/output content only. `InputFooter` reads `lifecycleStore.queueDepth` so the pending queue count remains visible near the composer without echoing queued text outside the conversation.
 
 Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe display row has an expansion target in the persisted transcript/log; it does not mean raw text can be shown inline or shown without re-sanitizing. The transcript uses a `raw` marker only as an affordance. With `persistTranscript:false`, protected events force `rawAvailable:false` and omit `expandId`, so the UI has no raw expansion target. Default display payloads and expansion payloads canonicalize terminal controls before redaction.
 
@@ -196,7 +192,6 @@ interface LifecycleState {
   status: 'idle' | 'running' | 'complete' | 'cancelled';
   cancelled: boolean;
   queueDepth: number;    // pending user messages
-  queuePreviews: readonly { id: string; preview: string }[];
   startedAt: number | null;
   endedAt: number | null;
   durationMs: number | null;
@@ -243,31 +238,6 @@ interface OperationWarningGroup {
   firstTs: number;
   lastTs: number;
   latestMessage: string;
-}
-
-// src/stores/workflow/activity.ts
-interface ActivityState {
-  items: readonly ActivityItem[];
-}
-interface ActivityItem {
-  id: string;
-  callId: string;
-  taskId?: string;
-  ts: number;
-  phase: Phase;
-  role: OperationRole;
-  stage: 'started' | 'updated' | 'completed' | 'warning' | 'failed' | 'aborted' | 'timeout' | 'truncated' | 'refused' | 'unsupported_tool' | 'incomplete';
-  kind: 'tool' | 'command' | 'file' | 'read' | 'write' | 'edit' | 'search' | 'glob' | 'task' | 'web' | 'mcp' | 'plan' | 'session' | 'artifact' | 'warning' | 'error' | 'text' | 'unknown';
-  label: string;       // safe, sanitized, terminal-cell bounded
-  target?: string;
-  runnerName?: string;
-  model?: string;
-  redacted: boolean;
-  rawAvailable: boolean; // false when transcript persistence or protection forbids raw expansion
-  expandId?: string;     // present only for an allowed raw expansion target
-  textPartial?: string;
-  diagnosticPartial?: string;
-  sequence: number;
 }
 
 // src/stores/workflow/tasks.ts

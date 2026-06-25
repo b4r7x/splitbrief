@@ -2,7 +2,6 @@ import { groupEventsIntoSections } from '../../core/sections/event-sections.js';
 import type { Section } from '../../core/sections/event-sections.js';
 import type { TaskCompletionMethod } from '../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
-import { formatQueuedMessagePreview } from '../../core/queue-preview.js';
 import { classifyTaskCompletionMethod } from '../../core/task-completion.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
@@ -30,7 +29,6 @@ import {
   _lifecycleInternal,
   lifecycleStore,
   type LifecycleState,
-  type QueuedMessagePreview,
   markLifecycleCancellationRequested,
   updatePhase,
   updateQueueDepth,
@@ -41,7 +39,6 @@ import {
   operationsStore,
   updateOperations,
 } from './operations.js';
-import { _activityInternal, activityStore, updateActivity } from './activity.js';
 import { streamingOutputStore } from './streaming-output.js';
 
 export function addEvent(event: EngineEvent): void {
@@ -57,7 +54,7 @@ export function addEvent(event: EngineEvent): void {
   // noise that would restart old phase spans.
   if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
 
-  // Ordering invariant: retained event log → tasks → tokens → lifecycle → operations → activity.
+  // Ordering invariant: retained event log → tasks → tokens → lifecycle → operations.
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
   // consistent commit with all workflow stores updated.
@@ -90,7 +87,6 @@ export function addEvent(event: EngineEvent): void {
   });
 
   _operationsInternal.set((s) => updateOperations(s, event));
-  _activityInternal.set((s) => updateActivity(s, event));
 }
 
 export interface CancellationIntent {
@@ -106,7 +102,6 @@ export function markCancellationRequested(intent: CancellationIntent = {}): bool
     reason: intent.reason ?? 'user_cancelled',
   };
   _operationsInternal.set((s) => markOperationsCancellationRequested(s, cancellation));
-  _activityInternal.set((s) => ({ ...s, items: [] }));
   _lifecycleInternal.set((s) => markLifecycleCancellationRequested(s, cancellation));
   return true;
 }
@@ -121,7 +116,6 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tokensStore.reset();
   lifecycleStore.reset();
   operationsStore.reset();
-  activityStore.reset();
   streamingOutputStore.reset();
   cachedEvents = null;
   cachedSections = [];
@@ -136,7 +130,6 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
   const startedAt = timestampFromIso(resume.startedAt);
   const pendingMessages = pendingQueueMessages(resume.messageQueue);
   const queueDepth = pendingMessages.length;
-  const queuePreviews = queuePreviewsFromMessages(pendingMessages);
   if (resume.phase === 'complete') {
     const endedAt = startedAt ?? Date.now();
     return {
@@ -144,7 +137,6 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
       status: 'complete',
       cancelled: false,
       queueDepth,
-      queuePreviews,
       startedAt,
       endedAt,
       durationMs: Math.max(0, endedAt - (startedAt ?? endedAt)),
@@ -156,7 +148,6 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
     status: 'running',
     cancelled: false,
     queueDepth,
-    queuePreviews,
     startedAt,
     endedAt: null,
     durationMs: null,
@@ -172,15 +163,6 @@ function pendingQueueMessages(messages: readonly QueuedMessage[]): QueuedMessage
       message.nativeDeliveryState !== 'delivered' &&
       message.nativeDeliveryState !== 'injecting',
   );
-}
-
-function queuePreviewsFromMessages(messages: readonly QueuedMessage[]): QueuedMessagePreview[] {
-  const previews: QueuedMessagePreview[] = [];
-  for (const message of messages) {
-    const preview = formatQueuedMessagePreview(message);
-    if (preview.length > 0) previews.push({ id: message.id, preview });
-  }
-  return previews;
 }
 
 function tasksStateFromResume(

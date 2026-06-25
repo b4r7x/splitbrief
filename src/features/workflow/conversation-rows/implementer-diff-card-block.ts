@@ -1,13 +1,17 @@
+import { SOFT_SEP } from '../../../components/separators.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getMaxVisibleDiffLines } from '../layout/diff-height.js';
-import type { ConversationRowBlock, RowBuildContext } from './types.js';
+import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from './types.js';
 import {
   cardRowsWindowSlice,
   countCardRows,
   sanitizeRowDisplayText,
   type CardBodyLineInput,
 } from './row-format.js';
+
+const ELLIPSIS = '\u2026';
+const COLLAPSE_HINT = 'ctrl+d to collapse';
 
 function diffLineTone(line: string): 'success' | 'error' | 'textDim' {
   if (line.startsWith('+ ')) return 'success';
@@ -33,9 +37,18 @@ export function implementerExpandedDiffCardBlock(
     text: `${String(index + 1).padStart(3, '0')} ${line}`,
     tone: diffLineTone(line),
   }));
-  bodyLines.push({ text: 'Ctrl+D', tone: 'textDim' });
   if (remaining > 0) {
-    bodyLines.push({ text: `...${remaining} more lines`, tone: 'textDim' });
+    const hintSegments: ConversationRowSegment[] = [
+      { text: `${ELLIPSIS} ${remaining} more lines`, tone: 'textDim' },
+      { text: SOFT_SEP, tone: 'textDim' },
+      { text: COLLAPSE_HINT, tone: 'accent' },
+    ];
+    bodyLines.push({
+      text: hintSegments.map((segment) => segment.text).join(''),
+      segments: hintSegments,
+    });
+  } else {
+    bodyLines.push({ text: COLLAPSE_HINT, tone: 'accent' });
   }
 
   const cardKey = `${keyPrefix}-diff-card`;

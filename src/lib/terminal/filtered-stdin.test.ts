@@ -8,6 +8,14 @@ import {
 } from './filtered-stdin.js';
 import { terminalSequences } from './control.js';
 
+function x10MouseSequence(button: number, x: number, y: number): string {
+  return `\u001b[M${String.fromCharCode(button + 32)}${String.fromCharCode(x + 32)}${String.fromCharCode(y + 32)}`;
+}
+
+function x10MouseBytes(button: number, x: number, y: number): Buffer {
+  return Buffer.from([0x1b, 0x5b, 0x4d, button + 32, x + 32, y + 32]);
+}
+
 describe('parseMouseEvents', () => {
   it('intercepts wheel-up events and removes them from the clean stream', () => {
     const input = `before\u001b[<0;10;20Mmiddle\u001b[<64;10;20Mafter`;
@@ -36,6 +44,22 @@ describe('parseMouseEvents', () => {
 
     expect(events).toEqual([]);
     expect(clean).toBe('text');
+  });
+
+  it('intercepts X10 wheel reports when a terminal does not emit SGR mouse bytes', () => {
+    const { events, clean } = parseMouseEvents(`before${x10MouseSequence(64, 10, 20)}after`);
+
+    expect(clean).toBe('beforeafter');
+    expect(events).toEqual([
+      { type: 'wheel-up', x: 10, y: 20, button: 64, shift: false, meta: false, ctrl: false },
+    ]);
+  });
+
+  it('strips non-wheel X10 mouse reports without emitting events', () => {
+    const { events, clean } = parseMouseEvents(`left${x10MouseSequence(0, 3, 4)}right`);
+
+    expect(clean).toBe('leftright');
+    expect(events).toEqual([]);
   });
 
   it('strips non-wheel sequences with modifier bits', () => {
@@ -106,7 +130,7 @@ async function readFiltered(
   });
 }
 
-describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
+describe('createFilteredStdin input filtering', () => {
   let originalWrite: typeof process.stdout.write;
   let written: string[];
 
@@ -172,6 +196,27 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     expect(clean).toBe('ab');
     expect(events).toEqual([
       { type: 'wheel-down', x: 1, y: 1, button: 65, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('parses raw X10 mouse bytes before UTF-8 decoding and keeps trailing text', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    filtered.onMouse((e) => events.push(e));
+
+    fakeStdin.emit(
+      'data',
+      Buffer.concat([Buffer.from('left'), x10MouseBytes(64, 100, 20), Buffer.from('tail')]),
+    );
+
+    const clean = await readFiltered(filtered.stdin, 'lefttail'.length);
+
+    expect(clean).toBe('lefttail');
+    expect(events).toEqual([
+      { type: 'wheel-up', x: 100, y: 20, button: 64, shift: false, meta: false, ctrl: false },
     ]);
 
     filtered.disable();
@@ -294,7 +339,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('left\u001b'));
-    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 80));
     expect(collected.join('')).toBe('left\u001b');
 
     filtered.disable();
@@ -311,7 +356,7 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('left\u001b[2'));
-    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 45));
 
     expect(chunks.join('')).toBe('left\u001b[2');
     expect(chunks).toContain('\u001b[2');
@@ -329,12 +374,79 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('\u001b[2'));
-    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 45));
     fakeStdin.emit('data', Buffer.from('x'));
     await new Promise((r) => setTimeout(r, 10));
 
     expect(chunks.join('')).toBe('\u001b[2x');
     expect(chunks).not.toContain('\u001b[2x');
+
+    filtered.disable();
+  });
+
+  it('flushes an incomplete ESC[ prefix after the held-prefix delay', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const chunks: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('left\u001b['));
+    await new Promise((r) => setTimeout(r, 45));
+
+    expect(chunks.join('')).toBe('left\u001b[');
+
+    filtered.disable();
+  });
+
+  it('flushes an incomplete ESC[M prefix after the held-prefix delay', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const chunks: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('left\u001b[M'));
+    await new Promise((r) => setTimeout(r, 45));
+
+    expect(chunks.join('')).toBe('left\u001b[M');
+
+    filtered.disable();
+  });
+
+  it('reassembles an SGR mouse report split after a bare ESC', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    filtered.onMouse((e) => events.push(e));
+
+    const cleanPromise = readFiltered(filtered.stdin, 'tail'.length);
+    fakeStdin.emit('data', Buffer.from('\u001b'));
+    fakeStdin.emit('data', Buffer.from('[<64;5;6Mtail'));
+
+    await expect(cleanPromise).resolves.toBe('tail');
+    expect(events).toEqual([
+      { type: 'wheel-up', x: 5, y: 6, button: 64, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('reassembles an X10 mouse report split after a bare ESC', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    filtered.onMouse((e) => events.push(e));
+
+    const cleanPromise = readFiltered(filtered.stdin, 'tail'.length);
+    fakeStdin.emit('data', Buffer.from('\u001b'));
+    fakeStdin.emit(
+      'data',
+      Buffer.concat([Buffer.from('[M'), x10MouseBytes(64, 7, 8).subarray(3), Buffer.from('tail')]),
+    );
+
+    await expect(cleanPromise).resolves.toBe('tail');
+    expect(events).toEqual([
+      { type: 'wheel-up', x: 7, y: 8, button: 64, shift: false, meta: false, ctrl: false },
+    ]);
 
     filtered.disable();
   });
@@ -353,6 +465,31 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     expect(collected.join('')).toBe('left');
 
     fakeStdin.emit('data', Buffer.from('<65;3;4Mright'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('leftright');
+    expect(events).toEqual([
+      { type: 'wheel-down', x: 3, y: 4, button: 65, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('withholds an X10 mouse report split after ESC[M until completion', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    const collected: string[] = [];
+    const report = x10MouseSequence(65, 3, 4);
+    filtered.onMouse((e) => events.push(e));
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from(`left${report.slice(0, 3)}`));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('left');
+
+    fakeStdin.emit('data', Buffer.from(`${report.slice(3)}right`));
     await new Promise((r) => setTimeout(r, 10));
 
     expect(collected.join('')).toBe('leftright');
@@ -429,6 +566,25 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
       terminalSequences.disableBracketedPaste,
     ]);
   });
+
+  it('can enable paste filtering without mouse tracking or mouse dispatch', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin, { mouse: false });
+    const events: MouseEvent[] = [];
+    filtered.onMouse((e) => events.push(e));
+
+    const cleanPromise = readFiltered(filtered.stdin, 'ok'.length);
+    fakeStdin.emit('data', Buffer.from('\u001b[200~o\x03k\u001b[<64;1;1M\u001b[201~'));
+
+    await expect(cleanPromise).resolves.toBe('ok');
+    filtered.disable();
+
+    expect(events).toEqual([]);
+    expect(written).toEqual([
+      terminalSequences.enableBracketedPaste,
+      terminalSequences.disableBracketedPaste,
+    ]);
+  });
 });
 
 describe('createFilteredStdin: lone ESC delivery', () => {
@@ -455,9 +611,8 @@ describe('createFilteredStdin: lone ESC delivery', () => {
     return bytes;
   }
 
-  // A bare \x1b is a valid prefix of both the bracketed-paste start marker (\x1b[200~)
-  // and a partial SGR mouse sequence; these pin that a lone Escape keypress still reaches
-  // the consumer immediately instead of being withheld by the partial buffers.
+  // A bare \x1b is a valid prefix of bracketed paste and mouse reports; these pin that
+  // disable still flushes a real Escape keypress instead of dropping it.
   it('delivers a single lone ESC byte to the consumer', () => {
     const delivered = collectDelivered((source) => {
       source.emit('data', Buffer.from('\x1b'));
@@ -485,8 +640,6 @@ describe('createFilteredStdin: lone ESC delivery', () => {
       source.emit('data', Buffer.from('\x1b'));
       source.emit('data', Buffer.from('[A'));
     });
-    // The filter does not buffer or reassemble: it forwards the lone ESC immediately and the
-    // [A tail separately, so the Up-arrow bytes survive in order for the downstream parser.
     expect(delivered).toEqual([0x1b, 0x5b, 0x41]);
   });
 });
@@ -676,6 +829,32 @@ describe('createFilteredStdin bracketed paste handling', () => {
     filtered.disable();
   });
 
+  it('does not dispatch mouse events from bracketed paste bodies', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    const collected: string[] = [];
+    filtered.onMouse((e) => events.push(e));
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit(
+      'data',
+      Buffer.concat([
+        Buffer.from('\u001b[200~safe'),
+        Buffer.from('\u001b[<64;1;2Mtext'),
+        Buffer.from('\u001b[Mabc'),
+        Buffer.from('done\u001b[201~'),
+      ]),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('safetextabcdone');
+    expect(events).toEqual([]);
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
+
   it('never emits a bare carriage return mid-paste, converting it to a newline', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
@@ -694,6 +873,66 @@ describe('createFilteredStdin bracketed paste handling', () => {
     expect(filtered.isPasteActive()).toBe(false);
 
     filtered.disable();
+  });
+
+  it('strips unsafe paste controls while preserving LF and tab', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b[200~a\x03b\x04c\x08d\x1ae\x7ff\n\tg\u001b[201~'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('abcdef\n\tg');
+
+    filtered.disable();
+  });
+
+  it('keeps a delayed paste start marker pending beyond the base held-prefix delay', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b'));
+    await new Promise((r) => setTimeout(r, 45));
+    fakeStdin.emit('data', Buffer.from('[200~a\rb\u001b[201~'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('a\nb');
+    expect(collected.join('')).not.toContain('\r');
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
+
+  it('drains decoder-held UTF-8 bytes on disable', () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    const emoji = Buffer.from('😀', 'utf8');
+    fakeStdin.emit('data', emoji.subarray(0, 2));
+    filtered.disable();
+
+    expect(collected.join('')).toBe('\uFFFD');
+  });
+
+  it('drops a paste-held escape prefix on disable after emitting paste body text', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b[200~abc\u001b'));
+    await new Promise((r) => setTimeout(r, 10));
+    filtered.disable();
+
+    expect(collected.join('')).toBe('abc');
+    expect(collected.join('')).not.toContain('\u001b');
+    expect(filtered.isPasteActive()).toBe(false);
   });
 
   it('resets paste state on disable', async () => {

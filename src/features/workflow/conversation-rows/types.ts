@@ -60,6 +60,7 @@ export interface ConversationRowBlock {
   key: string;
   rowCount: number;
   renderableUnits: number;
+  activeRowKey?: string;
   createRows: (windowStart: number, windowEnd: number) => ConversationRow[];
 }
 
@@ -70,6 +71,7 @@ export interface ConversationRowsProjection {
 }
 
 export interface ConversationRowScrollComputation {
+  activeRowKey: string | null;
   maxOffset: number;
   newEventCount: number;
   renderableCount: number;

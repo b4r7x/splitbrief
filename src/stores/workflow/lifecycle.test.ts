@@ -43,17 +43,12 @@ describe('lifecycleStore', () => {
       preview: 'second',
     });
     expect(lifecycleStore.get().queueDepth).toBe(2);
-    expect(lifecycleStore.get().queuePreviews.map((entry) => entry.preview)).toEqual([
-      'first',
-      'second',
-    ]);
 
     addEvent({ type: 'queue_drained', ts: Date.now(), count: 2, phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(0);
-    expect(lifecycleStore.get().queuePreviews).toEqual([]);
   });
 
-  it('decrements queueDepth and removes the pending preview on native injection', () => {
+  it('decrements queueDepth on native injection', () => {
     addEvent({
       type: 'message_queued',
       ts: Date.now(),
@@ -71,10 +66,9 @@ describe('lifecycleStore', () => {
     });
 
     expect(lifecycleStore.get().queueDepth).toBe(0);
-    expect(lifecycleStore.get().queuePreviews).toEqual([]);
   });
 
-  it('removes only drained queue previews when queue_drained carries ids', () => {
+  it('uses drained ids to decrement queueDepth', () => {
     addEvent({
       type: 'message_queued',
       ts: Date.now(),
@@ -99,7 +93,6 @@ describe('lifecycleStore', () => {
     });
 
     expect(lifecycleStore.get().queueDepth).toBe(1);
-    expect(lifecycleStore.get().queuePreviews.map((entry) => entry.preview)).toEqual(['second']);
   });
 
   it('decrements queueDepth on queue_cleared by count (clamped at 0)', () => {
@@ -119,10 +112,8 @@ describe('lifecycleStore', () => {
     });
     addEvent({ type: 'queue_cleared', ts: Date.now(), count: 1, phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(1);
-    expect(lifecycleStore.get().queuePreviews.map((entry) => entry.preview)).toEqual(['second']);
     addEvent({ type: 'queue_cleared', ts: Date.now(), count: 5, phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(0);
-    expect(lifecycleStore.get().queuePreviews).toEqual([]);
   });
 
   it('records terminal cancellation timing from workflow_cancelled', () => {

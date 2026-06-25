@@ -19,16 +19,6 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
     const direction = event.type === 'wheel-up' ? -1 : 1;
 
     const review = reviewStore.get();
-    const snapshot = readConversationScrollSnapshot();
-    const contentRect = review.filePath ? snapshot.contentRect : snapshot.conversationRect;
-    if (
-      event.x < contentRect.left ||
-      event.x > contentRect.right ||
-      event.y < contentRect.top ||
-      event.y > contentRect.bottom
-    ) {
-      return;
-    }
 
     if (review.filePath) {
       const visibleHeight = readReviewContentHeight();
@@ -41,6 +31,7 @@ export function wireMouseScroll(filteredStdin: FilteredStdin): () => void {
       return;
     }
 
+    const snapshot = readConversationScrollSnapshot();
     const { renderableCount, totalHeight, maxOffset } = snapshot;
     if (direction < 0) {
       conversationScrollStore.scrollUp({

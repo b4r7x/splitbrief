@@ -18,7 +18,6 @@ import {
   makeCostUpdate,
 } from '#testing/helpers/events.js';
 import { operationsStore } from './operations.js';
-import { activityStore } from './activity.js';
 
 function makeRunnerTextDelta(
   overrides?: Partial<EngineEventOf<'runner_call_text_delta'>>,
@@ -285,14 +284,6 @@ describe('eventsStore — append via addEvent', () => {
       usage: { inputTokens: 1, outputTokens: 2 },
       reason: `failed ${rawSentinel}`,
     });
-    expect(activityStore.get().items).toEqual([
-      expect.objectContaining({
-        id: 'call-1:session',
-        label: 'session captured',
-        rawAvailable: false,
-      }),
-    ]);
-    expect(JSON.stringify(activityStore.get().items)).not.toContain(rawSentinel);
   });
 
   it('sanitizes generic warning and error messages before retaining them', () => {

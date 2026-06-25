@@ -116,6 +116,31 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('keeps long configured model labels to one row before slash hints', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
+    const longModel =
+      'provider-family-ultra-long-model-name-with-capability-flags-and-release-channel';
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: longModel },
+        implementer: { model: longModel },
+      }),
+    });
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    const plannerLine = lineContaining(frame, 'Planner');
+    const implementerLine = lineContaining(frame, 'Implementer');
+
+    expect(plannerLine).toContain('/plann');
+    expect(implementerLine).toContain('/implem');
+    expect(frame.split('\n').length).toBeLessThanOrEqual(30);
+    ui.unmount();
+  });
+
   it('caps recent sessions and reports a hidden count when capacity is tight', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
 
@@ -135,7 +160,8 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('feature 24');
-    expect(frame).toMatch(/\+\d+ more/);
+    expect(frame).toMatch(/\b\d+ more\b/);
+    expect(frame).toContain('ctrl+r');
     ui.unmount();
   });
 
@@ -238,7 +264,7 @@ describe('HomeScreen', () => {
       frame.includes(label),
     ).length;
     expect(visibleCount).toBe(30);
-    expect(frame).not.toMatch(/\+\d+ more/);
+    expect(frame).not.toMatch(/\b\d+ more\b/);
     expect(frame).toContain(HOME_HINT);
     expect(frame).toContain('>');
     ui.unmount();

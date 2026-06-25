@@ -2,17 +2,20 @@ import {
   fitCompactActivityDisplayLine,
   type ActivityDisplayValueFit,
 } from '../display/activity-display-text.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { getShortcutKey } from '../../../core/keybindings/registry.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import {
   buildActivityBatchViewModel,
   type ActivityBatchViewModel,
   type RunnerActivityEvent,
 } from './activity-batch-model.js';
-import { row } from './row-format.js';
+import { row, segmentedRow } from './row-format.js';
 import { rowMarkerCells } from './row-markers.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
 const ACTIVITY_EXPAND_ACTION = getShortcutKey('activity') ?? '/activity';
+const ACTIVITY_EXPAND_KEY = ACTIVITY_EXPAND_ACTION.split(', ')[1]?.toLowerCase() ?? 'ctrl+a';
 
 type RunnerActivityBatchRowsInput = {
   events: readonly RunnerActivityEvent[];
@@ -35,13 +38,21 @@ export function runnerActivityBatchRowBlock(
   const rowCount = runnerActivityBatchRowCount(model);
   if (rowCount === 0) return null;
 
+  const activeRowKey = activityBatchActiveRowKey(model);
   return {
     key: model.batchKey,
     rowCount,
     renderableUnits: model.renderableUnits,
+    ...(activeRowKey !== undefined ? { activeRowKey } : {}),
     createRows: (windowStart, windowEnd) =>
       runnerActivityBatchWindowRows({ model, width, windowStart, windowEnd }),
   };
+}
+
+function activityBatchActiveRowKey(model: ActivityBatchViewModel): string | undefined {
+  if (model.headerText !== null) return `${model.batchKey}-header`;
+  if (model.visibleItems.length === 1) return `${model.batchKey}-item-0`;
+  return undefined;
 }
 
 export function runnerActivityBatchRowCount(model: ActivityBatchViewModel): number {
@@ -115,23 +126,36 @@ export function runnerActivityBatchWindowRows(input: {
   }
 
   if (hasHidden) {
-    appendVisibleRow(() =>
-      activityCardRow({
-        key: `${model.batchKey}-hidden`,
-        label: model.expanded ? 'less' : '+',
-        value: model.expanded
-          ? ACTIVITY_EXPAND_ACTION
-          : `${model.hiddenCount} earlier  ${ACTIVITY_EXPAND_ACTION}`,
-        width,
-        labelTone: 'textDim',
-        valueTone: 'textDim',
-        fitMode: 'end',
-        kind: 'activity-more',
-      }),
-    );
+    appendVisibleRow(() => activityMoreRow({ model, width }));
   }
 
   return rows;
+}
+
+function activityMoreRow(input: { model: ActivityBatchViewModel; width: number }): ConversationRow {
+  const prefixCells = rowMarkerCells('activity-more');
+  const budget = Math.max(0, input.width - prefixCells);
+  const leadingText = input.model.expanded ? 'collapse' : `${input.model.hiddenCount} earlier`;
+
+  const keyCells = getTerminalCellWidth(ACTIVITY_EXPAND_KEY);
+  const sepCells = getTerminalCellWidth(SOFT_SEP);
+  const keyBudget = Math.min(keyCells, budget);
+  const sepBudget = Math.max(0, Math.min(sepCells, budget - keyBudget));
+  const leadingBudget = Math.max(0, budget - sepBudget - keyBudget);
+
+  const leading = truncateTerminalDisplayText(leadingText, leadingBudget);
+  const separator = sepBudget > 0 ? truncateTerminalDisplayText(SOFT_SEP, sepBudget) : '';
+  const key = truncateTerminalDisplayText(ACTIVITY_EXPAND_KEY, keyBudget);
+
+  return segmentedRow(
+    `${input.model.batchKey}-hidden`,
+    [
+      { text: leading, tone: 'textDim' as const },
+      { text: separator, tone: 'textDim' as const },
+      { text: key, tone: 'accent' as const },
+    ],
+    'activity-more',
+  );
 }
 
 function resolveActivityBatchRowsOptions(options: RunnerActivityBatchRowsOptions): {

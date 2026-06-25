@@ -5,7 +5,6 @@ import { tasksStore } from './tasks.js';
 import { tokensStore } from './tokens.js';
 import { lifecycleStore } from './lifecycle.js';
 import { abortStore } from './abort.js';
-import { activityStore } from './activity.js';
 import { approvalPromptStore, openApprovalPrompt } from '../approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../cost-approval/prompt.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -100,7 +99,6 @@ describe('addEvent — cancelled gate', () => {
     });
 
     expect(eventsStore.get().events.filter((e) => e.type === 'runner_call_activity')).toEqual([]);
-    expect(activityStore.get().items).toEqual([]);
   });
 
   it('drops planner_status events after cancel', () => {
@@ -194,7 +192,6 @@ describe('resetWorkflow', () => {
     expect(lifecycleStore.get().phase).toBe('idle');
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
-    expect(activityStore.get().items).toEqual([]);
   });
 
   it('restores observable workflow state from a persisted resume snapshot', () => {
@@ -371,7 +368,7 @@ describe('resetWorkflow', () => {
     expect(tokensStore.get().escalatedCount).toBe(1);
   });
 
-  it('reconstructs pending queue depth and previews from undrained non-native messages on resume', () => {
+  it('reconstructs pending queue depth from undrained non-native messages on resume', () => {
     const queuedAt = new Date().toISOString();
 
     resetWorkflow({
@@ -432,10 +429,6 @@ describe('resetWorkflow', () => {
     });
 
     expect(lifecycleStore.get().queueDepth).toBe(2);
-    expect(lifecycleStore.get().queuePreviews).toEqual([
-      { id: 'pending', preview: 'token sk-***REDACTED***' },
-      { id: 'clarification', preview: 'clarification: Which API style? -> Use GraphQL' },
-    ]);
   });
 
   it('uses resumed token usage as the baseline for the next cumulative cost update', () => {

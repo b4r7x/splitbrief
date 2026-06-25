@@ -52,12 +52,19 @@ export function getConversationRowsProjection(
 }
 
 export function getConversationRowsWindowProjection(
-  input: ProjectionCacheKeyInput & {
-    windowStart: number;
-    windowEnd: number;
-  },
+  input:
+    | (ProjectionCacheKeyInput & {
+        windowStart: number;
+        windowEnd: number;
+      })
+    | {
+        projection: ConversationRowsProjection;
+        windowStart: number;
+        windowEnd: number;
+      },
 ): ConversationRowsWindowProjection {
-  const projection = getConversationRowsProjection(input);
+  const projection =
+    'projection' in input ? input.projection : getConversationRowsProjection(input);
   const start = Math.max(0, input.windowStart);
   const end = Math.max(start, input.windowEnd);
   return {

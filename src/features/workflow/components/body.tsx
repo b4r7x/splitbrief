@@ -1,6 +1,6 @@
+import { useEffect } from 'react';
 import { Box } from 'ink';
 import { ConversationFlow } from './conversation-flow/flow.js';
-import { ActivitySideRail } from './activity-side-rail.js';
 import { Sidebar } from './sidebar.js';
 import { BriefReviewView } from './brief-review-view.js';
 import { PromptBody } from './prompt-body.js';
@@ -12,6 +12,7 @@ import {
   getWorkflowRuntimeLayout,
   WORKFLOW_CONTENT_PADDING_X,
 } from '../layout/rect.js';
+import { WORKFLOW_BODY_TOP_GAP_ROWS } from '../layout/chrome-rows.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -21,7 +22,7 @@ export function WorkflowBody({
   phase,
   contentHeight,
   contentWidth,
-  terminalCols,
+  onScrollAbove,
 }: {
   showSidebar: boolean;
   sidebarWidth: number;
@@ -30,13 +31,18 @@ export function WorkflowBody({
   phase: Phase;
   contentHeight: number;
   contentWidth: number;
-  terminalCols: number;
+  onScrollAbove?: (label: string) => void;
 }) {
   const isConversationMode = inputMode.mode !== 'review';
   const runtimeLayout = isConversationMode
-    ? getWorkflowRuntimeLayout({ contentWidth, terminalCols })
-    : { activityRailWidth: 0, conversationWidth: contentWidth, contentWidth };
+    ? getWorkflowRuntimeLayout({ contentWidth })
+    : { conversationWidth: contentWidth, contentWidth };
   const reviewWidth = getReviewColumnWidth(contentWidth);
+  const topGapRows = contentHeight > 1 ? WORKFLOW_BODY_TOP_GAP_ROWS : 0;
+  useEffect(() => {
+    if (isConversationMode) return;
+    onScrollAbove?.('');
+  }, [isConversationMode, onScrollAbove]);
 
   return (
     <Box flexDirection="row" flexGrow={1}>
@@ -48,6 +54,7 @@ export function WorkflowBody({
         overflow="hidden"
         paddingX={WORKFLOW_CONTENT_PADDING_X}
       >
+        {topGapRows > 0 && <Box height={topGapRows} flexShrink={0} />}
         {inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
           <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={reviewWidth} />
         ) : inputMode.mode === 'review' && reviewFilePath ? (
@@ -55,12 +62,12 @@ export function WorkflowBody({
         ) : inputMode.mode === 'question' ? (
           <PromptBody prompt={inputMode.hint} height={contentHeight} width={contentWidth} />
         ) : (
-          <Box flexDirection="row" width={contentWidth} height={contentHeight} overflow="hidden">
-            <ConversationFlow height={contentHeight} width={runtimeLayout.conversationWidth} />
-            {runtimeLayout.activityRailWidth > 0 && (
-              <ActivitySideRail height={contentHeight} width={runtimeLayout.activityRailWidth} />
-            )}
-          </Box>
+          <ConversationFlow
+            height={contentHeight}
+            conversationWidth={runtimeLayout.conversationWidth}
+            contentWidth={contentWidth}
+            onScrollAbove={onScrollAbove}
+          />
         )}
       </Box>
     </Box>

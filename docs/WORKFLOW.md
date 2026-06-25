@@ -296,7 +296,7 @@ Resume uses the capability matrix:
 3. Rebuild from `session.jsonl`: read transcript messages, use latest compact summary entry plus later messages. Pass as initial context to fresh planner call.
 4. If `persistTranscript: false` and step 1 failed → no transcript context is available. `applyRebuiltContext()` publishes a warning and continues with Task Brief transport plus any supporting spec/plan as handoff.
 
-Pending queue entries remain in `state.json` regardless of transcript persistence. Resume excludes still-pending queued user messages from stateless transcript rebuild so they are not duplicated, but `resetWorkflow(resume)` reconstructs queue depth and previews from those pending entries so the footer and `/queue show` still reflect them.
+Pending queue entries remain in `state.json` regardless of transcript persistence. Resume excludes still-pending queued user messages from stateless transcript rebuild so they are not duplicated, but `resetWorkflow(resume)` reconstructs queue depth from those pending entries so the footer and `/queue show` still reflect them.
 
 In-flight tasks: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. They are re-run from the Task Brief with refreshed `currentCode`.
 

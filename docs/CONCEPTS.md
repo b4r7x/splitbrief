@@ -210,7 +210,7 @@ This is distinct from a **planner session** — e.g. the `session_id` Claude Cod
 
 ## Queue & Interjection
 
-The **queue** is a workflow-scoped buffer of user messages that the user types while the planner is actively generating. The engine stores queued messages on `WorkflowState.messageQueue`; the TUI stores queue depth and display state in the workflow lifecycle store. It solves the problem of "I want to add something without restarting the phase".
+The **queue** is a workflow-scoped buffer of user messages that the user types while the planner is actively generating. The engine stores queued messages on `WorkflowState.messageQueue`; the TUI stores only the pending queue depth in the workflow lifecycle store. It solves the problem of "I want to add something without restarting the phase".
 
 Flow:
 

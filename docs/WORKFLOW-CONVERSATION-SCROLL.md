@@ -39,7 +39,7 @@ The current projection path is:
 
 ```ts
 const projection = getConversationRowsProjection(input);
-const rows = getConversationRowsWindowProjection({ ...input, windowStart, windowEnd }).rows;
+const rows = getConversationRowsWindowProjection({ projection, windowStart, windowEnd }).rows;
 ```
 
 `src/features/workflow/conversation-rows/projection-cache.ts` caches projections by width, viewport height, expansion state, streaming state, and event content. `src/features/workflow/conversation-rows/build.ts` returns `ConversationRowBlock` records with `rowCount`, `renderableUnits`, and `createRows(windowStart, windowEnd)`, so scrolling by one row does not allocate every row in a large session. Each materialized row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
@@ -53,7 +53,7 @@ Completed task summaries are pinned above the dynamic conversation window. `src/
 - `computeScrollMaxOffset()` computes the maximum offset after reserving scroll indicator rows.
 - `getScrollWindowState()` returns `windowStart`, `windowEnd`, visible above/below counts, and optional new-event row reservation.
 
-Above/below banners and the new-events banner are part of the viewport budget. They never add rows after the fact.
+The above-count label is lifted into the top chrome divider. The below-count banner and the new-events banner remain part of the conversation viewport budget, so they never add rows after the fact.
 
 ## Keyboard and Commands
 
@@ -64,7 +64,7 @@ Conversation scrolling uses one semantic set of actions over the row window:
 - `Home` / `End` jump to the top or bottom.
 - `/scroll top`, `/scroll bottom`, `/scroll page-up`, and `/scroll page-down` provide the same actions through the runtime command path.
 
-Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` expand or collapse the latest activity batch with hidden rows. The visible collapsed-row affordance is `/activity, Ctrl+A`.
+Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` expand or collapse the latest activity batch with hidden rows. Compact collapsed rows show the lowercase key affordance, such as `ctrl+a`.
 
 ## Projection Performance
 
@@ -126,7 +126,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - requested windows materialize only requested rows
 - `src/features/workflow/conversation-rows/build.test.ts`
   - render blocks are materialized only when they intersect the requested row window
-  - compact activity rows dedupe and expose the `/activity, Ctrl+A` affordance
+  - compact activity rows dedupe and expose the key affordance
 - `src/features/workflow/conversation-rows/markdown-rows.test.ts`
   - markdown layout is cached by identity and width
   - active cache entries survive cache-cap pressure

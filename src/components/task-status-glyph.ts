@@ -6,7 +6,7 @@ export const STATUS_GLYPH: Record<TaskStatus, string> = {
   escalated: '⚠',
   in_progress: '◉',
   pending: '○',
-  skipped: '○',
+  skipped: '–',
 };
 
 export function statusGlyph(status: TaskStatus): string {

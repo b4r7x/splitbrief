@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getChromeHeight } from './chrome-rows.js';
+import { getChromeHeight, TOP_FIXED_CHROME_ROWS } from './chrome-rows.js';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
@@ -23,18 +23,16 @@ describe('hasWorkflowConfig', () => {
 });
 
 describe('getWorkflowRuntimeLayout', () => {
-  it('keeps compact runtime layouts full width without an activity rail', () => {
-    expect(getWorkflowRuntimeLayout({ contentWidth: 98, terminalCols: 100 })).toEqual({
-      activityRailWidth: 0,
+  it('keeps runtime layouts full width without an activity rail on compact terminals', () => {
+    expect(getWorkflowRuntimeLayout({ contentWidth: 98 })).toEqual({
       conversationWidth: 98,
       contentWidth: 98,
     });
   });
 
-  it('splits wide runtime layouts between conversation and activity rail', () => {
-    expect(getWorkflowRuntimeLayout({ contentWidth: 118, terminalCols: 120 })).toEqual({
-      activityRailWidth: 35,
-      conversationWidth: 82,
+  it('keeps wide runtime layouts full width (activity rail removed)', () => {
+    expect(getWorkflowRuntimeLayout({ contentWidth: 118 })).toEqual({
+      conversationWidth: 118,
       contentWidth: 118,
     });
   });
@@ -50,7 +48,6 @@ describe('getWorkflowRuntimeLayout', () => {
     });
     const runtime = getWorkflowRuntimeLayout({
       contentWidth: contentRect.width,
-      terminalCols: 120,
     });
     const conversationRect = getWorkflowConversationRect(contentRect, runtime);
 
@@ -109,7 +106,8 @@ describe('workflow viewport layout', () => {
     expect(viewport).toBe(rows - getChromeHeight(inputRows, false));
 
     const legacyBottomFixedWithoutDivider = 2;
-    const legacyViewport = rows - 3 - legacyBottomFixedWithoutDivider - inputRows;
+    const legacyViewport =
+      rows - TOP_FIXED_CHROME_ROWS - legacyBottomFixedWithoutDivider - inputRows;
     expect(viewport).toBe(legacyViewport - 1);
   });
 

@@ -101,10 +101,11 @@ describe('implementer_generate_done diff card', () => {
     });
     expect(segmentTone(removedTone)).toBe('error');
 
-    requireRow(bodyRows, (rowValue) => rowText(rowValue).includes('Ctrl+D'));
+    requireRow(bodyRows, (rowValue) => rowText(rowValue).includes('ctrl+d to collapse'));
 
     expect(text).toContain('+ added line');
     expect(text).toContain('- removed line');
+    expect(text).not.toMatch(/\bCtrl\+D\b/);
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 
@@ -136,5 +137,88 @@ describe('implementer_generate_done diff card', () => {
     expect(rows.every((rowValue) => rowValue.kind !== 'card-bottom')).toBe(true);
     expect(text).not.toContain('┌─');
     expect(text).not.toContain('└');
+  });
+
+  it('merges overflow count and collapse hint into one action-hint body line', () => {
+    const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');
+    const rows = rowsFor(implementerDoneEvent({ diff, linesAdded: 47, linesRemoved: 0 }), true);
+    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
+    const text = rows.map(rowText).join('\n');
+
+    const hintRow = requireRow(
+      bodyRows,
+      (rowValue) =>
+        rowText(rowValue).includes('ctrl+d') &&
+        rowText(rowValue).includes('more lines') &&
+        rowText(rowValue).includes('to collapse'),
+    );
+
+    expect(rowText(hintRow)).toContain('…');
+    expect(rowText(hintRow)).toContain(' · ');
+    expect(text).toContain('to collapse');
+    expect(text).not.toMatch(/\bCtrl\+D\b/);
+    expect(bodyRows.some((rowValue) => rowText(rowValue).trim() === 'Ctrl+D')).toBe(false);
+
+    const keySegment = requireSegment(hintRow.segments, (segment) =>
+      segment.text.includes('to collapse'),
+    );
+    expect(segmentTone(keySegment)).toBe('accent');
+
+    const countSegment = requireSegment(hintRow.segments, (segment) =>
+      segment.text.includes('more lines'),
+    );
+    expect(segmentTone(countSegment)).toBe('textDim');
+
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
+  });
+
+  it('renders exactly one merged hint body row (one fewer than the old two-line form)', () => {
+    const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');
+    const rows = rowsFor(implementerDoneEvent({ diff, linesAdded: 47, linesRemoved: 0 }), true);
+    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
+
+    const maxVisible = 12;
+    const visibleCount = Math.min(diff.split('\n').length, maxVisible);
+    expect(bodyRows.length).toBe(visibleCount + 1);
+    expect(bodyRows.some((rowValue) => rowText(rowValue).includes('to collapse'))).toBe(true);
+    expect(bodyRows.some((rowValue) => rowText(rowValue).includes('to expand'))).toBe(false);
+    expect(bodyRows.every((rowValue) => !rowText(rowValue).includes('Ctrl+D'))).toBe(true);
+  });
+
+  it('keeps the merged overflow hint on a single row at width 48', () => {
+    const width = 48;
+    const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');
+    const rows = rowsFor(
+      implementerDoneEvent({ diff, linesAdded: 47, linesRemoved: 0 }),
+      true,
+      width,
+    );
+    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
+    const hintRows = bodyRows.filter((rowValue) => rowText(rowValue).includes('to collapse'));
+
+    expect(hintRows).toHaveLength(1);
+    const hintRow = hintRows[0];
+    expect(hintRow).toBeDefined();
+    if (hintRow !== undefined) {
+      expect(getTerminalCellWidth(rowText(hintRow))).toBeLessThanOrEqual(width);
+    }
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
+  });
+
+  it('keeps a narrow overflow hint readable when it wraps', () => {
+    const width = 30;
+    const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');
+    const rows = rowsFor(
+      implementerDoneEvent({ diff, linesAdded: 47, linesRemoved: 0 }),
+      true,
+      width,
+    );
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('more lines');
+    expect(text).toContain('ctrl+d');
+    expect(text).toContain('collapse');
+    expect(text).not.toContain('│ … … │');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
   });
 });

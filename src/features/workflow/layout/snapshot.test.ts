@@ -10,6 +10,7 @@ import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows.js';
+import { getWorkflowViewportHeight } from './rect.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -73,13 +74,15 @@ describe('readConversationScrollSnapshot', () => {
     inputHeightStore.__testReset({ rows: 3 });
 
     const snap = readConversationScrollSnapshot();
+    const fullBodyHeight = getWorkflowViewportHeight(40, 3, false, 0, 160);
 
     expect(snap.contentRect.width).toBe(158);
-    expect(snap.conversationWidth).toBe(115);
-    expect(snap.conversationRect.width).toBe(115);
-    expect(snap.activityRailWidth).toBe(42);
-    expect(snap.viewportHeight).toBeGreaterThan(0);
+    expect(snap.conversationWidth).toBe(158);
+    expect(snap.conversationRect.width).toBe(158);
+    expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
+    expect(snap.conversationRect.top).toBe(snap.contentRect.top);
+    expect(snap.conversationRect.height).toBe(snap.viewportHeight);
   });
 
   it('reduces viewportHeight on a small terminal', () => {
@@ -167,7 +170,7 @@ describe('readConversationScrollSnapshot', () => {
     expect(narrow.totalHeight).toBeGreaterThan(wide.totalHeight);
   });
 
-  it('uses rendered conversation width for wide activity-rail scroll calculations', () => {
+  it('uses full content width for scroll calculations now that the activity rail is removed', () => {
     eventsStore.__testReset({ events: [makeLongTaskStarted()] });
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
@@ -175,10 +178,9 @@ describe('readConversationScrollSnapshot', () => {
     const snap = readConversationScrollSnapshot();
 
     expect(snap.contentRect.width).toBe(118);
-    expect(snap.activityRailWidth).toBe(35);
-    expect(snap.conversationWidth).toBe(82);
-    expect(snap.conversationRect.width).toBe(82);
-    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 81);
+    expect(snap.conversationWidth).toBe(118);
+    expect(snap.conversationRect.width).toBe(118);
+    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 117);
   });
 
   it('sidebar presence narrows content width', () => {

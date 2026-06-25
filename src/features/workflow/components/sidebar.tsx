@@ -87,7 +87,9 @@ export function Sidebar({ width }: SidebarProps) {
       <Box flexDirection="column" paddingX={1} flexGrow={1} flexShrink={1} overflow="hidden">
         {tasks.map((task) => (
           <Box key={task.id}>
-            <Text color={statusColor(task.status, t)}>{STATUS_GLYPH[task.status]} </Text>
+            <Text color={statusColor(task.status, t)} bold={task.status === 'in_progress'}>
+              {STATUS_GLYPH[task.status]}{' '}
+            </Text>
             <Text color={titleColor(task.status, t)} bold={task.status === 'in_progress'}>
               {truncateTerminalDisplayText(
                 sanitizeTerminalDisplayText(task.title),

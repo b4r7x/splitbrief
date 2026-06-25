@@ -10,7 +10,7 @@ export interface ScrollWindowState {
   newEventRows: number;
 }
 
-const TOP_OR_BOTTOM_BANNER_ROWS = 1;
+const BELOW_BANNER_ROWS = 1;
 const NEW_EVENT_BANNER_ROWS = 1;
 
 function getReservedScrollBannerRows(
@@ -21,7 +21,7 @@ function getReservedScrollBannerRows(
   if (contentHeight <= visibleHeight) return 0;
   const contentFloor = contentHeight > 0 ? 1 : 0;
   const rowsAvailable = Math.max(0, visibleHeight - newEventRows - contentFloor);
-  return Math.min(2 * TOP_OR_BOTTOM_BANNER_ROWS, rowsAvailable);
+  return Math.min(BELOW_BANNER_ROWS, rowsAvailable);
 }
 
 export function computeScrollMaxOffset(
@@ -63,20 +63,15 @@ export function getScrollWindowState(input: ScrollWindowStateInput): ScrollWindo
   const bottomWindowStart = clamp(contentHeight - innerHeight, 0, contentHeight);
   const windowStart = clamp(bottomWindowStart - clampedOffset, 0, contentHeight);
   const windowEnd = clamp(windowStart + innerHeight, windowStart, contentHeight);
-  let showAbove = scrollBannerRows > 0 && windowStart > 0;
-  let showBelow = scrollBannerRows > 0 && contentHeight - windowEnd > 0;
-
-  if (scrollBannerRows === TOP_OR_BOTTOM_BANNER_ROWS && showAbove && showBelow) {
-    showAbove = windowStart >= contentHeight - windowEnd;
-    showBelow = !showAbove;
-  }
+  const linesAbove = windowStart > 0 ? windowStart : 0;
+  const showBelow = scrollBannerRows > 0 && contentHeight - windowEnd > 0;
 
   return {
     bannerRows,
     innerHeight,
     windowStart,
     windowEnd,
-    linesAbove: showAbove ? windowStart : 0,
+    linesAbove,
     linesBelow: showBelow ? Math.max(0, contentHeight - windowEnd) : 0,
     newEventRows,
   };

@@ -54,10 +54,13 @@ export function taskStartedRowBlock(input: {
     offset = lineEnd;
   }
 
+  const activeRowKey = rows[rows.length - 1]?.key;
+
   return {
     key: input.keyPrefix,
     rowCount: rows.length,
     renderableUnits: 1,
+    ...(activeRowKey !== undefined ? { activeRowKey } : {}),
     createRows: (windowStart, windowEnd) => rows.slice(windowStart, windowEnd),
   };
 }

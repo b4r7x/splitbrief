@@ -3,10 +3,13 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { eventsStore } from '../../../../stores/workflow/events.js';
+import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../../stores/workflow/actions.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
+import type { ConversationRow } from '../../conversation-rows/types.js';
 import { ConversationFlow } from './flow.js';
+import { ConversationRowView } from './row-view.js';
 
 function makePlannerText(index: number): Extract<EngineEvent, { type: 'planner_text' }> {
   return {
@@ -155,6 +158,45 @@ function makeRunnerActivity(): Extract<EngineEvent, { type: 'runner_call_activit
   };
 }
 
+function makeActivityRead(
+  sequence: number,
+  file: string,
+): Extract<EngineEvent, { type: 'runner_call_activity' }> {
+  return {
+    type: 'runner_call_activity',
+    ts: sequence,
+    phase: 'researching',
+    callId: 'call-1',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'codex',
+    sequence,
+    activityId: `call-1:read:${file}`,
+    stage: 'completed',
+    kind: 'read',
+    label: `reading ${file}`,
+    redacted: false,
+  };
+}
+
+function makeActivityReads(
+  files: string[],
+): Extract<EngineEvent, { type: 'runner_call_activity' }>[] {
+  return files.map((file, index) => makeActivityRead(index + 1, file));
+}
+
+function makeActivityReadForCall(
+  sequence: number,
+  callId: string,
+  file: string,
+): Extract<EngineEvent, { type: 'runner_call_activity' }> {
+  return {
+    ...makeActivityRead(sequence, file),
+    callId,
+    activityId: `${callId}:read:${file}`,
+  };
+}
+
 function frameRowCount(frame: string): number {
   return frame.length === 0 ? 0 : frame.split('\n').length;
 }
@@ -181,9 +223,31 @@ function contentRows(frame: string): string[] {
   return normalizedRows(frame).filter((line) => /^line-\d+$/.test(line));
 }
 
-function renderConversation(events: EngineEvent[], height: number, width: number) {
+function renderConversation(events: EngineEvent[], height: number, conversationWidth: number) {
   eventsStore.__testReset({ events });
-  return renderFeature(<ConversationFlow height={height} width={width} />);
+  return renderFeature(
+    <ConversationFlow
+      height={height}
+      conversationWidth={conversationWidth}
+      contentWidth={conversationWidth}
+    />,
+  );
+}
+
+function makeActivityRow(key: string): ConversationRow {
+  return {
+    key,
+    kind: 'activity',
+    segments: [{ text: 'reading src/a.ts', tone: 'textDim' }],
+  };
+}
+
+function makeTaskHeaderRow(key: string): ConversationRow {
+  return {
+    key,
+    kind: 'task-header',
+    segments: [{ text: 'T001 No-op task', tone: 'accent', bold: true }],
+  };
 }
 
 describe('ConversationFlow', () => {
@@ -191,6 +255,7 @@ describe('ConversationFlow', () => {
     eventsStore.__testReset();
     conversationScrollStore.reset();
     streamingOutputStore.__testReset();
+    lifecycleStore.__testReset();
   });
 
   it('renders markdown planner documents without raw markdown control markers', () => {
@@ -210,7 +275,9 @@ describe('ConversationFlow', () => {
   });
 
   it('styles live researching Task Brief markdown through the workflow event path', async () => {
-    const ui = renderFeature(<ConversationFlow height={20} width={90} />);
+    const ui = renderFeature(
+      <ConversationFlow height={20} conversationWidth={90} contentWidth={90} />,
+    );
 
     addEvent(makeLiveTaskBriefPlannerText());
     await tick();
@@ -254,9 +321,36 @@ describe('ConversationFlow', () => {
     const ui = renderConversation(events, 10, 80);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('2 lines above');
     expect(frame).toContain('1 line below');
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
+
+    ui.unmount();
+  });
+
+  it('keeps the below scroll banner rule within the conversation width', () => {
+    const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
+    const conversationWidth = 60;
+
+    eventsStore.__testReset({ events });
+    conversationScrollStore.__testReset({
+      scrollOffset: 1,
+      renderableCountAtScroll: events.length,
+      heightAtScroll: 11,
+    });
+
+    const ui = renderFeature(
+      <ConversationFlow
+        height={10}
+        conversationWidth={conversationWidth}
+        contentWidth={conversationWidth}
+      />,
+    );
+    const frame = ui.lastFrame() ?? '';
+    const bannerLine = frame.split('\n').find((line) => line.includes('line below')) ?? '';
+
+    expect(frame).toContain('1 line below');
+    expect(bannerLine.length).toBeLessThanOrEqual(conversationWidth);
+    expect(bannerLine.indexOf('line below')).toBeLessThan(conversationWidth);
 
     ui.unmount();
   });
@@ -300,8 +394,14 @@ describe('ConversationFlow', () => {
     const scrolled = renderConversation(events, 6, 80);
     const scrolledFrame = scrolled.lastFrame() ?? '';
 
-    expect(contentRows(bottomFrame)).toEqual(['line-9', 'line-10', 'line-11', 'line-12']);
-    expect(contentRows(scrolledFrame)).toEqual(['line-8', 'line-9', 'line-10', 'line-11']);
+    expect(contentRows(bottomFrame)).toEqual(['line-8', 'line-9', 'line-10', 'line-11', 'line-12']);
+    expect(contentRows(scrolledFrame)).toEqual([
+      'line-7',
+      'line-8',
+      'line-9',
+      'line-10',
+      'line-11',
+    ]);
     expect(scrolledFrame).toContain('1 line below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(6);
 
@@ -362,8 +462,8 @@ describe('ConversationFlow', () => {
     const scrolledFrame = scrolled.lastFrame() ?? '';
     const scrolledRows = normalizedRows(scrolledFrame);
 
-    expect(bottomRows).toEqual(['stream-3', 'stream-4', 'stream-5']);
-    expect(scrolledRows).toEqual(['stream-2', 'stream-3', 'stream-4']);
+    expect(bottomRows).toEqual(['stream-2', 'stream-3', 'stream-4', 'stream-5']);
+    expect(scrolledRows).toEqual(['stream-1', 'stream-2', 'stream-3', 'stream-4']);
     expect(scrolledFrame).not.toMatch(/[│┆]/);
     expect(scrolledFrame).toContain('1 line below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(5);
@@ -388,14 +488,43 @@ describe('ConversationFlow', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Finished task');
-    expect(frame).toContain('3 lines above');
     expect(frame).toContain('1 line below');
     expect(normalizedRows(frame).filter((line) => line.startsWith('event '))).toEqual([
+      'event 1',
       'event 2',
       'event 3',
       'event 4',
     ]);
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
+
+    ui.unmount();
+  });
+
+  it('lifts the above scroll label to the chrome divider via onScrollAbove', async () => {
+    const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
+    const calls: string[] = [];
+
+    eventsStore.__testReset({ events });
+    conversationScrollStore.__testReset({
+      scrollOffset: 1,
+      renderableCountAtScroll: events.length,
+      heightAtScroll: 11,
+    });
+
+    const ui = renderFeature(
+      <ConversationFlow
+        height={10}
+        conversationWidth={80}
+        contentWidth={80}
+        onScrollAbove={(label) => {
+          calls.push(label);
+        }}
+      />,
+    );
+    await tick();
+
+    expect(calls.at(-1)).toBe('1 line above');
+    expect(ui.lastFrame() ?? '').not.toContain('line above');
 
     ui.unmount();
   });
@@ -413,6 +542,137 @@ describe('ConversationFlow', () => {
     expect(frame).toContain('failed');
     expect(frame).not.toContain('No events yet');
 
+    ui.unmount();
+  });
+
+  it('renders a user message only in the conversation row surface', () => {
+    const userText = 'unique user prompt should appear exactly once';
+    const ui = renderFeature(
+      <ConversationFlow height={8} conversationWidth={90} contentWidth={90} />,
+    );
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'user_message',
+          ts: 0,
+          phase: 'implementing',
+          text: userText,
+        },
+      ],
+    });
+    ui.rerender(<ConversationFlow height={8} conversationWidth={90} contentWidth={90} />);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.match(new RegExp(userText, 'g')) ?? []).toHaveLength(1);
+    ui.unmount();
+  });
+
+  it('does not blink a historical visible activity row when the latest active row is off-screen', async () => {
+    const events: EngineEvent[] = [
+      makeActivityReadForCall(1, 'old-call', 'src/old.ts'),
+      makePlannerTextBlock(24),
+      makeActivityReadForCall(2, 'latest-call', 'src/latest.ts'),
+    ];
+
+    conversationScrollStore.__testReset({
+      scrollOffset: 24,
+      renderableCountAtScroll: events.length,
+      heightAtScroll: 28,
+    });
+    lifecycleStore.__testReset({ status: 'running', phase: 'researching' });
+    const ui = renderConversation(events, 6, 90);
+    const framesBefore = ui.frames.length;
+
+    await tick(650);
+
+    expect(ui.lastFrame() ?? '').toContain('src/old.ts');
+    expect(ui.lastFrame() ?? '').not.toContain('src/latest.ts');
+    expect(ui.frames).toHaveLength(framesBefore);
+    ui.unmount();
+  });
+
+  it('rotates the activity-more chevron between collapsed (▸) and expanded (▾)', () => {
+    const events = makeActivityReads(['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts']);
+    const batchKey = 'activity-batch:0:call-1';
+
+    conversationScrollStore.__testReset({ expandedActivityBatches: new Set() });
+    const collapsed = renderConversation(events, 12, 90);
+    const collapsedFrame = collapsed.lastFrame() ?? '';
+    expect(collapsedFrame).toContain('earlier');
+    expect(collapsedFrame).toContain('▸');
+    expect(collapsedFrame).not.toContain('▾');
+    collapsed.unmount();
+
+    conversationScrollStore.__testReset({
+      expandedActivityBatches: new Set([batchKey]),
+    });
+    const expanded = renderConversation(events, 12, 90);
+    const expandedFrame = expanded.lastFrame() ?? '';
+    expect(expandedFrame).toContain('collapse');
+    expect(expandedFrame).toContain('▾');
+    expect(expandedFrame).not.toContain('▸');
+    expanded.unmount();
+  });
+
+  it('renders the activity dot on the live running row', () => {
+    const events = makeActivityReads(['src/a.ts', 'src/b.ts']);
+    const batchKey = 'activity-batch:0:call-1';
+
+    conversationScrollStore.__testReset({ expandedActivityBatches: new Set([batchKey]) });
+    lifecycleStore.__testReset({ status: 'running', phase: 'researching' });
+    const running = renderConversation(events, 12, 90);
+    const runningFrame = running.lastFrame() ?? '';
+    expect(runningFrame).toContain('⏺');
+    expect(runningFrame).toContain('plan activity');
+    expect(runningFrame).toContain('READ  src/a.ts');
+    running.unmount();
+  });
+
+  it('renders the 2-cell dot for an active activity row and a steady activity row', () => {
+    const activeRow = makeActivityRow('activity-batch:0:call-1');
+
+    const active = renderFeature(<ConversationRowView row={activeRow} active={true} />);
+    const activeFrame = active.lastFrame() ?? '';
+    expect(activeFrame).toContain('⏺');
+    expect(activeFrame).toContain('reading src/a.ts');
+    active.unmount();
+
+    const steady = renderFeature(<ConversationRowView row={activeRow} active={false} />);
+    const steadyFrame = steady.lastFrame() ?? '';
+    expect(steadyFrame).toContain('⏺');
+    expect(steadyFrame).toContain('reading src/a.ts');
+    steady.unmount();
+  });
+
+  it('renders the 2-cell dot for an active task-header row and a steady task-header row', () => {
+    const row = makeTaskHeaderRow('task-header:T001');
+
+    const active = renderFeature(<ConversationRowView row={row} active={true} />);
+    const activeFrame = active.lastFrame() ?? '';
+    expect(activeFrame).toContain('⏺');
+    expect(activeFrame).toContain('T001 No-op task');
+    active.unmount();
+
+    const steady = renderFeature(<ConversationRowView row={row} active={false} />);
+    const steadyFrame = steady.lastFrame() ?? '';
+    expect(steadyFrame).toContain('⏺');
+    expect(steadyFrame).toContain('T001 No-op task');
+    steady.unmount();
+  });
+
+  it('does not blink rows whose marker is not the activity dot', () => {
+    const row: ConversationRow = {
+      key: 'activity-more:0:call-1-hidden',
+      kind: 'activity-more',
+      segments: [{ text: 'earlier', tone: 'textDim' }],
+    };
+
+    const ui = renderFeature(
+      <ConversationRowView row={row} expandedActivityBatches={new Set()} active={true} />,
+    );
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('▸');
+    expect(frame).not.toContain('⏺');
     ui.unmount();
   });
 });
