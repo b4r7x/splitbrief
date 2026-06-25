@@ -155,7 +155,7 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
   const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
   if (scrollKey === null) return NONE;
 
-  const pageStep = Math.max(1, viewportHeight - 2);
+  const pageStep = Math.max(1, viewportHeight - 1);
 
   switch (scrollKey) {
     case 'line-up':

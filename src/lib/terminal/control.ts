@@ -48,25 +48,41 @@ export function writeTerminalSequence(sequence: string): void {
   }
 }
 
-export function setTerminalInputModes(mode: 'enable' | 'disable'): void {
+export interface TerminalInputModeOptions {
+  mouse?: boolean | undefined;
+  paste?: boolean | undefined;
+}
+
+export function setTerminalInputModes(
+  mode: 'enable' | 'disable',
+  opts?: TerminalInputModeOptions,
+): void {
   const enabled = mode === 'enable';
-  writeTerminalSequence(
-    enabled ? terminalSequences.enableMouseTracking : terminalSequences.disableMouseTracking,
-  );
-  writeTerminalSequence(
-    enabled ? terminalSequences.enableSgrMouse : terminalSequences.disableSgrMouse,
-  );
-  writeTerminalSequence(
-    enabled ? terminalSequences.enableBracketedPaste : terminalSequences.disableBracketedPaste,
-  );
+  const mouse = opts?.mouse ?? true;
+  const paste = opts?.paste ?? true;
+  if (mouse) {
+    writeTerminalSequence(
+      enabled ? terminalSequences.enableMouseTracking : terminalSequences.disableMouseTracking,
+    );
+    writeTerminalSequence(
+      enabled ? terminalSequences.enableSgrMouse : terminalSequences.disableSgrMouse,
+    );
+  }
+  if (paste) {
+    writeTerminalSequence(
+      enabled ? terminalSequences.enableBracketedPaste : terminalSequences.disableBracketedPaste,
+    );
+  }
 }
 
 export function restoreTerminalControl(opts: {
   fullscreen: boolean;
   mouse: boolean;
+  paste?: boolean | undefined;
   stdin?: NodeJS.ReadStream | undefined;
 }): void {
-  if (opts.mouse) setTerminalInputModes('disable');
+  const paste = opts.paste ?? opts.mouse;
+  if (opts.mouse || paste) setTerminalInputModes('disable', { mouse: opts.mouse, paste });
   if (opts.fullscreen) {
     writeTerminalSequence(terminalSequences.exitAltBuffer);
     writeTerminalSequence(terminalSequences.showCursor);

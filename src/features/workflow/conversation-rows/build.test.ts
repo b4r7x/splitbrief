@@ -208,7 +208,9 @@ describe('buildConversationRows', () => {
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
     expect(text).toContain('d.ts');
-    expect(text).toMatch(/\+\s+1 earlier\s+\/activity, Ctrl\+A/);
+    expect(text).toMatch(/1 earlier\s+·\s+ctrl\+a/);
+    expect(text).not.toContain('/activity');
+    expect(text).not.toContain('Ctrl+A');
     expect(text).not.toContain('┌─');
     expect(text).not.toContain('└');
 
@@ -222,7 +224,7 @@ describe('buildConversationRows', () => {
     });
     const expandedText = expanded.rows.map(rowText).join('\n');
 
-    expect(expandedText).toContain('less  /activity, Ctrl+A');
+    expect(expandedText).toMatch(/collapse\s+·\s+ctrl\+a/);
     expect(expandedText).toContain('a.ts');
   });
 

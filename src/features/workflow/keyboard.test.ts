@@ -95,13 +95,13 @@ describe('handleConversationScroll', () => {
     expect(handleConversationScroll({ ...base, input: 'b', key: { ctrl: true } as Key })).toEqual({
       type: 'conversation-scroll-up',
       renderableCount: 24,
-      step: 10,
+      step: 11,
       totalHeight: 42,
       maxOffset: 9,
     });
     expect(handleConversationScroll({ ...base, input: 'f', key: { ctrl: true } as Key })).toEqual({
       type: 'conversation-scroll-down',
-      step: 10,
+      step: 11,
     });
   });
 

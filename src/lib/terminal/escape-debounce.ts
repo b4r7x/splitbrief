@@ -1,4 +1,4 @@
-const DEFAULT_DELAY_MS = 35;
+const DEFAULT_DELAY_MS = 25;
 
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 

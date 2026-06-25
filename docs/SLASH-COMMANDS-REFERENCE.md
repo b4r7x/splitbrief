@@ -89,7 +89,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Args**: none.
 - **Shortcut**: `/activity` is the guaranteed command path; `Ctrl+A` is the workflow shortcut.
 - **Example**: `/activity`
-- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show the `/activity, Ctrl+A` affordance when earlier rows are hidden. If no activity block has hidden rows, there is nothing to expand.
+- **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show a compact key affordance such as `ctrl+a` when earlier rows are hidden. If no activity block has hidden rows, there is nothing to expand.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; command context uses `findLatestExpandableActivityBatchKey()` and `conversationScrollStore.toggleActivityBatch()`.
 - **See also**: `/scroll`, `/sidebar`.
 
@@ -486,7 +486,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `toggle-diff` | `Ctrl+D` | Toggle diff; attached detaches | workflow |
 | `scroll` | `Shift+↑/↓, PgUp/PgDn, Home/End` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `Ctrl+E` | Open editor in review mode only | workflow |
-| `activity` | `/activity, Ctrl+A` | Expand activity rows | workflow |
+| `activity` | `/activity, Ctrl+A` | Expand activity rows; compact rows show `ctrl+a` | workflow |
 | `continue` | `Enter` | Continue | summary |
 
 ---

@@ -25,12 +25,6 @@ type LifecycleStatus = 'idle' | 'running' | 'complete' | 'cancelled';
 
 interface LifecycleBase {
   queueDepth: number;
-  queuePreviews: readonly QueuedMessagePreview[];
-}
-
-export interface QueuedMessagePreview {
-  id: string;
-  preview: string;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -84,7 +78,6 @@ interface LifecycleResetState {
   status?: LifecycleStatus | undefined;
   cancelled?: boolean | undefined;
   queueDepth?: number | undefined;
-  queuePreviews?: readonly QueuedMessagePreview[] | undefined;
   startedAt?: number | null | undefined;
   endedAt?: number | null | undefined;
   durationMs?: number | null | undefined;
@@ -96,7 +89,6 @@ const initial: LifecycleState = {
   status: 'idle',
   cancelled: false,
   queueDepth: 0,
-  queuePreviews: [],
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -127,7 +119,6 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
-      queuePreviews: state.queuePreviews,
       startedAt: event.ts,
     });
   }
@@ -136,7 +127,6 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
-      queuePreviews: state.queuePreviews,
       startedAt: state.startedAt ?? event.ts,
     });
   }
@@ -164,16 +154,12 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
     return {
       ...state,
       queueDepth: state.queueDepth + 1,
-      queuePreviews: event.preview
-        ? [...state.queuePreviews, { id: event.id, preview: event.preview }]
-        : state.queuePreviews,
     };
   }
   if (event.type === 'message_injected_native') {
     return {
       ...state,
       queueDepth: Math.max(0, state.queueDepth - 1),
-      queuePreviews: state.queuePreviews.filter((entry) => entry.id !== event.id),
     };
   }
   if (event.type === 'queue_drained') {
@@ -184,12 +170,6 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
     return {
       ...state,
       queueDepth: next,
-      queuePreviews:
-        next === 0
-          ? []
-          : ids
-            ? state.queuePreviews.filter((entry) => !ids.has(entry.id))
-            : state.queuePreviews.slice(Math.min(event.count, state.queuePreviews.length)),
     };
   }
   if (event.type === 'queue_cleared') {
@@ -198,10 +178,6 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
     return {
       ...state,
       queueDepth: next,
-      queuePreviews:
-        next === 0
-          ? []
-          : state.queuePreviews.slice(Math.min(event.count, state.queuePreviews.length)),
     };
   }
   return state;
@@ -218,7 +194,6 @@ export function markLifecycleCancellationRequested(
     status: 'cancelled',
     cancelled: true,
     queueDepth: state.queueDepth,
-    queuePreviews: state.queuePreviews,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: durationFromStart(state.startedAt, cancellation.ts),
@@ -237,7 +212,6 @@ function markLifecycleComplete(
     status: 'complete',
     cancelled: false,
     queueDepth: state.queueDepth,
-    queuePreviews: state.queuePreviews,
     startedAt: state.startedAt,
     endedAt,
     durationMs: durationFromStart(state.startedAt, endedAt),
@@ -252,7 +226,6 @@ function durationFromStart(startedAt: number | null, endedAt: number): number {
 function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   const phase = next.phase ?? initial.phase;
   const queueDepth = next.queueDepth ?? initial.queueDepth;
-  const queuePreviews = next.queuePreviews ?? initial.queuePreviews;
   const startedAt = next.startedAt ?? null;
 
   if (next.status === 'complete') {
@@ -262,7 +235,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'complete',
       cancelled: false,
       queueDepth,
-      queuePreviews,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -277,7 +249,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'cancelled',
       cancelled: true,
       queueDepth,
-      queuePreviews,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -286,13 +257,12 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   }
 
   if (next.status === 'running' || phase !== 'idle') {
-    return runningLifecycleState({ phase, queueDepth, queuePreviews, startedAt });
+    return runningLifecycleState({ phase, queueDepth, startedAt });
   }
 
   return {
     ...initial,
     queueDepth,
-    queuePreviews,
   };
 }
 
@@ -306,7 +276,6 @@ function applyRunningPhase(
     return runningLifecycleState({
       phase,
       queueDepth: state.queueDepth,
-      queuePreviews: state.queuePreviews,
       startedAt: ts,
     });
   }
@@ -319,7 +288,6 @@ function applyRunningPhase(
 function runningLifecycleState(input: {
   phase: Phase;
   queueDepth: number;
-  queuePreviews: readonly QueuedMessagePreview[];
   startedAt: number | null;
 }): RunningLifecycleState {
   return {
@@ -327,7 +295,6 @@ function runningLifecycleState(input: {
     status: 'running',
     cancelled: false,
     queueDepth: input.queueDepth,
-    queuePreviews: input.queuePreviews,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

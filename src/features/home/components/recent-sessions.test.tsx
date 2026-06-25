@@ -75,7 +75,7 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it("caps to `limit` rows and shows a '+N more' line with the correct hidden count; omits it when limit covers all", async () => {
+  it('caps to `limit` rows and shows an "N more · ctrl+r" footnote with the correct hidden count; omits it when limit covers all', async () => {
     seed([
       { id: 's-0', feature: 'oldest-row', startedAt: 1_700_000_000 },
       { id: 's-1', feature: 'old-row', startedAt: 1_700_000_001 },
@@ -93,14 +93,15 @@ describe('RecentSessions', () => {
     expect(cappedFrame).not.toContain('mid-row');
     expect(cappedFrame).not.toContain('old-row');
     expect(cappedFrame).not.toContain('oldest-row');
-    expect(cappedFrame).toContain('+3 more');
+    expect(cappedFrame).toMatch(/\b3 more\b/);
+    expect(cappedFrame).toContain('ctrl+r');
     capped.unmount();
 
     const full = renderFeature(<RecentSessions limit={10} />);
     await tick(20);
 
     const fullFrame = full.lastFrame() ?? '';
-    expect(fullFrame).not.toMatch(/\+\d+ more/);
+    expect(fullFrame).not.toMatch(/\b\d+ more\b/);
     for (const label of ['newest-row', 'new-row', 'mid-row', 'old-row', 'oldest-row']) {
       expect(fullFrame).toContain(label);
     }
@@ -214,7 +215,7 @@ describe('RecentSessions', () => {
     expect(frame).not.toContain('oldest-small-home');
     expect(frame).not.toContain('filter sessions');
     expect(frame).not.toContain(CURSOR_GLYPH);
-    expect(frame).not.toMatch(/\+\d+ more/);
+    expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
   });
 
@@ -259,7 +260,7 @@ describe('RecentSessions', () => {
     expect(frame).toContain('newest-focused-small-home');
     expect(frame).not.toContain('middle-focused-small-home');
     expect(frame).not.toContain('oldest-focused-small-home');
-    expect(frame).not.toMatch(/\+\d+ more/);
+    expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
   });
 

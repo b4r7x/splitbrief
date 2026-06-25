@@ -16,13 +16,13 @@ describe('escape-debounce', () => {
     vi.useRealTimers();
   });
 
-  it('fires the action after the default 35ms delay', () => {
+  it('fires the action after the default 25ms delay', () => {
     const action = vi.fn();
     scheduleEscapeAction(action);
     expect(isEscapeActionPending()).toBe(true);
     expect(action).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(34);
+    vi.advanceTimersByTime(24);
     expect(action).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1);
@@ -51,18 +51,18 @@ describe('escape-debounce', () => {
     scheduleEscapeAction(second);
 
     // The first action's original deadline passes without it firing.
-    vi.advanceTimersByTime(20);
+    vi.advanceTimersByTime(5);
     expect(first).not.toHaveBeenCalled();
     expect(second).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(15);
+    vi.advanceTimersByTime(20);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
   });
 
   it('reports not pending after the action fires', () => {
     scheduleEscapeAction(() => {});
-    vi.advanceTimersByTime(35);
+    vi.advanceTimersByTime(25);
     expect(isEscapeActionPending()).toBe(false);
   });
 });

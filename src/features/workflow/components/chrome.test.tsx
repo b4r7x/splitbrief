@@ -11,6 +11,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { WorkflowHeader } from './chrome.js';
+import { ConversationFlow } from './conversation-flow/flow.js';
 
 type WorkflowConfigOverrides = Partial<
   Omit<EngineEventOf<'workflow_config'>, 'type' | 'ts' | 'phase'>
@@ -160,6 +161,56 @@ describe('WorkflowHeader', () => {
 
     expect(statusLines).toHaveLength(1);
 
+    ui.unmount();
+  });
+
+  it('keeps the top divider directly below the status row', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    addEvent({
+      type: 'planner_status',
+      ts: Date.now(),
+      phase: 'researching',
+      status: 'running',
+      tool: 'codex',
+      model: 'default',
+    });
+
+    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
+    await tick();
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const statusIndex = lines.findIndex((line) => line.includes('planner researching'));
+    const dividerIndex = lines.findIndex((line) => line.includes('─'));
+
+    expect(statusIndex).toBeGreaterThanOrEqual(0);
+    expect(dividerIndex).toBe(statusIndex + 1);
+
+    ui.unmount();
+  });
+
+  it('does not duplicate the latest user message in workflow chrome', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    const userText = 'single visible user message';
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'user_message',
+          ts: 1,
+          phase: 'implementing',
+          text: userText,
+        },
+      ],
+    });
+
+    const ui = renderFeature(
+      <>
+        <WorkflowHeader startedAt={new Date().toISOString()} />
+        <ConversationFlow height={6} conversationWidth={80} contentWidth={80} />
+      </>,
+    );
+    await tick();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.match(new RegExp(userText, 'g')) ?? []).toHaveLength(1);
     ui.unmount();
   });
 });

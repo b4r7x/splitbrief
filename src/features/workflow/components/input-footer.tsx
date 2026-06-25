@@ -23,7 +23,6 @@ interface InputFooterLayoutInput {
   advisoryText: string | null;
   taskText: string;
   queueCountText: string | null;
-  queuePreviewText: string | null;
   gitLabel: string;
 }
 
@@ -50,32 +49,15 @@ function truncateFooterText(text: string, maxCells: number): string {
   return truncateTerminalDisplayText(text, maxCells);
 }
 
-function buildQueueText(
-  queueCountText: string | null,
-  queuePreviewText: string | null,
-  isCompact: boolean,
-): string | null {
+function buildQueueText(queueCountText: string | null, isCompact: boolean): string | null {
   if (!queueCountText) return null;
   if (isCompact) return queueCountText;
-  const pendingText = `${queueCountText} pending`;
-  if (!queuePreviewText) return pendingText;
-  return `${pendingText} - ${queuePreviewText}`;
-}
-
-function formatQueuePreviewText(
-  previews: readonly { preview: string }[],
-  maxPreviewCount = 2,
-): string | null {
-  if (previews.length === 0) return null;
-  const visible = previews.slice(-maxPreviewCount).map((entry) => entry.preview);
-  const hiddenCount = Math.max(0, previews.length - visible.length);
-  const suffix = hiddenCount > 0 ? `, +${hiddenCount} older` : '';
-  return `${visible.join('; ')}${suffix}`;
+  return `${queueCountText} pending`;
 }
 
 function buildRightStatus(input: InputFooterLayoutInput, contentWidth: number): string {
   const isCompact = contentWidth < FOOTER_COMPACT_CONTENT_WIDTH;
-  const queueText = buildQueueText(input.queueCountText, input.queuePreviewText, isCompact);
+  const queueText = buildQueueText(input.queueCountText, isCompact);
   const full = joinFooterParts([input.taskText, queueText, isCompact ? null : input.gitLabel]);
   if (fitsFooterCells(full, contentWidth)) return full;
 
@@ -143,7 +125,7 @@ export function buildInputFooterLayout(input: InputFooterLayoutInput): InputFoot
 
 export function InputFooter({ width }: { width?: number | undefined }) {
   const t = useTheme();
-  const [{ queueDepth, queuePreviews }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
+  const [{ queueDepth }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const isAttachedClient = routerStore.use(
     (s) => s.screen === 'workflow' && s.attach !== undefined,
   );
@@ -155,7 +137,6 @@ export function InputFooter({ width }: { width?: number | undefined }) {
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
   const taskText = `Task ${currentTask}/${totalTasks}${etaText ? `${SOFT_SEP}${etaText}` : ''}`;
-  const queuePreviewText = formatQueuePreviewText(queuePreviews);
   const queueCountText = queueDepth > 0 ? `queued: ${queueDepth}` : null;
   const layout = buildInputFooterLayout({
     cols: width ?? cols,
@@ -164,7 +145,6 @@ export function InputFooter({ width }: { width?: number | undefined }) {
       advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
     taskText,
     queueCountText,
-    queuePreviewText,
     gitLabel,
   });
 

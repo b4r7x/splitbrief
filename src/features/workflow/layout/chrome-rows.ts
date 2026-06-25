@@ -1,5 +1,6 @@
-// Header (1) + meta row (1) + AgentStatusRow (1) = 3 rows.
-export const TOP_FIXED_CHROME_ROWS = 3;
+export const WORKFLOW_BODY_TOP_GAP_ROWS = 1;
+// Header (1) + meta row (1) + AgentStatusRow (1) + divider (1), plus the fixed body gap below it.
+export const TOP_FIXED_CHROME_ROWS = 4 + WORKFLOW_BODY_TOP_GAP_ROWS;
 // ConfigLine is optional and tracked separately from the fixed top chrome.
 export const CONFIG_CHROME_ROWS = 1;
 // Footer divider (1) + feedback row (1) + composer + input footer rows.

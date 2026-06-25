@@ -63,22 +63,12 @@ describe('wireMouseScroll', () => {
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-down', 2, 5);
+    mock.emit('wheel-down', 2, 7);
     expect(reviewStore.get().scrollOffset).toBe(1);
     dispose();
   });
 
-  it('ignores wheel input outside the conversation rectangle', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-
-    const mock = createMockFilteredStdin();
-    const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-down', 2, 1);
-    expect(conversationScrollStore.get().scrollOffset).toBe(0);
-    dispose();
-  });
-
-  it('scrolls the conversation when the wheel is inside the content rectangle', () => {
+  it('scrolls the conversation even when touchpad wheel coordinates are outside the content rectangle', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     eventsStore.__testReset({
       events: Array.from({ length: 20 }, (_, ts) => ({
@@ -91,8 +81,31 @@ describe('wireMouseScroll', () => {
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-up', 2, 5);
+    mock.emit('wheel-up', 2, 1);
     expect(conversationScrollStore.get().scrollOffset).toBe(1);
+    dispose();
+  });
+
+  it('scrolls the conversation back toward the bottom on wheel-down', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    eventsStore.__testReset({
+      events: Array.from({ length: 20 }, (_, ts) => ({
+        type: 'planner_text' as const,
+        ts,
+        phase: 'specifying' as const,
+        text: `event-${ts}`,
+      })),
+    });
+    conversationScrollStore.__testReset({
+      scrollOffset: 1,
+      renderableCountAtScroll: 20,
+      heightAtScroll: 20,
+    });
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireMouseScroll(mock.filtered);
+    mock.emit('wheel-down', 2, 7);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
     dispose();
   });
 
@@ -110,7 +123,7 @@ describe('wireMouseScroll', () => {
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-up', 2, 5);
+    mock.emit('wheel-up', 2, 7);
     expect(conversationScrollStore.get().scrollOffset).toBe(0);
     dispose();
   });

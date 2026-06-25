@@ -24,7 +24,6 @@ import { getWorkflowPromptRows } from '../prompt-rows.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 
 export interface ConversationScrollSnapshot {
-  activityRailWidth: number;
   conversationRect: ReturnType<typeof getWorkflowContentRect>;
   conversationWidth: number;
   contentRect: ReturnType<typeof getWorkflowContentRect>;
@@ -91,7 +90,6 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   });
   const runtimeLayout = getWorkflowRuntimeLayout({
     contentWidth,
-    terminalCols: cols,
   });
   const contentRect = getWorkflowContentRect({
     cols,
@@ -121,7 +119,6 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     streaming: streamingOutputStore.get(),
   });
   return {
-    activityRailWidth: runtimeLayout.activityRailWidth,
     conversationRect,
     conversationWidth: runtimeLayout.conversationWidth,
     contentRect,

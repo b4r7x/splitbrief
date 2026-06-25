@@ -47,7 +47,26 @@ type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
 interface RestoreTerminalOptions {
   fullscreen: boolean;
   mouse?: boolean | undefined;
+  paste?: boolean | undefined;
   stdin?: NodeJS.ReadStream | undefined;
+}
+
+interface RenderInputConfig {
+  useFilteredStdin: boolean;
+  useMouse: boolean;
+  usePaste: boolean;
+}
+
+export function resolveRenderInputConfig(options: {
+  fullscreen: boolean;
+  mouse?: boolean | undefined;
+}): RenderInputConfig {
+  const usePaste = options.fullscreen;
+  return {
+    useFilteredStdin: usePaste,
+    useMouse: options.mouse !== false && options.fullscreen,
+    usePaste,
+  };
 }
 
 // fullscreen-ink restores the main screen buffer only after `waitUntilExit()` resolves, but a
@@ -59,6 +78,7 @@ export function restoreTerminal(options: RestoreTerminalOptions): void {
   restoreTerminalControl({
     fullscreen: options.fullscreen,
     mouse: options.mouse ?? false,
+    paste: options.paste,
     stdin: options.stdin,
   });
 }
@@ -154,10 +174,12 @@ export function createSuspendListenerToggle(deps: { install: () => void; uninsta
 
 export async function startFullscreenThenActivateHandover(deps: {
   start: () => Promise<void>;
+  publishFilteredStdin?: (() => void) | undefined;
   activateFilteredStdin?: (() => void) | undefined;
   handover: TerminalHandoverConfig;
   setHandover: (config: TerminalHandoverConfig | undefined) => void;
 }): Promise<void> {
+  deps.publishFilteredStdin?.();
   await deps.start();
   deps.activateFilteredStdin?.();
   deps.setHandover(deps.handover);
@@ -185,7 +207,10 @@ export async function renderApp(
 
   configureDiptychKeyDebugLog(projectDir ? { projectDir } : undefined);
 
-  const useMouse = mouse !== false && fullscreen;
+  const { useFilteredStdin, useMouse, usePaste } = resolveRenderInputConfig({
+    fullscreen,
+    mouse,
+  });
   let filteredStdin: FilteredStdin | undefined;
   let filteredDisabled = false;
 
@@ -196,8 +221,8 @@ export async function renderApp(
     process.stdin.on('data', rawKeyTap);
   }
 
-  if (useMouse) {
-    filteredStdin = createFilteredStdin(process.stdin, { activate: false });
+  if (useFilteredStdin) {
+    filteredStdin = createFilteredStdin(process.stdin, { activate: false, mouse: useMouse });
   }
 
   const disableFilteredStdin = () => {
@@ -300,13 +325,22 @@ export async function renderApp(
         ink = fullscreenInk;
         await startFullscreenThenActivateHandover({
           start: () => fullscreenInk.start(),
-          activateFilteredStdin: filteredStdin
+          publishFilteredStdin: filteredStdin
             ? () => {
-                filteredStdin.activate();
                 setActiveFilteredStdin(filteredStdin);
               }
             : undefined,
-          handover: { fullscreen: true, mouse: useMouse, sourceStdin: process.stdin },
+          activateFilteredStdin: filteredStdin
+            ? () => {
+                filteredStdin.activate();
+              }
+            : undefined,
+          handover: {
+            fullscreen: true,
+            mouse: useMouse,
+            paste: usePaste,
+            sourceStdin: process.stdin,
+          },
           setHandover: setActiveTerminalHandover,
         });
       } catch (err) {

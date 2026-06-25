@@ -148,9 +148,10 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(lastText).toContain('d.ts');
     expect(lastText).not.toContain('earlier');
     expect(moreText).toContain('earlier');
+    expect(moreText).toContain('ctrl+a');
   });
 
-  it('keeps the terminator on the last real child when expanded and marks less separately', () => {
+  it('keeps the terminator on the last real child when expanded and marks collapse separately', () => {
     const rows = blockRows(
       [
         activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
@@ -168,13 +169,16 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(last).toHaveLength(1);
     expect(more).toHaveLength(1);
     expect(lastText).toContain('d.ts');
-    expect(moreText).toContain('less');
+    expect(moreText).toContain('collapse');
+    expect(moreText).toContain('ctrl+a');
   });
 
   it('keeps every activity-child marker at the same cell width as the gutter', () => {
     for (const kind of ['activity-child', 'activity-child-last', 'activity-more'] as const) {
       expect(getTerminalCellWidth(rowMarker(kind) ?? '')).toBe(4);
     }
+    expect(getTerminalCellWidth('  ▾ ')).toBe(4);
+    expect(getTerminalCellWidth('  ▸ ')).toBe(4);
     expect(getTerminalCellWidth(rowMarker('activity') ?? '')).toBe(2);
   });
 });

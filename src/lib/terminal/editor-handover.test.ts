@@ -89,6 +89,30 @@ describe('terminal handover for $EDITOR', () => {
     expect(calls).toEqual(['pause', 'resume']);
   });
 
+  it('brackets paste mode without mouse tracking when mouse is disabled', () => {
+    const { stdin, calls } = makeFakeStdin();
+    const config: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: false,
+      paste: true,
+      sourceStdin: stdin,
+    };
+    const written = captureStdout();
+
+    suspendTerminalForEditor(config);
+    const afterSuspend = written.length;
+    resumeTerminalAfterEditor(config);
+
+    const suspendWrites = written.slice(0, afterSuspend);
+    const resumeWrites = written.slice(afterSuspend);
+
+    expect(suspendWrites).toContain(terminalSequences.disableBracketedPaste);
+    expect(suspendWrites).not.toContain(terminalSequences.disableMouseTracking);
+    expect(resumeWrites).toContain(terminalSequences.enableBracketedPaste);
+    expect(resumeWrites).not.toContain(terminalSequences.enableMouseTracking);
+    expect(calls).toEqual(['pause', 'resume']);
+  });
+
   it('disables source stdin raw mode for the handoff and restores it afterward', () => {
     const { stdin, rawModes } = makeFakeStdin(true);
     const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };

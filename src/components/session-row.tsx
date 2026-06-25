@@ -62,15 +62,20 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
         </Box>
       )}
       <Box flexShrink={0} backgroundColor={bg}>
-        <Text color={display.color}>{display.icon} </Text>
+        <Text color={display.color} bold={selected}>
+          {display.icon}{' '}
+        </Text>
       </Box>
       <Box flexGrow={1} flexShrink={1} minWidth={0} backgroundColor={bg}>
         <Text color={selected ? t.accent : t.text} bold={selected} wrap="truncate-end">
           {session.feature}
         </Text>
       </Box>
-      <Box flexShrink={0} backgroundColor={bg}>
-        <Text color={t.textDim}> {time}</Text>
+      <Box flexShrink={0} justifyContent="flex-end" backgroundColor={bg}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {' '}
+          {time}
+        </Text>
       </Box>
     </Box>
   );

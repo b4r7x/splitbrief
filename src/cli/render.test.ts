@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PassThrough } from 'node:stream';
 import {
   createCrashHandler,
   createResumeHandler,
@@ -7,6 +8,7 @@ import {
   createTerminationHandler,
   prepareInlineFallbackAfterFullscreenFailure,
   restoreTerminal,
+  resolveRenderInputConfig,
   startFullscreenThenActivateHandover,
 } from './render.js';
 import type { TerminalHandoverConfig } from '../lib/terminal/editor-handover.js';
@@ -193,6 +195,92 @@ describe('createSuspendListenerToggle', () => {
   });
 });
 
+describe('resolveRenderInputConfig', () => {
+  it('uses filtered paste input in fullscreen even when mouse is disabled', () => {
+    expect(resolveRenderInputConfig({ fullscreen: true, mouse: false })).toEqual({
+      useFilteredStdin: true,
+      useMouse: false,
+      usePaste: true,
+    });
+  });
+
+  it('does not use terminal input filtering outside fullscreen', () => {
+    expect(resolveRenderInputConfig({ fullscreen: false, mouse: true })).toEqual({
+      useFilteredStdin: false,
+      useMouse: false,
+      usePaste: false,
+    });
+  });
+});
+
+describe('renderApp fullscreen input startup', () => {
+  let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+    vi.doUnmock('../lib/terminal/filtered-stdin.js');
+    vi.doUnmock('fullscreen-ink');
+    vi.resetModules();
+  });
+
+  it('publishes filtered stdin before fullscreen start mounts the app', async () => {
+    const calls: string[] = [];
+    let activeFiltered: unknown;
+    const filtered = {
+      stdin: new PassThrough() as unknown as NodeJS.ReadStream,
+      activate: () => {
+        calls.push('activate-filtered-stdin');
+      },
+      disable: () => {
+        calls.push('disable-filtered-stdin');
+      },
+      onMouse: () => () => {},
+      isPasteActive: () => false,
+    };
+
+    vi.resetModules();
+    vi.doMock('../lib/terminal/filtered-stdin.js', () => ({
+      createFilteredStdin: () => {
+        calls.push('create-filtered-stdin');
+        return filtered;
+      },
+      setActiveFilteredStdin: (next: unknown) => {
+        activeFiltered = next;
+        calls.push(next ? 'publish-filtered-stdin' : 'clear-filtered-stdin');
+      },
+      getActiveFilteredStdin: () => activeFiltered,
+    }));
+    vi.doMock('fullscreen-ink', () => ({
+      withFullScreen: () => ({
+        start: async () => {
+          calls.push(activeFiltered === filtered ? 'start-with-filtered-stdin' : 'start-missing');
+        },
+        waitUntilExit: async () => {
+          calls.push('wait-until-exit');
+        },
+      }),
+    }));
+
+    const { renderApp } = await import('./render.js');
+    const appElement = {} as Parameters<typeof renderApp>[0];
+
+    await renderApp(appElement, { fullscreen: true, mouse: true });
+
+    expect(calls).toContain('start-with-filtered-stdin');
+    expect(calls.indexOf('publish-filtered-stdin')).toBeLessThan(
+      calls.indexOf('start-with-filtered-stdin'),
+    );
+    expect(calls.indexOf('start-with-filtered-stdin')).toBeLessThan(
+      calls.indexOf('activate-filtered-stdin'),
+    );
+  });
+});
+
 describe('startFullscreenThenActivateHandover', () => {
   it('marks terminal handover only after fullscreen start succeeds', async () => {
     const calls: string[] = [];
@@ -207,8 +295,11 @@ describe('startFullscreenThenActivateHandover', () => {
       start: async () => {
         calls.push('start');
       },
+      publishFilteredStdin: () => {
+        calls.push('publish-filtered-stdin');
+      },
       activateFilteredStdin: () => {
-        calls.push('filtered-stdin');
+        calls.push('activate-filtered-stdin');
       },
       handover,
       setHandover: (config) => {
@@ -218,7 +309,12 @@ describe('startFullscreenThenActivateHandover', () => {
     });
 
     expect(activeHandover).toBe(handover);
-    expect(calls).toEqual(['start', 'filtered-stdin', 'handover']);
+    expect(calls).toEqual([
+      'publish-filtered-stdin',
+      'start',
+      'activate-filtered-stdin',
+      'handover',
+    ]);
   });
 
   it('leaves terminal handover inactive when fullscreen start fails', async () => {
@@ -232,12 +328,15 @@ describe('startFullscreenThenActivateHandover', () => {
 
     await expect(
       startFullscreenThenActivateHandover({
+        publishFilteredStdin: () => {
+          calls.push('publish-filtered-stdin');
+        },
         start: async () => {
           calls.push('start');
           throw new Error('fullscreen unavailable');
         },
         activateFilteredStdin: () => {
-          calls.push('filtered-stdin');
+          calls.push('activate-filtered-stdin');
         },
         handover,
         setHandover: (config) => {
@@ -248,7 +347,7 @@ describe('startFullscreenThenActivateHandover', () => {
     ).rejects.toThrow('fullscreen unavailable');
 
     expect(activeHandover).toBeUndefined();
-    expect(calls).toEqual(['start']);
+    expect(calls).toEqual(['publish-filtered-stdin', 'start']);
   });
 });
 
@@ -303,6 +402,22 @@ describe('restoreTerminal', () => {
     expect(written).toEqual([
       terminalSequences.disableMouseTracking,
       terminalSequences.disableSgrMouse,
+      terminalSequences.disableBracketedPaste,
+      terminalSequences.exitAltBuffer,
+      terminalSequences.showCursor,
+    ]);
+  });
+
+  it('can disable paste mode without disabling mouse tracking', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+
+    restoreTerminal({ fullscreen: true, mouse: false, paste: true });
+
+    expect(written).toEqual([
       terminalSequences.disableBracketedPaste,
       terminalSequences.exitAltBuffer,
       terminalSequences.showCursor,

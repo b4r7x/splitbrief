@@ -221,7 +221,7 @@ describe('eventRows', () => {
     expect(lines.every((line) => getTerminalCellWidth(line) <= 4)).toBe(true);
   });
 
-  it('renders sanitized queue previews when queued and injected events carry them', () => {
+  it('renders sanitized queued message text when queued and injected events carry it', () => {
     const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
     const events: EngineEvent[] = [
       {

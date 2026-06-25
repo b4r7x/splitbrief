@@ -8,6 +8,7 @@ import { AgentStatusRow } from './agent-status-row.js';
 import { CostStatusLine } from './cost/status-line.js';
 import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
+import { Divider } from './divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { createLatestEventByTypeSelector } from '../latest-event-selector.js';
@@ -59,12 +60,20 @@ function WorkflowMetaRow() {
   );
 }
 
-export function WorkflowHeader({ startedAt }: { startedAt: string }) {
+export function WorkflowHeader({
+  startedAt,
+  scrollAboveLabel = '',
+}: {
+  startedAt: string;
+  scrollAboveLabel?: string;
+}) {
+  const cols = terminalSizeStore.use((s) => s.cols);
   return (
     <>
       <Header startedAt={startedAt} />
       <WorkflowMetaRow />
       <AgentStatusRow />
+      <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </>
   );
 }

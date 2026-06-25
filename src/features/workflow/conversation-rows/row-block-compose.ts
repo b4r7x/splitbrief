@@ -25,10 +25,12 @@ export function rowsBlock(
       text: sanitizeRowDisplayText(segment.text),
     })),
   }));
+  const activeRowKey = [...safeRows].reverse().find(isActiveRow)?.key;
   return {
     key,
     rowCount: safeRows.length,
     renderableUnits: 1,
+    ...(activeRowKey !== undefined ? { activeRowKey } : {}),
     createRows: (windowStart, windowEnd) => safeRows.slice(windowStart, windowEnd),
   };
 }
@@ -42,10 +44,12 @@ export function rowSeedsBlock(
     ...seed,
     text: sanitizeRowDisplayText(seed.text),
   }));
+  const activeRowKey = [...safeSeeds].reverse().find((seed) => isActiveKind(seed.kind))?.key;
   return {
     key,
     rowCount: safeSeeds.length,
     renderableUnits: 1,
+    ...(activeRowKey !== undefined ? { activeRowKey } : {}),
     createRows: (windowStart, windowEnd) =>
       safeSeeds.slice(windowStart, windowEnd).map((seed) => row(seed)),
   };
@@ -72,6 +76,9 @@ export function wrappedTextBlock(input: {
     key: keyPrefix,
     rowCount,
     renderableUnits: 1,
+    ...(kind !== undefined && isActiveKind(kind)
+      ? { activeRowKey: `${keyPrefix}-${rowCount - 1}` }
+      : {}),
     createRows: (windowStart, windowEnd) =>
       eventWrappedRowsWindow({
         keyPrefix,
@@ -110,6 +117,9 @@ export function cardRowsBlock(input: {
     key: keyPrefix,
     rowCount,
     renderableUnits: 1,
+    ...(kind !== undefined && isActiveKind(kind)
+      ? { activeRowKey: `${keyPrefix}-${rowCount - 1}` }
+      : {}),
     createRows: (windowStart, windowEnd) =>
       cardRowsWindow({
         keyPrefix,
@@ -137,6 +147,7 @@ export function compositeBlock(
     key,
     rowCount,
     renderableUnits: 1,
+    ...lastActiveRowKey(children),
     createRows: (windowStart, windowEnd) => {
       const rows: ConversationRow[] = [];
       const start = Math.max(0, windowStart);
@@ -160,6 +171,21 @@ export function compositeBlock(
       return rows;
     },
   };
+}
+
+function lastActiveRowKey(children: readonly ConversationRowBlock[]): { activeRowKey?: string } {
+  const activeRowKey = [...children]
+    .reverse()
+    .find((block) => block.activeRowKey !== undefined)?.activeRowKey;
+  return activeRowKey === undefined ? {} : { activeRowKey };
+}
+
+function isActiveRow(rowValue: ConversationRow): boolean {
+  return isActiveKind(rowValue.kind);
+}
+
+function isActiveKind(kind: ConversationRowKind | undefined): boolean {
+  return kind === 'activity' || kind === 'task-header';
 }
 
 function countEventWrappedRows(text: string, width: number): number {

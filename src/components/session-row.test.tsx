@@ -93,6 +93,7 @@ describe('SessionRow', () => {
     );
     expect(frame).toContain('…');
     expect(frame).not.toContain('jeszcze');
+    expect(frame).toMatch(/… 1m ago|… just now/);
   });
 
   it('keeps a focused row on one line and does not shift columns when selected', () => {

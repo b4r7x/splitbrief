@@ -5,6 +5,7 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SessionRow } from '../../../components/session-row.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
@@ -74,7 +75,10 @@ export function RecentSessions({
         <SessionRow key={s.id} session={s} />
       ))}
       {showHiddenCount && hiddenCount > 0 && (
-        <Text color={theme.textDim}> +{hiddenCount} more</Text>
+        <Box marginLeft={2}>
+          <Text color={theme.text}>{hiddenCount} more</Text>
+          <Text color={theme.textDim}>{SOFT_SEP}ctrl+r to show all</Text>
+        </Box>
       )}
     </RecentSessionsShell>
   );

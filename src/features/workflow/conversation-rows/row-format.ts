@@ -217,6 +217,7 @@ export interface CardBodyLineInput {
   text: string;
   tone?: ConversationRowTone;
   bold?: boolean;
+  segments?: ConversationRowSegment[];
 }
 
 export interface CardMetaSegmentInput {
@@ -237,7 +238,7 @@ export function countCardRows(input: CardBlockInput): number {
   const bodyWrapWidth = Math.max(1, Math.max(0, Math.max(CARD_MIN_WIDTH, input.width) - 4));
   let count = 2;
   for (const body of input.bodyLines) {
-    const cleanBody = sanitizeRowDisplayText(body.text);
+    const cleanBody = sanitizeRowDisplayText(cardBodyLineDisplayText(body));
     count += countHardWrappedDisplayLines(cleanBody, bodyWrapWidth);
   }
   return count;
@@ -297,6 +298,68 @@ function fittedCardHeaderSegments(input: {
   return segments;
 }
 
+function cardBodyLineDisplayText(body: CardBodyLineInput): string {
+  if (body.segments !== undefined && body.segments.length > 0) {
+    return body.segments.map((segment) => segment.text).join('');
+  }
+  return body.text;
+}
+
+interface ResolvedBodySegment {
+  text: string;
+  tone: ConversationRowTone;
+  bold: boolean;
+}
+
+function cardBodySegments(body: CardBodyLineInput): ResolvedBodySegment[] {
+  if (body.segments !== undefined && body.segments.length > 0) {
+    return body.segments.map((segment) => ({
+      text: segment.text,
+      tone: segment.tone ?? 'text',
+      bold: segment.bold === true,
+    }));
+  }
+  return [
+    {
+      text: body.text,
+      tone: body.tone ?? 'text',
+      bold: body.bold === true,
+    },
+  ];
+}
+
+function cardBodyRowSegments(
+  segments: ResolvedBodySegment[],
+  wrappedText: string,
+  body: CardBodyLineInput,
+  offset: number,
+): ConversationRowSegment[] {
+  if (segments.length === 1) {
+    return [
+      {
+        text: wrappedText,
+        tone: segments[0]?.tone ?? 'text',
+        ...(segments[0]?.bold === true ? { bold: true } : {}),
+      },
+    ];
+  }
+
+  const joined = segments.map((segment) => segment.text).join('');
+  if (wrappedText.length === joined.length && wrappedText === joined) {
+    return segments.map((segment) => ({
+      text: segment.text,
+      tone: segment.tone,
+      ...(segment.bold === true ? { bold: true } : {}),
+    }));
+  }
+
+  if (offset > 0) {
+    return [{ text: wrappedText, tone: body.tone ?? 'textDim' }];
+  }
+
+  return [{ text: wrappedText, tone: segments[0]?.tone ?? 'text' }];
+}
+
 export function cardRowsWindowSlice(
   input: CardBlockInput & { windowStart: number; windowEnd: number },
 ): ConversationRow[] {
@@ -335,7 +398,8 @@ export function cardRowsWindowSlice(
   const bodyWrapWidth = Math.max(1, inner);
   for (const [index, body] of input.bodyLines.entries()) {
     if (rowIndex >= end) return rows;
-    const cleanBody = sanitizeRowDisplayText(body.text);
+    const bodySegments = cardBodySegments(body);
+    const cleanBody = sanitizeRowDisplayText(bodySegments.map((segment) => segment.text).join(''));
     const bodyWindow = wrappedDisplayLineWindow(
       cleanBody,
       bodyWrapWidth,
@@ -349,11 +413,7 @@ export function cardRowsWindowSlice(
           `${input.keyPrefix}-body-${index}-${offset}`,
           [
             { text: '│ ', tone: 'border' },
-            {
-              text,
-              tone: body.tone ?? 'text',
-              ...(body.bold === true ? { bold: true } : {}),
-            },
+            ...cardBodyRowSegments(bodySegments, text, body, offset),
             { text: ' '.repeat(padLength) },
             { text: ' │', tone: 'border' },
           ],

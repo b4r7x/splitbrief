@@ -8,7 +8,6 @@ import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow, markCancellationRequested } from '../../stores/workflow/actions.js';
 import { operationsStore } from '../../stores/workflow/operations.js';
-import { activityStore } from '../../stores/workflow/activity.js';
 import { makePlannerText, makeTaskStart, makeWorkflowCancelled } from '#testing/helpers/events.js';
 
 describe('tuiSink', () => {
@@ -124,18 +123,6 @@ describe('tuiSink', () => {
     ]);
     expect(eventsStore.get().events[0]).not.toHaveProperty('rawAvailable');
     expect(JSON.stringify(eventsStore.get().events)).not.toContain(secret);
-
-    expect(activityStore.get().items).toEqual([
-      expect.objectContaining({
-        label: 'running command',
-        rawAvailable: false,
-      }),
-    ]);
-    expect(activityStore.get().items[0]).not.toHaveProperty('target');
-    expect(activityStore.get().items[0]).not.toHaveProperty('expandId');
-    expect(activityStore.get().items[0]).not.toHaveProperty('textPartial');
-    expect(activityStore.get().items[0]).not.toHaveProperty('diagnosticPartial');
-    expect(JSON.stringify(activityStore.get().items)).not.toContain(secret);
 
     expect(operationsStore.get().last).toMatchObject({
       status: 'failed',

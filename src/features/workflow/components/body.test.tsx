@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { activityStore } from '../../../stores/workflow/activity.js';
 import { configStore } from '../../../stores/project/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { WorkflowBody } from './body.js';
@@ -15,13 +14,11 @@ let tmpDir: string;
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'workflow-body-test-'));
   eventsStore.__testReset();
-  activityStore.__testReset();
   configStore.__testReset({ config: makeConfig(), projectDir: tmpDir });
 });
 
 afterEach(async () => {
   eventsStore.__testReset();
-  activityStore.__testReset();
   configStore.__testReset();
   await rm(tmpDir, { recursive: true, force: true });
 });
@@ -63,15 +60,35 @@ describe('WorkflowBody brief review rendering', () => {
         phase="implementing"
         contentHeight={4}
         contentWidth={40}
-        terminalCols={80}
       />,
     );
 
     const frame = ui.lastFrame() ?? '';
-    const row = frame.split('\n').find((line) => line.includes('No events yet')) ?? '';
+    const lines = frame.split('\n');
+    const row = lines.find((line) => line.includes('No events yet')) ?? '';
 
+    expect(lines[0]).toBe('');
     expect(row.startsWith(' ')).toBe(true);
     expect(row.trimStart()).toContain('No events yet');
+
+    ui.unmount();
+  });
+
+  it('uses a one-row body for content instead of the top gap', () => {
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={normalInputMode()}
+        reviewFilePath={null}
+        phase="implementing"
+        contentHeight={1}
+        contentWidth={40}
+      />,
+    );
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('No events yet');
 
     ui.unmount();
   });
@@ -94,7 +111,6 @@ describe('WorkflowBody brief review rendering', () => {
         phase="implementing"
         contentHeight={8}
         contentWidth={80}
-        terminalCols={100}
       />,
     );
 
@@ -109,31 +125,8 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it.each([
-    [120, 118],
-    [140, 138],
-  ])('shows the activity rail for wide %s-column runtime conversation layouts', (terminalCols, contentWidth) => {
-    activityStore.__testReset({
-      items: [
-        {
-          id: 'activity-1',
-          callId: 'call-1',
-          phase: 'implementing',
-          role: 'implementer',
-          stage: 'updated',
-          kind: 'command',
-          label: 'running npm test sk-abcdefghijklmnopqrstuvwxyz',
-          target: 'npm test sk-abcdefghijklmnopqrstuvwxyz',
-          runnerName: 'codex',
-          redacted: true,
-          rawAvailable: true,
-          expandId: 'activity-1',
-          sequence: 1,
-          ts: 1,
-        },
-      ],
-    });
-
+  it('clears the above-scroll label when conversation mode is replaced by a prompt', () => {
+    const onScrollAbove = vi.fn();
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
@@ -141,60 +134,27 @@ describe('WorkflowBody brief review rendering', () => {
         inputMode={normalInputMode()}
         reviewFilePath={null}
         phase="implementing"
-        contentHeight={5}
-        contentWidth={contentWidth}
-        terminalCols={terminalCols}
+        contentHeight={4}
+        contentWidth={40}
+        onScrollAbove={onScrollAbove}
       />,
     );
-    const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Activity 1');
-    expect(frame).toContain('RUN');
-    expect(frame).toContain('EDACTED***');
-    expect(frame).toContain('raw');
-    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
-
-    ui.unmount();
-  });
-
-  it.each([
-    [80, 78],
-    [100, 98],
-  ])('hides the activity rail at %s columns', (terminalCols, contentWidth) => {
-    activityStore.__testReset({
-      items: [
-        {
-          id: 'activity-1',
-          callId: 'call-1',
-          phase: 'implementing',
-          role: 'implementer',
-          stage: 'updated',
-          kind: 'command',
-          label: 'running npm test',
-          redacted: false,
-          rawAvailable: false,
-          expandId: 'activity-1',
-          sequence: 1,
-          ts: 1,
-        },
-      ],
-    });
-
-    const ui = renderFeature(
+    onScrollAbove.mockClear();
+    ui.rerender(
       <WorkflowBody
         showSidebar={false}
         sidebarWidth={0}
-        inputMode={normalInputMode()}
+        inputMode={questionInputMode('Question?')}
         reviewFilePath={null}
         phase="implementing"
-        contentHeight={5}
-        contentWidth={contentWidth}
-        terminalCols={terminalCols}
+        contentHeight={4}
+        contentWidth={40}
+        onScrollAbove={onScrollAbove}
       />,
     );
 
-    expect(ui.lastFrame() ?? '').not.toContain('Activity 1');
-
+    expect(onScrollAbove).toHaveBeenCalledWith('');
     ui.unmount();
   });
 });
