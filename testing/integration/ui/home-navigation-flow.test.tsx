@@ -14,7 +14,7 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
-import { App } from '../../../src/app.js';
+import { App } from '../../../src/app/root.js';
 
 const CTRL_R = '\x12';
 const ARROW_DOWN = '\u001b[B';

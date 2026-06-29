@@ -15,7 +15,7 @@ Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [
 | `src/core/` | Domain logic — knows diptych concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
 | `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
-| `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only `app.tsx` |
+| `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only the `app/` shell (pages in `app/screens\|overlays` + `app/router.tsx`) |
 
 Import direction is one-way, top to bottom. For the cross-check table and blockers, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree).
 
@@ -199,7 +199,7 @@ Sectioned picker display belongs to the picker display-window stack: `src/compon
 
 A component earns its place in `src/components/` only when a **second** feature imports it. The first feature keeps it locally; the second consumer triggers the promotion.
 
-**Canonical promotion — `SessionRow`:** originally lived at `src/features/sessions/session-row.tsx` while only `features/sessions/picker.tsx` consumed it. When `features/home/components/recent-sessions.tsx` added a second consumer, the file moved to `src/components/session-row.tsx` (a cross-feature import would otherwise have been required).
+**Canonical promotion — `SessionRow`:** originally lived at `src/features/sessions/session-row.tsx` while only `src/app/overlays/sessions.tsx` consumed it. When `features/home/components/recent-sessions.tsx` added a second consumer, the file moved to `src/components/session-row.tsx` (a cross-feature import would otherwise have been required).
 
 ### Demoting a misplaced shared component — the 1-consumer reversal
 
@@ -209,8 +209,8 @@ If a file in `src/components/` turns out to have a single feature consumer, demo
 
 | File (old home in `components/`) | Real consumer | New home |
 |---|---|---|
-| `components/overlays/mode-selector.tsx` | `app.tsx` overlay switch; writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
-| `components/composer/feedback-row.tsx` | `features/workflow/screen.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
+| `components/overlays/mode-selector.tsx` | `app/router.tsx` overlay switch (`renderOverlay`); writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
+| `components/composer/feedback-row.tsx` | `src/app/screens/workflow.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
 
 The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.
 
@@ -222,7 +222,7 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 
 **Features do not import from each other.** The only cross-cutting channel is stores. See [`STRUCTURE.md` §Cross-feature rule](./STRUCTURE.md#cross-feature-rule).
 
-**Prohibited imports:** other `features/` siblings. The callback-composition-at-app.tsx pattern covers the "feature A renders UI owned by feature B" case.
+**Prohibited imports:** other `features/` siblings. The callback-composition-at-the-`app/`-shell pattern (router supplies the render-prop) covers the "feature A renders UI owned by feature B" case.
 
 ---
 

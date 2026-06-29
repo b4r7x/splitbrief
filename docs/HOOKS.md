@@ -44,7 +44,7 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 | `use-filterable-list.ts` | Filterable, searchable picker state (arrow-nav, filter, selection). Used by every feature-level picker. |
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
 
-App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. It binds to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort) and is composed once by `src/app.tsx`, so it sits next to the shell it serves.
+App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. It binds to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort) and is composed once by `src/app/root.tsx`, so it sits next to the shell it serves.
 
 ### Feature-scoped (`src/features/{feature}/hooks/`)
 
@@ -58,7 +58,7 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-mouse-scroll.ts` | Mouse-wheel binding to conversation/review scroll. |
 | `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll, diff/activity expansion, and cost drilldown. Mounted only when `screen === 'workflow'`. |
-| `use-brief-review-keys.ts` | Brief-review row focus: arrow-key selection and `y` yank during Task Brief review. Receives `copyTarget` / `canCopyFocused` ports from `WorkflowScreen` (wired in `app.tsx`) so the app shell never owns workflow copy state. Clears `focusStore` on unmount. |
+| `use-brief-review-keys.ts` | Brief-review row focus: arrow-key selection and `y` yank during Task Brief review. Receives `copyTarget` / `canCopyFocused` ports from `WorkflowScreen` (wired in `app/router.tsx` / the workflow page) so the app shell never owns workflow copy state. Clears `focusStore` on unmount. |
 
 ## Pure helpers that are not hooks
 
@@ -126,13 +126,13 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 ## Design decisions
 
 **Why not a deep taxonomy inside `src/hooks/`?**
-Once the shared directory only contains hooks used across ≥2 features, the count drops to single digits (2 today). A taxonomy over two files is pure ceremony.
+Once the shared directory only contains hooks used across ≥2 features, it stays small. A taxonomy over so few files is pure ceremony.
 
 **Why keep `use-filterable-list` shared when it powers feature-level pickers?**
 It is a keyboard/filter primitive, not a business hook. Every feature picker composes it — the primitive has its own lifecycle independent of any feature.
 
 **Why split `use-global-keys` into `useAppKeys` (`src/app/keys.ts`) + `use-keys` (`src/features/workflow/hooks/use-keys.ts`)?**
-Three reasons: (1) `use-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies. `useAppKeys` lives next to `src/app.tsx` because its concerns are app-shell concerns (exit, overlay stack, lifecycle abort). Brief-review row focus and `y` yank live in `use-brief-review-keys.ts` for the same reason — they mutate `reviewStore` and `focusStore`, and receive copy ports from the composition root rather than importing workflow resolvers directly.
+Three reasons: (1) `use-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies. `useAppKeys` lives at `src/app/keys.ts`, next to the `app/` shell it serves (`app/root.tsx`) (exit, overlay stack, lifecycle abort). Brief-review row focus and `y` yank live in `use-brief-review-keys.ts` for the same reason — they mutate `reviewStore` and `focusStore`, and receive copy ports from the composition root rather than importing workflow resolvers directly.
 
 **Why not put `keyboard.ts` under `features/workflow/hooks/`?**
 It is a pure function, not a hook. Hooks imply React lifecycle. Keeping pure helpers at the feature root (`features/workflow/keyboard.ts`) signals "this is feature logic, consumable by both React and non-React code".

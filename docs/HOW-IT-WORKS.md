@@ -52,7 +52,7 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 `renderApp()` in `src/cli/render.ts` mounts the Ink app. It tries fullscreen mode via `withFullScreen()` from `fullscreen-ink` — if that fails (unsupported terminal, broken escape codes), it falls back to inline rendering. Mouse input is wired through a filtered stdin that strips mouse escape sequences before they reach Ink's input handler.
 
-**`src/app.tsx`** is the root component. It reads `routerStore` for the current screen (`home`, `workflow`, `summary`, `setup`) and `overlayStore` for any active overlay (help, command palette, settings, sessions, etc.). It builds a runtime command context, binds app-wide keyboard handlers via `useAppKeys()` from `src/app/keys.ts`, and renders `<ThemeProvider>` wrapping `<Layout screen={...} overlay={...}/>`.
+**`src/app/root.tsx`** is the root component. It reads `routerStore` for the current screen and `overlayStore` for any active overlay, wires runtime commands via `useRuntimeCommands()` (`src/app/command-context.ts`), binds app-wide keys via `useAppKeys()` (`src/app/keys.ts`), and renders `<AppProvider>` (`app/provider.tsx`, today only `<ThemeProvider>`) wrapping `<Router/>` (`app/router.tsx`), which composes the page files and returns `<Layout screen={…} overlay={…}/>`.
 
 Screen selection is a switch on `routerStore`'s `screen` field:
 

@@ -17,8 +17,8 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { getLogo } from './logo.js';
-import { HomeScreen } from './screen.js';
+import { getLogo } from '../../features/home/logo.js';
+import { HomeScreen } from './home.js';
 
 const originalPlatform = process.platform;
 

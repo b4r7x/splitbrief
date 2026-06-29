@@ -51,7 +51,7 @@ utils/  →  lib/  →  core/  →  engine/  →  (stores/)  →  features/
 | `core/` | + `lib/`, `core/` | domain logic, **no React, no subprocess/file-writes** |
 | `engine/` | + `core/`, `engine/` | orchestration; **zero React/Ink, zero `features/`/`components/`/`hooks/`/`cli/`** |
 | `stores/` | `utils/`, `core/`, `lib/` | the only sanctioned engine↔UI channel |
-| `features/{f}/` | everything below + shared `components/`,`hooks/` | imported only by `app.tsx`; **never another feature** |
+| `features/{f}/` | everything below + shared `components/`,`hooks/` | imported only by the `app/` shell (the FLAT pages in `app/screens\|overlays` + `app/router.tsx`); **never another feature, never another page** |
 
 Blockers (also gated by [INVARIANTS.md](./INVARIANTS.md) #9, #12, #12b, #12c): `utils/→core/`, `lib/→engine/`, `core/→features/`, `features/A→features/B`, any `engine/→react|ink|features|components|hooks|cli`.
 

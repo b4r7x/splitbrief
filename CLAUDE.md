@@ -96,9 +96,11 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 
 - **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
 - **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, but the registry backs composer `/` input, the command palette, and RPC dispatch.
-- **App shell glue** lives in `src/app/`: global keys in `keys.ts`, runtime command context in `command-context.ts`.
-- **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, rendering is `overlay.tsx`.
-- **Runner selection** is the `src/features/runners/` feature. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
+- **App shell** lives in `src/app/`: composition root `root.tsx` (mounts `<AppProvider><Router/>`), `router.tsx` (`renderScreen` + `renderOverlay` switches → `<Layout>`), `provider.tsx` (`AppProvider`; today only `ThemeProvider`), `layout.tsx` (header + body + footer), plus app-wide keys in `keys.ts` and runtime-command context in `command-context.ts`. The shell lives entirely under `src/app/`; there is no monolithic root component or layout file at the `src/` root.
+- **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
+- **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
+- **Settings** overlay entry is the page `src/app/overlays/settings.tsx`; `ModeSelector` stays at `src/features/settings/mode-selector.tsx` and is imported directly by `src/app/router.tsx` (a router-imported feature component, not a page).
+- **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
 
 ## Runner kinds
 

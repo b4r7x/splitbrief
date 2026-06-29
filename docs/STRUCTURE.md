@@ -2,15 +2,16 @@
 
 How `src/` is organized on disk. For data flow between layers (CLI → stores → engine/UI), see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For state patterns, see [`STORES.md`](./STORES.md). For hook placement rules, see [`HOOKS.md`](./HOOKS.md).
 
-diptych organizes UI code by **business domain**, not by technical layer. A feature is a self-contained business concept — the code that implements it (screen, components, hooks, pure helpers, tests) lives in one folder under `src/features/`. Cross-cutting primitives (shared UI, shared hooks, low-level utilities) live flat at `src/` root.
+diptych organizes UI code by **business domain**, not by technical layer. A feature is a self-contained business concept — its internals (components, hooks, pure helpers, tests) live in one folder under `src/features/`. The **entry** of each surface is a FLAT page in the `src/app/` shell that *composes* that feature. Cross-cutting primitives (shared UI, shared hooks, low-level utilities) live flat at `src/` root.
 
 ## What we follow
 
 This is **feature-based organization, bulletproof-react-inspired**, adapted for an Ink CLI:
 
-- `src/features/{feature}/` holds the full vertical slice for one business concept.
+- `src/features/{feature}/` holds the internals (vertical slice) for one business concept.
+- The `src/app/` shell is the composition layer: shell modules (`root.tsx`, `router.tsx`, `provider.tsx`, `layout.tsx`, `keys.ts`, `command-context.ts`) plus FLAT page entries under `app/screens/` and `app/overlays/`.
 - Shared code sits flat at `src/` root in `components/`, `hooks/`, `utils/`, `lib/` — no `shared/` wrapper.
-- Features **do not import from other features**. Composition happens at the top level (`src/app.tsx`).
+- Features **do not import from other features**, and pages **do not import other pages**. Composition happens at the `app/` shell (`src/app/router.tsx` dispatches the FLAT pages).
 - No barrels anywhere, per [`NO-BARRELS.md`](./NO-BARRELS.md).
 - Tests are colocated next to source.
 
@@ -18,8 +19,16 @@ This is **feature-based organization, bulletproof-react-inspired**, adapted for 
 
 ```
 src/
-├── app.tsx, layout.tsx, cli.ts              # app entry + shell
-├── app/                                     # app-shell support: global keys + runtime command context
+├── cli.ts                                   # binary entry (commander)
+├── app/                                     # app shell + FLAT pages (composition layer)
+│   ├── root.tsx                             # composition root; mounts <AppProvider><Router/>
+│   ├── router.tsx                           # renderScreen + renderOverlay switches → <Layout>
+│   ├── provider.tsx                         # AppProvider (app-level providers; today ThemeProvider)
+│   ├── layout.tsx                           # structural shell (header + body + footer)
+│   ├── keys.ts                              # app-wide keyboard dispatch (useAppKeys)
+│   ├── command-context.ts                   # runtime-command wiring (useRuntimeCommands)
+│   ├── screens/                             # FLAT page entries: home, workflow, summary, setup
+│   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
@@ -28,22 +37,20 @@ src/
 ├── hooks/                                   # shared hooks (cross-feature) — see HOOKS.md
 ├── lib/                                     # infrastructure wrappers (git, fs, process, terminal) — see LAYERS.md
 ├── utils/                                   # generic primitives (zero domain, zero infra) — see LAYERS.md
-└── features/                                # business features
-    ├── help/
+└── features/                                # business-feature internals (entries are pages in app/)
     ├── workflow/
     ├── home/
     ├── palette/
-    ├── setup/
     ├── summary/
-    ├── settings/
-    ├── sessions/
-    ├── runners/
-    └── skills/
+    ├── settings/                            # retains mode-selector.tsx + presentation.ts + hooks/
+    └── runners/
 ```
 
 The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 
-There is no `src/screens/` directory. Each feature exports its own `screen.tsx` (or `picker.tsx` / `overlay.tsx` for overlay-style features), and `src/app.tsx` dispatches based on `routerStore.use(s => s.screen)`.
+`help`, `sessions`, `setup`, and `skills` have **no `features/` folder** — they dissolved into a single page each (the page *is* the whole surface). The folders above keep only internals; their entry is a page in `src/app/`.
+
+There is no `src/screens/` directory. Each surface's entry is a FLAT page under `src/app/screens/` (full screens) or `src/app/overlays/` (overlays), and `src/app/router.tsx` dispatches based on `routerStore.use(s => s.screen)` (driven by `src/app/root.tsx`).
 
 ## Layer inventory — non-feature folders
 
@@ -220,19 +227,19 @@ src/utils/
 
 ## Feature anatomy
 
-A feature folder contains the code a feature needs, and nothing else. Subfolders appear only where there is natural grouping.
+A feature folder contains the internals a surface needs, and nothing else — its **entry is a FLAT page in `src/app/`** that composes these internals (imported via `../../features/<x>/…`). Subfolders appear only where there is natural grouping.
 
-**Full-screen feature** (e.g. `features/workflow/`):
+**Full-screen feature** (e.g. `features/workflow/`; entry page `app/screens/workflow.tsx`):
 
 ```
 features/workflow/
-├── screen.tsx                # feature entry — rendered by app.tsx
 ├── components/               # feature-local components
 │   ├── header.tsx
 │   ├── sidebar.tsx
 │   ├── chrome.tsx            # workflow header/footer chrome
 │   └── conversation-flow/    # row-based conversation viewport
 ├── hooks/                    # feature-local hooks
+│   ├── use-workflow-screen.ts # the page's screen model (state/effects)
 │   ├── use-runner.ts
 │   └── use-keys.ts
 ├── handlers.ts               # pure helper — engine↔UI bridge
@@ -240,34 +247,32 @@ features/workflow/
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 
-**Overlay-style feature** (e.g. `features/settings/`):
+The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in the feature.
+
+**Overlay-style feature** (e.g. `features/settings/`; entry page `app/overlays/settings.tsx`):
 
 ```
 features/settings/
-├── overlay.tsx               # feature entry — rendered when overlay active
-├── mode-selector.tsx         # secondary overlay
+├── mode-selector.tsx         # router-imported feature component (NOT a page) — mounted by renderOverlay in app/router.tsx
 ├── presentation.ts           # pure formatters on SettingDef (value color, filter match, validate, display) — feature-local
 └── hooks/
     ├── buffer.ts             # useEditBuffer — feature-local
     └── editor.ts             # useSettingsEditor — feature-local
 ```
 
-`features/help/` and `features/palette/` follow the same overlay-entry pattern. The command palette pairs `overlay.tsx` with `sources.ts` and `results.ts`: `sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions, and `results.ts` ranks/filter-matches them for rendering.
+The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `presentation.ts` and `hooks/editor.ts`. `mode-selector.tsx` is the exception that proves the rule — it stays in the feature and is imported **directly by `app/router.tsx`** (a router-imported feature component, not a page).
 
-**Minimal feature** (e.g. `features/setup/`):
+`features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
 
-```
-features/setup/
-└── screen.tsx                # accepts render-prop callbacks for cross-feature composition
-```
+**Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
-`features/setup/` never imports from `features/runners/`. It accepts a `renderToolPicker` prop; `src/app.tsx` composes setup + runners together. This is the canonical **callback-composition-at-app.tsx** pattern for cases where one feature needs to render UI owned by another. `runners` is the feature boundary; `ToolModelPicker` / `renderToolPicker` are component and callback names, not a `tool-picker` feature.
+A dissolved surface has **no `features/` folder** — the page *is* the whole surface. `src/app/screens/setup.tsx` accepts render-prop callbacks for cross-feature composition: it takes a `renderToolPicker` prop, and `src/app/router.tsx` composes setup + runners together. This is the canonical **callback-composition-at-the-`app/`-shell** pattern for when one surface needs to render UI owned by another. `runners` is the feature boundary; `ToolModelPicker` / `renderToolPicker` are component and callback names, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone (`src/app/overlays/{help,sessions,skills}.tsx`).
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
 - **`hooks/` subfolder** appears only when the feature has ≥2 hook files.
 - **Pure helpers** (non-React modules) sit at the feature root as flat files (`handlers.ts`, `keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate when they carry behavior (`layout.test.ts`).
-- **No `index.ts` barrels** inside a feature. The entry point is a named file (`screen.tsx`, `overlay.tsx`, `picker.tsx`). See [`NO-BARRELS.md`](./NO-BARRELS.md).
+- **No `index.ts` barrels** inside a feature. The surface's entry is a FLAT page in `src/app/` (`app/screens/<x>.tsx` | `app/overlays/<x>.tsx`); feature folders hold only internals. See [`NO-BARRELS.md`](./NO-BARRELS.md).
 
 ## File placement decision tree
 
@@ -289,10 +294,10 @@ Is it a TypeScript type (compile-time only)?
 Does the code import React / Ink?
 ├── Shared across ≥2 features         → src/components/<category>/
 ├── React hook shared across ≥2 features or a UI primitive → src/hooks/
+├── A surface entry (screen / overlay) → src/app/screens/<name>.tsx | src/app/overlays/<name>.tsx (FLAT page composing the feature)
 └── Single-feature UI                 → src/features/<name>/
                                           ├── components/ (≥2 component files)
-                                          ├── hooks/ (≥2 hook files)
-                                          └── <entry>.tsx (screen|overlay|picker)
+                                          └── hooks/ (≥2 hook files)
 
 Is it global state with subscribers?
 └── YES → src/stores/<domain>/  (see STORES.md)
@@ -330,9 +335,10 @@ Am I about to create an `index.ts` that only re-exports?
 | `src/core/` | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
 | `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
-| `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only `app.tsx` |
+| `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only the `app/` shell (pages in `app/screens\|overlays` + `app/router.tsx`) |
+| `src/app/screens\|overlays/` (pages) | features + shared `components/`, `hooks/`, stores; `app/keys.ts`, `app/command-context.ts` | only `app/router.tsx` |
 
-Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`.
+Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`, page → page, and page → app shell (`app/{root,router,provider,layout}`).
 
 ## Cross-feature rule
 
@@ -343,9 +349,9 @@ Why:
 - It creates implicit ordering constraints: you cannot remove or rewrite feature A without checking what feature B consumed.
 - It invites circular imports.
 
-If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the app level (`src/app.tsx` dispatches, `src/layout.tsx` wraps).
+If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the `app/` shell (`src/app/router.tsx` dispatches the FLAT pages, `src/app/layout.tsx` wraps).
 
-When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `runners` picker), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. The canonical example is `setup/`. Keep the feature folder named for the domain (`runners`); callback names do not create folder names.
+When one surface needs to render UI owned by another (e.g. the `setup` page rendering the `runners` picker), the page accepts a render-prop callback (`renderToolPicker`) and `src/app/router.tsx` supplies the implementation. The canonical example is the `setup` page. Keep the feature folder named for the domain (`runners`); callback names do not create folder names.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
@@ -355,21 +361,28 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
-- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
+- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/mode-selector.tsx`) stay in the feature folder.
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 
 If `src/components/` ever grows past ~30 direct entries, revisit and consider `src/components/ui/` for atomic design-system primitives. Not before.
 
-## Screen-per-feature
+## The app shell and FLAT pages
 
-`src/app.tsx` dispatches screens by reading `routerStore.screen` and importing each feature's entry point directly:
+The `src/app/` shell is the composition layer. It has two parts:
+
+- **Shell modules** — `app/root.tsx` (composition root), `app/router.tsx` (dispatch), `app/provider.tsx` (`AppProvider`, today only `<ThemeProvider>`), `app/layout.tsx` (header + body + footer), `app/keys.ts` (`useAppKeys`), `app/command-context.ts` (`useRuntimeCommands`).
+- **FLAT pages** — one file per surface under `app/screens/` (full screens) and `app/overlays/` (overlays). Each page is the surface's entry point and *composes* its feature's internals.
+
+`app/root.tsx` is the composition root: it reads `routerStore`/`overlayStore`/`lifecycleStore`, wires runtime commands via `useRuntimeCommands()` (`app/command-context.ts`) and app-wide keys via `useAppKeys()` (`app/keys.ts`), and renders `<AppProvider>` wrapping `<Router/>`.
+
+`app/router.tsx` dispatches by reading `routerStore.screen` and importing each page directly:
 
 ```ts
-// src/app.tsx (conceptually)
-import { HomeScreen } from './features/home/screen.js';
-import { WorkflowScreen } from './features/workflow/screen.js';
+// src/app/router.tsx (conceptually)
+import { HomeScreen } from './screens/home.js';
+import { WorkflowScreen } from './screens/workflow.js';
 // ...
 
 function renderScreen(screen: Screen) {
@@ -381,17 +394,26 @@ function renderScreen(screen: Screen) {
 }
 ```
 
-This replaces the previous `src/screens/*.tsx` layer. The screen component is the feature's entry point and lives with the feature's internals — same folder, same context.
+`renderScreen` and `renderOverlay` return JSX that `app/router.tsx` hands to `<Layout screen={…} overlay={…}/>` (`app/layout.tsx`). This replaces the previous `src/screens/*.tsx` layer and the old monolithic root + layout shell (which no longer exist — the shell now lives entirely under `src/app/`). A page lives at `src/app/screens/<x>.tsx` | `src/app/overlays/<x>.tsx`; the feature it composes keeps its internals in `src/features/<x>/`, imported via `../../features/<x>/…`.
 
-## Feature entry-point naming
+### Page isolation and the shell guard
 
-| Feature kind | Entry filename |
+The FLAT (depth-3) page layout is load-bearing — two rules are enforced by gate 9 (`scripts/import-boundaries.ts`, see [`INVARIANTS.md`](./INVARIANTS.md)):
+
+- **Page ↔ page isolation.** Pages must not import one another — not screen↔screen, not overlay↔overlay, not screen↔overlay. They coordinate only through stores. A page composes *features*, never sibling pages.
+- **Page → shell guard.** Pages must not import the shell modules (`app/root.tsx`, `app/router.tsx`, `app/provider.tsx`, `app/layout.tsx`). `app/keys.ts` and `app/command-context.ts` are *not* guarded — a page may consume them.
+
+Both rules depend on the page being a flat file exactly three path segments deep (`app/screens/<x>.tsx`). A depth-4 file under `app/screens/` would escape the `sliceRoot` page predicate and slip past isolation — so pages stay flat, and all feature-local nesting lives under `src/features/<x>/`.
+
+## Page entry-point naming
+
+| Surface kind | Entry page |
 |---|---|
-| Full screen | `screen.tsx` |
-| Overlay | `overlay.tsx` |
-| Picker overlay | `picker.tsx` |
+| Full screen | `src/app/screens/<name>.tsx` |
+| Overlay | `src/app/overlays/<name>.tsx` |
+| Picker overlay | `src/app/overlays/<name>.tsx` |
 
-Consistency helps `grep` and editor navigation. If a feature has multiple entry points (rare), use descriptive names instead of `index.tsx`.
+The page basename is the bare surface name with **no path-echo** — `app/screens/home.tsx`, not `home-screen.tsx` or `screens/home/home.tsx`. Export names are unchanged by the flattening: the page still exports `HomeScreen`, `WorkflowScreen`, `CommandPaletteOverlay`, `ToolModelPicker`, etc. Consistency helps `grep` and editor navigation; one surface = one flat page.
 
 ## Test strategy
 
@@ -411,7 +433,7 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 **Companion rules:**
 
 - **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `handlers.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
-- **Ink tested at behavior seams.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
+- **Ink tested at behavior seams.** Page entries (`app/screens/<x>.tsx`, `app/overlays/<x>.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
 - **Engine tested by blast radius.** Pure decision modules and narrow orchestrator control-flow modules get colocated units; cross-module workflow behavior is covered through integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/`.
 - **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).
 - **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears.
@@ -429,10 +451,10 @@ Bulletproof-react allows both. We chose flat shared because:
 3. Node ESM with no bundler means every directory jump is a real filesystem lookup — fewer hops is a minor perf win.
 
 **Why not Feature-Sliced Design (FSD)?**
-FSD's seven layers (`app`, `processes`, `pages`, `widgets`, `features`, `entities`, `shared`) are designed for large product teams shipping web SPAs. For a single-binary CLI with one screen-dispatch root, five of those layers collapse into our `features/` + `app.tsx`. Adopting FSD literally would create empty `processes/`, `pages/`, and `entities/` layers with no content. The signal-to-noise ratio is wrong for this project.
+FSD's seven layers (`app`, `processes`, `pages`, `widgets`, `features`, `entities`, `shared`) are designed for large product teams shipping web SPAs. For a single-binary CLI with one screen-dispatch root, five of those layers collapse into our `features/` + the `src/app/` shell. Adopting FSD literally would create empty `processes/`, `pages/`, and `entities/` layers with no content. The signal-to-noise ratio is wrong for this project.
 
 **Why eliminate `src/screens/`?**
-A screen is the entry point of a feature — it is not a separate technical layer. Keeping screens in their own dir forces every change to a feature to touch two folders. The feature folder *is* the screen's home.
+A screen is the entry point of a surface — it is not a separate technical layer. The FLAT pages under `src/app/screens/` are that entry; they compose the feature's internals from `src/features/<x>/`. Keeping a parallel `src/screens/` dir would force every surface change to touch a third folder.
 
 **Why merge `src/ui/` into `src/components/`?**
 See "Shared components" above. The primitive/composed boundary is fuzzy and unenforced. One folder = one mental model.
@@ -445,10 +467,13 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | Don't | Why |
 |---|---|
 | Import from another feature (`features/home` imports from `features/workflow`) | Breaks the "one folder, one concept" model. Use a shared module or store. |
+| Import one page from another (`app/screens/home` imports `app/overlays/palette`) | Pages compose features and coordinate via stores; gate 9 blocks page↔page imports. |
+| Import the app shell from a page (`app/screens/home` imports `app/router`) | Pages must not reach into `app/{root,router,provider,layout}`; gate 9's shell guard blocks it. `app/keys.ts` / `app/command-context.ts` are allowed. |
 | Create `src/features/shared/` or `src/features/common/` | That is `src/components/`, `src/hooks/`, `src/utils/`. Do not nest shared under features. |
-| Keep a `src/screens/` folder | Screens are feature entry points; they live in their feature. |
+| Keep a `src/screens/` folder | Screens are FLAT pages in `src/app/screens/`; they compose a feature, not live in one. |
+| Nest a page (`app/screens/home/home.tsx`) | Pages must be flat depth-3 files or they escape the gate-9 `sliceRoot` page predicate. Feature-local nesting lives under `src/features/<x>/`. |
 | Add a primitive to `src/ui/` | There is no `src/ui/`. Shared primitives go in `src/components/`. |
-| Create `features/{f}/index.ts` as a re-export barrel | Barrels are forbidden per [`NO-BARRELS.md`](./NO-BARRELS.md). Use the named entry (`screen.tsx`, `overlay.tsx`, `picker.tsx`). |
+| Create `features/{f}/index.ts` as a re-export barrel | Barrels are forbidden per [`NO-BARRELS.md`](./NO-BARRELS.md). Use the named page entry (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`) and import feature internals directly. |
 | Put pure functions under a feature's `hooks/` subfolder | Hooks imply React lifecycle. Pure fns go at the feature root (`keyboard.ts`, `layout.ts`). |
 | Test a trivial feature-local hook in isolation | Behavior lives in the component that uses it. Test at that level. |
 | Create a feature for a single overlay file | If the overlay has no hooks, no pure helpers, and no tests, it is not a feature. Keep it in `src/components/overlays/` until it earns feature status. |
@@ -458,25 +483,25 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 
 1. **A feature is discoverable.** Opening `src/features/{feature}/` must reveal the entire feature. If you need to grep to understand what a feature does, the layout failed.
 2. **Shared earns its place.** A module enters `src/components/`, `src/hooks/`, or `src/utils/` only when used by ≥2 features. Premature sharing is as costly as premature abstraction.
-3. **The app.tsx is the only cross-feature composition point.** If you find yourself wiring feature A's output into feature B's input anywhere else, re-examine the feature boundary.
+3. **The `app/` shell is the only cross-feature composition point.** Pages (`app/screens|overlays`) compose features; `app/router.tsx` wires them together. If you find yourself wiring feature A's output into feature B's input anywhere else — or importing one page from another — re-examine the boundary.
 4. **Changes to one feature should touch one folder.** If a feature change requires edits in multiple top-level directories, something crossed a boundary that shouldn't have.
 
 ## Feature inventory
 
-| Feature | Responsibility | Entry file |
-|---|---|---|
-| `workflow` | Running workflow — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle | `screen.tsx` |
-| `home` | Landing screen — banner, config summary, recent sessions, input | `screen.tsx` |
-| `help` | Global help overlay — keyboard and command reference | `overlay.tsx` |
-| `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `overlay.tsx` |
-| `setup` | First-time setup — planner + implementer selection | `screen.tsx` |
-| `summary` | Post-workflow report — cost, task table, phase timing | `screen.tsx` |
-| `settings` | Settings overlay — field editor for config | `overlay.tsx` |
-| `sessions` | Sessions picker — select a past session to resume | `picker.tsx` |
-| `runners` | Planner/implementer runner + model selection | `picker.tsx` |
-| `skills` | Skills picker — toggle available skills for a workflow | `picker.tsx` |
+| Surface | Responsibility | Entry page | Feature folder |
+|---|---|---|---|
+| `workflow` | Running workflow — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle | `app/screens/workflow.tsx` | `features/workflow/` |
+| `home` | Landing screen — banner, config summary, recent sessions, input | `app/screens/home.tsx` | `features/home/` |
+| `summary` | Post-workflow report — cost, task table, phase timing | `app/screens/summary.tsx` | `features/summary/` |
+| `setup` | First-time setup — planner + implementer selection | `app/screens/setup.tsx` | dissolved (page only) |
+| `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `app/overlays/palette.tsx` | `features/palette/` |
+| `settings` | Settings overlay — field editor for config | `app/overlays/settings.tsx` | `features/settings/` (mode-selector + presentation + hooks) |
+| `runners` | Planner/implementer runner + model selection | `app/overlays/runners.tsx` | `features/runners/` |
+| `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
+| `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
+| `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
 
-Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlays) imports. Internal structure is documented by inspection — there is no catalog per-feature.
+Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.tsx` wraps). Internal structure is documented by inspection — there is no catalog per-feature.
 
 ## Screaming folders
 

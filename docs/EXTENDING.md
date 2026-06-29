@@ -107,21 +107,21 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ### Screen
 
-1. Create `src/features/<name>/screen.tsx`
+1. Create `src/app/screens/<name>.tsx` — a FLAT page that composes the feature. Feature components/hooks live in `src/features/<name>/`; for a pure-entry surface, the page is the whole surface and no `features/<name>/` folder is created.
 2. Add the screen name to the `Screen` type in `src/core/navigation/types.ts`
-3. Wire into `renderScreen()` in `src/app.tsx`
+3. Add a `case` to `renderScreen()` in `src/app/router.tsx`, importing the page via `./screens/<name>.js`
 
 ### Overlay
 
-1. Create `src/features/<name>/overlay.tsx` (or `picker.tsx`)
+1. Create `src/app/overlays/<name>.tsx` — same shape as a screen (FLAT page composing the feature, or the whole surface for a pure-entry overlay)
 2. Add the overlay name to the `OverlayType` union in `src/core/navigation/types.ts`
-3. Wire into `renderOverlay()` in `src/app.tsx`
+3. Add a `case` to `renderOverlay()` in `src/app/router.tsx`, importing the page via `./overlays/<name>.js`
 
 ### Both
 
-- Feature-local components: `src/features/<name>/components/`
-- Feature-local hooks: `src/features/<name>/hooks/`
-- Features never import from other features. Shared code goes to `src/components/`, `src/hooks/`, `src/utils/`
+- Feature-local components stay in `src/features/<name>/components/` and feature-local hooks in `src/features/<name>/hooks/`; the page imports them via `../../features/<name>/…`.
+- Page↔page imports are forbidden — pages coordinate via stores.
+- Features never import from other features. Shared code goes to `src/components/`, `src/hooks/`, `src/utils/`.
 
 ---
 

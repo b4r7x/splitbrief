@@ -5,7 +5,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { Screen } from '../../core/navigation/types.js';
-import { HelpOverlay } from './overlay.js';
+import { HelpOverlay } from './help.js';
 
 const PAGE_DOWN = '\u001b[6~';
 const HOME = '\u001b[H';

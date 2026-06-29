@@ -122,7 +122,7 @@ Warnings are explicit, not a side effect of benign stderr. `call_stderr_delta` i
 
 ## Sinks
 
-Up to six sinks can subscribe to the bus. Two are unconditional (JSONL, tree recorder); four are gated by config or runtime mode. All are registered in `initializeWorkflow()` (`run/init.ts`):
+Several sinks can subscribe to the bus. Two are unconditional (JSONL, tree recorder); the rest are gated by config or runtime mode. All are registered in `initializeWorkflow()` (`run/init.ts`):
 
 **TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
 

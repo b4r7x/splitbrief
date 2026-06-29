@@ -81,7 +81,7 @@ The performance regression harness is documented in [`TESTING.md`](./TESTING.md#
 
 Terminal size flows through `terminalSizeStore`. When `cols`, `rows`, or `isSmall` change:
 
-- `src/features/workflow/screen.tsx` recomputes content width, prompt rows, and content height.
+- `src/app/screens/workflow.tsx` recomputes content width, prompt rows, and content height.
 - `src/features/workflow/layout/snapshot.ts` and `src/features/workflow/layout/rect.ts` recompute snapshot geometry for keyboard and mouse scroll.
 - `buildConversationRowsProjection()` wraps text using the current `cols`.
 - `computeConversationRowScroll()` clamps the offset to the new row count.

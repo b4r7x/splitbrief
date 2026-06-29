@@ -92,7 +92,7 @@ A type stays in `src/core/types/` only if it meets **either** the cross-cutting 
 
 The current residents (TS-only, no Zod schema):
 
-- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (9 consumers under `cli/`; carve-out — no single folder owns the option contract). The provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
+- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
 - `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
 
 Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
@@ -114,7 +114,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, IPC, hooks, OTel, RPC, and explicit `InvokeResult` projections |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
-| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: 18 consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
+| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
 | `RuntimeCommandDef`, `RuntimeCommandContext`, `CommandPaletteItem` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
 
 **Banned anti-patterns:**

@@ -1,4 +1,13 @@
 import { join } from 'node:path';
+import { useRef } from 'react';
+import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
+import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
+import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
+import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
+import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
+import { getSections } from '../stores/workflow/actions.js';
+import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -46,9 +55,9 @@ export interface ConversationScrollMetrics {
   viewportHeight: number;
 }
 
-// Workflow-feature operations the runtime commands need but that the app shell must not reach into
-// directly. `app.tsx` (the composition root) wires the real feature implementations and injects them
-// here, keeping every `features/workflow/**` import at the app root rather than in this glue module.
+// Workflow-feature operations the runtime commands need but that the page tree must not
+// reach into. `useRuntimeCommands` (below, in this module) wires the real
+// `features/workflow/**` implementations into these ports; the page files never see them.
 export interface WorkflowCommandPorts {
   requestRewind: (request: RewindTarget) => boolean;
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
@@ -224,4 +233,38 @@ export function buildCommandContext({
       return { status: 'toggled', visible: controlsStore.get().sidebarVisible };
     },
   });
+}
+
+type Phase = ReturnType<typeof lifecycleStore.get>['phase'];
+
+export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: Phase }) {
+  const ctx = buildCommandContext({
+    exit,
+    workflow: {
+      requestRewind,
+      requestClearQueue,
+      findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+      readScrollMetrics: readConversationScrollSnapshot,
+      resolveCopyValue,
+    },
+  });
+  const commands = createRuntimeCommands(ctx);
+  const runtimeChainRef = useRef(Promise.resolve());
+  const handleRuntimeCommand = (raw: string, from: Screen) => {
+    runtimeChainRef.current = runtimeChainRef.current
+      .then(() =>
+        executeRuntimeCommand(commands, raw, {
+          screen: from,
+          phase,
+          onError: feedbackStore.setError,
+        }),
+      )
+      .catch(() => {});
+  };
+  return {
+    commands,
+    copyTarget: ctx.copyTarget,
+    setWorkflowMode: ctx.setWorkflowMode,
+    handleRuntimeCommand,
+  };
 }

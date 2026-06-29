@@ -9,7 +9,7 @@ import type { CollectedReadiness, CollectReadinessOptions } from '../../core/rea
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
-import { WorkflowScreen } from './screen.js';
+import { WorkflowScreen } from './workflow.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const collectReadiness = vi.fn<(options: CollectReadinessOptions) => Promise<CollectedReadiness>>();

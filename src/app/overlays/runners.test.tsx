@@ -4,7 +4,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { ToolModelPicker } from './picker.js';
+import { ToolModelPicker } from './runners.js';
 
 const ESC = '\u001B';
 

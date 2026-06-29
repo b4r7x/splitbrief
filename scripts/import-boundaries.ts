@@ -76,10 +76,72 @@ function srcRelative(srcRoot: string, absPath: string): string {
   return relative(srcRoot, absPath).split(sep).join('/');
 }
 
-function featureName(srcRelPath: string): string | null {
+type Slice =
+  | { readonly kind: 'feature'; readonly name: string } // src/features/<name>/**         (folder slice)
+  | { readonly kind: 'screen'; readonly name: string } //  src/app/screens/<name>.tsx     (flat page)
+  | { readonly kind: 'overlay'; readonly name: string }; // src/app/overlays/<name>.tsx    (flat page)
+
+const SLICE_EXT_RE = /\.(?:ts|tsx|js|jsx)$/;
+
+// Canonical id: feature -> "features/<name>"; screen -> "app/screens/<name>"; overlay -> "app/overlays/<name>".
+function sliceRoot(srcRelPath: string): Slice | null {
   const parts = srcRelPath.split('/');
-  if (parts[0] !== 'features' || parts.length < 2) return null;
-  return parts[1] ?? null;
+
+  // Folder slice: src/features/<name>/** (behaviour identical to old featureName, no ext strip).
+  if (parts[0] === 'features' && parts.length >= 2 && parts[1] !== undefined) {
+    return { kind: 'feature', name: parts[1] };
+  }
+
+  // File-level page slice: pages are FLAT under alpha — exactly app/<screens|overlays>/<file>, depth 3.
+  if (parts[0] === 'app' && parts.length === 3 && parts[2] !== undefined) {
+    const name = parts[2].replace(SLICE_EXT_RE, '');
+    if (parts[1] === 'screens') return { kind: 'screen', name };
+    if (parts[1] === 'overlays') return { kind: 'overlay', name };
+  }
+
+  return null;
+}
+
+function sameSlice(a: Slice, b: Slice): boolean {
+  return a.kind === b.kind && a.name === b.name;
+}
+
+function isPage(slice: Slice | null): slice is { kind: 'screen' | 'overlay'; name: string } {
+  return slice !== null && slice.kind !== 'feature';
+}
+
+function sliceIsolationReason(from: Slice, to: Slice): string | null {
+  // PRESERVED byte-for-byte: existing cross-feature message format.
+  if (from.kind === 'feature' && to.kind === 'feature') {
+    return `src/features/${from.name}/** must not import from src/features/${to.name}/**`;
+  }
+
+  // Same-surface page <-> page: pages coordinate via stores, never import each other.
+  if (from.kind === 'screen' && to.kind === 'screen') {
+    return `src/app/screens/${from.name}.tsx must not import from src/app/screens/${to.name}.tsx (pages coordinate via stores)`;
+  }
+  if (from.kind === 'overlay' && to.kind === 'overlay') {
+    return `src/app/overlays/${from.name}.tsx must not import from src/app/overlays/${to.name}.tsx (pages coordinate via stores)`;
+  }
+
+  // Cross-surface page <-> page: screens and overlays must not import each other directly.
+  if (isPage(from) && isPage(to)) {
+    return 'src/app/screens/** and src/app/overlays/** pages must not import each other directly (coordinate via stores)';
+  }
+
+  // page -> feature (composition at app level) is ALLOWED here; feature -> page is left to the
+  // layer-rank rule (features rank 4 -> app rank 5). Both fall through as null.
+  return null;
+}
+
+const APP_SHELL_MODULES = new Set(['root', 'router', 'provider', 'layout']);
+
+// Returns the shell module name iff srcRelPath is a depth-2 app shell file (app/root.tsx, ...).
+function appShellModule(srcRelPath: string): string | null {
+  const parts = srcRelPath.split('/');
+  if (parts[0] !== 'app' || parts.length !== 2 || parts[1] === undefined) return null;
+  const base = parts[1].replace(SLICE_EXT_RE, '');
+  return APP_SHELL_MODULES.has(base) ? base : null;
 }
 
 const ENGINE_FORBIDDEN_TOPLEVEL = ['stores', 'hooks', 'components', 'cli'] as const;
@@ -95,16 +157,27 @@ function classify(opts: {
   typeOnly: boolean;
 }): string | null {
   const { fromSrcRel, targetSrcRel, typeOnly } = opts;
-  const inComponents = fromSrcRel.startsWith('components/');
-  const targetFeature = featureName(targetSrcRel);
+  const fromSlice = sliceRoot(fromSrcRel);
+  const targetSlice = sliceRoot(targetSrcRel);
 
-  if (inComponents && targetFeature !== null) {
-    return `src/components/** must not import from src/features/** (${targetFeature})`;
+  // src/components/** must not import a vertical feature slice (message preserved byte-for-byte).
+  if (fromSrcRel.startsWith('components/') && targetSlice?.kind === 'feature') {
+    return `src/components/** must not import from src/features/** (${targetSlice.name})`;
   }
 
-  const fromFeature = featureName(fromSrcRel);
-  if (fromFeature !== null && targetFeature !== null && fromFeature !== targetFeature) {
-    return `src/features/${fromFeature}/** must not import from src/features/${targetFeature}/**`;
+  // Slice isolation: cross-feature + page<->page (same surface & cross surface).
+  // page->feature and page->shared return null here (ALLOWED — composition at app level).
+  if (fromSlice !== null && targetSlice !== null && !sameSlice(fromSlice, targetSlice)) {
+    const reason = sliceIsolationReason(fromSlice, targetSlice);
+    if (reason !== null) return reason;
+  }
+
+  // Shell guard: pages must not reach into the app shell — they receive everything via props/stores.
+  if (isPage(fromSlice)) {
+    const shell = appShellModule(targetSrcRel);
+    if (shell !== null) {
+      return `src/app/screens/** and src/app/overlays/** pages must not import the app shell (src/app/${shell})`;
+    }
   }
 
   if (fromSrcRel.startsWith('engine/')) {

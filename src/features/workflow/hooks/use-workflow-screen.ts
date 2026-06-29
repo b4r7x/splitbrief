@@ -1,86 +1,56 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Box, useApp, useInput } from 'ink';
-import type { ReadinessReport } from '../../core/readiness/types.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { isResumable } from '../../core/phases.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
-import { createStartReadinessRecord } from '../../core/readiness/format.js';
-import { READINESS_FILE, sessionDir } from '../../core/paths.js';
-import { writeSecureFile } from '../../lib/fs.js';
-import { loadState } from '../../core/state/persistence.js';
-import type {
-  RuntimeCommandDef,
-  CopyResult,
-  CopyTarget,
-} from '../../core/runtime/commands/types.js';
-import type { Focus } from '../../stores/ui/focus.js';
-import { ApprovalPrompt } from './components/approval-prompt.js';
-import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
-import { ReadinessPanel } from './components/readiness-panel.js';
-import { ScreenShell } from '../../components/screen-shell.js';
-import { useTheme } from '../../components/theme.js';
-import { Divider } from './components/divider.js';
-import { Spinner } from './components/spinner.js';
-import { WorkflowBody } from './components/body.js';
-import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
-import { useInputMode } from './hooks/use-input-mode.js';
-import {
-  useWorkflowRunner,
-  type RunWorkflowFn,
-  type WorkflowCompletion,
-} from './hooks/use-runner.js';
-import { useIpcClient } from './hooks/use-ipc-client.js';
-import { createIpcPromptDispatcher } from './ipc-prompt-dispatcher.js';
-import { type CollectReadinessFn, useReadinessFetch } from './hooks/use-readiness-fetch.js';
-import { useWorkflowKeys } from './hooks/use-keys.js';
-import { useBriefReviewKeys } from './hooks/use-brief-review-keys.js';
-import { createReviewInputHandler } from './review-parser.js';
+import { useApp, useInput } from 'ink';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { isResumable } from '../../../core/phases.js';
+import { readActive } from '../../../core/sessions/lifecycle.js';
+import { createStartReadinessRecord } from '../../../core/readiness/format.js';
+import { READINESS_FILE, sessionDir } from '../../../core/paths.js';
+import { writeSecureFile } from '../../../lib/fs.js';
+import { loadState } from '../../../core/state/persistence.js';
+import type { CopyResult, CopyTarget } from '../../../core/runtime/commands/types.js';
+import type { Focus } from '../../../stores/ui/focus.js';
+import { useInputMode } from './use-input-mode.js';
+import { useWorkflowRunner, type RunWorkflowFn, type WorkflowCompletion } from './use-runner.js';
+import { useIpcClient } from './use-ipc-client.js';
+import { createIpcPromptDispatcher } from '../ipc-prompt-dispatcher.js';
+import { type CollectReadinessFn, useReadinessFetch } from './use-readiness-fetch.js';
+import { useWorkflowKeys } from './use-keys.js';
+import { useBriefReviewKeys } from './use-brief-review-keys.js';
+import { createReviewInputHandler } from '../review-parser.js';
 import {
   resolveAttachBoxHint,
   resolveAttachFeedbackHint,
   resolveAttachInputHint,
   resolveCancelledHints,
   resolveInputHint,
-} from './input-hints.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { configStore } from '../../stores/project/config.js';
-import { skillsStore } from '../../stores/project/skills.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
-import { routerStore } from '../../stores/navigation/router.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { resetWorkflow } from '../../stores/workflow/actions.js';
-import { controlsStore } from '../../stores/ui/controls.js';
-import { reviewStore } from '../../stores/workflow/review.js';
-import { inputHeightStore } from '../../stores/ui/input-height.js';
-import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
-import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../stores/cost-approval/prompt.js';
-import { useStores } from '../../stores/use-stores.js';
-import {
-  clampWorkflowPromptRows,
-  getWorkflowContentWidth,
-  getWorkflowReviewColumn,
-  getWorkflowSidebarWidth,
-  getWorkflowViewportHeight,
-} from './layout/rect.js';
-import { getRailExtraRows, selectRailForm } from './layout/chrome-rows.js';
-import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.js';
-import { addTuiEvent } from './tui-sink.js';
+} from '../input-hints.js';
+import { configStore } from '../../../stores/project/config.js';
+import { skillsStore } from '../../../stores/project/skills.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { reviewStore } from '../../../stores/workflow/review.js';
+import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
+import { useStores } from '../../../stores/use-stores.js';
+import { addTuiEvent } from '../tui-sink.js';
 
-interface WorkflowScreenProps {
-  commands: RuntimeCommandDef[];
+export interface WorkflowScreenDeps {
+  runWorkflow?: RunWorkflowFn | undefined;
+  collectReadiness?: CollectReadinessFn | undefined;
+}
+
+interface UseWorkflowScreenOptions {
   onRuntimeCommand: (command: string) => void;
   copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
   canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
-}
-
-interface WorkflowScreenDeps {
-  runWorkflow?: RunWorkflowFn | undefined;
-  collectReadiness?: CollectReadinessFn | undefined;
 }
 
 function persistTuiReadiness(projectDir: string, report: ReadinessReport): void {
@@ -114,18 +84,16 @@ function hasLoadedResumableStateForSession({
   }
 }
 
-export function WorkflowScreen({
-  commands,
+export function useWorkflowScreen({
   onRuntimeCommand,
   copyTarget,
   canCopyFocused,
   deps,
-}: WorkflowScreenProps) {
+}: UseWorkflowScreenOptions) {
   const { exit } = useApp();
-  const t = useTheme();
   const config = configStore.useConfig();
   const projectDir = configStore.use((s) => s.projectDir);
-  const [skills, input, terminal] = useStores(skillsStore, inputHeightStore, terminalSizeStore);
+  const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
   const feature = routerStore.use((s) => (s.screen === 'workflow' ? s.feature : ''));
@@ -148,8 +116,6 @@ export function WorkflowScreen({
   });
   const readinessLoaded = isAttachedClient || readiness !== undefined;
   const readinessBlocked = !isAttachedClient && readiness?.status === 'blocked';
-  const { cols, rows, isSmall } = terminal;
-  const inputRows = input.rows;
 
   const onComplete = ({ summary, sessionId, status }: WorkflowCompletion) =>
     routerStore.navigate({ to: 'summary', summary, sessionId, status });
@@ -187,47 +153,12 @@ export function WorkflowScreen({
     lifecycleStore,
     reviewStore,
   );
-  const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
-  const [scrollAboveLabel, setScrollAboveLabel] = useState('');
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const costApprovalState = costApprovalStore.use((s) => s);
-  const footerInputRows = inputRows;
-  const promptPending =
-    approvalPromptState.status === 'pending' || costApprovalState.status === 'pending';
-
-  const sidebarWidth = getWorkflowSidebarWidth({
-    cols,
-    sidebarVisible,
-    isSmall,
-  });
-  const showSidebar = sidebarWidth > 0;
-  const approvalRows = getApprovalPromptRows(approvalPromptState, cols);
-  const costRows = getCostApprovalPromptRows(costApprovalState, cols);
-  const railForm = selectRailForm({ phase, cols });
-  const railExtraRows = getRailExtraRows(railForm, phase, cancelled);
-  const promptRows = clampWorkflowPromptRows(
-    rows,
-    footerInputRows,
-    railExtraRows,
-    approvalRows + costRows,
-  );
-  const promptBoxRows = promptPending ? Math.max(1, promptRows) : promptRows;
-  const contentHeight = getWorkflowViewportHeight(
-    rows,
-    footerInputRows,
-    railExtraRows,
-    promptBoxRows,
-  );
-  const contentWidth = getWorkflowContentWidth({
-    cols,
-    sidebarVisible,
-    isSmall,
-  });
-  const reviewColumn =
-    inputMode.mode === 'review'
-      ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
-      : undefined;
+  const approvalPending = approvalPromptState.status === 'pending';
+  const costPending = costApprovalState.status === 'pending';
+  const promptPending = approvalPending || costPending;
 
   useWorkflowKeys({ isActive: !promptPending });
   useBriefReviewKeys({
@@ -342,71 +273,36 @@ export function WorkflowScreen({
       ? resolveAttachBoxHint(ipcState.status)
       : undefined;
 
-  if (!isAttachedClient && !readinessLoaded) {
-    return (
-      <ScreenShell>
-        <Box paddingX={2}>
-          <Spinner label="checking readiness…" color={t.textDim} />
-        </Box>
-      </ScreenShell>
-    );
-  }
+  const fixCommand = readiness?.nextAction.command;
+  const onOpenReadinessFix = fixCommand?.startsWith('/')
+    ? () => onRuntimeCommand(fixCommand)
+    : undefined;
 
-  if (!isAttachedClient && readinessBlocked && readiness !== undefined) {
-    const fixCommand = readiness.nextAction.command;
-    const onOpenFix = fixCommand?.startsWith('/') ? () => onRuntimeCommand(fixCommand) : undefined;
-    return <ReadinessPanel report={readiness} onOpenFix={onOpenFix} />;
-  }
-
-  return (
-    <ScreenShell
-      header={
-        <WorkflowHeader
-          startedAt={runner.startedAt}
-          scrollAboveLabel={scrollAboveLabel}
-          railForm={railForm}
-        />
-      }
-      footer={
-        <>
-          <Divider width={cols} />
-          <WorkflowFooter
-            handleInput={handleInput}
-            onEmptySubmit={canResumeCancelledSession ? runner.handleResume : undefined}
-            onRuntimeCommand={handleRuntimeCommand}
-            commands={commands}
-            mode={inputMode.mode}
-            inputHint={inputHint}
-            questionEpoch={inputMode.questionEpoch}
-            feedbackHint={feedbackHint}
-            boxHintOverride={boxHintOverride}
-            reviewColumn={reviewColumn}
-            {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
-            disabled={
-              hasOverlay || promptPending || (isAttachedClient && ipcState.status !== 'connected')
-            }
-          />
-        </>
-      }
-    >
-      <WorkflowBody
-        showSidebar={showSidebar}
-        sidebarWidth={sidebarWidth}
-        inputMode={inputMode}
-        reviewFilePath={reviewFilePath}
-        phase={phase}
-        contentHeight={contentHeight}
-        contentWidth={contentWidth}
-        onScrollAbove={setScrollAboveLabel}
-      />
-      <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {approvalPromptState.status === 'pending' && (
-          <ApprovalPrompt clampedBoxRows={promptBoxRows} />
-        )}
-        {costApprovalState.status === 'pending' && (
-          <CostApprovalPromptConnected clampedBoxRows={promptBoxRows} />
-        )}
-      </Box>
-    </ScreenShell>
-  );
+  return {
+    readiness,
+    readinessLoaded,
+    readinessBlocked,
+    isAttachedClient,
+    hasOverlay,
+    onOpenReadinessFix,
+    phase,
+    cancelled,
+    inputMode,
+    reviewFilePath,
+    approvalPromptState,
+    costApprovalState,
+    approvalPending,
+    costPending,
+    promptPending,
+    startedAt: runner.startedAt,
+    handleInput,
+    handleRuntimeCommand,
+    onEmptySubmit: canResumeCancelledSession ? runner.handleResume : undefined,
+    onEditShortcut: handleReviewEditShortcut,
+    inputHint,
+    feedbackHint,
+    boxHintOverride,
+    questionEpoch: inputMode.questionEpoch,
+    ipcConnected: ipcState.status === 'connected',
+  };
 }

@@ -24,13 +24,13 @@ This is a codebase-wide principle. `src/stores/` is where it was first applied; 
 
 This project ships a CLI that runs under Node ESM (`tsx` in dev, `tsc` + Node in production). **No bundler**, therefore **no tree-shaking**. Every `export { x } from './x.js'` line in a barrel causes Node to evaluate `./x.js` the moment the barrel is imported — even if the caller only needs a single unrelated symbol.
 
-For 16 store modules (each initializing a module-scoped singleton), importing from a top-level barrel forces 16 store initializations per consumer, every time.
+For the store modules (each initializing a module-scoped singleton), importing from a top-level barrel forces every one of them to initialize per consumer, every time.
 
 ### 2. Test-run amplification
 
 Vitest isolates modules per test file — each test gets a fresh module graph. A barrel in the dependency path of a test file multiplies that barrel's init cost by the number of tests that import it.
 
-Rough math for stores before this principle was adopted: 144 test files × ~16 store inits per barrel = thousands of avoidable module initializations per full `npm test` run.
+Rough math for stores before this principle was adopted: every test file re-initializing every store behind the barrel summed to thousands of avoidable module initializations per full `npm test` run.
 
 ### 3. Startup latency
 

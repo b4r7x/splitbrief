@@ -200,7 +200,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 
 | Area | Score | Status |
 |---|---|---|
-| First-run experience | 9/10 | `diptych "feature"` shorthand, `@file` syntax, `--help` with 14 examples |
+| First-run experience | 9/10 | `diptych "feature"` shorthand, `@file` syntax, `--help` with examples |
 | Core feedback loop | 9/10 | Planner heartbeat, streaming partial output from API implementers |
 | Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
 | Session management | 9/10 | `continue`/`last`, numeric aliases in `ps` |

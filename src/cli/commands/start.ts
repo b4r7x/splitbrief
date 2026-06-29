@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { createElement } from 'react';
 import { join } from 'node:path';
-import { App } from '../../app.js';
+import { App } from '../../app/root.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, assertModeFlagsExclusive } from '../options.js';
 import {

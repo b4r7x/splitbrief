@@ -8,7 +8,7 @@ import type { SkillMeta } from '../../core/skills/types.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
-import { SkillsPicker } from './picker.js';
+import { SkillsPicker } from './skills.js';
 
 const PAGE_DOWN = '\u001b[6~';
 const HOME = '\u001b[H';

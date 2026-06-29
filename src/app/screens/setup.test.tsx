@@ -15,7 +15,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
-import { SetupScreen } from './screen.js';
+import { SetupScreen } from './setup.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('SetupScreen', () => {

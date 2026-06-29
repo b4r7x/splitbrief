@@ -5,7 +5,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { SettingsOverlay } from '../../../src/features/settings/overlay.js';
+import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';

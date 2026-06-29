@@ -126,14 +126,14 @@ Use `store.use(selector)` when reading one store. Use `useStores()` when reading
 
 ## Screens
 
-`src/app.tsx` reads `routerStore.screen` and renders the matching screen:
+`src/app/router.tsx` reads `routerStore.screen` (via `app/root.tsx`) and dispatches the matching FLAT page from `src/app/screens/`:
 
 | Screen | Component | Location |
 |---|---|---|
-| `home` | `HomeScreen` | `src/features/home/screen.tsx` |
-| `workflow` | `WorkflowScreen` | `src/features/workflow/screen.tsx` |
-| `summary` | `SummaryScreen` | `src/features/summary/screen.tsx` |
-| `setup` | `SetupScreen` | `src/features/setup/screen.tsx` |
+| `home` | `HomeScreen` | `src/app/screens/home.tsx` |
+| `workflow` | `WorkflowScreen` | `src/app/screens/workflow.tsx` |
+| `summary` | `SummaryScreen` | `src/app/screens/summary.tsx` |
+| `setup` | `SetupScreen` | `src/app/screens/setup.tsx` |
 
 Features are vertical slices. Each `src/features/<name>/` owns its screen (or overlay/picker), local components in `components/`, local hooks in `hooks/`. Features never import from each other. Shared code lives in `src/components/`, `src/hooks/`, `src/utils/`.
 
@@ -162,11 +162,11 @@ Brief review has one text-editing path. `workflow.briefReview: rich` is deprecat
 
 ## Overlays
 
-`overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/layout.tsx`) hides the screen and renders the overlay in its place.
+`overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
 Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `sessions`, `cost-drilldown`.
 
-Each type maps to a component in `renderOverlay()` in `src/app.tsx`.
+Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`.
 
 ---
 
@@ -292,8 +292,8 @@ type RouteData =
 
 ## Adding a new feature
 
-1. Create `src/features/<name>/screen.tsx` (or `overlay.tsx` / `picker.tsx`).
-2. Wire it in `src/app.tsx` -- add to `renderScreen()` or `renderOverlay()`.
+1. Create the feature's components and hooks under `src/features/<name>/`. A pure-entry surface with no internals skips this — the page in step 2 is the whole surface.
+2. Add a FLAT page in `src/app/screens` | `src/app/overlays`, then wire it into `renderScreen()` / `renderOverlay()` in `src/app/router.tsx`.
 3. If it's a new screen: add the route to the `Screen` type and the `transitions` map in `src/stores/navigation/router.ts`.
 4. Feature-local components: `src/features/<name>/components/`.
 5. Feature-local hooks: `src/features/<name>/hooks/`.

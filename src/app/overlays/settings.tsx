@@ -12,9 +12,9 @@ import { ListRow } from '../../components/list-row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import type { SettingDef } from '../../core/settings/catalog.js';
 import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
-import { displayValue } from './presentation.js';
+import { displayValue } from '../../features/settings/presentation.js';
 
-import { useSettingsEditor } from './hooks/editor.js';
+import { useSettingsEditor } from '../../features/settings/hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';

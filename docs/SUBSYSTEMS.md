@@ -157,7 +157,7 @@ The ledger is consumed during the final review phase indirectly: `analyzeBriefDr
 
 Activated via `diptych start --rpc`. The workflow runs headlessly with a machine-readable command interface over stdin/stdout. Both directions use newline-delimited JSON -- one object per line.
 
-**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. Nine command types:
+**Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. The command types:
 
 | `type` | Fields | What it does |
 |---|---|---|
