@@ -1,3 +1,4 @@
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { StartReadinessRecordSchema, type StartReadinessRecord } from '../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from './types.js';
@@ -6,15 +7,21 @@ function renderSectionLines(section: ReadinessSection): string[] {
   const lines: string[] = [];
   lines.push(`${section.title}:`);
   for (const check of section.checks) {
-    lines.push(`  ${check.severity} ${check.id}: ${check.summary}`);
+    lines.push(`  ${check.severity} ${check.id}: ${sanitizeTerminalDisplayText(check.summary)}`);
     for (const detail of check.details ?? []) {
-      lines.push(`    ${detail}`);
+      lines.push(`    ${sanitizeTerminalDisplayText(detail)}`);
     }
     if (check.fix) {
-      lines.push(`    Fix: ${check.fix}`);
+      lines.push(`    Fix: ${sanitizeTerminalDisplayText(check.fix)}`);
     }
   }
   return lines;
+}
+
+function formatRequiredAction(nextAction: ReadinessReport['nextAction']): string {
+  const label = sanitizeTerminalDisplayText(nextAction.label);
+  const command = nextAction.command ? ` (${sanitizeTerminalDisplayText(nextAction.command)})` : '';
+  return `Required action: ${label}${command}`;
 }
 
 export function formatReadinessReport(report: ReadinessReport): string {
@@ -23,9 +30,7 @@ export function formatReadinessReport(report: ReadinessReport): string {
     `Run readiness: ${report.status} (${report.counts.blocker} blockers, ${report.counts.warning} warnings)`,
   );
   if (report.status === 'blocked') {
-    lines.push(
-      `Required action: ${report.nextAction.label}${report.nextAction.command ? ` (${report.nextAction.command})` : ''}`,
-    );
+    lines.push(formatRequiredAction(report.nextAction));
   } else if (report.counts.warning > 0) {
     lines.push(`Advisory: ${countNoun(report.counts.warning, 'warning')}; start can continue.`);
   } else {
@@ -45,9 +50,7 @@ export function formatReadinessBlockers(report: ReadinessReport): string {
   const blockerOnly = createBlockerOnlyReadinessReport(report);
   const lines: string[] = [];
   lines.push(`Run readiness: blocked (${blockerOnly.counts.blocker} blockers)`);
-  lines.push(
-    `Required action: ${blockerOnly.nextAction.label}${blockerOnly.nextAction.command ? ` (${blockerOnly.nextAction.command})` : ''}`,
-  );
+  lines.push(formatRequiredAction(blockerOnly.nextAction));
   lines.push('');
 
   for (const section of blockerOnly.sections) {
@@ -79,7 +82,9 @@ export function readinessBlockerMessage(report: ReadinessReport): string {
     section.checks.filter((check) => check.severity === 'blocker'),
   );
   if (blockers.length === 0) return 'Readiness blocked.';
-  return blockers.map((check) => `${check.id}: ${check.summary}`).join('\n');
+  return blockers
+    .map((check) => `${check.id}: ${sanitizeTerminalDisplayText(check.summary)}`)
+    .join('\n');
 }
 
 export function readinessBlockerPointer(report: ReadinessReport): string {

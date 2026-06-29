@@ -8,6 +8,7 @@ import {
   runnerActivityRoleLabel,
   runnerActivitySeverityRank,
   type RunnerActivityLedgerItem,
+  type RunnerActivityLedgerLabel,
   type RunnerActivitySeverity,
 } from '../display/runner-activity-display.js';
 import type { ConversationRowTone } from './types.js';
@@ -176,7 +177,7 @@ function activityDisplayItem(display: RunnerActivityLedgerItem): ActivityDisplay
     key: display.visibleKey,
     label: display.label,
     value: display.value,
-    labelTone: toneToConversationTone(display.tone),
+    labelTone: activityLabelTone(display.label, display.severity),
     valueTone: toneToConversationTone(display.valueTone),
     fitMode: display.fitMode,
     severity: display.severity,
@@ -271,18 +272,18 @@ function activityGroups(items: Iterable<ActivityItemSummary>): ActivityBatchGrou
   return Array.from(groups, ([label, count]) => ({ label, count }));
 }
 
-function toneToConversationTone(
+export function toneToConversationTone(
   tone: 'info' | 'success' | 'warning' | 'error' | 'textDim',
 ): ConversationRowTone {
   switch (tone) {
-    case 'info':
-      return 'info';
     case 'success':
       return 'success';
-    case 'warning':
-      return 'warning';
     case 'error':
       return 'error';
+    case 'warning':
+      return 'warning';
+    case 'info':
+      return 'info';
     case 'textDim':
       return 'textDim';
     default:
@@ -290,20 +291,43 @@ function toneToConversationTone(
   }
 }
 
-function activityBatchTone(events: readonly RunnerActivityEvent[]): ConversationRowTone {
-  const role = events.at(-1)?.role;
-  switch (role) {
+function activityLabelTone(
+  label: RunnerActivityLedgerLabel,
+  severity: RunnerActivitySeverity,
+): ConversationRowTone {
+  if (severity === 'error') return 'error';
+  if (severity === 'warning') return 'warning';
+  switch (label) {
+    case 'RUN':
+    case 'CALL':
+    case 'EDIT':
+      return 'accent';
+    case 'PLAN':
+      return 'planner';
+    case 'SESS':
+    case 'ART':
+      return 'info';
+    case 'READ':
+    case 'FIND':
+      return 'textDim';
+    case 'WARN':
+      return 'warning';
+    case 'ERR':
+      return 'error';
+    default:
+      return assertNever(label);
+  }
+}
+
+export function activityBatchTone(events: readonly RunnerActivityEvent[]): ConversationRowTone {
+  switch (events.at(-1)?.role) {
+    case 'planner':
+      return 'planner';
     case 'implementer':
       return 'implementer';
-    case 'planner':
     case 'review':
-    case 'summary':
-    case 'compaction':
-    case 'escalation':
-      return 'planner';
-    case undefined:
-      return 'text';
+      return 'validator';
     default:
-      return assertNever(role);
+      return 'textDim';
   }
 }

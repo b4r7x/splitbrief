@@ -10,7 +10,7 @@ interface Handlers {
   cancel: () => void;
   rewind: (request: RewindTarget) => void;
   queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
-  clearQueue: () => QueueClearResult;
+  clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
 }
 
 const handlers: Partial<Handlers> = {};
@@ -66,7 +66,7 @@ export async function requestEnqueue(
   return handlers.queue(text, phase);
 }
 
-export function requestClearQueue(): QueueClearResult {
+export function requestClearQueue(): QueueClearResult | Promise<QueueClearResult> {
   return (
     handlers.clearQueue?.() ?? {
       status: 'unavailable',

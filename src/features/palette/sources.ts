@@ -22,6 +22,7 @@ interface BuildPaletteSourcesOptions {
   projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
   onWorkflowMode: (mode: WorkflowMode) => unknown;
+  isAttached?: boolean | undefined;
 }
 
 export function buildPaletteSources({
@@ -34,14 +35,15 @@ export function buildPaletteSources({
   projectDir,
   onRuntimeCommand,
   onWorkflowMode,
+  isAttached = false,
 }: BuildPaletteSourcesOptions): PaletteSources {
   return {
     commandItems: buildCommandItems(commands, screen, phase, onRuntimeCommand),
-    modeItems: buildModeItems(onWorkflowMode),
-    pickerItems: buildPickerItems(),
+    modeItems: isAttached ? [] : buildModeItems(onWorkflowMode),
+    pickerItems: buildPickerItems({ isAttached }),
     taskItems: buildTaskItems(tasks, phase),
     sessionItems: buildSessionItems(sessions, projectDir),
-    customItems: buildCustomItems(config, onRuntimeCommand),
+    customItems: isAttached ? [] : buildCustomItems(config, onRuntimeCommand),
   };
 }
 
@@ -56,7 +58,7 @@ function buildCommandItems(
     .filter((cmd) => cmd.validScreens.includes(screen))
     .filter((cmd) => cmd.phaseGuard === undefined || cmd.phaseGuard(phase))
     .map((cmd) => ({
-      label: cmd.label,
+      label: cmd.name,
       description: cmd.description,
       shortcut: cmd.shortcut ?? null,
       action: () => {
@@ -71,39 +73,45 @@ function buildModeItems(
 ): PaletteSources['modeItems'] {
   return WORKFLOW_MODES.map((mode) => ({
     label: mode,
-    description: `Switch to ${mode} mode`,
+    description: `switch to ${mode} mode`,
     action: () => {
       void onWorkflowMode(mode);
     },
   }));
 }
 
-function buildPickerItems(): PaletteSources['pickerItems'] {
+function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['pickerItems'] {
+  const shared = [
+    {
+      label: 'sessions',
+      description: 'browse past sessions',
+      action: () => {
+        overlayStore.open('sessions');
+      },
+    },
+  ];
+
+  if (opts.isAttached) return shared;
+
   return [
     {
-      label: 'Planner',
-      description: 'Select planner tool',
+      label: 'planner',
+      description: 'select planner tool',
       action: () => {
         overlayStore.open('planner-picker');
       },
     },
     {
-      label: 'Implementer',
-      description: 'Select implementer',
+      label: 'implementer',
+      description: 'select implementer',
       action: () => {
         overlayStore.open('implementer-picker');
       },
     },
+    ...shared,
     {
-      label: 'Sessions',
-      description: 'Browse past sessions',
-      action: () => {
-        overlayStore.open('sessions');
-      },
-    },
-    {
-      label: 'Settings',
-      description: 'Planner, model & settings',
+      label: 'settings',
+      description: 'planner, model & settings',
       action: () => {
         overlayStore.open('settings');
       },

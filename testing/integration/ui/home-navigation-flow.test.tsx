@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -12,7 +14,6 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
-import { CURSOR } from '../../../src/components/pickers/cursor-glyph.js';
 import { App } from '../../../src/app.js';
 
 const CTRL_R = '\x12';
@@ -20,11 +21,9 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const HOME_HINT = 'Ctrl+R recent /help /config /skills Ctrl+K';
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
-// Ink collapses the trailing space of the cursor cell when it abuts the next
-// column, so the rendered frame contains the bare glyph, not the padded cell.
-const CURSOR_GLYPH = CURSOR.trimEnd();
+const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const RECENT_SESSIONS_HINT = '↑↓ navigate · type filter · enter resume/view · esc back';
+const FOCUS_BAR = '▌';
 
 function lineIndexContaining(frame: string, text: string): number {
   const index = frame.split('\n').findIndex((line) => line.includes(text));
@@ -37,7 +36,7 @@ async function focusRecentSessions(ui: RenderFeatureResult): Promise<string> {
   let focused = '';
   await vi.waitFor(() => {
     focused = ui.lastFrame() ?? '';
-    expect(focused).toContain(CURSOR_GLYPH);
+    expect(focused).toContain(FOCUS_BAR);
     expect(focused).toContain(RECENT_SESSIONS_HINT);
   });
   await tick();
@@ -48,6 +47,7 @@ describe('home navigation flow (through real App)', () => {
   let projectDir = '';
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
     projectDir = createTempDir('home-nav-flow');
     configStore.__testReset({ config: makeConfig(), projectDir });
@@ -81,7 +81,7 @@ describe('home navigation flow (through real App)', () => {
 
     const boot = ui.lastFrame() ?? '';
     expect(boot).toContain('__| (_)');
-    expect(boot).toContain('Recent sessions');
+    expect(boot).toContain('recent sessions');
 
     await focusRecentSessions(ui);
 
@@ -95,7 +95,7 @@ describe('home navigation flow (through real App)', () => {
       expect(route.sessionId).toBe('resume-me');
     }
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Checking run readiness...');
+      expect(ui.lastFrame() ?? '').toContain('readiness');
     });
 
     ui.unmount();
@@ -129,7 +129,7 @@ describe('home navigation flow (through real App)', () => {
       expect(route.summary).toEqual(summary);
     }
     await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('diptych complete');
       expect(frame).toContain('completed feature');
     });
@@ -160,18 +160,18 @@ describe('home navigation flow (through real App)', () => {
     await tick(20);
 
     const focused = await focusRecentSessions(ui);
-    const before = lineIndexContaining(focused, CURSOR_GLYPH);
+    const before = lineIndexContaining(focused, FOCUS_BAR);
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
-      const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+      const after = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
       expect(after).toBeGreaterThan(before);
     });
 
     ui.stdin.write(ESC);
     await tick(20);
     const dropped = ui.lastFrame() ?? '';
-    expect(dropped).not.toContain(CURSOR_GLYPH);
+    expect(dropped).not.toContain(FOCUS_BAR);
     expect(dropped).toContain(HOME_HINT);
     expect(routerStore.get().screen).toBe('home');
 
@@ -205,7 +205,7 @@ describe('home navigation flow (through real App)', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('recalled prompt');
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toContain(FOCUS_BAR);
 
     ui.unmount();
   });
@@ -235,14 +235,14 @@ describe('home navigation flow (through real App)', () => {
 
     expect(routerStore.get().screen).toBe('home');
     expect(ui.lastFrame() ?? '').not.toContain(HOME_HINT);
-    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
 
     await tick(3100);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('missing or invalid');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
-      expect(frame).toContain(CURSOR_GLYPH);
+      expect(frame).toContain(FOCUS_BAR);
     });
 
     ui.unmount();

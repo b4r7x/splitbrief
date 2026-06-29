@@ -7,6 +7,8 @@ import { registerStatusCommand } from './status.js';
 import { DIPTYCH_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { CONFIG_FILE } from '../../core/paths.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -87,6 +89,21 @@ describe('status command', () => {
     await runStatus([]);
     const out = captureOutput();
     expect(out).toContain('add auth');
+    expect(out).toContain('implementing');
+  });
+
+  it('omits the feature name when persistTranscript is false', async () => {
+    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(
+      join(tmp, DIPTYCH_DIR, CONFIG_FILE),
+      ['version: 3', 'workflow:', '  persistTranscript: false', '  mode: standard'].join('\n'),
+    );
+    writeActiveSession(tmp, '2026-04-18-private', 'secret oauth login');
+
+    await runStatus([]);
+    const out = captureOutput();
+    expect(out).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(out).not.toContain('secret');
     expect(out).toContain('implementing');
   });
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { glyph } from '../../lib/glyphs.js';
 import { TextInputOverlay } from './text-input-overlay.js';
 
 describe('TextInputOverlay', () => {
@@ -38,6 +39,24 @@ describe('TextInputOverlay', () => {
     ui.stdin.write('\r');
     await tick(20);
     expect(submitted).toEqual(['hello']);
+    ui.unmount();
+  });
+
+  it('renders a single rounded input frame with an accent prompt and dim footer', async () => {
+    const ui = renderFeature(
+      <TextInputOverlay
+        title="custom command"
+        label="command to run"
+        placeholder="cmd"
+        onSubmit={() => {}}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame.split('╭').length - 1).toBe(1); // exactly one rounded box, no frame-in-frame
+    expect(frame).toContain(`${glyph('prompt')} `);
+    expect(frame).toContain('⏎ save · esc back');
     ui.unmount();
   });
 });

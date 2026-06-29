@@ -27,7 +27,8 @@ const ESC = '\x1b';
 const CTRL_C = '\x03';
 // Generous real-timer waits: the filter delivers via stream `data` events and the
 // arming action is deferred ~35ms by the escape-debounce, so allow margin for both.
-const AFTER_PRESS_MS = 80;
+// Wide margin so the deferred escape + navigation completes even under full-suite event-loop load.
+const AFTER_PRESS_MS = 200;
 
 function InstantWorkflowApp({
   exit = () => {},
@@ -38,7 +39,11 @@ function InstantWorkflowApp({
 }) {
   // Mirror the real workflow screen: both global app keys and the workflow-screen keys
   // are mounted, because the ESC->home-when-cancelled hop lives in useWorkflowKeys.
-  useAppKeys({ exit, interruptWorkflow });
+  useAppKeys({
+    exit,
+    interruptWorkflow,
+    cancelWorkflow: handlers.requestCancel,
+  });
   useWorkflowKeys({ isActive: true });
   return (
     <ThemeProvider>

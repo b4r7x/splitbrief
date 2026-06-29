@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import { modelCacheStore } from './model-cache.js';
 import { detectionStore } from '../project/detection.js';
-import { loadDetectionIntoStores } from './detection-adapter.js';
+import { loadDetectionIntoStores, refreshDetectionStores } from './detection-adapter.js';
 import { createDetectionService } from '../../engine/detection/service.js';
 import type { DetectionDeps } from '../../engine/detection/service.js';
 
@@ -169,5 +169,86 @@ describe('loadDetectionIntoStores', () => {
       // After invalidation the second load re-ran detection → gen-2 lands.
       expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
     });
+  });
+});
+
+describe('refreshDetectionStores', () => {
+  let service: ReturnType<typeof createDetectionService>;
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'diptych-refresh-detection-test-'));
+    service = createDetectionService();
+    detectionStore.reset();
+    modelCacheStore.reset();
+  });
+
+  afterEach(async () => {
+    await service.getPendingSave();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('updates detectionStore and modelCacheStore from fresh detection (regression: /refresh must apply results)', async () => {
+    const catalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-sonnet-4-6': {
+            id: 'claude-sonnet-4-6',
+            cost: { input: 3, output: 15 },
+            limit: { context: 1_000_000 },
+          },
+        },
+      },
+    };
+    const cliModels = { opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] };
+
+    let detectCalls = 0;
+    const deps: DetectionDeps = {
+      detectAll: async () => {
+        detectCalls++;
+        return {
+          planners: [makePlanner({ tool: 'claude-code', version: `refresh-gen-${detectCalls}` })],
+          implementers: [makeImplementer({ provider: 'ollama' })],
+        };
+      },
+      fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog),
+      discoverAllCliTools: vi.fn().mockResolvedValue(cliModels),
+    };
+
+    await service.loadDetection(deps, tempDir);
+    await service.getPendingSave();
+
+    detectionStore.reset();
+    modelCacheStore.reset();
+    expect(detectionStore.get().planners).toEqual([]);
+
+    await refreshDetectionStores(service, detectionStore, tempDir);
+
+    const state = detectionStore.get();
+    expect(state.planners.length).toBe(1);
+    expect(state.planners[0]?.version).toBe('refresh-gen-2');
+    expect(state.implementers.length).toBe(1);
+    expect(state.implementers[0]?.provider).toBe('ollama');
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
+    expect(modelCacheStore.getProviderModels('opencode')).toEqual(cliModels.opencode);
+  });
+
+  it('invalidates model cache before applying fresh results', async () => {
+    const deps: DetectionDeps = {
+      detectAll: async () => ({
+        planners: [makePlanner()],
+        implementers: [makeImplementer()],
+      }),
+      fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
+      discoverAllCliTools: vi.fn().mockResolvedValue({}),
+    };
+
+    await service.loadDetection(deps, tempDir);
+    modelCacheStore.setProviderModels('ollama', [{ id: 'stale-model' }]);
+
+    await refreshDetectionStores(service, detectionStore, tempDir);
+
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 });

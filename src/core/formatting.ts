@@ -49,7 +49,7 @@ export function formatTokensShort(tokens: number): string {
 }
 
 export function formatTruncatedList(values: string[], max: number): string {
-  const visible = values.slice(0, max).join(', ');
+  const visible = values.slice(0, max).join(' · ');
   const hidden = values.length - max;
-  return hidden > 0 ? `${visible}, +${hidden} more` : visible;
+  return hidden > 0 ? `${visible} · +${hidden} more` : visible;
 }

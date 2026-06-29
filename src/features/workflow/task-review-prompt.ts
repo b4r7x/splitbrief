@@ -3,14 +3,26 @@ import type {
   TaskReviewRequest,
   TaskReviewResponse,
 } from '../../engine/events/workflow-events.js';
-import { formatTruncatedList } from '../../core/formatting.js';
+import {
+  formatActionRow,
+  formatMiddotList,
+  type PromptRow,
+  promptRowsToString,
+} from './recovery-prompt.js';
 
 const COMMAND_LABELS: Record<TaskReviewCommand, string> = {
   continue: 'continue',
-  'redo-task': 'redo',
+  'redo-task': 'redo task',
   'edit-notes': 'notes <text>',
   'revise-plan': 'revise-plan <notes>',
   abort: 'abort',
+};
+
+const COMMAND_KEYS: Record<Exclude<TaskReviewCommand, 'edit-notes'>, string> = {
+  continue: 'c',
+  'redo-task': 'r',
+  'revise-plan': 'p',
+  abort: 'a',
 };
 
 const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
@@ -30,20 +42,37 @@ const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
   quit: 'abort',
 };
 
-export function formatTaskReviewPrompt(request: TaskReviewRequest): string {
-  const lines = [
-    `Task review: ${request.taskId} - ${request.taskTitle}`,
-    `Status: ${request.status}`,
-    `Files: ${formatList(request.filesTouched)}`,
-    `Validation: ${request.validation.summary}`,
-    ...formatEvidenceLines(request),
+export function buildTaskReviewPromptRows(request: TaskReviewRequest): PromptRow[] {
+  const passed = request.validation.passed === true;
+  const headline: PromptRow = passed
+    ? {
+        kind: 'headline',
+        tone: 'pass',
+        text: `${request.taskId} ready for review · ${request.taskTitle}`,
+      }
+    : { kind: 'headline', tone: 'failed', text: `${request.taskId}`, detail: request.taskTitle };
+  const facts = [
+    `status ${request.status}`,
+    `files ${formatList(request.filesTouched)}`,
+    `checks ${request.validation.summary}`,
     ...formatCostLines(request),
+    ...formatEvidenceLines(request),
     ...formatRoutingLines(request),
     ...formatRecoveryLines(request),
-    '',
-    `Commands: ${formatTaskReviewCommands(request.availableCommands)}`,
   ];
-  return lines.filter(Boolean).join('\n');
+
+  const rows: PromptRow[] = [
+    headline,
+    { kind: 'blank' },
+    { kind: 'facts', items: facts, grid: passed },
+  ];
+  const actionRows = buildTaskReviewCommandRows(request.availableCommands);
+  if (actionRows.length > 0) rows.push({ kind: 'blank' }, ...actionRows);
+  return rows;
+}
+
+export function formatTaskReviewPrompt(request: TaskReviewRequest): string {
+  return promptRowsToString(buildTaskReviewPromptRows(request));
 }
 
 export function parseTaskReviewAnswer(
@@ -88,8 +117,8 @@ export function taskReviewResponseAllowed(
 }
 
 function formatEvidenceLines(request: TaskReviewRequest): string[] {
-  const lines = [`Evidence: ${request.evidence.summary}`];
-  if (request.evidence.path) lines.push(`Evidence path: ${request.evidence.path}`);
+  const lines = [`evidence ${request.evidence.summary}`];
+  if (request.evidence.path) lines.push(`evidence path ${request.evidence.path}`);
   return lines;
 }
 
@@ -101,7 +130,7 @@ function formatCostLines(request: TaskReviewRequest): string[] {
   const worker = [request.cost.tool, request.cost.model, request.cost.implementerProfile]
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join(' / ');
-  return [`Cost/routing: ${tokenText}${worker ? ` (${worker})` : ''}`];
+  return [`cost ${tokenText}${worker ? ` · ${worker}` : ''}`];
 }
 
 function formatRoutingLines(request: TaskReviewRequest): string[] {
@@ -111,22 +140,34 @@ function formatRoutingLines(request: TaskReviewRequest): string[] {
     routing.contextLength === undefined
       ? `${routing.estimatedTokens} tokens`
       : `${routing.estimatedTokens}/${routing.contextLength} tokens`;
-  return [`Route: ${routing.fit} ${context} - ${routing.reason}`];
+  return [`route ${routing.fit} ${context} · ${routing.reason}`];
 }
 
 function formatRecoveryLines(request: TaskReviewRequest): string[] {
   if (!request.recovery) return [];
   return [
-    `Recovery: ${request.recovery.reason} - ${request.recovery.message}`,
-    `Recovery actions: ${request.recovery.availableActions.join(', ')}`,
+    `recovery ${request.recovery.reason} · ${request.recovery.message}`,
+    `recovery actions ${request.recovery.availableActions.join(' · ')}`,
   ];
 }
 
 function formatList(values: string[], max = 4): string {
   if (values.length === 0) return 'none';
-  return formatTruncatedList(values, max);
+  return formatMiddotList(values, max);
 }
 
-function formatTaskReviewCommands(commands: readonly TaskReviewCommand[]): string {
-  return commands.map((command) => COMMAND_LABELS[command]).join(', ');
+function buildTaskReviewCommandRows(commands: readonly TaskReviewCommand[]): PromptRow[] {
+  const rows: PromptRow[] = [];
+  for (const command of commands) {
+    if (command === 'edit-notes') {
+      rows.push({ kind: 'note', text: 'type notes <text> to continue with notes' });
+      continue;
+    }
+    rows.push({
+      kind: 'action' as const,
+      text: formatActionRow(COMMAND_KEYS[command], COMMAND_LABELS[command]),
+      recommended: command === 'continue',
+    });
+  }
+  return rows;
 }

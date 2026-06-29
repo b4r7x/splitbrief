@@ -30,6 +30,7 @@ import { readJsonSafe } from '../../lib/fs.js';
 import { countBySeverity } from '../../utils/collections.js';
 import { projectCostPredictionForTranscriptPolicy } from '../events/protection.js';
 import { featureForTranscriptPolicy } from '../../core/sessions/lifecycle.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
@@ -129,6 +130,16 @@ function countLocalAndEscalatedTasks(
   return { local, escalated };
 }
 
+function projectTaskBreakdownForTranscriptPolicy(task: TaskTokenUsage): TaskTokenUsage {
+  const { routingReason, costPosture, ...base } = task;
+  return {
+    ...base,
+    taskTitle: TRANSCRIPT_OMITTED_MESSAGE,
+    ...(routingReason !== undefined && { routingReason: TRANSCRIPT_OMITTED_MESSAGE }),
+    ...(costPosture !== undefined && { costPosture: TRANSCRIPT_OMITTED_MESSAGE }),
+  };
+}
+
 export function buildSummary(opts: BuildSummaryOptions): Summary {
   const {
     feature,
@@ -203,6 +214,10 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     };
   });
 
+  const taskBreakdown = persistTranscript
+    ? costedBreakdowns
+    : costedBreakdowns?.map(projectTaskBreakdownForTranscriptPolicy);
+
   let evidenceSummary: Summary['evidenceSummary'];
   let briefQuality: Summary['briefQuality'];
   let driftSummary: Summary['driftSummary'];
@@ -263,7 +278,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     tokenUsage: state.tokenUsage,
     estimatedCostSavings,
     escalationRate,
-    taskBreakdown: costedBreakdowns,
+    taskBreakdown,
     costBreakdown,
     plannerTool,
     plannerModel,

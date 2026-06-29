@@ -1,7 +1,13 @@
 import { readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { confinedReadLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
-import { sessionsRoot, sessionDir, STATE_FILE, SUMMARY_FILE } from '../../core/paths.js';
+import {
+  sessionsRoot,
+  sessionDir,
+  STATE_FILE,
+  SUMMARY_FILE,
+  isValidSessionId,
+} from '../../core/paths.js';
 import { cliError } from '../errors.js';
 
 export type AliasedSession = {
@@ -23,6 +29,10 @@ export function listSessionDirs(projectDir: string): string[] {
   return readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name);
+}
+
+export function listValidSessionDirs(projectDir: string): string[] {
+  return listSessionDirs(projectDir).filter(isValidSessionId);
 }
 
 function mtimeMs(filePath: string): number {

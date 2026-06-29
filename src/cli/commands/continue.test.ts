@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -6,12 +6,15 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './continue.js';
 import type { ContinueDeps } from './continue.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
+import { resolveRenderInputConfig } from '../render.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
 
 type RpcRun = {
   feature: string;
@@ -95,6 +98,41 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
 }
 
+function mockPlatform(value: NodeJS.Platform): () => void {
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value, configurable: true });
+  return () => Object.defineProperty(process, 'platform', { value: original, configurable: true });
+}
+
+function forceInteractiveTty(): () => void {
+  const stdout = process.stdout as { isTTY?: boolean };
+  const originalIsTty = stdout.isTTY;
+  const originalCi = process.env['CI'];
+  stdout.isTTY = true;
+  delete process.env['CI'];
+  return () => {
+    if (originalIsTty === undefined) delete stdout.isTTY;
+    else stdout.isTTY = originalIsTty;
+    if (originalCi !== undefined) process.env['CI'] = originalCi;
+  };
+}
+
+function liveStatus(sessionId: string, feature: string): ServerStatus {
+  return {
+    alive: true,
+    data: {
+      version: 1,
+      pid: process.pid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'standard',
+      feature,
+      authToken: 'test-auth-token',
+    },
+  };
+}
+
 function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
   return {
     checkServerStatus,
@@ -106,11 +144,18 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
     runRpc: async ({ feature, projectDir, opts, savedState, sessionId }) => {
       rpcRuns.push({ feature, projectDir, opts, state: savedState, sessionId });
     },
-    setupWorkflow: async (opts) => ({
-      projectDir: opts.project ?? '',
-      useFullscreen: false,
-      useMouse: false,
-    }),
+    setupWorkflow: async (opts) => {
+      const isInteractive = Boolean(process.stdout.isTTY) && !process.env['CI'];
+      const useFullscreen = opts.fullscreen !== false && isInteractive;
+      const useMouse = opts.mouse !== false && useFullscreen;
+      const useHover = opts.hover === true && useMouse;
+      return {
+        projectDir: opts.project ?? '',
+        useFullscreen,
+        useMouse,
+        useHover,
+      };
+    },
     printCrashDiagnostic: async () => ({
       sessionId: 'test',
       status: 'crashed' as const,
@@ -233,7 +278,7 @@ describe('continueCommand', () => {
     makeSessionDir(projectDir, sessionId);
     // An interactive (TUI/headless) run writes a liveness record WITHOUT an authToken — there
     // is no IPC socket to attach to. A `continue` from a second terminal must see it live and
-    // refuse, rather than silently double-executing the session (F-261 regression seam).
+    // refuse, rather than silently double-executing the session.
     deps = createDeps({
       checkServerStatus: async (): Promise<ServerStatus> => ({
         alive: true,
@@ -428,5 +473,175 @@ describe('continueCommand', () => {
 
     expect(rpcRuns).toHaveLength(1);
     expect(rpcRuns[0]?.state).toMatchObject({ mode: 'quick' });
+  });
+
+  it('strips terminal control bytes from the pre-TUI resume status line', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-osc');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-osc' });
+    writeState(sessDir, 'implementing', { feature: 'add \u001b]0;pwned\u0007login' });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+    try {
+      await continueCommand('2025-04-01-osc', { projectDir }, deps);
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
+
+    const resumeLine = logged.find((line) => line.includes('Resuming:'));
+    expect(resumeLine).toBeDefined();
+    expect(resumeLine).toContain('add login');
+    expect(resumeLine).not.toContain('\u001b');
+    expect(resumeLine).not.toContain('pwned');
+  });
+
+  it('forwards --hover to the attach render so any-motion mouse mode is enabled', async () => {
+    const projectDir = makeTmpProject();
+    makeSessionDir(projectDir, '2025-04-01-hover-live');
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> =>
+        liveStatus('2025-04-01-hover-live', 'live feature'),
+    });
+
+    const restoreTty = forceInteractiveTty();
+    try {
+      await continueCommand('2025-04-01-hover-live', { projectDir, hover: true }, deps);
+    } finally {
+      restoreTty();
+    }
+
+    expect(renderRuns).toHaveLength(1);
+    const options = renderRuns[0]?.options;
+    expect(options).toMatchObject({ fullscreen: true, mouse: true, hover: true });
+    expect(options && resolveRenderInputConfig(options).useHover).toBe(true);
+  });
+
+  it('forwards --no-fullscreen and --no-mouse to the attach render', async () => {
+    const projectDir = makeTmpProject();
+    makeSessionDir(projectDir, '2025-04-01-render-flags');
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> =>
+        liveStatus('2025-04-01-render-flags', 'live feature'),
+    });
+
+    const restoreTty = forceInteractiveTty();
+    try {
+      await continueCommand(
+        '2025-04-01-render-flags',
+        { projectDir, fullscreen: false, mouse: false },
+        deps,
+      );
+    } finally {
+      restoreTty();
+    }
+
+    expect(renderRuns[0]?.options).toMatchObject({
+      fullscreen: false,
+      mouse: false,
+      hover: false,
+    });
+  });
+
+  it('omits the feature on the resume status line when persistTranscript is false', async () => {
+    const projectDir = makeTmpProject();
+    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(
+      join(projectDir, DIPTYCH_DIR, CONFIG_FILE),
+      [
+        'version: 3',
+        'planner:',
+        '  kind: api',
+        '  provider: ollama',
+        '  apiBase: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+        '  contextLength: 32768',
+        'implementer:',
+        '  kind: api',
+        '  provider: ollama',
+        '  apiBase: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+        '  contextLength: 32768',
+        'workflow:',
+        '  persistTranscript: false',
+        '  mode: standard',
+      ].join('\n'),
+    );
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-private');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-private' });
+    writeState(sessDir, 'implementing', { feature: 'secret oauth login' });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await continueCommand('2025-04-01-private', { projectDir }, deps);
+    } finally {
+      const resumeLine = logSpy.mock.calls
+        .map((call) => call.join(' '))
+        .find((line) => line.includes('Resuming:'));
+      expect(resumeLine).toBeDefined();
+      expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+      expect(resumeLine).not.toContain('secret');
+      logSpy.mockRestore();
+    }
+  });
+
+  it('does not enable hover on the attach path when --hover is absent', async () => {
+    const projectDir = makeTmpProject();
+    makeSessionDir(projectDir, '2025-04-01-nohover-live');
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> =>
+        liveStatus('2025-04-01-nohover-live', 'live feature'),
+    });
+
+    const restoreTty = forceInteractiveTty();
+    try {
+      await continueCommand('2025-04-01-nohover-live', { projectDir }, deps);
+    } finally {
+      restoreTty();
+    }
+
+    expect(renderRuns).toHaveLength(1);
+    const options = renderRuns[0]?.options;
+    expect(options?.hover).toBe(false);
+    expect(options && resolveRenderInputConfig(options).useHover).toBe(false);
+  });
+
+  it('resumes an interrupted session on Windows instead of rejecting with the attach guard', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-win-resume');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-win-resume' });
+    writeState(sessDir, 'implementing');
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const restorePlatform = mockPlatform('win32');
+    try {
+      await continueCommand('2025-04-01-win-resume', { projectDir }, deps);
+    } finally {
+      restorePlatform();
+      logSpy.mockRestore();
+    }
+
+    expect(renderRuns).toHaveLength(1);
+  });
+
+  it('still rejects a live attach target on Windows', async () => {
+    const projectDir = makeTmpProject();
+    makeSessionDir(projectDir, '2025-04-01-win-live');
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> =>
+        liveStatus('2025-04-01-win-live', 'live feature'),
+    });
+
+    const restorePlatform = mockPlatform('win32');
+    try {
+      await expect(continueCommand('2025-04-01-win-live', { projectDir }, deps)).rejects.toThrow(
+        /not supported on Windows/,
+      );
+    } finally {
+      restorePlatform();
+    }
+
+    expect(renderRuns).toHaveLength(0);
   });
 });

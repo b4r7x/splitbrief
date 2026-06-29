@@ -1,3 +1,5 @@
+import { glyph } from '../lib/glyphs.js';
+
 interface ErrorHint {
   message: string;
   hint: string;
@@ -44,5 +46,5 @@ export function getErrorHint(error: string): ErrorHint | undefined {
 export function formatErrorWithHint(error: string): string {
   const hint = getErrorHint(error);
   if (!hint) return error;
-  return `${hint.message}\n  → ${hint.hint}`;
+  return `${hint.message}\n  ${glyph('connectorHandoff')} ${hint.hint}`;
 }

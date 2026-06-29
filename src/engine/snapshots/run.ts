@@ -19,6 +19,7 @@ import { nowIso } from '../../utils/format-time.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { resolveValidatedBlobPath } from './blob-resolver.js';
 import { createSnapshot } from './create.js';
+import { createWriteSequencer } from '../orchestrator/serial-executor.js';
 import { hashFile } from './files.js';
 import { readManifest } from './manifest.js';
 import type {
@@ -28,6 +29,7 @@ import type {
 
 export const ACCEPTED_RUN_SNAPSHOT_NAME = 'accepted-run';
 const RUN_LEDGER_FILE = 'run-ledger.json';
+const runSnapshotSequencer = createWriteSequencer();
 
 function runLedgerPath(projectDir: string, sessionId: string): string {
   return join(snapshotsDir(projectDir, sessionId), RUN_LEDGER_FILE);
@@ -216,7 +218,7 @@ async function hashProjectFileIfConfined(projectDir: string, path: string): Prom
   return hashFile(filePath);
 }
 
-export async function acceptRunSnapshot(
+async function acceptRunSnapshotBody(
   projectDir: string,
   sessionId: string,
 ): Promise<AcceptRunSnapshotResult> {
@@ -241,7 +243,14 @@ export async function acceptRunSnapshot(
   };
 }
 
-export async function rejectRunSnapshot(
+export async function acceptRunSnapshot(
+  projectDir: string,
+  sessionId: string,
+): Promise<AcceptRunSnapshotResult> {
+  return runSnapshotSequencer(() => acceptRunSnapshotBody(projectDir, sessionId));
+}
+
+async function rejectRunSnapshotBody(
   projectDir: string,
   sessionId: string,
 ): Promise<RejectRunSnapshotResult> {
@@ -362,4 +371,11 @@ export async function rejectRunSnapshot(
   });
   await writeRunLedger(projectDir, sessionId, nextLedger);
   return result;
+}
+
+export async function rejectRunSnapshot(
+  projectDir: string,
+  sessionId: string,
+): Promise<RejectRunSnapshotResult> {
+  return runSnapshotSequencer(() => rejectRunSnapshotBody(projectDir, sessionId));
 }

@@ -6,6 +6,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
+import { hintStateSeverity } from '../input-hints.js';
 
 const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
   exit: 'Ctrl+C again to exit',
@@ -13,15 +14,9 @@ const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
   cancel: 'Esc again to cancel workflow',
 };
 
-function formatQueueNotice(queueDepth: number): string | null {
-  if (queueDepth <= 0) return null;
-  const noun = queueDepth === 1 ? 'message' : 'messages';
-  return `Queued ${queueDepth} ${noun} pending next planner turn.`;
-}
-
 function formatCompactQueueNotice(queueDepth: number): string | null {
   if (queueDepth <= 0) return null;
-  return `queued: ${queueDepth}`;
+  return `queued ${queueDepth}`;
 }
 
 function summarizeDisplayLine(text: string): string {
@@ -39,34 +34,55 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const armed = abortStore.use((s) => s.armed);
   const t = useTheme();
 
-  const queueNotice = formatQueueNotice(queueDepth);
   const compactQueueNotice = formatCompactQueueNotice(queueDepth);
   const safeInputHint = summarizeDisplayLine(inputHint);
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
   const hintMessage =
     compactQueueNotice && safeInputHint
       ? `${safeInputHint} · ${compactQueueNotice}`
-      : (queueNotice ?? safeInputHint);
+      : (compactQueueNotice ?? safeInputHint);
   const feedbackMessage =
     safeMessage && safeInputHint ? `${safeMessage} ${safeInputHint}` : safeMessage;
   const displayMessage =
     armed !== 'none' ? ARMED_MESSAGES[armed] : (feedbackMessage ?? hintMessage);
-  let displayColor = t.textDim;
-  if (armed !== 'none') {
-    displayColor = t.warning;
-  } else if (isError) {
-    displayColor = t.error;
-  } else if (message || queueNotice) {
-    displayColor = t.info;
-  }
+  const showArmed = armed !== 'none';
+  const severity = showArmed
+    ? null
+    : isError
+      ? 'error'
+      : displayMessage
+        ? hintStateSeverity(displayMessage)
+        : null;
+  const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
 
   return (
     <Box height={1} paddingX={WORKFLOW_CONTENT_PADDING_X} flexShrink={0}>
-      {displayMessage && (
-        <Text color={displayColor} wrap="truncate-end">
-          {displayMessage}
-        </Text>
-      )}
+      {displayMessage &&
+        (wordColor !== null ? (
+          <StateWordVoice text={displayMessage} color={wordColor} />
+        ) : (
+          <Text color={showArmed ? t.warning : t.textDim} wrap="truncate-end">
+            {displayMessage}
+          </Text>
+        ))}
     </Box>
+  );
+}
+
+function StateWordVoice({ text, color }: { text: string; color: string }) {
+  const t = useTheme();
+  const spaceIndex = text.indexOf(' ');
+  if (spaceIndex === -1) {
+    return (
+      <Text color={color} wrap="truncate-end">
+        {text}
+      </Text>
+    );
+  }
+  return (
+    <Text wrap="truncate-end">
+      <Text color={color}>{text.slice(0, spaceIndex)}</Text>
+      <Text color={t.textDim}>{text.slice(spaceIndex)}</Text>
+    </Text>
   );
 }

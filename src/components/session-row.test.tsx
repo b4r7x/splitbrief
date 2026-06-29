@@ -1,16 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { glyph } from '../lib/glyphs.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { CURSOR, NO_CURSOR } from './pickers/cursor-glyph.js';
 import { SessionRow } from './session-row.js';
 
-const CURSOR_GLYPH = CURSOR.trimEnd();
+const CURSOR_GLYPH = '▸';
+const envSnapshot = { ...process.env };
+let ttyDescriptor: PropertyDescriptor | undefined;
+
+function forceUnicodeGlyphs(): void {
+  process.env.TERM = 'xterm-256color';
+  process.env.LANG = 'en_US.UTF-8';
+  ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+}
+
+function withAsciiTier(run: () => void): void {
+  process.env.TERM = 'dumb';
+  try {
+    run();
+  } finally {
+    process.env = { ...envSnapshot };
+    if (ttyDescriptor) {
+      Object.defineProperty(process.stdout, 'isTTY', ttyDescriptor);
+    } else {
+      forceUnicodeGlyphs();
+    }
+  }
+}
 
 function frameOf(element: Parameters<typeof renderFeature>[0]): string {
   const ui = renderFeature(element);
-  const frame = ui.lastFrame() ?? '';
+  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
   ui.unmount();
   return frame;
 }
@@ -28,6 +52,7 @@ function lineContaining(frame: string, text: string): string {
 describe('SessionRow', () => {
   beforeEach(() => {
     resetAllStores();
+    forceUnicodeGlyphs();
   });
 
   afterEach(() => {
@@ -117,14 +142,41 @@ describe('SessionRow', () => {
     expect(selected.indexOf(marker)).toBe(unselected.indexOf(marker));
   });
 
+  it('marks the selected inline row with a ▌ accent lead and reserves the cell otherwise', () => {
+    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
+
+    const selected = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} />
+      </Box>,
+    );
+    const unselected = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: false }} />
+      </Box>,
+    );
+
+    expect(selected).toContain('▌');
+    expect(unselected).not.toContain('▌');
+    expect(selected.indexOf('alpha')).toBe(unselected.indexOf('alpha'));
+  });
+
   it('renders the status icon for each session status', () => {
     expect(frameOf(<SessionRow session={makeSession({ status: 'complete' })} />)).toContain('✓');
     expect(
       frameOf(<SessionRow session={makeSession({ status: 'interrupted', summary: null })} />),
     ).toContain('○');
-    expect(
-      frameOf(<SessionRow session={makeSession({ status: 'failed', summary: null })} />),
-    ).toContain('✗');
+  });
+
+  it('renders a failed session with a dim ○ lead and a dim-red "failed" word, never a ✗ glyph', () => {
+    const frame = frameOf(
+      <SessionRow
+        session={makeSession({ status: 'failed', feature: 'flaky-test', summary: null })}
+      />,
+    );
+    expect(frame).not.toContain('✗');
+    expect(lineContaining(frame, 'flaky-test')).toMatch(/^○ flaky-test/);
+    expect(frame).toContain('failed');
   });
 
   it('does not reserve a cursor cell when no cursor is requested', () => {
@@ -132,24 +184,96 @@ describe('SessionRow', () => {
     expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
   });
 
-  it('shows the inline cursor cell only on the active row, and the NO_CURSOR cell otherwise', () => {
-    expect(NO_CURSOR.trim()).toBe('');
-
+  it('uses the ▌ accent bar as the sole inline selection signal, never the ▸ cursor', () => {
     const defaults = frameOf(<SessionRow session={makeSession()} />);
     expect(defaults).not.toContain(CURSOR_GLYPH);
 
     const active = frameOf(
       <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: true }} />,
     );
-    expect(active).toContain(CURSOR_GLYPH);
+    expect(active).not.toContain(CURSOR_GLYPH);
+    expect(active).toContain('▌');
 
     const inactive = frameOf(
       <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: false }} />,
     );
     expect(inactive).not.toContain(CURSOR_GLYPH);
+    expect(inactive).not.toContain('▌');
   });
 
-  it('renders an outdented cursor before the row without shifting the feature', () => {
+  it('uses ascii status and selection markers when the glyph tier is ascii', () => {
+    withAsciiTier(() => {
+      const frame = frameOf(
+        <SessionRow
+          session={makeSession({ feature: 'ascii-task', status: 'interrupted', summary: null })}
+          cursor={{ kind: 'inline', isCursor: true }}
+        />,
+      );
+      expect(frame).toContain(`${glyph('liveBar', 'ascii')} `);
+      expect(frame).toContain(`${glyph('statusPending', 'ascii')} ascii-task`);
+      expect(frame).not.toContain('▌');
+      expect(frame).not.toContain('○');
+    });
+  });
+
+  it('strips OSC-52/CSI control bytes from a persisted session feature name', () => {
+    const payload = 'ZWNobyBwd25lZA==';
+    const malicious = `before\u001b]52;c;${payload}\u0007\u001b[2Jafter`;
+    const ui = renderFeature(
+      <Box width={80}>
+        <SessionRow session={makeSession({ feature: malicious, startedAt: Date.now() })} />
+      </Box>,
+    );
+    const rawFrame = ui.lastFrame() ?? '';
+    ui.unmount();
+
+    expect(rawFrame).not.toContain(payload);
+    expect(rawFrame).not.toContain('\u001b]52');
+    expect(rawFrame).not.toContain('\u001b[2J');
+    expect(stripAnsiStyles(rawFrame)).toContain('beforeafter');
+  });
+
+  it('renders a dim "y copy" token only when copyHint is set and the row is the cursor', () => {
+    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
+
+    const focusedWithHint = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: true }} copyHint />
+      </Box>,
+    );
+    expect(focusedWithHint).toContain('y copy');
+
+    const focusedNoHint = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: true }} />
+      </Box>,
+    );
+    expect(focusedNoHint).not.toContain('y copy');
+
+    const unfocusedWithHint = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: false }} copyHint />
+      </Box>,
+    );
+    expect(unfocusedWithHint).not.toContain('y copy');
+  });
+
+  it('does not shift the feature column when the copy hint appears on the focused row', () => {
+    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
+    const withHint = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} copyHint />
+      </Box>,
+    );
+    const withoutHint = frameOf(
+      <Box width={72}>
+        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} />
+      </Box>,
+    );
+    expect(withHint.indexOf('alpha')).toBe(withoutHint.indexOf('alpha'));
+  });
+
+  it('leads an outdented row with the ▌ accent bar, never the ▸ cursor, without shifting the feature', () => {
     const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
     const plain = frameOf(
       <Box marginLeft={4} width={72}>
@@ -164,7 +288,8 @@ describe('SessionRow', () => {
 
     const plainAlpha = lineContaining(plain, 'alpha').indexOf('alpha');
     const outdentedLine = lineContaining(outdented, 'alpha');
+    expect(outdented).not.toContain(CURSOR_GLYPH);
     expect(outdentedLine.indexOf('alpha')).toBe(plainAlpha);
-    expect(outdentedLine.indexOf(CURSOR_GLYPH)).toBeLessThan(outdentedLine.indexOf('○ alpha'));
+    expect(outdentedLine.indexOf('▌')).toBeLessThan(outdentedLine.indexOf('○ alpha'));
   });
 });

@@ -1,89 +1,71 @@
 import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayTextMiddle,
+} from '../../../utils/display-text.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
 import type { BriefQualityReport } from '../../../engine/spec/brief-quality.js';
 import {
-  buildPlanReviewScorecard,
-  type PlanReviewScorecardEntry,
-} from '../plan-review-scorecard.js';
-import {
-  formatPlanReviewSummary,
   formatQualityDisplay,
   formatTaskCount,
   sanitizeTaskDisplayText,
 } from '../brief-review-format.js';
 
-function getScorecardColor(
-  entries: PlanReviewScorecardEntry[],
-  theme: ReturnType<typeof useTheme>,
-): string {
-  if (
-    entries.some(
-      (entry) =>
-        entry.count > 0 && (entry.bucket === 'splitOverflow' || entry.bucket === 'staleConflict'),
-    )
-  )
-    return theme.error;
-  if (entries.some((entry) => entry.count > 0 && entry.bucket !== 'ready')) return theme.warning;
-  if (entries.some((entry) => entry.count > 0 && entry.bucket === 'ready')) return theme.success;
-  return theme.textDim;
-}
-
-export function PlanReviewScorecardLine({
-  tasks,
-  quality,
-  metadata,
-}: {
-  tasks: Task[];
-  quality: BriefQualityReport | null;
-  metadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
-}) {
-  const t = useTheme();
-  const scorecard = buildPlanReviewScorecard(tasks, quality, metadata);
-  const text = scorecard.buckets.map((entry) => entry.label).join(SOFT_SEP);
-
-  return (
-    <Text color={getScorecardColor(scorecard.buckets, t)} wrap="truncate">
-      {text}
-    </Text>
-  );
-}
+const NARROW_COLLAPSE_WIDTH = 50;
+const MIN_FILEPATH_CELLS = 8;
 
 export function PlanReviewHeader({
   tasks,
   quality,
-  reviewMetadata,
   filePath,
+  width,
+  hasLoadError = false,
 }: {
   tasks: Task[];
   quality: BriefQualityReport | null;
-  reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   filePath: string;
+  width: number;
+  hasLoadError?: boolean | undefined;
 }) {
   const t = useTheme();
+  const countText = hasLoadError ? '—' : formatTaskCount(tasks.length);
   const qualityDisplay = formatQualityDisplay(quality);
-  const qualityColor = quality === null ? t.textDim : quality.passed ? t.success : t.error;
-  const summary = sanitizeTaskDisplayText(formatPlanReviewSummary(tasks, reviewMetadata));
+  const qualityColor = quality !== null && !quality.passed ? t.error : t.textDim;
+  const meta = `${countText}${SOFT_SEP}`;
   const displayFilePath = sanitizeTaskDisplayText(filePath);
 
+  const leftCells =
+    getTerminalCellWidth('task briefs') +
+    2 +
+    getTerminalCellWidth(meta) +
+    getTerminalCellWidth(qualityDisplay);
+  const filePathBudget = width - leftCells - 2;
+  const showFilePath =
+    displayFilePath !== '' &&
+    width >= NARROW_COLLAPSE_WIDTH &&
+    filePathBudget >= MIN_FILEPATH_CELLS;
+  const filePathText = showFilePath
+    ? truncateTerminalDisplayTextMiddle(displayFilePath, filePathBudget)
+    : '';
+
   return (
-    <>
-      <Box flexDirection="row" gap={2}>
-        <Text bold color={t.accent}>
-          Task Briefs
-        </Text>
-        <Text color={t.textDim}>{formatTaskCount(tasks.length)}</Text>
-        <Text color={qualityColor}>{qualityDisplay}</Text>
-      </Box>
-      <Text color={t.textDim} wrap="truncate">
-        {summary}
+    <Box flexDirection="row" width={width} overflow="hidden">
+      <Text bold color={t.text}>
+        task briefs
       </Text>
-      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
-      <Text color={t.textDim} wrap="truncate">
-        {displayFilePath}
-      </Text>
-    </>
+      <Text>{'  '}</Text>
+      <Text color={t.textDim}>{meta}</Text>
+      <Text color={qualityColor}>{qualityDisplay}</Text>
+      {showFilePath && (
+        <>
+          <Box flexGrow={1} />
+          <Text color={t.textDim} wrap="truncate">
+            {filePathText}
+          </Text>
+        </>
+      )}
+    </Box>
   );
 }

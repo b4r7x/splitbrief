@@ -43,7 +43,7 @@ describe('getHomeLayout', () => {
   it('keeps one session row when that is the only safe row before the input', () => {
     const layout = getHomeLayout({
       cols: 80,
-      rows: 15,
+      rows: 16,
       isSmall: true,
       hasSkills: false,
       sessionCount: 30,
@@ -53,7 +53,7 @@ describe('getHomeLayout', () => {
   });
 
   it('accounts focused prompt and selection-error rows before session capacity', () => {
-    const baseRows = 15;
+    const baseRows = 16;
     const focusedChromeRows = 2;
     const sessionCount = 30;
 
@@ -90,7 +90,7 @@ describe('getHomeLayout', () => {
   it('reserves a row for +N more when capacity allows more than one session row', () => {
     const layout = getHomeLayout({
       cols: 80,
-      rows: 16,
+      rows: 17,
       isSmall: true,
       hasSkills: false,
       sessionCount: 25,
@@ -189,25 +189,25 @@ describe('getHomeLayout', () => {
 
 describe('getConfigSummaryHeight', () => {
   it('collapses to a single line when small', () => {
-    expect(getConfigSummaryHeight(true, 20, false)).toBe(1);
+    expect(getConfigSummaryHeight({ isSmall: true, rows: 20, hasSkills: false })).toBe(1);
   });
 
   it('collapses to a single line on short terminals', () => {
-    expect(getConfigSummaryHeight(false, 20, true)).toBe(1);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 20, hasSkills: true })).toBe(1);
   });
 
   it('uses three labeled rows on a tall terminal without skills', () => {
-    expect(getConfigSummaryHeight(false, 40, false)).toBe(3);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 40, hasSkills: false })).toBe(3);
   });
 
   it('adds a row for the skills line when skills are active', () => {
-    expect(getConfigSummaryHeight(false, 40, true)).toBe(4);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 40, hasSkills: true })).toBe(4);
   });
 
   it('expands exactly at the CONFIG_SUMMARY_COMPACT_ROWS=30 boundary and crosses with hasSkills', () => {
-    expect(getConfigSummaryHeight(false, 29, false)).toBe(1);
-    expect(getConfigSummaryHeight(false, 30, false)).toBe(3);
-    expect(getConfigSummaryHeight(false, 30, true)).toBe(4);
-    expect(getConfigSummaryHeight(false, 29, true)).toBe(1);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 29, hasSkills: false })).toBe(1);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 30, hasSkills: false })).toBe(3);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 30, hasSkills: true })).toBe(4);
+    expect(getConfigSummaryHeight({ isSmall: false, rows: 29, hasSkills: true })).toBe(1);
   });
 });

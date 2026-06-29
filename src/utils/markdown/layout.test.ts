@@ -4,6 +4,8 @@ import { parseMarkdownBlocks } from './block-parser.js';
 import { layoutMarkdown } from './layout.js';
 import type { MarkdownLayoutLine } from './types.js';
 
+const THEMATIC_BREAK_CHAR = '\u2500';
+
 function lineText(line: MarkdownLayoutLine): string {
   return line.segments.map((segment) => segment.text).join('');
 }
@@ -15,8 +17,8 @@ function layoutLines(source: string, width: number): string[] {
 
 describe('layoutMarkdown', () => {
   it('uses terminal width for thematic breaks', () => {
-    expect(layoutLines('---', 12)).toEqual(['─'.repeat(12)]);
-    expect(layoutLines('---', 28)).toEqual(['─'.repeat(28)]);
+    expect(layoutLines('---', 12)).toEqual([THEMATIC_BREAK_CHAR.repeat(12)]);
+    expect(layoutLines('---', 28)).toEqual([THEMATIC_BREAK_CHAR.repeat(28)]);
   });
 
   it('produces more rows at narrow widths and keeps long paths inside row width', () => {

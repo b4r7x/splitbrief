@@ -91,15 +91,16 @@ export function createIpcWorkflowBridge(bus: EventBus): IpcWorkflowBridge {
         bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: currentPhase, count });
         return;
       }
-      const result = clearQueueHandler();
-      if (result.status === 'unavailable') {
-        bus.publish({
-          type: 'warning',
-          ts: Date.now(),
-          phase: currentPhase,
-          message: result.message,
-        });
-      }
+      void Promise.resolve(clearQueueHandler()).then((result) => {
+        if (result.status === 'unavailable') {
+          bus.publish({
+            type: 'warning',
+            ts: Date.now(),
+            phase: currentPhase,
+            message: result.message,
+          });
+        }
+      });
     },
     close() {
       queueHandler = null;

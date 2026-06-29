@@ -1,35 +1,36 @@
 import { describe, it, expect } from 'vitest';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { matchesFilter, validateNumber, displayValue } from './presentation.js';
+import { glyph } from '../../lib/glyphs.js';
 
 describe('displayValue with formatValue', () => {
   it('formats tool fields with getDisplayName', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'planner.kind')!;
-    expect(displayValue(def, 'claude-code')).toBe('[Claude Code]');
-    expect(displayValue(def, 'ollama')).toBe('[Ollama]');
+    expect(displayValue(def, 'claude-code')).toBe('Claude Code');
+    expect(displayValue(def, 'ollama')).toBe('Ollama');
   });
 
   it('formats model fields with formatModelName', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'implementer.model')!;
-    expect(displayValue(def, 'qwen2.5-coder:7b')).toBe('[Qwen 2.5 Coder 7B]');
-    expect(displayValue(def, 'deepseek-chat')).toBe('[DeepSeek V3]');
+    expect(displayValue(def, 'qwen2.5-coder:7b')).toBe('Qwen 2.5 Coder 7B');
+    expect(displayValue(def, 'deepseek-chat')).toBe('DeepSeek V3');
   });
 
   it('shows raw value for defs without formatValue', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'validation.testCommand')!;
-    expect(displayValue(def, 'npm test')).toBe('[npm test]');
+    expect(displayValue(def, 'npm test')).toBe('npm test');
   });
 
-  it('shows boolean checkmarks', () => {
+  it('shows ✓ for true and off for false booleans', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'validation.typecheck')!;
-    expect(displayValue(def, true)).toBe('[✓]');
-    expect(displayValue(def, false)).toBe('[✗]');
+    expect(displayValue(def, true)).toBe(glyph('check'));
+    expect(displayValue(def, false)).toBe('off');
   });
 
-  it('shows null placeholder for undefined values', () => {
+  it('shows an em-dash placeholder for undefined values', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'planner.model')!;
-    expect(displayValue(def, undefined)).toBe('[—]');
-    expect(displayValue(def, null)).toBe('[—]');
+    expect(displayValue(def, undefined)).toBe('—');
+    expect(displayValue(def, null)).toBe('—');
   });
 });
 
@@ -64,6 +65,12 @@ describe('validateNumber', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.maxRetries')!;
     expect(validateNumber('-1', def)).toBeNull();
     expect(validateNumber('99', def)).toBeNull();
+  });
+
+  it('rejects empty numeric buffers', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.maxRetries')!;
+    expect(validateNumber('', def)).toBeNull();
+    expect(validateNumber('   ', def)).toBeNull();
   });
 
   it('accepts valid integer', () => {

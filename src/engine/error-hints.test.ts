@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { glyph } from '../lib/glyphs.js';
 import { getErrorHint, formatErrorWithHint } from './error-hints.js';
 
 describe('getErrorHint', () => {
@@ -36,7 +37,9 @@ describe('getErrorHint', () => {
 describe('formatErrorWithHint', () => {
   it('returns enriched message for known errors', () => {
     const result = formatErrorWithHint('connect ECONNREFUSED 127.0.0.1:11434');
-    expect(result).toBe('Ollama is not running\n  → Start it with: ollama serve');
+    expect(result).toBe(
+      `Ollama is not running\n  ${glyph('connectorHandoff')} Start it with: ollama serve`,
+    );
   });
 
   it('returns original message for unknown errors', () => {

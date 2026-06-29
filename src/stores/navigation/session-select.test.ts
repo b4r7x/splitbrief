@@ -171,6 +171,21 @@ describe('handleSessionSelect (Enter routing)', () => {
     expect(sessionSelectStore.get().error ?? '').toContain('add auth');
   });
 
+  it('strips OSC-52/CSI control bytes from the feature name interpolated into a selection error', () => {
+    overlayStore.open('sessions');
+    const payload = 'ZWNobyBwd25lZA==';
+    const malicious = `before\u001b]52;c;${payload}\u0007\u001b[2Jafter`;
+    const session = makeSession({ feature: malicious, status: 'failed', summary: null });
+
+    handleSessionSelect(session, tmp);
+
+    const error = sessionSelectStore.get().error ?? '';
+    expect(error).toContain('beforeafter');
+    expect(error).not.toContain(payload);
+    expect(error).not.toContain(']52');
+    expect(error).not.toContain('[2J');
+  });
+
   it('surfaces an error and stays on home when loadState throws for an interrupted session with an unsafe id', () => {
     overlayStore.open('sessions');
     const session = makeSession({

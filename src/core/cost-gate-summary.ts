@@ -26,17 +26,17 @@ export function formatCostGateSummary(prediction: CostPrediction): CostGateSumma
       : 0;
   return {
     taskCount: deterministic.taskCount,
-    estimateLabel: deterministic.estimateScope === 'prompt-input-only' ? 'Prompt input' : 'Est.',
+    estimateLabel: deterministic.estimateScope === 'prompt-input-only' ? 'prompt input' : 'est',
     estimatedCost: estimated !== null ? formatCost(estimated) : 'n/a',
     allPlannerLabel:
-      deterministic.estimateScope === 'prompt-input-only' ? 'All-planner prompt' : 'All-planner',
+      deterministic.estimateScope === 'prompt-input-only' ? 'all-planner prompt' : 'all-planner',
     allPlannerCost: hypothetical !== null ? `~${formatCost(hypothetical)}` : 'n/a',
-    savingsLabel: deterministic.estimateScope === 'prompt-input-only' ? 'Prompt saving' : 'Saving',
+    savingsLabel: deterministic.estimateScope === 'prompt-input-only' ? 'prompt saving' : 'saving',
     estimatedSavings: savings !== null ? formatCost(Math.max(0, savings)) : 'n/a',
     savingsPercentage: Math.max(0, Math.round(pct)),
     scopeNote:
       deterministic.estimateScope === 'prompt-input-only'
-        ? 'Output, retries, validation reruns, and escalation are tracked at runtime.'
+        ? 'output, retries, validation reruns, and escalation tracked at runtime'
         : null,
   };
 }

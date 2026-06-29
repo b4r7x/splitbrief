@@ -41,6 +41,12 @@ import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
 import { protectConsumerPayload } from '../consumer-policy.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
+import { workflowFeatureForConsole } from './machine.js';
+
+export function consoleWorkflowFeature(feature: string, persistTranscript: boolean): string {
+  return stripTerminalControls(workflowFeatureForConsole(feature, persistTranscript));
+}
 
 function assertInsideRoot(projectDir: string, fullPath: string): void {
   const realRoot = nearestExistingAncestor(projectDir);

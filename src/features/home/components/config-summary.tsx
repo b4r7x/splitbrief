@@ -9,14 +9,15 @@ import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { ARROW_SEP, CHEVRON_SEP, SOFT_SEP } from '../../../components/separators.js';
+import { stripTerminalControls } from '../../../utils/display-text.js';
 import { CONFIG_SUMMARY_COMPACT_ROWS } from '../layout.js';
 
 function runnerLabel(toolName: string, model: string | undefined, local = false): string {
   const provider = getProviderDisplayName(toolName);
-  const modelPart = model ? ` › ${formatModelName(model)}` : '';
+  const modelPart = model ? `${CHEVRON_SEP}${formatModelName(model)}` : '';
   const localPart = local ? ' (local)' : '';
-  return `${provider}${modelPart}${localPart}`;
+  return stripTerminalControls(`${provider}${modelPart}${localPart}`);
 }
 
 export function HomeConfigSummary() {
@@ -31,6 +32,7 @@ export function HomeConfigSummary() {
   const implIsLocal = isProviderLocal(implToolName);
   const plannerLabel = runnerLabel(plannerToolName, plannerModel);
   const implLabel = runnerLabel(implToolName, implModel, implIsLocal);
+  const compactImplLabel = runnerLabel(implToolName, implModel);
   const mode = getWorkflowMode(config);
   const compact = isSmall || rows < CONFIG_SUMMARY_COMPACT_ROWS;
 
@@ -38,17 +40,21 @@ export function HomeConfigSummary() {
     return (
       <Box marginBottom={1} overflow="hidden">
         <Text wrap="truncate-end">
-          <Text color={theme.planner}>{plannerLabel}</Text>
+          <Text color={theme.planner} bold>
+            {plannerLabel}
+          </Text>
           <Text color={theme.textDim}>{SOFT_SEP}</Text>
-          <Text color={theme.implementer}>{implLabel}</Text>
+          <Text color={theme.implementer} bold>
+            {compactImplLabel}
+          </Text>
           <Text color={theme.textDim}>{SOFT_SEP}</Text>
           <Text color={theme.text} bold>
-            {mode}
+            {mode.toUpperCase()}
           </Text>
           {selectedSkillCount > 0 && (
             <>
               <Text color={theme.textDim}>{SOFT_SEP}</Text>
-              <Text color={theme.accent}>{selectedSkillCount} skills</Text>
+              <Text color={theme.textDim}>{selectedSkillCount} skills</Text>
             </>
           )}
         </Text>
@@ -58,10 +64,28 @@ export function HomeConfigSummary() {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <LabeledRow label="Planner">
+      <Box flexDirection="column" marginBottom={1}>
+        <Text>
+          <Text color={theme.planner} bold>
+            planner
+          </Text>
+          <Text color={theme.textDim}>{ARROW_SEP}</Text>
+          <Text color={theme.implementer} bold>
+            implementer
+          </Text>
+          <Text color={theme.textDim}>{ARROW_SEP}</Text>
+          <Text color={theme.validator} bold>
+            validator
+          </Text>
+        </Text>
+        <Text color={theme.textDim}>
+          expensive{SOFT_SEP}cheap{SOFT_SEP}checks drift
+        </Text>
+      </Box>
+      <LabeledRow label="planner">
         <Box width="100%" height={1} overflow="hidden">
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
-            <Text color={theme.planner} wrap="truncate-end">
+            <Text color={theme.planner} bold wrap="truncate-end">
               {plannerLabel}
             </Text>
           </Box>
@@ -71,10 +95,10 @@ export function HomeConfigSummary() {
           </Text>
         </Box>
       </LabeledRow>
-      <LabeledRow label="Implementer">
+      <LabeledRow label="implementer">
         <Box width="100%" height={1} overflow="hidden">
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
-            <Text color={theme.implementer} wrap="truncate-end">
+            <Text color={theme.implementer} bold wrap="truncate-end">
               {implLabel}
             </Text>
           </Box>
@@ -84,7 +108,7 @@ export function HomeConfigSummary() {
           </Text>
         </Box>
       </LabeledRow>
-      <LabeledRow label="Mode">
+      <LabeledRow label="mode">
         <Box width="100%" height={1} overflow="hidden">
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text color={theme.text} wrap="truncate-end">
@@ -98,10 +122,10 @@ export function HomeConfigSummary() {
         </Box>
       </LabeledRow>
       {selectedSkillCount > 0 && (
-        <LabeledRow label="Skills">
+        <LabeledRow label="skills">
           <Box width="100%" height={1} overflow="hidden">
             <Box flexGrow={1} flexShrink={1} minWidth={0}>
-              <Text color={theme.accent} wrap="truncate-end">
+              <Text color={theme.text} wrap="truncate-end">
                 {selectedSkillCount} active
               </Text>
             </Box>

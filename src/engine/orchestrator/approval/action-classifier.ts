@@ -185,6 +185,6 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
     };
   }
 
-  // Escalation: no write verb and no other pattern → read to avoid false positives
+  // Escalation: no write verb and no other pattern means read to avoid false positives
   return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
 }

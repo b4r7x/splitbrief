@@ -36,7 +36,8 @@ describe('HeroSavings', () => {
     const output = ui.lastFrame() ?? '';
     expect(output).toContain('$0.12 actual vs $0.95 baseline');
     expect(output).toContain('87% saved');
-    expect(output).toContain('Saved $0.83');
+    expect(output).toContain('saved $0.83');
+    expect(output).not.toContain(', 87%');
     ui.unmount();
   });
 
@@ -44,7 +45,7 @@ describe('HeroSavings', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 20, isSmall: true });
     const ui = renderFeature(<HeroSavings costBreakdown={makeCostBreakdown()} />);
     const output = ui.lastFrame() ?? '';
-    expect(output).toContain('Saved $0.83 (87%)');
+    expect(output).toContain('saved $0.83 (87%)');
     expect(output).not.toContain('actual vs');
     ui.unmount();
   });

@@ -4,7 +4,22 @@ import {
   type TaskReviewRequest,
 } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
-import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
+import { glyph } from '../../lib/glyphs.js';
+import type { PromptRow } from './recovery-prompt.js';
+import {
+  buildTaskReviewPromptRows,
+  formatTaskReviewPrompt,
+  parseTaskReviewAnswer,
+} from './task-review-prompt.js';
+
+function factItems(rows: PromptRow[]): string[] {
+  const row = rows.find((r): r is Extract<PromptRow, { kind: 'facts' }> => r.kind === 'facts');
+  return row?.items ?? [];
+}
+
+function actionRows(rows: PromptRow[]): Extract<PromptRow, { kind: 'action' }>[] {
+  return rows.filter((r): r is Extract<PromptRow, { kind: 'action' }> => r.kind === 'action');
+}
 
 const request: TaskReviewRequest = {
   taskId: taskId('T001'),
@@ -58,17 +73,61 @@ const request: TaskReviewRequest = {
 };
 
 describe('task review prompt', () => {
-  it('renders task metadata, evidence, cost, routing, and commands', () => {
+  it('builds task metadata, evidence, cost, routing, and commands', () => {
+    const rows = buildTaskReviewPromptRows(request);
+
+    expect(rows[0]).toEqual({
+      kind: 'headline',
+      tone: 'pass',
+      text: 'T001 ready for review · Add auth',
+    });
+    const facts = factItems(rows);
+    expect(facts).toContain('status done');
+    expect(facts).toContain('files src/auth.ts');
+    expect(facts).toContain('checks validation passed');
+    expect(facts).toContain('evidence path /tmp/project/.diptych/sessions/s1/evidence.json');
+    expect(facts.some((f) => f.includes('15 implementer, 0 escalation'))).toBe(true);
+    expect(facts.some((f) => f.startsWith('route fits 120/1000 tokens'))).toBe(true);
+
+    const commands = actionRows(rows).map((r) => r.text);
+    expect(commands).toContain('[c]  continue');
+    expect(commands).toContain('[r]  redo task');
+    expect(commands).toContain('[p]  revise-plan <notes>');
+    expect(commands).toContain('[a]  abort');
+    expect(rows.some((r) => r.kind === 'note' && r.text.includes('notes <text>'))).toBe(true);
+    expect(actionRows(rows).find((r) => r.recommended)?.text).toBe('[c]  continue');
+  });
+
+  it('flags a failed review headline with the task title detail', () => {
+    const rows = buildTaskReviewPromptRows({
+      ...request,
+      validation: { ...request.validation, passed: false, summary: 'tests failed' },
+    });
+
+    expect(rows[0]).toEqual({
+      kind: 'headline',
+      tone: 'failed',
+      text: 'T001',
+      detail: 'Add auth',
+    });
+    expect(factItems(rows)).toContain('checks tests failed');
+  });
+
+  it('serializes the passing review rows into a flat prompt with the ✓ and accent markers', () => {
     const prompt = formatTaskReviewPrompt(request);
 
-    expect(prompt).toContain('T001 - Add auth');
-    expect(prompt).toContain('Status: done');
-    expect(prompt).toContain('src/auth.ts');
-    expect(prompt).toContain('Validation: validation passed');
-    expect(prompt).toContain('Evidence path: /tmp/project/.diptych/sessions/s1/evidence.json');
-    expect(prompt).toContain('15 implementer, 0 escalation');
-    expect(prompt).toContain('Route: fits 120/1000 tokens');
-    expect(prompt).toContain('continue, redo, notes <text>, revise-plan <notes>, abort');
+    expect(prompt).toContain(`${glyph('check')} T001 ready for review · Add auth`);
+    expect(prompt).toContain(`${glyph('liveBar')} [c]  continue`);
+    expect(prompt).toContain('[r]  redo task');
+  });
+
+  it('serializes a failed review headline with its cause', () => {
+    const prompt = formatTaskReviewPrompt({
+      ...request,
+      validation: { ...request.validation, passed: false, summary: 'tests failed' },
+    });
+
+    expect(prompt).toContain('T001 failed review · Add auth');
   });
 
   it('parses review commands into public task review decisions', () => {
@@ -108,6 +167,13 @@ describe('task review prompt', () => {
   });
 
   it('treats bare Enter as the only implicit accept', () => {
+    expect(parseTaskReviewAnswer('')).toEqual({ action: 'continue' });
     expect(parseTaskReviewAnswer('   ')).toEqual({ action: 'continue' });
+  });
+
+  it('does not expose notes as a blank shortcut action key', () => {
+    const rows = buildTaskReviewPromptRows(request);
+    expect(actionRows(rows).some((r) => r.text.includes('[ ]'))).toBe(false);
+    expect(rows.some((r) => r.kind === 'note' && r.text.includes('notes <text>'))).toBe(true);
   });
 });

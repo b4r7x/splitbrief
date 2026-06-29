@@ -6,6 +6,9 @@ import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { buildCheckpointDetailRows } from './checkpoints.js';
 
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
 const checkpointSummary: CheckpointSummaryRollup = {
   count: 3,
   latestId: 'snap-post-2',
@@ -27,7 +30,7 @@ function CheckpointRows({
   isSmall?: boolean;
 }) {
   const theme = useTheme();
-  const rows = buildCheckpointDetailRows(checkpointSummary, 20, isSmall, theme);
+  const rows = buildCheckpointDetailRows(checkpointSummary, isSmall, theme);
   return (
     <Box flexDirection="column">
       {rows.map((row) => (
@@ -48,7 +51,7 @@ describe('buildCheckpointDetailRows', () => {
     const ui = renderFeature(<CheckpointRows checkpointSummary={checkpointSummary} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Checkpoints');
+    expect(frame).toContain('checkpoints');
     expect(frame).toContain('3 checkpoints');
     expect(frame).toContain('latest');
     expect(frame).toContain('post-task');
@@ -122,6 +125,34 @@ describe('buildCheckpointDetailRows', () => {
     expect(frame).not.toContain(longName);
     expect(frame).toContain('latest: snap-post-2');
     expect(frame).toContain('diptych snapshot diff snap-post-2');
+
+    ui.unmount();
+  });
+
+  it('strips terminal-control bytes from persisted checkpoint fields before render', () => {
+    terminalSizeStore.__testReset({ cols: 160, isSmall: false });
+
+    const ui = renderFeature(
+      <CheckpointRows
+        checkpointSummary={{
+          ...checkpointSummary,
+          latestId: `snap${ESC}]52;c;clip-id${BEL}-9`,
+          latestName: `post${ESC}[31m-task`,
+          preFinalReviewId: `snap-pre${ESC}]52;c;clip-pre${BEL}`,
+          latestRunCheckpointId: `snaprun${ESC}]52;c;clip-run${BEL}-9`,
+          diffCommand: `diptych snapshot diff ${ESC}]52;c;clip-diff${BEL}snap-9`,
+          restoreCommand: null,
+        }}
+      />,
+    );
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('snap');
+    expect(frame).not.toContain('clip-id');
+    expect(frame).not.toContain('clip-pre');
+    expect(frame).not.toContain('clip-run');
+    expect(frame).not.toContain('clip-diff');
+    expect(frame).not.toContain('52;c');
 
     ui.unmount();
   });

@@ -5,10 +5,15 @@ import {
   AlignedOptionRow,
   getAlignedOptionLabelWidth,
 } from '../../../pickers/aligned-option-row.js';
+import { CursorCell } from '../../../pickers/cursor-cell.js';
+import { NO_CURSOR } from '../../../pickers/cursor-glyph.js';
+import { SOFT_SEP } from '../../../separators.js';
+import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CompletionPanel } from '../completion-panel.js';
 
 const MAX_COMMAND_NAME_WIDTH = 18;
 const COMMAND_NAME_GAP = 2;
+const NARROW_FOOTER_COLS = 50;
 
 interface CommandCompletionMenuProps {
   filtered: RuntimeCommandDef[];
@@ -24,35 +29,41 @@ export function CommandCompletionMenu({
   maxVisible,
 }: CommandCompletionMenuProps) {
   const t = useTheme();
+  const cols = terminalSizeStore.use((s) => s.cols);
+  const footer =
+    cols < NARROW_FOOTER_COLS
+      ? ['↑↓', '⏎', 'esc'].join(SOFT_SEP)
+      : ['↑↓ select', 'tab fill', '⏎ run', 'esc close'].join(SOFT_SEP);
 
   return (
     <CompletionPanel
       items={filtered}
       selectedIndex={selectedIndex}
       maxVisible={maxVisible}
-      footer="↑↓ select  Tab fill  Enter run  Esc close"
-      isOpen={filtered.length > 0 || fuzzyMatch !== null}
+      footer={footer}
+      isOpen
       itemKey={(cmd) => cmd.name}
       renderRow={({ item: cmd, isSelected, rowBg, visibleItems }) => {
         const nameWidth = getCommandNameWidth(visibleItems.map((item) => item.name));
         return <CommandRow cmd={cmd} isSelected={isSelected} rowBg={rowBg} nameWidth={nameWidth} />;
       }}
       renderEmpty={(panelBg) => {
-        if (!fuzzyMatch || filtered.length > 0) return null;
+        if (filtered.length > 0) return null;
+        if (!fuzzyMatch) {
+          return <Text color={t.textDim}>{`${NO_CURSOR}no matching commands`}</Text>;
+        }
         const nameWidth = getCommandNameWidth([fuzzyMatch.name]);
         return (
-          <Box width="100%" backgroundColor={panelBg} paddingX={1}>
-            <AlignedOptionRow
-              lead={<Text color={t.textDim}>{'▸'}</Text>}
-              leadGap={1}
-              label={fuzzyMatch.name}
-              labelWidth={nameWidth}
-              labelColor={t.textDim}
-              detail={`${fuzzyMatch.description} (fuzzy)`}
-              detailColor={t.textDim}
-              backgroundColor={panelBg}
-            />
-          </Box>
+          <AlignedOptionRow
+            lead={<Text color={t.textDim}>{NO_CURSOR}</Text>}
+            leadGap={0}
+            label={fuzzyMatch.name}
+            labelWidth={nameWidth}
+            labelColor={t.textDim}
+            detail={`${fuzzyMatch.description} (fuzzy)`}
+            detailColor={t.textDim}
+            backgroundColor={panelBg}
+          />
         );
       }}
     />
@@ -78,21 +89,25 @@ function CommandRow({
   nameWidth: number;
 }) {
   const t = useTheme();
-  const shortcut = cmd.shortcut ? `[${cmd.shortcut}]` : null;
-  const details = shortcut ? `${cmd.description} ${shortcut}` : cmd.description;
 
   return (
-    <AlignedOptionRow
-      lead={<Text color={isSelected ? t.accent : t.textDim}>{isSelected ? '▸' : ' '}</Text>}
-      leadGap={1}
-      label={cmd.name}
-      labelWidth={nameWidth}
-      labelColor={isSelected ? t.accent : t.text}
-      labelBold={isSelected}
-      detail={details}
-      detailColor={t.textDim}
-      detailWrap={shortcut ? 'truncate-middle' : 'truncate-end'}
-      backgroundColor={rowBg}
-    />
+    <Box width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
+      <CursorCell isCursor={isSelected} dimWhenInactive />
+      <Box width={nameWidth} flexShrink={0} overflow="hidden" backgroundColor={rowBg}>
+        <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
+          {cmd.name}
+        </Text>
+      </Box>
+      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={rowBg}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {cmd.description}
+        </Text>
+      </Box>
+      {cmd.shortcut ? (
+        <Box flexShrink={0} marginLeft={1} backgroundColor={rowBg}>
+          <Text color={t.textDim}>{cmd.shortcut}</Text>
+        </Box>
+      ) : null}
+    </Box>
   );
 }

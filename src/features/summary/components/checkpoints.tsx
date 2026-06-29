@@ -1,9 +1,9 @@
 import { Text } from 'ink';
-import { LabeledRow } from '../../../components/labeled-row.js';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import { stripTerminalControls } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 
 function compactCheckpointCount(count: number): string {
@@ -24,12 +24,12 @@ function formatLatestCheckpoint(
   maxLength: number,
   isSmall: boolean,
 ): string {
-  if (isSmall) return summary.latestId ?? 'n/a';
+  if (isSmall) return stripTerminalControls(summary.latestId ?? 'n/a');
 
   const id = summary.latestId ?? 'n/a';
   const prefix = uniqueParts([summary.latestKind, summary.latestName]).join(' ');
   const text = prefix ? `${prefix} ${id}` : id;
-  return truncateWithEllipsis(text, maxLength);
+  return truncateWithEllipsis(stripTerminalControls(text), maxLength);
 }
 
 function formatRunStatus(summary: CheckpointSummaryRollup): string | null {
@@ -44,9 +44,9 @@ function commandFor(
   action: 'diff' | 'restore',
   checkpointId: string | null,
 ): string | null {
-  if (command) return command;
+  if (command) return stripTerminalControls(command);
   if (!checkpointId) return null;
-  return `diptych snapshot ${action} ${checkpointId}`;
+  return `diptych snapshot ${action} ${stripTerminalControls(checkpointId)}`;
 }
 
 function checkpointSummaryText(
@@ -56,15 +56,11 @@ function checkpointSummaryText(
 ): string {
   if (isSmall) return compactCheckpointCount(summary.count);
 
-  const parts = [countNoun(summary.count, 'checkpoint'), `latest: ${latest}`].filter(
-    (part): part is string => part !== null,
-  );
-  return parts.join(' | ');
+  return `${countNoun(summary.count, 'checkpoint')} · latest: ${latest}`;
 }
 
 export function buildCheckpointDetailRows(
   checkpointSummary: CheckpointSummaryRollup,
-  labelWidth: number,
   isSmall: boolean,
   theme: Theme,
 ): ScrollableDocumentRow[] {
@@ -77,6 +73,13 @@ export function buildCheckpointDetailRows(
     checkpointSummary.latestId,
   );
   const summaryText = checkpointSummaryText(checkpointSummary, latest, isSmall);
+  const safeLatestId = stripTerminalControls(checkpointSummary.latestId ?? 'n/a');
+  const safePreFinalReviewId = checkpointSummary.preFinalReviewId
+    ? stripTerminalControls(checkpointSummary.preFinalReviewId)
+    : '';
+  const safeLatestRunCheckpointId = checkpointSummary.latestRunCheckpointId
+    ? stripTerminalControls(checkpointSummary.latestRunCheckpointId)
+    : '';
   const runStatusColor =
     runStatus === 'rejected'
       ? theme.warning
@@ -86,13 +89,16 @@ export function buildCheckpointDetailRows(
 
   const rows: ScrollableDocumentRow[] = [
     {
+      key: 'checkpoints-heading',
+      node: <Text color={theme.textDim}>checkpoints</Text>,
+    },
+    {
       key: 'checkpoints-summary',
       node: (
-        <LabeledRow label="Checkpoints" labelWidth={labelWidth}>
-          <Text color={theme.textDim} wrap="truncate-end">
-            {summaryText}
-          </Text>
-        </LabeledRow>
+        <Text color={theme.textDim} wrap="truncate-end">
+          {'  '}
+          {summaryText}
+        </Text>
       ),
     },
   ];
@@ -101,22 +107,18 @@ export function buildCheckpointDetailRows(
     rows.push({
       key: 'checkpoints-latest',
       node: (
-        <LabeledRow label="" labelWidth={0}>
-          <Text color={theme.textDim} wrap="truncate-end">
-            latest: {checkpointSummary.latestId ?? 'n/a'}
-          </Text>
-        </LabeledRow>
+        <Text color={theme.textDim} wrap="truncate-end">
+          {'  '}latest: {safeLatestId}
+        </Text>
       ),
     });
     if (checkpointSummary.preFinalReviewId) {
       rows.push({
         key: 'checkpoints-pre',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={theme.textDim} wrap="truncate-end">
-              pre: {checkpointSummary.preFinalReviewId}
-            </Text>
-          </LabeledRow>
+          <Text color={theme.textDim} wrap="truncate-end">
+            {'  '}pre: {safePreFinalReviewId}
+          </Text>
         ),
       });
     }
@@ -127,11 +129,9 @@ export function buildCheckpointDetailRows(
       rows.push({
         key: 'checkpoints-latest-run',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={theme.textDim} wrap="truncate-end">
-              latest run: {checkpointSummary.latestRunCheckpointId}
-            </Text>
-          </LabeledRow>
+          <Text color={theme.textDim} wrap="truncate-end">
+            {'  '}latest run: {safeLatestRunCheckpointId}
+          </Text>
         ),
       });
     }
@@ -139,11 +139,9 @@ export function buildCheckpointDetailRows(
       rows.push({
         key: 'checkpoints-run-status',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={runStatusColor} wrap="truncate-end">
-              run status: {runStatus}
-            </Text>
-          </LabeledRow>
+          <Text color={runStatusColor} wrap="truncate-end">
+            {'  '}run status: {runStatus}
+          </Text>
         ),
       });
     }
@@ -152,11 +150,9 @@ export function buildCheckpointDetailRows(
       rows.push({
         key: 'checkpoints-pre',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={theme.textDim} wrap="truncate-end">
-              pre-final-review: {checkpointSummary.preFinalReviewId}
-            </Text>
-          </LabeledRow>
+          <Text color={theme.textDim} wrap="truncate-end">
+            {'  '}pre-final-review: {safePreFinalReviewId}
+          </Text>
         ),
       });
     }
@@ -167,11 +163,9 @@ export function buildCheckpointDetailRows(
       rows.push({
         key: 'checkpoints-latest-run',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={theme.textDim} wrap="truncate-end">
-              latest run: {checkpointSummary.latestRunCheckpointId}
-            </Text>
-          </LabeledRow>
+          <Text color={theme.textDim} wrap="truncate-end">
+            {'  '}latest run: {safeLatestRunCheckpointId}
+          </Text>
         ),
       });
     }
@@ -179,11 +173,9 @@ export function buildCheckpointDetailRows(
       rows.push({
         key: 'checkpoints-run-status',
         node: (
-          <LabeledRow label="" labelWidth={0}>
-            <Text color={runStatusColor} wrap="truncate-end">
-              run status: {runStatus}
-            </Text>
-          </LabeledRow>
+          <Text color={runStatusColor} wrap="truncate-end">
+            {'  '}run status: {runStatus}
+          </Text>
         ),
       });
     }
@@ -193,11 +185,9 @@ export function buildCheckpointDetailRows(
     rows.push({
       key: 'checkpoints-diff',
       node: (
-        <LabeledRow label="" labelWidth={0}>
-          <Text color={theme.textDim} wrap="truncate-end">
-            diff: {diffCommand}
-          </Text>
-        </LabeledRow>
+        <Text color={theme.textDim} wrap="truncate-end">
+          {'  '}diff: {diffCommand}
+        </Text>
       ),
     });
   }
@@ -205,11 +195,9 @@ export function buildCheckpointDetailRows(
     rows.push({
       key: 'checkpoints-restore',
       node: (
-        <LabeledRow label="" labelWidth={0}>
-          <Text color={theme.textDim} wrap="truncate-end">
-            restore: {restoreCommand}
-          </Text>
-        </LabeledRow>
+        <Text color={theme.textDim} wrap="truncate-end">
+          {'  '}restore: {restoreCommand}
+        </Text>
       ),
     });
   }
@@ -217,8 +205,8 @@ export function buildCheckpointDetailRows(
     key: 'checkpoints-restore-note',
     node: (
       <Text color={runStatus === 'rejected' ? runStatusColor : theme.textDim} wrap="truncate-end">
-        restore: hash-guarded; conflicts skipped{isSmall ? '' : ' by default'}; --force destructive
-        overwrite
+        {'  '}restore: hash-guarded · conflicts skipped{isSmall ? '' : ' by default'} · --force
+        destructive
       </Text>
     ),
   });

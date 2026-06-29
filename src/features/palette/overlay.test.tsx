@@ -21,6 +21,10 @@ import type {
 } from '../../core/runtime/commands/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
+import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
+import { glyph } from '../../lib/glyphs.js';
 import { CommandPaletteOverlay } from './overlay.js';
 
 function write(instance: ReturnType<typeof render>, chars: string): void {
@@ -40,8 +44,9 @@ function setWorkflowModeForTest(mode: WorkflowMode): boolean {
   return true;
 }
 
-function createTestCommands(): RuntimeCommandDef[] {
+function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommandDef[] {
   const ctx: RuntimeCommandContext = {
+    isAttached: opts.isAttached ?? false,
     openOverlay: overlayStore.open,
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
@@ -72,6 +77,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
+    copyTarget: async () => 'empty',
   };
   return createRuntimeCommands(ctx);
 }
@@ -93,8 +99,48 @@ function renderCommandPalette(): ReturnType<typeof render> {
   );
 }
 
+function renderAttachedCommandPalette(): ReturnType<typeof render> {
+  routerStore.navigate({
+    to: 'workflow',
+    feature: 'attached feature',
+    attach: { sockPath: '/tmp/diptych.sock', authToken: 'tok' },
+  });
+  const commands = createTestCommands({ isAttached: true });
+  return render(
+    <CommandPaletteOverlay
+      commands={commands}
+      onRuntimeCommand={(raw) =>
+        executeRuntimeCommand(commands, raw, {
+          screen: routerStore.get().screen,
+          phase: lifecycleStore.get().phase,
+          onError: feedbackStore.setError,
+        })
+      }
+      onWorkflowMode={setWorkflowModeForTest}
+    />,
+  );
+}
+
+const GROUP_HEADERS = ['commands', 'modes', 'pickers', 'tasks', 'sessions', 'actions'];
+
 function paletteResultRows(frame: string): string[] {
-  return frame.split('\n').filter((line) => /\[(command|mode|picker|session|task)\]/.test(line));
+  return frame.split('\n').filter((line) => {
+    // Strip the restored OverlayPanel frame (vertical borders + padding) so the inner text checks
+    // below see the bare row content; the ascii glyph tier renders the round border as `+-|`.
+    const text = stripAnsiStyles(line)
+      .replace(/^\s*[|│]\s*/u, '')
+      .replace(/\s*[|│]\s*$/u, '')
+      .trim();
+    if (text === '') return false;
+    if (/^[+-]+$/.test(text)) return false;
+    if (text.startsWith('palette')) return false;
+    if (text.startsWith(`${glyph('prompt')} `)) return false;
+    if (text.includes('navigate')) return false;
+    if (text === 'no matching commands') return false;
+    if (/^\d+\/\d+/.test(text)) return false;
+    if (GROUP_HEADERS.includes(text)) return false;
+    return true;
+  });
 }
 
 function rowContaining(rows: string[], text: string): string {
@@ -122,6 +168,7 @@ beforeEach(() => {
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
   terminalSizeStore.reset();
+  _resetMouseZones();
   overlayStore.open('command-palette');
 });
 
@@ -145,10 +192,10 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('Command Palette');
+    expect(frame).toContain('palette');
     expect(frame).toContain('navigate');
-    expect(frame).toContain('Esc close');
-    expect(frame).toMatch(/\[command\]|\[mode\]|\[picker\]/);
+    expect(frame).toContain('esc close');
+    expect(frame).toContain('commands');
     instance.unmount();
   });
 
@@ -161,14 +208,14 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    expect(instance.lastFrame() ?? '').toContain('hel_');
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(`hel${glyph('editCursor')}`);
     write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('he_');
-    expect(frame).not.toContain('hel_');
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+    expect(frame).toContain(`he${glyph('editCursor')}`);
+    expect(frame).not.toContain(`hel${glyph('editCursor')}`);
     instance.unmount();
   });
 
@@ -180,14 +227,14 @@ describe('CommandPaletteOverlay', () => {
     write(instance, 'hi😀');
     await tick(1);
     await tick(1);
-    expect(instance.lastFrame() ?? '').toContain('hi😀_');
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(`hi😀${glyph('editCursor')}`);
 
     write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('hi_');
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+    expect(frame).toContain(`hi${glyph('editCursor')}`);
     // No half of the surrogate pair left behind.
     expect(frame).not.toContain('\ud83d');
     expect(frame).not.toContain('\ude00');
@@ -255,7 +302,24 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     expect(overlayStore.get().active).toBe('help');
-    expect(commandPaletteMruStore.get().ids).toEqual(['command:Help']);
+    expect(commandPaletteMruStore.get().ids).toEqual(['command:/help']);
+    instance.unmount();
+  });
+
+  it('clicking a result row runs its action, records MRU, and closes the palette', async () => {
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('command-palette');
+    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
+
+    collectClickableZones({ cols: 100, rows: 50 }).get('palette:command:/help')?.();
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('help');
+    expect(commandPaletteMruStore.get().ids).toEqual(['command:/help']);
     instance.unmount();
   });
 
@@ -277,7 +341,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('[session]');
+    expect(frame).toContain('sessions');
     expect(frame).toContain('add login form');
     instance.unmount();
   });
@@ -311,7 +375,7 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('SuperUniquePaletteAction');
-    expect(frame).toContain('[custom]');
+    expect(frame).toContain('actions');
     instance.unmount();
   });
 
@@ -368,9 +432,12 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     if (showsTask) {
-      expect(frame).toContain('[task]');
+      expect(paletteResultRows(frame).some((row) => row.includes('uniquetasktitle123'))).toBe(true);
+      expect(frame).toContain('tasks');
     } else {
-      expect(frame).not.toContain('[task]');
+      expect(paletteResultRows(frame).some((row) => row.includes('uniquetasktitle123'))).toBe(
+        false,
+      );
     }
     instance.unmount();
   });
@@ -384,7 +451,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('[mode]');
+    expect(frame).toContain('modes');
     instance.unmount();
   });
 
@@ -410,11 +477,11 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'Settings');
+    write(instance, 'settings');
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toMatch(/Settings/);
+    expect(frame).toContain('pickers');
     instance.unmount();
   });
 
@@ -441,9 +508,11 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(24);
-    const resultLines = frame.split('\n').filter((line) => line.includes('[command]'));
+    const resultLines = paletteResultRows(frame).filter((line) =>
+      line.includes('/very-long-command'),
+    );
     expect(resultLines).toHaveLength(1);
-    expect(rowContaining(resultLines, '[command]')).toContain('…');
+    expect(resultLines[0]).toContain('…');
     expect(frame).not.toContain('TAIL_SENTINEL_PALETTE');
 
     instance.unmount();
@@ -458,13 +527,48 @@ describe('CommandPaletteOverlay', () => {
     const rows = paletteResultRows(instance.lastFrame() ?? '');
     expect(rows.length).toBeLessThanOrEqual(8);
 
-    const helpRow = rowContaining(rows, 'Help');
-    const settingsRow = rowContaining(rows, 'Settings');
-    expect(helpRow).toContain('Show help overlay');
-    expect(settingsRow).toContain('Planner');
+    const helpRow = rowContaining(rows, '/help');
+    const settingsRow = rowContaining(rows, '/settings');
+    expect(helpRow).toContain('show help overlay');
+    expect(settingsRow).toContain('planner');
     expect(settingsRow).toContain('settings');
 
     instance.unmount();
+  });
+
+  it('keeps the filter prompt and hints visible on a short terminal', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 12, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain(glyph('prompt'));
+    expect(frame).toContain('navigate');
+    expect(frame).toContain('esc close');
+    expect(frame).toMatch(/\d+\/\d+\s*↓/);
+
+    instance.unmount();
+  });
+
+  it('sizes the result window from terminal rows instead of a fixed window', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 12, isSmall: false });
+    const short = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+    const shortRows = paletteResultRows(short.lastFrame() ?? '');
+    short.unmount();
+
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
+    const tall = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+    const tallRows = paletteResultRows(tall.lastFrame() ?? '');
+    tall.unmount();
+
+    expect(shortRows.length).toBeGreaterThan(0);
+    expect(shortRows.length).toBeLessThan(tallRows.length);
+    expect(tallRows.length).toBeLessThanOrEqual(8);
   });
 
   it('keeps palette command shortcuts visible when descriptions overflow', async () => {
@@ -473,17 +577,35 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'Settings');
+    write(instance, 'settings');
     await tick(1);
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    const commandRows = paletteResultRows(frame).filter((line) => line.includes('[command]'));
-    expect(commandRows.length).toBeLessThanOrEqual(8);
+    const settingsRow = rowContaining(paletteResultRows(frame), 'Ctrl+,');
+    expect(settingsRow).toContain('/settings');
+    expect(settingsRow).toContain('Ctrl+,');
+    expect(frame).not.toContain('[Ctrl+,]');
+    expect(frame.split('\n').filter((line) => line.includes('Ctrl+,'))).toHaveLength(1);
 
-    const settingsRow = rowContaining(commandRows, 'Settings');
-    expect(settingsRow).toContain('[Ctrl+,]');
-    expect(frame.split('\n').filter((line) => line.includes('[Ctrl+,]'))).toHaveLength(1);
+    instance.unmount();
+  });
+
+  it('does not expose local config mutators for attached clients', async () => {
+    const instance = renderAttachedCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).not.toContain('modes');
+    expect(frame).not.toContain('planner');
+    expect(frame).not.toContain('implementer');
+    expect(frame).not.toContain('settings');
+
+    write(instance, 'instant');
+    await tick(1);
+    await tick(1);
+    expect(instance.lastFrame() ?? '').toContain('no matching commands');
 
     instance.unmount();
   });
@@ -511,13 +633,51 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('[session]');
+    expect(paletteResultRows(frame).some((row) => row.includes(uniqueFeature))).toBe(true);
+    expect(frame).toContain('sessions');
 
     write(instance, ENTER);
     await tick(1);
     await tick(1);
 
     expect(overlayStore.get().active).toBe('settings');
+
+    instance.unmount();
+  });
+
+  it('does not execute a hidden result, update MRU, or close on Enter when no row is visible', async () => {
+    const hiddenCommand: RuntimeCommandDef = {
+      kind: 'noarg',
+      name: '/hidden',
+      label: 'Hidden Palette Command',
+      description: 'must not run when clipped',
+      validScreens: ['home'],
+      handler: () => {
+        overlayStore.open('help');
+      },
+    };
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 1, isSmall: false });
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={[hiddenCommand]}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={setWorkflowModeForTest}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+    expect(frame).not.toContain('/hidden');
+    expect(frame).not.toContain('select');
+
+    write(instance, ENTER);
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('command-palette');
+    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
 
     instance.unmount();
   });

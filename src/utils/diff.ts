@@ -24,7 +24,7 @@ export function computeDiff(
     };
   }
 
-  // Files > 5000 lines: classic LCS DP is O(m×n) time AND memory; fall back to positional diff
+  // Files > 5000 lines: classic LCS DP is quadratic in time and memory; fall back to positional diff
   if (oldLines.length > LARGE_FILE_THRESHOLD || newLines.length > LARGE_FILE_THRESHOLD) {
     return diffLinesSimple(oldLines, newLines);
   }

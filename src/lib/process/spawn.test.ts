@@ -537,7 +537,7 @@ describe('spawnWithStdin', () => {
     const childProgram = [
       "const { spawn } = require('node:child_process');",
       "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
-      'console.log(gc.pid);',
+      'process.stdout.write(String(gc.pid) + "\\n");',
       'setTimeout(() => {}, 60_000);',
     ].join('');
 

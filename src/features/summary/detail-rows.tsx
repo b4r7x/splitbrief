@@ -3,7 +3,7 @@ import type { Theme } from '../../components/theme.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ScrollableDocumentRow } from '../../components/scrollable-document.js';
-import { statusGlyph } from '../../components/task-status-glyph.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { formatCost } from '../../core/formatting.js';
 import { getMethodDisplay } from '../../core/sessions/display.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
@@ -12,6 +12,7 @@ import { buildCostBreakdownRows } from './components/cost-breakdown.js';
 import { buildPhaseTimingRows } from './components/phase-timing.js';
 import { buildCheckpointDetailRows } from './components/checkpoints.js';
 import { buildReviewPacketDetailRows } from './components/review-packet.js';
+import { glyph } from '../../lib/glyphs.js';
 
 interface BuildSummaryDetailRowsInput {
   summary: Summary;
@@ -23,6 +24,14 @@ interface BuildSummaryDetailRowsInput {
   theme: Theme;
   isSmall: boolean;
   isShortSmall: boolean;
+}
+
+function spacerRow(key: string): ScrollableDocumentRow {
+  return { key, node: <Text> </Text> };
+}
+
+function sectionHeaderRow(key: string, label: string, theme: Theme): ScrollableDocumentRow {
+  return { key, node: <Text color={theme.textDim}>{label}</Text> };
 }
 
 export function buildSummaryDetailRows(
@@ -50,13 +59,16 @@ export function buildSummaryDetailRows(
     );
   }
 
-  if (summary.taskBreakdown) {
+  if (summary.taskBreakdown && summary.taskBreakdown.length > 0) {
+    if (rows.length > 0) rows.push(spacerRow('tasks-spacer'));
+    rows.push(sectionHeaderRow('tasks-heading', 'tasks', theme));
     for (const task of summary.taskBreakdown) {
       const method = getMethodDisplay(task.method, theme);
       rows.push({
         key: `task:${task.taskId}`,
         node: (
           <>
+            <Box width={2} flexShrink={0} />
             <Box width={6} flexShrink={0}>
               <Text color={theme.textDim} wrap="truncate-end">
                 {task.taskId}
@@ -64,11 +76,11 @@ export function buildSummaryDetailRows(
             </Box>
             <Box width={taskTitleWidth} flexShrink={0}>
               <Text wrap="truncate-end">
-                {truncateWithEllipsis(task.taskTitle, truncateLength)}
+                {truncateWithEllipsis(stripTerminalControls(task.taskTitle), truncateLength)}
               </Text>
             </Box>
             <Box width={10} flexShrink={0}>
-              <Text color={method.color} wrap="truncate-end">
+              <Text color={theme.textDim} wrap="truncate-end">
                 {method.text}
               </Text>
             </Box>
@@ -83,18 +95,22 @@ export function buildSummaryDetailRows(
   }
 
   if (summary.evidenceSummary) {
+    if (rows.length > 0) rows.push(spacerRow('evidence-spacer'));
     rows.push(...buildEvidenceDetailRows(summary, evidenceLedger, isSmall, theme));
   }
 
   if (summary.checkpointSummary) {
-    rows.push(...buildCheckpointDetailRows(summary.checkpointSummary, labelWidth, isSmall, theme));
+    if (rows.length > 0) rows.push(spacerRow('checkpoints-spacer'));
+    rows.push(...buildCheckpointDetailRows(summary.checkpointSummary, isSmall, theme));
   }
 
   if (summary.reviewPacket) {
+    if (rows.length > 0) rows.push(spacerRow('review-packet-spacer'));
     rows.push(...buildReviewPacketDetailRows(summary, sessionId, isSmall, theme));
   }
 
   if (summary.phaseTimings) {
+    if (rows.length > 0) rows.push(spacerRow('phase-spacer'));
     rows.push(...buildPhaseTimingRows(summary.phaseTimings, labelWidth, theme));
   }
 
@@ -109,28 +125,22 @@ function buildEvidenceDetailRows(
 ): ScrollableDocumentRow[] {
   if (!summary.evidenceSummary) return [];
 
-  const truncateLen = isSmall ? 28 : 60;
-  const titleWidth = isSmall ? 18 : 26;
+  const e = summary.evidenceSummary;
+  const truncateLen = isSmall ? 24 : 48;
+  const titleLen = isSmall ? 24 : 30;
   const rows: ScrollableDocumentRow[] = [
     {
       key: 'evidence-heading',
       node: (
-        <Text bold color={theme.text}>
-          Evidence
-        </Text>
-      ),
-    },
-    {
-      key: 'evidence-summary',
-      node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          ledger: {stripTerminalControls(summary.evidenceSummary.path)} ·{' '}
-          {summary.evidenceSummary.tasksWithValidationEvidence}/{summary.evidenceSummary.totalTasks}{' '}
-          validated · {summary.evidenceSummary.escalatedTasks} escalated ·{' '}
-          {summary.evidenceSummary.failedTasks} failed
+          evidence{'   '}
+          {stripTerminalControls(e.path)}
+          {SOFT_SEP}
+          {e.tasksWithValidationEvidence}/{e.totalTasks} validated{SOFT_SEP}
+          {e.escalatedTasks} escalated{SOFT_SEP}
+          {e.failedTasks} failed
         </Text>
       ),
-      lines: isSmall ? 1 : 1,
     },
   ];
 
@@ -152,51 +162,32 @@ function buildEvidenceDetailRows(
       task.observedEvidence.length > 0
         ? truncateWithEllipsis(stripTerminalControls(task.observedEvidence.join('; ')), truncateLen)
         : '—';
+    const done = task.status === 'done' && !task.escalated;
+    const marker = done ? glyph('check') : glyph('statusPending');
+    const markerColor = done ? theme.success : theme.textDim;
+    const detailParts = [`passed ${passed}`];
+    if (retries) detailParts.push(`retries ${retries}`);
+    detailParts.push(`expected ${expected}`);
+    detailParts.push(`observed ${observed}`);
 
     rows.push({
       key: `evidence-task:${task.id}`,
       node: (
         <Text>
-          <Text color={theme.textDim}>
-            {statusGlyph(task.escalated ? 'escalated' : task.status)} {task.id}{' '}
+          <Text color={markerColor}>
+            {'  '}
+            {marker} {task.id}{' '}
           </Text>
-          <Text>
-            {truncateWithEllipsis(stripTerminalControls(task.title), isSmall ? 24 : titleWidth - 6)}
-          </Text>
+          <Text>{truncateWithEllipsis(stripTerminalControls(task.title), titleLen)}</Text>
         </Text>
       ),
     });
     rows.push({
-      key: `evidence-task:${task.id}:passed`,
+      key: `evidence-task:${task.id}:detail`,
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          passed: {passed}
-        </Text>
-      ),
-    });
-    if (retries) {
-      rows.push({
-        key: `evidence-task:${task.id}:retries`,
-        node: (
-          <Text color={theme.textDim} wrap="truncate-end">
-            retries: {retries}
-          </Text>
-        ),
-      });
-    }
-    rows.push({
-      key: `evidence-task:${task.id}:expected`,
-      node: (
-        <Text color={theme.textDim} wrap="truncate-end">
-          expected: {expected}
-        </Text>
-      ),
-    });
-    rows.push({
-      key: `evidence-task:${task.id}:observed`,
-      node: (
-        <Text color={theme.textDim} wrap="truncate-end">
-          observed: {observed}
+          {'  '}
+          {glyph('treeLast')} {detailParts.join(SOFT_SEP)}
         </Text>
       ),
     });
@@ -207,8 +198,9 @@ function buildEvidenceDetailRows(
       key: 'evidence-final-review',
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          final review: {ledger.finalReview.status} (
-          {stripTerminalControls(ledger.finalReview.path)})
+          final review: {ledger.finalReview.status}
+          {SOFT_SEP}
+          {stripTerminalControls(ledger.finalReview.path)}
         </Text>
       ),
     });

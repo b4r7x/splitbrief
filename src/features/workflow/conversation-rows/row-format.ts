@@ -373,7 +373,7 @@ export function cardRowsWindowSlice(
           text: sanitizeRowDisplayText(segment.text),
           ...(segment.tone !== undefined ? { tone: segment.tone } : {}),
         }));
-  const labelTone: ConversationRowTone = input.labelTone ?? 'accent';
+  const labelTone: ConversationRowTone = input.labelTone ?? 'textDim';
 
   const rows: ConversationRow[] = [];
   const start = Math.max(0, input.windowStart);
@@ -385,10 +385,7 @@ export function cardRowsWindowSlice(
       rowIndex += 1;
       return;
     }
-    const segments: ConversationRowSegment[] = [];
-    segments.push({ text: '┌─ ', tone: 'border' });
-    segments.push(...fittedCardHeaderSegments({ label, labelTone, metaSegments, width: inner }));
-    segments.push({ text: ' ─┐', tone: 'border' });
+    const segments = fittedCardHeaderSegments({ label, labelTone, metaSegments, width: inner });
     rows.push(segmentedRow(`${input.keyPrefix}-top`, segments, 'card-top'));
     rowIndex += 1;
   };
@@ -407,16 +404,10 @@ export function cardRowsWindowSlice(
       end - rowIndex,
     );
     for (const { offset, text } of bodyWindow.lines) {
-      const padLength = Math.max(0, inner - displayWidth(text));
       rows.push(
         segmentedRow(
           `${input.keyPrefix}-body-${index}-${offset}`,
-          [
-            { text: '│ ', tone: 'border' },
-            ...cardBodyRowSegments(bodySegments, text, body, offset),
-            { text: ' '.repeat(padLength) },
-            { text: ' │', tone: 'border' },
-          ],
+          [{ text: '  ' }, ...cardBodyRowSegments(bodySegments, text, body, offset)],
           'card-body',
         ),
       );
@@ -427,18 +418,7 @@ export function cardRowsWindowSlice(
 
   if (rowIndex >= end) return rows;
   if (rowIndex >= start) {
-    const bottomPadLength = Math.max(0, inner);
-    rows.push(
-      segmentedRow(
-        `${input.keyPrefix}-bottom`,
-        [
-          { text: '└─', tone: 'border' },
-          { text: '─'.repeat(bottomPadLength), tone: 'border' },
-          { text: '─┘', tone: 'border' },
-        ],
-        'card-bottom',
-      ),
-    );
+    rows.push(blankRow(`${input.keyPrefix}-bottom`));
   }
 
   return rows;

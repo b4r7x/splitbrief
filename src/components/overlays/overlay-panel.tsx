@@ -1,9 +1,33 @@
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
+import { borderStyleFor } from '../../lib/glyphs.js';
+import { availableRows } from '../pickers/scroll-window.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth, getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
+
+export const OVERLAY_PANEL_BORDER_ROWS = 2;
+export const OVERLAY_PANEL_PADDING_Y_ROWS = 2;
+export const OVERLAY_PANEL_FRAME_ROWS = OVERLAY_PANEL_BORDER_ROWS + OVERLAY_PANEL_PADDING_Y_ROWS;
+export const OVERLAY_PANEL_BORDER_COLS = 2;
+export const OVERLAY_PANEL_PADDING_X_COLS = 4;
+export const OVERLAY_PANEL_FRAME_COLS = OVERLAY_PANEL_BORDER_COLS + OVERLAY_PANEL_PADDING_X_COLS;
+
+export function computeOverlayInnerRowCapacity(opts: {
+  terminalRows: number;
+  outerChromeRows?: number | undefined;
+}): number {
+  return availableRows({
+    rows: opts.terminalRows,
+    chromeRows: (opts.outerChromeRows ?? 0) + OVERLAY_PANEL_FRAME_ROWS,
+    floor: 0,
+  });
+}
+
+export function computeOverlayInnerWidth(outerWidth: number): number {
+  return Math.max(1, outerWidth - OVERLAY_PANEL_FRAME_COLS);
+}
 
 interface OverlayPanelProps {
   title?: string | undefined;
@@ -11,9 +35,6 @@ interface OverlayPanelProps {
   children: ReactNode;
   width?: number | 'auto' | undefined;
   maxWidth?: number | undefined;
-  bordered?: boolean | undefined;
-  paddingX?: number | undefined;
-  paddingY?: number | undefined;
 }
 
 export function OverlayPanel({
@@ -22,9 +43,6 @@ export function OverlayPanel({
   children,
   width: widthProp,
   maxWidth,
-  bordered = true,
-  paddingX = 2,
-  paddingY = 1,
 }: OverlayPanelProps) {
   const t = useTheme();
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
@@ -36,47 +54,35 @@ export function OverlayPanel({
       ? undefined
       : getClampedTerminalWidth({ cols, maxWidth: widthProp ?? resolvedMaxWidth });
 
+  // Surface titles are quiet dim metadata (§1.1 accent budget): the single accent cell per region is
+  // the focused row bar, never the title head. Real role titles (the runner picker) hand-roll their
+  // own accent rather than routing through OverlayPanel.
   const titleNode = title && (
-    <Box justifyContent="center" marginBottom={1}>
-      <Text bold color={t.accent}>
-        {title}
-      </Text>
+    <Box marginBottom={1}>
+      <Text color={t.textDim}>{title}</Text>
     </Box>
   );
 
   const hintNode = hint && (
-    <Box justifyContent="center" marginTop={1}>
+    <Box marginTop={1}>
       <Text color={t.textDim}>{hint}</Text>
-    </Box>
-  );
-
-  const inner = (
-    <Box flexDirection="column" width={resolvedWidth}>
-      {bordered ? (
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor={t.border}
-          paddingX={paddingX}
-          paddingY={paddingY}
-        >
-          {titleNode}
-          {children}
-          {hintNode}
-        </Box>
-      ) : (
-        <Box flexDirection="column">
-          {titleNode}
-          {children}
-          {hintNode}
-        </Box>
-      )}
     </Box>
   );
 
   return (
     <Box width={cols} height={rows} alignItems="center" justifyContent="center">
-      {inner}
+      <Box
+        flexDirection="column"
+        width={resolvedWidth}
+        borderStyle={borderStyleFor('round')}
+        borderColor={t.border}
+        paddingX={2}
+        paddingY={1}
+      >
+        {titleNode}
+        {children}
+        {hintNode}
+      </Box>
     </Box>
   );
 }

@@ -1,11 +1,7 @@
+import { clamp } from '../../../utils/math.js';
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
 export const WORKFLOW_CONTENT_PADDING_X = 1;
-export const MAX_REVIEW_COLUMN_WIDTH = 120;
-
-export function hasWorkflowConfig(events: readonly { type: string }[]): boolean {
-  return events.some((event) => event.type === 'workflow_config');
-}
 
 export interface SidebarWidthInput {
   cols: number;
@@ -27,7 +23,7 @@ export function getWorkflowContentWidth(input: SidebarWidthInput): number {
 }
 
 export function getReviewColumnWidth(contentWidth: number): number {
-  return Math.max(0, Math.min(contentWidth, MAX_REVIEW_COLUMN_WIDTH));
+  return Math.max(0, contentWidth);
 }
 
 export interface WorkflowReviewColumn {
@@ -81,60 +77,52 @@ export interface WorkflowContentRectInput {
   cols: number;
   rows: number;
   inputRows: number;
-  hasConfig: boolean;
+  railExtraRows: number;
   sidebarVisible: boolean;
   isSmall: boolean;
   promptRows?: number;
 }
 
 const REVIEW_HEADER_ROWS = 2;
-const REVIEW_FOOTER_ROWS = 1;
-const REVIEW_SCROLL_CHROME_ROWS = 2;
+const REVIEW_FOOTER_ROWS = 2;
 
-function getWorkflowMiddleRows(
-  rows: number,
-  inputRows: number,
-  hasConfig: boolean,
-  cols?: number,
-): number {
-  return Math.max(0, rows - getChromeHeight(inputRows, hasConfig, cols));
+function getWorkflowMiddleRows(rows: number, inputRows: number, railExtraRows: number): number {
+  return Math.max(0, rows - getChromeHeight(inputRows, railExtraRows));
 }
 
 export function clampWorkflowPromptRows(
   rows: number,
   inputRows: number,
-  hasConfig: boolean,
+  railExtraRows: number,
   promptRows: number,
-  cols?: number,
 ): number {
-  return Math.min(Math.max(0, promptRows), getWorkflowMiddleRows(rows, inputRows, hasConfig, cols));
+  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows, railExtraRows));
 }
 
 export function getWorkflowViewportHeight(
   rows: number,
   inputRows: number,
-  hasConfig: boolean,
+  railExtraRows = 0,
   promptRows = 0,
-  cols?: number,
 ): number {
   return Math.max(
     0,
-    getWorkflowMiddleRows(rows, inputRows, hasConfig, cols) -
-      clampWorkflowPromptRows(rows, inputRows, hasConfig, promptRows, cols),
+    getWorkflowMiddleRows(rows, inputRows, railExtraRows) -
+      clampWorkflowPromptRows(rows, inputRows, railExtraRows, promptRows),
   );
 }
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, hasConfig, sidebarVisible, isSmall, promptRows = 0 } = input;
+  const { cols, rows, inputRows, railExtraRows, sidebarVisible, isSmall, promptRows = 0 } = input;
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
     sidebarVisible,
     isSmall,
   });
   const width = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
-  const height = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows, cols);
+  const height = getWorkflowViewportHeight(rows, inputRows, railExtraRows, promptRows);
   const left = sidebarWidth + WORKFLOW_CONTENT_PADDING_X + 1;
-  const top = getContentTopRow(hasConfig, cols);
+  const top = getContentTopRow(railExtraRows, height);
   const right = width > 0 ? left + width - 1 : left;
   const bottom = height > 0 ? top + height - 1 : top;
   return {
@@ -157,15 +145,9 @@ export function getReviewContentLayout(
   renderedLineCount: number,
 ): ReviewContentLayout {
   const availableRows = Math.max(0, containerHeight - REVIEW_HEADER_ROWS);
-  const contentWithoutFooter = Math.max(0, availableRows - REVIEW_SCROLL_CHROME_ROWS);
-  const showFooter =
-    renderedLineCount > contentWithoutFooter &&
-    availableRows >= REVIEW_SCROLL_CHROME_ROWS + REVIEW_FOOTER_ROWS;
+  const showFooter = renderedLineCount > availableRows && availableRows >= REVIEW_FOOTER_ROWS;
   return {
-    contentHeight: Math.max(
-      0,
-      availableRows - REVIEW_SCROLL_CHROME_ROWS - (showFooter ? REVIEW_FOOTER_ROWS : 0),
-    ),
+    contentHeight: Math.max(0, availableRows - (showFooter ? REVIEW_FOOTER_ROWS : 0)),
     showFooter,
   };
 }

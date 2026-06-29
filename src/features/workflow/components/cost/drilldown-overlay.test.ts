@@ -7,7 +7,6 @@ import {
   buildPhaseRows,
   buildTaskRows,
   CostDrilldownOverlay,
-  renderBar,
   formatCacheCreateTokens,
   formatInputOutputSplit,
   formatTotalTokens,
@@ -128,7 +127,6 @@ describe('CostDrilldownOverlay', () => {
 
     expect(frame).toContain('planning');
     expect(frame).toContain('$18.00');
-    expect(frame).toContain('█');
     ui.unmount();
   });
 
@@ -164,7 +162,6 @@ describe('CostDrilldownOverlay', () => {
 
     expect(frame).toContain('implementing');
     expect(frame).toContain('$18.00');
-    expect(frame).toContain('█');
     ui.unmount();
   });
 });
@@ -181,18 +178,6 @@ describe('buildTaskRows', () => {
       task3: { totalTokens: 50, title: 'Third task' },
     });
     expect(rows.map((r) => r.taskId)).toEqual(['task2', 'task1', 'task3']);
-  });
-});
-
-describe('renderBar', () => {
-  it.each([
-    [0, 0, 10, ''],
-    [5, 0, 10, ''],
-    [10, 10, 10, '██████████'],
-    [5, 10, 10, '█████░░░░░'],
-    [0, 10, 10, '░░░░░░░░░░'],
-  ] as const)('renderBar(%i, %i, %i) → %s', (value, max, width, expected) => {
-    expect(renderBar({ value, max, width })).toBe(expected);
   });
 });
 
@@ -216,8 +201,8 @@ describe('formatCacheCreateTokens', () => {
 
 describe('formatTotalTokens', () => {
   it.each([
-    [500, '500 tokens (total)'],
-    [2500, '2.5k tokens (total)'],
+    [500, '500 tok'],
+    [2500, '2.5k tok'],
   ] as const)('formatTotalTokens(%i) → %s', (tokens, expected) => {
     expect(formatTotalTokens(tokens)).toBe(expected);
   });

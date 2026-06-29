@@ -8,6 +8,7 @@ interface UseStaticSelectorOptions<T> {
   onCancel?: (() => void) | undefined;
   isActive?: boolean | undefined;
   initialIndex?: number | undefined;
+  isIndexActionable?: ((index: number) => boolean) | undefined;
 }
 
 interface UseStaticSelectorResult {
@@ -20,6 +21,7 @@ export function useStaticSelector<T>({
   onCancel,
   isActive = true,
   initialIndex = 0,
+  isIndexActionable,
 }: UseStaticSelectorOptions<T>): UseStaticSelectorResult {
   const [selectedIndex, setSelectedIndex] = useState(clampIndex(initialIndex, items.length));
   const effectiveIndex = clampIndex(selectedIndex, items.length);
@@ -45,6 +47,7 @@ export function useStaticSelector<T>({
       }
       if (key.return) {
         const index = selectedRef.current;
+        if (isIndexActionable && !isIndexActionable(index)) return;
         const item = items[index];
         if (item !== undefined) onSelect(item, index);
         return;

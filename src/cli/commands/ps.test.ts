@@ -260,6 +260,45 @@ describe('psCommand', () => {
     expect(lines[1]).toContain('1m');
   });
 
+  it('strips terminal controls from session ids and skips invalid session directories', async () => {
+    const startMs = Date.now();
+    const safeId = '2025-04-01-safe-session';
+    putSession(safeId, {
+      version: 1,
+      pid: 42,
+      startTimeMs: startMs,
+      lastAliveMs: startMs,
+      sessionId: safeId,
+      mode: 'standard',
+      feature: 'feature',
+    });
+    const unsafeId = 'bad\u001b]0;pwned\u0007session';
+    putSession(unsafeId, {
+      version: 1,
+      pid: 43,
+      startTimeMs: startMs,
+      lastAliveMs: startMs,
+      sessionId: unsafeId,
+      mode: 'standard',
+      feature: 'feature',
+    });
+    putSession('../escape', {
+      version: 1,
+      pid: 44,
+      startTimeMs: startMs,
+      lastAliveMs: startMs,
+      sessionId: '../escape',
+      mode: 'standard',
+      feature: 'feature',
+    });
+
+    const lines = await collectPsOutput();
+
+    expect(lines.some((line) => line.includes(safeId))).toBe(true);
+    expect(lines.join('\n')).not.toContain('\u001b');
+    expect(lines.join('\n')).not.toContain('../escape');
+  });
+
   it('throws cliError with exit code 1 on Windows', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 

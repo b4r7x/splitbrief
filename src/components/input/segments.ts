@@ -1,3 +1,5 @@
+import { stripTerminalControls } from '../../utils/display-text.js';
+
 export type SegmentType = 'placeholder' | 'highlight' | 'cursor' | undefined;
 
 export interface Segment {
@@ -94,7 +96,7 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
     if (!isPlaceholder && mask) {
       return normalized.replace(/[^\n]/g, mask);
     }
-    return expandTabs(normalized, tabSize);
+    return stripTerminalControls(expandTabs(normalized, tabSize), { preserveLineBreaks: true });
   };
 
   if (!value) {

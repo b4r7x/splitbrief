@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { makePlannerText, makeTaskStart } from '#testing/helpers/events.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { eventRows } from './event-rows.js';
 import { rowText } from './row-format.js';
@@ -20,16 +21,12 @@ function requireRow(rows: ConversationRow[], index: number): ConversationRow {
 function makeTaskStarted(
   overrides: Partial<Extract<EngineEvent, { type: 'task_started' }>> = {},
 ): Extract<EngineEvent, { type: 'task_started' }> {
-  return {
-    type: 'task_started',
+  return makeTaskStart({
     ts: 0,
-    phase: 'implementing',
     taskId: taskId('T001'),
     title: 'Route ordinary task',
-    index: 0,
     total: 1,
     file: 'src/app.ts',
-    action: 'modify',
     tool: 'codex',
     implementerProfile: 'cheap-cloud',
     contextFit: 'fits',
@@ -37,14 +34,13 @@ function makeTaskStarted(
     contextLength: 32_768,
     routingReason: 'selected cheapest capable profile',
     ...overrides,
-  };
+  });
 }
 
 function makeMarkdownPlannerText(
   overrides: Partial<Extract<EngineEvent, { type: 'planner_text' }>> = {},
 ): Extract<EngineEvent, { type: 'planner_text' }> {
-  return {
-    type: 'planner_text',
+  return makePlannerText({
     ts: 0,
     phase: 'planning',
     content: 'markdown',
@@ -57,7 +53,7 @@ function makeMarkdownPlannerText(
       'Smoke check.',
     ].join('\n'),
     ...overrides,
-  };
+  });
 }
 
 describe('eventRows task header and planner phase header', () => {
@@ -74,10 +70,10 @@ describe('eventRows task header and planner phase header', () => {
     const first = requireRow(rows, 0);
     expect(first.kind).toBe('task-header');
     expect(first.segments).toEqual([
-      { text: 'T1', tone: 'accent', bold: true },
+      { text: 'T1', tone: 'text', bold: true },
       { text: ' Route ordinary task', tone: 'text', bold: true },
       {
-        text: '  src/app.ts (modify) · Codex · profile cheap-cloud · fit fits · why selected cheapest capable ',
+        text: '  src/app.ts (modify) · Codex · profile cheap-cloud · fit fits · why selected cheapest capable',
         tone: 'textDim',
       },
     ]);

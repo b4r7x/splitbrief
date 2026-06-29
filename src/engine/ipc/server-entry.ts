@@ -12,7 +12,11 @@ import { createIpcWorkflowBridge } from './workflow-bridge.js';
 import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { readIpcServerArgsFileConfined, type IpcServerArgs } from './server-args.js';
-import { writeActive, clearActive } from '../../core/sessions/lifecycle.js';
+import {
+  writeActive,
+  clearActive,
+  featureForTranscriptPolicy,
+} from '../../core/sessions/lifecycle.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { loadState } from '../../core/state/persistence.js';
 import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle.js';
@@ -46,10 +50,10 @@ export function getArgv(processArgv: string[]): IpcServerArgs {
   return readConfinedArgsFileOrExit(argsFile);
 }
 
-export async function main(argv: IpcServerArgs, dir: string) {
-  bootstrapOtel();
-  mkdirSync(dir, { recursive: true });
-
+export async function writeStartupLockfile(
+  dir: string,
+  argv: IpcServerArgs,
+): Promise<{ authToken: string; startedAt: number }> {
   const now = Date.now();
   const authToken = randomBytes(32).toString('hex');
   await writeLockfile(dir, {
@@ -58,9 +62,19 @@ export async function main(argv: IpcServerArgs, dir: string) {
     lastAliveMs: now,
     sessionId: argv.sessionId,
     mode: argv.mode,
-    feature: argv.feature,
+    // `diptych ps` prints this field, so it is a consumer surface: redact it under
+    // persistTranscript:false. The raw feature still reaches the planner via argv.feature.
+    feature: featureForTranscriptPolicy(argv.feature, argv.persistTranscript ?? true),
     authToken,
   });
+  return { authToken, startedAt: now };
+}
+
+export async function main(argv: IpcServerArgs, dir: string) {
+  bootstrapOtel();
+  mkdirSync(dir, { recursive: true });
+
+  const { authToken, startedAt } = await writeStartupLockfile(dir, argv);
 
   clearStaleSession(argv.projectDir);
   writeActive({ projectDir: argv.projectDir, sessionId: argv.sessionId });
@@ -77,9 +91,11 @@ export async function main(argv: IpcServerArgs, dir: string) {
   });
   emitConfigWarnings(warnings);
   const ipcServer = await startIpcServer({
+    // Attached TUI clients connect here; user_input and queue_clear are the runtime-command IPC
+    // bridges documented in docs/SLASH-COMMANDS-REFERENCE.md § Attached clients.
     sessionId: argv.sessionId,
     sessionDir: dir,
-    startedAt: now,
+    startedAt,
     mode: argv.mode,
     feature: argv.feature,
     authToken,

@@ -60,7 +60,7 @@ describe('buildPaletteResults', () => {
       'Run it',
       'Standard mode',
       'Pick file',
-      'Task T-001',
+      'task T-001',
       'running',
       '',
     ]);

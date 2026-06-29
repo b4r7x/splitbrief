@@ -28,6 +28,7 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  maxVisible: number;
   setActiveColumn: (col: 'left' | 'right') => void;
   setSelectedLeftKey: (key: string | null) => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
@@ -114,6 +115,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (key.return) {
+    if (ctx.maxVisible <= 0) return;
     if (ctx.leftActive) {
       if (!ctx.leftCurrentItem || ctx.isDisabled) return;
       if (ctx.isSpecial) {

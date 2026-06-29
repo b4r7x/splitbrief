@@ -9,9 +9,9 @@ If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-comma
 Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtime/commands/dispatch.ts` resolves commands in two steps:
 
 1. Exact match on `name` or any `aliases`. Example: `/config` resolves to `/settings`.
-2. Fuzzy fallback through `src/core/runtime/commands/lookup.ts`. Example: `/mde` resolves to `/mode`. Commands with no match return an error.
+2. If no exact match, `suggestRuntimeCommand` in `src/core/runtime/commands/lookup.ts` may suggest a close command in the error message — it does not auto-execute. Example: `/mde` returns `Unknown command: /mde. Did you mean /mode?` without running `/mode`.
 
-Each command declares `validScreens`. The four screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
+Each command declares `validScreens`. The four screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere". Attached clients use `ATTACHED_AVAILABLE_COMMANDS` as an allow-list for completion, palette, and help so config/workflow mutations cannot report false local success (see [Attached clients](#attached-clients-start---detach) below).
 
 Three rewind-family commands also enforce a `phaseGuard`. The guards are the single source of truth for when a rewind can run:
 
@@ -21,7 +21,27 @@ Three rewind-family commands also enforce a `phaseGuard`. The guards are the sin
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, wired up for the TUI in `src/app/command-context.ts`. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-There are 29 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
+### Attached clients (`start --detach`)
+
+When the workflow route carries an `attach` socket (`routerStore` → `route.attach`), the TUI is a thin viewer over a detached IPC server (`src/engine/ipc/server-entry.ts` → `runWorkflowLoop`). `buildCommandContext` sets `ctx.isAttached`, and `createRuntimeCommands` exposes only `ATTACHED_AVAILABLE_COMMANDS` (`src/core/runtime/commands/registry.ts`) in completion, palette, and help.
+
+| Hidden command | Why | Server-side equivalent |
+|---|---|---|
+| `/revise-spec`, `/revise-plan`, `/redo-task` | Rewind mutates orchestrator state on the server | Type the revision as composer text (`user_input` IPC) or approve/reject at the next prompt |
+| `/attach`, `/detach` | Pending image attachments live in the client's `attachmentsStore` | Attach before `start --detach`, or restart without detach |
+| `/yolo` | Toggles tiered approvals in local config | Change `approval.enabled` in config and restart the server |
+
+Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/sidebar`) or have an explicit IPC bridge:
+
+| Command | IPC message | Handler |
+|---|---|---|
+| Composer text (normal mode) | `user_input` | `useIpcClient.sendUserInput` → `workflow-bridge.onUserInput` |
+| `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `workflow/screen.tsx` before dispatch) |
+| Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop.makeCallbacks` |
+
+Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, and `/implementer` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
+
+The slash commands — enumerated by [`src/core/runtime/commands/registry.ts`](../src/core/runtime/commands/registry.ts), the single source of truth — cover overlays, workflow mode/tool selection, clipboard copy, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -233,7 +253,22 @@ Commands that open an overlay for interactive selection. None of these mutate st
 
 ## Output and artifacts
 
-Commands that produce or manage on-disk artifacts: handoff packs for external agents, transcript compaction, the repo-map cache, and pending image attachments.
+Commands that produce, copy, or manage output and artifacts: clipboard copies, handoff packs for external agents, transcript compaction, the repo-map cache, and pending image attachments.
+
+### `/copy [message|brief|path|command|cost]`
+
+- **Purpose**: Copy a value you are reviewing to the system clipboard, so you do not have to select terminal text. Grabs the planner's last message, a Task Brief, a brief's file path, the planner command, or the cost summary.
+- **Screens**: `workflow` only. Not available on `home` — copy targets read workflow review state.
+- **Args**: optional target. One of `message`, `brief`, `path`, `command`, `cost` (the `COPY_TARGETS` tuple in `src/core/runtime/commands/types.ts`). Defaults to `message` when omitted. Any other value prints `"Invalid copy target: <x>. Valid: message, brief, path, command, cost"`.
+  - `message` — the planner's most recent assistant text.
+  - `brief` — the focused (or top-of-window) Task Brief's source text.
+  - `path` — the focused brief's file path, relative to the project directory.
+  - `command` — the configured planner runner command.
+  - `cost` — the current cost summary text.
+- **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
+- **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; value resolution in `src/features/workflow/copy/resolve.ts`; clipboard delivery in `src/lib/clipboard/clipboard.ts` via the wiring in `src/app/command-context.ts`.
+- **See also**: `/export`, `/handoff`.
 
 ### `/handoff <target> [task-id]`
 
@@ -268,9 +303,7 @@ Commands that produce or manage on-disk artifacts: handoff packs for external ag
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; export pipeline in `src/engine/export/`.
 - **See also**: `/handoff`, `/sessions`.
 
-### `/queue [show|clear]`
-
-See [Workflow control](#workflow-control) above. Listed under workflow control because it mutates the planner message queue, but conceptually also a queued-output management command.
+See [/queue](#queue-showclear) under [Workflow control](#workflow-control).
 
 ### `/repomap rebuild`
 
@@ -446,7 +479,14 @@ When the review pane has a `filePath` set (e.g. inspecting a spec or plan), thes
 
 ### Brief review editing
 
-During simple Task Brief review, typed commands use `src/features/workflow/review-parser.ts`:
+During simple Task Brief review, typed commands use `src/features/workflow/review-parser.ts`. Row focus and `y` yank are handled by `src/features/workflow/hooks/use-brief-review-keys.ts` (mounted from `WorkflowScreen`):
+
+| Key | Action | Source |
+|---|---|---|
+| `↑` / `↓` | Select a Task Brief row (review mode only) | `use-brief-review-keys.ts` |
+| `y` | Copy the focused brief (`/copy brief` parity) | `use-brief-review-keys.ts` |
+
+Typed commands:
 
 | Command | Action |
 |---|---|
@@ -500,6 +540,7 @@ Alphabetical, for fast lookup:
 - [`/activity`](#activity) — expand or collapse the latest hidden activity rows.
 - [`/compact-transcript`](#compact-transcript) — summarize older persisted transcript turns.
 - [`/config`](#settings-alias-config) — alias for `/settings`.
+- [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
 - [`/detach`](#detach-indexid) — remove a pending image attachment.
 - [`/effort`](#effort-lowmediumhighxhigh) — set planner reasoning effort.
 - [`/export`](#export) — export the session as an HTML report.

@@ -205,6 +205,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
       getState: opts.getTrackedState,
       setState: opts.setTrackedState,
       bus: opts.bus,
+      serialize,
     }),
   );
 }

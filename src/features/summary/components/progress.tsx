@@ -1,12 +1,11 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { renderMeterBar } from '../../../utils/meter-bar.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 
 interface SummaryProgressProps {
   completed: number;
   total: number;
   completedByLocal: number;
-  escalatedToPlanner: number;
   failed: number;
   isSmall: boolean;
 }
@@ -15,7 +14,6 @@ export function SummaryProgress({
   completed,
   total,
   completedByLocal,
-  escalatedToPlanner,
   failed,
   isSmall,
 }: SummaryProgressProps) {
@@ -24,38 +22,25 @@ export function SummaryProgress({
   if (total === 0) {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color={t.textDim}>No task briefs compiled</Text>
+        <Text color={t.textDim}>no task briefs compiled</Text>
         {failed > 0 && <Text color={t.error}>{failed} failed</Text>}
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text color={t.success}>{renderMeterBar(completed, total, isSmall ? 20 : 30)}</Text>
-        <Text>
-          {' '}
-          {completed}/{total}
-        </Text>
-      </Box>
-      <Box gap={isSmall ? 1 : 2} overflow="hidden">
-        <Text color={t.success} wrap="truncate-end">
-          {completedByLocal} local
-        </Text>
-        <Text color={t.warning} wrap="truncate-end">
-          {escalatedToPlanner} escalated
-        </Text>
-        {failed > 0 && (
-          <Text color={t.error} wrap="truncate-end">
+    <Box marginTop={1} overflow="hidden">
+      <Text color={t.textDim} wrap="truncate-end">
+        {completed}/{total}
+        {isSmall ? '' : ' tasks'}
+        {SOFT_SEP}
+        {completedByLocal} local
+        {failed > 0 ? (
+          <Text color={t.error}>
+            {SOFT_SEP}
             {failed} failed
           </Text>
-        )}
-      </Box>
-      <Text color={t.textDim} wrap="truncate-end">
-        {isSmall
-          ? 'local = cheap · escalated = planner'
-          : 'local = cheap implementer, escalated = planner fallback'}
+        ) : null}
       </Text>
     </Box>
   );

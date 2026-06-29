@@ -54,7 +54,7 @@ export function addEvent(event: EngineEvent): void {
   // noise that would restart old phase spans.
   if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
 
-  // Ordering invariant: retained event log → tasks → tokens → lifecycle → operations.
+  // Ordering invariant: retained event log, then tasks, tokens, lifecycle, and operations.
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
   // consistent commit with all workflow stores updated.

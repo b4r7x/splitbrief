@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatModelName } from '../../../core/model-display.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
@@ -42,7 +43,7 @@ describe('eventRows', () => {
     expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('PLAN');
     expect(rows[0]?.segments).toContainEqual({ text: 'PLAN', tone: 'planner', bold: true });
     expect(rowText(rows[1] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
-    expect(rows[1]?.segments).toContainEqual({ text: 'T001', tone: 'accent', bold: true });
+    expect(rows[1]?.segments).toContainEqual({ text: 'T001', tone: 'text', bold: true });
     expect(text).toContain('Description');
     expect(text).toContain('// No exported signature.');
     expect(text).not.toContain('│');
@@ -51,7 +52,7 @@ describe('eventRows', () => {
     expect(text).not.toContain('```');
     expect(heading?.segments).toContainEqual({
       text: 'Description',
-      tone: 'markdownHeading',
+      tone: 'text',
       bold: true,
     });
   });
@@ -122,13 +123,13 @@ describe('eventRows', () => {
     expect(rows.map(rowText)).toEqual(['task failed  T001']);
     expect(rows[0]?.kind).toBe('summary');
     expect(rows[0]?.segments).toContainEqual({ text: 'task failed  ', tone: 'error' });
-    expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'error' });
+    expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'textDim' });
   });
 
   it.each([
     ['continued', 'success'],
     ['retry-current-task', 'success'],
-    ['skipped-current-task', 'warning'],
+    ['skipped-current-task', 'textDim'],
     ['aborted', 'error'],
   ] as const)('tones recovery_resolved outcome %s as %s', (outcome, tone) => {
     const event: EngineEventOf<'recovery_resolved'> = {
@@ -150,8 +151,10 @@ describe('eventRows', () => {
 
     const topRow = rows.find((rowValue) => rowValue.kind === 'card-top');
     expect(topRow).toBeDefined();
-    expect(topRow?.segments[0]?.tone).toBe('border');
-    expect(topRow?.segments[1]?.tone).toBe(tone);
+    expect(topRow?.segments[0]?.tone).toBe(tone);
+    if (topRow !== undefined) {
+      expect(rowText(topRow)).not.toContain('┌');
+    }
     expect(rows.map(rowText).join('\n')).toContain(`${outcome} via retry-same-worker`);
   });
 
@@ -314,7 +317,7 @@ describe('eventRows', () => {
 
     expect(rows.map(rowText)).toEqual(['RUN   npm run typecheck']);
     expect(rows[0]?.segments).toEqual([
-      { text: 'RUN   ', tone: 'info' },
+      { text: 'RUN   ', tone: 'accent' },
       { text: 'npm run typecheck', tone: 'textDim' },
     ]);
     expect(rows[0]?.kind).toBe('activity');
@@ -413,7 +416,9 @@ describe('eventRows', () => {
     const lines = rows.map(rowText);
     const text = lines.join('\n');
 
-    expect(text).toContain('why current code reduced to fit cheap-cloud context');
+    expect(text.replace(/\s+/g, ' ')).toContain(
+      'why current code reduced to fit cheap-cloud context',
+    );
     expect(text).not.toContain('cost Selected unknown cost tier');
     expect(lines.every((line) => line.length <= 52)).toBe(true);
   });
@@ -531,5 +536,123 @@ describe('eventRows', () => {
       expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
       expect(rows.every((rowValue) => rowValue.kind.length > 0)).toBe(true);
     }
+  });
+
+  it.each([
+    {
+      name: 'error',
+      event: {
+        type: 'error',
+        ts: 0,
+        phase: 'implementing',
+        message: 'disk write boundary exceeded',
+      },
+      stateWord: 'error',
+      body: 'disk write boundary exceeded',
+    },
+    {
+      name: 'budget_exceeded',
+      event: {
+        type: 'budget_exceeded',
+        ts: 0,
+        phase: 'implementing',
+        currentCost: 12,
+        maxBudget: 10,
+      },
+      stateWord: 'budget',
+      body: 'Exceeded',
+    },
+    {
+      name: 'recovery_action_failed',
+      event: {
+        type: 'recovery_action_failed',
+        ts: 0,
+        phase: 'implementing',
+        issueId: 'issue-1',
+        reason: 'validation-failed',
+        action: 'retry-same-worker',
+        message: 'worker unavailable',
+      },
+      stateWord: 'recovery',
+      body: 'worker unavailable',
+    },
+    {
+      name: 'brief_quality_failed',
+      event: {
+        type: 'brief_quality_failed',
+        ts: 0,
+        phase: 'planning',
+        score: 0.5,
+        errorCount: 2,
+        warningCount: 1,
+      },
+      stateWord: 'brief quality',
+      body: 'failed',
+    },
+    {
+      name: 'task_full_fail',
+      event: {
+        type: 'task_full_fail',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+      },
+      stateWord: 'task failed',
+      body: 'T001',
+    },
+    {
+      name: 'implementer_generate_failed',
+      event: {
+        type: 'implementer_generate_failed',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        model: 'qwen2.5-coder:7b',
+      },
+      stateWord: 'failed',
+      body: formatModelName('qwen2.5-coder:7b'),
+    },
+  ] satisfies {
+    name: string;
+    event: EngineEvent;
+    stateWord: string;
+    body: string;
+  }[])('keeps only the state word error-toned and dims the cause for $name', ({
+    event,
+    stateWord,
+    body,
+  }) => {
+    const segments = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    }).flatMap((rowValue) => rowValue.segments);
+
+    const errorSegments = segments.filter((segment) => segment.tone === 'error');
+    const dimSegments = segments.filter((segment) => segment.tone === 'textDim');
+
+    expect(errorSegments.some((segment) => segment.text.includes(stateWord))).toBe(true);
+    expect(errorSegments.every((segment) => !segment.text.includes(body))).toBe(true);
+    expect(dimSegments.some((segment) => segment.text.includes(body))).toBe(true);
+  });
+
+  it('renders user_message rows without the heavy-angle prompt marker', () => {
+    const text = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'implementing',
+        text: 'ship the redesign',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('ship the redesign');
+    expect(text).not.toContain('❯');
   });
 });

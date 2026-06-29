@@ -49,7 +49,7 @@ describe('buildPaletteSources command items', () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      label: 'Help',
+      label: '/help',
       description: 'Show help',
       shortcut: 'ctrl+/',
       availableOn: ['home'],
@@ -83,7 +83,7 @@ describe('buildPaletteSources command items', () => {
       },
     ]);
 
-    expect(items.map((item) => item.label)).toEqual(['Visible']);
+    expect(items.map((item) => item.label)).toEqual(['/visible']);
   });
 
   it('runs command item actions through the runtime command callback', () => {
@@ -132,12 +132,33 @@ describe('buildPaletteSources command items', () => {
       buildCommandSources(commands, noop, { screen: 'workflow', phase: 'planning' }).map(
         (item) => item.label,
       ),
-    ).toEqual(['Visible']);
+    ).toEqual(['/visible']);
     expect(
       buildCommandSources(commands, noop, { screen: 'workflow', phase: 'implementing' }).map(
         (item) => item.label,
       ),
-    ).toEqual(['Redo Task', 'Visible']);
+    ).toEqual(['/redo-task', '/visible']);
+  });
+});
+
+describe('buildPaletteSources attached-client boundary', () => {
+  it('omits local config mutation sources while attached', () => {
+    const sources = buildPaletteSources({
+      commands: [],
+      screen: 'workflow',
+      config: makeConfig(),
+      phase: 'implementing',
+      tasks: [],
+      sessions: [],
+      projectDir: '/tmp/diptych-test',
+      onRuntimeCommand: noop,
+      onWorkflowMode: noop,
+      isAttached: true,
+    });
+
+    expect(sources.modeItems).toEqual([]);
+    expect(sources.pickerItems.map((item) => item.label)).toEqual(['sessions']);
+    expect(sources.customItems).toEqual([]);
   });
 });
 

@@ -16,6 +16,7 @@ function makeInputMode(answers: string | string[]): UseInputModeResult {
   return {
     mode: 'normal',
     hint: '',
+    questionEpoch: 0,
     setReviewMode: async () => ({ approved: false }),
     setQuestionMode: async () => queue.shift() ?? '',
     resolve: () => {},

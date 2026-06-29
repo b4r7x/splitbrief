@@ -11,7 +11,8 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { printCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive, writeActive } from '../../core/sessions/lifecycle.js';
-import { loadState } from '../../core/state/persistence.js';
+import { loadState, consoleWorkflowFeature } from '../../core/state/persistence.js';
+import { loadConfig } from '../../core/config/load/io.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import {
@@ -86,10 +87,10 @@ export async function resumeSavedSession(args: {
   }
 
   console.log(
-    `Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
+    `Resuming: ${consoleWorkflowFeature(state.feature, loadConfig(projectDir).config.workflow.persistTranscript)} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
   );
 
-  const { useFullscreen, useMouse } = await deps.setupWorkflow(opts);
+  const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
 
   await deps.initStores(projectDir, opts);
   if (state.selectedSkills && state.selectedSkills.length > 0) {
@@ -100,6 +101,7 @@ export async function resumeSavedSession(args: {
   await deps.renderApp(createElement(App), {
     fullscreen: useFullscreen,
     mouse: useMouse,
+    hover: useHover,
     projectDir,
   });
 }
@@ -155,7 +157,6 @@ export async function continueCommand(
   opts: { projectDir: string } & WorkflowOpts,
   deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
-  assertNotWindows();
   assertModeFlagsExclusive(opts);
   assertWorktreeStartOnly(opts);
 
@@ -165,10 +166,15 @@ export async function continueCommand(
   const status = await deps.checkServerStatus(sessDir);
 
   if (status.alive) {
+    // Live attach speaks the IPC/attach lifecycle that only the non-Windows path supports;
+    // interrupted sessions below take the platform-neutral resume path instead.
+    assertNotWindows();
     if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
     if (status.data.authToken === undefined) {
       throw cliError(`session ${sessionId} does not support authenticated attach`, 1);
     }
+    // renderAttachClient takes explicit fullscreen/mouse/hover from setupWorkflow.
+    const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
     await renderAttachClient(
       {
         projectDir: opts.projectDir,
@@ -178,6 +184,7 @@ export async function continueCommand(
         authToken: status.data.authToken,
       },
       deps,
+      { fullscreen: useFullscreen, mouse: useMouse, hover: useHover },
     );
     return;
   }

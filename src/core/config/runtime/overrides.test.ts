@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { applyCLIOverrides, applyApproveOverride } from './overrides.js';
+import { applyCLIOverrides, applyApproveOverride, resolveCliWorkflowMode } from './overrides.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveImplementerProfiles } from '../accessors/implementer-profiles.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -11,6 +11,18 @@ function buildBaseConfig(): Config {
   return c;
 }
 const baseConfig: Config = buildBaseConfig();
+
+describe('resolveCliWorkflowMode', () => {
+  it('uses the config workflow mode when --mode is omitted', () => {
+    const config: Config = { ...baseConfig, workflow: { ...baseConfig.workflow, mode: 'quick' } };
+    expect(resolveCliWorkflowMode({}, config)).toBe('quick');
+  });
+
+  it('prefers an explicit --mode override', () => {
+    const config: Config = { ...baseConfig, workflow: { ...baseConfig.workflow, mode: 'quick' } };
+    expect(resolveCliWorkflowMode({ mode: 'speckit' }, config)).toBe('speckit');
+  });
+});
 
 describe('applyCLIOverrides — approve / auto', () => {
   it('--approve <level> sets workflow.approve', () => {

@@ -461,8 +461,8 @@ describe('/activity command', () => {
   it('labels scroll and activity commands for palette and help surfaces', () => {
     const commands = createRuntimeCommands(makeCtx());
 
-    expect(commands.find((command) => command.name === '/scroll')?.label).toBe('Scroll');
-    expect(commands.find((command) => command.name === '/activity')?.label).toBe('Activity');
+    expect(commands.find((command) => command.name === '/scroll')?.label).toBe('scroll');
+    expect(commands.find((command) => command.name === '/activity')?.label).toBe('activity');
     expect(commands.find((command) => command.name === '/activity')?.shortcut).toBe(
       '/activity, Ctrl+A',
     );
@@ -486,7 +486,7 @@ describe('/queue command', () => {
     expect(feedback).toBe('Queue: 2 messages pending');
   });
 
-  it('clears pending queue messages', () => {
+  it('clears pending queue messages', async () => {
     let feedback: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -497,7 +497,7 @@ describe('/queue command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/queue clear', 'workflow', noop);
+    await executeRuntimeCommand(commands, '/queue clear', 'workflow', noop);
 
     expect(feedback).toBe('Cleared 3 queued messages');
   });
@@ -572,8 +572,8 @@ describe('/sidebar command', () => {
     const command = createRuntimeCommands(makeCtx()).find((entry) => entry.name === '/sidebar');
 
     expect(command).toMatchObject({
-      label: 'Sidebar',
-      description: 'Show or hide workflow sidebar',
+      label: 'sidebar',
+      description: 'show or hide workflow sidebar',
       validScreens: ['workflow'],
     });
     expect(command?.shortcut).toBeUndefined();

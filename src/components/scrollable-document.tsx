@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Box, useInput } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { resolveScrollKey, type ScrollKeyAction } from '../core/keybindings/scroll.js';
+import { clamp } from '../utils/math.js';
+import { glyph } from '../lib/glyphs.js';
+import { getScrollbarThumb, getScrollViewportContentWidth, scrollbarCell } from './scrollbar.js';
+import { useTheme } from './theme.js';
 import { ScrollIndicator } from './scroll-indicator.js';
 
 export interface ScrollableDocumentRow {
@@ -18,6 +22,9 @@ interface ScrollableDocumentProps {
   scrollOffset?: number | undefined;
   onScrollOffsetChange?: ((offset: number) => void) | undefined;
   placeholder?: ReactNode;
+  showScrollIndicators?: boolean | undefined;
+  showScrollbar?: boolean | undefined;
+  width?: number | undefined;
 }
 
 function rowLineCount(row: ScrollableDocumentRow): number {
@@ -38,7 +45,7 @@ export function clampScrollableDocumentOffset(
   height: number,
 ): number {
   const maxOffset = Math.max(0, lineCount - normalizeVisibleHeight(height));
-  return Math.max(0, Math.min(Math.floor(offset), maxOffset));
+  return clamp(Math.floor(offset), 0, maxOffset);
 }
 
 interface VisibleScrollableDocumentRow {
@@ -131,7 +138,11 @@ export function ScrollableDocument({
   scrollOffset: controlledScrollOffset,
   onScrollOffsetChange,
   placeholder,
+  showScrollIndicators = true,
+  showScrollbar = false,
+  width,
 }: ScrollableDocumentProps) {
+  const t = useTheme();
   const [internalScrollOffset, setInternalScrollOffset] = useState(0);
   const requestedOffset = controlledScrollOffset ?? internalScrollOffset;
   const windowState = getScrollableDocumentWindow(rows, requestedOffset, height);
@@ -174,30 +185,75 @@ export function ScrollableDocument({
     { isActive },
   );
 
+  const contentWidth =
+    showScrollbar && width !== undefined
+      ? Math.max(1, getScrollViewportContentWidth(width))
+      : undefined;
+  const showGutter = showScrollbar && windowState.lineCount > windowState.visibleHeight;
+  const thumb = getScrollbarThumb({
+    offset: windowState.offset,
+    lineCount: windowState.lineCount,
+    visibleHeight: windowState.visibleHeight,
+  });
+
+  const viewport = (
+    <Box
+      flexDirection="column"
+      height={windowState.visibleHeight}
+      width={contentWidth}
+      overflow="hidden"
+    >
+      {windowState.visibleRows.map(({ row, skipLines, visibleLines }) => {
+        const lines = rowLineCount(row);
+        if (skipLines === 0 && visibleLines === lines && lines === 1) {
+          return <Box key={row.key}>{row.node}</Box>;
+        }
+        return (
+          <Box key={row.key} flexDirection="column" height={visibleLines} overflow="hidden">
+            <Box marginTop={-skipLines} flexShrink={0}>
+              {row.node}
+            </Box>
+          </Box>
+        );
+      })}
+      {rows.length === 0 && placeholder}
+    </Box>
+  );
+
   return (
     <Box flexDirection="column">
-      <Box height={1} overflow="hidden">
-        <ScrollIndicator show={windowState.showScrollUp} direction="up" />
-      </Box>
-      <Box flexDirection="column" height={windowState.visibleHeight} overflow="hidden">
-        {windowState.visibleRows.map(({ row, skipLines, visibleLines }) => {
-          const lines = rowLineCount(row);
-          if (skipLines === 0 && visibleLines === lines && lines === 1) {
-            return <Box key={row.key}>{row.node}</Box>;
-          }
-          return (
-            <Box key={row.key} flexDirection="column" height={visibleLines} overflow="hidden">
-              <Box marginTop={-skipLines} flexShrink={0}>
-                {row.node}
-              </Box>
+      {showScrollIndicators && (
+        <Box height={1} overflow="hidden">
+          <ScrollIndicator show={windowState.showScrollUp} direction="up" />
+        </Box>
+      )}
+      {showScrollbar ? (
+        <Box flexDirection="row" height={windowState.visibleHeight} overflow="hidden">
+          {viewport}
+          {showGutter && (
+            <Box flexDirection="column" flexShrink={0} marginLeft={1}>
+              {Array.from({ length: windowState.visibleHeight }, (_, rowIndex) => {
+                const onThumb = scrollbarCell(rowIndex, thumb);
+                return (
+                  <Text
+                    key={`scrollbar-${rowIndex}`}
+                    color={onThumb ? t.accent : t.scrollIndicator}
+                  >
+                    {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
+                  </Text>
+                );
+              })}
             </Box>
-          );
-        })}
-        {rows.length === 0 && placeholder}
-      </Box>
-      <Box height={1} overflow="hidden">
-        <ScrollIndicator show={windowState.showScrollDown} direction="down" />
-      </Box>
+          )}
+        </Box>
+      ) : (
+        viewport
+      )}
+      {showScrollIndicators && (
+        <Box height={1} overflow="hidden">
+          <ScrollIndicator show={windowState.showScrollDown} direction="down" />
+        </Box>
+      )}
     </Box>
   );
 }

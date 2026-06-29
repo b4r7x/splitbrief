@@ -13,6 +13,7 @@ function matchesCommandQuery(cmd: RuntimeCommandDef, query: string): boolean {
 }
 
 interface UseCommandCompletionOptions {
+  // Pre-filtered by createRuntimeCommands (e.g. attached clients expose ATTACHED_AVAILABLE_COMMANDS).
   commands: RuntimeCommandDef[];
   currentScreen: Screen;
   value: string;
@@ -30,6 +31,7 @@ interface UseCommandCompletionResult {
 }
 
 interface LatestCommandState {
+  value: string;
   currentScreen: Screen;
   selectionKey: string;
   itemCount: number;
@@ -67,19 +69,24 @@ export function useCommandCompletion({
   const phase = lifecycleStore.use((s) => s.phase);
 
   const commandMode = value.startsWith('/');
-  const query = '/' + value.slice(1).toLowerCase();
+  const whitespaceIndex = value.search(/\s/);
+  const hasArgs = whitespaceIndex >= 0;
+  const commandToken = hasArgs ? value.slice(0, whitespaceIndex) : value;
+  const query = commandToken.toLowerCase();
   const validCommands = commands.filter((cmd) => {
     if (!cmd.validScreens.includes(currentScreen)) return false;
     if (cmd.phaseGuard && !cmd.phaseGuard(phase)) return false;
     return true;
   });
-  const filtered = commandMode
+  // Suggestions match the command token only and close once arguments begin, so the menu never
+  // swallows Enter for an argument'd command — the composer submits the raw line to dispatch instead.
+  const showSuggestions = commandMode && !hasArgs;
+  const filtered = showSuggestions
     ? validCommands.filter((cmd) => matchesCommandQuery(cmd, query))
     : [];
 
   const fuzzyMatch =
-    commandMode && filtered.length === 0 ? suggestRuntimeCommand(validCommands, query) : null;
-  const showSuggestions = commandMode && (filtered.length > 0 || fuzzyMatch !== null);
+    showSuggestions && filtered.length === 0 ? suggestRuntimeCommand(validCommands, query) : null;
   const selectionKey = buildCommandSelectionKey({
     currentScreen,
     phase,
@@ -89,6 +96,7 @@ export function useCommandCompletion({
   });
   const { effectiveSelectedIndex, latestRef, moveSelection } =
     useCompletionSelection<LatestCommandState>({
+      value,
       currentScreen,
       selectionKey,
       itemCount: filtered.length,
@@ -112,12 +120,13 @@ export function useCommandCompletion({
       }
     },
     onReturn: (l) => {
-      const command = l.filtered[l.effectiveSelectedIndex]?.name ?? l.fuzzyMatch?.name;
-      if (command) {
-        inputHistoryStore.push(command);
-        onRuntimeCommand(command);
-        setValue('');
-      }
+      const selected = l.filtered[l.effectiveSelectedIndex];
+      // A highlighted command runs; otherwise submit the raw slash line so the dispatcher decides
+      // (unknown-command feedback, fuzzy suggestion) instead of silently running the fuzzy guess.
+      const command = selected ? selected.name : l.value;
+      inputHistoryStore.push(command);
+      onRuntimeCommand(command);
+      setValue('');
     },
     onSelect: () => {},
     onEscape: () => setValue(''),

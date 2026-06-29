@@ -8,10 +8,11 @@ import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { filterSession } from '../../core/sessions/search.js';
 
-const SESSION_PICKER_HINT = '\u2191\u2193 navigate  Type filter  Enter resume/view  Esc close';
+const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_SEP}\u23ce resume/view${SOFT_SEP}esc close`;
 
 export function SessionsPicker() {
   const t = useTheme();
@@ -32,7 +33,7 @@ export function SessionsPicker() {
   }, []);
 
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
-  const hint = selectionError ? `Error: ${selectionError}` : SESSION_PICKER_HINT;
+  const hint = selectionError ? selectionError : SESSION_PICKER_HINT;
 
   return (
     <FilterableList
@@ -40,15 +41,16 @@ export function SessionsPicker() {
       filterFn={filterSession}
       getKey={(session) => session.id}
       onConfirm={(session) => handleSessionSelect(session, projectDir)}
-      title={`Sessions (${sessions.length})`}
+      title={`sessions${SOFT_SEP}${sessions.length}`}
       hint={hint}
-      bordered={false}
       chromeRows={12}
       listFloor={0}
       width={panelWidth}
       placeholder={
         <Text color={t.textDim}>
-          {sessions.length === 0 ? '  No sessions found.' : '  No matching sessions'}
+          {sessions.length === 0
+            ? '  no sessions yet — run a task to start one'
+            : '  no matching sessions'}
         </Text>
       }
       renderItem={(session, { isCursor }) => (

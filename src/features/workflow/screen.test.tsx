@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -18,6 +19,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from './prompt-grace.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
 import { sessionDir } from '../../core/paths.js';
+import { glyph } from '../../lib/glyphs.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -33,10 +35,12 @@ const { openApprovalPrompt } = await import('../../stores/approval-prompt/prompt
 const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prompt.js');
 const { createInitialState, transition } = await import('../../core/state/machine.js');
 const { saveState } = await import('../../core/state/persistence.js');
+const { abortStore } = await import('../../stores/workflow/abort.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const ENTER = '\r';
 const CTRL_E = '\x05';
+
 const ipcServers: IpcServer[] = [];
 const ipcTempDirs: string[] = [];
 
@@ -136,7 +140,7 @@ describe('WorkflowScreen key arbitration', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('Approve once');
+    expect(ui.lastFrame() ?? '').toContain('approve once');
 
     // A single 's' must produce exactly one semantic action: the prompt's session-approve.
     // If the composer were still focused it would also append 's' to the input box.
@@ -396,7 +400,7 @@ describe('WorkflowScreen key arbitration', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('Cost Approval Required');
+    expect(ui.lastFrame() ?? '').toContain('approve?');
 
     ui.stdin.write('n');
     await expect(decision).resolves.toBe(false);
@@ -412,7 +416,7 @@ describe('WorkflowScreen key arbitration', () => {
     ui.stdin.write('j');
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} j`);
 
     ui.unmount();
   });
@@ -591,7 +595,7 @@ describe('WorkflowScreen key arbitration', () => {
     ui.stdin.write('j');
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toMatch(/>\s+j(\s|$)/m);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} j`);
 
     ui.unmount();
   });
@@ -638,8 +642,14 @@ describe('WorkflowScreen key arbitration', () => {
         expect(ui.lastFrame() ?? '').toContain('approve | Ctrl+E/e edit-file');
       });
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Ctrl+C abort');
+      // The Ctrl+C cluster left the resting InputFooter; it now lives only in the armed FeedbackRow.
+      expect(frame).not.toContain('Ctrl+C');
       expect(frame).not.toContain('tab sections');
+
+      abortStore.arm('exit');
+      await tick(20);
+      expect(ui.lastFrame() ?? '').toContain('Ctrl+C again to exit');
+      abortStore.clear();
 
       ui.unmount();
     } finally {

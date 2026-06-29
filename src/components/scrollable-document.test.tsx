@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Box, Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { glyph } from '../lib/glyphs.js';
 import { ScrollableDocument } from './scrollable-document.js';
 
 const HOME = '\u001b[H';
@@ -151,6 +152,45 @@ describe('ScrollableDocument', () => {
     await tick(20);
 
     expect(ui.lastFrame() ?? '').toContain('empty-doc');
+
+    ui.unmount();
+  });
+
+  it('renders an internal scrollbar gutter when showScrollbar overflows', async () => {
+    const ui = renderFeature(
+      <ScrollableDocument
+        rows={makeRows(8)}
+        height={3}
+        width={20}
+        showScrollbar
+        showScrollIndicators={false}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(glyph('scrollThumb'));
+    expect(frame).toContain(glyph('scrollTrack'));
+    expect(frame).toContain('line-0');
+
+    ui.unmount();
+  });
+
+  it('omits the scrollbar gutter when content fits the viewport', async () => {
+    const ui = renderFeature(
+      <ScrollableDocument
+        rows={makeRows(2)}
+        height={5}
+        width={20}
+        showScrollbar
+        showScrollIndicators={false}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(glyph('scrollThumb'));
+    expect(frame).not.toContain(glyph('scrollTrack'));
 
     ui.unmount();
   });

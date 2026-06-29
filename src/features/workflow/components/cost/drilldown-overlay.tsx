@@ -1,6 +1,9 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
+import { ListRow } from '../../../../components/list-row.js';
+import { SOFT_SEP } from '../../../../components/separators.js';
+import { getResponsivePanelWidth } from '../../../../utils/terminal-width.js';
 import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import type {
   PerTaskTokens,
@@ -10,6 +13,7 @@ import type {
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache.js';
 import { formatCost, formatTokensShort } from '../../../../core/formatting.js';
+import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { formatCacheHitPct } from '../../layout/cost-chrome.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import {
@@ -23,7 +27,7 @@ import {
 } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
 import { PhaseSchema, type Phase } from '../../../../core/schemas/enums.js';
-import { renderMeterBar } from '../../../../utils/meter-bar.js';
+import { glyph } from '../../../../lib/glyphs.js';
 
 type PhaseRowData = PhaseTokens & { phase: Phase };
 type PricingContext = NonNullable<ReturnType<typeof tokensStore.get>['pricingContext']>;
@@ -79,12 +83,6 @@ function attemptHasTokens(attempt: TaskAttemptTokens): boolean {
   );
 }
 
-export function renderBar(options: { value: number; max: number; width: number }): string {
-  const { value, max, width } = options;
-  if (max === 0) return '';
-  return renderMeterBar(value, max, width);
-}
-
 export function formatCacheCreateTokens(cacheCreate: number): string {
   if (cacheCreate === 0) return '';
   if (cacheCreate > 1000) return `create ${formatTokensShort(cacheCreate)}`;
@@ -105,9 +103,9 @@ export function formatInputOutputSplit(options: {
 
 export function formatTotalTokens(totalTokens: number): string {
   if (totalTokens > 1000) {
-    return `${formatTokensShort(totalTokens)} tokens (total)`;
+    return `${formatTokensShort(totalTokens)} tok`;
   }
-  return `${totalTokens} tokens (total)`;
+  return `${totalTokens} tok`;
 }
 
 function formatAttemptFit(attempt: TaskAttemptTokens): string {
@@ -175,10 +173,12 @@ function formatTaskAttemptMetadata(
   const pricing = formatAttemptPricingLabel(attempt, pricingContext);
   const routingReason =
     attempt.routingReason && shouldShowRoutingReason(attempt, pricing)
-      ? `why ${attempt.routingReason}`
+      ? `why ${sanitizeTerminalDisplayText(attempt.routingReason)}`
       : '';
   const parts = [
-    attempt.implementerProfile ? `profile ${attempt.implementerProfile}` : '',
+    attempt.implementerProfile
+      ? `profile ${sanitizeTerminalDisplayText(attempt.implementerProfile)}`
+      : '',
     fit,
     pricing,
     routingReason,
@@ -324,9 +324,19 @@ function pricingForPhase(
   return null;
 }
 
+function SectionHeader({ label, width }: { label: string; width: number }) {
+  const t = useTheme();
+  const dashes = Math.max(0, width - label.length - 1);
+  return (
+    <Box height={1} overflow="hidden" flexShrink={0} width={width}>
+      <Text color={t.textDim}>{`${label} ${glyph('divider').repeat(dashes)}`}</Text>
+    </Box>
+  );
+}
+
 export function CostDrilldownOverlay() {
   const t = useTheme();
-  const [tokens, { cols }] = useStores(tokensStore, terminalSizeStore);
+  const [tokens, { cols, isSmall }] = useStores(tokensStore, terminalSizeStore);
   const { perPhase, perTask, pricingContext } = tokens;
 
   const plannerPricing = pricingContext
@@ -343,14 +353,12 @@ export function CostDrilldownOverlay() {
     calculatePhaseRowCost(row, plannerPricing, implementerPricing),
   );
   const taskRows = buildTaskRows(perTask);
-  const maxCost = phaseRows[0]?.cost ?? 0;
-  const maxTaskTokens = taskRows[0]?.totalTokens ?? 0;
-  const barWidth = Math.max(10, Math.min(30, cols - 40));
+  const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
 
   return (
-    <OverlayPanel title="Cost Breakdown" hint="press any key to dismiss" width="auto">
+    <OverlayPanel title="cost · breakdown" hint="esc · any key to close" width="auto">
       <Box flexDirection="column">
-        <Text color={t.textDim}>— by phase —</Text>
+        <SectionHeader label="by phase" width={panelWidth} />
         {phaseRows.map((row) => {
           const split = hasRoleSplit(row);
           const plannerActive = roleHasTokens(row, 'planner');
@@ -374,56 +382,52 @@ export function CostDrilldownOverlay() {
                   pricingForPhase(row.phase, plannerPricing, implementerPricing)?.pricingMode ??
                   null,
               });
+          const preview = [
+            formatInputOutputSplit({
+              inputTokens: row.inputTokens,
+              outputTokens: row.outputTokens,
+            }),
+            cacheText === 'cache n/a' ? '' : cacheText,
+            row.cacheCreateTokens > 0 ? formatCacheCreateTokens(row.cacheCreateTokens) : '',
+          ]
+            .filter(Boolean)
+            .join(SOFT_SEP);
           return (
-            <Box key={row.phase} flexDirection="column" marginBottom={1}>
-              <Box gap={1}>
-                <Text color={t.text}>{row.phase.slice(0, 18).padEnd(18)}</Text>
-                <Text color={t.accent}>
-                  {renderBar({ value: row.cost, max: maxCost, width: barWidth })}
-                </Text>
-                <Text color={t.textDim}>{costLabel}</Text>
-              </Box>
-              <Box marginLeft={2} gap={2}>
-                <Text color={t.textDim}>
-                  {formatInputOutputSplit({
-                    inputTokens: row.inputTokens,
-                    outputTokens: row.outputTokens,
-                  })}
-                </Text>
-                {cacheText !== 'cache n/a' && <Text color={t.textDim}>{cacheText}</Text>}
-                {row.cacheCreateTokens > 0 && (
-                  <Text color={t.textDim}>{formatCacheCreateTokens(row.cacheCreateTokens)}</Text>
-                )}
-              </Box>
+            <Box key={row.phase} flexDirection="column">
+              <ListRow label={row.phase} metadata={costLabel} labelWidth={18} />
+              {preview !== '' ? (
+                <Box marginLeft={4}>
+                  <Text color={t.textDim}>{preview}</Text>
+                </Box>
+              ) : null}
             </Box>
           );
         })}
-        {phaseRows.length === 0 && <Text color={t.textDim}>No phase data yet.</Text>}
+        {phaseRows.length === 0 && <Text color={t.textDim}>no phase data yet</Text>}
 
         <Box height={1} />
-        <Text color={t.textDim}>— by task —</Text>
+        <SectionHeader label="by task" width={panelWidth} />
         {taskRows.map((row) => (
           <Box key={row.taskId} flexDirection="column">
-            <Box gap={1}>
-              <Text color={t.text}>{row.title.slice(0, 20).padEnd(20)}</Text>
-              <Text color={t.accent}>
-                {renderBar({ value: row.totalTokens, max: maxTaskTokens, width: barWidth })}
-              </Text>
-              <Text color={t.textDim}>{formatTotalTokens(row.totalTokens)}</Text>
-            </Box>
-            {(row.attempts ?? []).map((attempt, index) => {
+            <ListRow
+              label={row.title}
+              metadata={formatTotalTokens(row.totalTokens)}
+              labelWidth={20}
+            />
+            {(row.attempts ?? []).map((attempt, attemptIndex) => {
               const metadata = formatTaskAttemptMetadata(attempt, pricingContext);
               if (!metadata) return null;
-              const prefix = (row.attempts?.length ?? 0) > 1 ? `attempt ${index + 1} · ` : '';
+              const prefix =
+                (row.attempts?.length ?? 0) > 1 ? `attempt ${attemptIndex + 1} · ` : '';
               return (
-                <Box key={`${row.taskId}-${index}`} marginLeft={2}>
+                <Box key={`${row.taskId}-${attemptIndex}`} marginLeft={4}>
                   <Text color={t.textDim}>{prefix + metadata}</Text>
                 </Box>
               );
             })}
           </Box>
         ))}
-        {taskRows.length === 0 && <Text color={t.textDim}>No task data yet.</Text>}
+        {taskRows.length === 0 && <Text color={t.textDim}>no task data yet</Text>}
       </Box>
     </OverlayPanel>
   );

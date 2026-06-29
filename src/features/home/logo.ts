@@ -20,6 +20,8 @@ export const COMPACT_LOGO = [
   '        |_|       |__/',
 ].join('\n');
 
+export const LOGO_TAGLINE = 'plan expensively · build cheaply';
+
 const LOGOS: Record<LogoTier, string> = { full: FULL_LOGO, compact: COMPACT_LOGO };
 
 export function getLogo(tier: LogoTier): string {

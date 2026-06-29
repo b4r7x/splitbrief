@@ -16,7 +16,7 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
   - `2` — reserved for guardrail hooks (e.g. `.claude/hooks/block-git-commits.sh`). The CLI itself does not raise `2`; observe it in subprocess output only.
 - **Error format:** Failures print `Error: <message>` in red on stderr. Programmatic callers should grep stderr, not stdout.
 - **OpenTelemetry:** `src/cli.ts` calls `bootstrapOtel()` before parsing. When `otel.enabled: true` in config and `--otel-exporter console` is passed (where supported), spans flow to stdout. See [OTEL.md](./OTEL.md).
-- **Platform notes:** `attach`, `detach`, `ps`, and `start --detach` (server lifecycle) call `assertNotWindows()` and exit with `1` and the message `diptych attach/detach/ps are not supported on Windows.` on `win32`.
+- **Platform notes:** `attach`, `detach`, `ps`, and `start --detach` (server lifecycle) call `assertNotWindows()` and exit with `1` and the message `diptych attach/detach/ps are not supported on Windows.` on `win32`. `continue` and `last` resume interrupted sessions on Windows, but reject a **live** running target with the same attach unsupported message because that path delegates to `attach`.
 
 ## Command index
 
@@ -72,7 +72,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
-  [--no-fullscreen] [--no-mouse] \
+  [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
@@ -109,6 +109,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
+| `--hover` | boolean | `false` | Opt in to hover highlighting under the mouse. Requires both mouse tracking and fullscreen; a no-op with `--no-mouse` or `--no-fullscreen`. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 | `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
 | `--rpc` | boolean | `false` | RPC: bidirectional NDJSON. Reads commands from stdin and writes `ack` / `error` / `status` / wrapped `event` responses to stdout. Requires a `feature`; mutually exclusive with `--json`. |
@@ -141,7 +142,7 @@ diptych start --rpc "add audit logging"
 # Detached background session, attach later
 diptych start --detach "long migration"
 diptych ps
-diptych attach <session-id>
+diptych attach <session-id> --project .
 
 # Isolated worktree
 diptych start --worktree migration "Postgres 17 upgrade"
@@ -167,6 +168,8 @@ diptych start --worktree migration "Postgres 17 upgrade"
 ### Behavior notes
 
 - `--detach` cannot be combined with `--json` or `--rpc`; `--json` and `--rpc` cannot be combined. `--detach`, `--json`, and `--rpc` each require a feature where they start a new workflow.
+- When `--detach` omits `--mode`, the workflow mode comes from `workflow.mode` in config (default `standard`), not a hard-coded CLI default.
+- After `start --detach`, the printed attach hint is a shell-safe argv line using `--project` (not a brittle `cd … && …` chain). Paths with spaces are quoted.
 - The startup pipeline calls `maybeMigrate(projectDir)` first, so a stale pre-v3 state is migrated on the fly.
 - Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.diptych/sessions/<id>/readiness.json`.
 - Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
@@ -493,7 +496,7 @@ diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] \
-  [--no-fullscreen] [--no-mouse] \
+  [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
@@ -569,7 +572,7 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
 | `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; rejected for live detached sessions. |
-| Other resume flags | — | — | Runner overrides, mode, budget, OTel, fullscreen/mouse, and approval controls. `--worktree` is rejected — it is a `start`-only flag, since a resumed session already lives in its original worktree. |
+| Other resume flags | — | — | Runner overrides, mode, budget, OTel, `--no-fullscreen`, `--no-mouse`, and `--hover` (live attach path only), and approval controls. `--worktree` is rejected — it is a `start`-only flag, since a resumed session already lives in its original worktree. |
 
 ### Examples
 
@@ -606,8 +609,9 @@ diptych continue --rpc 2026-05-01-add-auth
 
 ### Behavior notes
 
-- When the target session is running (lockfile present, process alive), `continue` delegates to `attach`; `--json` is ignored on that path and `--rpc` is rejected.
-- When the target session is not running but has resumable state, `continue` delegates to `resume`.
+- When the target session is running (lockfile present, process alive), `continue` delegates to `attach`; `--json` is ignored on that path and `--rpc` is rejected. The live attach path honors `--no-fullscreen`, `--no-mouse`, and `--hover` the same way `diptych attach` does.
+- When the target session is not running but has resumable state, `continue` delegates to `resume` (including `--json` / `--rpc` when passed).
+- On Windows, interrupted sessions still resume; live running targets fail with `diptych attach/detach/ps are not supported on Windows.` because attach is unavailable.
 - `--rpc` applies only to interrupted sessions. It does not attach to a live detached server.
 - Numeric aliases correspond to the `#` column in `diptych ps` output.
 
@@ -655,7 +659,8 @@ diptych last
 ### Behavior notes
 
 - Selects the session with the most recent `startTimeMs` regardless of status.
-- If the most recent session is running, attaches. If interrupted, resumes.
+- If the most recent session is running, attaches (honoring `--no-fullscreen`, `--no-mouse`, and `--hover` on the live path). If interrupted, resumes (including `--json` / `--rpc` when passed).
+- On Windows, interrupted sessions still resume; live running targets fail with the attach unsupported message.
 
 ---
 
@@ -1391,7 +1396,7 @@ diptych worktree remove migration --force --delete-branch
 **Synopsis**
 
 ```
-diptych attach [session-id] [--project <dir>]
+diptych attach [session-id] [--project <dir>] [--no-fullscreen] [--no-mouse] [--hover]
 ```
 
 Connect a TUI client to a background session that was launched with `diptych start --detach`. The session keeps running across attaches and detaches. If `session-id` is omitted, attaches to the unique running session in the project (errors when there are zero or two-plus).
@@ -1399,7 +1404,7 @@ Connect a TUI client to a background session that was launched with `diptych sta
 ### Usage
 
 ```
-diptych attach [session-id] [--project <dir>]
+diptych attach [session-id] [--project <dir>] [--no-fullscreen] [--no-mouse] [--hover]
 ```
 
 ### Options
@@ -1408,6 +1413,9 @@ diptych attach [session-id] [--project <dir>]
 |---|---|---|---|
 | `<session-id>` | string (positional) | auto-resolved | Specific session to attach to. Optional when exactly one session is running. |
 | `--project <dir>` | path | cwd | Project directory. |
+| `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. |
+| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
+| `--hover` | boolean | `false` | Opt in to hover highlighting; requires mouse + fullscreen. |
 
 ### Examples
 
@@ -1594,7 +1602,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, recovery pauses such as unknown paid pricing exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, recovery pauses such as unknown paid pricing exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
 
 ### RPC stream (`--rpc`)
 

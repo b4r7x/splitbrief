@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP, ARROW_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
@@ -12,6 +12,7 @@ import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
+import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { ScrollableDocument } from '../../components/scrollable-document.js';
 import { SummaryProgress } from './components/progress.js';
 import { HeroSavings } from './components/hero-savings.js';
@@ -54,20 +55,31 @@ function formatImplementerSummary(summary: Summary): string | null {
         ?.map((task) => task.implementerProfile)
         .filter((profile): profile is string => profile !== undefined) ?? [],
     );
-    return profiles.length > 0 ? `mixed profiles (${profiles.join(', ')})` : 'mixed implementers';
+    return profiles.length > 0
+      ? stripTerminalControls(`mixed profiles (${profiles.join(', ')})`)
+      : 'mixed implementers';
   }
 
-  return formatToolModel(summary.implementerTool, summary.implementerModel);
+  return stripTerminalControls(formatToolModel(summary.implementerTool, summary.implementerModel));
 }
 
-function getSummaryHeading(status: Session['status'], theme: ReturnType<typeof useTheme>) {
+interface SummaryHeading {
+  word: string;
+  color: string;
+  marker: boolean;
+}
+
+function getSummaryHeading(
+  status: Session['status'],
+  theme: ReturnType<typeof useTheme>,
+): SummaryHeading {
   switch (status) {
     case 'complete':
-      return { text: 'diptych complete', color: theme.success };
+      return { word: 'complete', color: theme.success, marker: true };
     case 'failed':
-      return { text: 'diptych failed with summary', color: theme.error };
+      return { word: 'failed', color: theme.error, marker: false };
     case 'interrupted':
-      return { text: 'diptych interrupted with summary', color: theme.warning };
+      return { word: 'interrupted', color: theme.warning, marker: false };
     default:
       return assertNever(status);
   }
@@ -75,12 +87,12 @@ function getSummaryHeading(status: Session['status'], theme: ReturnType<typeof u
 
 function formatRouteSummary(summary: Summary, implementerSummary: string | null): string | null {
   const plannerSummary = summary.plannerTool
-    ? formatToolModel(summary.plannerTool, summary.plannerModel)
+    ? stripTerminalControls(formatToolModel(summary.plannerTool, summary.plannerModel))
     : null;
   if (!plannerSummary && !implementerSummary) return null;
   if (!plannerSummary) return implementerSummary;
   if (!implementerSummary) return plannerSummary;
-  return `${plannerSummary} -> ${implementerSummary}`;
+  return `${plannerSummary}${ARROW_SEP}${implementerSummary}`;
 }
 
 function compactCount(count: number, noun: string): string {
@@ -114,7 +126,7 @@ function SummaryCompactRunDetails({
 
   return (
     <Box flexDirection="column" marginTop={1} overflow="hidden">
-      <Text wrap="truncate-end">Feature: {summary.feature}</Text>
+      <Text wrap="truncate-end">Feature: {stripTerminalControls(summary.feature)}</Text>
       <Text color={theme.textDim} wrap="truncate-end">
         {routeSummary ? `${routeSummary}${SOFT_SEP}` : ''}
         {runParts.join(SOFT_SEP)}
@@ -155,9 +167,9 @@ function SummaryCompactLowerSections({
             Checkpoints:
           </Text>{' '}
           {compactCount(checkpointSummary.count, 'ckpt')}
-          {SOFT_SEP}latest: {checkpointSummary.latestId ?? 'n/a'}
+          {SOFT_SEP}latest: {stripTerminalControls(checkpointSummary.latestId ?? 'n/a')}
           {checkpointSummary.preFinalReviewId
-            ? `${SOFT_SEP}pre: ${checkpointSummary.preFinalReviewId}`
+            ? `${SOFT_SEP}pre: ${stripTerminalControls(checkpointSummary.preFinalReviewId)}`
             : ''}
         </Text>
       )}
@@ -255,9 +267,6 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const truncateLength = Math.max(6, taskTitleWidth - 2);
   const mode = summary.mode;
   const isShortSmall = isSmall && cols <= 56 && rows <= 28;
-  const compiledByPlannerCount = summary.totalTasks;
-  const localCount = summary.completedByLocal;
-  const escalatedCount = summary.escalatedToPlanner;
 
   const bq = summary.briefQuality;
   const drift = summary.driftSummary;
@@ -266,7 +275,9 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const implementerSummary = formatImplementerSummary(summary);
   const routeSummary = formatRouteSummary(summary, implementerSummary);
   const heading = getSummaryHeading(status, theme);
-  const headingText = isSmall && routeSummary ? `${heading.text} ${routeSummary}` : heading.text;
+  const bylineText = [routeSummary, mode, formatTime(summary.totalTime)]
+    .filter((part): part is string => part !== null && part !== undefined && part !== '')
+    .join(SOFT_SEP);
   const detailRows = buildSummaryDetailRows({
     summary,
     evidenceLedger,
@@ -317,32 +328,20 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
         overflowY="hidden"
       >
         <Box justifyContent="center" width="100%">
-          <Text bold color={heading.color} wrap="truncate-end">
-            {headingText}
+          <Text wrap="truncate-end">
+            {heading.marker ? <Text color={theme.success}>{glyph('check')} </Text> : null}
+            <Text color={theme.textDim}>diptych </Text>
+            <Text color={heading.color}>{heading.word}</Text>
+            {isSmall && routeSummary ? <Text color={theme.textDim}> {routeSummary}</Text> : null}
           </Text>
         </Box>
-        {routeSummary && !isSmall && (
+        {!isSmall && bylineText && (
           <Box justifyContent="center" width="100%">
             <Text color={theme.textDim} wrap="truncate-end">
-              {routeSummary}
-              {mode ? `${SOFT_SEP}${mode}` : ''}
-              {SOFT_SEP}
-              {formatTime(summary.totalTime)}
+              {bylineText}
             </Text>
           </Box>
         )}
-        <Box justifyContent="center" width="100%">
-          <Text color={theme.textDim} wrap="truncate-end">
-            Planner compiled {compiledByPlannerCount} Task{' '}
-            {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'}
-          </Text>
-        </Box>
-        <Box justifyContent="center" width="100%">
-          <Text color={theme.textDim} wrap="truncate-end">
-            Implementer completed {localCount} locally
-            {escalatedCount > 0 ? `${SOFT_SEP}${escalatedCount} escalated` : ''}
-          </Text>
-        </Box>
 
         <HeroSavings costBreakdown={summary.costBreakdown} />
 
@@ -350,38 +349,32 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           <SummaryCompactRunDetails summary={summary} routeSummary={routeSummary} />
         ) : (
           <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-            <LabeledRow label="Feature" labelWidth={labelWidth}>
+            <LabeledRow label="feature" labelWidth={labelWidth}>
               <Text bold wrap="truncate-end">
-                {summary.feature}
+                {stripTerminalControls(summary.feature)}
               </Text>
             </LabeledRow>
-            <LabeledRow label="Time" labelWidth={labelWidth}>
-              <Text>{formatTime(summary.totalTime)}</Text>
-            </LabeledRow>
             {summary.plannerTool && (
-              <LabeledRow label="Planner" labelWidth={labelWidth}>
+              <LabeledRow label="planner" labelWidth={labelWidth}>
                 <Text wrap="truncate-end">
-                  {formatToolModel(summary.plannerTool, summary.plannerModel)}
+                  {stripTerminalControls(
+                    formatToolModel(summary.plannerTool, summary.plannerModel),
+                  )}
                 </Text>
               </LabeledRow>
             )}
             {implementerSummary && (
-              <LabeledRow label="Implementer" labelWidth={labelWidth}>
+              <LabeledRow label="implementer" labelWidth={labelWidth}>
                 <Text wrap="truncate-end">{implementerSummary}</Text>
               </LabeledRow>
             )}
-            {mode && (
-              <LabeledRow label="Mode" labelWidth={labelWidth}>
-                <Text>{mode}</Text>
-              </LabeledRow>
-            )}
-            <LabeledRow label="Brief quality" labelWidth={labelWidth}>
+            <LabeledRow label="brief quality" labelWidth={labelWidth}>
               <Text color={bq && !bq.passed ? theme.warning : theme.textDim} wrap="truncate-end">
                 {briefQualityText}
               </Text>
             </LabeledRow>
             {driftText && (
-              <LabeledRow label="Drift" labelWidth={labelWidth}>
+              <LabeledRow label="drift" labelWidth={labelWidth}>
                 <Text
                   color={drift && !drift.passed ? theme.warning : theme.textDim}
                   wrap="truncate-end"
@@ -391,21 +384,22 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {summary.chainDriftSummary && (
-              <Box marginTop={1} overflow="hidden">
+              <LabeledRow label="drift chain" labelWidth={labelWidth}>
                 <Text color={theme.textDim} wrap="truncate-end">
-                  Drift chain: {summary.chainDriftSummary.chainLength} tasks writing to{' '}
-                  {summary.chainDriftSummary.representativePath}, score{' '}
+                  {summary.chainDriftSummary.chainLength} tasks{ARROW_SEP}
+                  {stripTerminalControls(summary.chainDriftSummary.representativePath)}
+                  {SOFT_SEP}
                   {summary.chainDriftSummary.score.toFixed(2)}
                   {summary.chainDriftSummary.emittedChainCount > 1
-                    ? ` (${summary.chainDriftSummary.emittedChainCount} chains total)`
+                    ? `${SOFT_SEP}${summary.chainDriftSummary.emittedChainCount} chains`
                     : ''}
                 </Text>
-              </Box>
+              </LabeledRow>
             )}
             {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
-              <LabeledRow label="Saved" labelWidth={labelWidth}>
+              <LabeledRow label="saved" labelWidth={labelWidth}>
                 <Text bold color={theme.success} wrap="truncate-end">
-                  {summary.estimatedCostSavings}
+                  {stripTerminalControls(summary.estimatedCostSavings)}
                 </Text>
               </LabeledRow>
             )}
@@ -416,7 +410,6 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           completed={completed}
           total={summary.totalTasks}
           completedByLocal={summary.completedByLocal}
-          escalatedToPlanner={summary.escalatedToPlanner}
           failed={summary.failed}
           isSmall={isSmall}
         />
@@ -424,8 +417,23 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
         {isShortSmall ? (
           <SummaryCompactLowerSections summary={summary} ledger={evidenceLedger} />
         ) : detailRows.length > 0 ? (
-          <Box width={contentWidth}>
-            <ScrollableDocument rows={detailRows} height={detailHeight} isActive={!hasOverlay} />
+          <Box
+            flexDirection="column"
+            width={contentWidth}
+            marginTop={1}
+            borderStyle={borderStyleFor('single')}
+            borderColor={theme.border}
+            borderDimColor
+            overflow="hidden"
+          >
+            <ScrollableDocument
+              rows={detailRows}
+              height={detailHeight}
+              width={contentWidth}
+              isActive={!hasOverlay}
+              showScrollbar
+              showScrollIndicators={false}
+            />
           </Box>
         ) : null}
       </Box>

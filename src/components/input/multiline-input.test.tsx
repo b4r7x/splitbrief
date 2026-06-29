@@ -195,6 +195,60 @@ describe('MultilineInput keyBinding precedence (composer bindings)', () => {
   });
 });
 
+function SanitizeHarness({ onChange }: { onChange?: (value: string) => void }) {
+  const [value, setValue] = useState('');
+  return (
+    <MultilineInput
+      value={value}
+      onChange={(next) => {
+        onChange?.(next);
+        setValue(next);
+      }}
+      showCursor={false}
+      rows={1}
+    />
+  );
+}
+
+describe('MultilineInput control-byte sanitization', () => {
+  let unmount: (() => void) | undefined;
+
+  afterEach(() => {
+    unmount?.();
+    unmount = undefined;
+  });
+
+  it('does not echo multi-character BEL bytes into the rendered draft', async () => {
+    let stored = '';
+    const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write('a\x07b');
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(stored).toBe('a\x07b');
+    expect(frame).toContain('ab');
+    expect(frame).not.toContain('\x07');
+  });
+
+  it('does not echo multi-character C0 control bytes into the rendered draft', async () => {
+    let stored = '';
+    const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
+    unmount = ui.unmount;
+    await tick(20);
+
+    ui.stdin.write('a\x01b');
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(stored).toBe('a\x01b');
+    expect(frame).toContain('ab');
+    expect(frame).not.toContain('\x01');
+  });
+});
+
 const BACKSPACE = '\x7f';
 const DELETE = '\x1b[3~';
 const LEFT = '\x1b[D';

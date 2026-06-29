@@ -1,29 +1,27 @@
 import type { UserEditConflictAction } from '../../core/schemas/enums.js';
 import type { UserEditConflict } from '../../engine/events/workflow-events.js';
-import { formatRecoveryActionChoice } from './recovery-prompt.js';
+import { formatMiddotList, formatRecoveryActionLines } from './recovery-prompt.js';
 import { userEditActionToRecoveryAction } from '../../core/recovery/user-edit-actions.js';
-import { formatTruncatedList } from '../../core/formatting.js';
 
 function formatFiles(files: string[]): string {
-  return formatTruncatedList(files, 3) || 'no files';
+  return formatMiddotList(files, 3) || 'no files';
 }
 
 export function formatUserEditConflictPrompt(conflict: UserEditConflict): string {
   const task = conflict.currentTaskId ?? conflict.affectedTaskIds[0];
+  const actions = conflict.availableActions.map((action) => userEditActionToRecoveryAction(action));
+  const recommended = actions.includes('pause-run') ? 'pause-run' : actions[0];
   const lines = [
     task
-      ? `Recovery needed: user edit conflicts with ${task}`
-      : 'Recovery needed: user edits require a decision',
-    `Files: ${formatFiles(conflict.files)}`,
+      ? `recovery needed · your edits conflict with ${task}`
+      : 'recovery needed · your edits require a decision',
+    '',
+    `files ${formatFiles(conflict.files)}`,
     conflict.affectedTaskIds.length > 0
-      ? `Affected tasks: ${conflict.affectedTaskIds.join(', ')}`
+      ? `affected ${formatMiddotList(conflict.affectedTaskIds, 3)}`
       : '',
     '',
-    ...conflict.availableActions.map((action) =>
-      formatRecoveryActionChoice(userEditActionToRecoveryAction(action), {
-        reason: 'user-edit-conflict',
-      }),
-    ),
+    ...formatRecoveryActionLines(actions, { reason: 'user-edit-conflict' }, recommended),
   ];
   return lines
     .filter((line, index) => line.length > 0 || lines[index - 1] !== '')

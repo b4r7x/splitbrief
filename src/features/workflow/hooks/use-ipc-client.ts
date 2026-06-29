@@ -138,6 +138,7 @@ export function useIpcClient(opts: {
   }, [enabled, opts.sockPath, opts.authToken]);
 
   function sendUserInput(text: string) {
+    // Server equivalent: user_input IPC to workflow-bridge.onUserInput (see docs/SLASH-COMMANDS-REFERENCE.md).
     const s = socketRef.current;
     if (!s || state.status !== 'connected') return;
     try {
@@ -148,6 +149,7 @@ export function useIpcClient(opts: {
   }
 
   function clearQueue() {
+    // Server equivalent: queue_clear IPC to workflow-bridge.onQueueClear (/queue clear on attach clients).
     const s = socketRef.current;
     if (!s || state.status !== 'connected') return;
     try {

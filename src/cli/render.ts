@@ -33,6 +33,7 @@ import { teardownStores } from './init-stores.js';
 interface RenderOptions {
   fullscreen: boolean;
   mouse?: boolean;
+  hover?: boolean;
   projectDir?: string | undefined;
 }
 
@@ -54,17 +55,21 @@ interface RestoreTerminalOptions {
 interface RenderInputConfig {
   useFilteredStdin: boolean;
   useMouse: boolean;
+  useHover: boolean;
   usePaste: boolean;
 }
 
 export function resolveRenderInputConfig(options: {
   fullscreen: boolean;
   mouse?: boolean | undefined;
+  hover?: boolean | undefined;
 }): RenderInputConfig {
   const usePaste = options.fullscreen;
+  const useMouse = options.mouse !== false && options.fullscreen;
   return {
     useFilteredStdin: usePaste,
-    useMouse: options.mouse !== false && options.fullscreen,
+    useMouse,
+    useHover: (options.hover ?? false) && useMouse,
     usePaste,
   };
 }
@@ -201,15 +206,16 @@ export async function renderApp(
   appElement: ReturnType<typeof createElement>,
   options: RenderOptions,
 ): Promise<void> {
-  const { fullscreen, mouse, projectDir } = options;
+  const { fullscreen, mouse, hover, projectDir } = options;
   const kittyKeyboard = detectKittyKeyboardFlags();
   installTerminalOutputErrorGuard();
 
   configureDiptychKeyDebugLog(projectDir ? { projectDir } : undefined);
 
-  const { useFilteredStdin, useMouse, usePaste } = resolveRenderInputConfig({
+  const { useFilteredStdin, useMouse, useHover, usePaste } = resolveRenderInputConfig({
     fullscreen,
     mouse,
+    hover,
   });
   let filteredStdin: FilteredStdin | undefined;
   let filteredDisabled = false;
@@ -222,7 +228,11 @@ export async function renderApp(
   }
 
   if (useFilteredStdin) {
-    filteredStdin = createFilteredStdin(process.stdin, { activate: false, mouse: useMouse });
+    filteredStdin = createFilteredStdin(process.stdin, {
+      activate: false,
+      mouse: useMouse,
+      hover: useHover,
+    });
   }
 
   const disableFilteredStdin = () => {
@@ -339,6 +349,7 @@ export async function renderApp(
             fullscreen: true,
             mouse: useMouse,
             paste: usePaste,
+            hover: useHover,
             sourceStdin: process.stdin,
           },
           setHandover: setActiveTerminalHandover,

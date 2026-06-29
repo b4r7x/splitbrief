@@ -1,3 +1,5 @@
+import { glyph } from '../../lib/glyphs.js';
+
 export interface KeyLike {
   upArrow?: boolean | undefined;
   downArrow?: boolean | undefined;
@@ -64,7 +66,7 @@ function displayKey(name: string): string {
     case 'arrow-left':
       return '←';
     case 'arrow-right':
-      return '→';
+      return glyph('connectorHandoff');
     case 'page-up':
       return 'PgUp';
     case 'page-down':

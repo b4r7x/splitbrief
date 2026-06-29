@@ -3,12 +3,13 @@ import type { Summary } from '../../core/schemas/summary.js';
 const SHELL_PADDING_ROWS = 2;
 const FOOTER_ROWS = 4;
 const SCROLL_DOCUMENT_INDICATOR_ROWS = 2;
-const BASE_HEADER_ROWS = 3;
+const BASE_HEADER_ROWS = 1;
 const METADATA_MARGIN_ROWS = 1;
-const BASE_METADATA_ROWS = 3;
+const BASE_METADATA_ROWS = 2;
 const PROGRESS_MARGIN_ROWS = 1;
-const PROGRESS_NON_EMPTY_ROWS = 3;
+const PROGRESS_NON_EMPTY_ROWS = 1;
 const PROGRESS_EMPTY_ROWS = 1;
+const LEDGER_DIVIDER_ROWS = 2;
 const VIEWPORT_SAFETY_ROWS = 1;
 
 interface SummaryDetailLayoutInput {
@@ -34,9 +35,8 @@ function countMetadataRows(
   let childRows = BASE_METADATA_ROWS;
   if (summary.plannerTool) childRows += 1;
   if (implementerSummary) childRows += 1;
-  if (summary.mode) childRows += 1;
   if (summary.driftSummary) childRows += 1;
-  if (summary.chainDriftSummary) childRows += 2;
+  if (summary.chainDriftSummary) childRows += 1;
   if (!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable') childRows += 1;
   const gapRows = isSmall ? 0 : Math.max(0, childRows - 1);
   return METADATA_MARGIN_ROWS + childRows + gapRows;
@@ -47,17 +47,18 @@ function countProgressRows(summary: Summary): number {
   return PROGRESS_MARGIN_ROWS + bodyRows + (summary.totalTasks === 0 && summary.failed > 0 ? 1 : 0);
 }
 
-function countHeaderRows(isSmall: boolean, routeSummary: string | null): number {
-  return BASE_HEADER_ROWS + (routeSummary && !isSmall ? 1 : 0);
+function countHeaderRows(isSmall: boolean): number {
+  return BASE_HEADER_ROWS + (isSmall ? 0 : 1);
 }
 
 function countBodyChromeRows(input: SummaryDetailLayoutInput): number {
-  const { isSmall, summary, implementerSummary, routeSummary } = input;
+  const { isSmall, summary, implementerSummary } = input;
   let chrome =
-    countHeaderRows(isSmall, routeSummary) +
+    countHeaderRows(isSmall) +
     countProgressRows(summary) +
     countMetadataRows(summary, implementerSummary, isSmall);
   chrome += countHeroSavingsRows(summary.costBreakdown, isSmall);
+  chrome += LEDGER_DIVIDER_ROWS;
   return chrome;
 }
 

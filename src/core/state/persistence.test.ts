@@ -18,7 +18,9 @@ import {
   appendEngineEvent,
   appendMessage,
   createSessionLogAppender,
+  consoleWorkflowFeature,
 } from './persistence.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../transcript-policy.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
@@ -526,5 +528,17 @@ describe('session append symlink confinement', () => {
     expect(readFileSync(outsideLog, 'utf-8')).toBe('');
 
     rmSync(outside, { recursive: true, force: true });
+  });
+});
+
+describe('consoleWorkflowFeature', () => {
+  it('strips terminal controls and omits feature text when persistTranscript is false', () => {
+    expect(consoleWorkflowFeature('add \u001b]0;pwned\u0007login', false)).toBe(
+      TRANSCRIPT_OMITTED_MESSAGE,
+    );
+  });
+
+  it('returns the sanitized feature when persistTranscript is true', () => {
+    expect(consoleWorkflowFeature('add \u001b]0;pwned\u0007login', true)).toBe('add login');
   });
 });

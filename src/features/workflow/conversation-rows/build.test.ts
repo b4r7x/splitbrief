@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
+import { makeImplementerGenerate } from '#testing/helpers/events.js';
 import { activityBatchKey } from './activity-batch-key.js';
-import { buildConversationRows, materializeConversationRowsWindow } from './build.js';
+import {
+  buildConversationRowActions,
+  buildConversationRows,
+  materializeConversationRowsWindow,
+} from './build.js';
 import { rowText } from './row-format.js';
 import type { ConversationRowBlock } from './types.js';
 
@@ -178,7 +183,7 @@ describe('buildConversationRows', () => {
     expect(text).not.toContain('+  ');
   });
 
-  it('keeps recent activity rows with an earlier-update affordance', () => {
+  it('keeps recent activity rows with a +N more affordance', () => {
     const sections: Section<EngineEvent>[] = [
       {
         type: 'events',
@@ -208,7 +213,7 @@ describe('buildConversationRows', () => {
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
     expect(text).toContain('d.ts');
-    expect(text).toMatch(/1 earlier\s+·\s+ctrl\+a/);
+    expect(text).toContain('+1 more · ctrl+a');
     expect(text).not.toContain('/activity');
     expect(text).not.toContain('Ctrl+A');
     expect(text).not.toContain('┌─');
@@ -224,7 +229,7 @@ describe('buildConversationRows', () => {
     });
     const expandedText = expanded.rows.map(rowText).join('\n');
 
-    expect(expandedText).toMatch(/collapse\s+·\s+ctrl\+a/);
+    expect(expandedText).toContain('collapse');
     expect(expandedText).toContain('a.ts');
   });
 
@@ -380,5 +385,127 @@ describe('buildConversationRows', () => {
     expect(text).toContain('WARN  stderr: npm deprecated package token sk-***REDACTED***');
     expect(text).toContain('ERR   exit_code_1: Command failed: npm test');
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+
+  it('expands two same-timestamp diffs independently', () => {
+    const ts = 1234;
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          makeImplementerGenerate({ status: 'done', file: 'a.ts', diff: '+ first line', ts }),
+          makeImplementerGenerate({ status: 'done', file: 'b.ts', diff: '+ second line', ts }),
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    };
+
+    const firstExpanded = buildConversationRows({
+      ...inputs,
+      expandedDiffs: new Set(['implementer_generate_done:0']),
+    });
+    const firstText = firstExpanded.rows.map(rowText).join('\n');
+    expect(firstText).toContain('first line');
+    expect(firstText).not.toContain('second line');
+
+    const secondExpanded = buildConversationRows({
+      ...inputs,
+      expandedDiffs: new Set(['implementer_generate_done:1']),
+    });
+    const secondText = secondExpanded.rows.map(rowText).join('\n');
+    expect(secondText).toContain('second line');
+    expect(secondText).not.toContain('first line');
+  });
+});
+
+describe('buildConversationRowActions', () => {
+  it('maps the rendered +N more row to a toggle-activity-batch action', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+          activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+          activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+          activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    };
+
+    const { rows } = buildConversationRows(inputs);
+    const moreRow = rows.find((row) => row.kind === 'activity-more');
+    if (!moreRow) throw new Error('expected a +N more disclosure row');
+
+    const actions = buildConversationRowActions(inputs);
+    expect(actions.get(moreRow.key)).toEqual({
+      type: 'toggle-activity-batch',
+      key: activityBatchKey(0, 'call-1'),
+    });
+  });
+
+  it('maps the rendered diff rows to a toggle-diff action keyed by global render index', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [makeImplementerGenerate({ status: 'done', file: 'a.ts', diff: '+ x', ts: 5 })],
+      },
+    ];
+    const inputs = {
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    };
+
+    const { rows } = buildConversationRows(inputs);
+    const actions = buildConversationRowActions(inputs);
+    const actionableRows = rows.filter((row) => actions.has(row.key));
+
+    expect(actionableRows.length).toBeGreaterThan(0);
+    for (const row of actionableRows) {
+      expect(actions.get(row.key)).toEqual({
+        type: 'toggle-diff',
+        key: 'implementer_generate_done:0',
+      });
+    }
+  });
+
+  it('does not map a non-expandable activity batch', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' })],
+      },
+    ];
+    const actions = buildConversationRowActions({
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+
+    expect(actions.size).toBe(0);
   });
 });

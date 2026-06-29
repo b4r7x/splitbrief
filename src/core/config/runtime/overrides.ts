@@ -21,6 +21,8 @@ import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { WorkflowOpts } from '../../types/config-options.js';
+import type { WorkflowMode } from '../../schemas/enums.js';
+import { getWorkflowMode } from '../accessors/values.js';
 import {
   mergeImplementerProfileMetadata,
   pickDefaultProfileName,
@@ -56,6 +58,10 @@ export const CLIOverridesSchema = z.object({
 });
 
 export type CLIOverrides = z.infer<typeof CLIOverridesSchema>;
+
+export function resolveCliWorkflowMode(opts: WorkflowOpts, config: Config): WorkflowMode {
+  return opts.mode ?? getWorkflowMode(config);
+}
 
 export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
   return {

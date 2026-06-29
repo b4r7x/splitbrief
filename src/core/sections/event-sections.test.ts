@@ -200,6 +200,18 @@ describe('groupEventsIntoSections', () => {
   });
 });
 
+describe('diffEventKey', () => {
+  it('gives two same-timestamp diffs distinct keys from their global render index', () => {
+    const ts = 1234;
+    const first = makeImplementerGenerate({ status: 'done', diff: '+ a', ts });
+    const second = makeImplementerGenerate({ status: 'done', diff: '+ b', ts });
+
+    expect(diffEventKey(first, 0)).not.toBe(diffEventKey(second, 1));
+    expect(diffEventKey(first, 0)).toBe('implementer_generate_done:0');
+    expect(diffEventKey(second, 1)).toBe('implementer_generate_done:1');
+  });
+});
+
 describe('findLatestRenderableDiffKey', () => {
   it('skips completed-task sections and returns the latest live diff key', () => {
     const live = makeImplementerGenerate({ status: 'done', diff: '+ live', ts: 1234 });
@@ -222,18 +234,24 @@ describe('findLatestRenderableDiffKey', () => {
       },
     ];
 
-    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(live));
-    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:1234');
+    // The live diff is the only item of the active-task section at startIndex 2, so its global render
+    // index — and therefore its key — is 2.
+    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(live, 2));
+    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:2');
   });
 
-  it('returns a key that is independent of the diff event array position', () => {
-    const diff = makeImplementerGenerate({ status: 'done', diff: '+ d', ts: 42 });
+  it('keys the latest diff by its global render index, not its array position', () => {
+    const ts = 42;
+    const earlier = makeImplementerGenerate({ status: 'done', diff: '+ earlier', ts });
+    const latest = makeImplementerGenerate({ status: 'done', diff: '+ latest', ts });
 
-    const atIndexOne: Section[] = [
-      { type: 'events', startIndex: 0, items: [makePlannerText(), diff] },
+    const sections: Section[] = [
+      { type: 'events', startIndex: 0, items: [makePlannerText(), earlier, latest] },
     ];
-    const atIndexZero: Section[] = [{ type: 'events', startIndex: 5, items: [diff] }];
 
-    expect(findLatestRenderableDiffKey(atIndexOne)).toBe(findLatestRenderableDiffKey(atIndexZero));
+    // Both diffs share a timestamp; the latest renderable one is at global index 2 and gets its own
+    // unique key, so toggling it never collides with the earlier diff at index 1.
+    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:2');
+    expect(findLatestRenderableDiffKey(sections)).not.toBe(diffEventKey(earlier, 1));
   });
 });

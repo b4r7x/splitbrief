@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { assertNotWindows } from '../windows-guard.js';
 import { buildAliasedSessions } from '../sessions/aliases.js';
 import { continueCommand } from './continue.js';
 import { addWorkflowOptions, assertWorktreeStartOnly } from '../options.js';
@@ -28,7 +27,6 @@ export async function lastCommand(
   opts: { projectDir: string } & WorkflowOpts,
   deps: LastDeps = defaultDeps,
 ): Promise<void> {
-  assertNotWindows();
   assertWorktreeStartOnly(opts);
 
   const sessionId = await findMostRecentSession(opts.projectDir);

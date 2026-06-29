@@ -15,6 +15,7 @@ type HandoffTargetArg = Parameters<RuntimeCommandContext['writeHandoff']>[0];
 type ApprovalScope = 'session' | 'always' | 'all';
 
 interface CommandContextFactoryOptions {
+  isAttached?: boolean;
   projectDir: () => string;
   getConfig: () => Config | null;
   saveConfig: (config: Config) => ConfigSaveResult;
@@ -35,7 +36,7 @@ interface CommandContextFactoryOptions {
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
-  clearQueue: () => QueueClearCommandResult;
+  clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   rebuildRepomap: (
     projectDir: string,
     cacheDir: string | undefined,
@@ -74,6 +75,7 @@ interface CommandContextFactoryOptions {
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
   toggleSidebar: RuntimeCommandContext['toggleSidebar'];
+  copyTarget: RuntimeCommandContext['copyTarget'];
 }
 
 export function createCommandContext(opts: CommandContextFactoryOptions): RuntimeCommandContext {
@@ -96,6 +98,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
   };
 
   return {
+    isAttached: opts.isAttached ?? false,
     openOverlay: opts.openOverlay,
     navigate: () => opts.navigateHome(),
     quit: opts.quit,
@@ -171,5 +174,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
     toggleSidebar: opts.toggleSidebar,
+    copyTarget: opts.copyTarget,
   };
 }

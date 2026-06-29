@@ -3,6 +3,7 @@ import { render } from 'ink-testing-library';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
@@ -72,7 +73,7 @@ describe('SessionsPicker', () => {
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('add authentication');
     expect(frame).toContain('refactor payments');
-    expect(frame).toContain('(2)');
+    expect(stripAnsiStyles(frame)).toContain('sessions · 2');
 
     instance.unmount();
   });
@@ -109,7 +110,7 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('(0)');
+    expect(stripAnsiStyles(frame)).toContain('sessions · 0');
     expect(frame.toLowerCase()).toMatch(/no.*sessions/);
 
     instance.unmount();
@@ -184,6 +185,7 @@ describe('SessionsPicker', () => {
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('resume missing state');
     expect(frame).toContain('saved workflow state');
+    expect(frame).not.toContain('Error:');
     expect(routerStore.get().screen).toBe('home');
     expect(overlayStore.get().active).toBe('sessions');
 
@@ -211,7 +213,7 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('Sessions (1)');
+    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
     expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
 
@@ -240,10 +242,10 @@ describe('SessionsPicker', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('Sessions (1)');
+    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
     expect(frame).toContain('navigate');
     expect(frame).toContain('alpha-feature');
-    expect(frame).not.toContain('No matching sessions');
+    expect(frame).not.toContain('no matching sessions');
 
     instance.unmount();
   });
@@ -270,10 +272,10 @@ describe('SessionsPicker', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('Sessions (1)');
+    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
     expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
-    expect(frame).not.toContain('No matching sessions');
+    expect(frame).not.toContain('no matching sessions');
     expect(frame).not.toContain('╭');
     expect(frame).not.toContain('╰');
 

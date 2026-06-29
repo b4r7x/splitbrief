@@ -41,26 +41,26 @@ export function implementerExpandedDiffCardBlock(
     const hintSegments: ConversationRowSegment[] = [
       { text: `${ELLIPSIS} ${remaining} more lines`, tone: 'textDim' },
       { text: SOFT_SEP, tone: 'textDim' },
-      { text: COLLAPSE_HINT, tone: 'accent' },
+      { text: COLLAPSE_HINT, tone: 'textDim' },
     ];
     bodyLines.push({
       text: hintSegments.map((segment) => segment.text).join(''),
       segments: hintSegments,
     });
   } else {
-    bodyLines.push({ text: COLLAPSE_HINT, tone: 'accent' });
+    bodyLines.push({ text: COLLAPSE_HINT, tone: 'textDim' });
   }
 
   const cardKey = `${keyPrefix}-diff-card`;
   const cardInput = {
     keyPrefix: cardKey,
     label: event.file,
-    labelTone: 'implementer' as const,
+    labelTone: 'textDim' as const,
     metaSegments: [
       { text: formatDuration(event.duration), tone: 'textDim' as const },
       { text: '  ', tone: 'textDim' as const },
       { text: `+${event.linesAdded}`, tone: 'success' as const },
-      { text: ` -${event.linesRemoved}`, tone: 'textDim' as const },
+      { text: ` -${event.linesRemoved}`, tone: 'error' as const },
     ],
     bodyLines,
     width: ctx.width - 2,

@@ -6,8 +6,10 @@ import { hasTaskBriefMetadataKeys, parseMarkdownYamlKey } from '../../../utils/m
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { borderedCardRowsBlock } from './bordered-card-block.js';
+import { calloutRowsBlock } from './callout-block.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import {
   formatExternalChangesValue,
@@ -31,6 +33,7 @@ import {
   wrappedTextBlock,
 } from './row-block-compose.js';
 import { taskStartedRowBlock } from './task-started-row-block.js';
+import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
 
 export function eventRows(options: {
   event: EngineEvent;
@@ -50,6 +53,8 @@ export function eventRowBlock(options: {
 }): ConversationRowBlock | null {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
+
+  if (isRunnerCallTranscriptRowSuppressed(event)) return null;
 
   switch (event.type) {
     case 'workflow_started':
@@ -90,19 +95,10 @@ export function eventRowBlock(options: {
     case 'replay_complete':
     case 'clarifications_collected':
     case 'clarification_answered':
-    case 'runner_call_started':
-    case 'runner_call_text_delta':
-    case 'runner_call_usage':
-    case 'runner_call_session_id':
-    case 'runner_call_artifact':
-    case 'runner_call_warning':
-    case 'runner_call_error':
-    case 'runner_call_completed':
-    case 'runner_call_tool_use':
       return null;
     case 'workflow_cancelled':
       return rowSeedsBlock(keyPrefix, [
-        { key: `${keyPrefix}-title`, text: 'Workflow cancelled', tone: 'warning', bold: true },
+        { key: `${keyPrefix}-title`, text: 'Workflow cancelled', tone: 'textDim', bold: true },
       ]);
     case 'paused_external_changes':
       return borderedCardRowsBlock({
@@ -110,7 +106,7 @@ export function eventRowBlock(options: {
         label: 'user edits',
         value: formatExternalChangesValue(event),
         width: ctx.width,
-        labelTone: event.conflict?.safeToContinue ? 'warning' : 'error',
+        labelTone: event.conflict?.safeToContinue ? 'textDim' : 'error',
       });
     case 'recovery_prompted':
       return borderedCardRowsBlock({
@@ -118,8 +114,8 @@ export function eventRowBlock(options: {
         label: 'recovery',
         value: `${event.reason}${event.taskId ? ` · ${event.taskId}` : ''} · recommended ${event.recommendedAction}`,
         width: ctx.width,
-        labelTone: 'warning',
-        valueTone: 'warning',
+        labelTone: 'textDim',
+        valueTone: 'textDim',
       });
     case 'recovery_action_selected':
       return borderedCardRowsBlock({
@@ -127,7 +123,7 @@ export function eventRowBlock(options: {
         label: 'recovery',
         value: `selected ${event.action} for ${event.reason}`,
         width: ctx.width,
-        labelTone: 'info',
+        labelTone: 'textDim',
       });
     case 'recovery_action_failed':
       return borderedCardRowsBlock({
@@ -136,7 +132,7 @@ export function eventRowBlock(options: {
         value: `${event.action} blocked: ${event.message}`,
         width: ctx.width,
         labelTone: 'error',
-        valueTone: 'error',
+        valueTone: 'textDim',
       });
     case 'recovery_resolved':
       return borderedCardRowsBlock({
@@ -152,24 +148,24 @@ export function eventRowBlock(options: {
     case 'rewind_to_spec':
       return cardRowsBlock({
         keyPrefix,
-        label: 'rewind → spec',
+        label: `rewind ${glyph('connectorHandoff')} spec`,
         value: event.comment || undefined,
         width: ctx.width,
-        labelTone: 'warning',
+        labelTone: 'textDim',
       });
     case 'rewind_to_plan':
       return cardRowsBlock({
         keyPrefix,
-        label: 'rewind → plan',
+        label: `rewind ${glyph('connectorHandoff')} plan`,
         value: event.comment || undefined,
         width: ctx.width,
-        labelTone: 'warning',
+        labelTone: 'textDim',
       });
     case 'brief_quality_passed':
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'brief quality',
-        value: formatScoreSummary(event.score, { errorCount: 0, warningCount: event.warningCount }),
+        value: `passed · ${formatScoreSummary(event.score, { errorCount: 0, warningCount: event.warningCount })}`,
         width: ctx.width,
         labelTone: 'success',
       });
@@ -177,13 +173,13 @@ export function eventRowBlock(options: {
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'brief quality',
-        value: formatScoreSummary(event.score, {
+        value: `failed · ${formatScoreSummary(event.score, {
           errorCount: event.errorCount,
           warningCount: event.warningCount,
-        }),
+        })}`,
         width: ctx.width,
         labelTone: 'error',
-        valueTone: 'error',
+        valueTone: 'textDim',
       });
     case 'drift_report':
       return borderedCardRowsBlock({
@@ -194,15 +190,15 @@ export function eventRowBlock(options: {
           warningCount: event.warningCount,
         }),
         width: ctx.width,
-        labelTone: event.passed ? 'success' : 'warning',
-        valueTone: event.passed ? 'textDim' : 'warning',
+        labelTone: event.passed ? 'success' : 'textDim',
+        valueTone: 'textDim',
       });
     case 'mode_downgrade_advised':
       return wrappedTextBlock({
         keyPrefix,
         text: `This looks trivial. Consider --mode ${event.suggestedMode} instead of --mode ${event.currentMode}.`,
         width: ctx.width,
-        tone: 'warning',
+        tone: 'textDim',
       });
     case 'task_started':
       return taskStartedRowBlock({
@@ -227,7 +223,7 @@ export function eventRowBlock(options: {
         value: event.taskId,
         width: ctx.width,
         labelTone: 'error',
-        valueTone: 'error',
+        valueTone: 'textDim',
         kind: 'summary',
       });
     case 'task_retry':
@@ -235,7 +231,7 @@ export function eventRowBlock(options: {
         keyPrefix,
         text: `retry  attempt ${event.attempt}/${event.maxRetries}`,
         width: ctx.width,
-        tone: 'warning',
+        tone: 'textDim',
       });
     case 'task_reset':
       return cardRowsBlock({
@@ -243,18 +239,20 @@ export function eventRowBlock(options: {
         label: 'task reset',
         value: `Task ${event.taskId} set to pending`,
         width: ctx.width,
-        labelTone: 'warning',
+        labelTone: 'textDim',
       });
     case 'implementer_generate_running':
       return runningImplementerRowBlock(keyPrefix, event, ctx);
     case 'implementer_generate_done':
       return implementerDoneRowBlock(keyPrefix, event, ctx, expanded);
     case 'implementer_generate_failed':
-      return wrappedTextBlock({
+      return cardRowsBlock({
         keyPrefix,
-        text: `${formatModelName(event.model)}  failed`,
+        label: 'failed',
+        value: formatModelName(event.model),
         width: ctx.width,
-        tone: 'error',
+        labelTone: 'error',
+        valueTone: 'textDim',
       });
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
@@ -290,7 +288,7 @@ export function eventRowBlock(options: {
         label: 'queued',
         value: queueMessageValue(`Message queued during ${event.phase}`, event.preview),
         width: ctx.width,
-        labelTone: 'info',
+        labelTone: 'textDim',
       });
     case 'message_injected_native':
       return cardRowsBlock({
@@ -306,7 +304,7 @@ export function eventRowBlock(options: {
         label: 'drained',
         value: `${event.count} queued ${pluralize(event.count, 'message')} folded into next prompt`,
         width: ctx.width,
-        labelTone: 'info',
+        labelTone: 'textDim',
       });
     case 'queue_cleared':
       return cardRowsBlock({
@@ -314,14 +312,14 @@ export function eventRowBlock(options: {
         label: 'queue cleared',
         value: `${event.count} pending ${pluralize(event.count, 'message')} removed`,
         width: ctx.width,
-        labelTone: 'warning',
+        labelTone: 'textDim',
       });
     case 'user_message':
       return wrappedTextBlock({
         keyPrefix,
-        text: `❯ ${event.text}`,
+        text: event.text,
         width: ctx.width,
-        tone: 'accent',
+        tone: 'text',
         bold: true,
       });
     case 'planner_attachments_dropped':
@@ -330,55 +328,50 @@ export function eventRowBlock(options: {
         label: 'attachments dropped',
         value: `${countNoun(event.count, 'image')} dropped (${event.reason})`,
         width: ctx.width,
-        labelTone: 'warning',
-        valueTone: 'warning',
+        labelTone: 'textDim',
+        valueTone: 'textDim',
       });
     case 'warning':
-      return borderedCardRowsBlock({
+      return calloutRowsBlock({
         keyPrefix,
         label: 'warning',
         value: event.message,
         width: ctx.width,
-        labelTone: 'warning',
-        valueTone: 'warning',
+        severity: 'warning',
       });
     case 'error':
-      return borderedCardRowsBlock({
+      return calloutRowsBlock({
         keyPrefix,
         label: 'error',
         value: event.message,
         width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'error',
+        severity: 'error',
       });
     case 'cost_prediction':
       return rowsBlock(keyPrefix, costPredictionRows(keyPrefix, event, ctx.width));
     case 'budget_warning':
-      return borderedCardRowsBlock({
+      return calloutRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
         width: ctx.width,
-        labelTone: 'warning',
-        valueTone: 'warning',
+        severity: 'warning',
       });
     case 'budget_paused':
-      return borderedCardRowsBlock({
+      return calloutRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
         width: ctx.width,
-        labelTone: 'warning',
-        valueTone: 'warning',
+        severity: 'warning',
       });
     case 'budget_exceeded':
-      return borderedCardRowsBlock({
+      return calloutRowsBlock({
         keyPrefix,
         label: 'budget',
         value: `Exceeded: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
         width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'error',
+        severity: 'error',
       });
     case 'approval_mode_changed':
       return cardRowsBlock({
@@ -386,8 +379,8 @@ export function eventRowBlock(options: {
         label: 'approval',
         value: event.mode === 'yolo' ? 'tiered approvals disabled' : 'tiered approvals restored',
         width: ctx.width,
-        labelTone: event.mode === 'yolo' ? 'warning' : 'textDim',
-        valueTone: event.mode === 'yolo' ? 'warning' : 'textDim',
+        labelTone: 'textDim',
+        valueTone: 'textDim',
       });
     case 'runner_call_activity':
       return runnerActivityBatchRowBlock({
@@ -488,7 +481,7 @@ function runningImplementerRowBlock(
       keyPrefix: `${keyPrefix}-running-0`,
       text: fileHint,
       width: ctx.width,
-      tone: 'implementer',
+      tone: 'textDim',
     }),
     ...streamLines.map((line, index) =>
       wrappedTextBlock({
@@ -511,7 +504,7 @@ function implementerDoneRowBlock(
     keyPrefix: `${keyPrefix}-header-0`,
     text: `${event.file}  ${formatDuration(event.duration)}`,
     width: ctx.width,
-    tone: 'implementer',
+    tone: 'textDim',
   });
 
   if (!event.diff) {
@@ -534,7 +527,7 @@ function implementerDoneRowBlock(
       header,
       wrappedTextBlock({
         keyPrefix: `${keyPrefix}-collapsed-1`,
-        text: `▸ ${event.file} (+${event.linesAdded} -${event.linesRemoved})  Ctrl+D`,
+        text: `${event.file} (+${event.linesAdded} -${event.linesRemoved})  ctrl+d`,
         width: ctx.width,
         tone: 'textDim',
       }),
@@ -554,7 +547,7 @@ function validateRowBlock(
       keyPrefix,
       text: validationRow(event),
       width,
-      tone: event.passed ? 'success' : 'validator',
+      tone: event.passed ? 'success' : 'textDim',
     }),
     event.status === 'done' && !event.passed && event.error
       ? wrappedTextBlock({
@@ -577,7 +570,7 @@ function escalateRowBlock(
       keyPrefix,
       text: `escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`,
       width,
-      tone: 'planner',
+      tone: 'textDim',
       bold: true,
     }),
     event.hint
@@ -596,16 +589,7 @@ function queueMessageValue(base: string, preview: string | undefined): string {
 }
 
 function plannerTextTone(role: EngineEventOf<'planner_text'>['role']): ConversationRowTone {
-  switch (role) {
-    case 'implementer':
-      return 'implementer';
-    case 'planner':
-      return 'planner';
-    case undefined:
-      return 'text';
-    default:
-      return assertNever(role);
-  }
+  return role === undefined ? 'text' : 'textDim';
 }
 
 function recoveryResolvedTone(
@@ -616,7 +600,7 @@ function recoveryResolvedTone(
     case 'retry-current-task':
       return 'success';
     case 'skipped-current-task':
-      return 'warning';
+      return 'textDim';
     case 'aborted':
       return 'error';
     default:

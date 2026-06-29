@@ -2,8 +2,10 @@ import { PassThrough } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { setTerminalInputModes } from './control.js';
 
+export type MouseEventType = 'wheel-up' | 'wheel-down' | 'press' | 'release' | 'move';
+
 export interface MouseEvent {
-  type: 'wheel-up' | 'wheel-down';
+  type: MouseEventType;
   x: number;
   y: number;
   button: number;
@@ -29,8 +31,6 @@ const HELD_PREFIX_FLUSH_MS = 35;
 const BARE_ESCAPE_PREFIX_FLUSH_MS = 50;
 
 // biome-ignore-start lint/suspicious/noControlCharactersInRegex: matches ANSI escape bytes in terminal input
-const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
-const X10_MOUSE_RE = /\u001b\[M([\s\S])([\s\S])([\s\S])/g;
 const PASTE_BODY_ESCAPE_RE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001bO[@-~]|\u001b/g;
 const PASTE_BODY_UNSAFE_CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 // biome-ignore-end lint/suspicious/noControlCharactersInRegex: matches ANSI escape bytes in terminal input
@@ -59,39 +59,46 @@ function sanitizePasteBytes(body: Buffer): Buffer {
   return Buffer.from(clean);
 }
 
-function createMouseEvent(btn: number, x: number, y: number): MouseEvent | undefined {
-  const baseButton = btn & ~(4 | 8 | 16);
-  if (baseButton !== 64 && baseButton !== 65) return undefined;
+const MOTION_BIT = 32;
+const WHEEL_BIT = 64;
 
-  return {
-    type: baseButton === 64 ? 'wheel-up' : 'wheel-down',
-    x,
-    y,
-    button: baseButton,
+function classifyMouseType(baseButton: number, final: 'M' | 'm'): MouseEventType {
+  if ((baseButton & MOTION_BIT) !== 0) return 'move';
+  if (baseButton === 3) return 'release';
+  return final === 'm' ? 'release' : 'press';
+}
+
+function createMouseEvent(
+  btn: number,
+  x: number,
+  y: number,
+  final: 'M' | 'm',
+): MouseEvent | undefined {
+  const baseButton = btn & ~(4 | 8 | 16);
+  const modifiers = {
     shift: (btn & 4) !== 0,
     meta: (btn & 8) !== 0,
     ctrl: (btn & 16) !== 0,
   };
-}
 
-export function parseMouseEvents(chunk: string): { events: MouseEvent[]; clean: string } {
-  const events: MouseEvent[] = [];
-  const pushMouseEvent = (btn: number, x: number, y: number) => {
-    const event = createMouseEvent(btn, x, y);
-    if (event) events.push(event);
+  if (baseButton === 64 || baseButton === 65) {
+    return {
+      type: baseButton === 64 ? 'wheel-up' : 'wheel-down',
+      x,
+      y,
+      button: baseButton,
+      ...modifiers,
+    };
+  }
+  if ((baseButton & WHEEL_BIT) !== 0) return undefined;
+
+  return {
+    type: classifyMouseType(baseButton, final),
+    x,
+    y,
+    button: baseButton & ~MOTION_BIT,
+    ...modifiers,
   };
-
-  const clean = chunk
-    .replace(SGR_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
-      pushMouseEvent(parseInt(rawBtn, 10), parseInt(rawX, 10), parseInt(rawY, 10));
-      return '';
-    })
-    .replace(X10_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
-      pushMouseEvent(rawBtn.charCodeAt(0) - 32, rawX.charCodeAt(0) - 32, rawY.charCodeAt(0) - 32);
-      return '';
-    });
-
-  return { events, clean };
 }
 
 function startsWithBytes(source: Buffer, expected: Buffer): boolean {
@@ -128,6 +135,7 @@ function readX10Mouse(source: Buffer): MouseRead | undefined {
       source.readUInt8(3) - 32,
       source.readUInt8(4) - 32,
       source.readUInt8(5) - 32,
+      'M',
     ),
   };
 }
@@ -147,7 +155,12 @@ function readSgrMouse(source: Buffer): MouseRead | undefined {
       return {
         kind: 'complete',
         length: i + 1,
-        event: createMouseEvent(parseInt(rawBtn, 10), parseInt(rawX, 10), parseInt(rawY, 10)),
+        event: createMouseEvent(
+          parseInt(rawBtn, 10),
+          parseInt(rawX, 10),
+          parseInt(rawY, 10),
+          byte === 0x6d ? 'm' : 'M',
+        ),
       };
     }
     if (!isDigitByte(byte) && byte !== 0x3b) return undefined;
@@ -221,65 +234,6 @@ function readEscape(source: Buffer, pasteActive: boolean, mouseEnabled: boolean)
   return { kind: 'text', length: 1 };
 }
 
-function prefixLengthHeldBack(text: string): number {
-  const maxLen = Math.min(text.length, PASTE_START.length - 1);
-  for (let len = maxLen; len >= 1; len--) {
-    const suffix = text.slice(text.length - len);
-    if (PASTE_START.startsWith(suffix) || PASTE_END.startsWith(suffix)) {
-      return len;
-    }
-  }
-  return 0;
-}
-
-export function stripPasteMarkers(
-  text: string,
-  pasteActive: boolean,
-): { clean: string; pasteActive: boolean; partial: string } {
-  let active = pasteActive;
-  const parts: { text: string; active: boolean }[] = [];
-  let cursor = 0;
-  while (cursor < text.length) {
-    const startAt = text.indexOf(PASTE_START, cursor);
-    const endAt = text.indexOf(PASTE_END, cursor);
-    const next = startAt === -1 ? endAt : endAt === -1 ? startAt : Math.min(startAt, endAt);
-    if (next === -1) {
-      parts.push({ text: text.slice(cursor), active });
-      break;
-    }
-    parts.push({ text: text.slice(cursor, next), active });
-    if (next === startAt) {
-      active = true;
-      cursor = next + PASTE_START.length;
-    } else {
-      active = false;
-      cursor = next + PASTE_END.length;
-    }
-  }
-
-  const rawClean = parts.map((part) => part.text).join('');
-  const held = prefixLengthHeldBack(rawClean);
-  const partial = held === 0 ? '' : rawClean.slice(rawClean.length - held);
-
-  const bodyLengths: number[] = [];
-  let remainingTail = held;
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const partLength = parts[i]?.text.length ?? 0;
-    const trim = Math.min(remainingTail, partLength);
-    bodyLengths[i] = partLength - trim;
-    remainingTail -= trim;
-  }
-
-  const clean = parts
-    .map((part, i) => {
-      const body = part.text.slice(0, bodyLengths[i]);
-      return part.active ? sanitizePasteBody(body) : body;
-    })
-    .join('');
-
-  return { clean, pasteActive: active, partial };
-}
-
 export interface FilteredStdin {
   stdin: NodeJS.ReadStream;
   activate: () => void;
@@ -328,11 +282,16 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
 
 export function createFilteredStdin(
   stdin: NodeJS.ReadStream,
-  opts?: { activate?: boolean | undefined; mouse?: boolean | undefined },
+  opts?: {
+    activate?: boolean | undefined;
+    mouse?: boolean | undefined;
+    hover?: boolean | undefined;
+  },
 ): FilteredStdin {
   const filtered = bridgeTty(new PassThrough(), stdin);
   const decoder = new StringDecoder('utf8');
   const mouseEnabled = opts?.mouse ?? true;
+  const hoverEnabled = opts?.hover ?? false;
   let mouseListeners: MouseListener[] = [];
   let heldPrefix = EMPTY_BUFFER;
   let pasteActive = false;
@@ -440,7 +399,7 @@ export function createFilteredStdin(
   const activate = () => {
     if (active || disabled) return;
     active = true;
-    setTerminalInputModes('enable', { mouse: mouseEnabled, paste: true });
+    setTerminalInputModes('enable', { mouse: mouseEnabled, paste: true, hover: hoverEnabled });
     stdin.on('data', dataHandler);
   };
 

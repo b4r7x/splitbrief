@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { availableRows, computeListDisplayWindow, windowSlice } from './scroll-window.js';
+import {
+  availableRows,
+  computeListDisplayWindow,
+  isItemIndexVisible,
+  windowSlice,
+} from './scroll-window.js';
 
 const items = Array.from({ length: 30 }, (_, index) => index);
 
@@ -79,5 +84,34 @@ describe('computeListDisplayWindow', () => {
       section: 'project',
     });
     expect(window.visibleSlots[3]).toEqual({ kind: 'gap', itemIndex: 2 });
+  });
+});
+
+describe('isItemIndexVisible', () => {
+  it('returns false when the row budget is zero', () => {
+    expect(
+      isItemIndexVisible({
+        items: ['alpha', 'beta'],
+        selectedIndex: 0,
+        rowBudget: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false when the selected index is outside the visible window', () => {
+    expect(
+      isItemIndexVisible({
+        items,
+        selectedIndex: 20,
+        rowBudget: 4,
+      }),
+    ).toBe(true);
+    expect(
+      isItemIndexVisible({
+        items: [],
+        selectedIndex: 0,
+        rowBudget: 4,
+      }),
+    ).toBe(false);
   });
 });

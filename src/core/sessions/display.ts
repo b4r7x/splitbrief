@@ -1,5 +1,6 @@
 import type { Session } from '../schemas/session.js';
 import type { TaskCompletionMethod } from '../schemas/enums.js';
+import { glyph } from '../../lib/glyphs.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export interface SessionDisplayColors {
@@ -47,14 +48,6 @@ export function getSessionStatusDisplay(
   status: Session['status'],
   theme: SessionDisplayColors,
 ): SessionStatusDisplay {
-  switch (status) {
-    case 'complete':
-      return { icon: '\u2713', color: theme.success };
-    case 'interrupted':
-      return { icon: '\u25cb', color: theme.warning };
-    case 'failed':
-      return { icon: '\u2717', color: theme.error };
-    default:
-      return assertNever(status);
-  }
+  if (status === 'complete') return { icon: glyph('check'), color: theme.success };
+  return { icon: glyph('statusPending'), color: theme.textDim };
 }

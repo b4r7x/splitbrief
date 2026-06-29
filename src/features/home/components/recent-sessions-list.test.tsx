@@ -1,17 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  installClipboardExecFixture,
+  readClipboardExecCalls,
+  resetClipboardExecFixture,
+  restoreClipboardExecFixture,
+} from '#testing/helpers/clipboard-exec-fixture.js';
 import { Box } from 'ink';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { CURSOR } from '../../../components/pickers/cursor-glyph.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
+
+const originalPlatform = process.platform;
 
 const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const CURSOR_GLYPH = CURSOR.trimEnd();
+const FOCUS_BAR = '▌';
 
 function lineIndexContaining(frame: string, text: string): number {
   const index = frame.split('\n').findIndex((line) => line.includes(text));
@@ -34,13 +42,19 @@ describe('RecentSessionsList', () => {
   let closed: number;
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
+    installClipboardExecFixture();
+    resetClipboardExecFixture();
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     selected = null;
     closed = 0;
   });
 
   afterEach(() => {
     resetAllStores();
+    restoreClipboardExecFixture();
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
   const onSelect = (s: Session) => {
@@ -63,15 +77,15 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Recent sessions');
+    expect(frame).toContain('recent sessions');
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
     expect(frame).toContain('charlie');
     expect(frame).not.toContain('navigate');
     expect(frame).not.toContain('Enter resume');
     expect(frame).not.toContain('Esc back');
-    expect(frame).toContain(CURSOR_GLYPH);
-    expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(lineIndexContaining(frame, 'alpha'));
+    expect(frame).toContain(FOCUS_BAR);
+    expect(lineIndexContaining(frame, FOCUS_BAR)).toBe(lineIndexContaining(frame, 'alpha'));
     ui.unmount();
   });
 
@@ -111,11 +125,11 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const firstRow = lineIndexContaining(ui.lastFrame() ?? '', 'alpha');
-    const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+    const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_DOWN);
     await tick(20);
-    const after = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+    const after = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
     expect(after).toBeGreaterThan(before);
 
     ui.stdin.write(ARROW_DOWN);
@@ -123,7 +137,7 @@ describe('RecentSessionsList', () => {
     ui.stdin.write(ARROW_DOWN);
     await tick(20);
 
-    const wrapped = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+    const wrapped = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
     expect(wrapped).toBe(firstRow);
     ui.unmount();
   });
@@ -140,14 +154,14 @@ describe('RecentSessionsList', () => {
     );
     await tick(20);
 
-    const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+    const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_UP);
     await tick(20);
 
     expect(closed).toBe(1);
     expect(selected).toBeNull();
-    expect(lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH)).toBe(before);
+    expect(lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR)).toBe(before);
     ui.unmount();
   });
 
@@ -215,7 +229,97 @@ describe('RecentSessionsList', () => {
     expect(frame).toContain('gamma task');
     expect(frame).not.toContain('alpha task');
     expect(frame).not.toContain('beta task');
-    expect(lineIndexContaining(frame, CURSOR_GLYPH)).toBe(lineIndexContaining(frame, 'gamma task'));
+    expect(lineIndexContaining(frame, FOCUS_BAR)).toBe(lineIndexContaining(frame, 'gamma task'));
+    ui.unmount();
+  });
+
+  it('y copies the focused session feature and leaves the filter unchanged', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderWithOutdentRoom(
+      <RecentSessionsList
+        sessions={sessions}
+        hasOverlay={false}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write('y');
+    await tick(20);
+
+    await vi.waitFor(() => {
+      expect(readClipboardExecCalls().at(-1)?.stdin).toBe('alpha');
+    });
+    expect(selected).toBeNull();
+    expect(closed).toBe(0);
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('alpha');
+    expect(frame).toContain('bravo');
+    expect(frame).toContain('charlie');
+    expect(frame).not.toContain('No matching sessions');
+    ui.unmount();
+  });
+
+  it('y copies the currently highlighted session, not always the first', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderWithOutdentRoom(
+      <RecentSessionsList
+        sessions={sessions}
+        hasOverlay={false}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write(ARROW_DOWN);
+    await tick(20);
+    ui.stdin.write('y');
+    await tick(20);
+
+    await vi.waitFor(() => {
+      expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
+    });
+    ui.unmount();
+  });
+
+  it('renders a dim "y copy" affordance on the focused row only', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderWithOutdentRoom(
+      <RecentSessionsList
+        sessions={sessions}
+        hasOverlay={false}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('y copy');
+    expect(lineIndexContaining(frame, 'y copy')).toBe(lineIndexContaining(frame, 'alpha'));
+    expect(frame.match(/y copy/g)?.length).toBe(1);
+    ui.unmount();
+  });
+
+  it('y does not copy when no session row is visible in the list budget', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderWithOutdentRoom(
+      <RecentSessionsList
+        sessions={sessions}
+        hasOverlay={false}
+        onSelect={onSelect}
+        onClose={onClose}
+        maxVisible={0}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write('y');
+    await tick(20);
+
+    expect(readClipboardExecCalls()).toHaveLength(0);
     ui.unmount();
   });
 
@@ -231,7 +335,7 @@ describe('RecentSessionsList', () => {
     );
     await tick(20);
 
-    const before = lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH);
+    const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_DOWN);
     await tick(20);
@@ -240,7 +344,7 @@ describe('RecentSessionsList', () => {
     ui.stdin.write(ESC);
     await tick(20);
 
-    expect(lineIndexContaining(ui.lastFrame() ?? '', CURSOR_GLYPH)).toBe(before);
+    expect(lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR)).toBe(before);
     expect(selected).toBeNull();
     expect(closed).toBe(0);
     ui.unmount();

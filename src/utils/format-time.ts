@@ -14,15 +14,6 @@ export function formatTime(ms: number): string {
   return `${secs}s`;
 }
 
-export function formatTimeHHMMSS(ms: number): string {
-  if (!Number.isFinite(ms)) return '00:00:00';
-  const totalSecs = Math.max(0, Math.floor(ms / 1000));
-  const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
-  const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
-  const s = String(totalSecs % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
-
 export function formatEta(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '';
   return `~${formatTime(ms)} remaining`;

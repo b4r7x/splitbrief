@@ -5,7 +5,7 @@ import type { SessionRef } from '../types/session-ref.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { SessionSchema } from '../schemas/session.js';
 import { parsePersistedSession } from './summary-parser.js';
-import { sessionDir, sessionsRoot, validateSessionId } from '../paths.js';
+import { sessionDir, sessionsRoot, isValidSessionId } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { loadState } from '../state/persistence.js';
@@ -84,13 +84,11 @@ function recoverSession(projectDir: string, sessionId: string): Session | null {
 const MAX_RECENT_SESSIONS = 30;
 
 function isValidSessionDirectory(sessionId: string): boolean {
-  try {
-    validateSessionId(sessionId);
-    return true;
-  } catch (err) {
-    warnError(`Skipping session directory '${sessionId}'`, err);
+  if (!isValidSessionId(sessionId)) {
+    warnError(`Skipping session directory '${sessionId}'`, sessionError.invalidId(sessionId));
     return false;
   }
+  return true;
 }
 
 function readSessions(projectDir: string): Session[] {

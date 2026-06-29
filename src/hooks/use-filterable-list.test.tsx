@@ -167,6 +167,19 @@ describe('useFilterableList', () => {
     ui.unmount();
   });
 
+  it('does not select on Enter when the page has no visible rows (pageSize 0)', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta']} pageSize={0} />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('current:alpha|chosen:none');
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:none');
+
+    ui.unmount();
+  });
+
   it('deletes a full emoji with one backspace', async () => {
     const ui = renderFeature(<Harness items={['alpha']} />);
     await tick(20);

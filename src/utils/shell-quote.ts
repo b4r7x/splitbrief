@@ -1,3 +1,17 @@
+export function shellQuoteArg(arg: string): string {
+  if (arg.length === 0) return "''";
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg)) return arg;
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+export function formatShellArgv(argv: readonly string[]): string {
+  return argv.map(shellQuoteArg).join(' ');
+}
+
+export function formatDetachedAttachHint(projectDir: string, sessionId: string): string {
+  return formatShellArgv(['diptych', 'attach', sessionId, '--project', projectDir]);
+}
+
 export function shellCommandFromText(text: string): string | null {
   const prefixes = [
     '/bin/zsh -lc ',

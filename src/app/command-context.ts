@@ -8,20 +8,23 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
-import { getSections } from '../stores/workflow/actions.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
-import { requestClearQueue, requestRewind } from '../features/workflow/handlers.js';
-import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
-import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
-import { refreshDetection } from '../engine/detection/service.js';
+import { getDefaultDetectionService } from '../engine/detection/service.js';
+import { refreshDetectionStores } from '../stores/discovery/detection-adapter.js';
+import { detectionStore } from '../stores/project/detection.js';
 import { readActive } from '../core/sessions/lifecycle.js';
+import type { RewindTarget } from '../core/state/build-rewind-action.js';
 import type {
+  CopyResult,
+  CopyTarget,
+  QueueClearCommandResult,
   RuntimeCommandContext,
   ScrollCommandTarget,
   ScrollConversationResult,
   ToggleLatestActivityBatchResult,
 } from '../core/runtime/commands/types.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
+import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { sessionDir } from '../core/paths.js';
 import { rebuildRepomap } from '../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
@@ -35,6 +38,24 @@ import {
 } from '../core/approval/store.js';
 import { error } from '../utils/error.js';
 import { assertNever } from '../utils/type-guards.js';
+
+export interface ConversationScrollMetrics {
+  renderableCount: number;
+  totalHeight: number;
+  maxOffset: number;
+  viewportHeight: number;
+}
+
+// Workflow-feature operations the runtime commands need but that the app shell must not reach into
+// directly. `app.tsx` (the composition root) wires the real feature implementations and injects them
+// here, keeping every `features/workflow/**` import at the app root rather than in this glue module.
+export interface WorkflowCommandPorts {
+  requestRewind: (request: RewindTarget) => boolean;
+  requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
+  findLatestActivityBatchKey: () => string | null;
+  readScrollMetrics: () => ConversationScrollMetrics;
+  resolveCopyValue: (target: CopyTarget) => string | null;
+}
 
 const appCommandContextError = {
   noActiveSession: (command: string) =>
@@ -51,42 +72,52 @@ function currentSessionId(projectDir: string): string | null {
   return readActive(projectDir);
 }
 
+function isAttachedClient(): boolean {
+  const route = routerStore.get();
+  return route.screen === 'workflow' && route.attach !== undefined;
+}
+
 function conversationPageStep(viewportHeight: number): number {
   return Math.max(1, viewportHeight - 1);
 }
 
-function scrollConversation(target: ScrollCommandTarget): ScrollConversationResult {
-  const snapshot = readConversationScrollSnapshot();
+function scrollConversation(
+  target: ScrollCommandTarget,
+  readScrollMetrics: WorkflowCommandPorts['readScrollMetrics'],
+): ScrollConversationResult {
+  const metrics = readScrollMetrics();
   switch (target) {
     case 'top':
       conversationScrollStore.scrollUp({
-        renderableCount: snapshot.renderableCount,
-        totalHeight: snapshot.totalHeight,
-        step: snapshot.maxOffset,
-        maxOffset: snapshot.maxOffset,
+        renderableCount: metrics.renderableCount,
+        totalHeight: metrics.totalHeight,
+        step: metrics.maxOffset,
+        maxOffset: metrics.maxOffset,
       });
       return { status: 'scrolled' };
     case 'bottom':
-      conversationScrollStore.scrollToBottom(snapshot.renderableCount);
+      conversationScrollStore.scrollToBottom(metrics.renderableCount);
       return { status: 'scrolled' };
     case 'page-up':
       conversationScrollStore.scrollUp({
-        renderableCount: snapshot.renderableCount,
-        totalHeight: snapshot.totalHeight,
-        step: conversationPageStep(snapshot.viewportHeight),
-        maxOffset: snapshot.maxOffset,
+        renderableCount: metrics.renderableCount,
+        totalHeight: metrics.totalHeight,
+        step: conversationPageStep(metrics.viewportHeight),
+        maxOffset: metrics.maxOffset,
       });
       return { status: 'scrolled' };
     case 'page-down':
-      conversationScrollStore.scrollDown(conversationPageStep(snapshot.viewportHeight));
+      conversationScrollStore.scrollDown(conversationPageStep(metrics.viewportHeight));
       return { status: 'scrolled' };
     default:
       return assertNever(target);
   }
 }
 
-function toggleLatestActivityBatch(): ToggleLatestActivityBatchResult {
-  const key = findLatestExpandableActivityBatchKey(getSections());
+function toggleLatestActivityBatch(
+  findLatestActivityBatchKey: WorkflowCommandPorts['findLatestActivityBatchKey'],
+): ToggleLatestActivityBatchResult {
+  const key = findLatestActivityBatchKey();
   if (key === null) {
     return {
       status: 'unavailable',
@@ -99,8 +130,24 @@ function toggleLatestActivityBatch(): ToggleLatestActivityBatchResult {
   return { status: 'toggled', expanded };
 }
 
-export function buildCommandContext({ exit }: { exit: () => void }): RuntimeCommandContext {
+async function copyTarget(
+  target: CopyTarget,
+  resolveCopyValue: WorkflowCommandPorts['resolveCopyValue'],
+): Promise<CopyResult> {
+  const value = resolveCopyValue(target);
+  if (value === null || value.length === 0) return 'empty';
+  return copyToClipboard(value);
+}
+
+export function buildCommandContext({
+  exit,
+  workflow,
+}: {
+  exit: () => void;
+  workflow: WorkflowCommandPorts;
+}): RuntimeCommandContext {
   return createCommandContext({
+    isAttached: isAttachedClient(),
     projectDir: () => configStore.get().projectDir,
     getConfig: () => configStore.get().config,
     saveConfig: (config) => {
@@ -125,14 +172,18 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
-      await refreshDetection(configStore.get().projectDir);
+      await refreshDetectionStores(
+        getDefaultDetectionService(),
+        detectionStore,
+        configStore.get().projectDir,
+      );
     },
     refreshProjectFiles: projectFilesStore.requestRefresh,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestRewind,
-    requestTaskRedo: (taskId) => requestRewind({ target: 'task', taskId }),
+    requestRewind: workflow.requestRewind,
+    requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: requestClearQueue,
+    clearQueue: workflow.requestClearQueue,
     rebuildRepomap: async (projectDir, cacheDir) =>
       rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
     attachImage,
@@ -162,8 +213,9 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     compactTranscript: performManualCompaction,
     exportSession: async (projectDir, sessionId) =>
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
-    scrollConversation,
-    toggleLatestActivityBatch,
+    scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
+    toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
+    copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
       if (terminalSizeStore.get().isSmall) {
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };

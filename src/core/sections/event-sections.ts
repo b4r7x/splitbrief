@@ -61,8 +61,11 @@ function isDiffEvent<TEvent extends SectionableEvent>(event: TEvent): event is T
   return event.type === 'implementer_generate_done';
 }
 
-export function diffEventKey(event: SectionableEvent): string {
-  return `${event.type}:${event.ts ?? 0}`;
+// The diff's stable identity is its global render index, not its timestamp: publishers stamp events
+// with `Date.now()`, so two diffs produced in the same millisecond would collide on a type+ts key and
+// expand/collapse together. The global index is unique per rendered event and survives appends.
+export function diffEventKey(event: SectionableEvent, globalIndex: number): string {
+  return `${event.type}:${globalIndex}`;
 }
 
 export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
@@ -75,7 +78,7 @@ export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
       const event = section.items[index];
       if (!event) continue;
       if (isDiffEvent(event) && event.diff) {
-        return diffEventKey(event);
+        return diffEventKey(event, section.startIndex + index);
       }
     }
   }

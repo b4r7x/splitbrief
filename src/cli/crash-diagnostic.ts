@@ -1,5 +1,6 @@
 import type { ServerStatus } from '../engine/ipc/lockfile.js';
 import { buildCrashDiagnostic, type CrashDiagnostic } from '../engine/ipc/crash-diagnostic.js';
+import { glyph } from '../lib/glyphs.js';
 
 export type { CrashDiagnostic };
 
@@ -36,7 +37,7 @@ export function formatCrashDiagnostic(diag: CrashDiagnostic): string {
   if (diag.cause !== null) lines.push(`  Cause        : ${diag.cause}`);
 
   if (diag.status === 'crashed' && diag.logTail !== null) {
-    const sep = `  ${'─'.repeat(width - 4)}`;
+    const sep = `  ${glyph('divider').repeat(width - 4)}`;
     lines.push('');
     lines.push('  Last lines of server.log:');
     lines.push(sep);

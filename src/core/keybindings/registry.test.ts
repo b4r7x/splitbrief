@@ -6,7 +6,7 @@ describe('workflow scroll shortcut', () => {
     const scroll = getShortcutsForScreen('workflow').find((s) => s.id === 'scroll');
     expect(scroll).toBeDefined();
     expect(scroll?.key).toBe('Shift+↑/↓, PgUp/PgDn, Home/End');
-    expect(scroll?.description).toBe('Scroll; PageUp/PageDown; /scroll top|bottom');
+    expect(scroll?.description).toBe('scroll; PageUp/PageDown; /scroll top|bottom');
     expect(scroll?.key).not.toBe('↑/↓');
     expect(scroll?.key).not.toContain('Ctrl+B/F');
     expect(getShortcutsForScreen('workflow').some((s) => s.id === 'toggle-sidebar')).toBe(false);
@@ -24,7 +24,7 @@ describe('workflow scroll shortcut', () => {
     );
     expect(reviewEdit).toMatchObject({
       key: 'Ctrl+E',
-      description: 'Open editor in review mode only',
+      description: 'open editor in review mode only',
     });
   });
 
@@ -32,7 +32,7 @@ describe('workflow scroll shortcut', () => {
     const activity = getShortcutsForScreen('workflow').find((s) => s.id === 'activity');
     expect(activity).toMatchObject({
       key: '/activity, Ctrl+A',
-      description: 'Expand activity rows',
+      description: 'expand activity rows',
     });
     expect(activity?.key).not.toContain('Alt+A');
   });

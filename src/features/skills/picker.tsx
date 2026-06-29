@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme, type Theme } from '../../components/theme.js';
+import { Text } from 'ink';
+import { useTheme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
-import { CursorCell } from '../../components/pickers/cursor-cell.js';
+import { ListRow } from '../../components/list-row.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
-import { AlignedOptionRow } from '../../components/pickers/aligned-option-row.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean =>
   filterByFields(s, query, ['name', 'description']);
@@ -22,7 +22,8 @@ interface SkillRowProps {
   isChecked: boolean;
   nameColWidth: number;
   descMaxWidth: number;
-  theme: Theme;
+  width: number;
+  showDesc: boolean;
 }
 
 function SkillRow({
@@ -31,21 +32,19 @@ function SkillRow({
   isChecked,
   nameColWidth,
   descMaxWidth,
-  theme: t,
+  width,
+  showDesc,
 }: SkillRowProps) {
   const name = truncateTerminalDisplayText(skill.name, nameColWidth);
   const desc = truncateTerminalDisplayText(skill.description, descMaxWidth);
   return (
-    <AlignedOptionRow
-      lead={<CursorCell isCursor={isCursor} />}
-      meta={{ text: isChecked ? '[x]' : '[ ]', width: 3, color: isChecked ? t.success : t.textDim }}
-      metaGap={1}
+    <ListRow
+      state={isCursor ? 'active' : 'default'}
       label={name}
       labelWidth={nameColWidth}
-      labelColor={isCursor ? t.accent : t.text}
-      labelBold={isCursor}
-      detail={`  ${desc}`}
-      detailColor={t.textDim}
+      width={width}
+      selected={isChecked}
+      {...(showDesc && desc ? { metadata: desc } : {})}
     />
   );
 }
@@ -81,8 +80,8 @@ export function SkillsPicker() {
   const shouldAppendChar = (ch: string) => ch !== ' ' || !navigating;
 
   const hintText = navigating
-    ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel'
-    : '\u2191\u2193 to navigate  Ctrl+A all  Enter confirm  Esc cancel';
+    ? `space toggle${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
+    : `↑↓ navigate${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
 
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
   const nameColWidth = Math.max(8, Math.min(isSmall ? 20 : 26, Math.max(1, panelWidth - 10)));
@@ -94,9 +93,9 @@ export function SkillsPicker() {
       filterFn={filterSkill}
       getKey={(skill) => skill.id}
       onConfirm={handleConfirm}
-      title={`Planner Skills (${checked.size} selected)`}
+      onActivate={(skill) => toggle(skill.id)}
+      title={`skills${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
-      bordered={false}
       chromeRows={12}
       width={panelWidth}
       shouldAppendChar={shouldAppendChar}
@@ -135,24 +134,20 @@ export function SkillsPicker() {
       }}
       placeholder={
         skills.length === 0 ? (
-          <Box flexDirection="column">
-            <Text color={t.textDim}> No skills found.</Text>
-            <Text color={t.textDim}>
-              {' '}
-              Add skills to .claude/skills/ or .diptych/skills/ to get started.
-            </Text>
-          </Box>
+          <Text color={t.textDim}>
+            {'  no skills yet — add them under .claude/skills/ or .diptych/skills/'}
+          </Text>
         ) : (
-          <Text color={t.textDim}>{'  No matching skills'}</Text>
+          <Text color={t.textDim}>{'  no matching skills'}</Text>
         )
       }
       section={{
         by: (skill) => skill.scope,
         gapBetweenSections: true,
         renderHeader: (section) => (
-          <Text bold color={t.text}>
+          <Text color={t.textDim}>
             {'  '}
-            {section === 'project' ? 'Project' : 'Global'}
+            {section}
           </Text>
         ),
       }}
@@ -163,7 +158,8 @@ export function SkillsPicker() {
           isChecked={checked.has(skill.id)}
           nameColWidth={nameColWidth}
           descMaxWidth={descMaxWidth}
-          theme={t}
+          width={panelWidth}
+          showDesc={!isSmall}
         />
       )}
     />

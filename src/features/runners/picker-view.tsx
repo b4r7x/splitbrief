@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { TwoColumnPicker } from './two-column-picker/picker.js';
+import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';
@@ -12,11 +12,31 @@ import { isCustomModel } from './model-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
-import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
+import { PROVIDER_CATALOG, isProviderLocal } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';
+import { formatModelName } from '../../core/model-display.js';
+import { formatContextLength } from '../../core/formatting.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 const CUSTOM_ROW_OFFSET = 1;
+
+function toolPreview(item: PickerOption, modelCount: number): string {
+  const name = item.displayName.toLowerCase();
+  const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
+  if (!item.available && !isCommandBased && item.kind !== 'agent-sdk') {
+    return `${name} · ${item.kind} · ${isProviderLocal(item.id) ? 'no models' : 'unavailable'}`;
+  }
+  const noun = modelCount === 1 ? 'model' : 'models';
+  return `${name} · ${item.kind} · ${modelCount} ${noun} detected`;
+}
+
+function modelPreview(model: ModelOption, tool: PickerOption | undefined): string {
+  const parts = [formatModelName(model.id).toLowerCase()];
+  const ctx = formatContextLength(model.contextLength).toLowerCase();
+  if (ctx) parts.push(`${ctx} context`);
+  if (tool) parts.push(`via ${tool.displayName.toLowerCase()}`);
+  return parts.join(' · ');
+}
 
 interface PickerViewProps {
   role: 'planner' | 'implementer';
@@ -28,7 +48,7 @@ interface PickerViewProps {
 
 function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }) {
   const t = useTheme();
-  if (!currentItem) return <Text color={t.textDim}>No models available.</Text>;
+  if (!currentItem) return <Text color={t.textDim}>no models available.</Text>;
 
   const isOllama = currentItem.id === 'ollama';
   const isLmStudio = currentItem.id === 'lm-studio';
@@ -36,9 +56,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   if (isOllama) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>No models pulled.</Text>
+        <Text color={t.textDim}>no models pulled.</Text>
         <Text color={t.textDim} dimColor>
-          Run: ollama pull qwen2.5-coder:7b
+          run: ollama pull qwen2.5-coder:7b
         </Text>
       </Box>
     );
@@ -47,9 +67,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   if (isLmStudio) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>No models loaded.</Text>
+        <Text color={t.textDim}>no models loaded.</Text>
         <Text color={t.textDim} dimColor>
-          Download a model in LM Studio.
+          download a model in lm studio.
         </Text>
       </Box>
     );
@@ -61,16 +81,23 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
     if (envVar) {
       return (
         <Box flexDirection="column">
-          <Text color={t.textDim}>Provider not configured.</Text>
+          <Text color={t.textDim}>provider not configured.</Text>
           <Text color={t.textDim} dimColor>
-            Set {envVar} to enable.
+            set {envVar} to enable.
           </Text>
         </Box>
       );
     }
   }
 
-  return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
+  return (
+    <Box flexDirection="column">
+      <Text color={t.textDim}>no models available.</Text>
+      <Text color={t.textDim} dimColor>
+        press ⌃r to refresh.
+      </Text>
+    </Box>
+  );
 }
 
 const defaultRefresh = (projectDir: string | undefined) =>
@@ -102,25 +129,40 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
     void refreshPickerDetection(projectDir);
   };
 
+  const resolvePreview = (ctx: PreviewContext<PickerOption, ModelOption>): string | undefined => {
+    if (ctx.isOnLeftCustomItem) return undefined;
+    if (ctx.isOnCustomItem) {
+      const toolName = (catalog.currentItem?.displayName ?? role).toLowerCase();
+      return `add a model id ${toolName} can't auto-detect`;
+    }
+    if (ctx.activeColumn === 'right' && ctx.rightItem) {
+      return modelPreview(ctx.rightItem, catalog.currentItem);
+    }
+    const tool = ctx.leftItem ?? catalog.currentItem;
+    return tool ? toolPreview(tool, catalog.rightModels.length) : undefined;
+  };
+
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
-      title={catalog.roleLabel}
+      title={role}
+      subtitle={role === 'planner' ? 'tool & model' : 'model'}
       stepLabel={stepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={actions.confirm}
       onCancel={onCancel ?? (() => overlayStore.close())}
       onRefresh={handleRefresh}
+      preview={resolvePreview}
       leftProps={{
         items: catalog.items,
-        label: 'Tools',
+        label: 'tools',
         getKey: (item) => item.id,
         isSpecial: (item) => item.kind === 'shell' || item.kind === 'agent',
         isDisabled: (item) => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
         initialIndex: catalog.initialLeftIdx,
         specialHelp: (
-          <Box flexDirection="column" marginTop={1} paddingX={1}>
-            <Text color={t.textDim}>Run a custom command as the {role}.</Text>
-            <Text color={t.textDim}>Press Enter to configure the command.</Text>
+          <Box flexDirection="column">
+            <Text color={t.textDim}>run a custom command as the {role}.</Text>
+            <Text color={t.textDim}>press ⏎ to configure the command.</Text>
           </Box>
         ),
         renderRow: (item, { isCursor, isSelected, maxWidth }) =>
@@ -131,12 +173,11 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
             maxWidth,
             currentCommand: catalog.currentCommand,
             currentCommandKind: catalog.currentCommandKind,
-            theme: t,
           }),
       }}
       rightProps={{
         items: catalog.rightModels,
-        label: 'Models',
+        label: 'models',
         getKey: (item) => item.id,
         initialIndex: initialRightIndex,
         onLeftChange: actions.leftChange,
@@ -152,7 +193,6 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
             isCursor,
             maxWidth,
             currentModel: catalog.currentModel,
-            theme: t,
           }),
       }}
     />

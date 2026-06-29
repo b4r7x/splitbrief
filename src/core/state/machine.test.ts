@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, transition } from './machine.js';
+import { createInitialState, transition, workflowFeatureForConsole } from './machine.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../transcript-policy.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -29,6 +30,16 @@ describe('createInitialState', () => {
     expect(state.phase).toBe('idle');
     expect(state.feature).toBe('feature');
     expect(state.tasks).toEqual([]);
+  });
+});
+
+describe('workflowFeatureForConsole', () => {
+  it('returns the raw feature when persistTranscript is true', () => {
+    expect(workflowFeatureForConsole('add auth', true)).toBe('add auth');
+  });
+
+  it('omits the feature when persistTranscript is false', () => {
+    expect(workflowFeatureForConsole('secret oauth', false)).toBe(TRANSCRIPT_OMITTED_MESSAGE);
   });
 });
 

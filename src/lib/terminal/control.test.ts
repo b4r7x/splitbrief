@@ -63,9 +63,27 @@ describe('terminal control', () => {
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
       terminalSequences.disableMouseTracking,
+      terminalSequences.disableButtonEventMouse,
+      terminalSequences.disableAnyMotionMouse,
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
     ]);
+  });
+
+  it('enables any-motion tracking when hover is requested', () => {
+    const written: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+
+    setTerminalInputModes('enable', { mouse: true, paste: false, hover: true });
+
+    expect(written).toEqual([
+      terminalSequences.enableAnyMotionMouse,
+      terminalSequences.enableSgrMouse,
+    ]);
+    expect(written).not.toContain(terminalSequences.enableMouseTracking);
   });
 
   it('can enable and disable bracketed paste without mouse tracking', () => {
@@ -96,6 +114,8 @@ describe('terminal control', () => {
 
     expect(written).toEqual([
       terminalSequences.disableMouseTracking,
+      terminalSequences.disableButtonEventMouse,
+      terminalSequences.disableAnyMotionMouse,
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
       terminalSequences.exitAltBuffer,

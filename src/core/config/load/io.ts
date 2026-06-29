@@ -67,7 +67,7 @@ function mergeRunner(
 ): Record<string, unknown> {
   if (!migrated) return defaults;
   // When kinds differ, the migrated config is already self-contained (from
-  // v1→v2 migration or explicitly set in v2). Merging would leak kind-specific
+  // v1 to v2 migration or explicitly set in v2). Merging would leak kind-specific
   // fields (e.g. provider/apiBase from an api default into a cli config).
   if (migrated.kind !== undefined && migrated.kind !== defaults.kind) return migrated;
   // When the provider is explicitly set and differs from the default, the
