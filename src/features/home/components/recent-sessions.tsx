@@ -5,7 +5,6 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SessionRow } from '../../../components/session-row.js';
-import { SOFT_SEP } from '../../../components/separators.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
@@ -27,7 +26,10 @@ export function RecentSessions({
   onClose,
   hasOverlay,
 }: RecentSessionsProps) {
-  const [{ sessions, allSessions }, { projectDir }] = useStores(sessionsStore, configStore);
+  const [{ sessions, allSessions, totalCount }, { projectDir }] = useStores(
+    sessionsStore,
+    configStore,
+  );
   const theme = useTheme();
 
   const shouldLoad = Boolean(focused) || limit === undefined || limit > 0;
@@ -54,7 +56,7 @@ export function RecentSessions({
   }
 
   const visibleSessions = sessions.slice(0, limit ?? sessions.length);
-  const hiddenCount = sessions.length - visibleSessions.length;
+  const hiddenCount = totalCount - visibleSessions.length;
 
   if (focused && onSelect && onClose) {
     const focusedSessions = allSessions.length > 0 ? allSessions : sessions;
@@ -71,14 +73,13 @@ export function RecentSessions({
 
   return (
     <RecentSessionsShell>
-      <Box flexDirection="column" marginLeft={2}>
+      <Box flexDirection="column">
         {visibleSessions.map((s) => (
           <SessionRow key={s.id} session={s} />
         ))}
         {showHiddenCount && hiddenCount > 0 && (
           <Box>
             <Text color={theme.textDim}>{hiddenCount} more</Text>
-            <Text color={theme.textDim}>{SOFT_SEP}ctrl+r</Text>
           </Box>
         )}
       </Box>

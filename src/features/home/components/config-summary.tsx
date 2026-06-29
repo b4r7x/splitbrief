@@ -9,7 +9,7 @@ import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import { ARROW_SEP, CHEVRON_SEP, SOFT_SEP } from '../../../components/separators.js';
+import { CHEVRON_SEP, SOFT_SEP } from '../../../components/separators.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { CONFIG_SUMMARY_COMPACT_ROWS } from '../layout.js';
 
@@ -38,7 +38,7 @@ export function HomeConfigSummary() {
 
   if (compact) {
     return (
-      <Box marginBottom={1} overflow="hidden">
+      <Box marginBottom={1} overflow="hidden" flexShrink={0}>
         <Text wrap="truncate-end">
           <Text color={theme.planner} bold>
             {plannerLabel}
@@ -63,25 +63,7 @@ export function HomeConfigSummary() {
   }
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box flexDirection="column" marginBottom={1}>
-        <Text>
-          <Text color={theme.planner} bold>
-            planner
-          </Text>
-          <Text color={theme.textDim}>{ARROW_SEP}</Text>
-          <Text color={theme.implementer} bold>
-            implementer
-          </Text>
-          <Text color={theme.textDim}>{ARROW_SEP}</Text>
-          <Text color={theme.validator} bold>
-            validator
-          </Text>
-        </Text>
-        <Text color={theme.textDim}>
-          expensive{SOFT_SEP}cheap{SOFT_SEP}checks drift
-        </Text>
-      </Box>
+    <Box flexDirection="column" marginBottom={1} flexShrink={0}>
       <LabeledRow label="planner">
         <Box width="100%" height={1} overflow="hidden">
           <Box flexGrow={1} flexShrink={1} minWidth={0}>

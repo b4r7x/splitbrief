@@ -231,8 +231,8 @@ export function CommandPaletteOverlay({
 
   return (
     <OverlayPanel hint={hint} maxWidth={PALETTE_MAX_WIDTH}>
-      <Box marginBottom={1} width="100%">
-        <FilterInput filter={query} variant="prompt" />
+      <Box marginBottom={1}>
+        <FilterInput filter={query} />
       </Box>
 
       <Box flexDirection="column">

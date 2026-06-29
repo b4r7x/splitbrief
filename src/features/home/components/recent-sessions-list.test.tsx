@@ -77,7 +77,7 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('recent sessions');
+    expect(frame).toContain('RECENT SESSIONS');
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
     expect(frame).toContain('charlie');
@@ -108,7 +108,7 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const nonBlank = (ui.lastFrame() ?? '').split('\n').filter((line) => line.trim().length > 0);
-    expect(nonBlank.length).toBeLessThanOrEqual(5);
+    expect(nonBlank.length).toBeLessThanOrEqual(7);
     ui.unmount();
   });
 
@@ -284,7 +284,7 @@ describe('RecentSessionsList', () => {
     ui.unmount();
   });
 
-  it('renders a dim "y copy" affordance on the focused row only', async () => {
+  it('keeps the focused row clean with no per-row "y copy" affordance', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
     const ui = renderWithOutdentRoom(
       <RecentSessionsList
@@ -297,9 +297,10 @@ describe('RecentSessionsList', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('y copy');
-    expect(lineIndexContaining(frame, 'y copy')).toBe(lineIndexContaining(frame, 'alpha'));
-    expect(frame.match(/y copy/g)?.length).toBe(1);
+    expect(frame).not.toContain('y copy');
+    const focusedRow = lineIndexContaining(frame, FOCUS_BAR);
+    expect(focusedRow).toBe(lineIndexContaining(frame, 'alpha'));
+    expect(frame.split('\n')[focusedRow]).not.toContain('y copy');
     ui.unmount();
   });
 

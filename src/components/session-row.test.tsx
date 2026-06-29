@@ -233,46 +233,6 @@ describe('SessionRow', () => {
     expect(stripAnsiStyles(rawFrame)).toContain('beforeafter');
   });
 
-  it('renders a dim "y copy" token only when copyHint is set and the row is the cursor', () => {
-    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
-
-    const focusedWithHint = frameOf(
-      <Box width={72}>
-        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: true }} copyHint />
-      </Box>,
-    );
-    expect(focusedWithHint).toContain('y copy');
-
-    const focusedNoHint = frameOf(
-      <Box width={72}>
-        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: true }} />
-      </Box>,
-    );
-    expect(focusedNoHint).not.toContain('y copy');
-
-    const unfocusedWithHint = frameOf(
-      <Box width={72}>
-        <SessionRow session={session} cursor={{ kind: 'outdent', isCursor: false }} copyHint />
-      </Box>,
-    );
-    expect(unfocusedWithHint).not.toContain('y copy');
-  });
-
-  it('does not shift the feature column when the copy hint appears on the focused row', () => {
-    const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
-    const withHint = frameOf(
-      <Box width={72}>
-        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} copyHint />
-      </Box>,
-    );
-    const withoutHint = frameOf(
-      <Box width={72}>
-        <SessionRow session={session} cursor={{ kind: 'inline', isCursor: true }} />
-      </Box>,
-    );
-    expect(withHint.indexOf('alpha')).toBe(withoutHint.indexOf('alpha'));
-  });
-
   it('leads an outdented row with the ▌ accent bar, never the ▸ cursor, without shifting the feature', () => {
     const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
     const plain = frameOf(

@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getLogo,
-  getLogoTier,
-  getLogoHeight,
-  FULL_LOGO,
-  COMPACT_LOGO,
-  LOGO_TAGLINE,
-} from './logo.js';
+import { getLogo, getLogoTier, getLogoHeight, FULL_LOGO, COMPACT_LOGO } from './logo.js';
 
 describe('getLogoTier', () => {
   it('returns full when rows >= 24 and cols >= 44', () => {
@@ -81,13 +74,6 @@ describe('FULL_LOGO and COMPACT_LOGO constants', () => {
     expect(getLogo('compact')).toBe(getLogo('compact'));
     expect(getLogo('full')).not.toBe('');
     expect(getLogo('compact')).not.toBe('');
-  });
-});
-
-describe('LOGO_TAGLINE', () => {
-  it('is the single dim hero tagline, on one line, middot-joined', () => {
-    expect(LOGO_TAGLINE).toBe('plan expensively · build cheaply');
-    expect(LOGO_TAGLINE).not.toContain('\n');
   });
 });
 

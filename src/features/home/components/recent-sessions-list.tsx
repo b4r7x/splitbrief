@@ -10,6 +10,8 @@ import { ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
 import { filterSession } from '../../../core/sessions/search.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 
+export const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
+
 interface RecentSessionsListProps {
   sessions: Session[];
   hasOverlay: boolean;
@@ -58,13 +60,16 @@ export function RecentSessionsList({
 
   return (
     <RecentSessionsShell>
-      <FilterInput filter={filter} variant="prompt" placeholder="filter sessions" />
-      <Box flexDirection="column" marginLeft={2}>
+      <Box borderStyle="round" borderColor={theme.border} paddingX={1} marginBottom={1}>
+        <FilterInput filter={filter} placeholder="filter sessions" />
+      </Box>
+      <Box flexDirection="column">
         <ListViewport
           items={filtered}
           selectedIndex={selectedIndex}
           getKey={(session) => session.id}
           rowBudget={pageSize}
+          showRemainingCount
           rowZonePrefix="recent-session"
           rowZoneZ={ROW_ZONE_Z_SCREEN}
           {...(hasOverlay
@@ -77,7 +82,7 @@ export function RecentSessionsList({
               })}
           placeholder={<Text color={theme.textDim}>No matching sessions</Text>}
           renderItem={(session, { isCursor }) => (
-            <SessionRow session={session} cursor={{ kind: 'outdent', isCursor }} copyHint />
+            <SessionRow session={session} cursor={{ kind: 'outdent', isCursor }} />
           )}
         />
       </Box>

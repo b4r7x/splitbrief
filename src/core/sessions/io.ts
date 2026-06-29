@@ -110,8 +110,13 @@ function readSessions(projectDir: string): Session[] {
   return sessions.sort((a, b) => b.startedAt - a.startedAt);
 }
 
+export function listRecentSessions(projectDir: string): { sessions: Session[]; total: number } {
+  const all = readSessions(projectDir);
+  return { sessions: all.slice(0, MAX_RECENT_SESSIONS), total: all.length };
+}
+
 export function listSessions(projectDir: string): Session[] {
-  return readSessions(projectDir).slice(0, MAX_RECENT_SESSIONS);
+  return listRecentSessions(projectDir).sessions;
 }
 
 export function listAllSessions(projectDir: string): Session[] {
