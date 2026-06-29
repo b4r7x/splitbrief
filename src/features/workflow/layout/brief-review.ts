@@ -1,3 +1,5 @@
+import { clamp } from '../../../utils/math.js';
+
 // Rows above the first brief row inside the bordered ledger: top border (1) + header (1) +
 // blank (1). The hit-test top offset derives from this so a mouse click can never drift from the
 // rendered row.
@@ -64,7 +66,7 @@ export function getSimpleBriefVisibleSlice<T>(input: {
   }
 
   const maxStart = getSimpleBriefMaxTaskOffset({ rowBudget, taskCount: items.length });
-  const startIndex = Math.min(maxStart, Math.max(0, Math.floor(scrollOffset)));
+  const startIndex = clamp(Math.floor(scrollOffset), 0, maxStart);
   const endIndex = Math.min(items.length, startIndex + visibleCount);
   return {
     visibleItems: items.slice(startIndex, endIndex),

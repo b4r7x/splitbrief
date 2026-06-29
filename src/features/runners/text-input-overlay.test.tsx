@@ -54,7 +54,7 @@ describe('TextInputOverlay', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame.split('╭').length - 1).toBe(1); // exactly one rounded box, no frame-in-frame
+    expect(frame.split('╭').length - 1).toBe(1);
     expect(frame).toContain(`${glyph('prompt')} `);
     expect(frame).toContain('⏎ save · esc back');
     ui.unmount();

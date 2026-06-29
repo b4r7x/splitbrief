@@ -20,13 +20,18 @@ afterEach(() => {
   resetAllStores();
 });
 
-function setupSession(): { projectDir: string; sessionId: string } {
+type RecoveryOverrides = Partial<ReturnType<typeof makeRecoveryIssue>>;
+
+function setupSession(recoveryOverrides: RecoveryOverrides = {}): {
+  projectDir: string;
+  sessionId: string;
+} {
   const projectDir = createTempDir('recovery-driver-test');
   dirs.push(projectDir);
   const sessionId = 'sess-recovery';
   ensureSessionDir(projectDir, sessionId);
   const state = makeImplState([makeTask({ id: 'T001' })], {
-    pendingRecovery: makeRecoveryIssue(),
+    pendingRecovery: makeRecoveryIssue(recoveryOverrides),
   });
   saveState({ projectDir, sessionId }, state);
   return { projectDir, sessionId };
@@ -95,5 +100,39 @@ describe('createRecoveryDriver — unparseable answers', () => {
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(false);
     expect(feedbackStore.get().message).toBe('Recovery paused. Resume with diptych resume.');
+  });
+
+  it('reopens paused recovery and applies the selected action', async () => {
+    const { projectDir, sessionId } = setupSession({
+      status: 'paused',
+      selectedAction: 'pause-run',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker']);
+
+    const result = await runDriver(projectDir, sessionId, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.tasks[0]?.status).toBe('pending');
+    }
+  });
+
+  it('replays an applying selected action without prompting', async () => {
+    const { projectDir, sessionId } = setupSession({
+      status: 'applying',
+      selectedAction: 'retry-same-worker',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+    const result = await runDriver(projectDir, sessionId, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(0);
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.tasks[0]?.status).toBe('pending');
+    }
   });
 });

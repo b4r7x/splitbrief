@@ -237,23 +237,6 @@ export function getBudgetCostKnownness(
   };
 }
 
-export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): number {
-  const breakdown = calculateCostBreakdown(
-    {
-      tokenUsage: opts.tokenUsage,
-      totalTasks: opts.totalTasks,
-      escalatedCount: opts.escalatedCount,
-      plannerTool: opts.plannerTool,
-      implementerTool: opts.implementerTool,
-      ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
-      ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
-      ...(opts.taskBreakdowns !== undefined && { taskBreakdowns: opts.taskBreakdowns }),
-    },
-    opts.pricingCache,
-  );
-  return breakdown.totalActualCost;
-}
-
 export function checkBudget(
   currentCost: number,
   maxBudget: number,

@@ -17,7 +17,8 @@ import { sessionDir } from '../paths.js';
 import { STATE_FILE } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../state/machine.js';
-import { currentProcessStartTimeMs, HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
+import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
 
 let tmp: string;
 
@@ -141,10 +142,10 @@ describe('isSessionLive', () => {
     expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-idle' })).toBe(false);
   });
 
-  it('returns true for a lockfile-less session in implementing phase', () => {
+  it('returns false for a lockfile-less session in implementing phase', () => {
     const dir = makeTmp();
     writeState(dir, '2026-04-14-implementing', 'implementing');
-    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-implementing' })).toBe(true);
+    expect(isSessionLive({ projectDir: dir, sessionId: '2026-04-14-implementing' })).toBe(false);
   });
 
   it('returns false for an implementing session whose lockfile has exited', () => {

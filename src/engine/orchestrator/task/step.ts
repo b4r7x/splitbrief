@@ -59,12 +59,12 @@ async function runChainAnalysisSafe(opts: {
     const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles, dependsOnFiles);
 
     const existing =
-      readDriftChainState(projectDir, sessionId) ?? initialDriftChainState(sessionId);
+      readDriftChainState({ projectDir, sessionId }) ?? initialDriftChainState(sessionId);
 
     const threshold = opts.wctx.config.workflow.driftChainThreshold ?? 0.6;
     const update = analyzeDriftChain(existing, opts.task.id, outOfBoundsFiles, threshold);
 
-    writeDriftChainState(projectDir, sessionId, update.state);
+    writeDriftChainState({ projectDir, sessionId }, update.state);
 
     if (update.emitted) {
       publishDriftChainDetected({ bus, phase: opts.state.phase }, update.emitted, threshold);
@@ -84,6 +84,36 @@ async function restoreExhaustedTaskFiles(opts: {
   taskChangedFiles: string[];
   taskStartSnapshot: ChangedFilesSnapshot;
 }): Promise<void> {
+  return restoreTaskFilesFromSnapshot({
+    ...opts,
+    restoredMessage: (restoredFiles) =>
+      `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
+    failureMessage: 'Failed to restore failing task changes from the pre-task snapshot',
+  });
+}
+
+async function restoreDeniedPreValidationFiles(opts: {
+  wctx: WorkflowContext;
+  phase: WorkflowState['phase'];
+  taskChangedFiles: string[];
+  taskStartSnapshot: ChangedFilesSnapshot;
+}): Promise<void> {
+  return restoreTaskFilesFromSnapshot({
+    ...opts,
+    restoredMessage: (restoredFiles) =>
+      `Restored ${restoredFiles.length} unvalidated task change(s) after pre_validation denied: ${restoredFiles.join(', ')}`,
+    failureMessage: 'Failed to restore denied pre_validation task changes',
+  });
+}
+
+async function restoreTaskFilesFromSnapshot(opts: {
+  wctx: WorkflowContext;
+  phase: WorkflowState['phase'];
+  taskChangedFiles: string[];
+  taskStartSnapshot: ChangedFilesSnapshot;
+  restoredMessage: (restoredFiles: string[]) => string;
+  failureMessage: string;
+}): Promise<void> {
   if (opts.taskChangedFiles.length === 0) return;
   try {
     const { restoredFiles } = await restoreDirtyFilesFromSnapshot(
@@ -95,15 +125,11 @@ async function restoreExhaustedTaskFiles(opts: {
       publishWarning({
         bus: opts.wctx.bus,
         phase: opts.phase,
-        message: `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
+        message: opts.restoredMessage(restoredFiles),
       });
     }
   } catch (err) {
-    publishWarningFromError(
-      { bus: opts.wctx.bus, phase: opts.phase },
-      'Failed to restore failing task changes from the pre-task snapshot',
-      err,
-    );
+    publishWarningFromError({ bus: opts.wctx.bus, phase: opts.phase }, opts.failureMessage, err);
   }
 }
 
@@ -344,6 +370,12 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
     if (!preVal.allow) {
       const reason = preVal.reason ?? 'pre_validation hook denied';
+      await restoreDeniedPreValidationFiles({
+        wctx,
+        phase: state.phase,
+        taskChangedFiles,
+        taskStartSnapshot,
+      });
       publishWarning({
         bus: wctx.bus,
         phase: state.phase,
@@ -369,14 +401,25 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     }
   }
 
-  const validationResults = await wctx.validator.runValidation({
-    task,
-    projectDir,
-    config,
-    bus: wctx.bus,
-    phase: state.phase,
-    discoveredValidation: state.discoveredValidation,
-  });
+  if (wctx.signal?.aborted) return state;
+
+  let validationResults: Awaited<ReturnType<typeof wctx.validator.runValidation>>;
+  try {
+    validationResults = await wctx.validator.runValidation({
+      task,
+      projectDir,
+      config,
+      bus: wctx.bus,
+      phase: state.phase,
+      discoveredValidation: state.discoveredValidation,
+      signal: wctx.signal,
+    });
+  } catch (err) {
+    if (isAbortError(err) || wctx.signal?.aborted) return state;
+    throw err;
+  }
+  if (wctx.signal?.aborted) return state;
+
   const commitResult = await validateCommitAndAdvance({
     task,
     projectDir,

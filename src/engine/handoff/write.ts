@@ -14,7 +14,14 @@ import { loadState } from '../../core/state/persistence.js';
 import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, SPEC_FILE, PLAN_FILE, SUMMARY_FILE } from '../../core/paths.js';
+import {
+  DIPTYCH_DIR,
+  SESSIONS_DIR,
+  SPEC_FILE,
+  PLAN_FILE,
+  SUMMARY_FILE,
+  SPECIFY_CONSTITUTION_FILE,
+} from '../../core/paths.js';
 import {
   assertPathConfined,
   assertWritablePathConfined,
@@ -173,12 +180,11 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   const resolvedMode: WorkflowMode = summaryMode ?? configMode ?? 'standard';
 
-  const constitutionRelativePath = 'constitution.md';
   let constitutionContent: string | undefined;
-  if (confinedExists(projectDir, constitutionRelativePath)) {
+  if (confinedExists(projectDir, SPECIFY_CONSTITUTION_FILE)) {
     try {
       constitutionContent =
-        (await confinedReadFileAsync(projectDir, constitutionRelativePath)) ?? undefined;
+        (await confinedReadFileAsync(projectDir, SPECIFY_CONSTITUTION_FILE)) ?? undefined;
     } catch (err) {
       if (!pathConfinementError.isSymlinkRead(err) && !isPathEscape(err)) throw err;
     }

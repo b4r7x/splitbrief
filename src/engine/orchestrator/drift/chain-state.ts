@@ -3,6 +3,7 @@ import type { ActiveDriftChain, DriftChainState } from '../../../core/schemas/dr
 import { DriftChainStateSchema } from '../../../core/schemas/drift-chain.js';
 import { DRIFT_CHAINS_FILE, sessionDir } from '../../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../../lib/fs.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export function initialDriftChainState(sessionId: string): DriftChainState {
   return {
@@ -13,30 +14,26 @@ export function initialDriftChainState(sessionId: string): DriftChainState {
   };
 }
 
-export function driftChainsPath(projectDir: string, sessionId: string): string {
-  return join(sessionDir(projectDir, sessionId), DRIFT_CHAINS_FILE);
+export function driftChainsPath(ref: SessionRef): string {
+  return join(sessionDir(ref.projectDir, ref.sessionId), DRIFT_CHAINS_FILE);
 }
 
-export function readDriftChainState(projectDir: string, sessionId: string): DriftChainState | null {
-  const raw = readJsonSafe(driftChainsPath(projectDir, sessionId));
+export function readDriftChainState(ref: SessionRef): DriftChainState | null {
+  const raw = readJsonSafe(driftChainsPath(ref));
   if (raw === null) return null;
   const result = DriftChainStateSchema.safeParse(raw);
   return result.success ? result.data : null;
 }
 
-export function writeDriftChainState(
-  projectDir: string,
-  sessionId: string,
-  state: DriftChainState,
-): void {
-  writeSecureFile(driftChainsPath(projectDir, sessionId), `${JSON.stringify(state, null, 2)}\n`);
+export function writeDriftChainState(ref: SessionRef, state: DriftChainState): void {
+  writeSecureFile(driftChainsPath(ref), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 export function emptyActiveChain(): ActiveDriftChain {
   return { entries: [], uniqueFiles: [], score: 0 };
 }
 
-export function resetDriftChainState(projectDir: string, sessionId: string): void {
-  const empty = initialDriftChainState(sessionId);
-  writeDriftChainState(projectDir, sessionId, empty);
+export function resetDriftChainState(ref: SessionRef): void {
+  const empty = initialDriftChainState(ref.sessionId);
+  writeDriftChainState(ref, empty);
 }

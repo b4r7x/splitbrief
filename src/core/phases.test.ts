@@ -4,6 +4,7 @@ import { createInitialState } from './state/machine.js';
 import { attributePhaseTokenDelta } from './state/token-attribution.js';
 import type { TokenUsage } from './schemas/tokens.js';
 import type { WorkflowState } from './schemas/workflow.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 const EMPTY_USAGE: TokenUsage = {
   plannerInput: 0,
@@ -46,6 +47,30 @@ describe('isResumable', () => {
       phase: 'implementing',
     };
     expect(isResumable(state)).toBe(true);
+  });
+
+  it.each([
+    'reviewing-spec',
+    'validating-task',
+    'escalating',
+  ] as const)('returns true for %s when pendingRecovery is present', (phase) => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase,
+      pendingRecovery: makeRecoveryIssue({ phase }),
+    };
+
+    expect(isResumable(state)).toBe(true);
+  });
+
+  it('returns false on a terminal phase even when pendingRecovery is stale', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      pendingRecovery: makeRecoveryIssue({ phase: 'complete' }),
+    };
+
+    expect(isResumable(state)).toBe(false);
   });
 
   it('returns false for idle phase without awaitingContinue', () => {

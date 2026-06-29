@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-const coverageReportsDirectory = process.env.DIPTYCH_COVERAGE_DIR ?? `coverage/run-${process.pid}`;
+const coverageReportsDirectory = process.env.DIPTYCH_COVERAGE_DIR ?? 'coverage/manual';
 
 export default defineConfig({
   test: {
@@ -19,8 +19,6 @@ export default defineConfig({
     maxWorkers: 4,
     coverage: {
       provider: 'v8',
-      // Vitest writes raw coverage to reportsDirectory/.tmp; isolate concurrent
-      // coverage invocations so one run cannot delete another run's temp files.
       reportsDirectory: coverageReportsDirectory,
       include: ['src/**/*.{ts,tsx}'],
       exclude: [

@@ -16,7 +16,7 @@ import {
   makeTaskStart,
   makeTaskComplete,
   makeImplementerGenerate,
-} from '../../helpers/events.js';
+} from '#testing/helpers/events.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 
 beforeEach(() => {

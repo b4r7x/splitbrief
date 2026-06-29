@@ -363,6 +363,23 @@ describe('createApiPlanner', () => {
     expect(planner.unavailabilityReason?.()).toBe('no API key is configured');
   });
 
+  it('rejects over-context calls before dispatching upstream', async () => {
+    const cfg = makeApiPlannerConfig('ollama');
+    cfg.planner.contextLength = 1;
+    const planner = createApiPlanner(cfg);
+
+    await expect(
+      planner.regenerate({
+        prompt: 'this prompt cannot fit the one-token planner window',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+      }),
+    ).rejects.toMatchObject({
+      kind: 'provider-prompt-exceeds-context',
+    });
+    expect(receivedBodies).toEqual([]);
+  });
+
   it('unavailabilityReason surfaces the tracked HTTP status for an auth-rejected key', async () => {
     server.removeAllListeners('request');
     server.on('request', (_req, res) => {

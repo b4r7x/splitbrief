@@ -34,6 +34,12 @@ describe('HookEntrySchema', () => {
   it.each([
     [{ command: 'sh' }],
     [{ command: '/bin/bash' }],
+    [{ command: 'zsh' }],
+    [{ command: 'pwsh' }],
+    [{ command: 'cmd.exe' }],
+    [{ command: '/usr/bin/env' }],
+    [{ command: 'node', args: ['-c', 'echo nope'] }],
+    [{ command: 'node', args: ['bash'] }],
     [{ command: './scripts/pre-task.sh', timeout_ms: 999_999 }],
   ])('rejects unsafe hook config %o', (entry) => {
     expect(HookEntrySchema.safeParse(entry).success).toBe(false);

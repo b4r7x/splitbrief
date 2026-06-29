@@ -70,6 +70,7 @@ export const SESSION_LOG_FILE = 'session.jsonl';
 export const CONFIG_FILE = 'config.yaml';
 export const CLARIFICATIONS_FILE = 'clarifications.md';
 export const CONSTITUTION_CHECK_FILE = 'constitution-check.json';
+export const SPECIFY_CONSTITUTION_FILE = join('.specify', 'memory', 'constitution.md');
 export const ANALYZE_FILE = 'analyze.json';
 export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';

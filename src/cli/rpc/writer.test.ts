@@ -1,7 +1,7 @@
 import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { EngineEvent } from '../../engine/events/types.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../engine/events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { taskId } from '../../core/schemas/task.js';
 import { createResponseWriter } from './writer.js';
 

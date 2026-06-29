@@ -107,6 +107,16 @@ describe('status command', () => {
     expect(out).toContain('implementing');
   });
 
+  it('omits the feature name for a transcript-private session when current config allows transcripts', async () => {
+    writeActiveSession(tmp, '2026-04-18-session-abcdef123456', 'secret oauth login');
+
+    await runStatus([]);
+    const out = captureOutput();
+    expect(out).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(out).not.toContain('secret');
+    expect(out).toContain('implementing');
+  });
+
   it('triggers the cost-history path when --history is passed and suppresses the --history hint', async () => {
     await runStatus(['--history']);
     const out = captureOutput();

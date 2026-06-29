@@ -22,7 +22,7 @@ export function createTranscriptBuffer(opts: {
         appendMessage(
           ref,
           { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
-          shouldPersist,
+          { persistTranscript: shouldPersist },
         );
         buffer = '';
       }
@@ -32,7 +32,7 @@ export function createTranscriptBuffer(opts: {
       appendMessage(
         ref,
         { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
-        shouldPersist,
+        { persistTranscript: shouldPersist },
       );
       buffer = '';
     },
@@ -46,7 +46,7 @@ export function createTranscriptBuffer(opts: {
           text: buffer,
           interrupted: true,
         },
-        shouldPersist,
+        { persistTranscript: shouldPersist },
       );
       buffer = '';
     },

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import { MultilineInput } from '../input/multiline-input.js';
-import { useTheme } from '../theme.js';
+import { MultilineInput } from '../../components/input/multiline-input.js';
+import { useTheme } from '../../components/theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

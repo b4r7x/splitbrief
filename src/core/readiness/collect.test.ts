@@ -7,7 +7,8 @@ import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/h
 import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/lifecycle.js';
-import { currentProcessStartTimeMs, HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
+import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { collectReadiness } from './collect.js';
 import { flattenReadinessChecks } from './status.js';
 

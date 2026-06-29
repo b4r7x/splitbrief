@@ -8,7 +8,7 @@ import {
 } from '../../core/state/selectors.js';
 import { resolveProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
-import { listAllSessions } from '../../core/sessions/io.js';
+import { listAllSessions, readSessionPersistTranscript } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';
 import { countNoun } from '../../utils/pluralize.js';
@@ -68,7 +68,10 @@ export function registerStatusCommand(program: Command): void {
 
       const sessionId = readActive(projectDir);
       const state = sessionId ? loadState({ projectDir, sessionId }) : null;
-      const persistTranscript = loadConfig(projectDir).config.workflow.persistTranscript;
+      const persistTranscript = sessionId
+        ? loadConfig(projectDir).config.workflow.persistTranscript &&
+          readSessionPersistTranscript({ projectDir, sessionId })
+        : true;
 
       if (!state) {
         console.log('No active workflow.');
@@ -77,7 +80,7 @@ export function registerStatusCommand(program: Command): void {
         }
       } else {
         console.log(
-          `${ansis.dim('Feature:')}  ${ansis.bold(consoleWorkflowFeature(state.feature, persistTranscript))}`,
+          `${ansis.dim('Feature:')}  ${ansis.bold(consoleWorkflowFeature({ feature: state.feature, persistTranscript }))}`,
         );
         const phaseSuffix = state.awaitingContinue ? ` ${ansis.yellow('(awaiting continue)')}` : '';
         console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}${phaseSuffix}`);

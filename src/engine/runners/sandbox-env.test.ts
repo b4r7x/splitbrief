@@ -118,6 +118,32 @@ describe('createSandboxEnv', () => {
     expect(env.DIPTYCH_PUBLIC_FLAG).toBe('keep-me');
   });
 
+  it('strips credential handle env vars unless allowlisted', async () => {
+    const projectDir = createTempDir('sandbox-env-handles');
+    dirs.push(projectDir);
+    setEnv('AWS_PROFILE', 'prod');
+    setEnv('AWS_SHARED_CREDENTIALS_FILE', '/home/user/.aws/credentials');
+    setEnv('AWS_WEB_IDENTITY_TOKEN_FILE', '/var/run/secrets/token');
+    setEnv('GOOGLE_APPLICATION_CREDENTIALS', '/home/user/gcp.json');
+    setEnv('GIT_ASKPASS', '/usr/bin/askpass');
+    setEnv('SSH_AUTH_SOCK', '/tmp/ssh-agent.sock');
+    setEnv('NPM_CONFIG_USERCONFIG', '/home/user/.npmrc');
+    setEnv('npm_config_userconfig', '/home/user/.npmrc');
+    setEnv('CUSTOM_TOKEN_FILE', '/tmp/custom-token');
+
+    const env = await createSandboxEnv(projectDir, ['CUSTOM_TOKEN_FILE']);
+
+    expect(env.AWS_PROFILE).toBeUndefined();
+    expect(env.AWS_SHARED_CREDENTIALS_FILE).toBeUndefined();
+    expect(env.AWS_WEB_IDENTITY_TOKEN_FILE).toBeUndefined();
+    expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined();
+    expect(env.GIT_ASKPASS).toBeUndefined();
+    expect(env.SSH_AUTH_SOCK).toBeUndefined();
+    expect(env.NPM_CONFIG_USERCONFIG).toBeUndefined();
+    expect(env.npm_config_userconfig).toBeUndefined();
+    expect(env.CUSTOM_TOKEN_FILE).toBe('/tmp/custom-token');
+  });
+
   it("preserves the configured runner's own auth key while stripping other secrets", async () => {
     const projectDir = createTempDir('sandbox-env-preserve');
     dirs.push(projectDir);

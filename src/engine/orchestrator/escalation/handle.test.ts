@@ -17,6 +17,8 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 
 const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -38,8 +40,15 @@ const TEST_VALIDATOR = createValidator();
 vi.setConfig({ testTimeout: 30_000 });
 
 let dirs: string[] = [];
+let savedOpenRouterKey: string | undefined;
+
+beforeEach(() => {
+  savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+});
 
 afterEach(() => {
+  if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -159,7 +168,7 @@ describe('handleRetryAndEscalation', () => {
     expect(escalateTier2).toBeDefined();
   });
 
-  it('runs tier-1 hint escalation against the staged projectDir with the runner auth env intact (no sandboxEnv)', async () => {
+  it('runs tier-1 hint escalation with a staged projectDir and sandbox env', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -178,7 +187,7 @@ describe('handleRetryAndEscalation', () => {
     const escalateHint = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv).toBeUndefined();
+      expect(opts.sandboxEnv?.HOME?.startsWith(opts.projectDir)).toBe(true);
       return { success: false, output: 'hint text', code: null, usage: null };
     });
 
@@ -360,7 +369,7 @@ describe('handleRetryAndEscalation', () => {
     const escalateFull = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv).toBeUndefined();
+      expect(opts.sandboxEnv?.HOME?.startsWith(opts.projectDir)).toBe(true);
       return {
         success: true,
         output: 'full code',
@@ -486,6 +495,17 @@ describe('handleRetryAndEscalation', () => {
       }),
     });
     const planner = makePlanner({ escalateHint, escalateFull });
+    const hooks: HooksConfig = {
+      pre_escalation: [
+        {
+          kind: 'module',
+          path: 'deny-escalation.mjs',
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    markHooksConfigTrusted(projectDir, hooks);
 
     const { result, state: finalState } = await handleRetryAndEscalation({
       wctx: {
@@ -493,16 +513,7 @@ describe('handleRetryAndEscalation', () => {
         sessionId,
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1, commitStrategy: 'none' },
-          hooks: {
-            pre_escalation: [
-              {
-                kind: 'module',
-                path: 'deny-escalation.mjs',
-                timeout_ms: 30_000,
-                on_failure: 'warn',
-              },
-            ],
-          },
+          hooks,
         }),
         context: defaultContext,
         planner,
@@ -744,6 +755,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   });
 
   it('intermediate retry succeeds via fetch stub → result carries the intermediate provider/model identity, tokens in implementer category', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -819,6 +831,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   });
 
   it('intermediate retry fails via fetch rejection → falls through to Tier 1', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();

@@ -33,7 +33,7 @@ export function useSummaryEvidenceLedger(
 
     let ledger: EvidenceLedger | null = null;
     try {
-      ledger = readEvidenceLedger(projectDir, sessionId);
+      ledger = readEvidenceLedger({ projectDir, sessionId });
     } catch {
       ledger = null;
     }

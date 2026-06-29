@@ -1,4 +1,4 @@
-import { fuzzyMatchExtended } from '../../utils/fuzzy-match.js';
+import { fuzzyMatchExtended } from './fuzzy-match.js';
 import type { CommandPaletteItem } from '../../core/runtime/commands/types.js';
 
 export type PaletteSource = 'command' | 'mode' | 'picker' | 'task' | 'session' | 'custom';

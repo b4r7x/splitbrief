@@ -16,7 +16,7 @@ import { resolveHooksConfig } from '../../engine/hooks/discover.js';
 import { rejectUntrustedRunners } from '../../engine/runners/trust.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
-type SpecOpts = { project?: string; allowHooks: boolean };
+type SpecOpts = { project?: string; allowHooks: boolean; allowRepoRunners: boolean };
 
 interface SpecCommandDeps {
   createPlanner?: typeof createPlanner | undefined;
@@ -29,6 +29,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
     .description('Generate spec, plan, and tasks only (no implementation)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
+    .option(
+      '--allow-repo-runners',
+      'Trust repo-local shell/agent runner commands from project config',
+      false,
+    )
     .action(async (feature: string, opts: SpecOpts) => {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
@@ -38,7 +43,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       const { config: baseConfig, warnings } = loadConfigOrExit(projectDir);
       const mergedHooks = await resolveHooksConfig(projectDir, baseConfig.hooks);
       await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
-      rejectUntrustedRunners(baseConfig, projectDir, opts.allowHooks);
+      rejectUntrustedRunners(baseConfig, projectDir, opts.allowRepoRunners);
       printConfigWarnings(warnings);
 
       const sessionId = beginSession(projectDir, feature);

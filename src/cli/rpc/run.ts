@@ -17,6 +17,7 @@ import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import { loadState } from '../../core/state/persistence.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
+import { configForSessionTranscriptPolicy } from '../../core/sessions/io.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import { eventPhase, isInfrastructurePhaseEvent } from '../../engine/events/schema.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
@@ -148,11 +149,19 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   let persistedConfig = resolvedConfig.persistedConfig;
   let sessionApprovalEnabled = config.approval?.enabled !== false;
   let rpcClosed = false;
+  let activeSessionId = currentSessionId(projectDir, sessionId);
+
+  function activeConfig(): typeof config {
+    return configForSessionTranscriptPolicy(
+      config,
+      activeSessionId === undefined ? undefined : { projectDir, sessionId: activeSessionId },
+    );
+  }
 
   const writer = createResponseWriter({
     stream: deps.output ?? process.stdout,
     onClose: (reason) => shutdownRpc(reason),
-    getPersistTranscript: () => config.workflow.persistTranscript,
+    getPersistTranscript: () => activeConfig().workflow.persistTranscript,
   });
 
   const bus = createEventBus();
@@ -161,7 +170,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const recoveryGate = createGate<string>();
   const transportController = new AbortController();
   const runWorkflowImpl = deps.runWorkflow ?? runWorkflow;
-  let activeSessionId = currentSessionId(projectDir, sessionId);
   let currentPhase: Phase = savedState?.phase ?? 'idle';
   let queueHandler: QueueHandler | null = null;
   let clearQueueHandler: ClearQueueHandler | null = null;
@@ -348,10 +356,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     const issue = latest.pendingRecovery;
     if (!issue) return { shouldRun: true, state: latest };
 
-    if (issue.status === 'paused') {
-      return { shouldRun: false, state: latest };
-    }
-
     const applyAction = async (action: string) => {
       const parsed = RecoveryActionSchema.safeParse(action);
       if (!parsed.success) {
@@ -365,6 +369,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       const current = readCurrentState() ?? latest;
       const currentIssue = current.pendingRecovery;
       if (!currentIssue) return { shouldRun: true as const, state: current };
+      const effectiveConfig = activeConfig();
 
       const selectedImplementerProfile = currentIssue.selectedImplementerProfile;
       const retryProfileOverrideTaskId =
@@ -375,8 +380,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         state: current,
         action: parsed.data,
         bus,
-        config,
-        mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+        config: effectiveConfig,
+        mode: effectiveConfig.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
       });
       if (!result.ok) {
         writer.error(result.message);
@@ -389,7 +394,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
           projectDir,
           sessionId: id,
           state: result.state,
-          config,
+          config: effectiveConfig,
           status: result.status,
         });
       }
@@ -506,6 +511,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       });
       const latestState = readCurrentState();
       if (latestState) stateForRun = latestState;
+      const effectiveConfig = activeConfig();
 
       const turnController = new AbortController();
       activeTurnController = turnController;
@@ -515,10 +521,11 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         feature,
         plannerContext,
         projectDir,
-        config,
+        config: effectiveConfig,
         getApprovalEnabled: () => sessionApprovalEnabled,
         eventBus: bus,
         allowHooks: opts.allowHooks ?? false,
+        allowRepoRunners: opts.allowRepoRunners ?? false,
         sinks: {
           setAbortHandler: (handler) => {
             abortTurnHandler = handler;

@@ -42,7 +42,8 @@ export async function autoCompactResumeContext(
   const summarize = opts.planner.summarize;
   if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return opts.state;
 
-  const rebuilt = await buildResumeContext(opts.projectDir, opts.sessionId, true);
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const rebuilt = await buildResumeContext({ ref, persistTranscript: true });
   if (rebuilt.messages.length <= threshold) return opts.state;
 
   try {
@@ -85,11 +86,10 @@ export async function autoCompactResumeContext(
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
   const { projectDir, sessionId, bus, config, resumeHolder, requireNonEmpty } = opts;
-  const rebuilt = await buildResumeContext(
-    projectDir,
-    sessionId,
-    config.workflow.persistTranscript !== false,
-  );
+  const rebuilt = await buildResumeContext({
+    ref: { projectDir, sessionId },
+    persistTranscript: config.workflow.persistTranscript !== false,
+  });
   if (rebuilt.warning === 'transcript-unavailable') {
     publishWarning({
       bus: bus,

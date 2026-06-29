@@ -5,6 +5,8 @@ description: Design flow for a new feature that is not yet covered by any spec u
 
 # Add a new feature to diptych
 
+Local-only: this skill writes ignored, machine-local `notes/superpowers/specs/**` design artifacts. In a fresh checkout without the local notes workflow, use the tracked SpecKit commands or ask the user where feature specs should live.
+
 This skill designs a new feature by producing a new spec under `notes/superpowers/specs/`. It does **not** implement the feature. Use `diptych-implement-spec` for that, after the user reviews and approves the spec.
 
 ## Prerequisites

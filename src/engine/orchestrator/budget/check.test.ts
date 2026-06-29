@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { checkBudget, getBudgetCostKnownness, getCurrentCost, enforceBudget } from './check.js';
+import { checkBudget, getBudgetCostKnownness, enforceBudget } from './check.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { protectEngineEventForConsumer } from '../../events/protection.js';
@@ -19,6 +19,10 @@ const emptyPricingCache: ModelCacheAccessor = {
   getModelsDevCatalog: () => null,
   getProviderModels: () => null,
 };
+
+function currentKnownCost(opts: Parameters<typeof getBudgetCostKnownness>[0]): number {
+  return getBudgetCostKnownness(opts).currentKnownCost;
+}
 
 describe('checkBudget', () => {
   it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
@@ -66,10 +70,10 @@ describe('checkBudget', () => {
   });
 });
 
-describe('getCurrentCost', () => {
+describe('getBudgetCostKnownness', () => {
   it('returns 0 for zero usage with local tools', () => {
     expect(
-      getCurrentCost({
+      currentKnownCost({
         tokenUsage: zeroUsage,
         totalTasks: 1,
         escalatedCount: 0,
@@ -85,7 +89,7 @@ describe('getCurrentCost', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -115,7 +119,7 @@ describe('getCurrentCost', () => {
       plannerOutput: 1_000_000,
     };
 
-    const withoutCache = getCurrentCost({
+    const withoutCache = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -123,7 +127,7 @@ describe('getCurrentCost', () => {
       plannerModel: 'claude-runtime-budget-only',
       implementerTool: 'ollama',
     });
-    const withCache = getCurrentCost({
+    const withCache = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -144,7 +148,7 @@ describe('getCurrentCost', () => {
       implementerOutput: 1_000_000,
     };
 
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
@@ -197,7 +201,7 @@ describe('getCurrentCost', () => {
       },
     ];
 
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -266,7 +270,7 @@ describe('getCurrentCost', () => {
       implementerOutput: 500_000,
     };
 
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -340,7 +344,7 @@ describe('getCurrentCost', () => {
       getProviderModels: () => null,
     };
 
-    const below = getCurrentCost({
+    const below = currentKnownCost({
       tokenUsage: { ...zeroUsage, plannerInput: 200_000 },
       totalTasks: 1,
       escalatedCount: 0,
@@ -349,7 +353,7 @@ describe('getCurrentCost', () => {
       implementerTool: 'ollama',
       pricingCache,
     });
-    const above = getCurrentCost({
+    const above = currentKnownCost({
       tokenUsage: { ...zeroUsage, plannerInput: 300_000 },
       totalTasks: 1,
       escalatedCount: 0,
@@ -393,7 +397,7 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
@@ -442,7 +446,7 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
@@ -469,7 +473,7 @@ describe('enforceBudget', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
@@ -502,7 +506,7 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
@@ -534,7 +538,7 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({
+    const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
@@ -562,7 +566,7 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
     const budget = cost / 0.9;
 
     await enforceBudget({
@@ -589,7 +593,7 @@ describe('enforceBudget', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
     const budget = cost * 0.5;
 
     await enforceBudget({
@@ -617,13 +621,13 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const sonnetCost = getCurrentCost({
+    const sonnetCost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
     });
-    const unknownCost = getCurrentCost({
+    const unknownCost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',

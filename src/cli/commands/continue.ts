@@ -12,6 +12,7 @@ import { printCrashDiagnostic } from '../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive, writeActive } from '../../core/sessions/lifecycle.js';
 import { loadState, consoleWorkflowFeature } from '../../core/state/persistence.js';
+import { readSessionPersistTranscript } from '../../core/sessions/io.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { skillsStore } from '../../stores/project/skills.js';
@@ -87,7 +88,7 @@ export async function resumeSavedSession(args: {
   }
 
   console.log(
-    `Resuming: ${consoleWorkflowFeature(state.feature, loadConfig(projectDir).config.workflow.persistTranscript)} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
+    `Resuming: ${consoleWorkflowFeature({ feature: state.feature, persistTranscript: loadConfig(projectDir).config.workflow.persistTranscript && readSessionPersistTranscript({ projectDir, sessionId }) })} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
   );
 
   const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
@@ -96,7 +97,13 @@ export async function resumeSavedSession(args: {
   if (state.selectedSkills && state.selectedSkills.length > 0) {
     skillsStore.setSelected(new Set(state.selectedSkills));
   }
-  routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
+  routerStore.init({
+    screen: 'workflow',
+    feature: state.feature,
+    resumeState: state,
+    sessionId,
+    allowRepoRunners: opts.allowRepoRunners ?? false,
+  });
 
   await deps.renderApp(createElement(App), {
     fullscreen: useFullscreen,
@@ -160,6 +167,8 @@ export async function continueCommand(
   assertModeFlagsExclusive(opts);
   assertWorktreeStartOnly(opts);
 
+  await maybeMigrateAndReport(opts.projectDir, opts);
+
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
   const sessDir = sessionDir(opts.projectDir, sessionId);
 
@@ -199,8 +208,6 @@ export async function continueCommand(
   if (status.crashed) {
     await deps.printCrashDiagnostic(sessDir, status);
   }
-
-  await maybeMigrateAndReport(opts.projectDir, opts);
 
   const state = loadState({ projectDir: opts.projectDir, sessionId });
 

@@ -3,10 +3,10 @@ import type { IpcPromptRequest, ServerMessage } from './protocol.js';
 import { IPC_MAX_FRAME_BYTES, parseServerMessage } from './protocol.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import {
   protectEngineEventForConsumer,
   projectUserEditConflictForTranscriptPolicy,
-  TRANSCRIPT_OMITTED_MESSAGE,
 } from '../events/protection.js';
 
 const MAX_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024;

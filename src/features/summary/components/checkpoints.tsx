@@ -6,10 +6,6 @@ import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 
-function compactCheckpointCount(count: number): string {
-  return count === 1 ? '1 ckpt' : `${count} ckpts`;
-}
-
 function uniqueParts(parts: (string | null)[]): string[] {
   const seen = new Set<string>();
   return parts.filter((part): part is string => {
@@ -54,7 +50,7 @@ function checkpointSummaryText(
   latest: string,
   isSmall: boolean,
 ): string {
-  if (isSmall) return compactCheckpointCount(summary.count);
+  if (isSmall) return countNoun(summary.count, 'ckpt');
 
   return `${countNoun(summary.count, 'checkpoint')} · latest: ${latest}`;
 }

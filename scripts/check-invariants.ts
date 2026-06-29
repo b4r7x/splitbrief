@@ -169,24 +169,24 @@ const gates: Gate[] = [
   },
   {
     id: '20',
-    description: 'Test files must import testing/helpers via #testing alias, not relative paths',
-    command:
-      '{ rg -n "from [\'\\"]\\.\\.?/.*testing/helpers" src/ testing/ evals/ -g "*.ts" -g "*.tsx" || true; } | wc -l',
+    description:
+      'Test files must import top-level testing/helpers via #testing alias, not relative paths',
+    command: 'tsx scripts/testing-helper-imports.ts | wc -l',
     expected: 0,
   },
   {
     id: '22',
     description: 'Active agent instruction surfaces must not reference removed APIs',
     command:
-      "{ rg -n '\\\\bTuiEvent\\\\b|src/screens/|src/ui/' .github/prompts .claude/commands .claude/skills .opencode/command 2>/dev/null || true; } | wc -l",
+      '{ for path in .github/prompts .claude/commands .claude/skills .opencode/command; do [ -e "$path" ] && rg -n \'\\bTuiEvent\\b|src/screens/|src/ui/\' "$path" || true; done; } | wc -l',
     expected: 0,
   },
   {
     id: '21',
     description:
-      'No present tracked runtime artifacts under .diptych/ or .tiny-spec/ (excluding intentional fixtures)',
+      'No present tracked runtime artifacts under .diptych/, .tiny-spec/, or .nuke/ (excluding intentional fixtures)',
     command:
-      '{ git ls-files -z .diptych/ .tiny-spec/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
+      '{ git ls-files -z .diptych/ .tiny-spec/ .nuke/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
     expected: 0,
   },
   {

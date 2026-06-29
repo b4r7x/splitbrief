@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import { HeadlessJsonRecordSchema } from '../public-json.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { createStdoutJsonSink } from './stdout-json.js';
 
 describe('stdoutJsonSink', () => {

@@ -102,6 +102,9 @@ export function useWorkflowScreen({
   );
   const resumeState = routerStore.use((s) => (s.screen === 'workflow' ? s.resumeState : undefined));
   const sessionId = routerStore.use((s) => (s.screen === 'workflow' ? s.sessionId : undefined));
+  const allowRepoRunners = routerStore.use((s) =>
+    s.screen === 'workflow' ? s.allowRepoRunners : undefined,
+  );
   const routeReadiness = routerStore.use((s) =>
     s.screen === 'workflow' ? s.readiness : undefined,
   );
@@ -130,6 +133,7 @@ export function useWorkflowScreen({
     initialResumeState: resumeState,
     selectedSkills: selectedSkillMetas,
     sessionId,
+    allowRepoRunners: allowRepoRunners ?? false,
     inputMode,
     enabled: !isAttachedClient && readinessLoaded && !readinessBlocked,
     runWorkflow: deps?.runWorkflow,

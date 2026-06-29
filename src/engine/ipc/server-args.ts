@@ -31,6 +31,7 @@ const IpcServerArgsSchema = z.object({
   overrides: CLIOverridesSchema.default({}),
   persistTranscript: z.boolean().optional(),
   allowHooks: z.boolean().optional(),
+  allowRepoRunners: z.boolean().optional(),
   plannerContext: z.string().optional(),
   attachments: z.array(IpcServerAttachmentSchema).optional(),
 });

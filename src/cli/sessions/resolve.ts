@@ -6,9 +6,14 @@ import { isResumable } from '../../core/phases.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { findSingleRunningSession, type ScanRunningSessionsDeps } from './single-running.js';
 import { cliError } from '../errors.js';
+import { resolveSessionAlias } from './aliases.js';
 
-export function resolveSessionOrThrow(projectDir: string, sessionOpt: string | undefined): string {
-  const sessionId = sessionOpt ?? readActive(projectDir);
+export async function resolveSessionOrThrow(
+  projectDir: string,
+  sessionOpt: string | undefined,
+): Promise<string> {
+  const resolvedOpt = await resolveSessionAlias(sessionOpt, projectDir);
+  const sessionId = resolvedOpt ?? readActive(projectDir);
   if (!sessionId) throw cliError('No active session. Pass --session <id>.', 1);
   return sessionId;
 }

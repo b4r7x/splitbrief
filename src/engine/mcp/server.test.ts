@@ -55,6 +55,20 @@ describe('POST /mcp — valid auth', () => {
     expect((result['serverInfo'] as Record<string, unknown>)['version']).toBe(SERVER_VERSION);
   });
 
+  it('returns 200 and preserves JSON-RPC id:null', async () => {
+    const h = await startServer();
+    const body = JSON.stringify({ jsonrpc: '2.0', id: null, method: 'initialize', params: {} });
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json['id']).toBeNull();
+    expect(json['result']).toBeDefined();
+  });
+
   it('returns 202 for notifications/initialized', async () => {
     const h = await startServer();
     const body = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' });

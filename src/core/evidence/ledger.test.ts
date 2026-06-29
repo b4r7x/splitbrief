@@ -15,7 +15,7 @@ import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
 const tmpDir = setupEvidenceTmpDir();
 
 function lockPathFor(projectDir: string, sessionId: string): string {
-  return `${evidenceLedgerPath(projectDir, sessionId)}.lock`;
+  return `${evidenceLedgerPath({ projectDir, sessionId })}.lock`;
 }
 
 function findDeadPid(): number {
@@ -46,22 +46,22 @@ describe('write / read EvidenceLedger', () => {
   it('round-trips through filesystem', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
-    const read = readEvidenceLedger(tmpDir.get(), 'sess-1');
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
+    const read = readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' });
     expect(read).not.toBeNull();
     expect(read?.sessionId).toBe('sess-1');
   });
 
   it('returns null for missing file', () => {
-    expect(readEvidenceLedger(tmpDir.get(), 'nonexistent')).toBeNull();
+    expect(readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'nonexistent' })).toBeNull();
   });
 
   it('sequential mutations both persist', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
 
-    mutateEvidenceLedger(tmpDir.get(), 'sess-1', (current) => {
+    mutateEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, (current) => {
       if (current === null) throw new Error('missing ledger');
       return {
         ...current,
@@ -71,7 +71,7 @@ describe('write / read EvidenceLedger', () => {
         })),
       };
     });
-    mutateEvidenceLedger(tmpDir.get(), 'sess-1', (current) => {
+    mutateEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, (current) => {
       if (current === null) throw new Error('missing ledger');
       return {
         ...current,
@@ -82,7 +82,7 @@ describe('write / read EvidenceLedger', () => {
       };
     });
 
-    const read = readEvidenceLedger(tmpDir.get(), 'sess-1');
+    const read = readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' });
     expect(read?.tasks[0]?.observedEvidence).toEqual(['workflow evidence', 'mcp evidence']);
   });
 });
@@ -98,10 +98,10 @@ describe('evidence ledger lock reclamation', () => {
   it('writes the holding pid and timestamp into the lock during a mutation', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
 
     let observedHolder: unknown = null;
-    mutateEvidenceLedger(tmpDir.get(), 'sess-1', (current) => {
+    mutateEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, (current) => {
       observedHolder = JSON.parse(readFileSync(lockPathFor(tmpDir.get(), 'sess-1'), 'utf-8'));
       return current ?? ledger;
     });
@@ -115,9 +115,11 @@ describe('evidence ledger lock reclamation', () => {
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     seedLock(tmpDir.get(), 'sess-1', { pid: findDeadPid(), acquiredAt: Date.now() });
 
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
 
-    expect(readEvidenceLedger(tmpDir.get(), 'sess-1')?.sessionId).toBe('sess-1');
+    expect(readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' })?.sessionId).toBe(
+      'sess-1',
+    );
     expect(existsSync(lockPathFor(tmpDir.get(), 'sess-1'))).toBe(false);
   });
 
@@ -126,9 +128,11 @@ describe('evidence ledger lock reclamation', () => {
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     seedLock(tmpDir.get(), 'sess-1', { pid: process.pid, acquiredAt: Date.now() - 60_000 });
 
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
 
-    expect(readEvidenceLedger(tmpDir.get(), 'sess-1')?.sessionId).toBe('sess-1');
+    expect(readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' })?.sessionId).toBe(
+      'sess-1',
+    );
     expect(existsSync(lockPathFor(tmpDir.get(), 'sess-1'))).toBe(false);
   });
 
@@ -139,20 +143,25 @@ describe('evidence ledger lock reclamation', () => {
     mkdirSync(dirname(lockPath), { recursive: true });
     writeFileSync(lockPath, '{ broken');
 
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
 
-    expect(readEvidenceLedger(tmpDir.get(), 'sess-1')?.sessionId).toBe('sess-1');
+    expect(readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' })?.sessionId).toBe(
+      'sess-1',
+    );
   });
 
   it('times out with a structured error when a live, fresh lock is held', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    writeEvidenceLedger(tmpDir.get(), 'sess-1', ledger);
+    writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
     seedLock(tmpDir.get(), 'sess-1', { pid: process.pid, acquiredAt: Date.now() });
 
     let caught: unknown;
     try {
-      mutateEvidenceLedger(tmpDir.get(), 'sess-1', (current) => current ?? ledger);
+      mutateEvidenceLedger(
+        { projectDir: tmpDir.get(), sessionId: 'sess-1' },
+        (current) => current ?? ledger,
+      );
     } catch (err) {
       caught = err;
     }

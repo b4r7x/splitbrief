@@ -204,6 +204,66 @@ describe('runEscalationTier hint tier gate handling', () => {
 });
 
 describe('runEscalationTier intermediate tier guard ordering', () => {
+  it('does not publish a tier-0 escalate event when intermediate credentials are missing', async () => {
+    const savedKey = process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    try {
+      const { projectDir, sessionId } = setupProject();
+      const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+      const { bus, events } = makeBusRecorder();
+      const { callbacks } = makeCallbacks();
+      const ctx: EscalationContext = {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          implementer: {
+            kind: 'api',
+            provider: 'ollama',
+            model: 'qwen',
+            apiBase: 'http://localhost:11434/v1',
+          },
+          escalation: {
+            intermediateProvider: 'openrouter',
+            intermediateModel: 'openrouter/model',
+            enabled: true,
+          },
+        }),
+        callbacks,
+        bus,
+        planner: makePlanner({}),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      };
+      const task = makeTask();
+      const state = makeImplState([task]);
+
+      const outcome = await runEscalationTier(INTERMEDIATE_TIER, {
+        ctx,
+        task,
+        state,
+        lastError: 'validation failed',
+        priorAttempts: 0,
+      });
+
+      expect(outcome.attempts).toBe(0);
+      expect(events.some((e) => e.type === 'escalate')).toBe(false);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'warning',
+          message: expect.stringContaining('OpenRouter intermediate provider is missing'),
+        }),
+      );
+    } finally {
+      if (savedKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = savedKey;
+    }
+  });
+
   it('does not publish a tier-0 escalate event when the intermediate config cannot resolve', async () => {
     const { projectDir, sessionId } = setupProject();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);

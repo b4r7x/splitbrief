@@ -36,6 +36,26 @@ const AMBIENT_SECRET_KEYS = new Set([
 const SECRET_ENV_KEY_PATTERN =
   /_(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|URL|URI|DSN|CONNECTION)S?$/i;
 
+const CREDENTIAL_HANDLE_KEYS = new Set([
+  'AWS_PROFILE',
+  'AWS_DEFAULT_PROFILE',
+  'AWS_CONFIG_FILE',
+  'AWS_SHARED_CREDENTIALS_FILE',
+  'AWS_WEB_IDENTITY_TOKEN_FILE',
+  'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GIT_ASKPASS',
+  'GIT_SSH',
+  'GIT_SSH_COMMAND',
+  'SSH_ASKPASS',
+  'SSH_AUTH_SOCK',
+  'NPM_CONFIG_USERCONFIG',
+  'npm_config_userconfig',
+]);
+
+const CREDENTIAL_HANDLE_KEY_PATTERN =
+  /(^|_)((TOKEN|CREDENTIAL|CREDENTIALS|AUTH|SECRET|PASSWORD)_FILE|ASKPASS|AUTH_SOCK)$/i;
+
 const CLI_TOOL_AUTH_ENV: Partial<Record<string, string>> = {
   'claude-code': 'ANTHROPIC_API_KEY',
 };
@@ -68,7 +88,12 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
 
 function isStrippedSecret(key: string, preserve: Set<string>): boolean {
   if (preserve.has(key)) return false;
-  return AMBIENT_SECRET_KEYS.has(key) || SECRET_ENV_KEY_PATTERN.test(key);
+  return (
+    AMBIENT_SECRET_KEYS.has(key) ||
+    CREDENTIAL_HANDLE_KEYS.has(key) ||
+    SECRET_ENV_KEY_PATTERN.test(key) ||
+    CREDENTIAL_HANDLE_KEY_PATTERN.test(key)
+  );
 }
 
 export async function createSandboxEnv(

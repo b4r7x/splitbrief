@@ -4,9 +4,9 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../ca
 import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { providerError } from './errors.js';
 import { streamCompletion, type StreamClient } from './openai-stream.js';
-import type { StreamMessage } from './stream-types.js';
+import type { StreamMessage } from './types.js';
 
-export type { StreamMessage } from './stream-types.js';
+export type { StreamMessage } from './types.js';
 
 interface StreamDispatchOpts {
   provider: string;

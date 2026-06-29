@@ -32,6 +32,7 @@ export interface ImplementerPublisher {
 
 export interface ImplementerFactoryOptions {
   publisher?: ImplementerPublisher | undefined;
+  allowRepoRunners?: boolean | undefined;
 }
 
 export interface ImplementerOptions {

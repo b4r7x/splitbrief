@@ -347,7 +347,7 @@ describe('SummaryScreen', () => {
         status: 'written',
         path: 'review\u001b]52;c;clipboard-path\u0007.md',
       });
-      writeEvidenceLedger(projectDir, sessionId, ledger);
+      writeEvidenceLedger({ projectDir, sessionId }, ledger);
 
       terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
       configStore.__testReset({ projectDir });

@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -511,6 +513,8 @@ describe('validateCommitAndAdvance', () => {
       encoding: 'utf-8',
     }).trim();
     const commitAttempts: string[] = [];
+    const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+    markHooksConfigTrusted(projectDir, hooks);
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -519,7 +523,7 @@ describe('validateCommitAndAdvance', () => {
       sessionId,
       config: makeConfig({
         workflow: { git: { commitStrategy: 'per-task' } },
-        hooks: { builtin: { 'block-secrets': true } },
+        hooks,
       }),
       state,
       bus,
@@ -561,6 +565,8 @@ describe('validateCommitAndAdvance', () => {
     writeFileSync(cleanPath, 'export const hello = "world";');
     const { bus, events } = makeBusRecorder();
     const commitAttempts: string[] = [];
+    const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+    markHooksConfigTrusted(projectDir, hooks);
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -569,7 +575,7 @@ describe('validateCommitAndAdvance', () => {
       sessionId,
       config: makeConfig({
         workflow: { git: { commitStrategy: 'per-task' } },
-        hooks: { builtin: { 'block-secrets': true } },
+        hooks,
       }),
       state,
       bus,
@@ -613,6 +619,12 @@ describe('validateCommitAndAdvance', () => {
         '}',
       ].join('\n'),
     );
+    const hooks: HooksConfig = {
+      pre_commit: [
+        { kind: 'module', path: 'capture-hook.mjs', timeout_ms: 30_000, on_failure: 'warn' },
+      ],
+    };
+    markHooksConfigTrusted(projectDir, hooks);
     const { bus } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
@@ -622,11 +634,7 @@ describe('validateCommitAndAdvance', () => {
       sessionId,
       config: makeConfig({
         workflow: { git: { commitStrategy: 'per-task' } },
-        hooks: {
-          pre_commit: [
-            { kind: 'module', path: 'capture-hook.mjs', timeout_ms: 30_000, on_failure: 'warn' },
-          ],
-        },
+        hooks,
       }),
       state,
       bus,

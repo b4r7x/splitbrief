@@ -166,6 +166,45 @@ describe('agent implementer', () => {
     expect(prompt).not.toContain('{prompt}');
   });
 
+  it('refuses shell-evaluated {prompt} placeholders without repo runner trust', async () => {
+    const config = makeConfig({
+      command: 'bash',
+      args: ['-c', 'printf "%s" "{prompt}"'],
+    });
+
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
+      task: makeTask({ description: 'unsafe prompt content' }),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Runner args must not pass {prompt} through bash -c');
+  });
+
+  it('allows shell-evaluated {prompt} placeholders with explicit repo runner trust', async () => {
+    const outFile = join(testDir, 'trusted-prompt-out.txt');
+    const config = makeConfig({
+      command: 'bash',
+      args: ['-c', `cat > ${outFile} <<'DIPTYCH_PROMPT_EOF'\n{prompt}\nDIPTYCH_PROMPT_EOF`],
+    });
+
+    const implementer = createAgentImplementer(config, { allowRepoRunners: true });
+    const result = await implementer.implement({
+      task: makeTask({ description: 'trusted prompt content' }),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(outFile, 'utf-8')).toContain('trusted prompt content');
+  });
+
   it('retryTaskViaAgent works with error context', async () => {
     const outFile = join(testDir, 'retry-out.txt');
     const config = makeConfig({

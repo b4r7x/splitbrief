@@ -27,11 +27,26 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout.trim()).toBe('hello world');
   });
 
-  it('substitutes {prompt} placeholder in args', async () => {
+  it('rejects shell-evaluated {prompt} placeholders by default', async () => {
+    await expect(
+      invokeCommandBasedRunner({
+        command: 'sh',
+        args: ['-c', 'echo "{prompt}"'],
+        supportPromptPlaceholder: true,
+        prompt: 'substituted text',
+        projectDir: process.cwd(),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-shell-evaluated-prompt',
+    });
+  });
+
+  it('allows shell-evaluated {prompt} placeholders when runner trust is explicit', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'sh',
       args: ['-c', 'echo "{prompt}"'],
       supportPromptPlaceholder: true,
+      allowShellEvaluatedPrompt: true,
       prompt: 'substituted text',
       projectDir: process.cwd(),
     });

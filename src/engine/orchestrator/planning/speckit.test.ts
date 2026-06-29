@@ -3,6 +3,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { TaskId } from '../../../core/schemas/task.js';
@@ -14,7 +15,7 @@ import {
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { ANALYZE_FILE, sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { formatTasks } from '../../spec/formatter.js';
@@ -216,6 +217,10 @@ describe('runSpeckitPlanning', () => {
     });
     expect(result.cancelled).toBe(true);
     expect(result.tasks).toEqual([]);
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.phase).toBe('idle');
+    expect(persisted?.tasks).toEqual([]);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), ANALYZE_FILE))).toBe(false);
     const cc = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), 'constitution-check.json'), 'utf8'),
     );
@@ -254,8 +259,15 @@ describe('runSpeckitPlanning', () => {
   it('passes through phases in the documented order', async () => {
     const { events } = await runSpeckit();
     const statusEvents = events.filter((e) => e.type === 'planner_status');
-    const phasesInOrder = statusEvents.map((e) => ('phase' in e ? e.phase : null));
-    expect(phasesInOrder).toContain('analyzing');
+    const phasesInOrder = statusEvents.map((e) => e.phase);
+    const clarifying = phasesInOrder.indexOf('clarifying');
+    const constitutionCheck = phasesInOrder.indexOf('constitution-check');
+    const planning = phasesInOrder.indexOf('planning');
+    const analyzing = phasesInOrder.indexOf('analyzing');
+    expect(clarifying).toBeGreaterThanOrEqual(0);
+    expect(constitutionCheck).toBeGreaterThan(clarifying);
+    expect(planning).toBeGreaterThan(constitutionCheck);
+    expect(analyzing).toBeGreaterThan(planning);
   });
 
   it('publishes a running planner_status at the specifying phase so its OTel span opens', async () => {

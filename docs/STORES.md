@@ -49,7 +49,7 @@ src/stores/
 │   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in stores/ui/persistence.ts
 │   ├── input-height.ts       # Input bar rendered height
 │   ├── command-palette-mru.ts # Command palette most-recently-used order
-│   ├── project-files.ts      # Project file list for mention/attach pickers
+│   ├── project-files.ts      # Project-file picker refresh invalidation tick
 │   ├── completion.ts         # Completion popup open/closed flag
 │   ├── focus.ts              # Focused region + index (e.g. brief)
 │   ├── hover.ts              # Hovered surface + index (brief / conversation)
@@ -197,7 +197,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |
-| `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` | `requestRefresh()` |
+| `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |

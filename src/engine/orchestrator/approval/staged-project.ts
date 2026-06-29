@@ -17,6 +17,8 @@ export type StagedProject = {
   cleanup: () => void;
 };
 
+export type StagedProjectRunnerRole = 'planner' | 'implementer';
+
 export type PromoteStagedChangesResult = {
   promotedFiles: string[];
   conflictedFiles: string[];
@@ -44,6 +46,7 @@ async function shouldCopyToStagedProject(source: string): Promise<boolean> {
 export async function createStagedProject(
   projectDir: string,
   config?: Config,
+  runnerRole: StagedProjectRunnerRole = 'implementer',
 ): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
   const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
@@ -57,9 +60,7 @@ export async function createStagedProject(
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
     });
-    const preserveEnvKeys = config
-      ? [...runnerAuthEnvKeys(config.implementer), ...runnerAuthEnvKeys(config.planner)]
-      : [];
+    const preserveEnvKeys = config ? runnerAuthEnvKeys(config[runnerRole]) : [];
     const sandboxEnv = await createSandboxEnv(stagedProjectDir, preserveEnvKeys);
     return {
       projectDir: stagedProjectDir,

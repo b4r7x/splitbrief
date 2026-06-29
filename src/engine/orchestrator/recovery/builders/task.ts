@@ -38,6 +38,14 @@ export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
   routingReason?: string | undefined;
 }
 
+export interface ImplementerUnavailableRecoveryOptions
+  extends RecoveryBuilderBase,
+    TaskRecoveryContext {
+  tool?: string | undefined;
+  model?: string | undefined;
+  availabilityReason?: string | undefined;
+}
+
 export interface DependencyBlockedRecoveryOptions extends RecoveryBuilderBase {
   task: Task;
   blockedByTasks?: Task[] | undefined;
@@ -171,6 +179,54 @@ export function buildContextOverflowRecoveryIssue(
       routingReason,
       routeBiggerProfile,
       canRouteBigger,
+    }),
+    availableActions: actions,
+    recommendedAction,
+    createdAt: opts.createdAt,
+  });
+}
+
+export function buildImplementerUnavailableRecoveryIssue(
+  opts: ImplementerUnavailableRecoveryOptions,
+): RecoveryIssue {
+  const phase = opts.phase ?? 'implementing';
+  const actions = orderedActions([
+    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
+    'retry-same-worker',
+    'skip-current-task',
+    'pause-run',
+    'abort-workflow',
+  ]);
+  const recommendedAction = chooseRecommended(actions, [
+    'route-bigger-worker',
+    'retry-same-worker',
+    'pause-run',
+  ]);
+
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'implementation-error',
+    phase,
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${opts.task.id} selected implementer is unavailable`,
+    details: [
+      ...implementerDetails(opts.selectedImplementerProfile),
+      opts.tool !== undefined ? `Tool: ${opts.tool}` : undefined,
+      opts.model !== undefined ? `Model: ${opts.model}` : undefined,
+      opts.availabilityReason !== undefined
+        ? `Availability: ${opts.availabilityReason}`
+        : undefined,
+      ...routeBiggerDetails(opts),
+    ].filter((detail): detail is string => detail !== undefined),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    facts: compactFacts({
+      tool: opts.tool,
+      model: opts.model,
+      availabilityReason: opts.availabilityReason,
+      canRouteBigger: hasRouteBigger(opts),
+      routeBiggerProfile: opts.routeBiggerProfile,
     }),
     availableActions: actions,
     recommendedAction,

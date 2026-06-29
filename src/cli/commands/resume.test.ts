@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.js';
 import { resumeSavedSession } from './continue.js';
 import { writeActive } from '../../core/sessions/lifecycle.js';
-import { currentProcessStartTimeMs } from '../../core/sessions/lockfile-status.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';

@@ -101,7 +101,7 @@ export function enqueueUserMessage({
   appendMessage(
     { projectDir, sessionId },
     { role: 'user', phase, text, queuedAt: message.queuedAt, queueMessageId: message.id },
-    persistTranscript,
+    { persistTranscript },
   );
   const preview = formatQueuedMessagePreview(message);
   bus.publish({

@@ -3,10 +3,9 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { clearStaleSession } from './guards.js';
 import { writeActive } from './lifecycle.js';
-import { currentProcessStartTimeMs } from './lockfile-status.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { activeFile, sessionDir, STATE_FILE, DIPTYCH_DIR, LOCKFILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
-import { sessionError } from './errors.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -79,22 +78,15 @@ describe('clearStaleSession', () => {
     expect(existsSync(activeFile(dir))).toBe(false);
   });
 
-  it('throws a CLI error when the referenced session is still in progress', () => {
+  it('clears the active pointer when an in-progress session has no live owner', () => {
     const dir = makeTmp();
     const sessionId = '2026-04-18-in-progress';
     writeState(dir, sessionId, 'implementing');
     writeActive({ projectDir: dir, sessionId: sessionId });
 
-    try {
-      clearStaleSession(dir);
-      throw new Error('expected clearStaleSession to throw');
-    } catch (err) {
-      expect(sessionError.isStillActive(err)).toBe(true);
-      expect((err as Error).message).toContain(sessionId);
-    }
+    clearStaleSession(dir);
 
-    // Lockfile-less in-progress sessions remain protected for legacy foreground runs.
-    expect(existsSync(activeFile(dir))).toBe(true);
+    expect(existsSync(activeFile(dir))).toBe(false);
   });
 
   it('clears an in-progress active pointer when the session lockfile has exited', () => {
@@ -126,7 +118,8 @@ describe('clearStaleSession', () => {
     writeState(dir, sessionId, 'planning');
     writeActive({ projectDir: dir, sessionId: sessionId });
 
-    // First invocation throws, second still sees a live session and still throws.
+    writeLockfile(dir, sessionId);
+
     expect(() => clearStaleSession(dir)).toThrow();
     expect(() => clearStaleSession(dir)).toThrow();
     expect(existsSync(activeFile(dir))).toBe(true);

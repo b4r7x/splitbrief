@@ -82,6 +82,8 @@ export type RunWorkflowOptions = {
   headless?: boolean | undefined;
   /** When true, automatically trust hooks without prompting. Fail-closed otherwise in non-interactive paths. */
   allowHooks?: boolean | undefined;
+  /** When true, trust repo-local shell/agent runner commands from project config. */
+  allowRepoRunners?: boolean | undefined;
   /** Optional TUI event sink — bridges engine events to React stores. Supplied by the React workflow layer. */
   tuiSink?: EventSink | undefined;
   /** Optional externally-owned bus, used by the detached IPC server/client path. */
@@ -137,7 +139,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
   const config: Config = hooks === undefined ? opts.config : { ...opts.config, hooks };
 
-  rejectUntrustedRunners(config, projectDir, opts.allowHooks ?? false);
+  rejectUntrustedRunners(config, projectDir, opts.allowRepoRunners ?? false);
 
   const bus = opts.eventBus ?? createEventBus();
   const prev = initSinkUnsubscribers.get(bus);
@@ -237,7 +239,10 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   const implementer =
     opts._implementer ??
-    (await createImplementer(config, { publisher: createImplementerPublisher(bus) }));
+    (await createImplementer(config, {
+      publisher: createImplementerPublisher(bus),
+      allowRepoRunners: opts.allowRepoRunners ?? false,
+    }));
 
   let state: WorkflowState;
 
@@ -269,7 +274,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', text: feature },
-      config.workflow.persistTranscript,
+      { persistTranscript: config.workflow.persistTranscript },
     );
     publishUserMessage({ bus: bus, phase: state.phase }, feature);
 
@@ -314,6 +319,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     planner,
     context,
     implementer,
+    allowRepoRunners: opts.allowRepoRunners ?? false,
     signal: opts.signal,
     metadata,
     resumeHolder,

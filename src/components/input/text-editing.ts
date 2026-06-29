@@ -37,7 +37,7 @@ export function dropLastCodePoint(value: string): string {
 
 export type EditAction = TextEditingKeyAction | null;
 
-export function deleteWordBackward(value: string, cursor: number): EditResult {
+function deleteWordBackward(value: string, cursor: number): EditResult {
   if (cursor === 0) return { value, cursor };
 
   let i = cursor;
@@ -50,7 +50,7 @@ export function deleteWordBackward(value: string, cursor: number): EditResult {
   };
 }
 
-export function findVisualLineStart(value: string, cursor: number, columns: number): number {
+function findVisualLineStart(value: string, cursor: number, columns: number): number {
   const logicalStart = value.lastIndexOf('\n', cursor - 1) + 1;
   const nextNewline = value.indexOf('\n', logicalStart);
   const logicalEnd = nextNewline === -1 ? value.length : nextNewline;
@@ -83,7 +83,7 @@ function toNfc(value: string, cursor: number): { value: string; cursor: number }
   return { value: nfc, cursor: value.slice(0, cursor).normalize('NFC').length };
 }
 
-export function deleteLineBackward(value: string, cursor: number, columns?: number): EditResult {
+function deleteLineBackward(value: string, cursor: number, columns?: number): EditResult {
   const nfc = toNfc(value, cursor);
   const lineStart =
     columns != null && columns > 0
@@ -107,7 +107,7 @@ export function deleteLineBackward(value: string, cursor: number, columns?: numb
   };
 }
 
-export function moveToLineStart(value: string, cursor: number, columns?: number): EditResult {
+function moveToLineStart(value: string, cursor: number, columns?: number): EditResult {
   const nfc = toNfc(value, cursor);
   const lineStart =
     columns != null && columns > 0
@@ -116,21 +116,21 @@ export function moveToLineStart(value: string, cursor: number, columns?: number)
   return { value: nfc.value, cursor: lineStart };
 }
 
-export function moveToLineEnd(value: string, cursor: number): EditResult {
+function moveToLineEnd(value: string, cursor: number): EditResult {
   const nfc = toNfc(value, cursor);
   const nextNewline = nfc.value.indexOf('\n', nfc.cursor);
   return { value: nfc.value, cursor: nextNewline === -1 ? nfc.value.length : nextNewline };
 }
 
-export function moveCharBackward(value: string, cursor: number): EditResult {
+function moveCharBackward(value: string, cursor: number): EditResult {
   return { value, cursor: prevCodePointIndex(value, cursor) };
 }
 
-export function moveCharForward(value: string, cursor: number): EditResult {
+function moveCharForward(value: string, cursor: number): EditResult {
   return { value, cursor: nextCodePointIndex(value, cursor) };
 }
 
-export function deleteCharBackward(value: string, cursor: number): EditResult {
+function deleteCharBackward(value: string, cursor: number): EditResult {
   if (cursor <= 0) return { value, cursor };
   const prev = prevCodePointIndex(value, cursor);
   return {
@@ -139,7 +139,7 @@ export function deleteCharBackward(value: string, cursor: number): EditResult {
   };
 }
 
-export function deleteCharForward(value: string, cursor: number): EditResult {
+function deleteCharForward(value: string, cursor: number): EditResult {
   if (cursor >= value.length) return { value, cursor };
   const next = nextCodePointIndex(value, cursor);
   return {
@@ -171,21 +171,34 @@ const editHandlers: Record<
   'delete-char-forward': deleteCharForward,
 };
 
-export function applyEditAction(
-  action: EditAction,
-  value: string,
-  cursor: number,
-  columns?: number,
-): EditResult | null {
+export interface ApplyEditActionOptions {
+  action: EditAction;
+  value: string;
+  cursor: number;
+  columns?: number | undefined;
+}
+
+export function applyEditAction({
+  action,
+  value,
+  cursor,
+  columns,
+}: ApplyEditActionOptions): EditResult | null {
   if (action === null) return null;
   return editHandlers[action](value, cursor, columns);
 }
 
-export function navigateVertically(
-  direction: 'up' | 'down',
-  value: string,
-  cursorIndex: number,
-): number | undefined {
+export interface NavigateVerticallyOptions {
+  direction: 'up' | 'down';
+  value: string;
+  cursorIndex: number;
+}
+
+export function navigateVertically({
+  direction,
+  value,
+  cursorIndex,
+}: NavigateVerticallyOptions): number | undefined {
   const lines = normalizeLineEndings(value).split('\n');
   let currentLineIndex = 0;
   let currentPos = 0;

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { writeServerMessage } from './write-message.js';
 

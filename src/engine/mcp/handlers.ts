@@ -25,7 +25,9 @@ const JsonRpcRecordSchema = z
   .nullable()
   .transform((value) => value ?? {});
 
-function jsonRpcError(code: number, message: string, id: string | number | null): McpError {
+type JsonRpcId = string | number | null;
+
+function jsonRpcError(code: number, message: string, id: JsonRpcId): McpError {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
@@ -56,21 +58,18 @@ export async function handleMessage(
     return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
   }
 
-  // Distinguish notifications (no id), valid requests (string/number id), and invalid ids.
   const hasId = 'id' in msg;
   const rawId = msg['id'];
 
   if (!hasId) {
-    // JSON-RPC notification: server MUST NOT reply.
     return { kind: 'notification' };
   }
 
-  if (typeof rawId !== 'string' && typeof rawId !== 'number') {
-    // id present but invalid type (object, array, boolean, etc.).
+  if (rawId !== null && typeof rawId !== 'string' && typeof rawId !== 'number') {
     return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
   }
 
-  const id = rawId;
+  const id: JsonRpcId = rawId;
   const method = msg['method'];
   const paramsResult = JsonRpcRecordSchema.safeParse(msg['params']);
   if (!paramsResult.success) {

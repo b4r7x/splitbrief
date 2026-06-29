@@ -119,7 +119,7 @@ export async function handleRewindSpec(args: {
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', phase: 'specifying', text: rewindPending.comment },
-      config.workflow.persistTranscript,
+      { persistTranscript: config.workflow.persistTranscript },
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const queued = readQueueForPrompt({ projectDir, sessionId, state });
@@ -212,7 +212,7 @@ export async function handleRewindPlan(args: {
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', phase: 'planning', text: rewindPending.comment },
-      config.workflow.persistTranscript,
+      { persistTranscript: config.workflow.persistTranscript },
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
     const queued = readQueueForPrompt({ projectDir, sessionId, state });

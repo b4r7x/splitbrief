@@ -4,7 +4,7 @@ import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types
 import type { RunnerCallContext } from '../calls/types.js';
 import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
-import { createCommandAvailability } from '../availability.js';
+import { createCommandExistsAvailability } from '../availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 
 export interface CommandBasedImplementerOpts {
@@ -43,6 +43,8 @@ export function createCommandBasedImplementer(
         args: cfg.args ?? [],
         ...(cfg.outputFormat && { outputFormat: cfg.outputFormat }),
         ...(opts.supportPromptPlaceholder && { supportPromptPlaceholder: true }),
+        ...(opts.supportPromptPlaceholder &&
+          options?.allowRepoRunners && { allowShellEvaluatedPrompt: true }),
         ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),
         notFoundMessage,
         prompt,
@@ -59,6 +61,6 @@ export function createCommandBasedImplementer(
 
     ...(opts.detectChanges && { detectChanges: opts.detectChanges }),
     ...(opts.shouldThrow && { shouldThrow: opts.shouldThrow }),
-    ...createCommandAvailability(opts.initialCommand),
+    ...createCommandExistsAvailability(opts.initialCommand),
   });
 }

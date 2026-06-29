@@ -1,7 +1,6 @@
 import { Box, Text } from 'ink';
 import { ARROW_SEP, SOFT_SEP } from '../../../components/separators.js';
-import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
-import { statusGlyph } from '../../../components/task-status-glyph.js';
+import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
 import {
@@ -29,6 +28,19 @@ interface RowSpec {
   labelColor: string;
   bold: boolean;
   tail?: { text: string; color: string; dim?: boolean };
+}
+
+const TASK_STATUS_GLYPH_NAME: Record<WorkflowTask['status'], GlyphName> = {
+  done: 'statusDone',
+  failed: 'statusFailed',
+  escalated: 'statusEscalated',
+  in_progress: 'statusInProgress',
+  pending: 'statusPending',
+  skipped: 'statusSkipped',
+};
+
+function statusGlyph(status: WorkflowTask['status']): string {
+  return glyph(TASK_STATUS_GLYPH_NAME[status]);
 }
 
 function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {

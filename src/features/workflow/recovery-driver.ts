@@ -52,11 +52,6 @@ export function createRecoveryDriver(): (
     }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
       const loaded = loadPendingRecoveryState({ projectDir, sessionId: activeSessionId }, state);
       if (!loaded.pending) return { shouldRun: true, state: loaded.state };
-      if (loaded.issue.status === 'paused') return { shouldRun: false, state: loaded.state };
-      if (loaded.issue.status !== 'awaiting-user') {
-        return { shouldRun: true, state: loaded.state };
-      }
-      const issue = loaded.issue;
 
       const bus = createRecoveryBus({
         projectDir,
@@ -64,10 +59,80 @@ export function createRecoveryDriver(): (
         persistTranscript: config.workflow.persistTranscript,
         sinks: [createTuiSink({ persistTranscript: config.workflow.persistTranscript })],
       });
-      publishPendingRecoveryPrompt(bus, issue, republishPrompt);
+
+      const applyAction = (
+        currentState: WorkflowState,
+        action: NonNullable<typeof loaded.issue.selectedAction>,
+      ) => {
+        const currentIssue = currentState.pendingRecovery;
+        const selectedImplementerProfile = currentIssue?.selectedImplementerProfile;
+        const retryProfileOverrideTaskId = recoveryRetryTaskId(currentState);
+        const result = applySelectedRecoveryAction({
+          projectDir,
+          sessionId: activeSessionId,
+          state: currentState,
+          action,
+          bus,
+          config,
+        });
+
+        setInlineResume(result.state);
+
+        if (!result.ok) {
+          feedbackStore.setError(result.message);
+          return { shouldRun: false as const, state: result.state };
+        }
+
+        if (result.status === 'paused') {
+          feedbackStore.setMessage('Recovery paused. Resume with diptych resume.');
+          return { shouldRun: false as const, state: result.state };
+        }
+
+        if (result.status === 'aborted') {
+          finalizeRecoveryResult({
+            projectDir,
+            sessionId: activeSessionId,
+            state: result.state,
+            config,
+            status: result.status,
+          });
+          feedbackStore.setMessage('Workflow aborted.');
+          return { shouldRun: false as const, state: result.state };
+        }
+
+        const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
+        const retryOverrides =
+          retryProfileOverride !== undefined && result.status === 'retry-current-task'
+            ? {
+                retryProfileOverride,
+                ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}),
+              }
+            : {};
+        return {
+          shouldRun: true as const,
+          state: result.state,
+          ...retryOverrides,
+        };
+      };
+
+      if (loaded.issue.status === 'applying') {
+        const action = loaded.issue.selectedAction;
+        if (action === undefined) {
+          feedbackStore.setError('Recovery is applying but no action is selected.');
+          return { shouldRun: false, state: loaded.state };
+        }
+        return applyAction(loaded.state, action);
+      }
+
+      publishPendingRecoveryPrompt(bus, loaded.issue, republishPrompt);
 
       while (true) {
-        const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
+        const promptLoaded = loadPendingRecoveryState(
+          { projectDir, sessionId: activeSessionId },
+          loaded.state,
+        );
+        const promptIssue = promptLoaded.pending ? promptLoaded.issue : loaded.issue;
+        const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(promptIssue));
         if (controller.signal.aborted || abortedRef.current) {
           return { shouldRun: false, state: loaded.state };
         }
@@ -83,54 +148,7 @@ export function createRecoveryDriver(): (
           feedbackStore.setError('Unknown recovery action.');
           continue;
         }
-        const selectedImplementerProfile = latest.issue.selectedImplementerProfile;
-        const retryProfileOverrideTaskId = recoveryRetryTaskId(latest.state);
-        const result = applySelectedRecoveryAction({
-          projectDir,
-          sessionId: activeSessionId,
-          state: latest.state,
-          action,
-          bus,
-          config,
-        });
-
-        setInlineResume(result.state);
-
-        if (!result.ok) {
-          feedbackStore.setError(result.message);
-          return { shouldRun: false, state: result.state };
-        }
-
-        if (result.status === 'paused') {
-          feedbackStore.setMessage('Recovery paused. Resume with diptych resume.');
-          return { shouldRun: false, state: result.state };
-        }
-
-        if (result.status === 'aborted') {
-          finalizeRecoveryResult({
-            projectDir,
-            sessionId: activeSessionId,
-            state: result.state,
-            config,
-            status: result.status,
-          });
-          feedbackStore.setMessage('Workflow aborted.');
-          return { shouldRun: false, state: result.state };
-        }
-
-        const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
-        const retryOverrides =
-          retryProfileOverride !== undefined && result.status === 'retry-current-task'
-            ? {
-                retryProfileOverride,
-                ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}),
-              }
-            : {};
-        return {
-          shouldRun: true,
-          state: result.state,
-          ...retryOverrides,
-        };
+        return applyAction(latest.state, action);
       }
     };
   };

@@ -66,6 +66,26 @@ describe('handleMessage', () => {
     });
   });
 
+  it('initialize accepts JSON-RPC id:null and echoes it in the response', async () => {
+    const result = await handleMessage(
+      msg({
+        jsonrpc: '2.0',
+        id: null,
+        method: 'initialize',
+        params: { protocolVersion: MCP_PROTOCOL_VERSION },
+      }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    expect(result.body.id).toBeNull();
+    expect(result.body.result).toMatchObject({
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      serverInfo: { name: 'diptych', version: SERVER_VERSION },
+    });
+  });
+
   it('notifications/initialized → { kind: notification } no body', async () => {
     const result = await handleMessage(
       msg({ jsonrpc: '2.0', method: 'notifications/initialized' }),

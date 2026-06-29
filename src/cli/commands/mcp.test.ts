@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -10,11 +10,12 @@ import type { McpDeps } from './mcp.js';
 let tmp: string;
 let closeCount: number;
 
-function createSessionFixture(projectDir: string, sessionId: string): void {
+function createSessionFixture(projectDir: string, sessionId: string, sortKeyMs = Date.now()): void {
   const dir = join(projectDir, '.diptych', 'sessions', sessionId);
   mkdirSync(dir, { recursive: true });
+  const summaryPath = join(dir, 'summary.json');
   writeFileSync(
-    join(dir, 'summary.json'),
+    summaryPath,
     JSON.stringify({
       id: sessionId,
       feature: 'test',
@@ -24,6 +25,26 @@ function createSessionFixture(projectDir: string, sessionId: string): void {
       status: 'interrupted',
       summary: null,
     }),
+  );
+  const time = new Date(sortKeyMs);
+  utimesSync(summaryPath, time, time);
+}
+
+function writeConfig(projectDir: string): void {
+  mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+  writeFileSync(
+    join(projectDir, '.diptych', 'config.yaml'),
+    [
+      'version: 3',
+      'planner:',
+      '  kind: shell',
+      '  command: echo plan',
+      '  model: test-planner',
+      'implementer:',
+      '  kind: shell',
+      '  command: echo impl',
+      '  model: test-implementer',
+    ].join('\n'),
   );
 }
 
@@ -41,7 +62,8 @@ function createDeps(port = 4321): McpDeps {
 beforeEach(() => {
   tmp = createTempDir('mcp-command-test');
   closeCount = 0;
-  createSessionFixture(tmp, '2026-04-26-test-session');
+  writeConfig(tmp);
+  createSessionFixture(tmp, '2026-04-26-test-session', 2_000);
 });
 
 afterEach(() => {
@@ -154,5 +176,12 @@ describe('mcp serve — startup announcement', () => {
     const output = await runMcpServe(['--all-sessions']);
 
     expect(output).toContain('Sessions: all');
+  });
+
+  it('resolves numeric --session aliases before serving', async () => {
+    createSessionFixture(tmp, 'older-session', 1_000);
+    const output = await runMcpServe(['--session', '1']);
+
+    expect(output).toContain('Sessions: 2026-04-26-test-session');
   });
 });

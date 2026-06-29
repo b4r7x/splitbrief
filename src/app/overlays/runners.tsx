@@ -2,12 +2,12 @@ import { useReducer } from 'react';
 import { Text, useInput } from 'ink';
 import type { Config } from '../../core/schemas/config.js';
 import { useTheme } from '../../components/theme.js';
-import { TextInputOverlay } from '../../components/overlays/text-input-overlay.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
 import { usePickerActions } from '../../features/runners/use-picker-actions.js';
 import { viewReducer, initialViewState } from '../../features/runners/view-state.js';
 import { PickerView } from '../../features/runners/picker-view.js';
+import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 
 interface ToolModelPickerProps {
   role: 'planner' | 'implementer';

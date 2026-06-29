@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
 import { runnerCallWarningFingerprint } from '../calls/warning-fingerprint.js';
-import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from './protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { protectEngineEventForConsumer } from './protection.js';
 import type { EngineEvent } from './types.js';
 
 describe('protectEngineEventForConsumer', () => {

@@ -116,7 +116,7 @@ Return value shape:
 | `{ kind: 'deny', message?: string }` | Always blocks the action (independent of `on_failure`) |
 | `{ kind: 'warn', message?: string }` | Log warning, continue          |
 | `{ kind: 'crash', message: string }` | Treated as crash                |
-| Any other shape                     | Treated as `warn` with an unrecognized-outcome message |
+| Any other shape                     | Rejected as malformed and handled by `on_failure` |
 
 **Module loading:** Modules are loaded via ESM `import()` which is cached by URL — each module is loaded once per process lifetime. The default export must be a function. A missing default export or a non-function default fails with a clear load error and then follows `on_failure`.
 
@@ -141,7 +141,9 @@ Discovered hooks are equivalent to `kind: module` entries with their `path` set 
 
 ### `command` restrictions
 
-`command` cannot be `sh`, `bash`, `/bin/sh`, or `/bin/bash`. Inline shell is rejected because diptych doesn't run with `shell: true` — substitution values pass through as argv elements safely.
+Inline shell launchers are rejected. `command` cannot be `sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `cmd`, `cmd.exe`, common absolute variants such as `/bin/sh` and `/usr/bin/bash`, or `/usr/bin/env`. Hook `args` also cannot contain those shell launchers or shell-evaluation flags such as `-c`, `--command`, `/c`, and `/C`.
+
+Diptych does not run hooks with `shell: true`; substitution values pass through as argv elements safely. Inline shell is rejected so a hook cannot reintroduce shell evaluation at the argv boundary.
 
 To run a shell pipeline, put it in a script file:
 
@@ -178,7 +180,7 @@ Missing fields collapse to empty string. Object/array values are JSON-stringifie
 
 ### Shell quoting
 
-Subprocesses are spawned without `shell: true`, so substituted values are passed as individual argv elements. Shell metacharacters (`;`, `&&`, `|`, backticks, `$(...)`, etc.) in an event field never cause command injection — the child process sees the literal string as one argument. This is why `command` cannot be `sh`/`bash` with a `-c` arg (see [command restrictions](#command-restrictions)); inline shell would defeat the argv boundary.
+Subprocesses are spawned without `shell: true`, so substituted values are passed as individual argv elements. Shell metacharacters (`;`, `&&`, `|`, backticks, `$(...)`, etc.) in an event field never cause command injection — the child process sees the literal string as one argument. This is why shell launchers and shell-evaluation flags are rejected (see [command restrictions](#command-restrictions)); inline shell would defeat the argv boundary.
 
 ### Per-event availability
 
@@ -243,10 +245,10 @@ A hook that only needs to run side effects can exit 0 and write nothing. To infl
 
 | Field     | Type                              | Meaning                                                                                       |
 |-----------|-----------------------------------|-----------------------------------------------------------------------------------------------|
-| `decision`| `"allow" \| "deny" \| "warn"`     | Workflow control. On a `pre_*` hook, `deny` always aborts the upcoming action regardless of `on_failure`. A `decision` value outside this trio is surfaced as a `warn` (it never silently allows). |
+| `decision`| `"allow" \| "deny" \| "warn"`     | Workflow control. On a `pre_*` hook, `deny` always aborts the upcoming action regardless of `on_failure`. A value outside this trio is rejected as malformed. |
 | `message` | string                            | Surfaced in the TUI and in the `hook_blocked` / `warning` event.                               |
 
-The response is read from the **last JSON object line** of stdout, so a hook may log diagnostics first and emit the `{ "decision": … }` object on its final line. If no line parses as a JSON object the output is treated as success with an empty body (the hook's side effects stand; no warning is emitted).
+The response is read from the **last JSON object line** of stdout, so a hook may log diagnostics first and emit the `{ "decision": … }` object on its final line. If no line parses as a JSON object and no line looks like a malformed JSON object, the output is treated as success with an empty body (the hook's side effects stand; no warning is emitted). If a JSON object response is unparseable, has unknown keys, non-string `message`, or a `decision` outside `allow` / `deny` / `warn`, it is rejected as malformed and handled by `on_failure`.
 
 ### stderr
 
@@ -273,7 +275,7 @@ If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`)
 
 ### `on_failure` outcomes
 
-`on_failure` governs **crashes, timeouts, and non-zero exit codes** — not explicit denials. A `decision: "deny"` (or a module returning `{ kind: 'deny' }`) always blocks a `pre_*` action regardless of `on_failure`.
+`on_failure` governs **crashes, timeouts, non-zero exit codes, and malformed hook responses/outcomes** — not explicit denials. A `decision: "deny"` (or a module returning `{ kind: 'deny' }`) always blocks a `pre_*` action regardless of `on_failure`.
 
 | `on_failure`       | On crash / timeout / non-zero exit | Effect on workflow                                        |
 |--------------------|-------------------------------------|-----------------------------------------------------------|
@@ -296,8 +298,9 @@ Specific runtime failures are handled as follows, independent of (or layered on 
 | Module default export is missing or not a function | Clear load error; treated as failure per `on_failure`.                                    |
 | Timeout (`timeout_ms` exceeded)                  | Child killed (`SIGTERM`, then `SIGKILL`). Treated as failure per `on_failure`.             |
 | Module exceeds `timeout_ms`                      | Promise abandoned (JS cannot terminate in-process code). Treated as failure per `on_failure`. |
-| Stdout has no JSON object line                   | Treated as success with empty body. Side effects of the hook stand.                        |
-| Stdout's last JSON line has an unrecognized `decision` | Surfaced as a `warn` (never silently allowed); side effects stand.                     |
+| Stdout has no JSON-object-shaped response        | Treated as success with empty body. Side effects of the hook stand.                        |
+| Stdout's JSON object response is malformed      | Treated as failure per `on_failure`; side effects that already happened still stand.        |
+| Module hook returns an unrecognized outcome shape | Treated as failure per `on_failure`.                                                        |
 | `decision: "deny"` returned on a `post_*` event  | Ignored for flow; logged informationally.                                                  |
 | Hook crashes mid-stream                          | Partial stderr flushed as `warning`; treated as failure per `on_failure`.                  |
 | Non-zero exit code                               | Treated as `deny` if `on_failure: block`; `warn` otherwise.                                |
@@ -310,19 +313,21 @@ Hook commands run with the user's **full shell privileges** — the same authori
 
 Because of that authority, diptych layers several guardrails:
 
-1. **No inline shell.** Schema rejects `command: "sh"` / `"bash"` (and absolute variants) with `args` containing `-c`. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
+1. **No inline shell.** Schema rejects common shell launchers and shell-evaluation flags. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
 2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
 3. **Project cwd start.** Hooks start in `cwd: projectDir`, matching the implementer subprocess. This is not a filesystem sandbox: hook commands retain normal user access and can read or write anywhere the user account can.
-4. **Transitive hook coverage.** Any shell spawned from a diptych hook is still subject to `block-git-commits.sh` (the PreToolUse hook wired through Claude Code). In this repository, hooks inherit the same prohibition against `git commit` / `git add` from inside a diptych run. Product-level commit hooks may exist for downstream users, but they are not this repo's agent workflow.
+4. **Trust recheck before execution.** Before running a configured hook, diptych re-hashes the trusted hook configuration and referenced hook files. If bytes changed after trust, the hook is refused until the user re-trusts the new configuration.
+
+Claude Code `PreToolUse` hooks do not sandbox or intercept child processes spawned by diptych hooks. In this repository, `.claude/hooks/block-git-commits.sh` guards agent tool calls, not arbitrary subprocesses launched by lifecycle hooks. Do not rely on it as a git guard for diptych hook scripts.
 
 ### Trust model
 
 Adding a hook to `.diptych/config.yaml` is RCE on the next `diptych start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
 
-- The first time diptych sees a hook config, it computes `sha256(canonical-JSON + module file digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
+- The first time diptych sees a hook config, it computes `sha256(canonical-JSON + module dependency digests + local command script digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
 - On `y`: hash stored in `.diptych/hook-trust.json`. Future runs compare against the stored hash.
 - On `N`: refuses to start.
-- Editing the config or a module hook file invalidates the trust — next run re-prompts.
+- Editing the config, a module hook file/dependency, or a local command hook script invalidates the trust. The next run re-prompts, and an in-flight run refuses configured hook execution if the trusted bytes change before the hook runs.
 
 **In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, diptych refuses to start with an actionable error message.
 

@@ -82,6 +82,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
         callbacks,
         implementer: defaultImplementer,
         createImplementer: createProfileImplementer,
+        allowRepoRunners: true,
         bus,
       }),
       initialState: state,
@@ -95,7 +96,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       expect.objectContaining({
         implementer: expect.objectContaining({ model: 'qwen-large' }),
       }),
-      expect.objectContaining({ publisher: expect.any(Object) }),
+      expect.objectContaining({ publisher: expect.any(Object), allowRepoRunners: true }),
     );
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
       type: 'task_started',
@@ -352,5 +353,121 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       taskId: 'T001',
       currentCodeContextMode: 'none',
     });
+  });
+
+  it('blocks before invoking an unavailable selected profile implementer', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'local-small',
+        profiles: {
+          'cheap-large': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-large',
+            costTier: 'cheap',
+            contextLength: 32768,
+          },
+          'local-small': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-small',
+            costTier: 'local',
+            contextLength: 100,
+          },
+        },
+      },
+    };
+    const selectedImplementer = makeImplementer({
+      isAvailable: vi.fn().mockResolvedValue(false),
+      implement: vi.fn(),
+    });
+    const createProfileImplementer = vi.fn().mockReturnValue(selectedImplementer);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        implementer: makeImplementer(),
+        createImplementer: createProfileImplementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(selectedImplementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'implementation-error',
+      taskId: 'T001',
+      selectedImplementerProfile: 'cheap-large',
+      message: 'T001 selected implementer is unavailable',
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_prompted',
+        reason: 'implementation-error',
+        taskId: 'T001',
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('Selected implementer profile cheap-large'),
+      }),
+    );
+  });
+
+  it('blocks before invoking an unavailable default implementer', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({
+      isAvailable: vi.fn().mockResolvedValue(false),
+      implement: vi.fn(),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'implementation-error',
+      taskId: 'T001',
+      selectedImplementerProfile: 'default',
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_prompted',
+        reason: 'implementation-error',
+        taskId: 'T001',
+      }),
+    );
   });
 });

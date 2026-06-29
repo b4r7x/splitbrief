@@ -3,12 +3,12 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { LOCKFILE } from '../../core/paths.js';
 import { writeSecureFileAsync } from '../../lib/fs.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 import { error } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
 import {
   checkSessionLockStatus,
-  currentProcessStartTimeMs,
   LockfileDataSchema,
   readSessionLockfileData,
   type LockfileData,

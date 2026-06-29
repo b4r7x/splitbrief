@@ -24,6 +24,7 @@ import type { RunnerCallEvent } from '../calls/types.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -37,10 +38,8 @@ function toResumeMessage(message: SessionLogMessageEntry): ResumeMessage {
   return { role: message.role, content };
 }
 
-function pendingQueueEntries(projectDir: string, sessionId: string): WorkflowState['messageQueue'] {
-  return (
-    loadState({ projectDir, sessionId })?.messageQueue.filter(isQueuedMessagePendingDelivery) ?? []
-  );
+function pendingQueueEntries(ref: SessionRef): WorkflowState['messageQueue'] {
+  return loadState(ref)?.messageQueue.filter(isQueuedMessagePendingDelivery) ?? [];
 }
 
 function isStillPendingQueuedTranscriptMessage(
@@ -60,11 +59,8 @@ function isStillPendingQueuedTranscriptMessage(
   );
 }
 
-async function readCompactedResumeEntries(
-  projectDir: string,
-  sessionId: string,
-): Promise<SessionLogMessageEntry[]> {
-  return readCompactedMessages(sessionDir(projectDir, sessionId));
+async function readCompactedResumeEntries(ref: SessionRef): Promise<SessionLogMessageEntry[]> {
+  return readCompactedMessages(sessionDir(ref.projectDir, ref.sessionId));
 }
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
@@ -160,11 +156,11 @@ export async function compactResumeTranscript(opts: {
   return { ...result, usage };
 }
 
-export async function performManualCompaction(
-  config: Config,
-  projectDir: string,
-  sessionId: string,
-): Promise<CompactTranscriptResult> {
+export async function performManualCompaction(opts: {
+  config: Config;
+  ref: SessionRef;
+}): Promise<CompactTranscriptResult> {
+  const { config, ref } = opts;
   const planner = await createPlanner(config);
   const plannerName = getRunnerDisplayName(config.planner);
   if (planner.capabilities.supportsSelfSummarisation !== true) {
@@ -176,43 +172,39 @@ export async function performManualCompaction(
   const format = resolveCompactionFormat(config.workflow.compactionFormat, config.planner.kind);
   let usage: TokenDelta | null = null;
   const adapter = bindPlannerToProjectDir(planner, {
-    projectDir,
+    projectDir: ref.projectDir,
     onUsage: (delta) => {
       if (delta) usage = accumulateUsage(usage, delta);
     },
   });
   const result = await compactTranscript({
-    sessionDir: sessionDir(projectDir, sessionId),
+    sessionDir: sessionDir(ref.projectDir, ref.sessionId),
     keepRecentCount,
     format,
     planner: adapter,
   });
-  bookCompactionUsage(projectDir, sessionId, usage);
+  bookCompactionUsage(ref, usage);
   return { status: 'compacted', ...result };
 }
 
-function bookCompactionUsage(
-  projectDir: string,
-  sessionId: string,
-  usage: TokenDelta | null,
-): void {
+function bookCompactionUsage(ref: SessionRef, usage: TokenDelta | null): void {
   if (!usage) return;
-  const state = loadState({ projectDir, sessionId });
+  const state = loadState(ref);
   if (!state) return;
-  saveState({ projectDir, sessionId }, addUsage(state, 'planner', usage));
+  saveState(ref, addUsage(state, 'planner', usage));
 }
 
-export async function buildResumeContext(
-  projectDir: string,
-  sessionId: string,
-  persistTranscript: boolean,
-): Promise<ResumeContext> {
+export async function buildResumeContext(opts: {
+  ref: SessionRef;
+  persistTranscript: boolean;
+}): Promise<ResumeContext> {
+  const { ref, persistTranscript } = opts;
   if (!persistTranscript) {
     return { messages: [], warning: 'transcript-unavailable' };
   }
-  const pendingQueue = pendingQueueEntries(projectDir, sessionId);
+  const pendingQueue = pendingQueueEntries(ref);
   try {
-    const entries = await readCompactedResumeEntries(projectDir, sessionId);
+    const entries = await readCompactedResumeEntries(ref);
     return {
       messages: entries
         .filter((message) => !isStillPendingQueuedTranscriptMessage(message, pendingQueue))
@@ -220,7 +212,7 @@ export async function buildResumeContext(
     };
   } catch {
     const messages: ResumeMessage[] = [];
-    for await (const m of readMessages({ projectDir: projectDir, sessionId: sessionId })) {
+    for await (const m of readMessages(ref)) {
       if (isStillPendingQueuedTranscriptMessage(m, pendingQueue)) continue;
       messages.push(toResumeMessage(m));
     }

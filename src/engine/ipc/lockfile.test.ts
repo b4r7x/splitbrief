@@ -12,7 +12,7 @@ import {
   confinedReadLockfile,
   checkServerStatus,
 } from './lockfile.js';
-import { HEARTBEAT_STALENESS_MS } from './constants.js';
+import { HEARTBEAT_STALENESS_MS } from '../../core/sessions/lockfile-status.js';
 
 let testDir: string;
 

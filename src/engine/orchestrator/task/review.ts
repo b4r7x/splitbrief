@@ -42,7 +42,7 @@ export function shouldReviewTask(opts: {
 }
 
 export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): TaskReviewRequest {
-  const ledger = readEvidenceLedger(opts.projectDir, opts.sessionId);
+  const ledger = readEvidenceLedger(opts);
   const evidenceTask = ledger?.tasks.find((task) => task.id === opts.task.id);
   const validation = buildValidation(evidenceTask, opts.state);
   const evidencePath = ledger

@@ -78,7 +78,7 @@ describe('persistRetryApprovalEvidence', () => {
 
     persistRetryApprovalEvidence(ctx, state, task, decision);
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.approvals?.length).toBe(1);
     expect(ledger?.approvals?.[0]).toMatchObject({
       taskId: 'T001',
@@ -111,7 +111,7 @@ describe('persistRetryApprovalEvidence', () => {
 
     persistRetryApprovalEvidence(ctx, state, task, decision);
 
-    expect(readEvidenceLedger(projectDir, sessionId)).toBeNull();
+    expect(readEvidenceLedger({ projectDir, sessionId })).toBeNull();
   });
 });
 
@@ -150,7 +150,7 @@ describe('persistRetryRejectionEvidence', () => {
 
     persistRetryRejectionEvidence(ctx, state, task, decision);
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.rejections?.length).toBe(1);
     expect(ledger?.rejections?.[0]).toMatchObject({
       taskId: 'T002',
@@ -183,6 +183,6 @@ describe('persistRetryRejectionEvidence', () => {
 
     persistRetryRejectionEvidence(ctx, state, task, decision);
 
-    expect(readEvidenceLedger(projectDir, sessionId)).toBeNull();
+    expect(readEvidenceLedger({ projectDir, sessionId })).toBeNull();
   });
 });

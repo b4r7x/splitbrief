@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { loadConfigOrExit, resolveProjectDir } from '../setup.js';
 import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 import { generateToken } from '../../engine/mcp/auth-token.js';
 import { createResolver } from '../../engine/mcp/resolver.js';
@@ -7,6 +7,7 @@ import { startMcpServer } from '../../engine/mcp/server.js';
 import { createToolHandler } from '../../engine/mcp/tool/handler.js';
 import { getDiptychVersion } from '../../core/paths-io.js';
 import { cliError, withCliErrors } from '../errors.js';
+import { resolveSessionAlias } from '../sessions/aliases.js';
 
 const DEFAULT_PORT = 4321;
 
@@ -50,16 +51,23 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
           );
         }
 
+        const session = await resolveSessionAlias(opts.session, projectDir);
         const sessionIds = await withCliErrors(() =>
           resolveSessionIds(projectDir, {
-            ...(opts.session !== undefined && { session: opts.session }),
+            ...(session !== undefined && { session }),
             ...(opts.allSessions && { allSessions: opts.allSessions }),
           }),
         );
 
         const token = generateToken();
         const diptychVersion = getDiptychVersion();
-        const resolver = createResolver({ projectDir, sessionIds, diptychVersion });
+        const persistTranscript = loadConfigOrExit(projectDir).config.workflow.persistTranscript;
+        const resolver = createResolver({
+          projectDir,
+          sessionIds,
+          diptychVersion,
+          persistTranscript,
+        });
         const toolHandler = createToolHandler(projectDir, sessionIds);
 
         const handle = await withCliErrors(() =>

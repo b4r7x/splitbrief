@@ -27,7 +27,7 @@ import {
   sessionDir,
 } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
-import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
+import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { parseIpcServerArgs } from '../../engine/ipc/server-args.js';
 import { runHeadless } from '../headless.js';
 import { readLockfile, checkServerStatus } from '../../engine/ipc/lockfile.js';
@@ -39,10 +39,10 @@ import {
   isOpaqueSessionId,
   MAX_SLUG_LENGTH,
 } from '../../core/sessions/lifecycle.js';
+import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
-const spawnServerMock =
-  vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
+const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
 const runHeadlessMock = vi.fn<() => Promise<void>>();
 const runRpcMock = vi.fn<() => Promise<void>>();
 const initStoresMock: StartDeps['initStores'] = async () => {};
@@ -119,7 +119,7 @@ function writeSessionLockfile(
     JSON.stringify({
       version: 1,
       pid: process.pid,
-      startTimeMs: Date.now(),
+      startTimeMs: currentProcessStartTimeMs(),
       lastAliveMs: Date.now(),
       sessionId,
       mode: 'standard',
@@ -225,6 +225,7 @@ async function runStart(args: string[]): Promise<void> {
 describe('start command — concurrency guard', () => {
   it('refuses to start when a live session already exists and preserves the active marker', async () => {
     writeLiveSession(tmp, '2026-04-18-live');
+    writeSessionLockfile(tmp, '2026-04-18-live');
 
     let captured: unknown;
     try {
@@ -634,12 +635,29 @@ describe('start command — --worktree flag', () => {
     expect(parsed?.overrides.mode).toBe('speckit');
   });
 
+  it('clears the active pointer when detached server spawn fails', async () => {
+    writeReadyReadinessFixtures(tmp);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spawnFailure: SpawnServerResult = { ok: false, reason: 'boom' };
+    spawnServerMock.mockImplementationOnce(async () => spawnFailure);
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--detach', 'implement X']);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('Failed to start server');
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
+  });
+
   it('rolls back the worktree and branch when server spawn fails, so the same command can be retried', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const spawnFailure = { ok: false, reason: 'boom' } as unknown as Awaited<
-      ReturnType<typeof spawnServerMock>
-    >;
+    const spawnFailure: SpawnServerResult = { ok: false, reason: 'boom' };
     spawnServerMock.mockImplementationOnce(async () => spawnFailure);
 
     let captured: unknown;
@@ -815,6 +833,7 @@ describe('start command — readiness', () => {
   it('prints blockers only during normal start readiness failures', async () => {
     writeReadyReadinessFixtures(tmp);
     writeLiveSession(tmp, '2026-04-28-live');
+    writeSessionLockfile(tmp, '2026-04-28-live');
     writeFileSync(join(tmp, 'scratch.txt'), 'local edit');
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -836,6 +855,7 @@ describe('start command — readiness', () => {
   it('throws a one-line pointer instead of re-listing every blocker in the error message', async () => {
     writeReadyReadinessFixtures(tmp);
     writeLiveSession(tmp, '2026-04-28-live');
+    writeSessionLockfile(tmp, '2026-04-28-live');
     writeFileSync(join(tmp, 'scratch.txt'), 'local edit');
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -889,6 +909,7 @@ describe('start command — readiness', () => {
   it('blocks headless start before workflow execution when readiness has a blocker', async () => {
     writeConfigMarker(tmp);
     writeLiveSession(tmp, '2026-04-28-live');
+    writeSessionLockfile(tmp, '2026-04-28-live');
     const stdoutChunks: string[] = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
       stdoutChunks.push(String(chunk));

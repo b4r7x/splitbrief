@@ -46,7 +46,7 @@ const ResultEvent = z.object({
   result: z.string().optional(),
   is_error: z.boolean().optional(),
   session_id: z.string().optional(),
-  usage: z.unknown(),
+  usage: z.unknown().optional(),
 });
 
 const SessionEvent = z.object({

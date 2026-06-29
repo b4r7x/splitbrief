@@ -1,12 +1,5 @@
-import { useEffect } from 'react';
-import {
-  getActiveFilteredStdin,
-  type FilteredStdin,
-} from '../../../lib/terminal/filtered-stdin.js';
+import type { MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
 import { hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
-import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { routerStore } from '../../../stores/navigation/router.js';
-import { overlayStore } from '../../../stores/ui/overlay.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -25,7 +18,6 @@ import {
 } from '../layout/snapshot.js';
 import { buildConversationRowActions } from '../conversation-rows/build.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
-import { promptOwnsInput } from './use-mouse-scroll.js';
 
 const HOVER_THROTTLE_MS = 16;
 let lastHoverAt = 0;
@@ -164,65 +156,33 @@ function activateConversationRow(windowIndex: number): void {
   else conversationScrollStore.toggleActivityBatch(action.key);
 }
 
-export function wireMousePointer(filteredStdin: FilteredStdin): () => void {
-  return filteredStdin.onMouse((event) => {
-    if (event.type === 'wheel-up' || event.type === 'wheel-down') return;
-
-    // While an overlay, another screen, or a prompt owns input, the workflow surfaces are not
-    // interactive — a move there clears any lingering hover tint instead of leaving it stale.
-    if (overlayStore.get().active !== 'none') {
-      if (event.type === 'press') {
-        hitTopmostZone(event.x, event.y, { minZ: ROW_ZONE_Z_OVERLAY })?.onClick?.();
-      } else if (event.type === 'move') hoverStore.clear();
-      return;
-    }
-    if (routerStore.get().screen !== 'workflow') {
-      if (event.type === 'press') hitTopmostZone(event.x, event.y)?.onClick?.();
-      else if (event.type === 'move') hoverStore.clear();
-      return;
-    }
-    if (promptOwnsInput()) {
-      if (event.type === 'press') {
-        hitTopmostZone(event.x, event.y, { minZ: PROMPT_ZONE_Z })?.onClick?.();
-      } else if (event.type === 'move') hoverStore.clear();
-      return;
-    }
-
-    if (event.type === 'move') {
-      handleHover(event.x, event.y);
-      return;
-    }
-    if (event.type !== 'press') return;
-
-    const zone = hitTopmostZone(event.x, event.y);
-    if (zone) {
-      zone.onClick?.();
-      return;
-    }
-    const hit = resolveWorkflowHit(event.x, event.y, readConversationHoverSnapshot());
-    if (!hit) return;
-    if (hit.surface === 'rail') {
-      scrollToRailStage(hit.index);
-      return;
-    }
-    // A brief row is a bounded, copyable item: the click focuses it to match keyboard selection
-    // without moving the viewport — the hit row is already on screen, so snapping it to the top
-    // would be a jump the keyboard path never makes.
-    if (hit.surface === 'brief') {
-      focusStore.set('brief', hit.index);
-      return;
-    }
-    // A transcript row is inert prose unless it carries an expand/collapse affordance (a diff hint
-    // or an activity `+N more` / `collapse` row), in which case the click runs the same toggle as
-    // the keyboard. Plain prose rows have no action and stay inert.
-    activateConversationRow(hit.index);
-  });
+export function clearWorkflowHover(): void {
+  hoverStore.clear();
 }
 
-export function usePointer(): void {
-  useEffect(() => {
-    const filteredStdin = getActiveFilteredStdin();
-    if (!filteredStdin) return;
-    return wireMousePointer(filteredStdin);
-  }, []);
+export function handleWorkflowMouseMove(event: MouseEvent): void {
+  handleHover(event.x, event.y);
+}
+
+export function handleWorkflowPromptMousePress(event: MouseEvent): void {
+  hitTopmostZone(event.x, event.y, { minZ: PROMPT_ZONE_Z })?.onClick?.();
+}
+
+export function handleWorkflowMousePress(event: MouseEvent): void {
+  const zone = hitTopmostZone(event.x, event.y);
+  if (zone) {
+    zone.onClick?.();
+    return;
+  }
+  const hit = resolveWorkflowHit(event.x, event.y, readConversationHoverSnapshot());
+  if (!hit) return;
+  if (hit.surface === 'rail') {
+    scrollToRailStage(hit.index);
+    return;
+  }
+  if (hit.surface === 'brief') {
+    focusStore.set('brief', hit.index);
+    return;
+  }
+  activateConversationRow(hit.index);
 }

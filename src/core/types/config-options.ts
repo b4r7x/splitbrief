@@ -36,6 +36,7 @@ export interface WorkflowOpts {
   budget?: number;
   plannerEffort?: EffortLevel;
   allowHooks?: boolean;
+  allowRepoRunners?: boolean;
   json?: boolean;
   rpc?: boolean;
   otelExporter?: string;

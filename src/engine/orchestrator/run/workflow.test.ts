@@ -201,6 +201,35 @@ describe('runWorkflow — smoke', () => {
     expect(status.alive).toBe(false);
   });
 
+  it('refuses to run when the same session already has a live non-detached owner', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'liveness-conflict-sid';
+    const { callbacks } = makeCallbacks();
+    const config = unavailablePlannerConfig();
+    const { writeLockfile } = await import('../../ipc/lockfile.js');
+    const dir = sessionDir(projectDir, sessionId);
+    ensureSessionDir(projectDir, sessionId);
+    await writeLockfile(dir, {
+      pid: process.pid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'standard',
+      feature: 'live owner',
+    });
+
+    await expect(
+      runWorkflow({
+        feature: 'live owner',
+        projectDir,
+        config,
+        callbacks,
+        sessionId,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      }),
+    ).rejects.toThrow(/already running/);
+  });
+
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();

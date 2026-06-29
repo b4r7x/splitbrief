@@ -29,7 +29,12 @@ TypeScript types exist for things that cannot be expressed as runtime-checkable 
 
 **`z.infer<>` types live in the same file as the schema.** Do not split `TaskSchema` and `type Task = z.infer<typeof TaskSchema>` across two files. They are one concept.
 
-**Carve-out — `EngineEvent`.** The type-dispatched schema is `EngineEventSchema` in `src/engine/events/schema.ts`; its inferred alias `EngineEvent = z.infer<typeof EngineEventSchema>` is declared one file over in `src/engine/events/types.ts`, alongside the schema-less `EventBus` / `EventSink` ports it travels with. This is the one sanctioned split: the event ports have no Zod backing and over a hundred consumers import the alias and the ports as a single `events/types.js` contract. The alias is still derived from the schema — never hand-written — so the two files cannot drift.
+**Contract-module carve-outs.** `z.infer<>` aliases normally live beside their schema, with a small exception for contract modules that bundle inferred aliases with schema-less ports or projections:
+- `src/engine/events/types.ts` exports `EngineEvent = z.infer<typeof EngineEventSchema>` beside the schema-less `EventBus` / `EventSink` ports. The schema remains `src/engine/events/schema.ts`.
+- `src/engine/calls/types.ts` exports runner-call inferred aliases beside schema-less call/projection contracts. The schemas remain `src/engine/calls/schema.ts`.
+- `src/engine/orchestrator/budget/estimate.ts` exports budget-estimate aliases derived from summary schemas because the estimate API is a projection contract, not the summary schema owner.
+
+These aliases must stay mechanically derived from their schemas, never hand-written.
 
 ---
 
@@ -196,11 +201,11 @@ import { SkillMeta } from '../../core/skills/types.js';
 This matters in this project because:
 - The codebase is ESM without a bundler
 - Every top-level `import` triggers module evaluation
-- Cross-layer boundaries (engine → features type imports) must stay erasable to keep layer discipline at runtime
+- Cross-layer boundaries should stay erasable when they are allowed by [LAYERS.md](./LAYERS.md)
 
 ### When a type crosses a layer boundary
 
-`engine/` is not allowed to import runtime values from `features/` (that would invert the layer). But `import type` from `features/` into `engine/` is allowed — types are erased and do not create a runtime dependency.
+`engine/` must not import from `features/`, `components/`, `hooks/`, `app/`, or `cli/`, including `import type`. The resolver gates treat engine-owned code as headless and UI-free; shared contracts needed by engine move to `core/` or an engine-owned producer.
 
 Example from this codebase:
 ```ts
@@ -208,12 +213,12 @@ Example from this codebase:
 import type { EngineEvent } from '../../../../engine/events/types.js';
 ```
 
-This is allowed because:
+This UI import is allowed because:
 1. The type is erased — no runtime import
 2. The contract is owned by the producer (`engine/events/`) because `EngineEvent` is the single source of truth for workflow events
-3. UI conforms to the engine's event shape — the reverse direction (engine importing from features) is banned by the layer rule
+3. UI conforms to the engine's event shape — the reverse direction is banned by the layer rule
 
-If it turns out a value (constant, helper fn) from `features/workflow/` is needed in `engine/`, that's a signal the value should move to a neutral location — `core/` or extracted to a shared module.
+If it turns out a type or value from `features/workflow/` is needed in `engine/`, that's a signal the contract should move to a neutral location (`core/`) or to the engine-side producer. Do not add an engine → feature import and rely on `import type` to hide it.
 
 ---
 

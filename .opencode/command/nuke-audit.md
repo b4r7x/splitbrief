@@ -1,5 +1,5 @@
 ---
-description: Run a maximum-intensity multi-agent code quality audit and write a phased fix spec.
+description: Run a convergent multi-agent code quality audit and write a phased fix spec.
 ---
 
 ## User Input
@@ -8,30 +8,44 @@ description: Run a maximum-intensity multi-agent code quality audit and write a 
 $ARGUMENTS
 ```
 
-Use the user input as the audit scope. If it is empty, audit the full repository. Accepted scopes:
-`full`, `changed`, `staged`, `branch`, or a path/glob.
+Use the user input as `[mode] [scope]`. If mode is omitted, use `light`. If scope is omitted, audit the full repository.
+
+Accepted modes: `light`, `full`.
+Accepted scopes: `changed`, `staged`, `branch`, or a path/glob.
+
+A bare `full` is always the mode, not the scope: `/nuke-audit full` means a full-intensity audit of the whole repository.
 
 ## Non-Negotiable Rules
 
 - Read `CLAUDE.md` first, then `AGENTS.md`.
 - Never run `git add`, `git stage`, `git commit`, or `git stash`.
 - This command is audit-only. Do not edit source, config, docs, tests, or ignore files.
-- Write durable output only under `.nuke/<YYYY-MM-DD>-<scope-slug>/`.
-- Use the strongest available model and maximum reasoning effort for every auditor and validator.
-- Use subagents aggressively, but run at most 10 subagents concurrently.
+- Write durable output only under a fresh `.nuke/<YYYY-MM-DD>-<HHmmss>-<scope-slug>/` run directory.
+- Respect the selected mode. Light-mode agents inherit the session model and use small grouped waves; full mode uses the strongest available model and maximum reasoning effort for every auditor and validator.
+- Use subagents according to the current nuke-audit skill protocol: light mode caps each auditor round at 8 agents; full mode does not shrink waves to save cost.
 - Main context stays thin: give agents paths, charters, current ledger, and artifact paths instead of pasting large source files.
 - A finding enters the ledger only with file:line evidence and an end-to-end trace.
 - Include every severity: critical, high, medium, low, and info.
 
 ## Artifacts
 
-Create or update these files:
+Create these files in the fresh run directory:
 
 - `.nuke/<run>/context.md` - project snapshot, conventions, gates, scope file list, quality bar.
 - `.nuke/<run>/findings.md` - confirmed and rejected findings ledger.
 - `.nuke/<run>/rounds.md` - per-round convergence log.
 - `.nuke/<run>/report.md` - scorecard and summary.
 - `.nuke/<run>/fix-spec.md` - self-contained phased implementation spec.
+
+## Phase -1 - Allocate Run Directory
+
+Create a new run directory before recon:
+
+```text
+.nuke/<YYYY-MM-DD>-<HHmmss>-<scope-slug>/
+```
+
+If the path already exists, append `-2`, `-3`, etc. until creation succeeds. Never reuse or append to an existing audit run.
 
 ## Phase 0 - Recon
 
@@ -69,13 +83,13 @@ Cover at minimum:
 
 ## Phase 2 - Convergence Audit Loop
 
-Run rounds until two consecutive rounds find zero new confirmed findings, or until round 10.
+Run rounds until two consecutive rounds find zero new confirmed findings, or until the mode cap is reached: light = 8 rounds, full = 10 rounds.
 
 For each round:
 
-1. Dispatch a wave of fresh subagents, max 10 at once.
-2. Use per-area auditors for correctness, structure, simplicity, slop, types, errors, tests, conventions, performance, and stack fit.
-3. Use cross-cutting auditors for security, DRY, architecture, dead code, hygiene, docs drift, and repo gates.
+1. Dispatch a fresh auditor wave according to the selected mode.
+2. Light mode uses grouped behavioral, security, structural, and quality charters; full mode uses per-lens/per-chunk waves plus cross-cutting auditors.
+3. Cover correctness, security, structure, DRY, simplicity, architecture, slop, types, errors, dead code, tests, conventions, performance, stack fit, and hygiene.
 4. Every agent receives:
    - `context.md`
    - current `findings.md`
@@ -126,7 +140,7 @@ Write `fix-spec.md` as a complete handoff for `/nuke-fix` or another fresh AI co
 
 - executor context with repo conventions and gates
 - rule to never stage, commit, or stash
-- phase protocol: implementation subagents, fresh validation subagents, fix loop
+- audit mode header and phase protocol: implementation subagents, fresh validation subagents, mode-specific fix loop
 - dependency-ordered phases
 - parallel-safe batches with disjoint file ownership
 - exact tasks with affected files, finding IDs, change instructions, and acceptance criteria

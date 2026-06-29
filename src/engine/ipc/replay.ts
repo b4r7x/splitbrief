@@ -10,13 +10,6 @@ export type ReplayOptions = {
   sessionJsonlPath: string;
 };
 
-export type ReplayResult = {
-  events: EngineEvent[];
-  firstTs: number | null;
-  lastTs: number | null;
-  diagnostics: ReplayDiagnostics;
-};
-
 export type ReplaySummary = {
   totalEvents: number;
   firstTs: number | null;
@@ -75,21 +68,6 @@ function entryToEvent(raw: unknown): ReplayLineResult {
   if (taskId !== undefined) candidate['taskId'] = taskId;
   const event = parseEngineEvent(candidate);
   return event ? { kind: 'event', event } : { kind: 'skip', reason: 'skippedUnknown' };
-}
-
-export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResult> {
-  const events: EngineEvent[] = [];
-  const diagnostics = createReplayDiagnostics();
-  for await (const event of streamReplayEventsWithDiagnostics(opts, diagnostics)) {
-    events.push(event);
-  }
-
-  const first = events[0];
-  const last = events[events.length - 1];
-  const firstTs = first ? first.ts : null;
-  const lastTs = last ? last.ts : null;
-
-  return { events, firstTs, lastTs, diagnostics };
 }
 
 export async function* streamReplayEvents(opts: ReplayOptions): AsyncGenerator<EngineEvent> {

@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
-import {
-  protectEngineEventForConsumer,
-  TRANSCRIPT_OMITTED_MESSAGE,
-} from '../../engine/events/protection.js';
+import { protectEngineEventForConsumer } from '../../engine/events/protection.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js';

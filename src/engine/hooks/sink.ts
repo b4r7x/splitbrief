@@ -2,7 +2,7 @@ import type { HookEvent, HookEntry, HooksConfig } from '../../core/schemas/hooks
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EventBus, EventSink } from '../events/types.js';
 import { eventPhase } from '../events/schema.js';
-import { runHook } from './dispatch.js';
+import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext, HookOutcome } from './types.js';
 import { activeBuiltinsFor } from './builtins/registry.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -14,7 +14,7 @@ export function createHookSink(hooks: HooksConfig, ctx: HookContext, bus: EventB
     const builtins = activeBuiltinsFor(hookEvent, hooks);
     const entries = hooks[hookEvent] ?? [];
     if (builtins.length === 0 && entries.length === 0) return;
-    void runBuiltinsAndEntriesAndReport({ builtins, entries, hookEvent, event, ctx, bus });
+    void runBuiltinsAndEntriesAndReport({ hooks, builtins, entries, hookEvent, event, ctx, bus });
   };
 }
 
@@ -59,6 +59,7 @@ async function runAndReport(
 }
 
 async function runBuiltinsAndEntriesAndReport(opts: {
+  hooks: HooksConfig;
   builtins: ReturnType<typeof activeBuiltinsFor>;
   entries: HookEntry[];
   hookEvent: HookEvent;
@@ -66,17 +67,36 @@ async function runBuiltinsAndEntriesAndReport(opts: {
   ctx: HookContext;
   bus: EventBus;
 }): Promise<void> {
-  const { builtins, entries, hookEvent, event, ctx, bus } = opts;
+  const { hooks, builtins, entries, hookEvent, event, ctx, bus } = opts;
   const phase = getEventPhase(event);
+  const initialTrustRefusal = hookTrustRefusal(ctx.projectDir, hooks);
+  if (initialTrustRefusal) {
+    publishTrustRefusal(hookEvent, phase, bus, initialTrustRefusal);
+    return;
+  }
   for (const builtin of builtins) {
     await runAndReport(`[builtin ${builtin.name}]`, phase, bus, () => builtin.run(event, ctx));
   }
   for (const entry of entries) {
     const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
     await runAndReport(`[hook ${hookEvent} ${label}]`, phase, bus, () =>
-      runHook(entry, event, ctx),
+      runTrustedHook(entry, event, ctx, hooks),
     );
   }
+}
+
+function publishTrustRefusal(
+  hookEvent: HookEvent,
+  phase: Phase,
+  bus: EventBus,
+  message: string,
+): void {
+  bus.publish({
+    type: 'warning',
+    ts: Date.now(),
+    phase,
+    message: `[hook ${hookEvent}] ${message}`,
+  });
 }
 
 function getEventPhase(event: EngineEvent): Phase {

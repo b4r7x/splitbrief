@@ -37,6 +37,7 @@ import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { generateSessionId, readActive } from '../../../core/sessions/lifecycle.js';
+import { configForSessionTranscriptPolicy } from '../../../core/sessions/io.js';
 import { transition } from '../../../core/state/machine.js';
 import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -65,6 +66,7 @@ interface UseWorkflowRunnerOptions {
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
   sessionId?: string | undefined;
+  allowRepoRunners?: boolean | undefined;
   enabled?: boolean | undefined;
   runWorkflow?: RunWorkflowFn | undefined;
 }
@@ -91,6 +93,7 @@ export function useWorkflowRunner({
   selectedSkills,
   inputMode,
   sessionId: initialSessionId,
+  allowRepoRunners = false,
   enabled = true,
   runWorkflow: runWorkflowFn = runWorkflow,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
@@ -131,10 +134,14 @@ export function useWorkflowRunner({
     let activeSessionId = sessionIdForRun;
     let recoveryPromptAlreadyPublished = false;
 
+    function activeConfig(): Config {
+      return configForSessionTranscriptPolicy(config, { projectDir, sessionId: activeSessionId });
+    }
+
     resetWorkflow(stateForRun);
     if (pendingRewindEventRef.current) {
       addTuiEvent(pendingRewindEventRef.current, {
-        persistTranscript: config.workflow.persistTranscript,
+        persistTranscript: activeConfig().workflow.persistTranscript,
       });
       pendingRewindEventRef.current = null;
     }
@@ -146,6 +153,7 @@ export function useWorkflowRunner({
     setRewindHandler((request) => {
       inputMode.resetMode();
       const ref = { projectDir, sessionId: activeSessionId };
+      const effectiveConfig = activeConfig();
       const current = loadState(ref);
       if (!current) return;
 
@@ -153,7 +161,7 @@ export function useWorkflowRunner({
         request,
         ref,
         state: current,
-        persistTranscript: config.workflow.persistTranscript,
+        persistTranscript: effectiveConfig.workflow.persistTranscript,
       });
       let next = transition(current, persistedAction);
       if (request.target === 'task' && next.pendingRecovery?.taskId === request.taskId) {
@@ -170,18 +178,18 @@ export function useWorkflowRunner({
       setRunId((id) => id + 1);
     });
 
-    const promptPendingRecovery = recoveryDriverFactory({
-      projectDir,
-      config,
-      inputMode,
-      abortedRef,
-      setInlineResume,
-    });
-
     try {
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
       while (!isWorkflowAborted(controller, abortedRef)) {
+        const effectiveConfig = activeConfig();
+        const promptPendingRecovery = recoveryDriverFactory({
+          projectDir,
+          config: effectiveConfig,
+          inputMode,
+          abortedRef,
+          setInlineResume,
+        });
         if (stateForRun?.pendingRecovery) {
           const recovery = await promptPendingRecovery({
             state: stateForRun,
@@ -207,10 +215,11 @@ export function useWorkflowRunner({
           feature,
           plannerContext,
           projectDir,
-          config,
+          config: effectiveConfig,
+          allowRepoRunners,
           getApprovalEnabled: () => configStore.get().config?.approval?.enabled !== false,
           sinks,
-          tuiSink: createTuiSink({ persistTranscript: config.workflow.persistTranscript }),
+          tuiSink: createTuiSink({ persistTranscript: effectiveConfig.workflow.persistTranscript }),
           modelCache: modelCacheStore,
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
@@ -262,7 +271,7 @@ export function useWorkflowRunner({
             phase: lifecycleStore.get().phase,
             message: toErrorMessage(err),
           },
-          { persistTranscript: config.workflow.persistTranscript },
+          { persistTranscript: activeConfig().workflow.persistTranscript },
         );
       }
     }
@@ -302,6 +311,8 @@ export function useWorkflowRunner({
       return;
     }
     sessionIdRef.current = sessionId;
+    const effectiveConfig = configForSessionTranscriptPolicy(config, { projectDir, sessionId });
+    const persistTranscript = effectiveConfig.workflow.persistTranscript;
     const text = injectedText?.trim();
     let next = saved;
     if (text) {
@@ -310,10 +321,10 @@ export function useWorkflowRunner({
         createJsonlSink({
           projectDir,
           sessionId,
-          persistTranscript: config.workflow.persistTranscript,
+          persistTranscript,
         }),
       );
-      bus.subscribe(createTuiSink({ persistTranscript: config.workflow.persistTranscript }));
+      bus.subscribe(createTuiSink({ persistTranscript }));
       const queued = enqueueUserMessage({
         projectDir,
         sessionId,
@@ -321,7 +332,7 @@ export function useWorkflowRunner({
         text,
         phase: saved.phase,
         bus,
-        persistTranscript: config.workflow.persistTranscript !== false,
+        persistTranscript: persistTranscript !== false,
         enforcePhasePolicy: false,
       });
       next = queued.state;

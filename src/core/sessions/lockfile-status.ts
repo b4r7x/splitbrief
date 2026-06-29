@@ -7,8 +7,6 @@ import { LOCKFILE } from '../paths.js';
 import { WorkflowModeSchema } from '../schemas/enums.js';
 import { assertSessionConfinement } from './confinement.js';
 
-export { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
-
 export const HEARTBEAT_STALENESS_MS = 8000;
 
 const PROCESS_START_TOLERANCE_MS = 2000;

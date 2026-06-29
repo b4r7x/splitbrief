@@ -55,7 +55,7 @@ function seedSession(projectDir: string, sessionId: string): void {
       },
     ],
   });
-  writeEvidenceLedger(projectDir, sessionId, ledger);
+  writeEvidenceLedger({ projectDir, sessionId }, ledger);
 }
 
 function readLedger(projectDir: string, sessionId: string): ParsedLedger {

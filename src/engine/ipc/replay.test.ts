@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { readReplayEvents } from './replay.js';
+import { streamReplayEvents, summarizeReplayEvents } from './replay.js';
 import { CALL_SESSION_LOG_MAX_PUBLIC_PAYLOAD_BYTES } from '../../core/consumer-policy.js';
 import type { EngineEvent } from '../events/types.js';
 
@@ -35,15 +35,24 @@ const emptyDiagnostics = {
   skippedOversized: 0,
 };
 
+async function collectReplayEvents(sessionJsonlPath: string): Promise<EngineEvent[]> {
+  const events: EngineEvent[] = [];
+  for await (const event of streamReplayEvents({ sessionJsonlPath })) {
+    events.push(event);
+  }
+  return events;
+}
+
 afterEach(() => {
   for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
 });
 
-describe('readReplayEvents', () => {
+describe('session replay', () => {
   it('returns empty result for nonexistent file', async () => {
-    const result = await readReplayEvents({ sessionJsonlPath: '/nonexistent/path/session.jsonl' });
-    expect(result).toEqual({
-      events: [],
+    const sessionJsonlPath = '/nonexistent/path/session.jsonl';
+    await expect(collectReplayEvents(sessionJsonlPath)).resolves.toEqual([]);
+    await expect(summarizeReplayEvents({ sessionJsonlPath })).resolves.toEqual({
+      totalEvents: 0,
       firstTs: null,
       lastTs: null,
       diagnostics: emptyDiagnostics,
@@ -54,19 +63,21 @@ describe('readReplayEvents', () => {
     const dir = createTempDir('replay-test');
     tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
-    const events: EngineEvent[] = [
+    const fixtureEvents: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
       { type: 'workflow_complete', ts: 2000, phase: 'idle' },
       { type: 'warning', ts: 3000, phase: 'idle', message: 'something' },
     ];
-    writeFileSync(filePath, events.map(makeSessionEntry).join('\n') + '\n');
+    writeFileSync(filePath, fixtureEvents.map(makeSessionEntry).join('\n') + '\n');
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.events).toHaveLength(3);
-    expect(result.events[0]!.type).toBe('workflow_started');
-    expect(result.events[2]!.type).toBe('warning');
-    expect(result.firstTs).toBe(1000);
-    expect(result.lastTs).toBe(3000);
+    const events = await collectReplayEvents(filePath);
+    const summary = await summarizeReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(events).toHaveLength(3);
+    expect(events[0]!.type).toBe('workflow_started');
+    expect(events[2]!.type).toBe('warning');
+    expect(summary.firstTs).toBe(1000);
+    expect(summary.lastTs).toBe(3000);
   });
 
   it('preserves runner text semantics through session replay', async () => {
@@ -89,9 +100,9 @@ describe('readReplayEvents', () => {
       })}\n`,
     );
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
+    const events = await collectReplayEvents(filePath);
 
-    expect(result.events).toEqual([
+    expect(events).toEqual([
       expect.objectContaining({
         type: 'runner_call_text_delta',
         channel: 'result',
@@ -112,11 +123,13 @@ describe('readReplayEvents', () => {
     ];
     writeFileSync(filePath, lines.join('\n') + '\n');
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.events).toHaveLength(2);
-    expect(result.events[0]!.type).toBe('workflow_started');
-    expect(result.events[1]!.type).toBe('workflow_complete');
-    expect(result.diagnostics).toMatchObject({
+    const events = await collectReplayEvents(filePath);
+    const summary = await summarizeReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(events).toHaveLength(2);
+    expect(events[0]!.type).toBe('workflow_started');
+    expect(events[1]!.type).toBe('workflow_complete');
+    expect(summary.diagnostics).toMatchObject({
       totalLines: 3,
       replayedEvents: 2,
       skippedMalformed: 1,
@@ -141,10 +154,12 @@ describe('readReplayEvents', () => {
     }
     writeFileSync(filePath, lines.join('\n') + '\n');
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.events).toHaveLength(1200);
-    expect(result.firstTs).toBe(0);
-    expect(result.lastTs).toBe(1199 * 1000);
+    const events = await collectReplayEvents(filePath);
+    const summary = await summarizeReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(events).toHaveLength(1200);
+    expect(summary.firstTs).toBe(0);
+    expect(summary.lastTs).toBe(1199 * 1000);
   });
 
   it('skips lines with kind !== event', async () => {
@@ -166,10 +181,12 @@ describe('readReplayEvents', () => {
     });
     writeFileSync(filePath, [messageLine, eventLine].join('\n') + '\n');
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.events).toHaveLength(1);
-    expect(result.events[0]!.type).toBe('workflow_started');
-    expect(result.diagnostics).toMatchObject({
+    const events = await collectReplayEvents(filePath);
+    const summary = await summarizeReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe('workflow_started');
+    expect(summary.diagnostics).toMatchObject({
       totalLines: 2,
       replayedEvents: 1,
       skippedNonEvent: 1,
@@ -196,10 +213,12 @@ describe('readReplayEvents', () => {
     });
     writeFileSync(filePath, [unknownLine, oversizedLine, eventLine].join('\n') + '\n');
 
-    const result = await readReplayEvents({ sessionJsonlPath: filePath });
-    expect(result.events).toHaveLength(1);
-    expect(result.events[0]!.type).toBe('workflow_started');
-    expect(result.diagnostics).toMatchObject({
+    const events = await collectReplayEvents(filePath);
+    const summary = await summarizeReplayEvents({ sessionJsonlPath: filePath });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe('workflow_started');
+    expect(summary.diagnostics).toMatchObject({
       totalLines: 3,
       replayedEvents: 1,
       skippedUnknown: 1,

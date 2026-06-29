@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, utimesSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -12,6 +12,14 @@ let consoleSpy: ReturnType<typeof vi.spyOn>;
 
 function makeSessionDir(sessionId: string): void {
   mkdirSync(join(tmp, '.diptych', 'sessions', sessionId), { recursive: true });
+}
+
+async function makeAliasableSession(sessionId: string, sortKeyMs: number): Promise<void> {
+  makeSessionDir(sessionId);
+  const summaryPath = join(tmp, '.diptych', 'sessions', sessionId, 'summary.json');
+  await writeFile(summaryPath, '{}');
+  const time = new Date(sortKeyMs);
+  utimesSync(summaryPath, time, time);
 }
 
 beforeEach(() => {
@@ -123,5 +131,28 @@ describe('snapshot session resolution', () => {
     expect(isCliError(captured)).toBe(true);
     const msg = (captured as Error).message;
     expect(msg).toMatch(/active session|--session/i);
+  });
+
+  it('resolves numeric --session aliases for create, list, restore, and diff', async () => {
+    await makeAliasableSession('older-session', 1_000);
+    await makeAliasableSession('snapshot-session', 2_000);
+    await writeFile(join(tmp, 'src.ts'), 'version 1');
+
+    await runSnapshot(['create', '--project', tmp, '--session', '1']);
+    const createOutput = captureOutput();
+    const snapshotId = createOutput.match(/Snapshot created: (\S+)/)?.[1];
+    if (snapshotId === undefined) throw new Error('snapshot id not printed');
+
+    consoleSpy.mockClear();
+    await runSnapshot(['list', '--project', tmp, '--session', '1']);
+    expect(captureOutput()).toMatch(/phase=manual/);
+
+    consoleSpy.mockClear();
+    await runSnapshot(['diff', snapshotId, '--project', tmp, '--session', '1']);
+    expect(captureOutput()).toContain(`No differences from snapshot ${snapshotId}`);
+
+    consoleSpy.mockClear();
+    await runSnapshot(['restore', snapshotId, '--project', tmp, '--session', '1']);
+    expect(captureOutput()).toContain(`from snapshot ${snapshotId}`);
   });
 });

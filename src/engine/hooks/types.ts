@@ -1,8 +1,4 @@
-export type HookOutcome =
-  | { kind: 'allow'; stderr?: string }
-  | { kind: 'deny'; message?: string; stderr?: string }
-  | { kind: 'warn'; message?: string; stderr?: string }
-  | { kind: 'crash'; message: string; stderr?: string };
+export type { HookOutcome } from '../../core/schemas/hooks.js';
 
 export interface HookContext {
   projectDir: string;

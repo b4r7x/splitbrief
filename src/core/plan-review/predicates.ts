@@ -10,11 +10,3 @@ export function hasNoCapableWorker(metadata: PlanTaskReviewMetadata): boolean {
   if (metadata.contextFit === 'overflow') return true;
   return metadata.routingBlockKind === 'no-capable-worker';
 }
-
-export function hasStaleOrConflict(metadata: PlanTaskReviewMetadata | undefined): boolean {
-  return (
-    metadata?.stale === true ||
-    metadata?.conflict !== undefined ||
-    STALE_ESTIMATE_STATUSES.has(metadata?.estimateStatus)
-  );
-}

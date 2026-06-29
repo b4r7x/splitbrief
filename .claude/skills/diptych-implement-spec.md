@@ -5,6 +5,8 @@ description: Execute a specific implementation spec from notes/superpowers/specs
 
 # Implement a diptych spec end-to-end
 
+Local-only: this skill depends on ignored, machine-local `notes/superpowers/specs/**` content. In a fresh checkout without those notes, stop and ask for the spec files or use tracked `.specify`/CLI workflows instead.
+
 This skill drives a full implementation pass through one spec directory under `notes/superpowers/specs/` (numbered, e.g. `04-rpc-mode/`, or dated, e.g. `2026-04-26-command-palette/`). It assumes you have already read the project primer (`diptych-dev` skill) — if not, read those files first.
 
 ## Input
@@ -50,7 +52,7 @@ For each task:
 3. Run the task's stated verification (usually `npm run typecheck` or a specific test file).
 4. If verification fails:
    - If the failure is caused by this task, fix and re-verify.
-   - If the failure is pre-existing (reproduces on `git stash`), note it and continue.
+   - If the failure appears unrelated to this task, record `git status --short`, rerun the exact verification once without changing the worktree, and report the command/output evidence as a pre-existing or parallel-worker failure.
 5. Mark the task completed via `TaskUpdate`.
 
 Do not batch tasks — one at a time so the user can see progress. Exceptions: trivial renames or grep sweeps can fold into one task entry.
@@ -102,6 +104,7 @@ Remind the user:
 ## Constraints
 
 - **Never run `git add`, `git commit`, or `git stage`.** The hook at `.claude/hooks/block-git-commits.sh` blocks these. Respect it.
+- **Never run `git stash`.** Preserve the shared worktree exactly as you found it except for the task's intended edits.
 - **Never rename folders under `notes/superpowers/specs/` or `notes/specs/`.** Those are immutable once the spec is written.
 - **Never skip the Doc Sync phase.** Docs and code must stay synchronized — this is a project invariant.
 - **Never touch other specs' folders** during implementation. If the user wants to work on N, work on N only.

@@ -56,6 +56,19 @@ type PlannerCallPublisherContext = {
   getPhase: () => WorkflowState['phase'];
 };
 
+const workflowLivenessError = {
+  sessionAlreadyLive: (sessionId: string, pid: number) =>
+    error(
+      'workflow-session-already-live',
+      `session '${sessionId}' is already running (pid ${pid}). Use 'diptych continue ${sessionId}' to attach or resume it.`,
+      { sessionId, pid },
+    ),
+};
+
+function isDetachedLivenessOwner(data: { pid: number; authToken?: string | undefined }): boolean {
+  return data.pid === process.pid && data.authToken !== undefined;
+}
+
 function publishPlannerRunnerCall(
   ctx: PlannerCallPublisherContext,
   event: Parameters<typeof publishRunnerCallEvent>[1],
@@ -218,9 +231,20 @@ async function acquireLiveness(opts: {
 }): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
   ensureSessionDir(opts.projectDir, opts.sessionId);
+  let status: Awaited<ReturnType<typeof checkServerStatus>>;
   try {
-    const status = await checkServerStatus(dir);
-    if (status.alive) return async () => {};
+    status = await checkServerStatus(dir);
+  } catch (err) {
+    if (opts.signal?.aborted) return async () => {};
+    warnError('Failed to inspect session liveness lockfile', err);
+    return async () => {};
+  }
+  if (status.alive) {
+    if (isDetachedLivenessOwner(status.data)) return async () => {};
+    throw workflowLivenessError.sessionAlreadyLive(opts.sessionId, status.data.pid);
+  }
+
+  try {
     const now = Date.now();
     await writeLockfile(dir, {
       pid: process.pid,

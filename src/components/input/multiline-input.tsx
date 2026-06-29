@@ -137,7 +137,7 @@ export function MultilineInput({
           ? { ...key, backspace: true, delete: false }
           : key;
       const action = resolveEditAction(input, editKey);
-      const editResult = applyEditAction(action, value, cursorIndex, columns);
+      const editResult = applyEditAction({ action, value, cursor: cursorIndex, columns });
       if (editResult) {
         onChange(editResult.value);
         setCursorIndex(editResult.cursor);
@@ -160,7 +160,7 @@ export function MultilineInput({
       }
 
       if (key.upArrow) {
-        const newIndex = navigateVertically('up', value, cursorIndex);
+        const newIndex = navigateVertically({ direction: 'up', value, cursorIndex });
         if (newIndex !== undefined) {
           setCursorIndex(newIndex);
           setPasteLength(0);
@@ -170,7 +170,7 @@ export function MultilineInput({
           setPasteLength(0);
         }
       } else if (key.downArrow) {
-        const newIndex = navigateVertically('down', value, cursorIndex);
+        const newIndex = navigateVertically({ direction: 'down', value, cursorIndex });
         if (newIndex !== undefined) {
           setCursorIndex(newIndex);
           setPasteLength(0);

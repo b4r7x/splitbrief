@@ -616,6 +616,25 @@ describe('layer priority', () => {
     expect(runner.calls.at(-1)?.options?.timeout).toBe(900_000);
   });
 
+  it('passes the abort signal through to validation commands', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    const controller = new AbortController();
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      signal: controller.signal,
+    });
+
+    expect(runner.calls.at(-1)?.options?.signal).toBe(controller.signal);
+  });
+
   it('records a skipped test result when default source but no test file found', async () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
     const config = makeConfig({

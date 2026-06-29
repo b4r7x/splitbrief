@@ -8,7 +8,7 @@ description: Execute a nuke-audit fix spec with phased subagent implementation, 
 $ARGUMENTS
 ```
 
-Use the input as the path to `fix-spec.md`. If the input is empty, find the newest `.nuke/*/fix-spec.md` and ask for confirmation only if more than one plausible latest candidate exists.
+Use the input as `[mode] <path-to-fix-spec.md>`. If mode is omitted, use the `mode:` header in the spec; if the spec has no mode header, use `light`. If the spec path is omitted, ask for it instead of guessing from `.nuke/`.
 
 ## Non-Negotiable Rules
 
@@ -16,8 +16,8 @@ Use the input as the path to `fix-spec.md`. If the input is empty, find the newe
 - Never run `git add`, `git stage`, `git commit`, or `git stash`.
 - No `.bak` files.
 - Fix every task in the spec, including low and info severity work.
-- Use the strongest available model and maximum reasoning effort for every implementer, validator, and fixer.
-- Use subagents aggressively, but run at most 10 subagents concurrently.
+- Respect the selected mode. Light-mode agents inherit the session model; full mode uses the strongest available model and maximum reasoning effort.
+- Use the current nuke-fix skill protocol: light mode validates with one fresh validator per phase; full mode validates with a fresh validation wave.
 - Implementers never validate their own work.
 - Do not move to the next phase until the current phase is fully clean.
 - Evidence beats claims: every success needs file:line evidence and gate output.
@@ -25,29 +25,30 @@ Use the input as the path to `fix-spec.md`. If the input is empty, find the newe
 ## Phase 0 - Intake And Baseline
 
 1. Read the full fix spec.
-2. Read or create `fix-progress.md` next to the spec.
-3. Run the baseline gates from the spec. If the spec does not list gates, run:
+2. Read `mode:` from the spec unless the user supplied an explicit mode.
+3. Read or create `fix-progress.md` next to the spec.
+4. Run the baseline gates from the spec. If the spec does not list gates, run:
    - `npm run format:check`
    - `npm run typecheck`
    - `npm run lint`
    - `npm test`
    - `npm run check:invariants`
    - `npm run test-ci`
-4. If any baseline gate fails, adopt that failure as the first fix task. Do not validate around a broken baseline.
-5. Update `fix-progress.md` with phase statuses and baseline results.
+5. If any baseline gate fails, adopt that failure as the first fix task. Do not validate around a broken baseline.
+6. Update `fix-progress.md` with phase statuses and baseline results.
 
 ## Per-Phase Protocol
 
 For each phase in the spec, in order:
 
-1. Dispatch implementation subagents for all parallel-safe batches in the phase, max 10 at once.
+1. Dispatch implementation subagents for all parallel-safe batches in the phase.
 2. Each implementer receives only:
    - executor context from the spec
    - its batch tasks
    - its owned file list
    - instruction to avoid unrelated edits
    - instruction to return changed files, file:line evidence, task status, and deviations
-3. After implementation, dispatch fresh validation subagents. Validators must:
+3. After implementation, dispatch fresh validation. Light mode uses one fresh validator for the phase; full mode uses a validation wave. Validators must:
    - verify each task acceptance criterion with file:line evidence
    - re-audit every changed file for new correctness, security, DRY, KISS, YAGNI, SRP, naming, type, test, slop, and docs issues
    - run the phase gates from the spec
@@ -56,7 +57,7 @@ For each phase in the spec, in order:
    - keep file ownership narrow
    - rerun fresh validation after fixes
    - repeat until clean
-5. If a phase takes more than 5 fix cycles, stop, write the exact blockers to `fix-progress.md`, and report honestly.
+5. If a phase hits the mode cap, stop, write the exact blockers to `fix-progress.md`, and report honestly. Caps: light = 3 cycles; full = 5 cycles.
 6. Mark a phase done only after all validators pass and all gates pass.
 
 ## Final Verification
@@ -70,11 +71,10 @@ After the last phase:
    - `npm test`
    - `npm run check:invariants`
    - `npm run test-ci`
-2. Dispatch a final full-sweep validation wave:
-   - correctness and security reviewer
-   - structure and code-quality reviewer
-   - completeness reviewer
-3. Completeness reviewer must verify:
+2. Dispatch the final sweep by mode:
+   - light: one reviewer covering correctness, security, structure/quality, and completeness
+   - full: correctness/security reviewer, structure/quality reviewer, and completeness reviewer
+3. Completeness must verify:
    - every task in the spec is done
    - every `F-###` in the coverage map is resolved
    - no `.bak` files exist

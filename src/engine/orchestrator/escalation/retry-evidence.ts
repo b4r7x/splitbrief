@@ -14,7 +14,7 @@ export function persistRetryApprovalEvidence(
 ): void {
   if (!decision.confirmApprovals || decision.confirmApprovals.length === 0) return;
   try {
-    let ledger = getOrCreateLedger(ctx.projectDir, ctx.sessionId, state, ctx.config.workflow.mode);
+    let ledger = getOrCreateLedger({ ref: ctx, state, mode: ctx.config.workflow.mode });
     for (const approval of decision.confirmApprovals) {
       ledger = recordApprovalEvidence({
         ledger,
@@ -25,7 +25,7 @@ export function persistRetryApprovalEvidence(
         reason: approval.reason,
       });
     }
-    writeEvidenceLedger(ctx.projectDir, ctx.sessionId, ledger);
+    writeEvidenceLedger(ctx, ledger);
   } catch {
     // Approval evidence is best-effort; the approval decision already allowed the retry.
   }
@@ -46,12 +46,7 @@ export function persistRetryRejectionEvidence(
   )
     return;
   try {
-    const ledger = getOrCreateLedger(
-      ctx.projectDir,
-      ctx.sessionId,
-      state,
-      ctx.config.workflow.mode,
-    );
+    const ledger = getOrCreateLedger({ ref: ctx, state, mode: ctx.config.workflow.mode });
     const updated = recordRejectionEvidence({
       ledger,
       tier: rejectedTier,
@@ -60,7 +55,7 @@ export function persistRetryRejectionEvidence(
       taskId: task.id,
       reason: decision.reason ?? 'denied',
     });
-    writeEvidenceLedger(ctx.projectDir, ctx.sessionId, updated);
+    writeEvidenceLedger(ctx, updated);
   } catch {
     // Rejection evidence is best-effort; the approval decision already blocked the task.
   }
