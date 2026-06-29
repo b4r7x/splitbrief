@@ -7,6 +7,9 @@ import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { buildReviewPacketDetailRows } from './review-packet.js';
 
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
 function ReviewPacketRows({
   summary,
   sessionId,
@@ -67,7 +70,7 @@ describe('buildReviewPacketDetailRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Review packet');
+    expect(frame).toContain('review packet');
     expect(frame).toContain('.diptych/sessions/s1/review-packet.md');
     expect(frame).toContain('.diptych/sessions/s1/review-packet.json');
     expect(frame).toContain('final review: written');
@@ -168,6 +171,35 @@ describe('buildReviewPacketDetailRows', () => {
     expect(frame).toContain('review-packet.json');
     expect(frame).not.toContain(longMarkdownPath);
     expect(frame).not.toContain(longJsonPath);
+
+    ui.unmount();
+  });
+
+  it('strips terminal-control bytes from persisted packet paths before render', () => {
+    terminalSizeStore.__testReset({ cols: 160, isSmall: false });
+
+    const ui = renderFeature(
+      <ReviewPacketRows
+        summary={makeSummary({
+          reviewPacket: {
+            markdownPath: `.diptych/sessions/s1/review${ESC}]52;c;clip-md${BEL}-packet.md`,
+            jsonPath: `.diptych/sessions/s1/review${ESC}[31m-packet.json`,
+            generatedAt: '2026-04-28T10:00:00.000Z',
+            finalReviewStatus: 'written',
+            driftPassed: true,
+            evidenceValidatedTasks: 1,
+            evidenceTotalTasks: 1,
+            missingArtifactCount: 0,
+          },
+        })}
+      />,
+    );
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('.diptych/sessions/s1/review-packet.md');
+    expect(frame).toContain('.diptych/sessions/s1/review-packet.json');
+    expect(frame).not.toContain('clip-md');
+    expect(frame).not.toContain('52;c');
 
     ui.unmount();
   });

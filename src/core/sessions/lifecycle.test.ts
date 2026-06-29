@@ -7,6 +7,10 @@ import {
   clearActive,
   isSessionLive,
   generateSessionId,
+  generateOpaqueSessionSlug,
+  isOpaqueSessionId,
+  featureForTranscriptPolicy,
+  TRANSCRIPT_OMITTED_FEATURE,
 } from './lifecycle.js';
 import { DIPTYCH_DIR, LOCKFILE } from '../paths.js';
 import { sessionDir } from '../paths.js';
@@ -305,5 +309,43 @@ describe('generateSessionId', () => {
     const dir = makeTmp();
     const id = generateSessionId(dir, 'Add email validator', new Date('2026-01-05T23:30:00Z'));
     expect(id).toBe('2026-01-05-add-email-validator');
+  });
+
+  it('generates an opaque id with no feature text when persistTranscript is false', () => {
+    const dir = makeTmp();
+    const id = generateSessionId(dir, 'Add secret oauth login', new Date('2026-04-14T10:00:00Z'), {
+      persistTranscript: false,
+    });
+    expect(id).toMatch(/^2026-04-14-session-[a-f0-9]{12}$/);
+    expect(isOpaqueSessionId(id)).toBe(true);
+    expect(id).not.toContain('secret');
+    expect(id).not.toContain('oauth');
+  });
+
+  it('keeps the feature slug when persistTranscript is true', () => {
+    const dir = makeTmp();
+    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00Z'), {
+      persistTranscript: true,
+    });
+    expect(id).toBe('2026-04-14-add-email-validator');
+    expect(isOpaqueSessionId(id)).toBe(false);
+  });
+});
+
+describe('transcript-policy session helpers', () => {
+  it('mints opaque slugs that round-trip through isOpaqueSessionId', () => {
+    const slug = generateOpaqueSessionSlug();
+    expect(slug).toMatch(/^session-[a-f0-9]{12}$/);
+    expect(isOpaqueSessionId(`2026-04-14-${slug}`)).toBe(true);
+    expect(isOpaqueSessionId(`2026-04-14-${slug}-2`)).toBe(true);
+  });
+
+  it('treats a feature-derived id as non-opaque', () => {
+    expect(isOpaqueSessionId('2026-04-14-add-email-validator')).toBe(false);
+  });
+
+  it('redacts the feature only when transcript persistence is off', () => {
+    expect(featureForTranscriptPolicy('secret feature', true)).toBe('secret feature');
+    expect(featureForTranscriptPolicy('secret feature', false)).toBe(TRANSCRIPT_OMITTED_FEATURE);
   });
 });

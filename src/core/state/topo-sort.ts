@@ -1,11 +1,16 @@
 import type { Task } from '../schemas/task.js';
 import { error } from '../../utils/error.js';
+import { glyph } from '../../lib/glyphs.js';
 
 export const topoError = {
   circularDependency: (cycle: string[]) =>
-    error('topo-circular-dependency', `Circular dependency detected: ${cycle.join(' → ')}`, {
-      cycle,
-    }),
+    error(
+      'topo-circular-dependency',
+      `Circular dependency detected: ${cycle.join(` ${glyph('connectorHandoff')} `)}`,
+      {
+        cycle,
+      },
+    ),
   unknownDependency: (taskId: string, dependencyId: string) =>
     error('topo-unknown-dependency', `Task ${taskId} depends on unknown task ${dependencyId}`, {
       taskId,

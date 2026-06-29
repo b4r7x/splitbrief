@@ -11,12 +11,12 @@ const ESC = '\u001B';
 async function openCustomCommand(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Run a custom command as the');
+    expect(frame).toContain('run a custom command as the');
     expect(frame).toContain('planner.');
   });
   ui.stdin.write('\r'); // Enter on the special row opens the custom-command input
   await vi.waitFor(() => {
-    expect(ui.lastFrame() ?? '').toContain('Command to run:');
+    expect(ui.lastFrame() ?? '').toContain('command to run');
   });
 }
 
@@ -39,7 +39,7 @@ describe('ToolModelPicker custom-command input', () => {
 
     ui.stdin.write(ESC); // ignored while the palette is on top
     await tick(20);
-    expect(ui.lastFrame()).toContain('Command to run:'); // still in the text-input view
+    expect(ui.lastFrame()).toContain('command to run'); // still in the text-input view
 
     overlayStore.close();
     await tick(20);
@@ -47,9 +47,9 @@ describe('ToolModelPicker custom-command input', () => {
     ui.stdin.write(ESC); // now reaches the picker and returns to the tool list
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain('Command to run:'); // left the text-input view
-      expect(frame).toContain('Tools'); // back on the two-column picker view
-      expect(frame).toContain('Models');
+      expect(frame).not.toContain('command to run'); // left the text-input view
+      expect(frame).toContain('tools'); // back on the two-column picker view
+      expect(frame).toContain('models');
     });
     ui.unmount();
   });

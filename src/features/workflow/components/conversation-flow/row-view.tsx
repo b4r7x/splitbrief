@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../../../components/theme.js';
-import { stripTerminalControls } from '../../../../utils/display-text.js';
+import { glyph } from '../../../../lib/glyphs.js';
+import { getTerminalCellWidth, stripTerminalControls } from '../../../../utils/display-text.js';
 import type {
   ConversationRow,
   ConversationRowSegment,
   ConversationRowTone,
 } from '../../conversation-rows/types.js';
-import { rowMarker } from '../../conversation-rows/row-markers.js';
+import {
+  focusBar,
+  rowLeadingCells,
+  rowMarker,
+  rowMarkerCells,
+  type RowMarkerStatus,
+} from '../../conversation-rows/row-markers.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 
-function colorForTone(tone: ConversationRowTone | undefined, theme: Theme): string {
+export function colorForTone(tone: ConversationRowTone | undefined, theme: Theme): string {
   switch (tone) {
     case undefined:
     case 'text':
@@ -66,57 +73,128 @@ function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   );
 }
 
-const ACTIVITY_MORE_COLLAPSED_MARKER = '  ▸ ';
-const ACTIVITY_MORE_EXPANDED_MARKER = '  ▾ ';
-const ACTIVITY_MORE_HIDDEN_SUFFIX = '-hidden';
-
-function activityMoreMarker(row: ConversationRow, expandedActivityBatches: Set<string>): string {
-  const batchKey = row.key.endsWith(ACTIVITY_MORE_HIDDEN_SUFFIX)
-    ? row.key.slice(0, -ACTIVITY_MORE_HIDDEN_SUFFIX.length)
-    : row.key;
-  return expandedActivityBatches.has(batchKey)
-    ? ACTIVITY_MORE_EXPANDED_MARKER
-    : ACTIVITY_MORE_COLLAPSED_MARKER;
-}
-
-const ACTIVE_DOT_GLYPH = '⏺ ';
+const ACTIVE_DOT_GLYPH = `${glyph('statusInProgress')} `;
 const ACTIVE_DOT_INTERVAL_MS = 500;
 
-function ActiveDot({ theme }: { theme: Theme }) {
+export function prefersReducedMotion(): boolean {
+  return process.env.DIPTYCH_REDUCE_MOTION === '1' || process.env.REDUCE_MOTION === '1';
+}
+
+function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number }) {
+  const reduced = prefersReducedMotion();
   const [on, setOn] = useState(true);
   useEffect(() => {
+    if (reduced) return;
     const id = setInterval(() => {
       setOn((prev) => !prev);
     }, ACTIVE_DOT_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [reduced]);
+  const lit = reduced || on;
   return (
-    <Text color={on ? theme.accent : theme.textDim} bold={on}>
-      {ACTIVE_DOT_GLYPH}
+    <Text color={lit ? theme.accent : theme.textDim} bold={lit}>
+      {alignLeadingWithinWidth(ACTIVE_DOT_GLYPH, leadingWidth)}
     </Text>
+  );
+}
+
+export type RowLifecycle = 'live' | 'queued' | 'done';
+
+function alignLeadingWithinWidth(content: string, width: number): string {
+  const pad = Math.max(0, width - getTerminalCellWidth(content));
+  return `${' '.repeat(pad)}${content}`;
+}
+
+function RowLeading({
+  kind,
+  lifecycle,
+  focused,
+  markerColor,
+}: {
+  kind: ConversationRow['kind'];
+  lifecycle: RowLifecycle;
+  focused?: boolean;
+  markerColor: string;
+}) {
+  const t = useTheme();
+  const isActivityHeader = kind === 'activity';
+  const isHeaderMarker = isActivityHeader || kind === 'task-header';
+  const isPulsingDot = isHeaderMarker && lifecycle === 'live';
+  const status: RowMarkerStatus =
+    lifecycle === 'queued' ? 'queued' : isPulsingDot ? 'live' : 'done';
+  const marker = rowMarker(kind, status);
+  const leadingWidth = rowLeadingCells(kind);
+  const focus = focusBar();
+  const showFocusBar = focused === true && !isPulsingDot;
+  const markerSlot = marker ?? ' '.repeat(rowMarkerCells(kind) || 0);
+
+  if (leadingWidth === 0) return null;
+
+  if (isPulsingDot) {
+    return (
+      <Box width={leadingWidth} flexShrink={0}>
+        <ActiveDot theme={t} leadingWidth={leadingWidth} />
+      </Box>
+    );
+  }
+
+  if (rowMarkerCells(kind) === 0) {
+    return (
+      <Box width={leadingWidth} flexShrink={0}>
+        {showFocusBar ? (
+          <Text color={t.accent} bold>
+            {focus}
+          </Text>
+        ) : (
+          <Text>{' '.repeat(leadingWidth)}</Text>
+        )}
+      </Box>
+    );
+  }
+
+  return (
+    <Box width={leadingWidth} flexDirection="row" flexShrink={0}>
+      {showFocusBar ? (
+        <Text color={t.accent} bold>
+          {focus}
+        </Text>
+      ) : (
+        <Text>{' '.repeat(focus.length)}</Text>
+      )}
+      <Text color={markerColor}>{markerSlot}</Text>
+    </Box>
   );
 }
 
 export function ConversationRowView({
   row,
-  expandedActivityBatches,
-  active,
+  lifecycle = 'done',
+  focused,
 }: {
   row: ConversationRow;
-  expandedActivityBatches?: Set<string>;
-  active?: boolean;
+  lifecycle?: RowLifecycle;
+  focused?: boolean;
 }) {
   const t = useTheme();
-  const marker =
-    row.kind === 'activity-more' && expandedActivityBatches !== undefined
-      ? activityMoreMarker(row, expandedActivityBatches)
-      : rowMarker(row.kind);
-  const markerColor = row.kind === 'activity-more' ? t.accent : t.textDim;
-  const isBlinkingDot = active === true && (row.kind === 'activity' || row.kind === 'task-header');
+  const isActivityHeader = row.kind === 'activity';
+  const isHeaderMarker = isActivityHeader || row.kind === 'task-header';
+  const markerColor =
+    lifecycle === 'queued'
+      ? t.textDim
+      : isActivityHeader
+        ? colorForTone(row.segments[0]?.tone, t)
+        : isHeaderMarker
+          ? t.success
+          : t.textDim;
+
   return (
     <Box height={1} overflow="hidden" flexShrink={0}>
-      {marker !== null &&
-        (isBlinkingDot ? <ActiveDot theme={t} /> : <Text color={markerColor}>{marker}</Text>)}
+      <RowLeading
+        kind={row.kind}
+        lifecycle={lifecycle}
+        {...(focused === undefined ? {} : { focused })}
+        markerColor={markerColor}
+      />
       <Text wrap="truncate-end">
         {row.segments.map((segment, index) => (
           <RowSegment key={index} segment={segment} />

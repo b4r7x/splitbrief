@@ -4,9 +4,14 @@ import { resolveProjectDir } from '../setup.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
-import { assignSessionAliases, listSessionDirs, sessionSortKeyMs } from '../sessions/aliases.js';
+import {
+  assignSessionAliases,
+  listValidSessionDirs,
+  sessionSortKeyMs,
+} from '../sessions/aliases.js';
 import { renderTable } from '../render-table.js';
 import { formatTime } from '../../utils/format-time.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type PsDeps = {
@@ -99,7 +104,7 @@ export async function psCommand(
   assertNotWindows();
 
   const root = sessionsRoot(opts.projectDir);
-  const names = listSessionDirs(opts.projectDir);
+  const names = listValidSessionDirs(opts.projectDir);
 
   if (names.length === 0) {
     console.log('No sessions found in this project.');
@@ -123,12 +128,12 @@ export async function psCommand(
   const lines = renderTable<SessionRow>({
     columns: [
       { header: '#', min: 2, value: (r) => (r.alias === null ? '-' : String(r.alias)) },
-      { header: 'SESSION ID', min: 10, value: (r) => r.sessionId },
+      { header: 'SESSION ID', min: 10, value: (r) => stripTerminalControls(r.sessionId) },
       { header: 'STATUS', min: 7, value: (r) => r.status },
       { header: 'PID', min: 5, value: (r) => String(r.pid ?? '-') },
       { header: 'MODE', min: 8, value: (r) => r.mode },
       { header: 'ELAPSED', min: 9, value: elapsedOf },
-      { header: 'FEATURE', min: 0, value: (r) => r.feature },
+      { header: 'FEATURE', min: 0, value: (r) => stripTerminalControls(r.feature) },
     ],
     rows,
   });

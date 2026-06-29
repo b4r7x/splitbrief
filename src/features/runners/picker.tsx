@@ -38,8 +38,12 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
   if (viewState.view.kind === 'custom-command') {
     return (
       <TextInputOverlay
-        title={`Custom ${catalog.roleLabel} Command`}
-        label="Command to run:"
+        title={
+          <>
+            custom <Text color={t.accent}>{role}</Text> command
+          </>
+        }
+        label="command to run"
         placeholder="e.g. my-ai-tool --format stream-json"
         initialValue={catalog.currentCommand ?? ''}
         rows={1}
@@ -53,10 +57,14 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
     const item = viewState.view.item;
     return (
       <TextInputOverlay
-        title={`Custom ${catalog.roleLabel} Model`}
+        title={
+          <>
+            custom <Text color={t.accent}>{role}</Text> model
+          </>
+        }
         label={
           <>
-            Enter a custom model ID for <Text color={t.accent}>{item.displayName}</Text>:
+            enter a custom model id for <Text color={t.accent}>{item.displayName}</Text>
           </>
         }
         placeholder="e.g. my-org/custom-model or llama3.3:latest"

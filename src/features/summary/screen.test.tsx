@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -14,11 +15,15 @@ import { createEvidenceLedger } from '../../core/evidence/ledger.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger.js';
 import { recordFinalReviewEvidence } from '../../engine/orchestrator/evidence/reporting.js';
 import { recordLocalTaskEvidence } from '../../engine/orchestrator/evidence/task.js';
+import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { SummaryScreen } from './screen.js';
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
 
 function showSummaryRoute(opts: {
   summary: Summary;
@@ -38,7 +43,9 @@ function visibleTaskIds(frame: string): string[] {
 }
 
 function maxLineLength(frame: string): number {
-  return frame.split('\n').reduce((max, line) => Math.max(max, line.length), 0);
+  return stripAnsiStyles(frame)
+    .split('\n')
+    .reduce((max, line) => Math.max(max, line.length), 0);
 }
 
 describe('SummaryScreen', () => {
@@ -50,19 +57,21 @@ describe('SummaryScreen', () => {
     resetAllStores();
   });
 
-  it('renders the persisted mode from the summary', () => {
+  it('renders the persisted mode from the summary in the route byline', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Mode');
     expect(frame).toContain('standard');
+    expect(frame).not.toContain('Mode');
 
     ui.unmount();
   });
 
   it('does not label old summaries with the current live config mode', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     configStore.__testReset({ config: makeConfig({ workflow: { mode: 'quick' } }) });
     showSummaryRoute({ summary: makeSummary() });
 
@@ -75,7 +84,8 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('uses task compiler language in the summary header', () => {
+  it('folds the brief and task counts into a single progress fraction', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     showSummaryRoute({
       summary: makeSummary({ totalTasks: 5, completedByLocal: 4, escalatedToPlanner: 1 }),
     });
@@ -83,9 +93,11 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Task Brief');
-    expect(frame).toContain('Implementer completed');
-    expect(frame).toContain('locally');
+    expect(frame).toContain('5/5 tasks');
+    expect(frame).toContain('4 local');
+    expect(frame).not.toContain('Planner compiled');
+    expect(frame).not.toContain('Implementer completed');
+    expect(frame).not.toMatch(/[█░]/);
 
     ui.unmount();
   });
@@ -94,7 +106,7 @@ describe('SummaryScreen', () => {
     showSummaryRoute({ summary: makeSummary(), status: 'complete' });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('diptych complete');
 
@@ -105,9 +117,10 @@ describe('SummaryScreen', () => {
     showSummaryRoute({ summary: makeSummary(), status: 'failed' });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('diptych failed with summary');
+    expect(frame).toContain('diptych failed');
+    expect(frame).not.toContain('with summary');
     expect(frame).not.toContain('diptych complete');
 
     ui.unmount();
@@ -117,9 +130,10 @@ describe('SummaryScreen', () => {
     showSummaryRoute({ summary: makeSummary(), status: 'interrupted' });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('diptych interrupted with summary');
+    expect(frame).toContain('diptych interrupted');
+    expect(frame).not.toContain('with summary');
     expect(frame).not.toContain('diptych complete');
 
     ui.unmount();
@@ -205,7 +219,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Drift');
+    expect(frame).toContain('drift');
     expect(frame).toContain('1 warning');
 
     ui.unmount();
@@ -239,7 +253,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('No task briefs compiled');
+    expect(frame).toContain('no task briefs compiled');
     expect(frame).not.toContain('0/0');
     expect(frame).not.toContain('No savings this run');
 
@@ -279,11 +293,11 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Checkpoints');
+    expect(frame).toContain('checkpoints');
     expect(frame).toContain('2 checkpoints');
     expect(frame).toContain('snap-pre-final');
     expect(frame).toContain('diptych snapshot diff snap-post-1');
-    expect(frame).toContain('Review packet');
+    expect(frame).toContain('review packet');
     expect(frame).toContain('.diptych/sessions/summary-session/review-packet.md');
     expect(frame).toContain('final review: written');
     expect(frame).toContain('evidence: 2/2');
@@ -354,15 +368,16 @@ describe('SummaryScreen', () => {
       await tick();
       const frame = ui.lastFrame() ?? '';
 
-      expect(frame).toContain('Evidence');
+      expect(frame).toContain('evidence');
       expect(frame).toContain('1/1 validated');
       expect(frame).toContain('T001');
       expect(frame).toContain('Evidence detail');
+      expect(frame).toContain(glyph('check'));
+      expect(frame).toContain(glyph('treeLast'));
       expect(frame).toContain('visible expected');
       expect(frame).toContain('observed visible');
       expect(frame).toContain('review.md');
-      expect(frame).toContain('passed: test');
-      expect(frame).toContain('task reached done');
+      expect(frame).toContain('passed test');
       expect(frame).toContain('final review: written');
       expect(frame).not.toContain('clipboard-title');
       expect(frame).not.toContain('clipboard-expected');
@@ -398,7 +413,7 @@ describe('SummaryScreen', () => {
       await tick();
       const frame = ui.lastFrame() ?? '';
 
-      expect(frame).toContain('Evidence');
+      expect(frame).toContain('evidence');
       expect(frame).toContain('0/1 validated');
 
       ui.unmount();
@@ -603,7 +618,7 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('diptych');
     expect(frame).toContain('failed');
-    expect(frame).toContain('Codex -> Codex');
+    expect(frame).toContain(`Codex ${glyph('connectorHandoff')} Codex`);
     const continueCount = frame.split('press enter to continue').length - 1;
     expect(continueCount).toBe(1);
     expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
@@ -671,7 +686,7 @@ describe('SummaryScreen', () => {
     await tick(20);
     frames.push(ui.lastFrame() ?? '');
 
-    expect(frames.some((frame) => frame.includes('Review packet'))).toBe(true);
+    expect(frames.some((frame) => frame.includes('review packet'))).toBe(true);
     expect(frames.some((frame) => frame.includes('review-packet.md'))).toBe(true);
 
     ui.unmount();
@@ -753,8 +768,34 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Extra cost');
-    expect(frame).not.toContain('Saved $0.00 (-50%)');
+    expect(frame).toContain('extra cost');
+    expect(frame).not.toContain('saved $0.00 (-50%)');
+    expect((frame.match(/◆/g) ?? []).length).toBe(1);
+
+    ui.unmount();
+  });
+
+  it('strips terminal-control bytes from persisted feature and model fields before render', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    showSummaryRoute({
+      summary: makeSummary({
+        feature: `Ship ${ESC}]52;c;clip-feature${BEL}dashboard${ESC}[31m`,
+        plannerTool: 'codex',
+        plannerModel: `gpt${ESC}]52;c;clip-planner${BEL}-5`,
+        implementerTool: 'ollama',
+        implementerModel: `qwen${ESC}]52;c;clip-impl${BEL}-small`,
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Ship');
+    expect(frame).toContain('dashboard');
+    expect(frame).not.toContain('clip-feature');
+    expect(frame).not.toContain('clip-planner');
+    expect(frame).not.toContain('clip-impl');
+    expect(frame).not.toContain('52;c');
 
     ui.unmount();
   });

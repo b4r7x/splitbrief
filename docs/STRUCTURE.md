@@ -230,8 +230,8 @@ features/workflow/
 ├── components/               # feature-local components
 │   ├── header.tsx
 │   ├── sidebar.tsx
-│   ├── conversation-flow/    # sub-component folder
-│   └── event-cards/          # fixed workflow chrome cards
+│   ├── chrome.tsx            # workflow header/footer chrome
+│   └── conversation-flow/    # row-based conversation viewport
 ├── hooks/                    # feature-local hooks
 │   ├── use-runner.ts
 │   └── use-keys.ts

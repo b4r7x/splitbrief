@@ -1,19 +1,30 @@
 import { Box, Text, useApp, useInput } from 'ink';
-import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
 import { SOFT_SEP } from '../../../components/separators.js';
+import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
+import { getClampedTerminalWidth } from '../../../utils/terminal-width.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { Divider } from './divider.js';
+
+const DETAIL_INDENT = '           ';
 
 interface ReadinessPanelProps {
   report: ReadinessReport;
+  onOpenFix?: (() => void) | undefined;
+  onDismiss?: (() => void) | undefined;
 }
 
-export function ReadinessPanel({ report }: ReadinessPanelProps) {
+export function ReadinessPanel({ report, onOpenFix, onDismiss }: ReadinessPanelProps) {
   const t = useTheme();
   const { exit } = useApp();
+  const dismiss = onDismiss ?? exit;
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
+  const cols = terminalSizeStore.use((s) => s.cols);
+  const rows = terminalSizeStore.use((s) => s.rows);
   const notableChecks = report.sections
     .flatMap((section) => section.checks)
     .filter((check) => check.severity === 'blocker' || check.severity === 'warning')
@@ -22,63 +33,114 @@ export function ReadinessPanel({ report }: ReadinessPanelProps) {
   useInput(
     (input, key) => {
       if (key.escape || input === 'q') {
-        exit();
+        dismiss();
+        return;
+      }
+      if (key.return) {
+        onOpenFix?.();
       }
     },
     { isActive: !hasOverlay },
   );
 
+  const width = getClampedTerminalWidth({ cols, maxWidth: 72 });
+  const innerWidth = Math.max(1, width - 4);
+  const isBlocked = report.status === 'blocked';
+
   return (
-    <OverlayPanel title="Run Readiness" hint="q exit" maxWidth={86}>
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="column">
-          <Text color={statusColor(report.status, t)} bold>
-            {report.status}
-            {SOFT_SEP}
-            {report.counts.blocker} blockers{SOFT_SEP}
-            {report.counts.warning} warnings
-          </Text>
-          <Text color={t.textDim}>
-            {report.status === 'blocked'
-              ? `Required: ${report.nextAction.label} — ${report.nextAction.reason}`
-              : `${countNoun(report.counts.warning, 'advisory note')}; start can continue.`}
-          </Text>
-        </Box>
+    <Box width={cols} height={rows} alignItems="center" justifyContent="center">
+      <Box
+        flexDirection="column"
+        width={width}
+        borderStyle={borderStyleFor('bold')}
+        borderColor={isBlocked ? t.error : t.border}
+        paddingX={1}
+      >
         {notableChecks.length > 0 ? (
-          <Box flexDirection="column">
+          <>
+            <Box justifyContent="space-between">
+              <Text>
+                readiness
+                <Text color={t.textDim}>{SOFT_SEP}</Text>
+                <Text color={isBlocked ? t.error : t.textDim}>
+                  {isBlocked ? 'blocked' : 'warnings'}
+                </Text>
+              </Text>
+              <Text color={t.textDim}>
+                {countNoun(report.counts.blocker, 'blocker')}
+                {SOFT_SEP}
+                {countNoun(report.counts.warning, 'warning')}
+              </Text>
+            </Box>
+            <Text> </Text>
+            <Text>
+              <Text color={t.textDim}>{'required  '}</Text>
+              <Text bold>{sanitizeTerminalDisplayText(report.nextAction.label)}</Text>
+              <Text color={t.textDim}>
+                {SOFT_SEP}
+                {sanitizeTerminalDisplayText(report.nextAction.reason)}
+              </Text>
+            </Text>
+            <Text> </Text>
             {notableChecks.map((check) => (
               <ReadinessCheckLine key={check.id} check={check} />
             ))}
-          </Box>
+            <Divider width={innerWidth} tone="textDim" />
+            <Text color={t.textDim}>
+              {'esc  dismiss'}
+              {onOpenFix ? (
+                <>
+                  {SOFT_SEP}
+                  {'enter  open fix'}
+                </>
+              ) : null}
+            </Text>
+          </>
         ) : (
-          <Text color={t.success}>No readiness blockers or warnings.</Text>
+          <Text>
+            <Text color={t.success}>{`${glyph('statusDone')} `}</Text>
+            ready
+            <Text color={t.textDim}>
+              {SOFT_SEP}
+              no blockers, start can continue
+            </Text>
+          </Text>
         )}
       </Box>
-    </OverlayPanel>
+    </Box>
   );
 }
 
 function ReadinessCheckLine({ check }: { check: ReadinessCheck }) {
   const t = useTheme();
-  const color = check.severity === 'blocker' ? t.error : t.warning;
+  const cols = terminalSizeStore.use((s) => s.cols);
+  const showDetails = cols > 50;
+  const severityColor = check.severity === 'blocker' ? t.error : t.textDim;
   return (
     <Box flexDirection="column">
-      <Text color={color}>
-        {check.severity} {check.id}: {check.summary}
-      </Text>
-      {check.details?.slice(0, 2).map((detail) => (
-        <Text key={detail} color={t.textDim}>
-          {' '}
-          {detail}
+      <Text>
+        {'  '}
+        <Text color={severityColor}>{check.severity}</Text>
+        <Text color={t.text}>
+          {'  '}
+          {check.id}: {sanitizeTerminalDisplayText(check.summary)}
         </Text>
-      ))}
-      {check.fix && <Text color={t.textDim}> Fix: {check.fix}</Text>}
+      </Text>
+      {showDetails &&
+        check.details?.slice(0, 2).map((detail) => (
+          <Text key={detail} color={t.textDim}>
+            {DETAIL_INDENT}
+            {sanitizeTerminalDisplayText(detail)}
+          </Text>
+        ))}
+      {check.fix ? (
+        <Text color={t.textDim}>
+          {DETAIL_INDENT}fix
+          {SOFT_SEP}
+          {sanitizeTerminalDisplayText(check.fix)}
+        </Text>
+      ) : null}
+      <Text> </Text>
     </Box>
   );
-}
-
-function statusColor(status: ReadinessReport['status'], t: ReturnType<typeof useTheme>): string {
-  if (status === 'blocked') return t.error;
-  if (status === 'ready-with-warnings') return t.warning;
-  return t.success;
 }

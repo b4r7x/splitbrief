@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readClipboardExecCalls } from '#testing/helpers/clipboard-exec-fixture.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -13,22 +16,21 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
-import { CURSOR } from '../../components/pickers/cursor-glyph.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getLogo } from './logo.js';
 import { HomeScreen } from './screen.js';
+
+const originalPlatform = process.platform;
 
 const CTRL_R = '\x12';
 const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
-const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
-// Ink collapses the trailing space of the cursor cell when it abuts the next
-// column, so the rendered frame contains the bare ▸ glyph, not "▸ ".
-const CURSOR_GLYPH = CURSOR.trimEnd();
+const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k';
+const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const RECENT_SESSIONS_HINT = '↑↓ navigate · type filter · enter resume/view · esc back';
+const FOCUS_BAR = '▌';
 
 const COMMANDS: RuntimeCommandDef[] = [
   {
@@ -50,7 +52,9 @@ const COMMANDS: RuntimeCommandDef[] = [
 ];
 
 function lineContaining(frame: string, text: string): string {
-  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  const line = stripAnsiStyles(frame)
+    .split('\n')
+    .find((candidate) => candidate.includes(text));
   expect(line).toBeDefined();
   return line ?? '';
 }
@@ -63,7 +67,9 @@ describe('HomeScreen', () => {
   let projectDir = '';
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     projectDir = createTempDir('home-screen-test');
     configStore.__testReset({ config: makeConfig(), projectDir });
   });
@@ -72,6 +78,7 @@ describe('HomeScreen', () => {
     resetAllStores();
     cleanupTempDir(projectDir);
     projectDir = '';
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
   it('centers the main content on wide terminals while keeping the input visible', async () => {
@@ -81,8 +88,9 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = frame.split('\n').find((line) => line.includes('Planner')) ?? '';
-    expect(plannerLine.indexOf('Planner')).toBeGreaterThan(0);
+    const plannerLine = frame.split('\n').find((line) => line.includes('planner')) ?? '';
+    expect(plannerLine.indexOf('planner')).toBeGreaterThan(0);
+    expect(frame).toContain('plan expensively · build cheaply');
     expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
   });
@@ -95,7 +103,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
-    expect(frame).toContain('standard');
+    expect(frame).toContain('STANDARD');
     expect(frame).toContain('no recent sessions');
     ui.unmount();
   });
@@ -110,9 +118,9 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/help');
-    expect(frame).toContain('Tab fill');
-    expect(lineContaining(frame, 'Tab fill')).toContain('Tab fill');
-    expect(lineContaining(frame, '> /')).toContain('> /');
+    expect(frame).toContain('tab fill');
+    expect(lineContaining(frame, 'tab fill')).toContain('tab fill');
+    expect(lineContaining(frame, '› /')).toContain('› /');
     ui.unmount();
   });
 
@@ -132,8 +140,8 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = lineContaining(frame, 'Planner');
-    const implementerLine = lineContaining(frame, 'Implementer');
+    const plannerLine = lineContaining(frame, '/plann');
+    const implementerLine = lineContaining(frame, '/implem');
 
     expect(plannerLine).toContain('/plann');
     expect(implementerLine).toContain('/implem');
@@ -142,7 +150,7 @@ describe('HomeScreen', () => {
   });
 
   it('caps recent sessions and reports a hidden count when capacity is tight', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 80, rows: 17, isSmall: true });
 
     for (let i = 0; i < 25; i++) {
       saveSummary(
@@ -158,7 +166,7 @@ describe('HomeScreen', () => {
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('feature 24');
     expect(frame).toMatch(/\b\d+ more\b/);
     expect(frame).toContain('ctrl+r');
@@ -190,16 +198,16 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const before = ui.lastFrame() ?? '';
-    const plannerLine = lineContaining(before, 'Planner');
-    const modeLine = lineContaining(before, 'Mode');
+    const plannerLine = lineContaining(before, 'planner');
+    const modeLine = lineContaining(before, 'standard');
 
     ui.stdin.write('/');
     await tick(20);
 
     const after = ui.lastFrame() ?? '';
-    expect(after).toContain('Tab fill');
-    expect(lineContaining(after, 'Planner')).toBe(plannerLine);
-    expect(lineContaining(after, 'Mode')).toBe(modeLine);
+    expect(after).toContain('tab fill');
+    expect(lineContaining(after, 'planner')).toBe(plannerLine);
+    expect(lineContaining(after, 'standard')).toBe(modeLine);
     ui.unmount();
   });
 
@@ -266,7 +274,7 @@ describe('HomeScreen', () => {
     expect(visibleCount).toBe(30);
     expect(frame).not.toMatch(/\b\d+ more\b/);
     expect(frame).toContain(HOME_HINT);
-    expect(frame).toContain('>');
+    expect(frame).toContain('›');
     ui.unmount();
   });
 
@@ -290,7 +298,7 @@ describe('HomeScreen', () => {
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
     expect(frame).toContain('__| (_)');
     expect(frame).toContain('gap test feature');
-    expect(frame).toContain(DEFAULT_HOME_HINT);
+    expect(frame).toContain(HOME_HINT);
     ui.unmount();
   });
 });
@@ -314,6 +322,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   }
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
     projectDir = createTempDir('home-focus-test');
     configStore.__testReset({ config: makeConfig(), projectDir });
@@ -331,19 +340,19 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').not.toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
     ui.stdin.write(CTRL_R);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(CURSOR_GLYPH);
+    expect(frame).toContain(FOCUS_BAR);
     expect(frame).toContain(RECENT_SESSIONS_HINT);
     ui.unmount();
   });
 
-  it('shows compact focused recent-sessions chrome at 80x15', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
+  it('shows compact focused recent-sessions chrome at 80x16', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
     seedSessions(30);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
@@ -351,10 +360,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Recent sessions');
+      expect(frame).toContain('recent sessions');
       expect(frame).toContain('filter sessions');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
-      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).not.toMatch(/focus feature \d+/);
     });
     ui.unmount();
@@ -385,7 +394,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(DEFAULT_HOME_HINT);
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toContain(FOCUS_BAR);
     ui.unmount();
   });
 
@@ -396,12 +405,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 2')).toContain(CURSOR_GLYPH);
+      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 2')).toContain(FOCUS_BAR);
     });
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
-      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 1')).toContain(CURSOR_GLYPH);
+      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 1')).toContain(FOCUS_BAR);
     });
     ui.unmount();
   });
@@ -427,13 +436,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     });
     ui.stdin.write('ancient');
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('ancient hidden focus target');
-      expect(lineContaining(frame, 'ancient hidden focus target')).toContain(CURSOR_GLYPH);
+      expect(lineContaining(frame, 'ancient hidden focus target')).toContain(FOCUS_BAR);
     });
 
     ui.unmount();
@@ -446,12 +455,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
     });
     ui.unmount();
@@ -464,14 +473,72 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
 
     ui.stdin.write(ARROW_UP);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain(CURSOR_GLYPH);
+      expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
     });
+    ui.unmount();
+  });
+
+  it('Enter at a short height with zero visible rows selects no invisible session', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+    saveSummary(
+      { projectDir, sessionId: 'invisible-complete' },
+      makeSession({
+        id: 'invisible-complete',
+        feature: 'invisible feature',
+        status: 'complete',
+        summary: makeSummary({ feature: 'invisible feature' }),
+        startedAt: 1_700_000_700,
+      }),
+    );
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('filter sessions');
+    });
+    expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(routerStore.get().screen).toBe('home');
+    ui.unmount();
+  });
+
+  it('y does not copy a session when no session row is visible', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+    saveSummary(
+      { projectDir, sessionId: 'invisible-copy' },
+      makeSession({
+        id: 'invisible-copy',
+        feature: 'invisible copy feature',
+        status: 'complete',
+        summary: makeSummary({ feature: 'invisible copy feature' }),
+        startedAt: 1_700_000_800,
+      }),
+    );
+
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('filter sessions');
+    });
+    expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
+
+    ui.stdin.write('y');
+    await tick(20);
+
+    expect(readClipboardExecCalls()).toHaveLength(0);
     ui.unmount();
   });
 
@@ -526,7 +593,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     });
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
@@ -558,7 +625,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     });
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
@@ -566,7 +633,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     });
 
     expect(routerStore.get().screen).toBe('home');
-    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     ui.unmount();
   });
 
@@ -582,7 +649,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('recalled prompt');
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toContain(FOCUS_BAR);
     ui.unmount();
   });
 
@@ -593,11 +660,11 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
 
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
     await tick(20);
-    expect(ui.lastFrame() ?? '').not.toContain(CURSOR_GLYPH);
+    expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
     ui.stdin.write('hi');
     await tick(20);

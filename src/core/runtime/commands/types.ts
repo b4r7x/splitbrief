@@ -4,8 +4,25 @@ import type { OverlayType, Screen } from '../../navigation/types.js';
 import type { HandoffTarget } from '../../handoff/targets.js';
 import type { ApprovalGrant } from '../../schemas/approval-store.js';
 import type { StructuredSummary } from '../../schemas/compaction.js';
+import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
 
 type CommandHandlerResult = void | Promise<void>;
+
+export const COPY_TARGETS = ['message', 'brief', 'path', 'command', 'cost'] as const;
+
+export type CopyTarget = (typeof COPY_TARGETS)[number];
+
+export type CopyResult = CopyOutcome | 'empty';
+
+export function formatCopyResult(result: CopyResult): string {
+  if (result === 'empty') return 'Nothing to copy';
+  if (result === 'unavailable') return 'Could not copy';
+  // native/tmux are confirmed by a child process exiting 0; osc52 is an unacknowledged escape that
+  // many terminals silently drop, so it must read as best-effort rather than a guaranteed copy.
+  if (result === 'osc52')
+    return 'Copy escape sent; verify your clipboard (some terminals block it)';
+  return `Copied (${result})`;
+}
 
 export interface AcceptRunSnapshotResult {
   snapshotId: string;
@@ -75,6 +92,7 @@ export type RuntimeCommandDef =
     });
 
 export interface RuntimeCommandContext {
+  isAttached?: boolean;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (to: 'home') => void;
   quit: () => void;
@@ -88,7 +106,7 @@ export interface RuntimeCommandContext {
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
-  clearQueue: () => QueueClearCommandResult;
+  clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;
   attachImage: (input: string) => { ok: true; path: string } | { ok: false; reason: string };
   detachImage: (idOrIndex: string) => boolean;
@@ -105,6 +123,7 @@ export interface RuntimeCommandContext {
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleSidebar: () => ToggleSidebarResult;
+  copyTarget: (target: CopyTarget) => Promise<CopyResult>;
 }
 
 export interface CommandPaletteItem {

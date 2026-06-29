@@ -10,7 +10,12 @@ import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { transitionAndSave, raisePendingRecovery, refreshAndPersistCode } from './state-ops.js';
+import {
+  transitionAndSave,
+  raisePendingRecovery,
+  refreshAndPersistCode,
+  rebaseOnPersistedWorkflowState,
+} from './state-ops.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -31,6 +36,37 @@ function makeQueuedMessage(): QueuedMessage {
     nativeDeliveryState: 'pending',
   };
 }
+
+describe('rebaseOnPersistedWorkflowState', () => {
+  it('prefers persisted rewindPending and phase over stale in-memory state', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      let staleState = createInitialState('feature');
+      staleState = transition(staleState, { type: 'START' });
+      saveState({ projectDir, sessionId }, staleState);
+
+      staleState = transition(staleState, {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeQueuedMessage(),
+      });
+      saveState(
+        { projectDir, sessionId },
+        transition(staleState, {
+          type: 'REWIND_TO_PLAN',
+          comment: 'revise the approach',
+        }),
+      );
+
+      const rebased = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, staleState);
+
+      expect(rebased.phase).toBe('planning');
+      expect(rebased.rewindPending).toEqual({ target: 'plan', comment: 'revise the approach' });
+      expect(rebased.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+});
 
 describe('transitionAndSave', () => {
   it('applies transitions to the latest persisted state so queued messages are not lost', () => {

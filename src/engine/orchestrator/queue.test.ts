@@ -420,13 +420,14 @@ describe('enqueue', () => {
 });
 
 describe('clear', () => {
-  it('removes pending messages from live state and emits queue_cleared', () => {
+  it('removes pending messages from live state and emits queue_cleared', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeStateWithQueue([
       makeMessage('pending'),
       { ...makeMessage('drained'), id: 'msg-drained', drainedAt: new Date().toISOString() },
     ]);
     const { bus, events } = makeBusRecorder();
+    const serialize = createWriteSequencer();
 
     const clear = createClearQueueHandler({
       projectDir,
@@ -436,9 +437,10 @@ describe('clear', () => {
         state = next;
       },
       bus,
+      serialize,
     });
 
-    const result = clear();
+    const result = await clear();
 
     expect(result).toEqual({ status: 'cleared', count: 1 });
     expect(state?.messageQueue).toEqual([
@@ -453,7 +455,7 @@ describe('clear', () => {
     );
   });
 
-  it('does not remove messages already delivered through native injection', () => {
+  it('does not remove messages already delivered through native injection', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = {
       ...makeResearchingState(),
@@ -465,6 +467,7 @@ describe('clear', () => {
       ],
     };
     const { bus } = makeBusRecorder();
+    const serialize = createWriteSequencer();
 
     const clear = createClearQueueHandler({
       projectDir,
@@ -474,13 +477,14 @@ describe('clear', () => {
         state = next;
       },
       bus,
+      serialize,
     });
 
-    expect(clear()).toEqual({ status: 'cleared', count: 2 });
+    expect(await clear()).toEqual({ status: 'cleared', count: 2 });
     expect(state?.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
   });
 
-  it('clears pending messages from persisted state when caller state is stale', () => {
+  it('clears pending messages from persisted state when caller state is stale', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
     saveState(
@@ -495,6 +499,7 @@ describe('clear', () => {
       ]),
     );
     const { bus } = makeBusRecorder();
+    const serialize = createWriteSequencer();
 
     const clear = createClearQueueHandler({
       projectDir,
@@ -504,14 +509,70 @@ describe('clear', () => {
         state = next;
       },
       bus,
+      serialize,
     });
 
-    const result = clear();
+    const result = await clear();
 
     expect(result).toEqual({ status: 'cleared', count: 1 });
     expect(state?.messageQueue).toEqual([
       expect.objectContaining({ id: 'msg-drained', text: 'persisted drained' }),
     ]);
+  });
+
+  it('serializes clear with enqueue so cleared messages cannot be resurrected', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeStateWithQueue([makeMessage('old')]);
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner();
+    const inner = createWriteSequencer();
+    let releaseClear: (() => void) | undefined;
+    const clearGate = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    let clearEntered = false;
+    const serialize: typeof inner = (fn) =>
+      inner(async () => {
+        if (!clearEntered) {
+          clearEntered = true;
+          await clearGate;
+        }
+        return fn();
+      });
+
+    const enqueue = createQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+      persistTranscript: false,
+      planner,
+      serialize,
+    });
+    const clear = createClearQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+      serialize,
+    });
+
+    const clearPromise = clear();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const enqueuePromise = enqueue('after-clear', 'researching');
+    releaseClear?.();
+    await Promise.all([clearPromise, enqueuePromise]);
+
+    expect(state?.messageQueue.map((message) => message.text)).toEqual(['after-clear']);
+    expect(
+      loadState({ projectDir, sessionId })?.messageQueue.map((message) => message.text),
+    ).toEqual(['after-clear']);
   });
 });
 
@@ -797,11 +858,12 @@ describe('native injection', () => {
 
   it('marks the message delivered after native injection succeeds', async () => {
     const { projectDir, sessionId } = setupProject();
-    const state = makeResearchingState();
+    const queuedMessage = makeMessage('inject this');
+    let state = transition(makeResearchingState(), {
+      type: 'ENQUEUE_USER_MSG',
+      message: queuedMessage,
+    });
     let capturedState: WorkflowState | undefined;
-    const setState = (s: WorkflowState) => {
-      capturedState = s;
-    };
     const { bus, events } = makeBusRecorder();
     const injectedTurns: Array<{ text: string; dir: string }> = [];
     const planner = makePlanner({
@@ -818,15 +880,17 @@ describe('native injection', () => {
         return null;
       },
     });
-    const message = makeMessage('inject this');
 
     const result = await dispatchNativeInjection({
-      message,
+      message: queuedMessage,
       planner,
       projectDir,
       sessionId,
       getState: () => state,
-      setState,
+      setState: (s) => {
+        state = s;
+        capturedState = s;
+      },
       bus,
     });
 
@@ -838,10 +902,15 @@ describe('native injection', () => {
 
   it('rolls native delivery back to pending when injectUserTurn errors', async () => {
     const { projectDir, sessionId } = setupProject();
-    const state = makeResearchingState();
+    const queuedMessage = makeMessage();
+    let state = transition(makeResearchingState(), {
+      type: 'ENQUEUE_USER_MSG',
+      message: queuedMessage,
+    });
     let writtenState: WorkflowState | undefined;
     const setState = (s: WorkflowState) => {
       writtenState = s;
+      state = s;
     };
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
@@ -860,7 +929,7 @@ describe('native injection', () => {
 
     await expect(
       dispatchNativeInjection({
-        message: makeMessage(),
+        message: queuedMessage,
         planner,
         projectDir,
         sessionId,
@@ -874,9 +943,13 @@ describe('native injection', () => {
     expect(events.find((e) => e.type === 'message_injected_native')).toBeUndefined();
   });
 
-  it('reads fresh state via getState after awaiting injectUserTurn', async () => {
+  it('rebases delivery bookkeeping on persisted queue after awaiting injectUserTurn', async () => {
     const { projectDir, sessionId } = setupProject();
-    let state = makeResearchingState();
+    const originalMessage = makeMessage('original');
+    let state = transition(makeResearchingState(), {
+      type: 'ENQUEUE_USER_MSG',
+      message: originalMessage,
+    });
     const { bus } = makeBusRecorder();
     const planner = makePlanner({
       capabilities: {
@@ -889,13 +962,14 @@ describe('native injection', () => {
       },
       injectUserTurn: async () => {
         state = transition(state, { type: 'ENQUEUE_USER_MSG', message: makeMessage('concurrent') });
+        saveState({ projectDir, sessionId }, state);
         return null;
       },
     });
 
     let capturedState: WorkflowState | undefined;
     await dispatchNativeInjection({
-      message: makeMessage('original'),
+      message: originalMessage,
       planner,
       projectDir,
       sessionId,

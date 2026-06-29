@@ -8,8 +8,13 @@ import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
+import { featureForTranscriptPolicy } from '../sessions/lifecycle.js';
 
 export const CURRENT_STATE_VERSION = 3;
+
+export function workflowFeatureForConsole(feature: string, persistTranscript: boolean): string {
+  return featureForTranscriptPolicy(feature, persistTranscript);
+}
 
 export const transitionError = {
   invalidActionForPhase: (phase: Phase, action: StateAction['type']) =>

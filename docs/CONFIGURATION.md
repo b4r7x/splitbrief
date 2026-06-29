@@ -487,7 +487,7 @@ workflow: {
 
 ### Transcript persistence policy
 
-`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. Per-task git commit subjects also use task ids and control metadata only.
+`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. Per-task git commit subjects also use task ids and control metadata only.
 
 The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, safe runner activity labels, compact runner status, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queued-message text, and cost-prediction task prose are replaced with `[transcript omitted]` or removed. Raw runner expansion is disabled: protected runner activity forces `rawAvailable:false` and omits `expandId`, so `raw` markers disappear instead of pointing at hidden payloads.
 
@@ -986,7 +986,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 |---|---|---|
 | `--auto` | Alias for `--approve none` on spec/plan document gates | start, resume, continue, last |
 | `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
-| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last |
+| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
 | `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue, last |
@@ -1008,8 +1008,9 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
 | `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue, last |
 | `--project <dir>` | Project directory (default cwd) | most commands |
-| `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last |
-| `--no-mouse` | Disable mouse tracking | start, resume, continue, last |
+| `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last, attach |
+| `--no-mouse` | Disable mouse tracking | start, resume, continue, last, attach |
+| `--hover` | Opt in to hover highlighting (requires mouse + fullscreen) | start, resume, continue, last, attach |
 | `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
 | `--allow-custom-renderer` | Trust repo-local handoff renderer for this invocation | handoff |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |

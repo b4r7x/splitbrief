@@ -25,6 +25,12 @@ export function useCompletionNavigation<TSnapshot>(
         options.onEscape(latest);
         return;
       }
+      // Enter owners (e.g. the command menu) decide for themselves what an empty list means, so they
+      // run before the items guard — that lets an unmatched slash line still reach the dispatcher.
+      if (key.return && options.onReturn) {
+        options.onReturn(latest);
+        return;
+      }
       if (!options.hasItems(latest)) return;
       if (key.upArrow) {
         options.onMove(latest, -1);
@@ -39,7 +45,7 @@ export function useCompletionNavigation<TSnapshot>(
         return;
       }
       if (key.return) {
-        (options.onReturn ?? options.onSelect)(latest);
+        options.onSelect(latest);
         return;
       }
     },

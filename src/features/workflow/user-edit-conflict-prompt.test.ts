@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UserEditConflict } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
+import { glyph } from '../../lib/glyphs.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -20,12 +21,12 @@ describe('user edit conflict prompt', () => {
   it('shows affected task, shortened files, and recovery actions', () => {
     const prompt = formatUserEditConflictPrompt(conflict);
 
-    expect(prompt).toContain('Recovery needed: user edit conflicts with T001');
-    expect(prompt).toContain('Files: src/a.ts, src/b.ts, src/c.ts, +1 more');
-    expect(prompt).toContain('Affected tasks: T001');
-    expect(prompt).toContain('[space] pause');
-    expect(prompt).toContain('[s] skip task');
-    expect(prompt).toContain('[a] abort');
+    expect(prompt).toContain('recovery needed · your edits conflict with T001');
+    expect(prompt).toContain('files src/a.ts · src/b.ts · src/c.ts · 1 more');
+    expect(prompt).toContain('affected T001');
+    expect(prompt).toContain(`${glyph('liveBar')} [space]  pause`);
+    expect(prompt).toContain('[s]  skip task');
+    expect(prompt).toContain('[a]  abort');
     expect(prompt).not.toContain('ask planner');
   });
 

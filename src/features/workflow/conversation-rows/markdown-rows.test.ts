@@ -10,9 +10,12 @@ import {
   markdownConversationRowsCacheKey,
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
+  STATUS_DIM_ERROR,
   workflowMarkdownRenderSegments,
 } from './markdown-rows.js';
 import { rowText } from './row-format.js';
+
+const THEMATIC_BREAK_CHAR = '\u2500';
 
 type MarkdownRows = ReturnType<typeof markdownConversationRows>;
 
@@ -72,12 +75,12 @@ describe('markdownConversationRows', () => {
     const segments = rows.flatMap((row) => row.segments);
 
     expect(rows.map(rowText).join('\n')).toContain('T-06');
-    expect(segments).toContainEqual({ text: 'T001', tone: 'accent', bold: true });
-    expect(segments).toContainEqual({ text: 'T002', tone: 'accent', bold: true });
-    expect(segments).toContainEqual({ text: 'src/utils/markdown/layout.ts', tone: 'reviewFile' });
-    expect(segments).toContainEqual({ text: 'HIGH', tone: 'error', bold: true });
-    expect(segments).toContainEqual({ text: 'VERIFIED', tone: 'success', bold: true });
-    expect(segments).not.toContainEqual({ text: 'T-06', tone: 'accent', bold: true });
+    expect(segments).toContainEqual({ text: 'T001', tone: 'text', bold: true });
+    expect(segments).toContainEqual({ text: 'T002', tone: 'text', bold: true });
+    expect(segments).toContainEqual({ text: 'src/utils/markdown/layout.ts', tone: 'textDim' });
+    expect(segments).toContainEqual({ text: 'HIGH', tone: 'textDim' });
+    expect(segments).toContainEqual({ text: 'VERIFIED', tone: 'textDim' });
+    expect(segments).not.toContainEqual({ text: 'T-06', tone: 'text', bold: true });
   });
 
   it('renders task brief metadata without turning its delimiters into rules', () => {
@@ -118,7 +121,9 @@ describe('markdownConversationRows', () => {
     expect(texts).toContain('id: T002');
     expect(texts).toContain('depends_on:');
     expect(texts).toContain('  - T001');
-    expect(texts.filter((text) => /^─+$/.test(text))).toHaveLength(1);
+    expect(texts.filter((text) => text === THEMATIC_BREAK_CHAR.repeat(text.length))).toHaveLength(
+      1,
+    );
   });
 
   it('strips terminal controls from conversation markdown rows', () => {
@@ -300,13 +305,54 @@ describe('markdownConversationRows', () => {
 });
 
 describe('workflowMarkdownRenderSegments', () => {
-  it('decorates review render segments with the same task-id boundary', () => {
+  it('colors only the status word, leaving the doc region free of accent/state hues', () => {
     const theme = getTheme();
-    const segment: MarkdownLayoutSegment = { kind: 'text', text: 'Review T001 and T-06' };
+    const segment: MarkdownLayoutSegment = {
+      kind: 'text',
+      text: 'T001 in src/foo.ts is HIGH risk and FAILED',
+    };
 
     const parts = workflowMarkdownRenderSegments({ segment, theme });
 
-    expect(parts).toContainEqual({ text: 'T001', style: { color: theme.accent, bold: true } });
-    expect(parts.find((part) => part.text.includes('T-06'))?.style).toBeUndefined();
+    expect(parts).toContainEqual({ text: 'T001' });
+    expect(parts).toContainEqual({ text: 'src/foo.ts', style: { color: theme.textDim } });
+    expect(parts).toContainEqual({ text: 'HIGH' });
+    expect(parts).toContainEqual({
+      text: 'FAILED',
+      style: { color: STATUS_DIM_ERROR, bold: false },
+    });
+    expect(
+      parts.every(
+        (part) =>
+          part.text === 'FAILED' || part.style === undefined || part.style.color === theme.textDim,
+      ),
+    ).toBe(true);
+  });
+
+  it('does not color short prose verdict words on the doc surface', () => {
+    const theme = getTheme();
+    const segment: MarkdownLayoutSegment = {
+      kind: 'text',
+      text: 'all checks PASS and tasks DONE, nothing is OK to skip',
+    };
+
+    const parts = workflowMarkdownRenderSegments({ segment, theme });
+
+    expect(parts.every((part) => part.style === undefined)).toBe(true);
+    expect(parts.map((part) => part.text).join('')).toBe(
+      'all checks PASS and tasks DONE, nothing is OK to skip',
+    );
+  });
+
+  it('folds an inconclusive verdict to a dim word on the doc surface', () => {
+    const theme = getTheme();
+    const segment: MarkdownLayoutSegment = { kind: 'text', text: 'result is INCONCLUSIVE' };
+
+    const parts = workflowMarkdownRenderSegments({ segment, theme });
+
+    expect(parts).toContainEqual({
+      text: 'INCONCLUSIVE',
+      style: { color: theme.textDim, bold: false },
+    });
   });
 });

@@ -4,15 +4,21 @@ import { useTheme } from '../../../../components/theme.js';
 import { Divider } from '../divider.js';
 import { TaskSummary } from '../task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
-import { getCompletedTaskSummaryRows } from '../../../../core/sections/completed-task-summary-rows.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { tasksStore } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
+import { splitConversationViewport } from '../../conversation-rows/viewport.js';
+import { row } from '../../conversation-rows/row-format.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
+import {
+  CompletedTaskSummariesWithHover,
+  ConversationTranscriptRows,
+} from './conversation-hover-rows.js';
 
 interface ConversationFlowProps {
   height: number;
@@ -48,7 +54,8 @@ export function ConversationFlow({
     },
     streaming,
     lifecycle,
-  ] = useStores(conversationScrollStore, streamingOutputStore, lifecycleStore);
+    tasks,
+  ] = useStores(conversationScrollStore, streamingOutputStore, lifecycleStore, tasksStore);
   const isRunning = lifecycle.status === 'running';
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
@@ -57,7 +64,20 @@ export function ConversationFlow({
   const completedItems = sections.flatMap((section) =>
     section.type === 'completed-task' ? [section.summary] : [],
   );
-  const completedRows = getCompletedTaskSummaryRows(sections, viewportHeight);
+  const pendingTasks = tasks.tasks.filter((task) => task.status === 'pending');
+  const viewportSplit = splitConversationViewport({
+    viewportHeight,
+    sections,
+    pendingTaskCount: pendingTasks.length,
+  });
+  const queuedRows = tasks.tasks
+    .filter((task) => task.status === 'pending')
+    .slice(0, viewportSplit.queuedRows)
+    .map((task) =>
+      row({ key: `queued-${task.id}`, text: task.title, tone: 'textDim', kind: 'task-header' }),
+    );
+  const transcriptViewportHeight = viewportSplit.transcriptViewportHeight;
+  const completedRows = viewportSplit.completedRows;
   const visibleCompletedItems = completedRows > 0 ? completedItems.slice(-completedRows) : [];
   const {
     newEventCount,
@@ -71,7 +91,7 @@ export function ConversationFlow({
     expandedDiffs,
     expandedActivityBatches,
     cols,
-    viewportHeight,
+    viewportHeight: transcriptViewportHeight,
     rawScrollOffset,
     renderableCountAtScroll,
     heightAtScroll,
@@ -92,6 +112,8 @@ export function ConversationFlow({
   const { above, below } = computeScrollBannerLabel(windowState.linesAbove, windowState.linesBelow);
   const { newEventRows, innerHeight } = windowState;
 
+  const stickyLeadingLines = viewportSplit.stickyLeadingRows;
+
   useEffect(() => {
     onScrollAbove?.(above);
     return () => onScrollAbove?.('');
@@ -105,27 +127,40 @@ export function ConversationFlow({
       overflow="hidden"
       flexShrink={0}
     >
-      <Box flexDirection="column" width={conversationWidth} flexShrink={0} overflow="hidden">
-        {visibleCompletedItems.map((item) => (
-          <Box
-            key={`completed-${item.index}`}
-            height={1}
-            width={conversationWidth}
-            overflow="hidden"
-            flexShrink={0}
-          >
-            <TaskSummary
-              index={item.index}
-              title={item.title}
-              method={item.method}
-              retries={item.retries}
-              duration={item.duration}
-              file={item.file}
-              reason={item.reason}
-            />
-          </Box>
-        ))}
-      </Box>
+      {visibleCompletedItems.length > 0 ? (
+        <CompletedTaskSummariesWithHover
+          conversationWidth={conversationWidth}
+          summaryCount={visibleCompletedItems.length}
+        >
+          {(focusedSummaryIndex) => (
+            <>
+              <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+                <Text color={t.textDim}>◇ completed</Text>
+              </Box>
+              {visibleCompletedItems.map((item, position) => (
+                <Box
+                  key={`completed-${item.index}`}
+                  height={1}
+                  width={conversationWidth}
+                  flexShrink={0}
+                >
+                  <TaskSummary
+                    index={item.index}
+                    title={item.title}
+                    method={item.method}
+                    retries={item.retries}
+                    duration={item.duration}
+                    file={item.file}
+                    reason={item.reason}
+                    focused={focusedSummaryIndex === position}
+                  />
+                </Box>
+              ))}
+              <Box height={1} width={conversationWidth} flexShrink={0} />
+            </>
+          )}
+        </CompletedTaskSummariesWithHover>
+      ) : null}
       <Box
         width={conversationWidth}
         height={innerHeight}
@@ -135,18 +170,24 @@ export function ConversationFlow({
       >
         <Box width="100%" flexDirection="column" flexShrink={0}>
           {rows.length === 0 && completedItems.length === 0 && (
-            <Text color={t.textDim}>No events yet</Text>
+            <Text color={t.textDim}>no events yet</Text>
           )}
-          {rows.map((row) => (
-            <ConversationRowView
-              key={row.key}
-              row={row}
-              expandedActivityBatches={expandedActivityBatches}
-              active={row.key === visibleActiveRowKey}
-            />
-          ))}
+          <ConversationTranscriptRows
+            rows={rows}
+            stickyLeadingLines={stickyLeadingLines}
+            visibleActiveRowKey={visibleActiveRowKey}
+          />
         </Box>
       </Box>
+      {queuedRows.length > 0 && (
+        <Box flexDirection="column" width={conversationWidth} flexShrink={0} overflow="hidden">
+          {queuedRows.map((queuedRow) => (
+            <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>
+              <ConversationRowView row={queuedRow} lifecycle="queued" />
+            </Box>
+          ))}
+        </Box>
+      )}
       {below !== '' && <Divider width={fullWidth} label={below} tone="textDim" />}
       {newEventRows > 0 && (
         <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>

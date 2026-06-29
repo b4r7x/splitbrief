@@ -1,0 +1,133 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Text } from 'ink';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import {
+  _resetMouseZones,
+  hitTopmostZone,
+  registerMouseZone,
+} from '../../lib/terminal/mouse-zones.js';
+import { ListViewport } from './list-viewport.js';
+import { RowZone } from './row-zone.js';
+import { rowZoneRect } from './row-zone.js';
+
+beforeEach(() => {
+  _resetMouseZones();
+});
+
+describe('rowZoneRect', () => {
+  it('converts a height-1 SGR rect into an inclusive zone box', () => {
+    expect(rowZoneRect({ top: 10, left: 5, width: 20, height: 1 })).toEqual({
+      top: 10,
+      bottom: 10,
+      left: 5,
+      right: 24,
+    });
+  });
+
+  it('spans the full height for a multi-line row', () => {
+    expect(rowZoneRect({ top: 10, left: 5, width: 20, height: 3 })).toEqual({
+      top: 10,
+      bottom: 12,
+      left: 5,
+      right: 24,
+    });
+  });
+});
+
+describe('row zone calibration (idx = sgrY - listTop)', () => {
+  it('maps consecutive rows to consecutive indices with no phantom past the last row', () => {
+    const listTop = 7;
+    const hits: number[] = [];
+    for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
+      const index = windowIndex;
+      registerMouseZone({
+        id: `row:${index}`,
+        ...rowZoneRect({ top: listTop + windowIndex, left: 3, width: 10, height: 1 }),
+        z: 100,
+        onClick: () => hits.push(index),
+      });
+    }
+
+    for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
+      hitTopmostZone(5, listTop + windowIndex)?.onClick?.();
+      expect(hits.at(-1)).toBe(windowIndex);
+    }
+
+    expect(hitTopmostZone(5, listTop - 1)).toBeUndefined();
+    expect(hitTopmostZone(5, listTop + 4)).toBeUndefined();
+    expect(hitTopmostZone(2, listTop)).toBeUndefined();
+  });
+});
+
+describe('ListViewport row zones (integration)', () => {
+  it('registers a clickable zone per visible row that fires onRowActivate with the row index', async () => {
+    const onRowActivate = vi.fn();
+    const ui = renderFeature(
+      <ListViewport
+        items={['a', 'b', 'c']}
+        selectedIndex={0}
+        getKey={(item) => item}
+        rowBudget={5}
+        onRowActivate={onRowActivate}
+        renderItem={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    const seen = new Set<string>();
+    for (let y = 1; y <= 12; y++) {
+      const zone = hitTopmostZone(1, y);
+      if (zone && !seen.has(zone.id)) {
+        seen.add(zone.id);
+        zone.onClick?.();
+      }
+    }
+
+    expect(onRowActivate.mock.calls.map((call) => call[0])).toEqual([0, 1, 2]);
+
+    ui.unmount();
+  });
+
+  it('registers no zones when onRowActivate is omitted', async () => {
+    const ui = renderFeature(
+      <ListViewport
+        items={['a', 'b']}
+        selectedIndex={0}
+        getKey={(item) => item}
+        rowBudget={5}
+        renderItem={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    expect(hitTopmostZone(1, 1)).toBeUndefined();
+    expect(hitTopmostZone(1, 2)).toBeUndefined();
+
+    ui.unmount();
+  });
+
+  it('keeps the latest same-id registration when an earlier mount is disposed', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const ui = renderFeature(
+      <RowZone zoneId="row:test" z={100} onActivate={first}>
+        <Text>v1</Text>
+      </RowZone>,
+    );
+    await tick();
+    ui.rerender(
+      <RowZone zoneId="row:test" z={100} onActivate={second}>
+        <Text>v2</Text>
+      </RowZone>,
+    );
+    await tick();
+
+    for (let y = 1; y <= 6; y++) {
+      hitTopmostZone(1, y)?.onClick?.();
+    }
+
+    expect(second).toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+});

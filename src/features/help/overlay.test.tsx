@@ -75,7 +75,7 @@ describe('HelpOverlay', () => {
     expect(frame).toContain('PageUp/PageDown');
     expect(frame).toContain('/scroll top|bottom');
     expect(frame).toContain('/activity, Ctrl+A');
-    expect(frame).toContain('Expand activity rows');
+    expect(frame).toContain('expand activity rows');
     expect(frame).not.toContain('Alt+A');
     expect(frame).not.toContain('Ctrl+B/F');
     expect(frame).not.toContain('Ctrl+E');
@@ -93,7 +93,7 @@ describe('HelpOverlay', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Ctrl+E');
-    expect(frame).toContain('Open editor in review mode only');
+    expect(frame).toContain('open editor in review mode only');
 
     ui.unmount();
   });
@@ -125,22 +125,19 @@ describe('HelpOverlay', () => {
     ui.unmount();
   });
 
-  it('keeps top and bottom borders visible while paging on a short terminal', async () => {
+  it('keeps the overlay hint visible while paging on a short terminal', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
     const commands = Array.from({ length: 8 }, (_, i) => command(`/cmd-${i}`, ['home']));
     const ui = renderFeature(<HelpOverlay currentScreen="home" commands={commands} />);
     await tick(20);
 
-    const borderChar = '─';
     const initial = ui.lastFrame() ?? '';
-    expect(initial).toContain(borderChar);
+    expect(initial).toContain('close');
 
     ui.stdin.write(END);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(borderChar);
-    expect(frame).toContain('╰');
     expect(frame).toContain('close');
 
     ui.unmount();

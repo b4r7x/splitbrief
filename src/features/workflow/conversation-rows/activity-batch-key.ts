@@ -4,6 +4,7 @@ import {
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
   runnerActivityDisplayKey,
 } from './activity-batch-model.js';
+import { runnerCallId } from './runner-call-classification.js';
 
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
@@ -63,22 +64,4 @@ export function findLatestExpandableActivityBatchKey(
 
 function activityItemKey(event: RunnerActivityEvent): string {
   return runnerActivityDisplayKey(event);
-}
-
-function runnerCallId(event: EngineEvent): string | null {
-  switch (event.type) {
-    case 'runner_call_started':
-    case 'runner_call_text_delta':
-    case 'runner_call_usage':
-    case 'runner_call_tool_use':
-    case 'runner_call_activity':
-    case 'runner_call_session_id':
-    case 'runner_call_artifact':
-    case 'runner_call_warning':
-    case 'runner_call_error':
-    case 'runner_call_completed':
-      return event.callId;
-    default:
-      return null;
-  }
 }

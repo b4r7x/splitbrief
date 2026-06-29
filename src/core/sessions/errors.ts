@@ -21,6 +21,8 @@ export const sessionError = {
       `session '${sessionId}' is still active.\nUse 'diptych continue' to attach or resume it (or 'diptych attach' if it is running), or delete .diptych/active to discard it.`,
       { sessionId },
     ),
+  invalidId: (sessionId: string) =>
+    error('session-invalid-id', 'invalid session id', { sessionId }),
 
   isStillActive: matches('session-still-active'),
 } as const;

@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app.js';
-import { resolveProjectDir, isInteractiveTty } from '../setup.js';
+import { resolveProjectDir, setupWorkflow } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { renderApp } from '../render.js';
 import { cliError } from '../errors.js';
@@ -13,13 +13,16 @@ import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
 import { resolveRunningSession, assertSessionExists } from '../sessions/resolve.js';
+import { addWorkflowOptions } from '../options.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
+import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface AttachDeps {
   checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
   showCrashDiagnostic: (sessionDir: string, status: ServerStatus) => Promise<void>;
   initStores: typeof initStores;
   renderApp: typeof renderApp;
+  setupWorkflow: typeof setupWorkflow;
 }
 
 const defaultDeps: AttachDeps = {
@@ -27,7 +30,14 @@ const defaultDeps: AttachDeps = {
   showCrashDiagnostic,
   initStores,
   renderApp,
+  setupWorkflow,
 };
+
+export interface AttachRenderOptions {
+  fullscreen: boolean;
+  mouse: boolean;
+  hover: boolean;
+}
 
 export async function renderAttachClient(
   opts: {
@@ -37,7 +47,8 @@ export async function renderAttachClient(
     sockPath: string;
     authToken: string;
   },
-  deps: { initStores: typeof initStores; renderApp: typeof renderApp },
+  deps: Pick<AttachDeps, 'initStores' | 'renderApp'>,
+  render: AttachRenderOptions,
 ): Promise<void> {
   await deps.initStores(opts.projectDir);
   routerStore.init({
@@ -47,13 +58,16 @@ export async function renderAttachClient(
     attach: { sockPath: opts.sockPath, authToken: opts.authToken },
   });
 
-  const useFullscreen = isInteractiveTty();
-  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useFullscreen });
+  await deps.renderApp(createElement(App), {
+    fullscreen: render.fullscreen,
+    mouse: render.mouse,
+    hover: render.hover,
+  });
 }
 
 export async function attachCommand(
   sessionId: string | undefined,
-  opts: { projectDir: string },
+  opts: { projectDir: string } & WorkflowOpts,
   deps: AttachDeps = defaultDeps,
 ): Promise<void> {
   assertNotWindows();
@@ -72,6 +86,8 @@ export async function attachCommand(
     throw cliError(`session ${resolvedId} does not support authenticated attach`, 1);
   }
 
+  const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
+
   await renderAttachClient(
     {
       projectDir: opts.projectDir,
@@ -81,17 +97,18 @@ export async function attachCommand(
       authToken: status.data.authToken,
     },
     deps,
+    { fullscreen: useFullscreen, mouse: useMouse, hover: useHover },
   );
 }
 
 export function registerAttachCommand(program: Command): void {
-  program
-    .command('attach [session-id]')
-    .description('Connect a TUI client to a running background session')
-    .option('--project <dir>', 'Project directory (default: cwd)')
-    .action(async (sessionId: string | undefined, opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
-      const resolvedId = await resolveSessionAlias(sessionId, projectDir);
-      await attachCommand(resolvedId, { projectDir });
-    });
+  addWorkflowOptions(
+    program
+      .command('attach [session-id]')
+      .description('Connect a TUI client to a running background session'),
+  ).action(async (sessionId: string | undefined, opts: WorkflowOpts) => {
+    const projectDir = resolveProjectDir(opts.project);
+    const resolvedId = await resolveSessionAlias(sessionId, projectDir);
+    await attachCommand(resolvedId, { ...opts, projectDir });
+  });
 }

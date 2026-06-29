@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useRef } from 'react';
 import { useApp, useInput } from 'ink';
 import { isConfiguredKeyDebugEnabled, logDiptychParsedKey } from './core/key-debug.js';
 import { createRuntimeCommands } from './core/runtime/commands/registry.js';
@@ -6,7 +7,7 @@ import { buildCommandContext } from './app/command-context.js';
 import { executeRuntimeCommand } from './core/runtime/commands/dispatch.js';
 import { useAppKeys } from './app/keys.js';
 import { Layout } from './layout.js';
-import { ThemeProvider, getTheme } from './components/theme.js';
+import { ThemeProvider, resolveTheme } from './components/theme.js';
 import { routerStore } from './stores/navigation/router.js';
 import { configStore } from './stores/project/config.js';
 import { overlayStore } from './stores/ui/overlay.js';
@@ -27,10 +28,20 @@ import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './features/settings/mode-selector.js';
 import { ToolModelPicker } from './features/runners/picker.js';
-import { interruptTurn } from './features/workflow/handlers.js';
+import {
+  interruptTurn,
+  requestCancel,
+  requestRewind,
+  requestClearQueue,
+} from './features/workflow/handlers.js';
+import { findLatestExpandableActivityBatchKey } from './features/workflow/conversation-rows/activity-batch-key.js';
+import { readConversationScrollSnapshot } from './features/workflow/layout/snapshot.js';
+import { focusHasResolvableCopy, resolveCopyValue } from './features/workflow/copy/resolve.js';
+import { getSections } from './stores/workflow/actions.js';
 import { CostDrilldownOverlay } from './features/workflow/components/cost/drilldown-overlay.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
-import type { RuntimeCommandDef } from './core/runtime/commands/types.js';
+import { usePointer } from './features/workflow/hooks/use-mouse-pointer.js';
+import type { RuntimeCommandDef, CopyResult, CopyTarget } from './core/runtime/commands/types.js';
 import type { OverlayType, Screen } from './core/navigation/types.js';
 import { assertNever } from './utils/type-guards.js';
 
@@ -42,20 +53,39 @@ export function App() {
   );
   const { exit } = useApp();
   const config = configStore.useConfig();
-  const theme = getTheme(config.theme);
+  const theme = resolveTheme(config.theme);
 
-  const ctx = buildCommandContext({ exit });
+  const ctx = buildCommandContext({
+    exit,
+    workflow: {
+      requestRewind,
+      requestClearQueue,
+      findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+      readScrollMetrics: readConversationScrollSnapshot,
+      resolveCopyValue,
+    },
+  });
   const commands = createRuntimeCommands(ctx);
+  const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
-    void executeRuntimeCommand(commands, raw, {
-      screen: from,
-      phase,
-      onError: feedbackStore.setError,
-    });
+    runtimeChainRef.current = runtimeChainRef.current
+      .then(() =>
+        executeRuntimeCommand(commands, raw, {
+          screen: from,
+          phase,
+          onError: feedbackStore.setError,
+        }),
+      )
+      .catch(() => {});
   };
 
-  useAppKeys({ exit, interruptWorkflow: interruptTurn });
+  useAppKeys({
+    exit,
+    interruptWorkflow: interruptTurn,
+    cancelWorkflow: requestCancel,
+  });
   useMouseScroll();
+  usePointer();
   useInput((input, key) => logDiptychParsedKey(input, key), {
     isActive: isConfiguredKeyDebugEnabled(),
   });
@@ -63,7 +93,12 @@ export function App() {
   return (
     <ThemeProvider theme={theme}>
       <Layout
-        screen={renderScreen({ screen, commands, onRuntime: handleRuntimeCommand })}
+        screen={renderScreen({
+          screen,
+          commands,
+          onRuntime: handleRuntimeCommand,
+          copyTarget: ctx.copyTarget,
+        })}
         overlay={renderOverlay({
           active: overlayActive,
           screen,
@@ -80,10 +115,12 @@ function renderScreen({
   screen,
   commands,
   onRuntime,
+  copyTarget,
 }: {
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
+  copyTarget: (target: CopyTarget) => Promise<CopyResult>;
 }): ReactNode {
   switch (screen) {
     case 'home':
@@ -93,6 +130,8 @@ function renderScreen({
         <WorkflowScreen
           commands={commands}
           onRuntimeCommand={(raw) => onRuntime(raw, 'workflow')}
+          copyTarget={copyTarget}
+          canCopyFocused={focusHasResolvableCopy}
         />
       );
     case 'summary':

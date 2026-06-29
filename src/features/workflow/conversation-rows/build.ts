@@ -14,12 +14,17 @@ import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { eventRowBlock, isPlannerTextRenderedAsMarkdown } from './event-rows.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
+import { runnerCallId } from './runner-call-classification.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
 
 const MIN_ROW_WIDTH = 1;
+
+export type ConversationRowAction =
+  | { type: 'toggle-diff'; key: string }
+  | { type: 'toggle-activity-batch'; key: string };
 
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
@@ -122,7 +127,7 @@ function buildConversationRowsProjectionWithContext(
         event,
         globalIndex,
         ctx,
-        expanded: inputs.expandedDiffs.has(diffEventKey(event)),
+        expanded: inputs.expandedDiffs.has(diffEventKey(event, globalIndex)),
       });
       if (block === null) {
         if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
@@ -187,29 +192,82 @@ export function materializeConversationRowsWindow(options: {
   return rows;
 }
 
+// Maps each actionable transcript row key to its expand/collapse action so a click on the row can
+// trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`) and
+// diff rows are actionable; every other row key is absent and a click on it is inert.
+export function buildConversationRowActions(
+  inputs: ConversationRowInputs,
+): Map<string, ConversationRowAction> {
+  const ctx: RowBuildContext = {
+    width: Math.max(MIN_ROW_WIDTH, inputs.cols),
+    viewportRows: inputs.viewportHeight,
+    streaming: inputs.streaming,
+  };
+  const actions = new Map<string, ConversationRowAction>();
+  let activityBatch: RunnerActivityBatch | null = null;
+
+  const flushActivityBatch = (): void => {
+    if (activityBatch === null) return;
+    const batchKey = activityBatchKey(activityBatch.firstIndex, activityBatch.callId);
+    const model = buildActivityBatchViewModel({
+      events: [...activityBatch.events],
+      batchKey,
+      expanded: inputs.expandedActivityBatches.has(batchKey),
+    });
+    activityBatch = null;
+    if (model.expandableKey === null) return;
+    const block = runnerActivityBatchRowBlock({ model, width: ctx.width });
+    if (block === null) return;
+    for (const row of block.createRows(0, block.rowCount)) {
+      if (row.kind === 'activity-more') {
+        actions.set(row.key, { type: 'toggle-activity-batch', key: batchKey });
+      }
+    }
+  };
+
+  for (const section of inputs.sections) {
+    if (section.type === 'completed-task') {
+      flushActivityBatch();
+      continue;
+    }
+    for (const [index, event] of section.items.entries()) {
+      const globalIndex = section.startIndex + index;
+      if (event.type === 'runner_call_activity') {
+        if (activityBatch !== null && activityBatch.callId === event.callId) {
+          activityBatch.events.push(event);
+        } else {
+          flushActivityBatch();
+          activityBatch = { callId: event.callId, firstIndex: globalIndex, events: [event] };
+        }
+        continue;
+      }
+      if (event.type === 'implementer_generate_done' && event.diff) {
+        flushActivityBatch();
+        const key = diffEventKey(event, globalIndex);
+        const block = eventRowBlock({
+          event,
+          globalIndex,
+          ctx,
+          expanded: inputs.expandedDiffs.has(key),
+        });
+        if (block !== null) {
+          for (const row of block.createRows(0, block.rowCount)) {
+            actions.set(row.key, { type: 'toggle-diff', key });
+          }
+        }
+        continue;
+      }
+      if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
+    }
+  }
+  flushActivityBatch();
+  return actions;
+}
+
 function belongsToActivityBatch(
   event: EngineEvent,
   activityBatch: RunnerActivityBatch | null,
 ): boolean {
   if (activityBatch === null) return false;
-  const callId = runnerCallId(event);
-  return callId === activityBatch.callId;
-}
-
-function runnerCallId(event: EngineEvent): string | null {
-  switch (event.type) {
-    case 'runner_call_started':
-    case 'runner_call_text_delta':
-    case 'runner_call_usage':
-    case 'runner_call_tool_use':
-    case 'runner_call_activity':
-    case 'runner_call_session_id':
-    case 'runner_call_artifact':
-    case 'runner_call_warning':
-    case 'runner_call_error':
-    case 'runner_call_completed':
-      return event.callId;
-    default:
-      return null;
-  }
+  return runnerCallId(event) === activityBatch.callId;
 }

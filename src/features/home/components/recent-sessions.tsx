@@ -47,9 +47,9 @@ export function RecentSessions({
 
   if (sessions.length === 0) {
     return (
-      <Box flexDirection="column" marginBottom={1}>
+      <RecentSessionsShell>
         <Text color={theme.textDim}>no recent sessions</Text>
-      </Box>
+      </RecentSessionsShell>
     );
   }
 
@@ -71,15 +71,17 @@ export function RecentSessions({
 
   return (
     <RecentSessionsShell>
-      {visibleSessions.map((s) => (
-        <SessionRow key={s.id} session={s} />
-      ))}
-      {showHiddenCount && hiddenCount > 0 && (
-        <Box marginLeft={2}>
-          <Text color={theme.text}>{hiddenCount} more</Text>
-          <Text color={theme.textDim}>{SOFT_SEP}ctrl+r to show all</Text>
-        </Box>
-      )}
+      <Box flexDirection="column" marginLeft={2}>
+        {visibleSessions.map((s) => (
+          <SessionRow key={s.id} session={s} />
+        ))}
+        {showHiddenCount && hiddenCount > 0 && (
+          <Box>
+            <Text color={theme.textDim}>{hiddenCount} more</Text>
+            <Text color={theme.textDim}>{SOFT_SEP}ctrl+r</Text>
+          </Box>
+        )}
+      </Box>
     </RecentSessionsShell>
   );
 }

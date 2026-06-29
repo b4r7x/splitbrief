@@ -103,11 +103,9 @@ The old estimator-based pipeline was removed:
 - `src/core/layout/conversation-scroll.ts`
 - `src/core/layout/renderable-conversation.ts`
 - `src/core/layout/viewport-trimming.ts`
-- the obsolete `EventCard` renderer that walked events through `src/features/workflow/components/event-cards/`
+- the obsolete `EventCard` renderer and deleted workflow chrome modules (`event-cards/`, `agent-status-row`, `config-line`, `pipeline-bar`, and related cost status-line cards)
 
-The `EventCard` renderer is gone, but `src/features/workflow/components/event-cards/` is not removed: it still hosts live chrome cards — `config.tsx` (`WorkflowConfigCard`, used by `config-line.tsx` and `chrome.tsx`) and `operation-status.tsx` (`OperationStatusCard`, mounted via `agent-status-row.tsx`). Those cards render fixed chrome rows and are not part of the dynamic conversation row pipeline.
-
-Keeping both rendering paths would create two sources of truth for event formatting and row height. The row renderer is now the single conversation rendering model.
+Workflow chrome (header, rail, feedback, footer) now lives in `src/features/workflow/components/{chrome,header,rail,input-footer}.tsx`. Dynamic conversation output is rendered exclusively through `conversation-flow/` and `conversation-rows/`.
 
 ## Tests
 

@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { dispatchNativeInjection } from './native-injection.js';
 import { createEventBus } from '../events/bus.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { saveState, loadState } from '../../core/state/persistence.js';
+import { transition } from '../../core/state/machine.js';
 import type { EngineEvent } from '../events/types.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
@@ -33,7 +35,7 @@ describe('dispatchNativeInjection', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-failure-'));
     try {
       ensureSessionDir(projectDir, 'sess-1');
-      let state = makeImplState([]);
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
 
       await expect(
         dispatchNativeInjection({
@@ -91,7 +93,7 @@ describe('dispatchNativeInjection', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-usage-'));
     try {
       ensureSessionDir(projectDir, 'sess-usage');
-      let state: WorkflowState = makeImplState([]);
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
       const before = state.tokenUsage.plannerInput;
 
       const result = await dispatchNativeInjection({
@@ -136,7 +138,7 @@ describe('dispatchNativeInjection', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-preview-'));
     try {
       ensureSessionDir(projectDir, 'sess-preview');
-      let state: WorkflowState = makeImplState([]);
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
 
       const result = await dispatchNativeInjection({
         message: {
@@ -194,5 +196,127 @@ describe('dispatchNativeInjection', () => {
     expect(injected).toBe(false);
     expect(events.find((event) => event.type === 'message_injected_native')).toBeUndefined();
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+  });
+
+  it('does not book usage or mark delivered when aborted after injectUserTurn resolves', async () => {
+    const { planner } = fauxPlanner();
+    const controller = new AbortController();
+    planner.injectUserTurn = async () => {
+      controller.abort(new Error('cancelled'));
+      return { inputTokens: 500, outputTokens: 100 };
+    };
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+    const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-abort-after-'));
+    try {
+      ensureSessionDir(projectDir, 'sess-abort');
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+      const beforeInput = state.tokenUsage.plannerInput;
+
+      const result = await dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId: 'sess-abort',
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+        signal: controller.signal,
+      });
+
+      expect(result).toEqual({ status: 'not-delivered', reason: 'aborted' });
+      expect(state.tokenUsage.plannerInput).toBe(beforeInput);
+      expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+      expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not mark delivery when the queued message was cleared during injection', async () => {
+    const { planner } = fauxPlanner();
+    planner.injectUserTurn = async () => null;
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+    const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-cleared-'));
+    try {
+      ensureSessionDir(projectDir, 'sess-cleared');
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+      const beforeInput = state.tokenUsage.plannerInput;
+      planner.injectUserTurn = async () => {
+        saveState({ projectDir, sessionId: 'sess-cleared' }, { ...state, messageQueue: [] });
+        return { inputTokens: 25, outputTokens: 5 };
+      };
+
+      const result = await dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId: 'sess-cleared',
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+      });
+
+      expect(result).toEqual({ status: 'not-delivered', reason: 'cleared' });
+      expect(state.tokenUsage.plannerInput).toBe(beforeInput);
+      expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
+      expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not erase persisted rewindPending or rewind phase when injection completes after a rewind', async () => {
+    const { planner } = fauxPlanner();
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((e) => events.push(e));
+    const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-rewind-'));
+    try {
+      ensureSessionDir(projectDir, 'sess-rewind');
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+      saveState({ projectDir, sessionId: 'sess-rewind' }, state);
+      planner.injectUserTurn = async () => {
+        saveState(
+          { projectDir, sessionId: 'sess-rewind' },
+          transition(state, { type: 'REWIND_TO_PLAN', comment: 'change architecture' }),
+        );
+        return null;
+      };
+
+      const result = await dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId: 'sess-rewind',
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+      });
+
+      expect(result).toEqual({ status: 'delivered' });
+      expect(state.phase).toBe('planning');
+      expect(state.rewindPending).toEqual({ target: 'plan', comment: 'change architecture' });
+      expect(loadState({ projectDir, sessionId: 'sess-rewind' })?.rewindPending).toEqual({
+        target: 'plan',
+        comment: 'change architecture',
+      });
+      expect(loadState({ projectDir, sessionId: 'sess-rewind' })?.phase).toBe('planning');
+      expect(events.some((event) => event.type === 'message_injected_native')).toBe(true);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 });

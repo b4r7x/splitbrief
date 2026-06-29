@@ -163,6 +163,22 @@ function computeContentWindow(opts: {
   return { contentRows, scrollOffset, showScrollUp, showScrollDown };
 }
 
+export function isItemIndexVisible<T>(opts: {
+  items: T[];
+  selectedIndex: number;
+  rowBudget: number;
+  section?: ListSectionOptions<T> | undefined;
+}): boolean {
+  if (opts.rowBudget <= 0 || opts.items.length === 0) return false;
+  const { visibleSlots } = computeListDisplayWindow({
+    items: opts.items,
+    selectedIndex: opts.selectedIndex,
+    rowBudget: opts.rowBudget,
+    ...(opts.section ? { section: opts.section } : {}),
+  });
+  return visibleSlots.some((slot) => slot.kind === 'item' && slot.itemIndex === opts.selectedIndex);
+}
+
 export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
   const rowBudget = resolveRowBudget(opts);
   const slots = buildListDisplaySlots(opts.items, opts.section);

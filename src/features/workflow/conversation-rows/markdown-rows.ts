@@ -27,7 +27,7 @@ import type {
 } from '../../../utils/markdown/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { sanitizeRowDisplayText } from './row-format.js';
-import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from './types.js';
+import type { ConversationRow, ConversationRowSegment } from './types.js';
 
 interface MarkdownConversationRowsInput {
   keyPrefix: string;
@@ -109,7 +109,17 @@ const STATUS_MARKERS: readonly string[] = [
   'OK',
 ];
 
+const PROSE_STATUS_MARKERS: readonly string[] = [
+  'NOT VERIFIED',
+  'INCONCLUSIVE',
+  'VERIFIED',
+  'BLOCKED',
+  'FAILED',
+];
+
 const RISK_MARKERS: readonly string[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+export const STATUS_DIM_ERROR = '#a85561';
+const STATUS_DIM_SUCCESS = '#6e8f4a';
 const TASK_ID_PATTERN = /^T\d{3}/;
 const FILE_PATH_PATTERN =
   /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+(?::\d+)?/;
@@ -801,9 +811,14 @@ export const workflowMarkdownRenderSegments: MarkdownSegmentDecorator = ({
   segment: MarkdownLayoutSegment;
   theme: Theme;
 }) =>
-  workflowMarkdownParts(segment).map((part) => workflowMarkdownPartToRenderSegment(part, theme));
+  workflowMarkdownParts(segment, PROSE_STATUS_MARKERS).map((part) =>
+    workflowMarkdownPartToRenderSegment(part, theme),
+  );
 
-function workflowMarkdownParts(segment: MarkdownLayoutSegment): WorkflowMarkdownPart[] {
+function workflowMarkdownParts(
+  segment: MarkdownLayoutSegment,
+  statusMarkers: readonly string[] = STATUS_MARKERS,
+): WorkflowMarkdownPart[] {
   const cleanSegment = cloneSegmentWithText(segment, stripTerminalControls(segment.text));
   if (!isWorkflowScannableSegment(cleanSegment)) return [{ kind: 'base', segment: cleanSegment }];
 
@@ -812,7 +827,7 @@ function workflowMarkdownParts(segment: MarkdownLayoutSegment): WorkflowMarkdown
   let index = 0;
 
   while (index < cleanSegment.text.length) {
-    const marker = matchWorkflowMarkerAt(cleanSegment.text, index);
+    const marker = matchWorkflowMarkerAt(cleanSegment.text, index, statusMarkers);
     if (!marker) {
       buffer += cleanSegment.text[index] ?? '';
       index += 1;
@@ -858,7 +873,11 @@ function isWorkflowScannableSegment(segment: MarkdownLayoutSegment): boolean {
   }
 }
 
-function matchWorkflowMarkerAt(text: string, index: number): WorkflowMarkerMatch | undefined {
+function matchWorkflowMarkerAt(
+  text: string,
+  index: number,
+  statusMarkers: readonly string[],
+): WorkflowMarkerMatch | undefined {
   const task = matchPatternAt(text, index, TASK_ID_PATTERN);
   if (task && hasWordBoundary(text, index, task.length) && TaskIdSchema.safeParse(task).success) {
     return { kind: 'taskId', text: task };
@@ -869,7 +888,7 @@ function matchWorkflowMarkerAt(text: string, index: number): WorkflowMarkerMatch
     return { kind: 'filePath', text: path };
   }
 
-  const status = matchKeywordAt(text, index, STATUS_MARKERS);
+  const status = matchKeywordAt(text, index, statusMarkers);
   if (status) return { kind: 'status', text: status };
 
   const risk = matchKeywordAt(text, index, RISK_MARKERS);
@@ -913,13 +932,13 @@ function workflowMarkdownPartToConversationSegment(
     case 'base':
       return markdownSegment(part.segment);
     case 'taskId':
-      return { text: part.text, tone: 'accent', bold: true };
+      return { text: part.text, tone: 'text', bold: true };
     case 'filePath':
-      return { text: part.text, tone: 'reviewFile' };
+      return { text: part.text, tone: 'textDim' };
     case 'status':
-      return { text: part.text, tone: statusTone(part.text), bold: true };
+      return { text: part.text, tone: 'textDim' };
     case 'risk':
-      return { text: part.text, tone: riskTone(part.text), bold: true };
+      return { text: part.text, tone: 'textDim' };
     default:
       return assertNever(part);
   }
@@ -933,13 +952,13 @@ function workflowMarkdownPartToRenderSegment(
     case 'base':
       return { text: part.segment.text };
     case 'taskId':
-      return { text: part.text, style: { color: theme.accent, bold: true } };
+      return { text: part.text };
     case 'filePath':
-      return { text: part.text, style: { color: theme.review.file } };
+      return { text: part.text, style: { color: theme.textDim } };
     case 'status':
-      return { text: part.text, style: { color: statusColor(part.text, theme), bold: true } };
+      return { text: part.text, style: { color: statusColor(part.text, theme), bold: false } };
     case 'risk':
-      return { text: part.text, style: { color: riskColor(part.text, theme), bold: true } };
+      return { text: part.text };
     default:
       return assertNever(part);
   }
@@ -948,17 +967,17 @@ function workflowMarkdownPartToRenderSegment(
 function markdownSegment(segment: MarkdownLayoutSegment): ConversationRowSegment {
   switch (segment.kind) {
     case 'heading':
-      return { text: segment.text, tone: 'markdownHeading', bold: true };
+      return { text: segment.text, tone: 'text', bold: true };
     case 'metadata':
       return { text: segment.text, tone: 'textDim' };
     case 'rule':
-      return { text: segment.text, tone: 'markdownRule' };
+      return { text: segment.text, tone: 'textDim' };
     case 'listMarker':
-      return { text: segment.text, tone: 'markdownList' };
+      return { text: segment.text, tone: 'text' };
     case 'blockquoteMarker':
-      return { text: segment.text, tone: 'markdownBlockquote' };
+      return { text: segment.text, tone: 'textDim' };
     case 'code':
-      return { text: segment.text, tone: 'markdownCode' };
+      return { text: segment.text, tone: 'textDim' };
     case 'bold':
       return { text: segment.text, tone: 'text', bold: true };
     case 'italic':
@@ -972,27 +991,6 @@ function markdownSegment(segment: MarkdownLayoutSegment): ConversationRowSegment
   }
 }
 
-function statusTone(text: string): ConversationRowTone {
-  const value = text.toUpperCase();
-  if (
-    value.includes('FAIL') ||
-    value.includes('ERROR') ||
-    value.includes('BLOCKED') ||
-    value.includes('NOT VERIFIED')
-  ) {
-    return 'error';
-  }
-  if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return 'warning';
-  return 'success';
-}
-
-function riskTone(text: string): ConversationRowTone {
-  const value = text.toUpperCase();
-  if (value === 'CRITICAL' || value === 'HIGH') return 'error';
-  if (value === 'MEDIUM') return 'warning';
-  return 'success';
-}
-
 function statusColor(text: string, theme: Theme): string {
   const value = text.toUpperCase();
   if (
@@ -1001,15 +999,8 @@ function statusColor(text: string, theme: Theme): string {
     value.includes('BLOCKED') ||
     value.includes('NOT VERIFIED')
   ) {
-    return theme.error;
+    return STATUS_DIM_ERROR;
   }
-  if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return theme.warning;
-  return theme.success;
-}
-
-function riskColor(text: string, theme: Theme): string {
-  const value = text.toUpperCase();
-  if (value === 'CRITICAL' || value === 'HIGH') return theme.error;
-  if (value === 'MEDIUM') return theme.warning;
-  return theme.success;
+  if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return theme.textDim;
+  return STATUS_DIM_SUCCESS;
 }

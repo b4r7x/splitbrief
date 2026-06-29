@@ -84,6 +84,24 @@ describe('useEditBuffer commit on invalid input', () => {
     ui.unmount();
   });
 
+  it('keeps edit mode open and surfaces an error for empty numeric values', async () => {
+    const committed: CommittedEdit[] = [];
+    const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
+    await tick(20);
+
+    for (let i = 0; i < '3'.length; i++) ui.stdin.write('\x7f');
+    await tick(20);
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(committed).toHaveLength(0);
+    expect(ui.lastFrame() ?? '').toContain('active=true');
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('Max Retries');
+
+    ui.unmount();
+  });
+
   it('keeps edit mode open and surfaces an error for empty string values', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(

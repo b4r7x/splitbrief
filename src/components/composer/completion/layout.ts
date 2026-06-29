@@ -1,4 +1,4 @@
-import { availableRows, computeScrollOffset } from '../../pickers/scroll-window.js';
+import { availableRows } from '../../pickers/scroll-window.js';
 
 const SUGGESTION_PANEL_CHROME_ROWS = 4;
 const SUGGESTION_PANEL_SAFETY_MARGIN = 8;
@@ -16,24 +16,22 @@ export function computeCompletionCap(terminalRows: number, inputVisibleRows: num
   );
 }
 
+// The overlay opens upward via a negative margin, so this must equal the panel's TRUE rendered
+// height: the visible content rows plus the panel chrome (divider + footer + the two border lines).
+// Scroll position is shown by the in-gutter thumb, not by separate indicator rows, so nothing else
+// is added — overcounting here is what leaves a floating gap above the input.
 export function computeCompletionOverlayRows(args: {
   itemCount: number;
-  selectedIndex: number;
   maxVisible: number;
   hasFuzzyMatch?: boolean | undefined;
+  hasEmptyMessage?: boolean | undefined;
 }): number {
   const rowCount =
-    args.itemCount > 0 ? Math.min(args.itemCount, args.maxVisible) : args.hasFuzzyMatch ? 1 : 0;
-  if (rowCount === 0) return 0;
-
-  const scrollOffset = computeScrollOffset({
-    index: args.selectedIndex,
-    windowSize: args.maxVisible,
-    totalItems: args.itemCount,
-  });
-  const indicatorRows =
     args.itemCount > 0
-      ? Number(scrollOffset > 0) + Number(scrollOffset + args.maxVisible < args.itemCount)
-      : 0;
-  return rowCount + indicatorRows + SUGGESTION_PANEL_CHROME_ROWS;
+      ? Math.min(args.itemCount, args.maxVisible)
+      : args.hasFuzzyMatch || args.hasEmptyMessage
+        ? 1
+        : 0;
+  if (rowCount === 0) return 0;
+  return rowCount + SUGGESTION_PANEL_CHROME_ROWS;
 }

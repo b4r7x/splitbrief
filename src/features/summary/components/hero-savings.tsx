@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { formatCost } from '../../../core/formatting.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 
@@ -24,7 +25,7 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
     return (
       <Box justifyContent="center" width="100%" marginTop={1} overflow="hidden">
         <Text bold color={t.success} wrap="truncate-end">
-          Saved {formatCost(costBreakdown.savingsAmount)} ({pct}%)
+          saved {formatCost(costBreakdown.savingsAmount)} ({pct}%)
         </Text>
       </Box>
     );
@@ -39,10 +40,11 @@ export function HeroSavings({ costBreakdown }: HeroSavingsProps) {
       alignItems="center"
     >
       <Text bold color={t.success} wrap="truncate-end">
-        {actual} actual vs {baseline} baseline, {pct}% saved
+        {actual} actual vs {baseline} baseline{SOFT_SEP}
+        {pct}% saved
       </Text>
       <Text color={t.textDim} wrap="truncate-end">
-        Saved {formatCost(costBreakdown.savingsAmount)} by routing{' '}
+        saved {formatCost(costBreakdown.savingsAmount)} by routing{' '}
         {Math.round(costBreakdown.localCompletionRate * 100)}% locally
       </Text>
     </Box>

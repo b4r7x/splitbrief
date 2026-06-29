@@ -19,6 +19,7 @@ export interface TerminalHandoverConfig {
   fullscreen: boolean;
   mouse: boolean;
   paste?: boolean | undefined;
+  hover?: boolean | undefined;
   sourceStdin: TerminalHandoverStdin;
 }
 
@@ -139,7 +140,7 @@ export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void
       }
       const paste = handover.paste ?? handover.mouse;
       if (handover.mouse || paste)
-        setTerminalInputModes('enable', { mouse: handover.mouse, paste });
+        setTerminalInputModes('enable', { mouse: handover.mouse, paste, hover: handover.hover });
     }
   } finally {
     const snapshot = endHandover();

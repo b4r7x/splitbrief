@@ -85,8 +85,6 @@ export function createDetectionService() {
 
 const defaultService = createDetectionService();
 
-export const refreshDetection = defaultService.refreshDetection.bind(defaultService);
-
 export function getDefaultDetectionService(): DetectionService {
   return defaultService;
 }

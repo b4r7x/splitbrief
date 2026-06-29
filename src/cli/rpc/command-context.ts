@@ -5,7 +5,6 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
-import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
 import { createCommandContext } from '../../core/runtime/commands/context-factory.js';
@@ -145,22 +144,12 @@ export function createRpcCommandContext(opts: {
       return true;
     },
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
-    clearQueue: () => {
+    clearQueue: async () => {
       const clearLiveQueue = opts.clearQueueHandler();
       if (clearLiveQueue) return clearLiveQueue();
-      const state = opts.getState();
-      const sessionId = opts.getSessionId();
-      if (!state || !sessionId) {
-        return { status: 'unavailable', message: 'Cannot clear queue: no active workflow.' };
-      }
       return {
-        status: 'cleared',
-        count: clearPendingQueue({
-          projectDir: opts.projectDir,
-          sessionId,
-          state,
-          bus: opts.bus,
-        }).count,
+        status: 'unavailable',
+        message: 'Cannot clear queue: workflow queue is not ready.',
       };
     },
     rebuildRepomap: async (projectDir, cacheDir) =>
@@ -204,5 +193,6 @@ export function createRpcCommandContext(opts: {
       status: 'unavailable',
       message: 'Sidebar is not available in RPC mode.',
     }),
+    copyTarget: () => Promise.resolve('unavailable'),
   });
 }

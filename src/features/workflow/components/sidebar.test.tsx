@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
@@ -95,12 +97,27 @@ describe('Sidebar — completed count', () => {
 
     const ui = renderFeature(<Sidebar width={120} />);
     await tick();
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('ship red ***REDACTED*** sk-***REDACTED***');
     expect(frame).not.toContain('eyJhbGci');
     expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
     expect(frame).not.toContain('\u001b');
+
+    ui.unmount();
+  });
+
+  it('names both runner models on the role line, color-coded by role', async () => {
+    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+
+    const ui = renderFeature(<Sidebar width={60} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('planner claude-code');
+    expect(frame).toContain('impl');
+    expect(frame).toContain('Qwen 2.5 Coder 7B');
+    expect(frame).toContain(glyph('connectorHandoff'));
 
     ui.unmount();
   });
@@ -119,10 +136,9 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Tasks 20/40');
-    expect(frame).toContain('mode');
-    expect(frame).toContain('Cost');
-    expect(frame).toContain('Local rate:');
+    expect(frame).toContain('20/40');
+    expect(frame).toContain('standard');
+    expect(frame).toContain('local');
 
     ui.unmount();
   });

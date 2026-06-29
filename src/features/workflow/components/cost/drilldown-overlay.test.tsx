@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import { CostDrilldownOverlay } from './drilldown-overlay.js';
@@ -35,14 +36,46 @@ describe('CostDrilldownOverlay task metadata', () => {
     });
 
     const ui = renderFeature(<CostDrilldownOverlay />);
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Route hard task');
     expect(frame).toContain('profile cheap-local');
     expect(frame).toContain('fit tight');
     expect(frame).toContain('price unknown');
     expect(frame).toContain('why rerouted after context estimate exceeded');
-    expect(frame).toContain('cheap profile');
+    expect(frame.replace(/\s+/g, ' ')).toContain('cheap profile');
+    ui.unmount();
+  });
+
+  it('strips terminal-control bytes from attempt profile and routing reason metadata', () => {
+    tokensStore.__testReset({
+      perTask: {
+        T001: {
+          title: 'Resumed hostile task',
+          totalTokens: 150,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 150,
+              escalationTokens: 0,
+              retryCount: 0,
+              implementerProfile: 'cheap\u001b]0;pwned\u0007-local',
+              contextFit: 'tight',
+              routingReason: 'rerouted\u001b[2J cleared',
+            },
+          ],
+        },
+      },
+    });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('profile cheap-local');
+    expect(frame).toContain('why rerouted cleared');
+    expect(frame).not.toContain('\u001b]0;');
+    expect(frame).not.toContain('\u001b[2J');
+    expect(frame).not.toContain('pwned');
     ui.unmount();
   });
 
@@ -57,7 +90,7 @@ describe('CostDrilldownOverlay task metadata', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('Started only');
-    expect(frame).toContain('No task data yet.');
+    expect(frame).toContain('no task data yet');
     ui.unmount();
   });
 
@@ -83,7 +116,7 @@ describe('CostDrilldownOverlay task metadata', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('Zero attempt');
-    expect(frame).toContain('No task data yet.');
+    expect(frame).toContain('no task data yet');
     ui.unmount();
   });
 
@@ -117,20 +150,14 @@ describe('CostDrilldownOverlay task metadata', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Cache only task');
-    expect(frame).toContain('1000.0k tokens (total)');
+    expect(frame).toContain('1000.0k tok');
     expect(frame).toContain('price partially unknown');
     ui.unmount();
   });
 
-  it('renders cache rows only when cache data is meaningful', () => {
+  it('renders the focused phase cache fraction and never the cache n/a placeholder', () => {
     tokensStore.__testReset({
       perPhase: {
-        planning: {
-          inputTokens: 100,
-          outputTokens: 20,
-          cacheReadTokens: 0,
-          cacheCreateTokens: 0,
-        },
         implementing: {
           inputTokens: 100,
           outputTokens: 20,
@@ -199,6 +226,53 @@ describe('CostDrilldownOverlay task metadata', () => {
     expect(frame).toContain('profile cheap-cloud');
     expect(frame).toContain('fit fits');
     expect(frame).not.toContain('why selected cheapest capable profile');
+    ui.unmount();
+  });
+
+  it('renders metadata for every task row, not only the first sorted row', () => {
+    tokensStore.__testReset({
+      perTask: {
+        T001: {
+          title: 'Top task',
+          totalTokens: 500,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 500,
+              escalationTokens: 0,
+              retryCount: 0,
+              implementerProfile: 'cheap-cloud',
+              contextFit: 'fits',
+            },
+          ],
+        },
+        T002: {
+          title: 'Second task',
+          totalTokens: 150,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 150,
+              escalationTokens: 0,
+              retryCount: 0,
+              implementerProfile: 'cheap-local',
+              contextFit: 'tight',
+              costPosture: 'unknown-price',
+              routingReason: 'rerouted after context estimate exceeded cheap profile',
+            },
+          ],
+        },
+      },
+    });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Second task');
+    expect(frame).toContain('profile cheap-local');
+    expect(frame).toContain('fit tight');
+    expect(frame).toContain('price unknown');
+    expect(frame).toContain('why rerouted after context estimate exceeded');
     ui.unmount();
   });
 });

@@ -7,6 +7,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { listSessions } from '../../../core/sessions/io.js';
 import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { readStats } from '../../../core/stats/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildContextOverflowRecoveryIssue } from './builders/task.js';
@@ -124,6 +125,31 @@ describe('finalizeRecoveryResult — detached abort', () => {
     expect(session?.summary?.tokenUsage.implementerInput).toBe(2000);
     // The active pointer is cleared once the aborted session is finalized.
     expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('redacts feature text from the finalized abort summary when persistTranscript is false', () => {
+    const projectDir = createTempDir('recovery-driver-test');
+    dirs.push(projectDir);
+    const sessionId = 'sess-aborted-redacted';
+    ensureSessionDir(projectDir, sessionId);
+
+    const secretFeature = 'wire up the unreleased acquisition pricing endpoint';
+    finalizeRecoveryResult({
+      projectDir,
+      sessionId,
+      state: {
+        ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+        feature: secretFeature,
+      },
+      config: makeConfig({ workflow: { persistTranscript: false } }),
+      status: 'aborted',
+    });
+
+    const session = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(session).toBeDefined();
+    expect(session?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(session?.summary?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(JSON.stringify(session)).not.toContain(secretFeature);
   });
 
   it('does not double-book lifetime stats for an aborted session', () => {

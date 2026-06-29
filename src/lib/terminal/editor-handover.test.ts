@@ -89,6 +89,26 @@ describe('terminal handover for $EDITOR', () => {
     expect(calls).toEqual(['pause', 'resume']);
   });
 
+  it('resumes hover-enabled handoffs with any-motion mouse tracking', () => {
+    const { stdin } = makeFakeStdin();
+    const config: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: true,
+      hover: true,
+      sourceStdin: stdin,
+    };
+    const written = captureStdout();
+
+    suspendTerminalForEditor(config);
+    const afterSuspend = written.length;
+    resumeTerminalAfterEditor(config);
+
+    const resumeWrites = written.slice(afterSuspend);
+
+    expect(resumeWrites).toContain(terminalSequences.enableAnyMotionMouse);
+    expect(resumeWrites).not.toContain(terminalSequences.enableMouseTracking);
+  });
+
   it('brackets paste mode without mouse tracking when mouse is disabled', () => {
     const { stdin, calls } = makeFakeStdin();
     const config: TerminalHandoverConfig = {

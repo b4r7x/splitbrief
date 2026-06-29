@@ -16,6 +16,7 @@ interface LayoutOptions {
 }
 
 type WrapMode = 'word' | 'hard';
+const THEMATIC_BREAK_CHAR = '\u2500';
 
 export function layoutMarkdown(document: MarkdownDocument, options: LayoutOptions): MarkdownLayout {
   const width = normalizeWidth(options.width);
@@ -56,7 +57,7 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
     case 'thematicBreak':
       return [
         createRow(key, block.kind, [
-          { segments: [{ kind: 'rule', text: '─'.repeat(Math.max(1, width)) }] },
+          { segments: [{ kind: 'rule', text: THEMATIC_BREAK_CHAR.repeat(Math.max(1, width)) }] },
         ]),
       ];
     case 'code':

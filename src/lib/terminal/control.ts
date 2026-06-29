@@ -7,6 +7,9 @@ export const terminalSequences = {
   showCursor: '\u001b[?25h',
   enableMouseTracking: '\u001b[?1000h',
   disableMouseTracking: '\u001b[?1000l',
+  disableButtonEventMouse: '\u001b[?1002l',
+  enableAnyMotionMouse: '\u001b[?1003h',
+  disableAnyMotionMouse: '\u001b[?1003l',
   enableSgrMouse: '\u001b[?1006h',
   disableSgrMouse: '\u001b[?1006l',
   enableBracketedPaste: '\u001b[?2004h',
@@ -35,15 +38,20 @@ export function installTerminalOutputErrorGuard(): void {
   process.stderr.on('error', guard);
 }
 
-export function writeTerminalSequence(sequence: string): void {
+// Returns whether the sequence was handed to stdout without a synchronous failure. A broken pipe
+// (stdout closed, e.g. the reader went away) yields `false` so a clipboard caller can downgrade an
+// OSC-52 emit it can never otherwise confirm. Asynchronous write failures still only warn — they
+// cannot influence this synchronous result, which is the honest limit of a fire-and-forget write.
+export function writeTerminalSequence(sequence: string): boolean {
   installTerminalOutputErrorGuard();
   try {
     process.stdout.write(sequence, (err?: Error | null) => {
       if (!err || isBrokenOutputError(err)) return;
       warnError('writeTerminalSequence: stdout write failed', err);
     });
+    return true;
   } catch (err) {
-    if (isBrokenOutputError(err)) return;
+    if (isBrokenOutputError(err)) return false;
     throw err;
   }
 }
@@ -51,6 +59,7 @@ export function writeTerminalSequence(sequence: string): void {
 export interface TerminalInputModeOptions {
   mouse?: boolean | undefined;
   paste?: boolean | undefined;
+  hover?: boolean | undefined;
 }
 
 export function setTerminalInputModes(
@@ -60,13 +69,19 @@ export function setTerminalInputModes(
   const enabled = mode === 'enable';
   const mouse = opts?.mouse ?? true;
   const paste = opts?.paste ?? true;
+  const hover = opts?.hover ?? false;
   if (mouse) {
-    writeTerminalSequence(
-      enabled ? terminalSequences.enableMouseTracking : terminalSequences.disableMouseTracking,
-    );
-    writeTerminalSequence(
-      enabled ? terminalSequences.enableSgrMouse : terminalSequences.disableSgrMouse,
-    );
+    if (enabled) {
+      writeTerminalSequence(
+        hover ? terminalSequences.enableAnyMotionMouse : terminalSequences.enableMouseTracking,
+      );
+      writeTerminalSequence(terminalSequences.enableSgrMouse);
+    } else {
+      writeTerminalSequence(terminalSequences.disableMouseTracking);
+      writeTerminalSequence(terminalSequences.disableButtonEventMouse);
+      writeTerminalSequence(terminalSequences.disableAnyMotionMouse);
+      writeTerminalSequence(terminalSequences.disableSgrMouse);
+    }
   }
   if (paste) {
     writeTerminalSequence(

@@ -14,11 +14,11 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import { requestCancel, type InterruptResult } from '../features/workflow/handlers.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
-import type { OverlayType, Screen } from '../core/navigation/types.js';
+import type { OverlayType } from '../core/navigation/types.js';
+import type { InterruptResult } from '../features/workflow/handlers.js';
 
 type AppKeyAction =
   | { type: 'none' }
@@ -28,9 +28,16 @@ type AppKeyAction =
 const NONE: AppKeyAction = { type: 'none' };
 const noop = () => 'none' as const;
 
+// Help and the cost drilldown render no Escape handler of their own and rely on this global close.
+// Every other overlay closes itself on Escape, so the global handler must stand down once one of
+// them sits on a non-empty stack — otherwise a single Escape would fire both handlers and pop past
+// the parent (e.g. a runner picker opened from settings would skip settings and close outright).
+const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help', 'cost-drilldown']);
+
 interface UseAppKeysOptions {
   exit: () => void;
   interruptWorkflow?: (() => InterruptResult) | undefined;
+  cancelWorkflow?: (() => void) | undefined;
 }
 
 function applyAction(action: AppKeyAction, exit: () => void) {
@@ -65,9 +72,9 @@ function fireInterrupt(interruptWorkflow: () => InterruptResult) {
   abortStore.clear();
 }
 
-function fireCancel() {
+function fireCancel(cancelWorkflow: () => void) {
   cancelEscapeAction();
-  requestCancel();
+  cancelWorkflow();
   closeApprovalPrompt();
   closeCostApprovalPrompt({ approved: false });
   abortStore.clear();
@@ -86,7 +93,11 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
   scheduleEscapeAction(deferred);
 }
 
-export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions) {
+export function useAppKeys({
+  exit,
+  interruptWorkflow = noop,
+  cancelWorkflow = noop,
+}: UseAppKeysOptions) {
   const [route, overlay, approval, cost, completion] = useStores(
     routerStore,
     overlayStore,
@@ -97,6 +108,7 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const overlayHasStack = overlay.stack.length > 0;
+  const overlayClosesOnGlobalEscape = !overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive);
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
   const completionOpen = completion.open;
 
@@ -131,7 +143,7 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
         return;
       }
       if (armed === 'cancel') {
-        fireCancel();
+        fireCancel(cancelWorkflow);
         return;
       }
       // A fresh ESC after the run was cancelled navigates home. This sits below the
@@ -151,7 +163,7 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
         input,
         () => {
           if (target === 'interrupt') fireInterrupt(interruptWorkflow);
-          else fireCancel();
+          else fireCancel(cancelWorkflow);
         },
         () => abortStore.arm(target),
       );
@@ -197,12 +209,12 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
     (_input, key) => {
       if (key.escape) overlayStore.close();
     },
-    { isActive: isOpen && !overlayExclusive && !overlayHasStack },
+    { isActive: isOpen && !overlayExclusive && overlayClosesOnGlobalEscape },
   );
 
   useInput(
     (input, key) => {
-      const shortcut = handleShortcutKeys(input, key, route.screen);
+      const shortcut = handleShortcutKeys(input, key, route);
       if (shortcut.type !== 'none') {
         applyAction(shortcut, exit);
         return;
@@ -212,13 +224,21 @@ export function useAppKeys({ exit, interruptWorkflow = noop }: UseAppKeysOptions
   );
 }
 
-function handleShortcutKeys(input: string, key: Key, screen: Screen): AppKeyAction {
+function handleShortcutKeys(
+  input: string,
+  key: Key,
+  route: ReturnType<typeof routerStore.get>,
+): AppKeyAction {
+  const screen = route.screen;
   if (key.ctrl && input === 'k') return { type: 'open-overlay', overlay: 'command-palette' };
   if (key.ctrl && input === 's' && screen === 'home')
     return { type: 'open-overlay', overlay: 'skills' };
   if (input === '\x1f' || (key.ctrl && input === '/'))
     return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
-  if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
+  if (key.ctrl && input === ',') {
+    if (route.screen === 'workflow' && route.attach !== undefined) return NONE;
+    return { type: 'open-overlay', overlay: 'settings' };
+  }
   if (key.ctrl && input === 'q') return { type: 'exit' };
   return NONE;
 }

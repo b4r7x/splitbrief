@@ -1,8 +1,10 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
+import { glyph } from '../lib/glyphs.js';
+import { SOFT_SEP } from './separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
-import { CursorCell } from './pickers/cursor-cell.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 
 export type SessionRowCursor =
   | { kind: 'none' }
@@ -32,6 +34,7 @@ function formatRelativeTime(timestamp: number): string {
 interface SessionRowProps {
   session: Session;
   cursor?: SessionRowCursor;
+  copyHint?: boolean;
 }
 
 function isSelected(cursor: SessionRowCursor): boolean {
@@ -48,33 +51,48 @@ function isSelected(cursor: SessionRowCursor): boolean {
   }
 }
 
-export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
+export function SessionRow({ session, cursor = NO_ROW_CURSOR, copyHint = false }: SessionRowProps) {
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
+  const failed = session.status === 'failed';
+  const icon = display.icon;
+  const iconColor = display.color;
   const time = formatRelativeTime(session.startedAt);
+  const feature = sanitizeTerminalDisplayText(session.feature);
   const selected = isSelected(cursor);
   const bg = selected ? t.selectionBg : undefined;
+  const liveBar = `${glyph('liveBar')} `;
   const row = (
     <Box width="100%" backgroundColor={bg}>
       {cursor.kind === 'inline' && (
         <Box flexShrink={0} backgroundColor={bg}>
-          <CursorCell isCursor={cursor.isCursor} />
+          <Text color={t.accent} bold>
+            {selected ? liveBar : '  '}
+          </Text>
         </Box>
       )}
       <Box flexShrink={0} backgroundColor={bg}>
-        <Text color={display.color} bold={selected}>
-          {display.icon}{' '}
+        <Text color={iconColor} bold={selected}>
+          {icon}{' '}
         </Text>
       </Box>
       <Box flexGrow={1} flexShrink={1} minWidth={0} backgroundColor={bg}>
         <Text color={selected ? t.accent : t.text} bold={selected} wrap="truncate-end">
-          {session.feature}
+          {feature}
         </Text>
       </Box>
       <Box flexShrink={0} justifyContent="flex-end" backgroundColor={bg}>
-        <Text color={t.textDim} wrap="truncate-end">
-          {' '}
-          {time}
+        <Text wrap="truncate-end">
+          <Text color={t.textDim}> {time}</Text>
+          {failed && (
+            <>
+              <Text color={t.textDim}>{SOFT_SEP}</Text>
+              <Text color={t.error} dimColor>
+                failed
+              </Text>
+            </>
+          )}
+          {copyHint && selected && <Text color={t.textDim}>{`${SOFT_SEP}y copy`}</Text>}
         </Text>
       </Box>
     </Box>
@@ -86,7 +104,9 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
     <Box width="100%" backgroundColor={bg}>
       {cursor.isCursor && (
         <Box position="absolute" marginLeft={-2} backgroundColor={bg}>
-          <CursorCell isCursor />
+          <Text color={t.accent} bold>
+            {liveBar}
+          </Text>
         </Box>
       )}
       {row}

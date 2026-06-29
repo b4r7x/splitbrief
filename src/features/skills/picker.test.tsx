@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { glyph } from '../../lib/glyphs.js';
 import { SkillsPicker } from './picker.js';
 
 const PAGE_DOWN = '\u001b[6~';
@@ -44,11 +48,31 @@ describe('SkillsPicker', () => {
     await tick(20);
     ui.stdin.write(SPACE);
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain('Planner Skills (1 selected)');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected');
 
     ui.stdin.write(ENTER);
     await tick(20);
     expect([...skillsStore.get().selected]).toEqual(['skill-7']);
+    ui.unmount();
+  });
+
+  it('right-aligns the selected marker on a selected description row at the row edge', async () => {
+    skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+    ui.stdin.write(ARROW_DOWN);
+    await tick(20);
+    ui.stdin.write(SPACE);
+    await tick(20);
+
+    const selectedLine = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('bravo'));
+    expect(selectedLine).toBeDefined();
+    // The selected marker right-aligns to the inner content edge; the restored OverlayPanel frame (border +
+    // padding) now sits to its right, so strip that trailing chrome before the edge check.
+    expect((selectedLine ?? '').replace(/[\s|│]+$/u, '').endsWith(glyph('check'))).toBe(true);
     ui.unmount();
   });
 
@@ -98,7 +122,7 @@ describe('SkillsPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    for (const label of ['Project', 'Global', 'project-alpha', 'project-bravo', 'global-charlie']) {
+    for (const label of ['project', 'global', 'project-alpha', 'project-bravo', 'global-charlie']) {
       expect(frame).toContain(label);
     }
     expect(frame).not.toContain('more');
@@ -118,10 +142,10 @@ describe('SkillsPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('Planner Skills (0 selected)');
+    expect(stripAnsiStyles(frame)).toContain('skills · 0 selected');
     expect(frame).toContain('alpha-filter');
-    expect(frame).toContain('Enter confirm');
-    expect(frame).not.toContain('No matching skills');
+    expect(frame).toContain('⏎ confirm');
+    expect(frame).not.toContain('no matching skills');
     expect(frame).not.toContain('╭');
     expect(frame).not.toContain('╰');
     ui.unmount();
@@ -141,7 +165,7 @@ describe('SkillsPicker', () => {
     const ui = renderFeature(<SkillsPicker />);
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('alphabeta');
     expect(frame).toContain('safedesc');
     expect(frame).not.toContain('owned');
@@ -169,6 +193,100 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     expect([...skillsStore.get().selected].sort()).toEqual(['skill-0', 'skill-3']);
+    ui.unmount();
+  });
+
+  it('marks a selected skill with a trailing selected marker and drops the checkbox column', async () => {
+    skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    ui.stdin.write(ARROW_DOWN);
+    await tick(20);
+    ui.stdin.write(SPACE);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(glyph('check'));
+    expect(frame).not.toContain('[x]');
+    expect(frame).not.toContain('[ ]');
+    ui.unmount();
+  });
+
+  it('appends Space to the query instead of toggling while typing', async () => {
+    skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    ui.stdin.write('a');
+    await tick(20);
+    ui.stdin.write(SPACE);
+    await tick(20);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 0 selected');
+    ui.unmount();
+  });
+
+  it('renders dim lowercase group headers', async () => {
+    skillsStore.setAvailable([skill('proj', 'project'), skill('glob', 'global')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('project');
+    expect(frame).toContain('global');
+    expect(frame).not.toContain('Project');
+    expect(frame).not.toContain('Global');
+    ui.unmount();
+  });
+});
+
+describe('SkillsPicker row activation', () => {
+  beforeEach(() => {
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 100, rows: 28, isSmall: false });
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    _resetMouseZones();
+  });
+
+  it('toggles the clicked skill without saving and closing', async () => {
+    skillsStore.setAvailable([skill('alpha', 'project'), skill('bravo', 'project')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 0 selected');
+
+    const zones = collectClickableZones({ cols: 100, rows: 28 });
+    zones.get('list-row:bravo')?.();
+    await tick(20);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected');
+    expect(skillsStore.get().selected.size).toBe(0);
+    ui.unmount();
+  });
+
+  it('confirms the click-toggled selection on Enter', async () => {
+    skillsStore.setAvailable([skill('alpha', 'project'), skill('bravo', 'project')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const zones = collectClickableZones({ cols: 100, rows: 28 });
+    zones.get('list-row:bravo')?.();
+    await tick(20);
+    expect(skillsStore.get().selected.size).toBe(0);
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect([...skillsStore.get().selected]).toEqual(['bravo']);
     ui.unmount();
   });
 });

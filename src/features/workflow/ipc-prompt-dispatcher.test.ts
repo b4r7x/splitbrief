@@ -7,8 +7,12 @@ import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_FILE_PATH_MAX_BYTES } from '../../core/sessions/confinement.js';
+import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
+import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
+import { glyph } from '../../lib/glyphs.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { closeCostApprovalPrompt, costApprovalStore } from '../../stores/cost-approval/prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
   createIpcPromptDispatcher,
@@ -44,6 +48,7 @@ function inputModeWith(prompts: string[], answer: string | string[]): UseInputMo
   return {
     mode: 'normal',
     hint: '',
+    questionEpoch: 0,
     setReviewMode: async () => ({ approved: false }),
     setQuestionMode: async (prompt: string) => {
       prompts.push(prompt);
@@ -61,6 +66,7 @@ function reviewInputMode(
   return {
     mode: 'normal',
     hint: '',
+    questionEpoch: 0,
     setReviewMode: async () => {
       reviewPaths.push(reviewStore.get().filePath ?? '');
       return result;
@@ -90,29 +96,78 @@ function approvalRequest(filePath: string): IpcPromptRequest {
 }
 
 afterEach(() => {
-  reviewStore.clearReview();
+  reviewStore.reset();
   feedbackStore.reset();
+  costApprovalStore.__testReset();
   for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
 });
+
+function failingReviewInputMode(): UseInputModeResult {
+  return {
+    mode: 'normal',
+    hint: '',
+    questionEpoch: 0,
+    setReviewMode: async () => {
+      throw new Error('cost approval must not enter generic review mode');
+    },
+    setQuestionMode: async () => '',
+    resolve: () => {},
+    resetMode: () => {},
+  };
+}
+
+function supersedingReviewInputMode() {
+  let resolver: ((value: ApprovalReviewResult) => void) | null = null;
+  const reviewFiles: string[] = [];
+  const mode: UseInputModeResult = {
+    mode: 'normal',
+    hint: '',
+    questionEpoch: 0,
+    setReviewMode: () => {
+      reviewFiles.push(reviewStore.get().filePath ?? '');
+      const previous = resolver;
+      return new Promise<ApprovalReviewResult>((resolve) => {
+        resolver = resolve;
+        previous?.({ approved: false });
+      });
+    },
+    setQuestionMode: async () => '',
+    resolve: () => {},
+    resetMode: () => {},
+  };
+  return {
+    mode,
+    reviewFiles,
+    resolveCurrent: (value: ApprovalReviewResult) => {
+      const current = resolver;
+      resolver = null;
+      current?.(value);
+    },
+  };
+}
 
 describe('formatIpcRecoveryPrompt', () => {
   it('presents every available action, not a binary retry/abort', () => {
     const prompt = formatIpcRecoveryPrompt(budgetPausedIssue);
 
-    expect(prompt).toContain('Recovery needed: budget-paused');
-    expect(prompt).toContain('Task: T001 - Finish checkout');
-    expect(prompt).toContain('Files: src/checkout.ts');
-    expect(prompt).toContain('Worker: local-large');
-    expect(prompt).toContain('Recommended: continue');
-    expect(prompt).toContain('[c] continue');
-    expect(prompt).toContain('[s] skip task');
-    expect(prompt).toContain('[space] pause');
-    expect(prompt).toContain('[a] abort');
+    expect(prompt).toContain('recovery needed · budget-paused');
+    expect(prompt).toContain('task T001 · Finish checkout');
+    expect(prompt).toContain('files src/checkout.ts');
+    expect(prompt).toContain('worker local-large');
+    expect(prompt).not.toContain('Recommended');
+    expect(prompt).toContain(`${glyph('liveBar')} [c]  continue`);
+    expect(prompt).toContain('[s]  skip task');
+    expect(prompt).toContain('[space]  pause');
+    expect(prompt).toContain('[a]  abort');
     expect(prompt).not.toContain('retry / abort');
   });
 });
 
 describe('parseIpcRecoveryAction', () => {
+  it('applies the recommended action for empty Enter', () => {
+    expect(parseIpcRecoveryAction('', budgetPausedIssue)).toBe('continue');
+  });
+
   it('maps aliases to actions confined to availableActions', () => {
     expect(parseIpcRecoveryAction('c', budgetPausedIssue)).toBe('continue');
     expect(parseIpcRecoveryAction('skip', budgetPausedIssue)).toBe('skip-current-task');
@@ -153,8 +208,8 @@ describe('createIpcPromptDispatcher recovery_needed', () => {
     const response = await dispatch(request);
 
     expect(response).toEqual({ kind: 'recovery_needed', action: 'skip-current-task' });
-    expect(prompts[0]).toContain('[s] skip task');
-    expect(prompts[0]).toContain('[c] continue');
+    expect(prompts[0]).toContain('[s]  skip task');
+    expect(prompts[0]).toContain('[c]  continue');
   });
 
   it('re-prompts instead of coercing an unknown recovery answer', async () => {
@@ -279,6 +334,64 @@ describe('createIpcPromptDispatcher approval_needed path confinement', () => {
   );
 });
 
+describe('createIpcPromptDispatcher cost_approval', () => {
+  it('routes attached cost approval through the shared cost prompt store with full prediction', async () => {
+    const dispatch = createIpcPromptDispatcher(failingReviewInputMode());
+    const prediction = makeCostPrediction();
+
+    const pending = dispatch({ requestId: 'cost-1', kind: 'cost_approval', prediction });
+
+    const state = costApprovalStore.get();
+    expect(state.status).toBe('pending');
+    if (state.status !== 'pending') throw new Error('expected pending cost prompt');
+    expect(state.prediction).toBe(prediction);
+    // The shared prompt renders deterministic prediction detail (task count / estimate / baseline /
+    // savings) rather than the old generic "Cost estimate ready. approve / reject" review line.
+    expect(formatCostGateSummary(state.prediction)).not.toBeNull();
+
+    closeCostApprovalPrompt({ approved: true });
+    expect(await pending).toEqual({ kind: 'cost_approval', approved: true });
+  });
+
+  it('returns the rejection decision from the cost prompt', async () => {
+    const dispatch = createIpcPromptDispatcher(failingReviewInputMode());
+    const pending = dispatch({
+      requestId: 'cost-2',
+      kind: 'cost_approval',
+      prediction: makeCostPrediction(),
+    });
+
+    closeCostApprovalPrompt({ approved: false });
+    expect(await pending).toEqual({ kind: 'cost_approval', approved: false });
+  });
+});
+
+describe('createIpcPromptDispatcher approval re-delivery', () => {
+  it('keeps a re-delivered review when a superseded approval handler completes', async () => {
+    const sessionDir = makeSessionDir();
+    const specPath = join(sessionDir, 'spec.md');
+    writeFileSync(specPath, '# spec\n');
+    const ctl = supersedingReviewInputMode();
+    const dispatch = createIpcPromptDispatcher(ctl.mode, { sessionDirPath: sessionDir });
+
+    const stale = dispatch(approvalRequest('spec.md'));
+    expect(reviewStore.get().filePath).toBe(specPath);
+
+    // The same prompt is re-delivered after a reconnect; the new handler supersedes the stale one,
+    // resolving the stale handler's review mode with a non-approval.
+    const live = dispatch(approvalRequest('spec.md'));
+
+    // The superseded handler has resolved and run its cleanup, but the live review must survive.
+    expect(await stale).toEqual({ kind: 'approval_needed', approved: false });
+    expect(reviewStore.get().filePath).toBe(specPath);
+
+    // The live handler still owns the session and clears review on completion.
+    ctl.resolveCurrent({ approved: true });
+    expect(await live).toEqual({ kind: 'approval_needed', approved: true });
+    expect(reviewStore.get().filePath).toBeNull();
+  });
+});
+
 describe('createIpcPromptDispatcher task_review', () => {
   it('uses the full task-review prompt and re-prompts on unavailable commands', async () => {
     const prompts: string[] = [];
@@ -313,10 +426,10 @@ describe('createIpcPromptDispatcher task_review', () => {
       response: { action: 'continue' },
     });
     expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain('Task review: T001 - Attached task');
-    expect(prompts[0]).toContain('Status: done');
-    expect(prompts[0]).toContain('Files: src/attached.ts');
-    expect(prompts[0]).toContain('Commands: continue');
+    expect(prompts[0]).toContain(`${glyph('check')} T001 ready for review · Attached task`);
+    expect(prompts[0]).toContain('status done');
+    expect(prompts[0]).toContain('files src/attached.ts');
+    expect(prompts[0]).toContain(`${glyph('liveBar')} [c]  continue`);
     expect(prompts[0]).not.toContain('abort');
     expect(feedbackStore.get()).toMatchObject({
       isError: true,

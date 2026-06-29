@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
-import {
-  parseMouseEvents,
-  createFilteredStdin,
-  stripPasteMarkers,
-  type MouseEvent,
-} from './filtered-stdin.js';
+import { createFilteredStdin, type MouseEvent } from './filtered-stdin.js';
 import { terminalSequences } from './control.js';
 
 function x10MouseSequence(button: number, x: number, y: number): string {
@@ -15,85 +10,6 @@ function x10MouseSequence(button: number, x: number, y: number): string {
 function x10MouseBytes(button: number, x: number, y: number): Buffer {
   return Buffer.from([0x1b, 0x5b, 0x4d, button + 32, x + 32, y + 32]);
 }
-
-describe('parseMouseEvents', () => {
-  it('intercepts wheel-up events and removes them from the clean stream', () => {
-    const input = `before\u001b[<0;10;20Mmiddle\u001b[<64;10;20Mafter`;
-    const { events, clean } = parseMouseEvents(input);
-
-    expect(clean).toBe('beforemiddleafter');
-    expect(events).toEqual([
-      { type: 'wheel-up', x: 10, y: 20, button: 64, shift: false, meta: false, ctrl: false },
-    ]);
-  });
-
-  it('intercepts wheel-down events and removes them from the clean stream', () => {
-    const { events, clean } = parseMouseEvents(`\u001b[<65;3;7Mtext`);
-
-    expect(clean).toBe('text');
-    expect(events).toEqual([
-      { type: 'wheel-down', x: 3, y: 7, button: 65, shift: false, meta: false, ctrl: false },
-    ]);
-  });
-
-  it('strips non-wheel SGR mouse sequences without emitting events', () => {
-    const press = '\u001b[<0;5;10M';
-    const release = '\u001b[<0;5;10m';
-    const input = `${press}text${release}`;
-    const { events, clean } = parseMouseEvents(input);
-
-    expect(events).toEqual([]);
-    expect(clean).toBe('text');
-  });
-
-  it('intercepts X10 wheel reports when a terminal does not emit SGR mouse bytes', () => {
-    const { events, clean } = parseMouseEvents(`before${x10MouseSequence(64, 10, 20)}after`);
-
-    expect(clean).toBe('beforeafter');
-    expect(events).toEqual([
-      { type: 'wheel-up', x: 10, y: 20, button: 64, shift: false, meta: false, ctrl: false },
-    ]);
-  });
-
-  it('strips non-wheel X10 mouse reports without emitting events', () => {
-    const { events, clean } = parseMouseEvents(`left${x10MouseSequence(0, 3, 4)}right`);
-
-    expect(clean).toBe('leftright');
-    expect(events).toEqual([]);
-  });
-
-  it('strips non-wheel sequences with modifier bits', () => {
-    const seq = '\u001b[<4;1;1M';
-    const { events, clean } = parseMouseEvents(seq);
-
-    expect(events).toEqual([]);
-    expect(clean).toBe('');
-  });
-
-  it('intercepts wheel events with modifier bits using the masked button code', () => {
-    const { events, clean } = parseMouseEvents('\u001b[<68;2;3M');
-    expect(clean).toBe('');
-    expect(events).toEqual([
-      { type: 'wheel-up', x: 2, y: 3, button: 64, shift: true, meta: false, ctrl: false },
-    ]);
-  });
-
-  it('strips unsupported extended wheel codes silently', () => {
-    const { events, clean } = parseMouseEvents(`before\u001b[<66;1;2Mafter`);
-
-    expect(clean).toBe('beforeafter');
-    expect(events).toEqual([]);
-  });
-
-  it('handles mixed non-wheel, wheel, and plain text correctly', () => {
-    const input = '\u001b[<0;1;1Mhello\u001b[<64;2;3Mworld\u001b[<1;4;5M';
-    const { events, clean } = parseMouseEvents(input);
-
-    expect(clean).toBe('helloworld');
-    expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe('wheel-up');
-  });
-});
 
 function makeFakeStdin(): NodeJS.ReadStream {
   const pt = new PassThrough();
@@ -254,7 +170,7 @@ describe('createFilteredStdin input filtering', () => {
     filtered.disable();
   });
 
-  it('strips click reports from filtered stdin without reporting scroll events', async () => {
+  it('strips click reports from filtered stdin and surfaces them as press events', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
@@ -265,7 +181,31 @@ describe('createFilteredStdin input filtering', () => {
     const clean = await readFiltered(filtered.stdin, 'abc'.length);
 
     expect(clean).toBe('abc');
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      { type: 'press', x: 3, y: 4, button: 0, shift: false, meta: false, ctrl: false },
+      { type: 'press', x: 5, y: 6, button: 2, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('surfaces a raw X10 button-3 report as a release event', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    filtered.onMouse((e) => events.push(e));
+
+    fakeStdin.emit(
+      'data',
+      Buffer.concat([Buffer.from('a'), x10MouseBytes(3, 5, 6), Buffer.from('b')]),
+    );
+
+    const clean = await readFiltered(filtered.stdin, 'ab'.length);
+
+    expect(clean).toBe('ab');
+    expect(events).toEqual([
+      { type: 'release', x: 5, y: 6, button: 3, shift: false, meta: false, ctrl: false },
+    ]);
 
     filtered.disable();
   });
@@ -313,7 +253,7 @@ describe('createFilteredStdin input filtering', () => {
     filtered.disable();
   });
 
-  it('strips a non-wheel click report split across chunks', async () => {
+  it('reassembles a non-wheel click report split across chunks into one press event', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
@@ -324,7 +264,9 @@ describe('createFilteredStdin input filtering', () => {
     fakeStdin.emit('data', Buffer.from(';6Mright'));
 
     await expect(cleanPromise).resolves.toBe('leftright');
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      { type: 'press', x: 5, y: 6, button: 0, shift: false, meta: false, ctrl: false },
+    ]);
 
     filtered.disable();
   });
@@ -562,9 +504,35 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
       terminalSequences.disableMouseTracking,
+      terminalSequences.disableButtonEventMouse,
+      terminalSequences.disableAnyMotionMouse,
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
     ]);
+  });
+
+  it('enables any-motion tracking for hover and clears every mouse mode on disable', () => {
+    const writtenHover: string[] = [];
+    process.stdout.write = ((chunk: string) => {
+      writtenHover.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    const fakeStdin = makeFakeStdin();
+
+    const filtered = createFilteredStdin(fakeStdin, { hover: true });
+    filtered.disable();
+
+    expect(writtenHover).toEqual([
+      terminalSequences.enableAnyMotionMouse,
+      terminalSequences.enableSgrMouse,
+      terminalSequences.enableBracketedPaste,
+      terminalSequences.disableMouseTracking,
+      terminalSequences.disableButtonEventMouse,
+      terminalSequences.disableAnyMotionMouse,
+      terminalSequences.disableSgrMouse,
+      terminalSequences.disableBracketedPaste,
+    ]);
+    expect(writtenHover).not.toContain(terminalSequences.enableMouseTracking);
   });
 
   it('can enable paste filtering without mouse tracking or mouse dispatch', async () => {
@@ -641,62 +609,6 @@ describe('createFilteredStdin: lone ESC delivery', () => {
       source.emit('data', Buffer.from('[A'));
     });
     expect(delivered).toEqual([0x1b, 0x5b, 0x41]);
-  });
-});
-
-describe('stripPasteMarkers', () => {
-  it('removes a start/end pair and keeps the content, ending inactive', () => {
-    const result = stripPasteMarkers('\u001b[200~hello world\u001b[201~', false);
-    expect(result.clean).toBe('hello world');
-    expect(result.pasteActive).toBe(false);
-    expect(result.partial).toBe('');
-  });
-
-  it('marks paste active after a lone start marker', () => {
-    const result = stripPasteMarkers('\u001b[200~partial line', false);
-    expect(result.clean).toBe('partial line');
-    expect(result.pasteActive).toBe(true);
-    expect(result.partial).toBe('');
-  });
-
-  it('clears paste active when a previously-open paste ends', () => {
-    const result = stripPasteMarkers('rest of paste\u001b[201~after', true);
-    expect(result.clean).toBe('rest of pasteafter');
-    expect(result.pasteActive).toBe(false);
-    expect(result.partial).toBe('');
-  });
-
-  it('preserves text content unchanged when there are no markers', () => {
-    const result = stripPasteMarkers('plain typed text', false);
-    expect(result.clean).toBe('plain typed text');
-    expect(result.pasteActive).toBe(false);
-    expect(result.partial).toBe('');
-  });
-
-  it('holds back a trailing partial marker that the mouse layer would not catch', () => {
-    const result = stripPasteMarkers('text\u001b[20', false);
-    expect(result.clean).toBe('text');
-    expect(result.partial).toBe('\u001b[20');
-  });
-
-  it('reflects the last marker when a chunk ends then immediately starts a paste', () => {
-    const result = stripPasteMarkers('\u001b[201~mid\u001b[200~tail', true);
-    expect(result.clean).toBe('midtail');
-    expect(result.pasteActive).toBe(true);
-  });
-
-  it('does not hold back a complete escape sequence that is not a paste prefix', () => {
-    const result = stripPasteMarkers('text\u001b[A', false);
-    expect(result.clean).toBe('text\u001b[A');
-    expect(result.partial).toBe('');
-  });
-
-  it('holds a lone trailing ESC as a partial so a split paste marker can reassemble', () => {
-    const result = stripPasteMarkers('\u001b', false);
-    // A lone trailing ESC may head a split `[200~`/`[201~` marker, so it is held one chunk
-    // and re-prepended to the next chunk rather than leaking the marker body into the stream.
-    expect(result.clean).toBe('');
-    expect(result.partial).toBe('\u001b');
   });
 });
 

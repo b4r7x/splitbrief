@@ -11,18 +11,18 @@ export function buildReadinessFailureReport(projectDir: string, err: unknown): R
     counts: { ok: 0, info: 0, warning: 0, blocker: 1 },
     nextAction: {
       kind: 'exit',
-      label: 'Resolve readiness failure',
-      reason: 'Readiness collection failed before the workflow could start.',
+      label: 'fix and rerun',
+      reason: 'readiness could not be collected',
     },
     sections: [
       {
         id: 'readiness',
-        title: 'Readiness',
+        title: 'readiness',
         checks: [
           {
             id: 'readiness.collection-failed',
             severity: 'blocker',
-            summary: 'Readiness check failed',
+            summary: 'collection failed before start',
             details: [message],
             nextAction: 'exit',
           },

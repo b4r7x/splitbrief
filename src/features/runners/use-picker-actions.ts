@@ -1,6 +1,7 @@
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { CHEVRON_SEP } from '../../components/separators.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -91,7 +92,7 @@ export function usePickerActions(opts: {
         return;
       }
       const label = model
-        ? `${selection.displayName} › ${formatModelName(model.id)}`
+        ? `${selection.displayName}${CHEVRON_SEP}${formatModelName(model.id)}`
         : selection.displayName;
       if (isPlanner) {
         const updated = commitPlannerSelection(config, selection, model);
@@ -171,7 +172,7 @@ export function usePickerActions(opts: {
       });
       commit(
         updated,
-        `${catalog.roleLabel} set to: ${customModelItem.displayName} › ${formatModelName(modelName)}`,
+        `${catalog.roleLabel} set to: ${customModelItem.displayName}${CHEVRON_SEP}${formatModelName(modelName)}`,
         runnerChangedPaths(config, updated, role, [
           `${role}.kind`,
           `${role}.tool`,

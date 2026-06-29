@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { Box } from 'ink';
 import { renderMarkdownRows } from './markdown.js';
 import { getTheme } from './theme.js';
@@ -37,7 +38,7 @@ describe('Markdown', () => {
     );
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('title: Markdown Core');
     expect(frame).toContain('owner: docs');
     expect(frame).toContain('Markdown Core');
@@ -83,7 +84,7 @@ describe('Markdown', () => {
     );
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Safe heading');
     expect(frame).toContain('visible done tail');
     expect(frame).not.toContain('clipboard');
@@ -117,7 +118,7 @@ describe('Markdown', () => {
     );
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Token Review');
     expect(frame).toContain('TOKEN=REDACTED');
     expect(frame).toContain('Authorization: Bearer ***REDACTED***');

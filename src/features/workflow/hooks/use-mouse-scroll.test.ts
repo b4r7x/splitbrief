@@ -7,8 +7,44 @@ import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
+import type { TieredApprovalRequest } from '../../../core/approval/types.js';
+import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { resetWorkflow } from '../../../stores/workflow/actions.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
+
+function seedConversation(): void {
+  eventsStore.__testReset({
+    events: Array.from({ length: 20 }, (_, ts) => ({
+      type: 'planner_text' as const,
+      ts,
+      phase: 'specifying' as const,
+      text: `event-${ts}`,
+    })),
+  });
+}
+
+function makePendingApprovalRequest(): TieredApprovalRequest {
+  return {
+    tier: 'confirm',
+    actionClass: 'destructive',
+    actionDescription: 'rm -rf /',
+    phase: 'implementing',
+  };
+}
+
+function makePrediction(): CostPrediction {
+  return {
+    estimatedTasks: 1,
+    lowCost: 0,
+    expectedCost: 0,
+    highCost: 0,
+    plannerTool: 'anthropic',
+    implementerTool: 'anthropic',
+  };
+}
 
 function createMockFilteredStdin() {
   let listener: ((event: MouseEvent) => void) | undefined;
@@ -47,6 +83,9 @@ describe('wireMouseScroll', () => {
     conversationScrollStore.reset();
     resetWorkflow();
     inputHeightStore.reset();
+    controlsStore.__testReset();
+    approvalPromptStore.__testReset();
+    costApprovalStore.__testReset();
   });
 
   it('ignores wheel input outside the workflow screen', () => {
@@ -111,15 +150,52 @@ describe('wireMouseScroll', () => {
 
   it('ignores wheel input while an overlay is open', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
-    eventsStore.__testReset({
-      events: Array.from({ length: 20 }, (_, ts) => ({
-        type: 'planner_text' as const,
-        ts,
-        phase: 'specifying' as const,
-        text: `event-${ts}`,
-      })),
-    });
+    seedConversation();
     overlayStore.open('cost-drilldown');
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireMouseScroll(mock.filtered);
+    mock.emit('wheel-up', 2, 7);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    dispose();
+  });
+
+  it('ignores wheel input while an approval prompt is pending', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    seedConversation();
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request: makePendingApprovalRequest(),
+      resolve: () => {},
+    });
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireMouseScroll(mock.filtered);
+    mock.emit('wheel-up', 2, 7);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    dispose();
+  });
+
+  it('ignores wheel input while a cost prompt is pending', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    seedConversation();
+    costApprovalStore.__testReset({
+      status: 'pending',
+      prediction: makePrediction(),
+      resolve: () => {},
+    });
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireMouseScroll(mock.filtered);
+    mock.emit('wheel-up', 2, 7);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    dispose();
+  });
+
+  it('ignores wheel input while input mode is question', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    seedConversation();
+    controlsStore.setInputMode('question');
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);

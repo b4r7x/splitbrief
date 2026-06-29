@@ -150,4 +150,21 @@ describe('lastCommand', () => {
 
     expect(sessionIds).toEqual(['2025-04-05-interactive']);
   });
+
+  it('no longer rejects on Windows, delegating the attach/resume decision to continue', async () => {
+    const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
+
+    makeSessionWithLockfile(projectDir, '2025-04-01-windows', 5000);
+
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      await lastCommand({ projectDir } as never, deps);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
+
+    expect(sessionIds).toEqual(['2025-04-01-windows']);
+  });
 });

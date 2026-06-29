@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { ReviewView } from './review-view.js';
 
@@ -13,6 +16,7 @@ describe('ReviewView', () => {
   let ui: ReturnType<typeof renderFeature> | null;
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
     tmp = createTempDir('review-view');
     ui = null;
@@ -40,7 +44,7 @@ describe('ReviewView', () => {
     writeFileSync(
       file,
       [
-        'This paragraph mentions src/features/workflow/components/review-view.tsx and keeps going long enough to wrap across several terminal rows.',
+        'This paragraph mentions src/features/workflow/components/review-view.tsx and keeps going long enough to wrap across several terminal rows and then continues with many more words so the rendered output clearly overflows the available content height and forces a scroll footer to appear.',
       ].join('\n'),
     );
     reviewStore.setReviewFile(file);
@@ -49,7 +53,8 @@ describe('ReviewView', () => {
 
     await vi.waitFor(() => {
       expect(reviewStore.get().renderedLineCount).toBeGreaterThan(1);
-      expect(ui?.lastFrame()).toContain('more rows below');
+      expect(ui?.lastFrame()).toContain('↓');
+      expect(ui?.lastFrame()).toContain('more');
     });
 
     const frame = ui.lastFrame() ?? '';
@@ -62,7 +67,7 @@ describe('ReviewView', () => {
       codeBlock(['line-0', 'line-1', 'line-2', 'line-3', 'line-4', 'line-5', 'line-6']),
     );
 
-    ui = renderFeature(<ReviewView height={8} width={40} />);
+    ui = renderFeature(<ReviewView height={10} width={40} />);
 
     await vi.waitFor(() => {
       expect(reviewStore.get().renderedLineCount).toBe(7);
@@ -70,19 +75,19 @@ describe('ReviewView', () => {
     reviewStore.setScrollOffset(999);
 
     await vi.waitFor(() => {
-      expect(reviewStore.get().scrollOffset).toBe(4);
+      expect(reviewStore.get().scrollOffset).toBe(3);
       const frame = ui?.lastFrame() ?? '';
       expect(frame).toContain('line-4');
       expect(frame).toContain('line-6');
-      expect(frame).toContain('↑ more');
-      expect(frame).not.toContain('↓ more');
+      expect(frame).toContain('end of file');
+      expect(frame).not.toContain('more');
     });
   });
 
-  it('clips a multi-line row at the review offset and keeps both scroll indicators visible', async () => {
+  it('clips a multi-line row at the review offset and folds scroll affordance into one footer', async () => {
     openReviewFile('partial-row.md', codeBlock(['line-0', 'line-1', 'line-2', 'line-3', 'line-4']));
 
-    ui = renderFeature(<ReviewView height={7} width={36} />);
+    ui = renderFeature(<ReviewView height={8} width={36} />);
 
     await vi.waitFor(() => {
       expect(reviewStore.get().renderedLineCount).toBe(5);
@@ -91,8 +96,9 @@ describe('ReviewView', () => {
 
     await vi.waitFor(() => {
       const frame = ui?.lastFrame() ?? '';
-      expect(frame).toContain('↑ more');
-      expect(frame).toContain('↓ more');
+      expect(frame).not.toContain('↑ more');
+      expect(frame).not.toContain('↓ more');
+      expect(frame).toContain('more');
       expect(frame).not.toContain('line-0');
       expect(frame).toContain('line-1');
       expect(frame).toContain('line-2');
@@ -121,7 +127,7 @@ describe('ReviewView', () => {
     ui = renderFeature(<ReviewView height={18} width={48} />);
 
     await vi.waitFor(() => {
-      const frame = ui?.lastFrame() ?? '';
+      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
       expect(frame).toContain('risk: HIGH');
       expect(frame).toContain('Review Heading');
       expect(frame).toContain('• keep inline code visible');
@@ -130,12 +136,12 @@ describe('ReviewView', () => {
     });
   });
 
-  it('caps very wide review documents to a readable column', async () => {
+  it('spans the full content width as a bordered card', async () => {
     openReviewFile(
       'wide.md',
       [
         '# Wide Review',
-        'This line should render in a readable review column instead of stretching across the full terminal width.',
+        'This line should render across the full review column instead of a narrow capped column.',
       ].join('\n'),
     );
 
@@ -144,8 +150,16 @@ describe('ReviewView', () => {
     await vi.waitFor(() => {
       const frame = ui?.lastFrame() ?? '';
       expect(frame).toContain('Wide Review');
-      expect(frame).toContain('─'.repeat(120));
-      expect(frame).not.toContain('─'.repeat(121));
+      const rule = glyph('divider', 'unicode');
+      const interiorRuleLine =
+        frame
+          .split('\n')
+          .find(
+            (line) => (stripAnsiStyles(line).match(new RegExp(rule, 'g')) ?? []).length === 176,
+          ) ?? '';
+      expect(interiorRuleLine).not.toBe('');
+      expect(stripAnsiStyles(interiorRuleLine)).toContain(rule.repeat(176));
+      expect(stripAnsiStyles(interiorRuleLine)).not.toContain(rule.repeat(177));
     });
   });
 
@@ -165,13 +179,13 @@ describe('ReviewView', () => {
     ui = renderFeature(<ReviewView height={10} width={80} />);
 
     await vi.waitFor(() => {
-      const frame = ui?.lastFrame() ?? '';
+      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
       expect(frame).toContain('Plan Review');
       expect(frame).toContain('TOKEN=REDACTED');
       expect(frame).toContain('Authorization: Bearer ***REDACTED***');
     });
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).not.toContain(rawToken);
     expect(frame).not.toContain('\u001b');
     expect(readFileSync(file, 'utf-8')).toContain(rawToken);
@@ -190,20 +204,20 @@ describe('ReviewView', () => {
     );
     reviewStore.setReviewFile(file);
 
-    ui = renderFeature(<ReviewView height={8} width={22} />);
+    ui = renderFeature(<ReviewView height={8} width={24} />);
 
     await vi.waitFor(() => {
-      const frame = ui?.lastFrame() ?? '';
+      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
       expect(frame).toContain('👩‍💻-e\u0301.md');
       expect(frame).toContain('Safe heading');
       expect(frame).toContain('visible done tail');
     });
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).not.toContain('clipboard');
     expect(frame).not.toContain('\u001b');
     expect(frame).not.toContain('\u009b');
     expect(frame).not.toContain('\u0007');
-    expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 22)).toBe(true);
+    expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 24)).toBe(true);
   });
 });

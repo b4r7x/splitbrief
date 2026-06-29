@@ -30,6 +30,7 @@ export interface WorkflowOpts {
   project?: string;
   fullscreen?: boolean;
   mouse?: boolean;
+  hover?: boolean;
   mode?: WorkflowMode;
   approve?: ApproveLevel;
   budget?: number;

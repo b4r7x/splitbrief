@@ -51,6 +51,29 @@ export function mergePersistedMessageQueue(ref: SessionRef, state: WorkflowState
   return { ...state, messageQueue: [...byId.values()] };
 }
 
+export function rebaseOnPersistedWorkflowState(
+  ref: SessionRef,
+  state: WorkflowState,
+): WorkflowState {
+  const persisted = loadState(ref);
+  if (!persisted) return state;
+
+  const inMemoryById = new Map(state.messageQueue.map((message) => [message.id, message]));
+  const messageQueue = persisted.messageQueue.map((persistedMessage) => {
+    const current = inMemoryById.get(persistedMessage.id);
+    if (!current) return persistedMessage;
+    return {
+      ...persistedMessage,
+      ...current,
+      deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
+      nativeDeliveryState: mergeNativeDeliveryState(persistedMessage, current),
+      drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
+    };
+  });
+
+  return { ...persisted, messageQueue };
+}
+
 export function transitionAndSave(
   ref: SessionRef,
   state: WorkflowState,

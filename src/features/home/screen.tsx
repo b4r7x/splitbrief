@@ -16,12 +16,12 @@ import { skillsStore } from '../../stores/project/skills.js';
 import type { Session } from '../../core/schemas/session.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { getHomeLayout } from './layout.js';
-import { getLogo } from './logo.js';
+import { getLogo, LOGO_TAGLINE } from './logo.js';
 import { useRecentSessionsFocus } from './use-recent-sessions-focus.js';
 
-const DEFAULT_HOME_HINT = '/help /config /skills Ctrl+K';
-const HOME_HINT = `Ctrl+R recent ${DEFAULT_HOME_HINT}`;
-const RECENT_SESSIONS_HINT = '↑↓ navigate  Type filter  Enter resume/view  Esc back';
+const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k';
+const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const RECENT_SESSIONS_HINT = '↑↓ navigate · type filter · enter resume/view · esc back';
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 interface HomeScreenProps {
@@ -93,8 +93,9 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
       <Box flexDirection="column" width={layout.inputWidth} height="100%">
         <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
           <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
-            <Box justifyContent="center" marginBottom={1}>
+            <Box flexDirection="column" alignItems="center" marginBottom={1}>
               <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
+              <Text color={theme.textDim}>{LOGO_TAGLINE}</Text>
             </Box>
 
             <HomeConfigSummary />
@@ -126,7 +127,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
             onRuntimeCommand={onRuntimeCommand}
             commands={commands}
             mode="normal"
-            hint="describe your feature..."
+            hint="describe your feature…"
             currentScreen="home"
             width={layout.inputWidth}
             homeHint={homeHint}

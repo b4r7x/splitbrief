@@ -63,6 +63,9 @@ function assertPromptResponse<T extends IpcPromptResponse['kind']>(
 }
 
 export function makeCallbacks(ipcServer: IpcServer): OrchestratorCallbacks {
+  // Approval, question, and tiered prompts round-trip over IPC (prompt_response). Rewind commands
+  // (/revise-spec, /revise-plan, /redo-task) are not exposed to attach clients — send revision
+  // text via user_input or settle at the next prompt instead.
   return {
     onApprovalNeeded: async (approvalType: 'spec' | 'plan' | 'briefs', filePath: string) => {
       const response = assertPromptResponse(

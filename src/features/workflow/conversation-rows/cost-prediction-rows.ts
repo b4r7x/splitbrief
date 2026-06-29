@@ -22,7 +22,7 @@ export function costPredictionRows(
   const deterministic = prediction.deterministic;
   const reviewLine = plannerEstimateReviewLine(prediction);
   const rows: ConversationRow[] = [
-    row({ key: `${keyPrefix}-title`, text: 'Cost prediction', tone: 'accent', bold: true }),
+    row({ key: `${keyPrefix}-title`, text: 'Cost prediction', tone: 'text', bold: true }),
   ];
 
   if (!deterministic) {
@@ -52,7 +52,7 @@ export function costPredictionRows(
         row({
           key: `${keyPrefix}-review`,
           text: reviewLine,
-          tone: prediction.plannerEstimateReview?.status === 'unavailable' ? 'warning' : 'planner',
+          tone: 'textDim',
         }),
       );
     const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
@@ -61,7 +61,7 @@ export function costPredictionRows(
         row({
           key: `${keyPrefix}-recommendation`,
           text: `Recommended: ${recommendation}`,
-          tone: 'planner',
+          tone: 'textDim',
         }),
       );
     return wrapRows(rows, width);
@@ -80,10 +80,10 @@ export function costPredictionRows(
   const totalsLine = formatDeterministicTotals(deterministic);
   if (totalsLine) rows.push(row({ key: `${keyPrefix}-totals`, text: totalsLine, tone: 'textDim' }));
   const riskLine = formatDeterministicRiskCounts(deterministic);
-  if (riskLine) rows.push(row({ key: `${keyPrefix}-risk`, text: riskLine, tone: 'warning' }));
+  if (riskLine) rows.push(row({ key: `${keyPrefix}-risk`, text: riskLine, tone: 'textDim' }));
   const unknownReasons = formatBlockedUnknownReasons(deterministic);
   if (unknownReasons)
-    rows.push(row({ key: `${keyPrefix}-unknown`, text: unknownReasons, tone: 'warning' }));
+    rows.push(row({ key: `${keyPrefix}-unknown`, text: unknownReasons, tone: 'textDim' }));
   rows.push(
     row({
       key: `${keyPrefix}-tools`,
@@ -96,7 +96,7 @@ export function costPredictionRows(
       row({
         key: `${keyPrefix}-review`,
         text: reviewLine,
-        tone: prediction.plannerEstimateReview?.status === 'unavailable' ? 'warning' : 'planner',
+        tone: 'textDim',
       }),
     );
   const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
@@ -105,7 +105,7 @@ export function costPredictionRows(
       row({
         key: `${keyPrefix}-recommendation`,
         text: `Recommended: ${recommendation}`,
-        tone: 'planner',
+        tone: 'textDim',
       }),
     );
   return wrapRows(rows, width);

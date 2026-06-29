@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { glyph } from '../../lib/glyphs.js';
 import { topoError, topoSort } from './topo-sort.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -60,7 +61,7 @@ describe('topoError.circularDependency factory', () => {
     const err = topoError.circularDependency(['a', 'b', 'a']);
     expect(err).toBeInstanceOf(Error);
     expect(err.kind).toBe('topo-circular-dependency');
-    expect(err.message).toContain('a → b → a');
+    expect(err.message).toContain(['a', 'b', 'a'].join(` ${glyph('connectorHandoff')} `));
     expect(err.data).toEqual({ cycle: ['a', 'b', 'a'] });
   });
 });

@@ -1,78 +1,48 @@
 import { Box } from 'ink';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
-import { Composer } from '../../../components/composer/composer.js';
+import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
 import { Header } from './header.js';
-import { ConfigLine } from './config-line.js';
-import { AgentStatusRow } from './agent-status-row.js';
-import { CostStatusLine } from './cost/status-line.js';
+import { Rail } from './rail.js';
 import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
 import { Divider } from './divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
-import { createLatestEventByTypeSelector } from '../latest-event-selector.js';
-import { getWorkflowConfigDensity, WorkflowConfigCard } from './event-cards/config.js';
-import { getChromeContentWidth, INLINE_CONFIG_MIN_COLS } from '../layout/chrome-rows.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { formatCostDisplay } from '../cost-text.js';
+import { useCostStats } from '../hooks/use-cost-stats.js';
+import { glyph } from '../../../lib/glyphs.js';
+import type { ComposerBoxHintOverride } from '../input-hints.js';
+import type { RailForm } from '../layout/chrome-rows.js';
 import type { WorkflowReviewColumn } from '../layout/rect.js';
 
-const selectLatestWorkflowConfig = createLatestEventByTypeSelector('workflow_config');
-
-function WorkflowMetaRow() {
-  const cols = terminalSizeStore.use((s) => s.cols);
-  const configEvent = eventsStore.use(selectLatestWorkflowConfig);
-  const canInlineConfig = configEvent !== undefined && cols >= INLINE_CONFIG_MIN_COLS;
-
-  if (!configEvent) {
-    return <CostStatusLine />;
-  }
-
-  if (!canInlineConfig) {
-    return (
-      <>
-        <ConfigLine />
-        <CostStatusLine />
-      </>
-    );
-  }
-
-  const contentWidth = getChromeContentWidth(cols);
-  const costWidth = Math.min(56, Math.max(24, Math.floor(contentWidth * 0.36)));
-  const configWidth = Math.max(20, contentWidth - costWidth - 4);
-
-  return (
-    <Box
-      width="100%"
-      height={1}
-      overflow="hidden"
-      paddingX={1}
-      justifyContent="space-between"
-      flexShrink={0}
-    >
-      <Box width={configWidth} height={1} overflow="hidden">
-        <WorkflowConfigCard
-          event={configEvent}
-          density={getWorkflowConfigDensity(configEvent, configWidth)}
-        />
-      </Box>
-      <CostStatusLine maxWidth={costWidth} paddingX={0} align="right" />
-    </Box>
-  );
+function useComposerBoxHints(
+  mode: InputMode,
+  override?: ComposerBoxHintOverride | undefined,
+): ComposerBoxHints {
+  const complete = lifecycleStore.use((s) => s.phase === 'complete');
+  const { localRate, costBreakdown, pricingState } = useCostStats();
+  const baseKeys = override ? override.keys : mode === 'question' ? '⏎  send' : '⏎';
+  const keys = complete ? `${baseKeys}  ${glyph('check')}` : baseKeys;
+  const display = formatCostDisplay(localRate, costBreakdown, pricingState);
+  const cost = override?.cost === true && display.hasPricedUsage ? display.spentText : undefined;
+  return { keys, cost };
 }
 
 export function WorkflowHeader({
   startedAt,
   scrollAboveLabel = '',
+  railForm,
 }: {
   startedAt: string;
   scrollAboveLabel?: string;
+  railForm?: RailForm | undefined;
 }) {
   const cols = terminalSizeStore.use((s) => s.cols);
   return (
     <>
       <Header startedAt={startedAt} />
-      <WorkflowMetaRow />
-      <AgentStatusRow />
+      <Rail form={railForm} />
       <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </>
   );
@@ -85,9 +55,12 @@ export function WorkflowFooter({
   commands,
   mode,
   inputHint,
+  feedbackHint,
+  boxHintOverride,
   disabled,
   onEditShortcut,
   reviewColumn,
+  questionEpoch,
 }: {
   handleInput: (text: string) => void;
   onEmptySubmit?: (() => void) | undefined;
@@ -95,15 +68,21 @@ export function WorkflowFooter({
   commands: RuntimeCommandDef[];
   mode: InputMode;
   inputHint: string;
+  feedbackHint?: string | undefined;
+  boxHintOverride?: ComposerBoxHintOverride | undefined;
   disabled: boolean;
   onEditShortcut?: (() => void) | undefined;
   reviewColumn?: WorkflowReviewColumn | undefined;
+  questionEpoch?: number | undefined;
 }) {
-  const composerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
+  const composerWidthProps = reviewColumn
+    ? { width: reviewColumn.width, boxLeftOffset: reviewColumn.leftOffset }
+    : {};
   const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
+  const boxHints = useComposerBoxHints(mode, boxHintOverride);
   const footer = (
     <>
-      <FeedbackRow inputHint={inputHint} />
+      <FeedbackRow inputHint={feedbackHint ?? inputHint} />
       <Composer
         onSubmit={handleInput}
         onEmptySubmit={onEmptySubmit}
@@ -113,6 +92,8 @@ export function WorkflowFooter({
         hint={inputHint}
         currentScreen="workflow"
         disabled={disabled}
+        boxHints={boxHints}
+        questionEpoch={questionEpoch}
         {...composerWidthProps}
         {...(onEditShortcut ? { onEditShortcut } : {})}
       />

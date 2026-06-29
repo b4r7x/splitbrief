@@ -4,6 +4,7 @@ import {
   runnerOperationStatusDisplay,
   runnerTerminalOperationLine,
 } from './runner-terminal.js';
+import { glyph } from '../../../lib/glyphs.js';
 import type {
   ActiveOperation,
   OperationWarningGroup,
@@ -27,7 +28,7 @@ describe('runnerOperationStatusDisplay', () => {
   it('treats aborted runner status as user interruption', () => {
     expect(runnerOperationStatusDisplay('aborted')).toEqual({
       label: 'interrupted',
-      marker: '×',
+      marker: glyph('statusCancelled'),
       tone: 'warning',
       showDiagnosticPreview: true,
     });
@@ -49,6 +50,15 @@ describe('runnerOperationStatusDisplay', () => {
       marker: '!',
       tone: 'error',
       showDiagnosticPreview: true,
+    });
+  });
+});
+
+describe('runnerOperationStatusDisplay glyphs', () => {
+  it('uses the active glyph policy for completed operations', () => {
+    expect(runnerOperationStatusDisplay('completed')).toMatchObject({
+      marker: glyph('check'),
+      tone: 'success',
     });
   });
 });

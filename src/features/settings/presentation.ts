@@ -1,16 +1,5 @@
 import type { SettingDef } from '../../core/settings/catalog.js';
-
-export interface SettingsPresentationColors {
-  accent: string;
-  success: string;
-  textDim: string;
-}
-
-export function valueColor(def: SettingDef, value: unknown, t: SettingsPresentationColors): string {
-  if (def.kind === 'boolean') return value ? t.success : t.textDim;
-  if (def.kind === 'picker') return t.accent;
-  return t.textDim;
-}
+import { glyph } from '../../lib/glyphs.js';
 
 export function matchesFilter(def: SettingDef, query: string): boolean {
   const q = query.toLowerCase();
@@ -22,7 +11,9 @@ export function matchesFilter(def: SettingDef, query: string): boolean {
 }
 
 export function validateNumber(value: string, def: SettingDef): number | null {
-  const num = Number(value);
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const num = Number(trimmed);
   if (Number.isNaN(num)) return null;
   if (def.min !== undefined && num < def.min) return null;
   if (def.max !== undefined && num > def.max) return null;
@@ -31,10 +22,9 @@ export function validateNumber(value: string, def: SettingDef): number | null {
 }
 
 export function displayValue(def: SettingDef, value: unknown): string {
-  if (def.kind === 'boolean') return value ? '[✓]' : '[✗]';
+  if (def.kind === 'boolean') return value ? glyph('check') : 'off';
   if (value !== undefined && value !== null) {
-    const formatted = def.formatValue ? def.formatValue(value) : String(value);
-    return `[${formatted}]`;
+    return def.formatValue ? def.formatValue(value) : String(value);
   }
-  return '[—]';
+  return '—';
 }

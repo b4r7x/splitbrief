@@ -145,6 +145,54 @@ describe('executeRuntimeCommand', () => {
     expect(errorMsg).toContain('planning');
   });
 
+  it('parses argument-bearing slash lines forwarded from the composer', async () => {
+    const received: string[] = [];
+    const cmds: RuntimeCommandDef[] = [
+      {
+        kind: 'arg',
+        name: '/copy',
+        description: 'copy',
+        validScreens: ['workflow'],
+        handler: (args) => {
+          received.push(`copy:${args ?? ''}`);
+        },
+      },
+      {
+        kind: 'arg',
+        name: '/queue',
+        description: 'queue',
+        validScreens: ['workflow'],
+        handler: (args) => {
+          received.push(`queue:${args ?? ''}`);
+        },
+      },
+    ];
+
+    await executeRuntimeCommand(cmds, '/copy path', 'workflow', noop);
+    await executeRuntimeCommand(cmds, '/queue clear', 'workflow', noop);
+
+    expect(received).toEqual(['copy:path', 'queue:clear']);
+  });
+
+  it('reports an unknown slash command against a populated registry', async () => {
+    let errorMsg = '';
+    const cmds: RuntimeCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/help',
+        description: 'help',
+        validScreens: ['home'],
+        handler: noop,
+      },
+    ];
+
+    await executeRuntimeCommand(cmds, '/nope', 'home', (msg) => {
+      errorMsg = msg;
+    });
+
+    expect(errorMsg).toContain('Unknown command: /nope');
+  });
+
   it('waits for async command handlers', async () => {
     let called = false;
     const cmds: RuntimeCommandDef[] = [

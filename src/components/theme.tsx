@@ -145,6 +145,25 @@ export function getTheme(mode: 'terminal' | 'mono' = 'terminal'): Theme {
   return mode === 'mono' ? monoTheme : terminalTheme;
 }
 
+// The mono preset is truecolor/256 hex. On a 16-color terminal those hexes are downsampled to the
+// nearest ANSI bucket, where slate textDim (#666) and accent (#7aa2f7) can collapse together and
+// break the dim-vs-accent separation. Only offer it when the terminal advertises hi-color support;
+// otherwise fall back to the named-ANSI preset, which stays legible everywhere.
+export function supportsHexColors(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') return false;
+  const colorterm = env.COLORTERM?.toLowerCase() ?? '';
+  if (colorterm === 'truecolor' || colorterm === '24bit') return true;
+  return /256/.test(env.TERM ?? '');
+}
+
+export function resolveTheme(
+  mode: 'terminal' | 'mono' = 'terminal',
+  env?: NodeJS.ProcessEnv,
+): Theme {
+  if (mode === 'mono' && !supportsHexColors(env)) return terminalTheme;
+  return getTheme(mode);
+}
+
 const ThemeContext = createContext<Theme>(terminalTheme);
 
 export function ThemeProvider({

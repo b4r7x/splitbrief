@@ -49,8 +49,12 @@ const getFilteredItems = <T>(
   filter: string,
 ): T[] => (filter ? items.filter((item) => filterFn(item, filter)) : items);
 
+function rawPageSize<T>(pageSize: PageSize<T>, ctx: PageNavigationContext<T>): number {
+  return typeof pageSize === 'number' ? pageSize : pageSize(ctx);
+}
+
 function resolvePageSize<T>(pageSize: PageSize<T>, ctx: PageNavigationContext<T>): number {
-  return Math.max(1, typeof pageSize === 'number' ? pageSize : pageSize(ctx));
+  return Math.max(1, rawPageSize(pageSize, ctx));
 }
 
 export function useFilterableList<T>({
@@ -105,6 +109,11 @@ export function useFilterableList<T>({
         setState((prev) => {
           const currentFiltered = getFilteredItems(items, filterFn, prev.filter);
           const currentIndex = clampIndex(prev.selectedIndex, currentFiltered.length);
+          const visibleRows = rawPageSize(pageSize, {
+            filtered: currentFiltered,
+            selectedIndex: currentIndex,
+          });
+          if (visibleRows <= 0) return prev;
           const selected = currentFiltered[currentIndex];
           if (selected === undefined) return prev;
           return {

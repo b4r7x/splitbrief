@@ -1,194 +1,65 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { configStore } from '../../../stores/project/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { operationsStore } from '../../../stores/workflow/operations.js';
-import { addEvent } from '../../../stores/workflow/actions.js';
+import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import type { EngineEventOf } from '../../../engine/events/types.js';
-import { WorkflowHeader } from './chrome.js';
+import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 
-type WorkflowConfigOverrides = Partial<
-  Omit<EngineEventOf<'workflow_config'>, 'type' | 'ts' | 'phase'>
->;
-
-function workflowConfig(overrides: WorkflowConfigOverrides = {}): EngineEventOf<'workflow_config'> {
-  return {
-    type: 'workflow_config',
-    ts: Date.now(),
-    phase: 'planning',
-    mode: 'instant',
-    plannerTool: 'codex',
-    implementerTool: 'codex',
-    ...overrides,
-  };
-}
+const RAIL_STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'];
 
 describe('WorkflowHeader', () => {
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
-    operationsStore.reset();
-    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
     routerStore.init({ screen: 'workflow', feature: 'test feature' });
-    lifecycleStore.__testReset({ phase: 'researching' });
+    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
   });
 
   afterEach(() => {
     resetAllStores();
-    operationsStore.reset();
   });
 
-  it('inlines full config with models when the allocated config column is wide enough', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    eventsStore.__testReset({
-      events: [
-        workflowConfig({
-          plannerModel: 'p',
-          implementerModel: 'i',
-        }),
-      ],
-    });
+  it('renders the pipeline rail with all five compile stages below the header', async () => {
+    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
 
+    for (const stage of RAIL_STAGES) expect(frame).toContain(stage);
+    ui.unmount();
+  });
+
+  it('drops the retired res/impl/rev dot-strip labels', async () => {
+    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).not.toContain('res ');
+    expect(frame).not.toContain('impl');
+    expect(frame).not.toContain('rev');
+    ui.unmount();
+  });
+
+  it('separates the rail region from the body with a single hairline divider', async () => {
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
     await tick();
     const lines = (ui.lastFrame() ?? '').split('\n');
+    const rule = glyph('divider', 'unicode');
+    const dividerLines = lines.filter((line) => stripAnsiStyles(line).includes(rule.repeat(20)));
 
-    expect(
-      lines.some(
-        (line) =>
-          line.includes('instant') &&
-          line.includes('(p)') &&
-          line.includes('(i)') &&
-          !line.includes('spent n/a'),
-      ),
-    ).toBe(true);
-
-    ui.unmount();
-  });
-
-  it('keeps labels but omits models when the inline config column cannot fit full text', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    eventsStore.__testReset({
-      events: [
-        workflowConfig({
-          plannerModel: 'planner-model',
-          implementerModel: 'implementer-model',
-        }),
-      ],
-    });
-
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('instant · Planner: Codex');
-    expect(frame).toContain('Implementer: Codex');
-    expect(frame).not.toContain('planner-model');
-    expect(frame).not.toContain('implementer-model');
-
-    ui.unmount();
-  });
-
-  it('uses tool-only config text when labels do not fit the available width', async () => {
-    terminalSizeStore.__testReset({ cols: 40, rows: 24, isSmall: true });
-    eventsStore.__testReset({
-      events: [workflowConfig()],
-    });
-
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('instant · Codex → Codex');
-    expect(frame).not.toContain('Planner:');
-    expect(frame).not.toContain('Implementer:');
-
-    ui.unmount();
-  });
-
-  it('keeps the pipeline on the same right side as the timer', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    routerStore.init({
-      screen: 'workflow',
-      feature: 'a long feature name that should stop before the right chrome',
-    });
-
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const header = (ui.lastFrame() ?? '').split('\n')[0] ?? '';
-    const pipelineIndex = header.indexOf('res');
-    const timerIndex = header.indexOf('00:');
-
-    expect(pipelineIndex).toBeGreaterThan(40);
-    expect(timerIndex).toBeGreaterThan(pipelineIndex);
-
-    ui.unmount();
-  });
-
-  it('keeps running agent status to one chrome row when heartbeat details are present', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    addEvent({
-      type: 'planner_status',
-      ts: Date.now(),
-      phase: 'researching',
-      status: 'running',
-      tool: 'codex',
-      model: 'default',
-    });
-    addEvent({
-      type: 'planner_heartbeat',
-      ts: Date.now(),
-      phase: 'researching',
-      elapsedMs: 200,
-      accumulatedTokens: 12_300,
-      phaseHint: 'collecting enough context to decide whether the work should be split',
-    });
-
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const frame = ui.lastFrame() ?? '';
-    const statusLines = frame
-      .split('\n')
-      .filter(
-        (line) =>
-          line.includes('planner researching') || line.includes('collecting enough context'),
-      );
-
-    expect(statusLines).toHaveLength(1);
-
-    ui.unmount();
-  });
-
-  it('keeps the top divider directly below the status row', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
-    addEvent({
-      type: 'planner_status',
-      ts: Date.now(),
-      phase: 'researching',
-      status: 'running',
-      tool: 'codex',
-      model: 'default',
-    });
-
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const lines = (ui.lastFrame() ?? '').split('\n');
-    const statusIndex = lines.findIndex((line) => line.includes('planner researching'));
-    const dividerIndex = lines.findIndex((line) => line.includes('─'));
-
-    expect(statusIndex).toBeGreaterThanOrEqual(0);
-    expect(dividerIndex).toBe(statusIndex + 1);
-
+    expect(dividerLines).toHaveLength(1);
     ui.unmount();
   });
 
   it('does not duplicate the latest user message in workflow chrome', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     const userText = 'single visible user message';
     eventsStore.__testReset({
       events: [
@@ -211,6 +82,104 @@ describe('WorkflowHeader', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.match(new RegExp(userText, 'g')) ?? []).toHaveLength(1);
+    ui.unmount();
+  });
+});
+
+describe('WorkflowFooter', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    routerStore.init({ screen: 'workflow', feature: 'test feature' });
+    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
+  });
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  function renderFooter(
+    props: Partial<{
+      mode: 'normal' | 'question';
+      inputHint: string;
+      questionEpoch: number;
+      handleInput: (text: string) => void;
+    }> = {},
+  ) {
+    return renderFeature(
+      <WorkflowFooter
+        handleInput={props.handleInput ?? (() => {})}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode={props.mode ?? 'normal'}
+        inputHint={props.inputHint ?? ''}
+        questionEpoch={props.questionEpoch ?? 0}
+        disabled={false}
+      />,
+    );
+  }
+
+  it('appends a done token to the footer key cluster when the phase is complete', async () => {
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
+    const ui = renderFooter();
+    await tick();
+
+    expect(ui.lastFrame() ?? '').toContain(glyph('check'));
+    ui.unmount();
+  });
+
+  it('shows the question-mode send affordance and feedback hint in the footer', async () => {
+    const ui = renderFooter({
+      mode: 'question',
+      inputHint: 'answer prompt shown above',
+    });
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('send');
+    expect(frame).toContain('answer prompt shown above');
+    ui.unmount();
+  });
+
+  it('omits the done token while the workflow is still running', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    const ui = renderFooter();
+    await tick();
+
+    expect(ui.lastFrame() ?? '').not.toContain(glyph('check'));
+    ui.unmount();
+  });
+
+  it('clears a stale answer when questionEpoch advances in question mode', async () => {
+    const submits: string[] = [];
+    const ui = renderFooter({
+      mode: 'question',
+      inputHint: 'first question',
+      questionEpoch: 1,
+      handleInput: (text) => submits.push(text),
+    });
+    ui.stdin.write('stale answer');
+    await tick(20);
+    expect(ui.lastFrame()).toContain('stale answer');
+
+    ui.rerender(
+      <WorkflowFooter
+        handleInput={(text) => submits.push(text)}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="question"
+        inputHint="second question"
+        questionEpoch={2}
+        disabled={false}
+      />,
+    );
+    await tick(20);
+    expect(ui.lastFrame()).not.toContain('stale answer');
+
+    ui.stdin.write('\r');
+    await tick(20);
+    expect(submits).not.toContain('stale answer');
     ui.unmount();
   });
 });

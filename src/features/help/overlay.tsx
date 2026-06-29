@@ -1,6 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { ListGroupHeader, ListRow } from '../../components/list-row.js';
 import {
   ScrollableDocument,
   type ScrollableDocumentRow,
@@ -11,7 +10,9 @@ import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 
-const PADDING_BORDER = 6;
+// OverlayPanel round border (2) + paddingX=2 (4), plus each ListRow's lead (2) and the metadata
+// leading space (1) so the widest label+description pair fits inside the frame without truncation.
+const PADDING_BORDER = 9;
 const HELP_CHROME_ROWS = 11;
 
 interface HelpOverlayProps {
@@ -20,7 +21,6 @@ interface HelpOverlayProps {
 }
 
 export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
-  const t = useTheme();
   const rows = terminalSizeStore.use((s) => s.rows);
   const inputMode = controlsStore.use((s) => s.inputMode);
   const visibleCommands = commands.filter((command) =>
@@ -41,48 +41,28 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const documentRows: ScrollableDocumentRow[] = [
     {
       key: 'commands-heading',
-      node: (
-        <Text bold color={t.text}>
-          Commands
-        </Text>
-      ),
+      node: <ListGroupHeader label="commands" />,
     },
     ...visibleCommands.map((cmd) => ({
       key: `command:${cmd.name}`,
-      node: (
-        <>
-          <Box width={labelColWidth}>
-            <Text color={t.accent}>{cmd.name}</Text>
-          </Box>
-          <Text color={t.textDim}>{cmd.description}</Text>
-        </>
-      ),
+      node: <ListRow label={cmd.name} metadata={cmd.description} labelWidth={labelColWidth} />,
     })),
     {
       key: 'shortcuts-heading',
-      node: (
-        <Text bold color={t.text}>
-          Keyboard Shortcuts
-        </Text>
-      ),
+      node: <ListGroupHeader label="keyboard shortcuts" />,
     },
     ...shortcuts.map((shortcut) => ({
       key: `shortcut:${shortcut.id}`,
       node: (
-        <>
-          <Box width={labelColWidth}>
-            <Text color={t.accent}>{shortcut.key}</Text>
-          </Box>
-          <Text color={t.textDim}>{shortcut.description}</Text>
-        </>
+        <ListRow label={shortcut.key} metadata={shortcut.description} labelWidth={labelColWidth} />
       ),
     })),
   ];
 
   return (
     <OverlayPanel
-      title="Help"
-      hint="↑↓/PgUp/PgDn scroll  Esc close"
+      title="help · commands & shortcuts"
+      hint="↑↓ scroll · esc close"
       maxWidth={labelColWidth + maxDescWidth + PADDING_BORDER}
     >
       <ScrollableDocument

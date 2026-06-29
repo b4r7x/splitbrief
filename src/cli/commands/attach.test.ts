@@ -11,13 +11,24 @@ import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 const mockCheckServerStatus = vi.fn<(dir: string) => Promise<ServerStatus>>();
 const mockShowCrashDiagnostic = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockInitStores = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-const mockRenderApp = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const renderCalls: Array<Parameters<AttachDeps['renderApp']>[1]> = [];
+const mockRenderAppWithCapture: AttachDeps['renderApp'] = async (_app, options) => {
+  renderCalls.push(options);
+};
+const mockSetupWorkflow: AttachDeps['setupWorkflow'] = async (opts) => {
+  const isInteractive = Boolean(process.stdout.isTTY) && !process.env['CI'];
+  const useFullscreen = opts.fullscreen !== false && isInteractive;
+  const useMouse = opts.mouse !== false && useFullscreen;
+  const useHover = opts.hover === true && useMouse;
+  return { projectDir: opts.project ?? testDir, useFullscreen, useMouse, useHover };
+};
 
 const fakeDeps: AttachDeps = {
   checkServerStatus: mockCheckServerStatus,
   showCrashDiagnostic: mockShowCrashDiagnostic,
   initStores: mockInitStores,
-  renderApp: mockRenderApp,
+  renderApp: mockRenderAppWithCapture,
+  setupWorkflow: mockSetupWorkflow,
 };
 
 let testDir: string;
@@ -28,6 +39,7 @@ beforeEach(() => {
   testDir = join(tmpdir(), `attach-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
   vi.clearAllMocks();
+  renderCalls.length = 0;
   routerStore.reset();
   Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
 });
@@ -179,9 +191,45 @@ describe('attachCommand', () => {
         sockPath: join(sessDir, 'ipc.sock'),
       },
     });
-    expect(mockRenderApp).toHaveBeenCalledWith(expect.anything(), {
+    expect(renderCalls).toHaveLength(1);
+    expect(renderCalls[0]).toEqual({
       fullscreen: false,
       mouse: false,
+      hover: false,
+    });
+  });
+
+  it('forwards workflow render flags when attaching to a live session', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+
+    const sessDir = join(testDir, '.diptych', 'sessions', 'flag-session');
+    mkdirSync(sessDir, { recursive: true });
+
+    mockCheckServerStatus.mockResolvedValue({
+      alive: true,
+      data: {
+        version: 1,
+        pid: 77,
+        startTimeMs: Date.now(),
+        lastAliveMs: Date.now(),
+        sessionId: 'flag-session',
+        mode: 'quick',
+        feature: 'flag feature',
+        authToken: 'test-auth-token',
+      },
+    });
+
+    await attachCommand(
+      'flag-session',
+      { projectDir: testDir, fullscreen: false, mouse: false, hover: true },
+      fakeDeps,
+    );
+
+    expect(renderCalls[0]).toEqual({
+      fullscreen: false,
+      mouse: false,
+      hover: false,
     });
   });
 

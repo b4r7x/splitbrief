@@ -82,7 +82,7 @@ export type QueueHandler = (
   text: string,
   phase: Phase,
 ) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
-export type ClearQueueHandler = () => QueueClearResult;
+export type ClearQueueHandler = () => QueueClearResult | Promise<QueueClearResult>;
 
 export interface WorkflowSinks {
   setAbortHandler: (handler: (() => void) | null) => void;

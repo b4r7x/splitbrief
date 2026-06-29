@@ -14,6 +14,7 @@ interface UseSettingsEditorParams {
   onClose: () => void;
   onOpenSubPicker: (def: SettingDef) => void;
   pageSize: PageSize<SettingDef>;
+  canActOnIndex: (filtered: SettingDef[], index: number) => boolean;
 }
 
 interface SettingsEditorState {
@@ -24,6 +25,7 @@ interface SettingsEditorState {
   editBuffer: string;
   selectedDef: SettingDef | undefined;
   getValue: (def: SettingDef) => unknown;
+  activate: (index: number) => void;
 }
 
 export function useSettingsEditor({
@@ -32,6 +34,7 @@ export function useSettingsEditor({
   onClose,
   onOpenSubPicker,
   pageSize,
+  canActOnIndex,
 }: UseSettingsEditorParams): SettingsEditorState {
   const getValue = (def: SettingDef): unknown =>
     def.readValue ? def.readValue(config) : getConfigValue(config, def.id);
@@ -70,19 +73,21 @@ export function useSettingsEditor({
       )
     : 0;
 
+  const runSelect = (def: SettingDef) => {
+    if (def.kind === 'picker') {
+      onOpenSubPicker(def);
+      return;
+    }
+    if (def.kind === 'string' || def.kind === 'number') {
+      const current = getValue(def);
+      editor.startEditing(def.id, current != null ? String(current) : '');
+    }
+  };
+
   const list = useFilterableList<SettingDef>({
     items: SETTINGS_DEFS,
     filterFn: matchesFilter,
-    onSelect: (def) => {
-      if (def.kind === 'picker') {
-        onOpenSubPicker(def);
-        return;
-      }
-      if (def.kind === 'string' || def.kind === 'number') {
-        const current = getValue(def);
-        editor.startEditing(def.id, current != null ? String(current) : '');
-      }
-    },
+    onSelect: runSelect,
     onClose,
     isActive: isListActive,
     shouldAppendChar: (c) => c !== ' ',
@@ -90,9 +95,22 @@ export function useSettingsEditor({
     pageSize,
   });
 
+  const activate = (index: number) => {
+    if (editor.isEditing) return;
+    if (!canActOnIndex(list.filtered, index)) return;
+    const def = list.filtered[index];
+    if (!def) return;
+    if (def.kind === 'boolean' || def.kind === 'enum') {
+      onSpaceToggle(def);
+      return;
+    }
+    runSelect(def);
+  };
+
   useInput(
     (input) => {
       if (input !== ' ' || list.filtered.length === 0) return;
+      if (!canActOnIndex(list.filtered, list.selectedIndex)) return;
       const def = list.filtered[list.selectedIndex];
       if (def) onSpaceToggle(def);
     },
@@ -107,5 +125,6 @@ export function useSettingsEditor({
     editBuffer: editor.editBuffer,
     selectedDef: list.filtered[list.selectedIndex],
     getValue,
+    activate,
   };
 }

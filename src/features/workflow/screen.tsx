@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, useApp, useInput } from 'ink';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { isResumable } from '../../core/phases.js';
@@ -10,12 +10,19 @@ import { createStartReadinessRecord } from '../../core/readiness/format.js';
 import { READINESS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { loadState } from '../../core/state/persistence.js';
-import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandDef,
+  CopyResult,
+  CopyTarget,
+} from '../../core/runtime/commands/types.js';
+import type { Focus } from '../../stores/ui/focus.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
 import { ScreenShell } from '../../components/screen-shell.js';
+import { useTheme } from '../../components/theme.js';
 import { Divider } from './components/divider.js';
+import { Spinner } from './components/spinner.js';
 import { WorkflowBody } from './components/body.js';
 import { WorkflowFooter, WorkflowHeader } from './components/chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
@@ -28,15 +35,21 @@ import { useIpcClient } from './hooks/use-ipc-client.js';
 import { createIpcPromptDispatcher } from './ipc-prompt-dispatcher.js';
 import { type CollectReadinessFn, useReadinessFetch } from './hooks/use-readiness-fetch.js';
 import { useWorkflowKeys } from './hooks/use-keys.js';
+import { useBriefReviewKeys } from './hooks/use-brief-review-keys.js';
 import { createReviewInputHandler } from './review-parser.js';
-import { resolveAttachInputHint, resolveInputHint } from './input-hints.js';
+import {
+  resolveAttachBoxHint,
+  resolveAttachFeedbackHint,
+  resolveAttachInputHint,
+  resolveCancelledHints,
+  resolveInputHint,
+} from './input-hints.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
@@ -52,14 +65,16 @@ import {
   getWorkflowReviewColumn,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
-  hasWorkflowConfig,
 } from './layout/rect.js';
+import { getRailExtraRows, selectRailForm } from './layout/chrome-rows.js';
 import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.js';
 import { addTuiEvent } from './tui-sink.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
+  copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
+  canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
 }
 
@@ -99,8 +114,15 @@ function hasLoadedResumableStateForSession({
   }
 }
 
-export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScreenProps) {
+export function WorkflowScreen({
+  commands,
+  onRuntimeCommand,
+  copyTarget,
+  canCopyFocused,
+  deps,
+}: WorkflowScreenProps) {
   const { exit } = useApp();
+  const t = useTheme();
   const config = configStore.useConfig();
   const projectDir = configStore.use((s) => s.projectDir);
   const [skills, input, terminal] = useStores(skillsStore, inputHeightStore, terminalSizeStore);
@@ -168,7 +190,6 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
 
-  const hasConfig = eventsStore.use((s) => hasWorkflowConfig(s.events));
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const costApprovalState = costApprovalStore.use((s) => s);
   const footerInputRows = inputRows;
@@ -183,20 +204,20 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
   const showSidebar = sidebarWidth > 0;
   const approvalRows = getApprovalPromptRows(approvalPromptState, cols);
   const costRows = getCostApprovalPromptRows(costApprovalState, cols);
+  const railForm = selectRailForm({ phase, cols });
+  const railExtraRows = getRailExtraRows(railForm, phase, cancelled);
   const promptRows = clampWorkflowPromptRows(
     rows,
     footerInputRows,
-    hasConfig,
+    railExtraRows,
     approvalRows + costRows,
-    cols,
   );
   const promptBoxRows = promptPending ? Math.max(1, promptRows) : promptRows;
   const contentHeight = getWorkflowViewportHeight(
     rows,
     footerInputRows,
-    hasConfig,
+    railExtraRows,
     promptBoxRows,
-    cols,
   );
   const contentWidth = getWorkflowContentWidth({
     cols,
@@ -208,7 +229,12 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
       ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
       : undefined;
 
-  useWorkflowKeys({ isActive: true });
+  useWorkflowKeys({ isActive: !promptPending });
+  useBriefReviewKeys({
+    isActive: !promptPending,
+    copyTarget,
+    canCopyFocused,
+  });
 
   useEffect(() => {
     if (!isAttachedClient) return;
@@ -291,32 +317,56 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
       }
     : undefined;
 
-  const inputHint =
-    isAttachedClient && inputMode.mode === 'normal'
+  const attachedNormal = isAttachedClient && inputMode.mode === 'normal';
+  const cancelledHints =
+    !isAttachedClient && cancelled ? resolveCancelledHints(canResumeCancelledSession) : null;
+  const inputHint = attachedNormal
+    ? ipcState.status === 'connected'
       ? resolveAttachInputHint(ipcState.status)
+      : '…'
+    : cancelledHints
+      ? cancelledHints.placeholder
       : resolveInputHint({
-          cancelled,
-          canResumeCancelled: canResumeCancelledSession,
           inputHint: inputMode.hint,
           inputMode: inputMode.mode,
           phase,
         });
+  const feedbackHint = attachedNormal
+    ? resolveAttachFeedbackHint(ipcState.status)
+    : cancelledHints
+      ? ''
+      : inputHint;
+  const boxHintOverride = cancelledHints
+    ? { keys: cancelledHints.byline, cost: false }
+    : attachedNormal
+      ? resolveAttachBoxHint(ipcState.status)
+      : undefined;
 
   if (!isAttachedClient && !readinessLoaded) {
     return (
-      <ScreenShell justifyContent="center" alignItems="center">
-        <Text>Checking run readiness...</Text>
+      <ScreenShell>
+        <Box paddingX={2}>
+          <Spinner label="checking readiness…" color={t.textDim} />
+        </Box>
       </ScreenShell>
     );
   }
 
   if (!isAttachedClient && readinessBlocked && readiness !== undefined) {
-    return <ReadinessPanel report={readiness} />;
+    const fixCommand = readiness.nextAction.command;
+    const onOpenFix = fixCommand?.startsWith('/') ? () => onRuntimeCommand(fixCommand) : undefined;
+    return <ReadinessPanel report={readiness} onOpenFix={onOpenFix} />;
   }
 
   return (
     <ScreenShell
-      header={<WorkflowHeader startedAt={runner.startedAt} scrollAboveLabel={scrollAboveLabel} />}
+      header={
+        <WorkflowHeader
+          startedAt={runner.startedAt}
+          scrollAboveLabel={scrollAboveLabel}
+          railForm={railForm}
+        />
+      }
       footer={
         <>
           <Divider width={cols} />
@@ -327,6 +377,9 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
             commands={commands}
             mode={inputMode.mode}
             inputHint={inputHint}
+            questionEpoch={inputMode.questionEpoch}
+            feedbackHint={feedbackHint}
+            boxHintOverride={boxHintOverride}
             reviewColumn={reviewColumn}
             {...(handleReviewEditShortcut ? { onEditShortcut: handleReviewEditShortcut } : {})}
             disabled={
@@ -347,8 +400,12 @@ export function WorkflowScreen({ commands, onRuntimeCommand, deps }: WorkflowScr
         onScrollAbove={setScrollAboveLabel}
       />
       <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {approvalPromptState.status === 'pending' && <ApprovalPrompt />}
-        {costApprovalState.status === 'pending' && <CostApprovalPromptConnected />}
+        {approvalPromptState.status === 'pending' && (
+          <ApprovalPrompt clampedBoxRows={promptBoxRows} />
+        )}
+        {costApprovalState.status === 'pending' && (
+          <CostApprovalPromptConnected clampedBoxRows={promptBoxRows} />
+        )}
       </Box>
     </ScreenShell>
   );

@@ -126,6 +126,7 @@ export function saveAbortedRecoverySession(opts: {
     mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
+    persistTranscript: opts.config.workflow.persistTranscript,
   });
   saveFinalSession({
     projectDir: opts.projectDir,

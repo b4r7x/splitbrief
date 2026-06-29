@@ -413,3 +413,31 @@ describe('rejectRunSnapshot', () => {
     expect(ledger?.runSnapshotIds).toContain(runSnapshot.manifest.id);
   });
 });
+
+describe('run snapshot command serialization', () => {
+  it('serializes overlapping accept and reject so stale ledger reads cannot win', async () => {
+    await writeFile(join(tmp, 'feature.ts'), 'before');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    const runSnapshot = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
+
+    const accept = acceptRunSnapshot(tmp, 'sess-01');
+    const reject = rejectRunSnapshot(tmp, 'sess-01');
+    const [acceptResult, rejectResult] = await Promise.all([accept, reject]);
+
+    expect(acceptResult.snapshotId).toBeTruthy();
+    expect(rejectResult.status).toBe('accepted');
+    if (rejectResult.status === 'accepted') {
+      expect(rejectResult.snapshotId).toBe(acceptResult.snapshotId);
+    }
+    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+    const ledger = await readRunSnapshotLedger(tmp, 'sess-01');
+    expect(ledger?.accepted).toBe(true);
+    expect(ledger?.rejected).toBe(false);
+  });
+});

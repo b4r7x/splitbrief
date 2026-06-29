@@ -13,7 +13,11 @@ import {
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
-import { beginSession, MAX_SLUG_LENGTH } from '../../core/sessions/lifecycle.js';
+import {
+  beginSession,
+  generateOpaqueSessionSlug,
+  MAX_SLUG_LENGTH,
+} from '../../core/sessions/lifecycle.js';
 import { sessionError } from '../../core/sessions/errors.js';
 import { maybeMigrateAndReport } from './migrate.js';
 import { runHeadless } from '../headless.js';
@@ -45,6 +49,9 @@ import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { buildCLIOverrides, printConfigWarnings } from '../build-overrides.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
+import { formatDetachedAttachHint } from '../../utils/shell-quote.js';
+import { resolveCliWorkflowMode } from '../../core/config/runtime/overrides.js';
 
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
@@ -74,16 +81,25 @@ async function applyWorktreeOption(
 ): Promise<CreatedWorktree | null> {
   if (opts.worktree === undefined) return null;
 
+  const baseProjectDir = await canonicalizeProjectDir(opts);
+  // A bare `--worktree` derives its slug from the feature. Under
+  // workflow.persistTranscript:false the feature must not leak into the
+  // `.trees/<slug>` directory or `diptych/<slug>` branch, so generate an
+  // opaque slug instead. An explicit `--worktree <name>` is user-chosen and
+  // kept verbatim.
+  const persistTranscript = loadConfig(baseProjectDir).config.workflow.persistTranscript;
   const slug =
     typeof opts.worktree === 'string' && opts.worktree.length > 0
       ? opts.worktree
-      : slugify(feature ?? 'session', MAX_SLUG_LENGTH) || 'unknown';
-  const baseProjectDir = await canonicalizeProjectDir(opts);
+      : persistTranscript
+        ? slugify(feature ?? 'session', MAX_SLUG_LENGTH) || 'unknown'
+        : generateOpaqueSessionSlug();
   const git = createGitClient(baseProjectDir);
   const wtPath = await withCliErrors(() =>
     createWorktree({ projectDir: baseProjectDir, slug, git }),
   );
-  console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
+  const displaySlug = stripTerminalControls(slug);
+  console.log(`Starting session in worktree .trees/${displaySlug} (branch diptych/${displaySlug})`);
   opts.project = wtPath;
   return { slug, baseProjectDir, git };
 }
@@ -98,9 +114,10 @@ async function rollbackCreatedWorktree(created: CreatedWorktree): Promise<void> 
       deleteBranch: true,
     });
   } catch {
+    const displaySlug = stripTerminalControls(created.slug);
     process.stderr.write(
-      `Warning: failed to remove worktree .trees/${created.slug} after a startup error; ` +
-        `run "git worktree prune" then "git branch -D diptych/${created.slug}" to clean up.\n`,
+      `Warning: failed to remove worktree .trees/${displaySlug} after a startup error; ` +
+        `run "git worktree prune" then "git branch -D diptych/${displaySlug}" to clean up.\n`,
     );
   }
 }
@@ -151,7 +168,8 @@ async function bootstrapSession(
   args.emitReadiness(readiness.report);
   assertReadinessCanStart(readiness.report, args.assertJson);
   clearStaleSessionForCli(args.projectDir);
-  const sessionId = beginSession(args.projectDir, args.feature);
+  const persistTranscript = readiness.config?.workflow.persistTranscript ?? true;
+  const sessionId = beginSession(args.projectDir, args.feature, { persistTranscript });
   persistStartReadiness({ projectDir: args.projectDir, sessionId }, readiness.report);
   return { sessionId, readiness };
 }
@@ -182,13 +200,14 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
   const readiness = await collectReadiness({ projectDir, opts, probeValidation: true });
   assertReadinessCanStart(readiness.report, opts.json);
 
-  const mode = opts.mode ?? 'standard';
+  const mode = resolveCliWorkflowMode(opts, config);
+  const persistTranscript = config.workflow.persistTranscript;
   clearStaleSessionForCli(projectDir);
-  const sessId = beginSession(projectDir, feature);
+  const sessId = beginSession(projectDir, feature, { persistTranscript });
   const sessDir = sessionDir(projectDir, sessId);
   persistStartReadiness({ projectDir, sessionId: sessId }, readiness.report);
 
-  const overrides = { ...buildCLIOverrides(opts), mode };
+  const overrides = buildCLIOverrides(opts);
 
   const result = await deps.spawnServer({
     sessionDir: sessDir,
@@ -198,6 +217,7 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
     mode,
     configPath: configPath(projectDir),
     overrides,
+    persistTranscript,
     ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
     ...(plannerContext !== undefined && { plannerContext }),
     ...(args.attachments !== undefined &&
@@ -211,7 +231,9 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
   }
 
   console.log(`Session ${result.sessionId} started (pid ${result.pid}).`);
-  console.log(`Run: cd ${projectDir} && diptych attach ${result.sessionId}`);
+  console.log(
+    `Run: ${formatDetachedAttachHint(stripTerminalControls(projectDir), stripTerminalControls(result.sessionId))}`,
+  );
 }
 
 async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<void> {
@@ -265,7 +287,7 @@ async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<void> {
 async function runInteractiveStart(args: DispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   assertInteractiveTty();
-  const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
+  const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
 
   let sessionId: string | undefined;
   let readiness: CollectedReadiness | undefined;
@@ -309,6 +331,7 @@ async function runInteractiveStart(args: DispatchArgs): Promise<void> {
   await deps.renderApp(createElement(App), {
     fullscreen: useFullscreen,
     mouse: useMouse,
+    hover: useHover,
     projectDir,
   });
 }
@@ -355,7 +378,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
           parsedAttachments.push({ id: att.id, path: att.path, mimeType: att.mimeType });
         }
         for (const err of parsed.errors) {
-          console.error(`Warning: @${err.path}: ${err.reason}`);
+          console.error(`Warning: @${stripTerminalControls(err.path)}: ${err.reason}`);
         }
       }
 

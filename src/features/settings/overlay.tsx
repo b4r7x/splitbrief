@@ -1,20 +1,26 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel, computeOverlayInnerWidth } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { availableRows, computeListDisplayWindow } from '../../components/pickers/scroll-window.js';
-import { CursorCell } from '../../components/pickers/cursor-cell.js';
+import {
+  availableRows,
+  computeListDisplayWindow,
+  isItemIndexVisible,
+} from '../../components/pickers/scroll-window.js';
+import { ListRow } from '../../components/list-row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import type { SettingDef } from '../../core/settings/catalog.js';
 import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
-import { displayValue, valueColor } from './presentation.js';
+import { displayValue } from './presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
+import { glyph } from '../../lib/glyphs.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
@@ -28,7 +34,8 @@ export function SettingsOverlay() {
   const [{ focus: focusSetting }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const chrome = BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0);
-  const panelWidth = getClampedTerminalWidth({ cols, maxWidth: MAX_PANEL_WIDTH });
+  const panelOuterWidth = getClampedTerminalWidth({ cols, maxWidth: MAX_PANEL_WIDTH });
+  const panelInnerWidth = computeOverlayInnerWidth(panelOuterWidth);
   const rowBudget = availableRows({ rows, chromeRows: chrome });
   const getSection = (def: SettingDef) => def.section;
   const getPageSize = ({ filtered, selectedIndex }: PageNavigationContext<SettingDef>) => {
@@ -40,6 +47,14 @@ export function SettingsOverlay() {
     });
     return displayWindow.visibleSlots.filter((slot) => slot.kind === 'item').length;
   };
+  const listSection = { by: getSection, gapBetweenSections: true as const };
+  const canActOnIndex = (filtered: SettingDef[], index: number) =>
+    isItemIndexVisible({
+      items: filtered,
+      selectedIndex: index,
+      rowBudget,
+      section: listSection,
+    });
 
   const openSubPicker = (def: SettingDef) => {
     overlayStore.setFocus(def.id);
@@ -48,69 +63,94 @@ export function SettingsOverlay() {
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
   };
 
-  const { filter, filtered, effectiveIndex, editingId, editBuffer, selectedDef, getValue } =
-    useSettingsEditor({
-      config,
-      focusSetting,
-      onClose,
-      onOpenSubPicker: openSubPicker,
-      pageSize: getPageSize,
-    });
+  const {
+    filter,
+    filtered,
+    effectiveIndex,
+    editingId,
+    editBuffer,
+    selectedDef,
+    getValue,
+    activate,
+  } = useSettingsEditor({
+    config,
+    focusSetting,
+    onClose,
+    onOpenSubPicker: openSubPicker,
+    pageSize: getPageSize,
+    canActOnIndex,
+  });
 
+  const hasVisibleSettings = filtered.length > 0 && canActOnIndex(filtered, effectiveIndex);
   const hintText = editingId
-    ? 'Enter confirm  Esc cancel'
-    : '\u2191\u2193 nav  Space toggle  Enter edit  Esc close';
+    ? 'enter confirm  esc cancel'
+    : hasVisibleSettings
+      ? '\u2191\u2193 nav  space toggle  enter edit  esc close'
+      : '\u2191\u2193 nav  esc close';
 
   return (
-    <OverlayPanel title="Settings" hint={hintText} maxWidth={panelWidth}>
-      <FilterInput filter={filter} />
+    <OverlayPanel hint={hintText} maxWidth={panelOuterWidth}>
+      <Box width={panelInnerWidth} justifyContent="space-between" marginBottom={1}>
+        <Text color={t.textDim}>settings</Text>
+        <Text color={t.textDim}>esc</Text>
+      </Box>
+
+      <FilterInput filter={filter} placeholder={'filter\u2026'} />
 
       <ListViewport
         items={filtered}
         selectedIndex={effectiveIndex}
         getKey={(def) => def.id}
         rowBudget={rowBudget}
+        onRowActivate={activate}
         section={{
           by: getSection,
           gapBetweenSections: true,
-          renderHeader: (section) => (
-            <Text bold color={t.text}>
-              {section}
-            </Text>
-          ),
+          renderHeader: (section) => <Text color={t.textDim}>{section}</Text>,
         }}
         renderItem={(def, { isCursor }) => {
-          const isEditing = editingId === def.id;
           const value = getValue(def);
 
-          return (
-            <Box justifyContent="space-between">
-              <Box>
-                <CursorCell isCursor={isCursor} dimWhenInactive />
-                <Text color={!isCursor ? t.textDim : t.text}>{def.label}</Text>
+          if (editingId === def.id) {
+            return (
+              <Box width={panelInnerWidth} height={1} overflow="hidden">
+                <Text color={t.textDim}>{'  '}</Text>
+                <Box flexGrow={1} minWidth={0} overflow="hidden">
+                  <Text color={t.text} wrap="truncate-end">
+                    {def.label}
+                  </Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Text
+                    color={t.accent}
+                  >{`[${stripTerminalControls(editBuffer)}${glyph('editCursor')}]`}</Text>
+                </Box>
               </Box>
+            );
+          }
 
-              {isEditing ? (
-                <Text color={t.accent}>[{editBuffer}|]</Text>
-              ) : (
-                <Text color={valueColor(def, value, t)}>
-                  {displayValue(def, value)}
-                  {def.kind === 'picker' ? ' \u2192' : ''}
-                </Text>
-              )}
-            </Box>
+          const boolTrue = def.kind === 'boolean' && value === true;
+          const metadata = boolTrue
+            ? undefined
+            : `${displayValue(def, value)}${def.kind === 'picker' ? ` ${glyph('connectorHandoff')}` : ''}`;
+
+          return (
+            <ListRow
+              label={def.label}
+              state={isCursor ? 'active' : 'default'}
+              metadata={metadata}
+              selected={boolTrue}
+              width={panelInnerWidth}
+            />
           );
         }}
       />
 
-      {filtered.length === 0 && (
-        <Box justifyContent="center" marginY={1}>
-          <Text color={t.textDim}>No settings match filter</Text>
-        </Box>
-      )}
+      {filtered.length === 0 && <Text color={t.textDim}>no settings match filter</Text>}
 
       {showDescription && selectedDef && (
-        <Box marginTop={1}>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={t.border}>{glyph('divider').repeat(panelInnerWidth)}</Text>
           <Text color={t.textDim}>{selectedDef.description}</Text>
         </Box>
       )}

@@ -685,14 +685,11 @@ src/
 │   └── workflow/                  Largest feature
 │       ├── attach-resolver.ts     /attach path resolver
 │       ├── conversation-rows/     row-based conversation renderer
-│       ├── components/            agent-status-row, approval-prompt,
-│       │                          brief-review-view, config-line,
-│       │                          conversation-flow/,
-│       │                          cost-display/drilldown/footer/status,
-│       │                          event-cards/{operation-status,
-│       │                          config},
+│       ├── components/            approval-prompt, brief-review-view,
+│       │                          chrome, conversation-flow/,
+│       │                          cost/drilldown-overlay,
 │       │                          feedback-row, header, input-footer,
-│       │                          pipeline-bar, review-view,
+│       │                          rail, readiness-panel, review-view,
 │       │                          sidebar, task-summary
 │       ├── handlers.ts            Runtime command context actions
 │       ├── hooks/                 use-advisory,

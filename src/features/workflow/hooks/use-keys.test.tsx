@@ -32,8 +32,8 @@ const END = '\x1B[F';
 const ARROW_UP = '\x1B[A';
 const ARROW_DOWN = '\x1B[B';
 
-function Harness() {
-  useWorkflowKeys({ isActive: true });
+function Harness({ isActive = true }: { isActive?: boolean }) {
+  useWorkflowKeys({ isActive });
   return <Text> </Text>;
 }
 
@@ -78,7 +78,8 @@ function seedDiff(): string {
     linesRemoved: 0,
     duration: 10,
   });
-  return 'implementer_generate_done:1';
+  // The key is the diff's global render index (0 for the only event), not its timestamp.
+  return 'implementer_generate_done:0';
 }
 
 describe('useWorkflowKeys', () => {
@@ -161,6 +162,22 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     await tick(1);
     expect(controlsStore.get().sidebarVisible).toBe(false);
+    ui.unmount();
+  });
+
+  it('Ctrl+D toggles the latest workflow diff by its unique render-index key', async () => {
+    const key = seedDiff();
+    const ui = render(<Harness />);
+    await tick(1);
+    await tick(1);
+
+    expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(false);
+
+    ui.stdin.write(CTRL_D);
+    await tick(1);
+    await tick(1);
+
+    expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(true);
     ui.unmount();
   });
 
@@ -390,6 +407,72 @@ describe('useWorkflowKeys', () => {
     await tick(1);
 
     ui.stdin.write('G');
+    await tick(1);
+    await tick(1);
+
+    expect(reviewStore.get().scrollOffset).toBe(0);
+    ui.unmount();
+  });
+});
+
+describe('useWorkflowKeys suspended while a prompt is pending', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('Ctrl+G does not open the cost-drilldown overlay', async () => {
+    const ui = render(<Harness isActive={false} />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write('\x07');
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('Ctrl+A does not toggle the latest expandable activity batch', async () => {
+    const key = seedExpandableActivityBatch();
+    const ui = render(<Harness isActive={false} />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write(CTRL_A);
+    await tick(1);
+    await tick(1);
+
+    expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(false);
+    ui.unmount();
+  });
+
+  it('Ctrl+D does not toggle the latest workflow diff', async () => {
+    const key = seedDiff();
+    const ui = render(<Harness isActive={false} />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write(CTRL_D);
+    await tick(1);
+    await tick(1);
+
+    expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(false);
+    ui.unmount();
+  });
+
+  it('Shift+↓ does not scroll the open review pane', async () => {
+    reviewStore.setReviewFile('/tmp/spec.md', 1000);
+    controlsStore.setInputMode('review');
+    const ui = render(<Harness isActive={false} />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
 

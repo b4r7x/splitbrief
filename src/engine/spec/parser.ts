@@ -58,6 +58,21 @@ export function parseTasksStrict(
   });
 }
 
+export interface TaskSourceBlock {
+  id: string;
+  source: string;
+}
+
+export function parseTaskSourceBlocks(tasksMarkdown: string): TaskSourceBlock[] {
+  const stripped = normalizeTaskSeparators(stripFileFrontmatter(tasksMarkdown));
+  const result: TaskSourceBlock[] = [];
+  for (const block of splitTaskBlocks(stripped)) {
+    const task = parseTaskBlock(block);
+    if (task) result.push({ id: task.id, source: block.trim() });
+  }
+  return result;
+}
+
 function parseTaskBlocksFromMarkdown(
   tasksMarkdown: string,
   opts: { strict: boolean; onWarning?: (message: string) => void },

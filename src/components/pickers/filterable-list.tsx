@@ -14,13 +14,13 @@ interface FilterableListProps<T> {
   getKey: (item: T) => string;
   renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
   onConfirm?: (item: T) => void;
+  onActivate?: (item: T) => void;
   title?: string;
   hint?: string;
   placeholder?: ReactNode;
   chromeRows: number;
   maxVisible?: number;
   listFloor?: number;
-  bordered?: boolean;
   width?: number;
   filterVariant?: FilterInputVariant | undefined;
   filterPlaceholder?: string | undefined;
@@ -39,15 +39,15 @@ export function FilterableList<T>({
   getKey,
   renderItem,
   onConfirm,
+  onActivate,
   title,
   hint,
   placeholder,
   chromeRows,
   maxVisible: maxVisibleProp,
   listFloor = 0,
-  bordered,
   width,
-  filterVariant = 'bordered',
+  filterVariant = 'plain',
   filterPlaceholder,
   shouldAppendChar,
   customKeys,
@@ -58,7 +58,7 @@ export function FilterableList<T>({
   const pageSize =
     maxVisibleProp === undefined ? viewportRows : Math.min(viewportRows, maxVisibleProp);
   const resolvedFilterVariant =
-    viewportRows <= 0 && filterVariant === 'bordered' ? 'inline' : filterVariant;
+    viewportRows <= 0 && filterVariant === 'plain' ? 'inline' : filterVariant;
 
   const list = useFilterableList<T>({
     items,
@@ -72,8 +72,10 @@ export function FilterableList<T>({
 
   const { filter, filtered, selectedIndex } = list;
 
+  const onRowActivate = onActivate ?? onConfirm;
+
   return (
-    <OverlayPanel title={title} hint={hint} maxWidth={width} bordered={bordered}>
+    <OverlayPanel title={title} hint={hint} maxWidth={width}>
       <FilterInput
         filter={filter}
         variant={resolvedFilterVariant}
@@ -87,6 +89,14 @@ export function FilterableList<T>({
         rows={rows}
         chromeRows={chromeRows}
         listFloor={listFloor}
+        {...(onRowActivate
+          ? {
+              onRowActivate: (index: number) => {
+                const item = filtered[index];
+                if (item !== undefined) onRowActivate(item);
+              },
+            }
+          : {})}
         {...(maxVisibleProp !== undefined ? { maxVisible: maxVisibleProp } : {})}
         {...(placeholder !== undefined ? { placeholder } : {})}
         {...(section !== undefined ? { section } : {})}

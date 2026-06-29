@@ -63,6 +63,8 @@ export interface TwoColumnNavState<L, R> {
   isOnCustomItem: boolean;
   isOnLeftCustomItem: boolean;
   currentRightIsCustom: boolean;
+  activateLeft: (index: number) => void;
+  activateRight: (index: number) => void;
 }
 
 interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
@@ -72,6 +74,7 @@ interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: stri
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  maxVisible: number;
 }
 
 function defaultLeftFilter<L extends FilterableItem>(item: L, query: string): boolean {
@@ -157,6 +160,33 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   const resetRight = () => rightCol.reset(allowCustomRight ? 1 : 0);
 
+  const activateLeft = (index: number) => {
+    if (params.maxVisible <= 0) return;
+    const item = leftCol.items[index];
+    if (!item) return;
+    leftCol.setIndex(index);
+    resetRight();
+    setActiveColumn('left');
+    const disabled = isLeftItemDisabled?.(item) ?? false;
+    const special = isLeftItemSpecial?.(item) ?? false;
+    if (!disabled && special) onConfirm(item, null);
+  };
+
+  const activateRight = (index: number) => {
+    if (params.maxVisible <= 0) return;
+    const item = filteredRight[index];
+    if (!item) return;
+    rightCol.setIndex(index);
+    setActiveColumn('right');
+    if (isVirtualCustomItem(item)) {
+      if (onCustomRightOverlay && leftCol.currentItem) onCustomRightOverlay(leftCol.currentItem);
+      return;
+    }
+    if (!isRealRightItem(item)) return;
+    const leftItem = leftCol.items[leftCol.effectiveIndex];
+    if (leftItem) onConfirm(leftItem, item);
+  };
+
   const isActive = overlayStore.use(
     (s) =>
       s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
@@ -185,6 +215,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         onConfirm,
         onCancel,
         onRefresh: params.onRefresh,
+        maxVisible: params.maxVisible,
         setActiveColumn,
         setSelectedLeftKey,
         setLeftFilter: leftCol.setFilter,
@@ -216,5 +247,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     isOnCustomItem: rightActive && isOnVirtual,
     isOnLeftCustomItem: leftActive && isSpecial,
     currentRightIsCustom,
+    activateLeft,
+    activateRight,
   };
 }

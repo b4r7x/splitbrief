@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
@@ -15,51 +16,25 @@ import * as handlers from '../features/workflow/handlers.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
-import type { CostPrediction } from '../core/schemas/summary.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
 const PAST_DEBOUNCE_MS = 100;
 
-function makeCostPrediction(): CostPrediction {
-  return {
-    estimatedTasks: 1,
-    lowCost: 0.01,
-    expectedCost: 0.02,
-    highCost: 0.05,
-    plannerTool: 'anthropic',
-    implementerTool: 'anthropic',
-    deterministic: {
-      taskCount: 1,
-      taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-      contextConfidenceCounts: {
-        contextExplicit: 1,
-        contextDetected: 0,
-        contextKnownCatalog: 0,
-        contextCachedProvider: 0,
-        contextConservativeFallback: 0,
-        profileUnavailable: 0,
-      },
-      priceConfidenceCounts: { priceKnown: 1, priceUnknown: 0, profileUnavailable: 0 },
-      tasks: [],
-      totals: {
-        knownActualEstimate: 0.02,
-        hypotheticalAllPlanner: 0.1,
-        estimatedSavings: 0.08,
-        unknownCostReason: [],
-      },
-    },
-  };
-}
-
 function Harness({
   exit,
   interruptWorkflow,
+  cancelWorkflow = handlers.requestCancel,
 }: {
   exit: () => void;
   interruptWorkflow?: () => InterruptResult;
+  cancelWorkflow?: () => void;
 }) {
-  useAppKeys({ exit, interruptWorkflow });
+  useAppKeys({
+    exit,
+    interruptWorkflow,
+    cancelWorkflow,
+  });
   return (
     <Box>
       <Text>ready</Text>
@@ -283,6 +258,24 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     ui.unmount();
   });
 
+  it('second ESC in question mode invokes the workflow cancel port', async () => {
+    controlsStore.setInputMode('question');
+    const cancelWorkflow = vi.fn();
+    const ui = renderFeature(
+      <Harness exit={vi.fn()} interruptWorkflow={() => 'none'} cancelWorkflow={cancelWorkflow} />,
+    );
+    await tick();
+
+    writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    writeEsc(ui);
+    await tick();
+
+    expect(cancelWorkflow).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
   it('a split escape sequence (ESC then an arrow tail) does not arm', async () => {
     const abort = vi.fn();
     handlers.setAbortHandler(abort);
@@ -495,6 +488,7 @@ describe('useAppKeys: keystroke binding', () => {
 
   it.each([
     { name: 'Ctrl+K', input: '\x0b', overlay: 'command-palette' },
+    { name: 'Ctrl+,', input: '\x1b[44;5u', overlay: 'settings' },
     { name: 'Ctrl+/ (legacy \\x1f)', input: '\x1f', overlay: 'help' },
     { name: 'Ctrl+/ (kitty CSI-u)', input: '\x1b[47;5u', overlay: 'help' },
   ] as const)('$name opens the $overlay overlay', async ({ input, overlay }) => {
@@ -508,6 +502,23 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe(overlay);
+    ui.unmount();
+  });
+
+  it('Ctrl+, does not open local settings in an attached client', async () => {
+    routerStore.navigate({
+      to: 'workflow',
+      feature: 'attached feature',
+      attach: { sockPath: '/tmp/diptych.sock', authToken: 'tok' },
+    });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x1b[44;5u');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 
@@ -601,6 +612,48 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
+    ui.unmount();
+  });
+
+  it('Escape closes a stacked passive overlay back to its parent (help over settings -> settings)', async () => {
+    const exit = vi.fn();
+    // The command palette closes itself before launching the chosen overlay, so opening Help from
+    // the palette over Settings leaves Settings beneath Help on the stack.
+    overlayStore.open('settings');
+    overlayStore.open('command-palette');
+    overlayStore.close();
+    overlayStore.open('help');
+    await tick(20);
+    expect(overlayStore.get().active).toBe('help');
+    expect(overlayStore.get().stack.length).toBe(1);
+
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x1b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('settings');
+    ui.unmount();
+  });
+
+  it('Escape leaves a stacked self-closing overlay to its own handler (no global double-pop)', async () => {
+    const exit = vi.fn();
+    // A runner picker carries its own Escape handler. The global close must stand down while it sits
+    // on a non-empty stack, or one Escape would fire both handlers and skip past Settings.
+    overlayStore.open('settings');
+    overlayStore.open('planner-picker');
+    await tick(20);
+    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(overlayStore.get().stack.length).toBe(1);
+
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x1b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('planner-picker');
     ui.unmount();
   });
 });

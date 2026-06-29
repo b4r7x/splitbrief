@@ -6,6 +6,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 export interface UseInputModeResult {
   mode: InputMode;
   hint: string;
+  questionEpoch: number;
   setReviewMode: (h: string) => Promise<ApprovalReviewResult>;
   setQuestionMode: (h: string) => Promise<string>;
   resolve: (value: ApprovalReviewResult | string) => void;
@@ -13,9 +14,14 @@ export interface UseInputModeResult {
 }
 
 export function useInputMode(): UseInputModeResult {
-  const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({
+  const [modeState, setModeState] = useState<{
+    mode: InputMode;
+    hint: string;
+    questionEpoch: number;
+  }>({
     mode: 'normal',
     hint: '',
+    questionEpoch: 0,
   });
   // Mirror committed mode into a ref: resolve() can be invoked after `await` boundaries
   // (e.g. review-parser.ts awaits openInEditor before calling resolve), where a captured
@@ -38,7 +44,7 @@ export function useInputMode(): UseInputModeResult {
     supersedePending();
     return new Promise((resolve) => {
       reviewResolverRef.current = resolve;
-      setModeState({ mode: 'review', hint: h });
+      setModeState((state) => ({ ...state, mode: 'review', hint: h }));
       controlsStore.setInputMode('review');
     });
   };
@@ -47,14 +53,18 @@ export function useInputMode(): UseInputModeResult {
     supersedePending();
     return new Promise((resolve) => {
       questionResolverRef.current = resolve;
-      setModeState({ mode: 'question', hint: h });
+      setModeState((state) => ({
+        mode: 'question',
+        hint: h,
+        questionEpoch: state.questionEpoch + 1,
+      }));
       controlsStore.setInputMode('question');
     });
   };
 
   const resolve = (value: ApprovalReviewResult | string): void => {
     const currentMode = modeRef.current;
-    setModeState({ mode: 'normal', hint: '' });
+    setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     if (currentMode === 'review' && typeof value === 'object') {
       const resolver = reviewResolverRef.current;
@@ -72,7 +82,7 @@ export function useInputMode(): UseInputModeResult {
     const questionResolver = questionResolverRef.current;
     reviewResolverRef.current = null;
     questionResolverRef.current = null;
-    setModeState({ mode: 'normal', hint: '' });
+    setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     reviewResolver?.({ approved: false });
     questionResolver?.('');
@@ -91,6 +101,7 @@ export function useInputMode(): UseInputModeResult {
   return {
     mode: modeState.mode,
     hint: modeState.hint,
+    questionEpoch: modeState.questionEpoch,
     setReviewMode,
     setQuestionMode,
     resolve,

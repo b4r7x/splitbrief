@@ -5,6 +5,7 @@ import { isGitRepo, getRepoToplevel } from '../lib/git.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
+import { stripTerminalControls } from '../utils/display-text.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 
 const NO_CONFIG_MSG = `No config found. Creating default ${DIPTYCH_DIR}/${CONFIG_FILE}`;
@@ -29,7 +30,7 @@ export async function canonicalizeProjectDir(opts: {
 
   if (opts.project !== undefined) {
     console.error(
-      `Warning: --project ${resolved} is inside git repository ${toplevel}; using repository root.`,
+      `Warning: --project ${stripTerminalControls(resolved)} is inside git repository ${stripTerminalControls(toplevel)}; using repository root.`,
     );
   }
   return toplevel;
@@ -72,6 +73,7 @@ export interface SetupResult {
   projectDir: string;
   useFullscreen: boolean;
   useMouse: boolean;
+  useHover: boolean;
   needsSetup?: boolean | undefined;
 }
 
@@ -83,6 +85,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const isInteractive = isInteractiveTty();
   const useFullscreen = opts.fullscreen !== false && isInteractive;
   const useMouse = opts.mouse !== false && useFullscreen;
+  const useHover = opts.hover === true && useMouse;
 
   const hasOverrides =
     opts.model !== undefined ||
@@ -98,9 +101,9 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
       console.log(NO_CONFIG_MSG);
       initConfig(projectDir);
     } else {
-      return { projectDir, useFullscreen, useMouse, needsSetup: true };
+      return { projectDir, useFullscreen, useMouse, useHover, needsSetup: true };
     }
   }
 
-  return { projectDir, useFullscreen, useMouse };
+  return { projectDir, useFullscreen, useMouse, useHover };
 }

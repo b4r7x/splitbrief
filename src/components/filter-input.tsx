@@ -1,7 +1,8 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
+import { glyph } from '../lib/glyphs.js';
 
-export type FilterInputVariant = 'bordered' | 'inline' | 'prompt';
+export type FilterInputVariant = 'plain' | 'inline' | 'prompt';
 
 interface FilterInputProps {
   filter: string;
@@ -11,8 +12,8 @@ interface FilterInputProps {
 
 export function FilterInput({
   filter,
-  placeholder = 'Type to filter...',
-  variant = 'bordered',
+  placeholder = 'type to filter…',
+  variant = 'plain',
 }: FilterInputProps) {
   const t = useTheme();
   const value = filter || <Text color={t.textDim}>{placeholder}</Text>;
@@ -29,29 +30,31 @@ export function FilterInput({
   if (variant === 'prompt') {
     return (
       <Box height={1} overflow="hidden">
-        <Text color={t.textDim}>{'❯ '}</Text>
+        <Text color={t.accent}>{`${glyph('prompt')} `}</Text>
         <Box flexShrink={1} minWidth={0} overflow="hidden">
-          <Text color={filter ? t.text : t.textDim} wrap="truncate-end">
-            {filter || placeholder}
-          </Text>
+          {filter ? (
+            <Text color={t.text} wrap="truncate-end">
+              {filter}
+            </Text>
+          ) : null}
+          <Text color={t.textDim}>{glyph('editCursor')}</Text>
+          {filter ? null : (
+            <Text color={t.textDim} wrap="truncate-end">
+              {placeholder}
+            </Text>
+          )}
         </Box>
-        <Text color={t.accent}>_</Text>
         <Box flexGrow={1} />
       </Box>
     );
   }
 
   return (
-    <Box
-      borderStyle="round"
-      borderColor={t.border}
-      paddingX={1}
-      marginBottom={1}
-      height={3}
-      overflow="hidden"
-    >
-      <Text color={t.accent}>{'> '}</Text>
-      <Text wrap="truncate-end">{value}</Text>
+    <Box height={1} overflow="hidden" marginBottom={1}>
+      <Text color={t.accent}>{`${glyph('prompt')} `}</Text>
+      <Box flexShrink={1} minWidth={0} overflow="hidden">
+        <Text wrap="truncate-end">{value}</Text>
+      </Box>
     </Box>
   );
 }

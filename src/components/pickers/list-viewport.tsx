@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { ScrollIndicator } from '../scroll-indicator.js';
 import { computeListDisplayWindow } from './scroll-window.js';
+import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
 
 export interface ListSectionConfig<T> {
   by: (item: T) => string;
@@ -16,6 +17,9 @@ interface ListViewportBaseProps<T> {
   renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
   placeholder?: ReactNode;
   section?: ListSectionConfig<T>;
+  onRowActivate?: ((globalIndex: number) => void) | undefined;
+  rowZonePrefix?: string | undefined;
+  rowZoneZ?: number | undefined;
 }
 
 type ListViewportExplicitBudgetProps = {
@@ -38,7 +42,17 @@ type ListViewportProps<T> = ListViewportBaseProps<T> &
   (ListViewportExplicitBudgetProps | ListViewportTerminalBudgetProps);
 
 export function ListViewport<T>(props: ListViewportProps<T>) {
-  const { items, selectedIndex, getKey, renderItem, placeholder, section } = props;
+  const {
+    items,
+    selectedIndex,
+    getKey,
+    renderItem,
+    placeholder,
+    section,
+    onRowActivate,
+    rowZonePrefix = 'list-row',
+    rowZoneZ = ROW_ZONE_Z_OVERLAY,
+  } = props;
   const rowBudgetInput =
     props.rowBudget !== undefined
       ? { rowBudget: props.rowBudget }
@@ -78,15 +92,25 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
             );
           case 'gap':
             return <Box key={`gap-${slot.itemIndex}-${i}`} height={1} />;
-          case 'item':
-            return (
-              <Box key={getKey(slot.item)}>
-                {renderItem(slot.item, {
-                  isCursor: slot.itemIndex === selectedIndex,
-                  globalIndex: slot.itemIndex,
-                })}
-              </Box>
+          case 'item': {
+            const rendered = renderItem(slot.item, {
+              isCursor: slot.itemIndex === selectedIndex,
+              globalIndex: slot.itemIndex,
+            });
+            const itemIndex = slot.itemIndex;
+            return onRowActivate ? (
+              <RowZone
+                key={getKey(slot.item)}
+                zoneId={`${rowZonePrefix}:${getKey(slot.item)}`}
+                z={rowZoneZ}
+                onActivate={() => onRowActivate(itemIndex)}
+              >
+                {rendered}
+              </RowZone>
+            ) : (
+              <Box key={getKey(slot.item)}>{rendered}</Box>
             );
+          }
           default: {
             const _exhaustive: never = slot;
             return _exhaustive;

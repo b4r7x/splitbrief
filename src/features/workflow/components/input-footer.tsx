@@ -8,150 +8,99 @@ import { useStores } from '../../../stores/use-stores.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { formatAdvisoryText } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
-import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { focusStore } from '../../../stores/ui/focus.js';
+import { focusHasResolvableCopy } from '../copy/resolve.js';
+import { getChromeContentWidth, getRailStages } from '../layout/chrome-rows.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { glyph } from '../../../lib/glyphs.js';
 
-const FOOTER_SEPARATOR = SOFT_SEP;
-const FOOTER_GAP_CELLS = 4;
-const FOOTER_COMPACT_CONTENT_WIDTH = 88;
-
-interface InputFooterLayoutInput {
+export interface InputFooterBylineInput {
   cols: number;
-  isAttachedClient: boolean;
-  advisoryText: string | null;
-  taskText: string;
-  queueCountText: string | null;
+  stageText: string;
+  fractionText: string;
+  etaText: string | null;
   gitLabel: string;
+  advisoryText: string | null;
+  copyHint?: string | null;
 }
 
-export interface InputFooterLayout {
-  left: string;
-  right: string;
-}
-
-function joinFooterParts(parts: readonly (string | null | undefined)[]): string {
+function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
     .filter((part): part is string => part !== null && part !== undefined && part.length > 0)
-    .join(FOOTER_SEPARATOR);
+    .join(SOFT_SEP);
 }
 
-function footerCellWidth(text: string): number {
+function bylineCells(text: string): number {
   return getTerminalCellWidth(text);
 }
 
-function fitsFooterCells(text: string, maxCells: number): boolean {
-  return footerCellWidth(text) <= maxCells;
-}
+export function buildInputFooterByline(input: InputFooterBylineInput): string {
+  const width = getChromeContentWidth(input.cols);
+  const core = [input.stageText, input.fractionText].filter((part) => part.length > 0).join(' ');
+  const floor = input.fractionText.length > 0 ? input.fractionText : input.stageText;
+  const lead = (text: string) => (text.length > 0 ? `${glyph('stageDone')} ${text}` : '');
 
-function truncateFooterText(text: string, maxCells: number): string {
-  return truncateTerminalDisplayText(text, maxCells);
-}
+  const candidates = [
+    joinBylineParts([lead(core), input.etaText, input.gitLabel, input.advisoryText]),
+    joinBylineParts([lead(core), input.etaText, input.gitLabel]),
+    joinBylineParts([lead(core), input.gitLabel]),
+    joinBylineParts([lead(core)]),
+    joinBylineParts([lead(floor)]),
+  ];
 
-function buildQueueText(queueCountText: string | null, isCompact: boolean): string | null {
-  if (!queueCountText) return null;
-  if (isCompact) return queueCountText;
-  return `${queueCountText} pending`;
-}
+  const chosenCore =
+    candidates.find((candidate) => bylineCells(candidate) <= width) ??
+    truncateTerminalDisplayText(lead(floor), width);
 
-function buildRightStatus(input: InputFooterLayoutInput, contentWidth: number): string {
-  const isCompact = contentWidth < FOOTER_COMPACT_CONTENT_WIDTH;
-  const queueText = buildQueueText(input.queueCountText, isCompact);
-  const full = joinFooterParts([input.taskText, queueText, isCompact ? null : input.gitLabel]);
-  if (fitsFooterCells(full, contentWidth)) return full;
+  // The copy hint is metadata: it is the first accessory to go under width pressure, degrading
+  // `y copy`, then bare `y`, then gone, and only appended when the richest core still leaves room.
+  const copyFull = input.copyHint && input.copyHint.length > 0 ? input.copyHint : null;
+  if (!copyFull) return chosenCore;
 
-  if (input.queueCountText) {
-    const compactQueue = joinFooterParts([input.taskText, input.queueCountText]);
-    if (fitsFooterCells(compactQueue, contentWidth)) return compactQueue;
-
-    const separatorWidth = footerCellWidth(FOOTER_SEPARATOR);
-    const queueWidth = footerCellWidth(input.queueCountText);
-    if (queueWidth <= contentWidth) {
-      const taskBudget = contentWidth - queueWidth - separatorWidth;
-      if (taskBudget > 1) {
-        return joinFooterParts([
-          truncateFooterText(input.taskText, taskBudget),
-          input.queueCountText,
-        ]);
-      }
-      return input.queueCountText;
-    }
-
-    return truncateFooterText(input.queueCountText, contentWidth);
+  const copyBare = copyFull.split(' ')[0] ?? copyFull;
+  const copyVariants = copyBare === copyFull ? [copyFull] : [copyFull, copyBare];
+  for (const variant of copyVariants) {
+    const combined = joinBylineParts([chosenCore, variant]);
+    if (bylineCells(combined) <= width) return combined;
   }
-
-  return truncateFooterText(full, contentWidth);
-}
-
-export function buildInputFooterLayout(input: InputFooterLayoutInput): InputFooterLayout {
-  const contentWidth = getChromeContentWidth(input.cols);
-  const isCompact = contentWidth < FOOTER_COMPACT_CONTENT_WIDTH;
-  const controlParts = input.isAttachedClient
-    ? ['Ctrl+D detach']
-    : ['Ctrl+C abort', isCompact ? null : 'Ctrl+C again exit'];
-  const right = buildRightStatus(input, contentWidth);
-  const baseLeft = joinFooterParts(controlParts);
-  const gap = right ? FOOTER_GAP_CELLS : 0;
-  const baseLeftWidth = footerCellWidth(baseLeft);
-  const rightWidth = footerCellWidth(right);
-  const advisoryBudget =
-    contentWidth - baseLeftWidth - rightWidth - gap - footerCellWidth(FOOTER_SEPARATOR);
-  const advisoryText =
-    input.advisoryText && contentWidth >= 60 && advisoryBudget >= 12
-      ? truncateFooterText(input.advisoryText, advisoryBudget)
-      : null;
-  const left = joinFooterParts([...controlParts, advisoryText]);
-  const leftBudget = right ? Math.max(0, contentWidth - rightWidth - gap) : contentWidth;
-
-  const fittedLeft = fitsFooterCells(left, leftBudget)
-    ? left
-    : truncateFooterText(left, leftBudget);
-
-  if (!right || footerCellWidth(fittedLeft) + rightWidth + gap <= contentWidth) {
-    return { left: fittedLeft, right };
-  }
-
-  const rightBudget = Math.max(
-    1,
-    contentWidth - Math.min(footerCellWidth(fittedLeft), Math.floor(contentWidth / 2)) - gap,
-  );
-  const fittedRight = truncateFooterText(right, rightBudget);
-  return {
-    left: truncateFooterText(left, Math.max(0, contentWidth - footerCellWidth(fittedRight) - gap)),
-    right: fittedRight,
-  };
+  return chosenCore;
 }
 
 export function InputFooter({ width }: { width?: number | undefined }) {
   const t = useTheme();
-  const [{ queueDepth }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
-  const isAttachedClient = routerStore.use(
-    (s) => s.screen === 'workflow' && s.attach !== undefined,
-  );
+  const [{ phase }, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
   const advisory = useAdvisory();
   const workflow = configStore.useConfig().workflow;
   const commitStrategy = workflow.git?.commitStrategy ?? 'none';
   const createBranchEnabled = workflow.git?.createBranch ?? false;
-  const gitLabel = createBranchEnabled ? `git: branch+${commitStrategy}` : `git: ${commitStrategy}`;
-  const taskText = `Task ${currentTask}/${totalTasks}${etaText ? `${SOFT_SEP}${etaText}` : ''}`;
-  const queueCountText = queueDepth > 0 ? `queued: ${queueDepth}` : null;
-  const layout = buildInputFooterLayout({
+  const gitLabel = createBranchEnabled ? `git:branch+${commitStrategy}` : `git:${commitStrategy}`;
+  const activeStage = getRailStages(phase).find((stage) => stage.status === 'active');
+  const stageText = activeStage ? activeStage.stage : '';
+  const fractionText = totalTasks > 0 ? `${currentTask}/${totalTasks}` : '';
+  // Only advertise `y copy` when the focused region actually resolves a value, so the affordance
+  // never promises a yank that would toast "Nothing to copy".
+  const focus = focusStore.use((f) => f);
+  const copyResolvable = focusHasResolvableCopy(focus);
+
+  const byline = buildInputFooterByline({
     cols: width ?? cols,
-    isAttachedClient,
+    stageText,
+    fractionText,
+    etaText,
+    gitLabel,
     advisoryText:
       advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
-    taskText,
-    queueCountText,
-    gitLabel,
+    copyHint: copyResolvable ? 'y copy' : null,
   });
 
   return (
-    <Box width="100%" paddingX={1} justifyContent="space-between" height={1} flexShrink={0}>
-      <Text color={t.textDim}>{layout.left}</Text>
-      {layout.right && <Text color={t.textDim}>{layout.right}</Text>}
+    <Box width="100%" paddingX={1} paddingBottom={1} height={2} flexShrink={0}>
+      <Text color={t.textDim} wrap="truncate-end">
+        {byline}
+      </Text>
     </Box>
   );
 }

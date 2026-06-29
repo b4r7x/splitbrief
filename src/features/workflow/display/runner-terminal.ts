@@ -11,11 +11,12 @@ import {
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { glyph } from '../../../lib/glyphs.js';
 
 export type RunnerTerminalTone = 'info' | 'success' | 'warning' | 'error' | 'textDim';
 export type RunnerOperationLineSegmentRole = 'role' | 'status' | 'dim';
 
-type OperationMarker = '✓' | '×' | '!' | '-';
+type OperationMarker = string;
 type TerminalOperation = Exclude<ActiveOperation, { status: 'running' }>;
 
 export interface RunnerOperationStatusDisplay {
@@ -43,21 +44,21 @@ export function runnerOperationStatusDisplay(
     case 'completed':
       return {
         label: null,
-        marker: '✓',
+        marker: glyph('check'),
         tone: 'success',
         showDiagnosticPreview: false,
       };
     case 'cancelled':
       return {
         label: 'cancelled',
-        marker: '×',
+        marker: glyph('statusCancelled'),
         tone: 'warning',
         showDiagnosticPreview: false,
       };
     case 'aborted':
       return {
         label: 'interrupted',
-        marker: '×',
+        marker: glyph('statusCancelled'),
         tone: 'warning',
         showDiagnosticPreview: true,
       };

@@ -7,7 +7,7 @@ import { SERVER_LOG_FILE, ipcSockPath } from '../../core/paths.js';
 import { fsError } from '../../lib/fs.js';
 import { checkServerStatus } from './lockfile.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
-import { writeIpcServerArgsFile } from './server-args.js';
+import { writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
 import { readOtelExporterFromArgv } from '../../lib/otel.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
@@ -23,6 +23,7 @@ export type SpawnServerOptions = {
   allowHooks?: boolean;
   plannerContext?: string;
   attachments?: Array<{ id: string; path: string; mimeType: string }>;
+  persistTranscript?: boolean;
 };
 
 export type SpawnServerResult =
@@ -61,6 +62,26 @@ export function resolveEntryPoint(
 
 export function buildServerArgv(entryArgs: string[], argsFile: string): string[] {
   return [...entryArgs, argsFile];
+}
+
+// server-args.json is internal launch state (parallel to state.json): its `feature` is the
+// detached child's only channel for the planner input, so it must stay raw even under
+// workflow.persistTranscript:false — otherwise the detached planner compiles spec/plan/tasks
+// for '[transcript omitted]'. The transcript policy is forwarded so the child redacts only the
+// consumer-facing surfaces (the `ps` lockfile and IPC session_meta), not the planner input.
+export function buildServerArgs(opts: SpawnServerOptions): IpcServerArgs {
+  return {
+    sessionId: opts.sessionId,
+    projectDir: opts.projectDir,
+    feature: opts.feature,
+    mode: opts.mode,
+    configPath: opts.configPath,
+    overrides: opts.overrides ?? {},
+    ...(opts.persistTranscript !== undefined && { persistTranscript: opts.persistTranscript }),
+    ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
+    ...(opts.attachments !== undefined && { attachments: opts.attachments }),
+  };
 }
 
 // The detached child inherits process.env, so OTEL_TRACES_EXPORTER / DIPTYCH_OTEL_EXPORTER
@@ -167,17 +188,7 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
   assertSessionConfinement(logPath, opts.sessionDir);
   const logHandle = await open(logPath, 'a');
 
-  const argsFile = writeIpcServerArgsFile(opts.sessionDir, {
-    sessionId: opts.sessionId,
-    projectDir: opts.projectDir,
-    feature: opts.feature,
-    mode: opts.mode,
-    configPath: opts.configPath,
-    overrides: opts.overrides ?? {},
-    ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
-    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
-    ...(opts.attachments !== undefined && { attachments: opts.attachments }),
-  });
+  const argsFile = writeIpcServerArgsFile(opts.sessionDir, buildServerArgs(opts));
   const argv = buildServerArgv(entryArgs, argsFile);
 
   const child = spawn(command, argv, {

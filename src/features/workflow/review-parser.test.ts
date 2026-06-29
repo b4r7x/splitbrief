@@ -40,6 +40,7 @@ function makeInputMode(
   return {
     mode,
     hint: '',
+    questionEpoch: 0,
     setReviewMode: vi.fn<UseInputModeResult['setReviewMode']>(),
     setQuestionMode: vi.fn<UseInputModeResult['setQuestionMode']>(),
     resolve,

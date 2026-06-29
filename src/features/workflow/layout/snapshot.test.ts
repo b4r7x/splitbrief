@@ -1,19 +1,29 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { readConversationScrollSnapshot, readReviewContentHeight } from './snapshot.js';
+import {
+  readBriefListSnapshot,
+  readConversationScrollSnapshot,
+  readRailSnapshot,
+  readReviewContentHeight,
+} from './snapshot.js';
+import { briefListTopOffset, hitBriefTaskRow } from './hit-test.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { resetWorkflow } from '../../../stores/workflow/actions.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows.js';
-import { getWorkflowViewportHeight } from './rect.js';
+import { getWorkflowContentWidth, getWorkflowViewportHeight } from './rect.js';
+import { RAIL_ACTIVE_EXTRA_ROWS } from './chrome-rows.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { makeTaskStart } from '#testing/helpers/events.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -36,16 +46,12 @@ function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
 }
 
 function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
-  return {
-    type: 'task_started',
+  return makeTaskStart({
     ts: 0,
-    phase: 'implementing',
     taskId: taskId('T001'),
     title: 'No-op workflow demonstration with enough metadata to wrap',
-    index: 0,
     total: 1,
     file: 'README.md',
-    action: 'modify',
     tool: 'claude-code',
     model: 'sonnet',
     implementerProfile: 'default',
@@ -54,7 +60,7 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
     contextLength: 32768,
     currentCodeContextMode: 'whole-file',
     costPosture: 'Selected unknown cost tier via cheapest-capable routing',
-  };
+  });
 }
 
 describe('readConversationScrollSnapshot', () => {
@@ -74,7 +80,8 @@ describe('readConversationScrollSnapshot', () => {
     inputHeightStore.__testReset({ rows: 3 });
 
     const snap = readConversationScrollSnapshot();
-    const fullBodyHeight = getWorkflowViewportHeight(40, 3, false, 0, 160);
+    // Default phase is idle: no stage is live, so the rail hangs no activity row.
+    const fullBodyHeight = getWorkflowViewportHeight(40, 3, 0, 0);
 
     expect(snap.contentRect.width).toBe(158);
     expect(snap.conversationWidth).toBe(158);
@@ -95,28 +102,18 @@ describe('readConversationScrollSnapshot', () => {
     expect(snap.viewportHeight).toBeLessThan(20);
   });
 
-  it('accounts for config chrome rows when a workflow-config event is present', () => {
+  it('spends one extra activity row on a live stage versus an idle rail', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
 
-    const snapWithout = readConversationScrollSnapshot();
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    const active = readConversationScrollSnapshot();
 
-    eventsStore.__testReset({
-      events: [
-        {
-          type: 'workflow_config',
-          ts: 0,
-          phase: 'idle' as const,
-          mode: 'standard',
-          plannerTool: 'claude-code',
-          implementerTool: 'ollama',
-        },
-      ],
-    });
+    lifecycleStore.__testReset({ phase: 'idle' });
+    const idle = readConversationScrollSnapshot();
 
-    const snapWith = readConversationScrollSnapshot();
-
-    expect(snapWith.viewportHeight).toBeLessThan(snapWithout.viewportHeight);
+    expect(active.viewportHeight).toBeLessThan(idle.viewportHeight);
+    expect(idle.viewportHeight - active.viewportHeight).toBe(RAIL_ACTIVE_EXTRA_ROWS);
   });
 
   it('subtracts dynamic prompt rows from the conversation viewport', () => {
@@ -206,6 +203,55 @@ describe('readConversationScrollSnapshot', () => {
   });
 });
 
+describe('readRailSnapshot', () => {
+  it('returns clickable zones for the active streaming rail', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+
+    const snap = readRailSnapshot();
+
+    expect(snap.activeIndex).toBe(3);
+    expect(snap.zones.length).toBeGreaterThan(0);
+    expect(snap.zones.some((zone) => zone.index === 3)).toBe(true);
+  });
+
+  it('exposes only the active-stage zone in Form C at a narrow width', () => {
+    terminalSizeStore.__testReset({ cols: 30, rows: 30, isSmall: true });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    // 28 content cells cannot fit the five-stage marker+connector line, so the rail drops to Form C.
+    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+
+    const snap = readRailSnapshot();
+
+    expect(snap.zones).toHaveLength(1);
+    expect(snap.zones.every((zone) => zone.index === 3)).toBe(true);
+  });
+
+  it('selects the rail form from width alone, independent of the live fraction', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    const live = readRailSnapshot();
+
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: 0,
+      cancelled: true,
+    });
+    const cancelled = readRailSnapshot();
+
+    expect(live.zones).toHaveLength(5);
+    // The horizontal rail no longer paints the fraction inline, so dropping it (cancelled) can never
+    // shift the trailing zones — the geometry mirrors rail.tsx.
+    expect(
+      cancelled.zones.map((zone) => ({ index: zone.index, left: zone.left, right: zone.right })),
+    ).toEqual(
+      live.zones.map((zone) => ({ index: zone.index, left: zone.left, right: zone.right })),
+    );
+  });
+});
+
 describe('readReviewContentHeight', () => {
   it('returns a positive height for a normal terminal with content', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
@@ -227,6 +273,138 @@ describe('readReviewContentHeight', () => {
     reviewStore.setRenderedLineCount(1000);
     const tallContent = readReviewContentHeight();
 
-    expect(tallContent).toBe(shortContent - 1);
+    expect(tallContent).toBe(shortContent - 2);
+  });
+});
+
+describe('readBriefListSnapshot phantom-hotspot clamp', () => {
+  it('clamps the visible window to the rendered briefs on a tall terminal with few tasks', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(3);
+    reviewStore.setScrollOffset(0);
+
+    const snap = readBriefListSnapshot();
+    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
+
+    // Far fewer briefs than rows of budget — the window must not advertise more rows than exist.
+    expect(snap.visibleCount).toBe(3);
+    expect(snap.previousCount).toBe(0);
+
+    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
+    const lastRowY = listTop + snap.visibleCount - 1;
+    const belowLastRowY = lastRowY + 1;
+
+    // The probe row sits inside the content rect but below the last rendered brief: still inert.
+    expect(belowLastRowY).toBeLessThanOrEqual(snap.rect.bottom);
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.left,
+        sgrY: belowLastRowY,
+        hasLoadError: false,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBeNull();
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.left,
+        sgrY: lastRowY,
+        hasLoadError: false,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBe(2);
+  });
+
+  it('spans the full content pane on a wide terminal (no review column cap)', () => {
+    terminalSizeStore.__testReset({ cols: 300, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(5);
+    reviewStore.setScrollOffset(0);
+
+    const snap = readBriefListSnapshot();
+    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
+
+    // The review column is no longer capped, so the brief card fills the whole content pane.
+    const fullContentWidth = getWorkflowContentWidth({
+      cols: 300,
+      sidebarVisible: false,
+      isSmall: false,
+    });
+    expect(fullContentWidth).toBeGreaterThan(120);
+    expect(snap.rect.width).toBe(fullContentWidth);
+    expect(snap.rect.right).toBe(snap.rect.left + fullContentWidth - 1);
+
+    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
+
+    // The last painted column of the full-width card still resolves a brief row.
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.right,
+        sgrY: listTop,
+        hasLoadError: false,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBe(0);
+
+    // One column past the content pane is outside the card — clicking it must not focus or copy a
+    // row.
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.right + 1,
+        sgrY: listTop,
+        hasLoadError: false,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBeNull();
+  });
+
+  it('shifts the brief-list offset down by the error chrome row when a brief failed to load', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(3);
+    reviewStore.setScrollOffset(0);
+    reviewStore.setLoadError('Task Brief file is missing');
+
+    const snap = readBriefListSnapshot();
+    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
+
+    // The snapshot carries the real error flag so the hit-test offset can track the rendered chrome.
+    expect(snap.hasLoadError).toBe(true);
+
+    // With the error line rendered, the first task row sits one screen line lower; feeding the
+    // snapshot's own flag back into the hit-test maps that lower line to task 0.
+    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: true });
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.left,
+        sgrY: listTop,
+        hasLoadError: snap.hasLoadError,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBe(0);
+    // The pre-error offset would land on the error line, not the first task: inert.
+    expect(
+      hitBriefTaskRow({
+        rect: snap.rect,
+        sgrX: snap.rect.left,
+        sgrY: snap.rect.top + briefListTopOffset({ hasLoadError: false }),
+        hasLoadError: snap.hasLoadError,
+        visibleCount: snap.visibleCount,
+        previousCount: snap.previousCount,
+      }),
+    ).toBeNull();
   });
 });

@@ -22,6 +22,7 @@ import {
   DIPTYCH_DIR,
   LOCKFILE,
   STATE_FILE,
+  TREES_DIR,
   worktreePath,
   sessionDir,
 } from '../../core/paths.js';
@@ -30,9 +31,15 @@ import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 import { parseIpcServerArgs } from '../../engine/ipc/server-args.js';
 import { runHeadless } from '../headless.js';
 import { readLockfile, checkServerStatus } from '../../engine/ipc/lockfile.js';
+import { buildServerArgs } from '../../engine/ipc/spawn-server.js';
 
 import { routerStore } from '../../stores/navigation/router.js';
-import { MAX_SLUG_LENGTH } from '../../core/sessions/lifecycle.js';
+import {
+  featureForTranscriptPolicy,
+  isOpaqueSessionId,
+  MAX_SLUG_LENGTH,
+} from '../../core/sessions/lifecycle.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
 const spawnServerMock =
   vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
@@ -66,20 +73,13 @@ beforeEach(() => {
   runRpcMock.mockClear();
   spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
     mkdirSync(opts.sessionDir, { recursive: true });
+    // Mirror production: the real spawnServer persists buildServerArgs(opts), which keeps the
+    // raw feature (the detached planner's only input channel) and forwards the transcript
+    // policy so the child redacts the ps-facing lockfile. A faithful mock lets the start
+    // regression observe the on-disk launch state.
     writeFileSync(
       join(opts.sessionDir, 'server-args.json'),
-      JSON.stringify(
-        {
-          sessionId: opts.sessionId,
-          projectDir: opts.projectDir,
-          feature: opts.feature,
-          mode: opts.mode,
-          configPath: opts.configPath,
-          overrides: opts.overrides ?? {},
-        },
-        null,
-        2,
-      ),
+      JSON.stringify(buildServerArgs(opts), null, 2),
     );
     return { ok: true, pid: 1234, sessionId: opts.sessionId };
   });
@@ -158,7 +158,7 @@ function writeConfigMarker(projectDir: string): void {
 
 function writeReadyReadinessFixtures(
   projectDir: string,
-  options: { validation?: boolean; codebase?: boolean } = {},
+  options: { validation?: boolean; codebase?: boolean; persistTranscript?: boolean } = {},
 ): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
@@ -194,7 +194,7 @@ function writeReadyReadinessFixtures(
     'workflow:',
     '  approve: default',
     '  maxRetries: 3',
-    '  persistTranscript: true',
+    `  persistTranscript: ${options.persistTranscript ?? true}`,
     '  mode: standard',
   );
   if (options.codebase === false) {
@@ -253,7 +253,7 @@ describe('start command — concurrency guard', () => {
   });
 });
 
-describe('start command — non-TTY preflight (F-321)', () => {
+describe('start command — non-TTY preflight', () => {
   it('fails fast without creating a session when stdin is not a TTY', async () => {
     writeConfigMarker(tmp);
     delete (process.stdin as { isTTY?: boolean }).isTTY;
@@ -416,7 +416,55 @@ describe('start command — --worktree flag', () => {
       .mocked(console.log)
       .mock.calls.map((call) => call.join(' '))
       .join('\n');
-    expect(output).toContain(`cd ${wtPath} && diptych attach`);
+    expect(output).toContain('diptych attach');
+    expect(output).toContain('--project');
+    expect(output).not.toContain('cd ');
+  });
+
+  it('prints a shell-safe attach hint with --project for paths containing spaces', async () => {
+    const spaced = join(tmp, 'my project');
+    mkdirSync(spaced, { recursive: true });
+    createTestGitRepo(spaced);
+    writeReadyReadinessFixtures(spaced);
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', spaced, '--detach', 'implement X']);
+
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((call) => call.join(' '))
+      .join('\n');
+    expect(output).toContain('diptych attach');
+    expect(output).toContain("--project '/");
+    expect(output).toContain("my project'");
+    expect(output).not.toContain('cd ');
+  });
+
+  it('preserves config workflow mode when --detach omits --mode', async () => {
+    writeReadyReadinessFixtures(tmp);
+    const configFilePath = join(tmp, DIPTYCH_DIR, CONFIG_FILE);
+    writeFileSync(
+      configFilePath,
+      readFileSync(configFilePath, 'utf-8').replace('mode: standard', 'mode: quick'),
+    );
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, '--detach', 'implement X']);
+
+    expect(spawnServerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'quick',
+        overrides: expect.not.objectContaining({ mode: expect.anything() }),
+      }),
+    );
+    const artifact = readOnlySessionArtifact(tmp, 'server-args.json') as {
+      mode?: string;
+      overrides?: { mode?: string };
+    };
+    expect(artifact.mode).toBe('quick');
+    expect(artifact.overrides?.mode).toBeUndefined();
   });
 
   it('persists detached CLI overrides in the server args artifact', async () => {
@@ -586,7 +634,7 @@ describe('start command — --worktree flag', () => {
     expect(parsed?.overrides.mode).toBe('speckit');
   });
 
-  it('rolls back the worktree and branch when server spawn fails, so the same command can be retried (F-187)', async () => {
+  it('rolls back the worktree and branch when server spawn fails, so the same command can be retried', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const spawnFailure = { ok: false, reason: 'boom' } as unknown as Awaited<
@@ -661,6 +709,73 @@ describe('start command — --worktree flag', () => {
     expect((captured as Error).message).toContain('--detach and --json cannot be combined');
     expect(existsSync(worktreePath(tmp, 'combo'))).toBe(false);
     expect(spawnServerMock).not.toHaveBeenCalled();
+  });
+
+  it('redacts the generated session id but forwards the raw feature to the detached planner when persistTranscript is false', async () => {
+    writeReadyReadinessFixtures(tmp, { persistTranscript: false });
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, '--detach', 'add secret oauth login']);
+
+    expect(spawnServerMock).toHaveBeenCalledTimes(1);
+    const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
+    expect(spawnArgs?.persistTranscript).toBe(false);
+
+    const sessionIds = readdirSync(join(tmp, DIPTYCH_DIR, 'sessions'));
+    expect(sessionIds).toHaveLength(1);
+    const sessionId = sessionIds[0] ?? '';
+    expect(isOpaqueSessionId(sessionId)).toBe(true);
+    expect(sessionId).not.toContain('secret');
+    expect(sessionId).not.toContain('oauth');
+
+    // server-args.json is internal launch state (parallel to state.json): it keeps the raw
+    // feature because it is the detached planner's only input channel. The ps-facing redaction
+    // happens at the lockfile the child writes, derived from the forwarded transcript policy.
+    const artifact = readOnlySessionArtifact(tmp, 'server-args.json') as {
+      feature?: string;
+      persistTranscript?: boolean;
+    };
+    expect(artifact.feature).toBe('add secret oauth login');
+    expect(artifact.persistTranscript).toBe(false);
+    expect(
+      featureForTranscriptPolicy(artifact.feature ?? '', artifact.persistTranscript ?? true),
+    ).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+  });
+
+  it('keeps the raw feature in the generated session id and detached metadata when persistTranscript is true', async () => {
+    writeReadyReadinessFixtures(tmp, { persistTranscript: true });
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, '--detach', 'add email validator']);
+
+    const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
+    expect(spawnArgs?.persistTranscript).toBe(true);
+
+    const sessionIds = readdirSync(join(tmp, DIPTYCH_DIR, 'sessions'));
+    const sessionId = sessionIds[0] ?? '';
+    expect(isOpaqueSessionId(sessionId)).toBe(false);
+    expect(sessionId).toContain('add-email-validator');
+
+    const artifact = readOnlySessionArtifact(tmp, 'server-args.json') as { feature?: string };
+    expect(artifact.feature).toBe('add email validator');
+  });
+
+  it('uses an opaque worktree slug for a bare --worktree when persistTranscript is false', async () => {
+    writeReadyReadinessFixtures(tmp, { persistTranscript: false });
+    spawnServerMock.mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, 'add secret oauth login', '--worktree', '--detach']);
+
+    const slugs = readdirSync(join(tmp, TREES_DIR));
+    expect(slugs).toHaveLength(1);
+    const slug = slugs[0] ?? '';
+    expect(slug).toMatch(/^session-[a-f0-9]{12}$/);
+    expect(slug).not.toContain('secret');
+    expect(slug).not.toContain('oauth');
+    expect(existsSync(worktreePath(tmp, 'add-secret-oauth-login'))).toBe(false);
   });
 });
 
@@ -895,7 +1010,7 @@ describe('start command — shorthand invocation', () => {
   });
 });
 
-describe('start command — liveness record (F-261)', () => {
+describe('start command — liveness record', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -1014,5 +1129,30 @@ describe('start command — @file syntax', () => {
 
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('@ghost.md'));
     expect(routerStore.get().screen).toBe('workflow');
+  });
+
+  it('strips terminal control bytes from the @file warning path before printing', async () => {
+    writeConfigMarker(tmp);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, fakeDeps);
+    await program.parseAsync([
+      'node',
+      'diptych',
+      'start',
+      'build it',
+      '@\u001b]0;pwned\u0007ghost.md',
+      '--project',
+      tmp,
+    ]);
+
+    const warning = stderrSpy.mock.calls
+      .map((call) => call.join(' '))
+      .find((line) => line.includes('ghost.md'));
+    expect(warning).toBeDefined();
+    expect(warning).not.toContain('\u001b');
+    expect(warning).not.toContain('pwned');
   });
 });

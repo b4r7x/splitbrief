@@ -4,6 +4,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState } from '../../core/state/persistence.js';
 import { isResumable } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { createStore, storeBase } from '../create-store.js';
 import { overlayStore } from '../ui/overlay.js';
 import { routerStore } from './router.js';
@@ -40,6 +41,7 @@ function openSummary(session: Session, summary: Summary) {
 }
 
 export function handleSessionSelect(session: Session, projectDir: string) {
+  const feature = sanitizeTerminalDisplayText(session.feature);
   if (session.status === 'interrupted') {
     let resumeState: WorkflowState | null;
     let resumeError: string | null = null;
@@ -47,7 +49,7 @@ export function handleSessionSelect(session: Session, projectDir: string) {
       resumeState = loadState({ projectDir, sessionId: session.id });
     } catch (err) {
       resumeState = null;
-      resumeError = `Cannot resume "${session.feature}": ${toErrorMessage(err)}`;
+      resumeError = `Cannot resume "${feature}": ${toErrorMessage(err)}`;
     }
 
     if (resumeState && isResumable(resumeState)) {
@@ -78,7 +80,7 @@ export function handleSessionSelect(session: Session, projectDir: string) {
     }
 
     setSelectionError(
-      `Cannot resume "${session.feature}": interrupted before it made progress — start it again.`,
+      `Cannot resume "${feature}": interrupted before it made progress — start it again.`,
     );
     return;
   }
@@ -86,5 +88,5 @@ export function handleSessionSelect(session: Session, projectDir: string) {
     openSummary(session, session.summary);
     return;
   }
-  setSelectionError(`Session "${session.feature}" failed without a summary to display`);
+  setSelectionError(`Session "${feature}" failed without a summary to display`);
 }

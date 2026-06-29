@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PassThrough } from 'node:stream';
 import {
   createCrashHandler,
   createResumeHandler,
@@ -200,6 +199,7 @@ describe('resolveRenderInputConfig', () => {
     expect(resolveRenderInputConfig({ fullscreen: true, mouse: false })).toEqual({
       useFilteredStdin: true,
       useMouse: false,
+      useHover: false,
       usePaste: true,
     });
   });
@@ -208,75 +208,23 @@ describe('resolveRenderInputConfig', () => {
     expect(resolveRenderInputConfig({ fullscreen: false, mouse: true })).toEqual({
       useFilteredStdin: false,
       useMouse: false,
+      useHover: false,
       usePaste: false,
     });
   });
-});
 
-describe('renderApp fullscreen input startup', () => {
-  let originalWrite: typeof process.stdout.write;
-
-  beforeEach(() => {
-    originalWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (() => true) as typeof process.stdout.write;
-  });
-
-  afterEach(() => {
-    process.stdout.write = originalWrite;
-    vi.doUnmock('../lib/terminal/filtered-stdin.js');
-    vi.doUnmock('fullscreen-ink');
-    vi.resetModules();
-  });
-
-  it('publishes filtered stdin before fullscreen start mounts the app', async () => {
-    const calls: string[] = [];
-    let activeFiltered: unknown;
-    const filtered = {
-      stdin: new PassThrough() as unknown as NodeJS.ReadStream,
-      activate: () => {
-        calls.push('activate-filtered-stdin');
-      },
-      disable: () => {
-        calls.push('disable-filtered-stdin');
-      },
-      onMouse: () => () => {},
-      isPasteActive: () => false,
-    };
-
-    vi.resetModules();
-    vi.doMock('../lib/terminal/filtered-stdin.js', () => ({
-      createFilteredStdin: () => {
-        calls.push('create-filtered-stdin');
-        return filtered;
-      },
-      setActiveFilteredStdin: (next: unknown) => {
-        activeFiltered = next;
-        calls.push(next ? 'publish-filtered-stdin' : 'clear-filtered-stdin');
-      },
-      getActiveFilteredStdin: () => activeFiltered,
-    }));
-    vi.doMock('fullscreen-ink', () => ({
-      withFullScreen: () => ({
-        start: async () => {
-          calls.push(activeFiltered === filtered ? 'start-with-filtered-stdin' : 'start-missing');
-        },
-        waitUntilExit: async () => {
-          calls.push('wait-until-exit');
-        },
-      }),
-    }));
-
-    const { renderApp } = await import('./render.js');
-    const appElement = {} as Parameters<typeof renderApp>[0];
-
-    await renderApp(appElement, { fullscreen: true, mouse: true });
-
-    expect(calls).toContain('start-with-filtered-stdin');
-    expect(calls.indexOf('publish-filtered-stdin')).toBeLessThan(
-      calls.indexOf('start-with-filtered-stdin'),
+  it('enables hover only when mouse and fullscreen are both active', () => {
+    expect(resolveRenderInputConfig({ fullscreen: true, mouse: true, hover: true })).toEqual({
+      useFilteredStdin: true,
+      useMouse: true,
+      useHover: true,
+      usePaste: true,
+    });
+    expect(resolveRenderInputConfig({ fullscreen: true, mouse: false, hover: true }).useHover).toBe(
+      false,
     );
-    expect(calls.indexOf('start-with-filtered-stdin')).toBeLessThan(
-      calls.indexOf('activate-filtered-stdin'),
+    expect(resolveRenderInputConfig({ fullscreen: false, mouse: true, hover: true }).useHover).toBe(
+      false,
     );
   });
 });
@@ -287,6 +235,7 @@ describe('startFullscreenThenActivateHandover', () => {
     const handover: TerminalHandoverConfig = {
       fullscreen: true,
       mouse: true,
+      hover: true,
       sourceStdin: process.stdin,
     };
     let activeHandover: TerminalHandoverConfig | undefined;
@@ -309,6 +258,7 @@ describe('startFullscreenThenActivateHandover', () => {
     });
 
     expect(activeHandover).toBe(handover);
+    expect(activeHandover?.hover).toBe(true);
     expect(calls).toEqual([
       'publish-filtered-stdin',
       'start',
@@ -401,6 +351,8 @@ describe('restoreTerminal', () => {
 
     expect(written).toEqual([
       terminalSequences.disableMouseTracking,
+      terminalSequences.disableButtonEventMouse,
+      terminalSequences.disableAnyMotionMouse,
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
       terminalSequences.exitAltBuffer,

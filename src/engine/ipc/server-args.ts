@@ -29,6 +29,7 @@ const IpcServerArgsSchema = z.object({
   ),
   configPath: z.string(),
   overrides: CLIOverridesSchema.default({}),
+  persistTranscript: z.boolean().optional(),
   allowHooks: z.boolean().optional(),
   plannerContext: z.string().optional(),
   attachments: z.array(IpcServerAttachmentSchema).optional(),
@@ -58,12 +59,6 @@ export const ipcServerArgsError = {
 export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
   const result = IpcServerArgsSchema.safeParse(value);
   return result.success ? result.data : null;
-}
-
-export function readIpcServerArgsFile(argsFile: string): IpcServerArgs {
-  const parsed = parseIpcServerArgs(JSON.parse(readFileSync(argsFile, 'utf8')));
-  if (!parsed) throw ipcServerArgsError.invalidServerArgs();
-  return parsed;
 }
 
 export function readIpcServerArgsFileConfined(

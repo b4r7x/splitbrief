@@ -128,7 +128,7 @@ function classifyRisk(
   if (factors.length > 0 && wordCount <= 14) {
     return { risk: 'trivial', confidence: 0.8 + Math.min(factors.length - 1, 2) * 0.05, factors };
   }
-  // Trivial keyword present but long prompt → normal risk
+  // Trivial keyword present but long prompt means normal risk
   if (factors.length > 0) {
     factors.length = 0;
   }

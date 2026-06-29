@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Box, Text } from 'ink';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -9,14 +11,15 @@ import { saveSummary } from '../../../core/sessions/io.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { CURSOR } from '../../../components/pickers/cursor-glyph.js';
 import { RecentSessions } from './recent-sessions.js';
 import { getHomeLayout } from '../layout.js';
 
-const CURSOR_GLYPH = CURSOR.trimEnd();
+const FOCUS_BAR = '▌';
 
 function lineContaining(frame: string, text: string): string {
-  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+  const line = stripAnsiStyles(frame)
+    .split('\n')
+    .find((candidate) => candidate.includes(text));
   expect(line).toBeDefined();
   return line ?? '';
 }
@@ -32,6 +35,7 @@ describe('RecentSessions', () => {
   }
 
   beforeEach(() => {
+    forceUnicodeGlyphs();
     resetAllStores();
     projectDir = createTempDir('recent-sessions-test');
     configStore.__testReset({ config: makeConfig(), projectDir });
@@ -54,24 +58,24 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Recent sessions');
+    expect(frame).toContain('recent sessions');
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
-    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
+    expect(lineContaining(frame, 'alpha')).toMatch(/^ {2}○ alpha/);
     ui.unmount();
   });
 
-  it('renders the empty state and neither header nor rows when no sessions are loaded', async () => {
+  it('renders the empty state under the lowercase header when no sessions are loaded', async () => {
     sessionsStore.load(projectDir);
 
     const ui = renderFeature(<RecentSessions />);
     await tick(20);
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('no recent sessions');
-    expect(frame).not.toContain('Recent sessions');
+    expect(frame.split('\n').some((line) => line.trim() === 'recent sessions')).toBe(true);
     ui.unmount();
   });
 
@@ -87,7 +91,7 @@ describe('RecentSessions', () => {
     const capped = renderFeature(<RecentSessions limit={2} />);
     await tick(20);
 
-    const cappedFrame = capped.lastFrame() ?? '';
+    const cappedFrame = stripAnsiStyles(capped.lastFrame() ?? '');
     expect(cappedFrame).toContain('newest-row');
     expect(cappedFrame).toContain('new-row');
     expect(cappedFrame).not.toContain('mid-row');
@@ -100,7 +104,7 @@ describe('RecentSessions', () => {
     const full = renderFeature(<RecentSessions limit={10} />);
     await tick(20);
 
-    const fullFrame = full.lastFrame() ?? '';
+    const fullFrame = stripAnsiStyles(full.lastFrame() ?? '');
     expect(fullFrame).not.toMatch(/\b\d+ more\b/);
     for (const label of ['newest-row', 'new-row', 'mid-row', 'old-row', 'oldest-row']) {
       expect(fullFrame).toContain(label);
@@ -138,7 +142,7 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain('Recent sessions');
+    expect(frame).not.toContain('recent sessions');
     expect(frame).not.toContain('no recent sessions');
     expect(frame).not.toContain('should-not-load');
     expect(sessionsStore.get().sessions.length).toBe(0);
@@ -169,7 +173,7 @@ describe('RecentSessions', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain('Esc back');
-    expect(frame).toContain(CURSOR_GLYPH);
+    expect(frame).toContain(FOCUS_BAR);
     expect(frame).toContain('newest-focus');
     expect(frame).toContain('new-focus');
     expect(frame).not.toContain('mid-focus');
@@ -191,11 +195,11 @@ describe('RecentSessions', () => {
       { id: 'small-1', feature: 'middle-small-home', startedAt: 1_700_000_001 },
       { id: 'small-2', feature: 'newest-small-home', startedAt: 1_700_000_002 },
     ]);
-    const terminalRows = 15;
+    const terminalRows = 16;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     const layout = getHomeLayout({
       cols: 80,
-      rows: 15,
+      rows: 16,
       isSmall: true,
       hasSkills: false,
       sessionCount: 3,
@@ -209,12 +213,12 @@ describe('RecentSessions', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('Recent sessions');
+    expect(frame).toContain('recent sessions');
     expect(frame).toContain('newest-small-home');
     expect(frame).not.toContain('middle-small-home');
     expect(frame).not.toContain('oldest-small-home');
     expect(frame).not.toContain('filter sessions');
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
   });
@@ -225,11 +229,11 @@ describe('RecentSessions', () => {
       { id: 'focus-small-1', feature: 'middle-focused-small-home', startedAt: 1_700_000_001 },
       { id: 'focus-small-2', feature: 'newest-focused-small-home', startedAt: 1_700_000_002 },
     ]);
-    const terminalRows = 17;
+    const terminalRows = 18;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     const layout = getHomeLayout({
       cols: 80,
-      rows: 17,
+      rows: 18,
       isSmall: true,
       hasSkills: false,
       sessionCount: 3,
@@ -274,8 +278,8 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Recent sessions');
-    expect(frame).not.toContain(CURSOR_GLYPH);
+    expect(frame).toContain('recent sessions');
+    expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
     ui.unmount();
   });

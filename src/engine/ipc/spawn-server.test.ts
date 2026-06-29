@@ -1,18 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, statSync, writeFileSync, readFileSync } from 'node:fs';
 import { execSync, execFileSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
-import { writeLockfile } from './lockfile.js';
-import { resolveEntryPoint, spawnServer, waitForServerReady } from './spawn-server.js';
+import { writeLockfile, readLockfile } from './lockfile.js';
 import {
-  parseIpcServerArgs,
-  readIpcServerArgsFile,
-  writeIpcServerArgsFile,
-} from './server-args.js';
+  buildServerArgs,
+  resolveEntryPoint,
+  spawnServer,
+  waitForServerReady,
+  type SpawnServerOptions,
+} from './spawn-server.js';
+import { parseIpcServerArgs, writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
+import { writeStartupLockfile } from './server-entry.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { featureForTranscriptPolicy } from '../../core/sessions/lifecycle.js';
 
 let testDir: string;
 let socketServer: Server | null = null;
@@ -291,7 +296,7 @@ describe('server args launch contract', () => {
     });
 
     expect(statSync(argsFile).mode & 0o777).toBe(0o600);
-    expect(readIpcServerArgsFile(argsFile)).toMatchObject({
+    expect(parseIpcServerArgs(JSON.parse(readFileSync(argsFile, 'utf8')))).toMatchObject({
       sessionId: 'test-session',
       feature: 'implement from @file\n\nsecret context',
       overrides: { budget: 4 },
@@ -356,5 +361,80 @@ describe('server args launch contract', () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.mode).toBe('speckit');
     expect(parsed?.overrides.mode).toBe('speckit');
+  });
+});
+
+describe('buildServerArgs transcript policy', () => {
+  const base: SpawnServerOptions = {
+    sessionDir: '/repo/.diptych/sessions/s',
+    sessionId: 's',
+    projectDir: '/repo',
+    feature: 'add secret oauth login',
+    mode: 'standard',
+    configPath: '/repo/.diptych/config.yaml',
+  };
+
+  it('keeps the raw feature under persistTranscript:false so the detached planner gets the real input', () => {
+    const args = buildServerArgs({ ...base, persistTranscript: false });
+    expect(args.feature).toBe('add secret oauth login');
+  });
+
+  it('forwards the transcript policy so the child can redact the ps-facing lockfile', () => {
+    expect(buildServerArgs({ ...base, persistTranscript: false }).persistTranscript).toBe(false);
+    expect(buildServerArgs({ ...base, persistTranscript: true }).persistTranscript).toBe(true);
+  });
+
+  it('redacting the forwarded feature with its policy yields the ps-facing omission', () => {
+    const args = buildServerArgs({ ...base, persistTranscript: false });
+    expect(featureForTranscriptPolicy(args.feature, args.persistTranscript ?? true)).toBe(
+      TRANSCRIPT_OMITTED_MESSAGE,
+    );
+  });
+
+  it('keeps the raw feature when persistTranscript is true', () => {
+    const args = buildServerArgs({ ...base, persistTranscript: true });
+    expect(args.feature).toBe('add secret oauth login');
+  });
+
+  it('omits the policy and persists the raw feature when persistTranscript is unset', () => {
+    const args = buildServerArgs(base);
+    expect(args.feature).toBe('add secret oauth login');
+    expect(args.persistTranscript).toBeUndefined();
+  });
+});
+
+describe('writeStartupLockfile ps-facing redaction', () => {
+  function makeArgv(overrides: Partial<IpcServerArgs>): IpcServerArgs {
+    return {
+      sessionId: sessionIdFor(testDir),
+      projectDir: testDir,
+      feature: 'add secret oauth login',
+      mode: 'standard',
+      configPath: join(testDir, 'config.yaml'),
+      overrides: {},
+      ...overrides,
+    };
+  }
+
+  it('redacts the lockfile feature `diptych ps` prints under persistTranscript:false', async () => {
+    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: false }));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(lock?.feature).not.toBe('add secret oauth login');
+  });
+
+  it('keeps the raw lockfile feature under persistTranscript:true', async () => {
+    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: true }));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe('add secret oauth login');
+  });
+
+  it('keeps the raw lockfile feature when persistTranscript is unset', async () => {
+    await writeStartupLockfile(testDir, makeArgv({}));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe('add secret oauth login');
   });
 });

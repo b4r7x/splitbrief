@@ -179,16 +179,19 @@ export function createQueueHandler(
       );
       if (submitted.result.status === 'accepted' && submitted.message && submitted.state) {
         const enqueuedState = submitted.state;
-        void dispatchNativeInjection({
-          message: submitted.message,
-          planner,
-          projectDir,
-          sessionId,
-          getState: () => getState() ?? enqueuedState,
-          setState,
-          bus,
-          ...(signal !== undefined && { signal }),
-        }).catch((err) => warnError('queue-handler failed', err));
+        const enqueuedMessage = submitted.message;
+        void serialize(async () =>
+          dispatchNativeInjection({
+            message: enqueuedMessage,
+            planner,
+            projectDir,
+            sessionId,
+            getState: () => getState() ?? enqueuedState,
+            setState,
+            bus,
+            ...(signal !== undefined && { signal }),
+          }),
+        ).catch((err) => warnError('queue-handler failed', err));
       }
       return submitted.result;
     } catch (err) {
@@ -225,18 +228,21 @@ function canQueueInPhase(phase: Phase): boolean {
   return isLivePhase(phase) && !isImplementerPhase(phase);
 }
 
-export function createClearQueueHandler(ctx: QueueHandlerContext): () => QueueClearResult {
-  const { projectDir, sessionId, getState, setState, bus } = ctx;
-  return () => {
-    const state = getState();
-    if (!state) {
-      return { status: 'unavailable', message: 'Cannot clear queue: no active workflow.' };
-    }
+export function createClearQueueHandler(
+  ctx: QueueHandlerContext & { serialize: WriteSequencer },
+): () => Promise<QueueClearResult> {
+  const { projectDir, sessionId, getState, setState, bus, serialize } = ctx;
+  return () =>
+    serialize((): QueueClearResult => {
+      const state = getState();
+      if (!state) {
+        return { status: 'unavailable', message: 'Cannot clear queue: no active workflow.' };
+      }
 
-    const result = clearPendingQueue({ projectDir, sessionId, state, bus });
-    setState(result.state);
-    return { status: 'cleared', count: result.count };
-  };
+      const result = clearPendingQueue({ projectDir, sessionId, state, bus });
+      setState(result.state);
+      return { status: 'cleared', count: result.count };
+    });
 }
 
 export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMutationOptions): {

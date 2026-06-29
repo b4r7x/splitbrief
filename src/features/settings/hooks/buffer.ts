@@ -12,9 +12,9 @@ interface UseEditBufferParams {
 
 function numberConstraintHint(def: SettingDef): string {
   const parts: string[] = [];
-  if (def.min !== undefined && def.max !== undefined) parts.push(`${def.min}–${def.max}`);
-  else if (def.min !== undefined) parts.push(`≥ ${def.min}`);
-  else if (def.max !== undefined) parts.push(`≤ ${def.max}`);
+  if (def.min !== undefined && def.max !== undefined) parts.push(`${def.min}-${def.max}`);
+  else if (def.min !== undefined) parts.push(`>= ${def.min}`);
+  else if (def.max !== undefined) parts.push(`<= ${def.max}`);
   if (def.integer) parts.push('integer');
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }

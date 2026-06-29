@@ -119,6 +119,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
+    .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
     .option(
       '--mode <mode>',
       'Workflow mode: instant, quick, standard, or speckit (full=speckit alias)',

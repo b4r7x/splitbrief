@@ -31,6 +31,15 @@ export function validateSessionId(sessionId: string): void {
   }
 }
 
+export function isValidSessionId(sessionId: string): boolean {
+  try {
+    validateSessionId(sessionId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sessionDir(projectDir: string, sessionId: string): string {
   validateSessionId(sessionId);
   return join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);

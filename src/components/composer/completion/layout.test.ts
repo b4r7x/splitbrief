@@ -26,23 +26,31 @@ describe('computeCompletionCap', () => {
 });
 
 describe('computeCompletionOverlayRows', () => {
-  it('includes panel chrome and scroll indicators for visible suggestion rows', () => {
+  it('matches the true panel height: visible rows capped at maxVisible plus chrome', () => {
     expect(
       computeCompletionOverlayRows({
         itemCount: 12,
-        selectedIndex: 10,
         maxVisible: 8,
       }),
-    ).toBe(13);
+    ).toBe(12);
   });
 
   it('uses one content row for a fuzzy-only command suggestion', () => {
     expect(
       computeCompletionOverlayRows({
         itemCount: 0,
-        selectedIndex: 0,
         maxVisible: 8,
         hasFuzzyMatch: true,
+      }),
+    ).toBe(5);
+  });
+
+  it('uses one content row for an empty "no matching commands" message', () => {
+    expect(
+      computeCompletionOverlayRows({
+        itemCount: 0,
+        maxVisible: 8,
+        hasEmptyMessage: true,
       }),
     ).toBe(5);
   });

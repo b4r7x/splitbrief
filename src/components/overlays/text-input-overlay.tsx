@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import { OverlayPanel } from './overlay-panel.js';
 import { MultilineInput } from '../input/multiline-input.js';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { glyph } from '../../lib/glyphs.js';
 
 interface TextInputOverlayProps {
-  title: string;
+  title: ReactNode;
   label: ReactNode;
   placeholder: string;
   initialValue?: string;
@@ -31,6 +31,7 @@ export function TextInputOverlay({
 }: TextInputOverlayProps) {
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
+  const termRows = terminalSizeStore.use((s) => s.rows);
   const [value, setValue] = useState(initialValue);
   const focus = overlayStore.use(
     (s) =>
@@ -50,15 +51,20 @@ export function TextInputOverlay({
   };
 
   return (
-    <OverlayPanel title={title} hint="Enter to save  Esc to go back" width="auto" maxWidth={70}>
-      <Box flexDirection="column" gap={1}>
+    <Box width={cols} height={termRows} alignItems="center" justifyContent="center">
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text color={t.textDim}>{title}</Text>
+        </Box>
         <Text color={t.textDim}>{label}</Text>
         <Box
+          marginTop={1}
           borderStyle="round"
-          borderColor={t.accent}
+          borderColor={t.border}
           paddingX={1}
           width={getClampedTerminalWidth({ cols, maxWidth: 60, gutter: 12 })}
         >
+          <Text color={t.accent}>{`${glyph('prompt')} `}</Text>
           <Box flexGrow={1}>
             <MultilineInput
               value={value}
@@ -78,17 +84,20 @@ export function TextInputOverlay({
         {examples && examples.length > 0 && (
           <Box marginTop={1} flexDirection="column">
             <Text color={t.textDim} dimColor>
-              Examples:
+              examples
             </Text>
             {examples.map((ex) => (
               <Text key={ex} color={t.textDim} dimColor>
-                {' '}
+                {'  '}
                 {ex}
               </Text>
             ))}
           </Box>
         )}
+        <Box marginTop={1}>
+          <Text color={t.textDim}>⏎ save · esc back</Text>
+        </Box>
       </Box>
-    </OverlayPanel>
+    </Box>
   );
 }

@@ -2,7 +2,10 @@ import { Box, Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
+import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CommandCompletionMenu } from './menu.js';
+import { glyph } from '../../../../lib/glyphs.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
   {
@@ -82,11 +85,24 @@ const SCROLLED_COMMANDS: RuntimeCommandDef[] = [
   },
 ];
 
-function panelInteriorRows(frame: string): string[] {
-  return frame
+const FUZZY_COMMAND: RuntimeCommandDef = {
+  kind: 'noarg',
+  name: '/help',
+  label: 'Help',
+  description: 'Show help overlay',
+  validScreens: ['home'],
+  handler: () => {},
+};
+
+function panelLines(frame: string): string[] {
+  return stripAnsiStyles(frame)
     .split('\n')
-    .filter((line) => line.includes('│'))
-    .map((line) => line.slice(line.indexOf('│') + 1, line.lastIndexOf('│')));
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter((line) => line.trim().length > 0);
+}
+
+function commandLines(lines: string[]): string[] {
+  return lines.filter((line) => line.includes('/'));
 }
 
 function rowContaining(rows: string[], text: string): string {
@@ -96,75 +112,97 @@ function rowContaining(rows: string[], text: string): string {
 }
 
 describe('CommandCompletionMenu', () => {
-  it('paints opaque rows over underlying terminal content', () => {
-    const ui = render(
-      <Box height={12} width={90} overflow="visible">
-        <Box flexDirection="column">
-          {Array.from({ length: 10 }, (_, index) => (
-            <Text key={index}>{'UNDERLYING TEXT '.repeat(6)}</Text>
-          ))}
-        </Box>
-        <Box position="absolute" marginTop={1} width={80}>
-          <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
-        </Box>
-      </Box>,
-    );
-
-    const rows = panelInteriorRows(ui.lastFrame() ?? '');
-    expect(rows.length).toBeGreaterThanOrEqual(3);
-    for (const row of rows) {
-      expect(row).not.toContain('UNDERLYING');
-    }
-    ui.unmount();
-  });
-
-  it('keeps narrow panels to the computed one-row footer height', () => {
-    const ui = render(
-      <Box width={22}>
-        <CommandCompletionMenu filtered={COMMANDS.slice(0, 1)} selectedIndex={0} maxVisible={1} />
-      </Box>,
-    );
-
-    const rows = panelInteriorRows(ui.lastFrame() ?? '');
-    expect(rows.length).toBeGreaterThanOrEqual(2);
-    expect(rows.length).toBeLessThanOrEqual(3);
-    expect(rowContaining(rows, '/help')).toContain('/help');
-    ui.unmount();
-  });
-
-  it('keeps command shortcuts visible when descriptions overflow', () => {
-    const ui = render(
-      <Box width={46}>
-        <CommandCompletionMenu filtered={LONG_HINT_COMMANDS} selectedIndex={0} maxVisible={1} />
-      </Box>,
-    );
-
-    const rows = panelInteriorRows(ui.lastFrame() ?? '');
-    const helpRow = rowContaining(rows, '/help');
-    expect(helpRow).toContain('[Ctrl+/]');
-    expect(rows.filter((line) => line.includes('[Ctrl+/]'))).toHaveLength(1);
-    ui.unmount();
-  });
-
-  it('shows visible commands within the panel row budget', () => {
+  it('renders a bordered panel and marks the selected row with a cursor', () => {
     const ui = render(
       <Box width={80}>
         <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
       </Box>,
     );
 
-    const rows = panelInteriorRows(ui.lastFrame() ?? '');
-    expect(rows.length).toBeLessThanOrEqual(5);
+    const frame = ui.lastFrame() ?? '';
+    // borderStyleFor('round') degrades to Ink's classic border (`+-|`) under the ascii glyph tier
+    // that the (non-TTY) test host resolves to.
+    expect(frame).toContain('|');
+    expect(frame).toContain(glyph('cursor'));
+    expect(frame).not.toContain('▌');
+    ui.unmount();
+  });
 
-    const helpRow = rowContaining(rows, '/help');
-    expect(helpRow).toContain('▸');
+  it('occludes underlying transcript text when overlaid absolutely', () => {
+    terminalSizeStore.__testReset({ cols: 80 });
+    const underlying = 'UNDERLYING'.repeat(6);
+    const ui = render(
+      <Box height={12} width={60} overflow="visible">
+        <Box flexDirection="column">
+          {Array.from({ length: 10 }, (_, index) => (
+            <Text key={index}>{underlying}</Text>
+          ))}
+        </Box>
+        <Box position="absolute" marginTop={1} width={60}>
+          <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
+        </Box>
+      </Box>,
+    );
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const footerIndex = lines.findIndex((line) => line.includes('select'));
+    expect(footerIndex).toBeGreaterThan(0);
+    // 3 command rows + hairline + footer: every panel line hides the transcript
+    for (const line of lines.slice(footerIndex - 4, footerIndex + 1)) {
+      expect(line.slice(0, 60)).not.toContain('UNDERLYING');
+    }
+    ui.unmount();
+  });
+
+  it('keeps narrow panels to a single command row plus the footer', () => {
+    const ui = render(
+      <Box width={22}>
+        <CommandCompletionMenu filtered={COMMANDS.slice(0, 1)} selectedIndex={0} maxVisible={1} />
+      </Box>,
+    );
+
+    const lines = panelLines(ui.lastFrame() ?? '');
+    expect(commandLines(lines)).toHaveLength(1);
+    expect(rowContaining(lines, '/help')).toContain('/help');
+    expect(lines.some((line) => line.includes('select'))).toBe(true);
+    ui.unmount();
+  });
+
+  it('keeps command shortcuts visible as a de-badged dim key when descriptions overflow', () => {
+    const ui = render(
+      <Box width={46}>
+        <CommandCompletionMenu filtered={LONG_HINT_COMMANDS} selectedIndex={0} maxVisible={1} />
+      </Box>,
+    );
+
+    const lines = panelLines(ui.lastFrame() ?? '');
+    const helpRow = rowContaining(lines, '/help');
+    expect(helpRow).toContain('Ctrl+/');
+    expect(helpRow).not.toContain('[Ctrl+/]');
+    expect(lines.filter((line) => line.includes('Ctrl+/'))).toHaveLength(1);
+    ui.unmount();
+  });
+
+  it('shows visible commands and marks the selected row', () => {
+    const ui = render(
+      <Box width={80}>
+        <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
+      </Box>,
+    );
+
+    const lines = panelLines(ui.lastFrame() ?? '');
+    expect(commandLines(lines).length).toBeLessThanOrEqual(3);
+
+    const helpRow = rowContaining(lines, '/help');
+    expect(helpRow).toContain(glyph('cursor'));
+    expect(helpRow).not.toContain('▌');
     expect(helpRow).toContain('Show help overlay');
 
     expect(
-      rows.some((line) => line.includes('/palette') && line.includes('Open command palette')),
+      lines.some((line) => line.includes('/palette') && line.includes('Open command palette')),
     ).toBe(true);
     expect(
-      rows.some((line) => line.includes('/skills') && line.includes('Select planner skills')),
+      lines.some((line) => line.includes('/skills') && line.includes('Select planner skills')),
     ).toBe(true);
     ui.unmount();
   });
@@ -176,17 +214,93 @@ describe('CommandCompletionMenu', () => {
       </Box>,
     );
 
-    const rows = panelInteriorRows(ui.lastFrame() ?? '');
-    const commandRows = rows.filter((line) => line.includes('/'));
-    expect(rows.length).toBeLessThanOrEqual(6);
+    const lines = panelLines(ui.lastFrame() ?? '');
+    const commandRows = commandLines(lines);
     expect(commandRows.length).toBeLessThanOrEqual(2);
     expect(commandRows.join('\n')).not.toContain('/hidden-command');
     expect(commandRows.some((line) => line.includes('/run'))).toBe(true);
 
     const testRow = rowContaining(commandRows, '/test');
-    expect(testRow).toContain('▸');
-    expect(testRow).toContain('[Ctrl+T]');
-    expect(rows.filter((line) => line.includes('[Ctrl+T]'))).toHaveLength(1);
+    expect(testRow).toContain(glyph('cursor'));
+    expect(testRow).not.toContain('▌');
+    expect(testRow).toContain('Ctrl+T');
+    expect(testRow).not.toContain('[Ctrl+T]');
+    expect(lines.filter((line) => line.includes('Ctrl+T'))).toHaveLength(1);
     ui.unmount();
+  });
+
+  it('aligns the fuzzy fallback row to the same left gutter as normal command rows', () => {
+    const normal = render(
+      <Box width={80}>
+        <CommandCompletionMenu filtered={[FUZZY_COMMAND]} selectedIndex={0} maxVisible={3} />
+      </Box>,
+    );
+    const normalCol = rowContaining(panelLines(normal.lastFrame() ?? ''), '/help').indexOf('/help');
+    normal.unmount();
+
+    const fuzzy = render(
+      <Box width={80}>
+        <CommandCompletionMenu
+          filtered={[]}
+          selectedIndex={0}
+          fuzzyMatch={FUZZY_COMMAND}
+          maxVisible={3}
+        />
+      </Box>,
+    );
+    const fuzzyCol = rowContaining(panelLines(fuzzy.lastFrame() ?? ''), '/help').indexOf('/help');
+    fuzzy.unmount();
+
+    expect(fuzzyCol).toBe(normalCol);
+  });
+
+  it('renders a quiet "no matching commands" line when nothing matches', () => {
+    const ui = render(
+      <Box width={80}>
+        <CommandCompletionMenu filtered={[]} selectedIndex={0} maxVisible={3} />
+      </Box>,
+    );
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('no matching commands');
+    expect(frame).not.toContain('▌');
+    expect(frame).not.toContain(glyph('cursor'));
+    ui.unmount();
+  });
+
+  it('renders a fuzzy fallback row without a cursor glyph', () => {
+    const ui = render(
+      <Box width={80}>
+        <CommandCompletionMenu
+          filtered={[]}
+          selectedIndex={0}
+          fuzzyMatch={FUZZY_COMMAND}
+          maxVisible={3}
+        />
+      </Box>,
+    );
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('/help');
+    expect(frame).toContain('(fuzzy)');
+    expect(frame).not.toContain(glyph('cursor'));
+    expect(frame).not.toContain('▌');
+    ui.unmount();
+  });
+
+  it('drops footer tokens to the abbreviated form below the narrow width gate', () => {
+    terminalSizeStore.__testReset({ cols: 40 });
+    const ui = render(
+      <Box width={40}>
+        <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
+      </Box>,
+    );
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('↑↓ · ⏎ · esc');
+    expect(frame).not.toContain('select');
+    expect(frame).not.toContain('tab fill');
+    ui.unmount();
+    terminalSizeStore.__testReset({ cols: 80 });
   });
 });

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -27,6 +28,7 @@ function reviewInputMode(): UseInputModeResult {
   return {
     mode: 'review',
     hint: '',
+    questionEpoch: 0,
     setReviewMode: vi.fn(),
     setQuestionMode: vi.fn(),
     resolve: vi.fn(),
@@ -65,11 +67,11 @@ describe('WorkflowBody brief review rendering', () => {
 
     const frame = ui.lastFrame() ?? '';
     const lines = frame.split('\n');
-    const row = lines.find((line) => line.includes('No events yet')) ?? '';
+    const row = lines.find((line) => line.includes('no events yet')) ?? '';
 
     expect(lines[0]).toBe('');
     expect(row.startsWith(' ')).toBe(true);
-    expect(row.trimStart()).toContain('No events yet');
+    expect(row.trimStart()).toContain('no events yet');
 
     ui.unmount();
   });
@@ -88,7 +90,12 @@ describe('WorkflowBody brief review rendering', () => {
     );
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('No events yet');
+    const lines = frame.split('\n');
+    expect(frame).toContain('no events yet');
+    // No leading blank gap row: the lone content row sits flush against the chrome above, matching
+    // the hit-test geometry that drops the top gap at this height.
+    expect(lines[0]).not.toBe('');
+    expect(lines[0]).toContain('no events yet');
 
     ui.unmount();
   });
@@ -114,7 +121,7 @@ describe('WorkflowBody brief review rendering', () => {
       />,
     );
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Task review: T001 - Run command');
     expect(frame).toContain('Validation: npm test token=***REDACTED***');
     expect(frame).toContain('Commands: continue, redo, notes <text>, abort');

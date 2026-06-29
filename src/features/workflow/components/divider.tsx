@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
+import { glyph } from '../../../lib/glyphs.js';
 import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
@@ -15,9 +16,10 @@ export interface DividerProps {
 export function Divider({ width, label, tone = 'border' }: DividerProps) {
   const t = useTheme();
   const color = tone === 'border' ? t.border : t.textDim;
+  const ruleChar = glyph('divider');
   const cleanLabel = label === undefined ? undefined : sanitizeTerminalDisplayText(label);
   if (cleanLabel === undefined || cleanLabel === '') {
-    const rule = '─'.repeat(Math.max(0, width));
+    const rule = ruleChar.repeat(Math.max(0, width));
     return (
       <Box height={1} overflow="hidden" flexShrink={0} width={width}>
         <Text color={color}>{rule}</Text>
@@ -32,9 +34,9 @@ export function Divider({ width, label, tone = 'border' }: DividerProps) {
   const right = side - left;
   return (
     <Box height={1} overflow="hidden" flexShrink={0} width={width}>
-      <Text color={color}>{'─'.repeat(left)}</Text>
+      <Text color={color}>{ruleChar.repeat(left)}</Text>
       <Text color={color}>{labelCell}</Text>
-      <Text color={color}>{'─'.repeat(right)}</Text>
+      <Text color={color}>{ruleChar.repeat(right)}</Text>
     </Box>
   );
 }

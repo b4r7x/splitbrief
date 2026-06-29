@@ -12,7 +12,7 @@ import {
   getWorkflowRuntimeLayout,
   WORKFLOW_CONTENT_PADDING_X,
 } from '../layout/rect.js';
-import { WORKFLOW_BODY_TOP_GAP_ROWS } from '../layout/chrome-rows.js';
+import { getWorkflowBodyTopGapRows } from '../layout/chrome-rows.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -38,7 +38,7 @@ export function WorkflowBody({
     ? getWorkflowRuntimeLayout({ contentWidth })
     : { conversationWidth: contentWidth, contentWidth };
   const reviewWidth = getReviewColumnWidth(contentWidth);
-  const topGapRows = contentHeight > 1 ? WORKFLOW_BODY_TOP_GAP_ROWS : 0;
+  const topGapRows = getWorkflowBodyTopGapRows(contentHeight);
   useEffect(() => {
     if (isConversationMode) return;
     onScrollAbove?.('');

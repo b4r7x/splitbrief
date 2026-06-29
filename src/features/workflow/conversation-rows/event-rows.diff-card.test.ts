@@ -68,19 +68,20 @@ function segmentTone(segment: ConversationRowSegment): string | undefined {
 }
 
 describe('implementer_generate_done diff card', () => {
-  it('renders expanded diff as a bordered card with file header and +N -M meta', () => {
+  it('renders expanded diff as a de-boxed file header with +N -M meta', () => {
     const rows = rowsFor(implementerDoneEvent(), true);
     const text = rows.map(rowText).join('\n');
 
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(rowText(topRow)).toContain('┌─');
+    expect(rowText(topRow)).not.toContain('┌');
     expect(rowText(topRow)).toContain('README.md');
     expect(rowText(topRow)).toContain('+1');
     expect(rowText(topRow)).toContain('-1');
     expect(rowText(topRow)).toContain('1.2s');
 
-    const bottomRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-bottom');
-    expect(rowText(bottomRow)).toContain('└');
+    expect(text).not.toMatch(/[┌┐└┘│]/);
+    const lastRow = rows.at(-1);
+    expect(lastRow?.kind).toBe('spacer');
 
     const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
     expect(bodyRows.length).toBeGreaterThan(0);
@@ -89,7 +90,7 @@ describe('implementer_generate_done diff card', () => {
       rowText(rowValue).includes('added line'),
     );
     const addedTone = requireSegment(addedBodyRow.segments, (segment) => {
-      return segment.text.trim().length > 0 && segment.tone !== 'border';
+      return segment.text.trim().length > 0;
     });
     expect(segmentTone(addedTone)).toBe('success');
 
@@ -97,7 +98,7 @@ describe('implementer_generate_done diff card', () => {
       rowText(rowValue).includes('removed line'),
     );
     const removedTone = requireSegment(removedBodyRow.segments, (segment) => {
-      return segment.text.trim().length > 0 && segment.tone !== 'border';
+      return segment.text.trim().length > 0;
     });
     expect(segmentTone(removedTone)).toBe('error');
 
@@ -130,8 +131,9 @@ describe('implementer_generate_done diff card', () => {
     const rows = rowsFor(implementerDoneEvent(), false);
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('▸ README.md (+1 -1)');
-    expect(text).toContain('Ctrl+D');
+    expect(text).toContain('README.md (+1 -1)');
+    expect(text).toContain('ctrl+d');
+    expect(text).not.toContain('▸');
     expect(rows.every((rowValue) => rowValue.kind !== 'card-top')).toBe(true);
     expect(rows.every((rowValue) => rowValue.kind !== 'card-body')).toBe(true);
     expect(rows.every((rowValue) => rowValue.kind !== 'card-bottom')).toBe(true);
@@ -162,7 +164,7 @@ describe('implementer_generate_done diff card', () => {
     const keySegment = requireSegment(hintRow.segments, (segment) =>
       segment.text.includes('to collapse'),
     );
-    expect(segmentTone(keySegment)).toBe('accent');
+    expect(segmentTone(keySegment)).toBe('textDim');
 
     const countSegment = requireSegment(hintRow.segments, (segment) =>
       segment.text.includes('more lines'),

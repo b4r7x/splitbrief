@@ -1,43 +1,29 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
-import { CostApprovalPrompt } from './cost-approval-prompt.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
+import { getCostApprovalButtonRowOffset } from '../prompt-rows.js';
+import {
+  CostApprovalPrompt,
+  CostApprovalPromptConnected,
+  getCostApprovalButtonZones,
+} from './cost-approval-prompt.js';
+import {
+  _resetMouseZones,
+  hitTopmostZone,
+  registerMouseZone,
+} from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import {
+  closeCostApprovalPrompt,
+  costApprovalStore,
+  openCostApprovalPrompt,
+} from '../../../stores/cost-approval/prompt.js';
+import { readConversationScrollSnapshot } from '../layout/snapshot.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
-import type { CostPrediction } from '../../../core/schemas/summary.js';
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
-
-function makePrediction(): CostPrediction {
-  return {
-    estimatedTasks: 12,
-    lowCost: 0.08,
-    expectedCost: 0.14,
-    highCost: 0.35,
-    plannerTool: 'anthropic',
-    implementerTool: 'anthropic',
-    deterministic: {
-      estimateScope: 'prompt-input-only',
-      taskCount: 12,
-      taskFitCounts: { fits: 10, tight: 1, overflow: 0, unknown: 1 },
-      contextConfidenceCounts: {
-        contextExplicit: 5,
-        contextDetected: 0,
-        contextKnownCatalog: 4,
-        contextCachedProvider: 2,
-        contextConservativeFallback: 1,
-        profileUnavailable: 0,
-      },
-      priceConfidenceCounts: { priceKnown: 12, priceUnknown: 0, profileUnavailable: 0 },
-      tasks: [],
-      totals: {
-        knownActualEstimate: 0.14,
-        hypotheticalAllPlanner: 1.2,
-        estimatedSavings: 1.06,
-        unknownCostReason: [],
-      },
-    },
-  };
-}
 
 describe('CostApprovalPrompt', () => {
   beforeEach(() => {
@@ -50,25 +36,29 @@ describe('CostApprovalPrompt', () => {
 
   it('renders task count and cost estimate', () => {
     const ui = renderFeature(
-      <CostApprovalPrompt prediction={makePrediction()} onApprove={vi.fn()} onReject={vi.fn()} />,
+      <CostApprovalPrompt
+        prediction={makeCostPrediction()}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />,
     );
     const output = ui.lastFrame() ?? '';
     expect(output).toContain('12 tasks');
-    expect(output).toContain('Prompt input');
+    expect(output).toContain('prompt input');
     expect(output).toContain('$0.14');
-    expect(output).toContain('All-planner prompt');
+    expect(output).toContain('all-planner prompt');
     expect(output).toContain('~$1.20');
-    expect(output).toContain('Prompt saving');
+    expect(output).toContain('prompt saving');
     expect(output).toContain(
-      'Output, retries, validation reruns, and escalation are tracked at runtime.',
+      'output, retries, validation reruns, and escalation tracked at runtime',
     );
-    expect(output).toContain('Approve?');
+    expect(output).toContain('approve?');
     expect(output).not.toContain('Est.');
     ui.unmount();
   });
 
   it('renders an all-planner baseline when the actual estimate is unknown', () => {
-    const prediction = makePrediction();
+    const prediction = makeCostPrediction();
     prediction.deterministic!.totals.knownActualEstimate = null;
     prediction.deterministic!.totals.estimatedSavings = null;
 
@@ -77,9 +67,9 @@ describe('CostApprovalPrompt', () => {
     );
     const output = ui.lastFrame() ?? '';
 
-    expect(output).toContain('Prompt input');
+    expect(output).toContain('prompt input');
     expect(output).toContain('n/a');
-    expect(output).toContain('All-planner prompt');
+    expect(output).toContain('all-planner prompt');
     expect(output).toContain('~$1.20');
     ui.unmount();
   });
@@ -89,7 +79,7 @@ describe('CostApprovalPrompt', () => {
     const onReject = vi.fn();
     const ui = renderFeature(
       <CostApprovalPrompt
-        prediction={makePrediction()}
+        prediction={makeCostPrediction()}
         onApprove={onApprove}
         onReject={onReject}
       />,
@@ -106,7 +96,7 @@ describe('CostApprovalPrompt', () => {
     const onReject = vi.fn();
     const ui = renderFeature(
       <CostApprovalPrompt
-        prediction={makePrediction()}
+        prediction={makeCostPrediction()}
         onApprove={onApprove}
         onReject={onReject}
       />,
@@ -123,7 +113,7 @@ describe('CostApprovalPrompt', () => {
     const onReject = vi.fn();
     const ui = renderFeature(
       <CostApprovalPrompt
-        prediction={makePrediction()}
+        prediction={makeCostPrediction()}
         onApprove={onApprove}
         onReject={onReject}
       />,
@@ -146,7 +136,7 @@ describe('CostApprovalPrompt', () => {
     overlayStore.open('settings');
     const ui = renderFeature(
       <CostApprovalPrompt
-        prediction={makePrediction()}
+        prediction={makeCostPrediction()}
         onApprove={onApprove}
         onReject={onReject}
       />,
@@ -164,6 +154,175 @@ describe('CostApprovalPrompt', () => {
     await tick(1);
     ui.stdin.write('y');
     expect(onApprove).toHaveBeenCalledOnce();
+    ui.unmount();
+  });
+});
+
+describe('CostApprovalPromptConnected', () => {
+  afterEach(() => {
+    costApprovalStore.__testReset();
+  });
+
+  it('renders full prediction detail for a store-driven prompt (attached IPC path)', async () => {
+    const pending = openCostApprovalPrompt(makeCostPrediction());
+    const ui = renderFeature(<CostApprovalPromptConnected />);
+    const output = ui.lastFrame() ?? '';
+
+    expect(output).toContain('12 tasks');
+    expect(output).toContain('prompt input');
+    expect(output).toContain('$0.14');
+    expect(output).toContain('all-planner prompt');
+    expect(output).toContain('~$1.20');
+    expect(output).toContain('prompt saving');
+    expect(output).toContain('approve?');
+
+    closeCostApprovalPrompt({ approved: false });
+    expect(await pending).toBe(false);
+    ui.unmount();
+  });
+});
+
+describe('cost approve/reject click zones', () => {
+  afterEach(() => {
+    _resetMouseZones();
+  });
+
+  it('splits the approve/reject row into two full-height halves (calibration)', () => {
+    const zones = getCostApprovalButtonZones({
+      boxTop: 10,
+      cols: 200,
+      promptRows: 30,
+      prediction: makeCostPrediction(),
+    });
+    expect(zones).not.toBeNull();
+    // boxTop(10) + border(1) + pad(1) + header(1) + comparison(3) + scope(1) + scopeBlank(1)
+    //   + gap(1) = approve/reject row 19.
+    expect(zones?.approve).toMatchObject({ left: 1, right: 100, top: 19, bottom: 19 });
+    expect(zones?.reject).toMatchObject({ left: 101, right: 200, top: 19, bottom: 19 });
+  });
+
+  it('collapses to a numberless approve/reject row when the summary is unpriced (calibration)', () => {
+    const zones = getCostApprovalButtonZones({
+      boxTop: 10,
+      cols: 200,
+      promptRows: 7,
+      prediction: makeCostPrediction({ deterministic: undefined }),
+    });
+    expect(zones).not.toBeNull();
+    // boxTop(10) + border(1) + pad(1) + gap(1) = numberless approve/reject row 13 (no data rows).
+    expect(zones?.approve).toMatchObject({ left: 1, right: 100, top: 13, bottom: 13 });
+    expect(zones?.reject).toMatchObject({ left: 101, right: 200, top: 13, bottom: 13 });
+  });
+
+  it('returns null when the row would fall below the clamped prompt box', () => {
+    const zones = getCostApprovalButtonZones({
+      boxTop: 10,
+      cols: 200,
+      promptRows: 5,
+      prediction: makeCostPrediction(),
+    });
+    expect(zones).toBeNull();
+  });
+
+  it('hits approve on the left half, reject on the right, and no-ops above the row', () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    const zones = getCostApprovalButtonZones({
+      boxTop: 10,
+      cols: 200,
+      promptRows: 30,
+      prediction: makeCostPrediction(),
+    });
+    if (!zones) throw new Error('expected zones');
+    registerMouseZone({ id: 'cost-approve', ...zones.approve, z: 50, onClick: onApprove });
+    registerMouseZone({ id: 'cost-reject', ...zones.reject, z: 50, onClick: onReject });
+
+    hitTopmostZone(40, zones.approve.top)?.onClick?.();
+    hitTopmostZone(150, zones.reject.top)?.onClick?.();
+    hitTopmostZone(40, zones.approve.top - 1)?.onClick?.();
+
+    expect(onApprove).toHaveBeenCalledOnce();
+    expect(onReject).toHaveBeenCalledOnce();
+  });
+});
+
+describe('cost gate render aligns to the computed button offset', () => {
+  it('renders the populated approve row exactly at the computed button offset', () => {
+    const ui = renderFeature(
+      <CostApprovalPrompt
+        prediction={makeCostPrediction()}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const boxWidth = lines[0]?.length ?? 0;
+    const approveRow = lines.findIndex((line) => line.includes('approve?'));
+    expect(approveRow).toBe(getCostApprovalButtonRowOffset(makeCostPrediction(), boxWidth));
+    ui.unmount();
+  });
+
+  it('renders the unpriced numberless approve row exactly at the computed button offset', () => {
+    const ui = renderFeature(
+      <CostApprovalPrompt
+        prediction={makeCostPrediction({ deterministic: undefined })}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const lines = frame.split('\n');
+    const boxWidth = lines[0]?.length ?? 0;
+    const approveRow = lines.findIndex((line) => line.includes('approve?'));
+    expect(approveRow).toBe(
+      getCostApprovalButtonRowOffset(makeCostPrediction({ deterministic: undefined }), boxWidth),
+    );
+    // The numberless gate has no header/comparison/scope rows: border + pad + gap = row 3.
+    expect(approveRow).toBe(3);
+    // No fabricated figures leak into the collapsed gate.
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('tasks');
+    ui.unmount();
+  });
+});
+
+describe('short-viewport clamp clips registered cost zones', () => {
+  beforeEach(() => {
+    _resetMouseZones();
+    overlayStore.reset();
+    terminalSizeStore.__testReset({ cols: 200, rows: 24, isSmall: false });
+  });
+
+  afterEach(() => {
+    _resetMouseZones();
+    overlayStore.reset();
+    terminalSizeStore.reset();
+  });
+
+  it('does not activate approve/reject zones below the shell-clamped prompt box', async () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    const ui = renderFeature(
+      <CostApprovalPrompt
+        prediction={makeCostPrediction()}
+        onApprove={onApprove}
+        onReject={onReject}
+        clampedBoxRows={8}
+      />,
+    );
+    await tick(1);
+
+    const { contentRect } = readConversationScrollSnapshot();
+    const boxTop = contentRect.top + contentRect.height;
+
+    // The approve/reject row would render at boxTop + 8, below the clamped box bottom
+    // (boxTop + 7), where overflow="hidden" hides it — no zone may be registered there.
+    const hit = hitTopmostZone(40, boxTop + 8);
+    hit?.onClick?.();
+    expect(hit).toBeUndefined();
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onReject).not.toHaveBeenCalled();
+
     ui.unmount();
   });
 });

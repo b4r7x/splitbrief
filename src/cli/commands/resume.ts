@@ -14,36 +14,61 @@ import { maybeMigrateAndReport } from './migrate.js';
 import { resumeSavedSession } from './continue.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
+export interface ResumeDeps {
+  checkServerStatus: typeof checkServerStatus;
+  resumeSavedSession: typeof resumeSavedSession;
+}
+
+const defaultResumeDeps: ResumeDeps = {
+  checkServerStatus,
+  resumeSavedSession,
+};
+
+export async function resumeCommand(
+  opts: { projectDir: string } & WorkflowOpts,
+  deps: ResumeDeps = defaultResumeDeps,
+): Promise<void> {
+  assertModeFlagsExclusive(opts);
+  assertWorktreeStartOnly(opts);
+  const { projectDir } = opts;
+  await maybeMigrateAndReport(projectDir, opts);
+
+  const sessionId = readActive(projectDir);
+  if (!sessionId) {
+    throw cliError('no active session to resume.');
+  }
+
+  const status = await deps.checkServerStatus(sessionDir(projectDir, sessionId));
+  if (status.alive) {
+    throw cliError(
+      `session '${sessionId}' is running — use \`diptych attach\` to view it or \`diptych continue\` to attach/resume.`,
+      1,
+    );
+  }
+
+  if (status.processAlive) {
+    throw cliError(
+      `server process ${status.data?.pid} exists but is unresponsive — kill it first`,
+      1,
+    );
+  }
+
+  const state = loadState({ projectDir, sessionId });
+
+  if (!state) {
+    throw cliError(
+      `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`diptych start\`.`,
+    );
+  }
+
+  await deps.resumeSavedSession({ projectDir, sessionId, state, opts });
+}
+
 export function registerResumeCommand(program: Command): void {
   addWorkflowOptions(
     program.command('resume').description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
-    assertModeFlagsExclusive(opts);
-    assertWorktreeStartOnly(opts);
     const projectDir = resolveProjectDir(opts.project);
-    await maybeMigrateAndReport(projectDir, opts);
-
-    const sessionId = readActive(projectDir);
-    if (!sessionId) {
-      throw cliError('no active session to resume.');
-    }
-
-    const status = await checkServerStatus(sessionDir(projectDir, sessionId));
-    if (status.alive) {
-      throw cliError(
-        `session '${sessionId}' is running — use \`diptych attach\` to view it or \`diptych continue\` to attach/resume.`,
-        1,
-      );
-    }
-
-    const state = loadState({ projectDir, sessionId });
-
-    if (!state) {
-      throw cliError(
-        `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`diptych start\`.`,
-      );
-    }
-
-    await resumeSavedSession({ projectDir, sessionId, state, opts });
+    await resumeCommand({ ...opts, projectDir });
   });
 }
