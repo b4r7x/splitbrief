@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  formatDetachedAttachHint,
-  formatShellArgv,
-  shellCommandFromText,
-  shellQuoteArg,
-} from './shell-quote.js';
+import { formatShellArgv, shellCommandFromText, shellQuoteArg } from './shell-quote.js';
 
 describe('shellQuoteArg', () => {
   it.each([
@@ -22,14 +17,6 @@ describe('formatShellArgv', () => {
   it('joins argv tokens with shell-safe quoting', () => {
     expect(formatShellArgv(['diptych', 'attach', 'sess-1', '--project', '/tmp/my project'])).toBe(
       "diptych attach sess-1 --project '/tmp/my project'",
-    );
-  });
-});
-
-describe('formatDetachedAttachHint', () => {
-  it('uses --project instead of a brittle cd && chain', () => {
-    expect(formatDetachedAttachHint('/tmp/my project', '2026-04-01-feature')).toBe(
-      "diptych attach 2026-04-01-feature --project '/tmp/my project'",
     );
   });
 });
