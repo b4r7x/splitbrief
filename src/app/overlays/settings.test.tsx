@@ -6,7 +6,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { SettingsOverlay } from './overlay.js';
+import { SettingsOverlay } from './settings.js';
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);

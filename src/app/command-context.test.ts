@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installClipboardExecFixture,
@@ -8,6 +9,7 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
@@ -29,12 +31,17 @@ import { configStore } from '../stores/project/config.js';
 import { addEvent, getSections } from '../stores/workflow/actions.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { controlsStore } from '../stores/ui/controls.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { reviewStore } from '../stores/workflow/review.js';
 import { focusStore } from '../stores/ui/focus.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
-import { buildCommandContext, type WorkflowCommandPorts } from './command-context.js';
+import {
+  buildCommandContext,
+  useRuntimeCommands,
+  type WorkflowCommandPorts,
+} from './command-context.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { loadDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
 import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
@@ -413,5 +420,62 @@ describe('buildCommandContext', () => {
       'copy:message',
     ]);
     expect(readClipboardExecCalls()).toHaveLength(0);
+  });
+});
+
+function RuntimeCommandsHarness({
+  onModel,
+}: {
+  onModel: (model: ReturnType<typeof useRuntimeCommands>) => void;
+}) {
+  const model = useRuntimeCommands({ exit: () => {}, phase: 'idle' });
+  onModel(model);
+  return null;
+}
+
+describe('useRuntimeCommands', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the documented runtime-commands shape', async () => {
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    await tick();
+
+    expect(Array.isArray(model?.commands)).toBe(true);
+    expect(model?.copyTarget).toBeDefined();
+    expect(typeof model?.setWorkflowMode).toBe('function');
+    expect(typeof model?.handleRuntimeCommand).toBe('function');
+    ui.unmount();
+  });
+
+  it('routes an unknown command through executeRuntimeCommand to feedbackStore.setError', async () => {
+    const setError = vi.spyOn(feedbackStore, 'setError');
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    await tick();
+
+    model?.handleRuntimeCommand('/totally-unknown-xyz', 'home');
+    await tick();
+
+    expect(setError).toHaveBeenCalled();
+    ui.unmount();
   });
 });

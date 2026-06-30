@@ -117,7 +117,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Session browser UI
 
-**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/features/sessions/picker.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.diptych/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
+**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/app/overlays/sessions.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.diptych/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
 
 **What remains.**
 

@@ -187,4 +187,137 @@ describe('findImportBoundaryViolations', () => {
     const violations = findImportBoundaryViolations('src');
     expect(violations).toEqual([]);
   });
+
+  it('flags a screen page importing a sibling screen page (page<->page in screens)', () => {
+    write('app/screens/summary.tsx', 'export const Summary = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Summary } from './summary.js';\nexport const Home = Summary;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.file).toBe('app/screens/home.tsx');
+    expect(violations[0]?.reason).toContain(
+      'src/app/screens/home.tsx must not import from src/app/screens/summary.tsx',
+    );
+  });
+
+  it('flags an overlay page importing a sibling overlay page (page<->page in overlays)', () => {
+    write('app/overlays/settings.tsx', 'export const Settings = () => null;');
+    write(
+      'app/overlays/palette.tsx',
+      "import { Settings } from './settings.js';\nexport const Palette = Settings;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain(
+      'src/app/overlays/palette.tsx must not import from src/app/overlays/settings.tsx',
+    );
+  });
+
+  it('flags a screen page importing an overlay page (cross-surface direct import)', () => {
+    write('app/overlays/palette.tsx', 'export const Palette = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Palette } from '../overlays/palette.js';\nexport const Home = Palette;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain(
+      'src/app/screens/** and src/app/overlays/** pages must not import each other directly',
+    );
+  });
+
+  it('flags a page importing the app shell (shell-guard)', () => {
+    write('app/root.tsx', 'export const Root = () => null;');
+    write('app/screens/home.tsx', "import { Root } from '../root.js';\nexport const Home = Root;");
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain('pages must not import the app shell (src/app/root)');
+  });
+
+  it('flags an overlay page importing the router shell (shell-guard)', () => {
+    write('app/router.tsx', 'export const Router = () => null;');
+    write(
+      'app/overlays/palette.tsx',
+      "import { Router } from '../router.js';\nexport const P = Router;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain('pages must not import the app shell (src/app/router)');
+  });
+
+  it('flags a page importing the provider shell (shell-guard)', () => {
+    write('app/provider.tsx', 'export const Provider = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Provider } from '../provider.js';\nexport const Home = Provider;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain('must not import the app shell');
+  });
+
+  it('flags a page importing the layout shell (shell-guard)', () => {
+    write('app/layout.tsx', 'export const Layout = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Layout } from '../layout.js';\nexport const Home = Layout;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain('must not import the app shell');
+  });
+
+  it('allows a page composing TWO features (composition at app level)', () => {
+    write('features/workflow/components/header.tsx', 'export const Header = () => null;');
+    write('features/summary/components/evidence.tsx', 'export const Evidence = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Header } from '../../features/workflow/components/header.js';\n" +
+        "import { Evidence } from '../../features/summary/components/evidence.js';\n" +
+        'export const Home = [Header, Evidence];',
+    );
+
+    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+  });
+
+  it('allows a page importing shared components', () => {
+    write('components/session-row.tsx', 'export const Row = () => null;');
+    write(
+      'app/screens/home.tsx',
+      "import { Row } from '../../components/session-row.js';\nexport const Home = Row;",
+    );
+
+    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+  });
+
+  it('allows the shell (root/router) importing pages', () => {
+    write('app/screens/home.tsx', 'export const Home = () => null;');
+    write('app/overlays/palette.tsx', 'export const Palette = () => null;');
+    write(
+      'app/root.tsx',
+      "import { Home } from './screens/home.js';\nimport { Palette } from './overlays/palette.js';\nexport const Root = [Home, Palette];",
+    );
+
+    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+  });
+
+  it('allows the router shell importing pages (composition site)', () => {
+    write('app/screens/home.tsx', 'export const Home = () => null;');
+    write('app/overlays/palette.tsx', 'export const Palette = () => null;');
+    write(
+      'app/router.tsx',
+      "import { Home } from './screens/home.js';\nimport { Palette } from './overlays/palette.js';\nexport const Router = [Home, Palette];",
+    );
+
+    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+  });
 });

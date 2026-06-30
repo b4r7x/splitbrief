@@ -75,7 +75,7 @@ module.exports = {
     {
       name: 'features-below-app-cli',
       comment:
-        'Feature slices are wired only at app.tsx (LAYERS.md). They must not reach up into app/ or cli/.',
+        'Feature slices are wired only at the app/ shell — app/router.tsx composes the page files and app/root.tsx mounts the tree (LAYERS.md). They must not reach up into app/ or cli/.',
       severity: 'error',
       from: { path: '^src/features/' },
       to: { path: '^src/(app|cli)/' },

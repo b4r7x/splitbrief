@@ -25,7 +25,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { glyph } from '../../lib/glyphs.js';
-import { CommandPaletteOverlay } from './overlay.js';
+import { CommandPaletteOverlay } from './palette.js';
 
 function write(instance: ReturnType<typeof render>, chars: string): void {
   instance.stdin.write(chars);

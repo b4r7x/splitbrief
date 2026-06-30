@@ -23,7 +23,14 @@ export default defineConfig({
       // coverage invocations so one run cannot delete another run's temp files.
       reportsDirectory: coverageReportsDirectory,
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/cli.ts', 'src/app.tsx', 'src/types/**'],
+      exclude: [
+        'src/cli.ts',
+        'src/app/root.tsx',
+        'src/app/router.tsx',
+        'src/app/provider.tsx',
+        'src/app/layout.tsx',
+        'src/types/**',
+      ],
       thresholds: { statements: 50, branches: 40, functions: 50, lines: 55 },
     },
   },

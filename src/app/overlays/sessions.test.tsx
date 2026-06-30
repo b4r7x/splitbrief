@@ -13,7 +13,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { Session } from '../../core/schemas/session.js';
-import { SessionsPicker } from './picker.js';
+import { SessionsPicker } from './sessions.js';
 import { tick } from '#testing/helpers/ink.js';
 
 let tmp: string;

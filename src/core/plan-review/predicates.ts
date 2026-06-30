@@ -18,11 +18,3 @@ export function hasStaleOrConflict(metadata: PlanTaskReviewMetadata | undefined)
     STALE_ESTIMATE_STATUSES.has(metadata?.estimateStatus)
   );
 }
-
-export function hasTruncatedContextReason(metadata: PlanTaskReviewMetadata | undefined): boolean {
-  return (
-    metadata?.currentCodeTruncated === true ||
-    metadata?.currentCodeContextMode === 'function-level' ||
-    metadata?.currentCodeContextMode === 'truncated'
-  );
-}

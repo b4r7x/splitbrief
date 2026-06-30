@@ -29,10 +29,10 @@ This document has two parts:
            ▼                              ▼
 ┌────────────────────────┐   ┌───────────────────────────────┐
 │  Engine (no React)     │   │  UI (React 19 + Ink 6)        │
-│    src/engine/         │   │    src/{app,layout,           │
-│    — workflow logic,   │   │          features,            │
-│      planners,         │   │          components,hooks}    │
-│      implementers,     │   │    — reads stores, renders   │
+│    src/engine/         │   │    src/{app,features,         │
+│    — workflow logic,   │   │          components,hooks}    │
+│      planners,         │   │    app/ = shell + flat pages  │
+│      implementers,     │   │    — reads stores, renders    │
 │      validation        │   │      event cards,             │
 │                        │   │      captures keys            │
 └───────────────────┬────┘   └───────────────────────────────┘
@@ -47,7 +47,7 @@ This document has two parts:
 
 - `src/engine/**` must not import from React, Ink, or any `src/features/`, `src/components/`, or `src/hooks/` path. The engine is runnable in a headless test process.
 - `src/features/**` and `src/components/**` must not import from `src/cli/**`. UI is driven by stores, not by command handlers.
-- `src/features/{a}/**` must not import from `src/features/{b}/**`. Cross-feature composition happens at `src/app.tsx` and `src/layout.tsx`; shared behavior lives in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. See [`STRUCTURE.md`](./STRUCTURE.md) and [`HOOKS.md`](./HOOKS.md).
+- `src/features/{a}/**` must not import from `src/features/{b}/**`. Cross-feature composition happens at the `src/app/` shell — `app/router.tsx` composes the page files and `app/root.tsx` mounts the tree; shared behavior lives in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. See [`STRUCTURE.md`](./STRUCTURE.md) and [`HOOKS.md`](./HOOKS.md).
 - `src/stores/**` has no React or Ink imports and no engine value imports. Store modules may use `import type` for engine-owned types such as `EngineEvent`.
 
 These rules are what let us run the full workflow under Vitest without bringing up Ink.
@@ -61,8 +61,15 @@ Only directories with meaningful responsibility — see `CLAUDE.md` for the full
 ```
 src/
 ├── cli.ts                    Entry point; registers commander subcommands
-├── app.tsx                   Root Ink component; routes screen + overlay
-├── layout.tsx                Structural shell (header + body + footer)
+├── app/                      App shell + FLAT pages (composition layer)
+│   ├── root.tsx              Composition root; mounts <AppProvider><Router/>
+│   ├── router.tsx            renderScreen + renderOverlay switches → <Layout>
+│   ├── provider.tsx          AppProvider (app-level providers; today ThemeProvider)
+│   ├── layout.tsx            Structural shell (header + body + footer)
+│   ├── keys.ts               App-wide keyboard dispatch (useAppKeys)
+│   ├── command-context.ts    Runtime-command wiring (useRuntimeCommands)
+│   ├── screens/              FLAT page entries: home, workflow, summary, setup
+│   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners
 │
 ├── cli/                      Non-React CLI logic
 │   ├── commands/             commander handlers (init, start, resume, spec, status)
@@ -96,23 +103,19 @@ src/
 │   ├── create-store.ts       ~45 LOC factory: get/set/subscribe/use/reset
 │   └── {ui,workflow,navigation,project,discovery}/*.ts
 │
-├── features/                 Business features — one folder per concept (10 features)
-│   ├── help/                 help overlay
-│   ├── workflow/             screen + components + hooks + pure helpers
-│   ├── home/                 screen + components
-│   ├── palette/              command palette overlay + result ranking
-│   ├── setup/                screen
-│   ├── summary/              screen + components
-│   ├── settings/             overlay + hooks
-│   ├── sessions/             picker + row
-│   ├── runners/             picker + view + catalog adapter + hooks (planner / implementer runner selection)
-│   └── skills/               picker
+├── features/                 Business features — components/hooks/helpers per concept
+│   ├── workflow/             components + hooks + pure helpers (largest feature)
+│   ├── home/                 components + recent-sessions hook + logo
+│   ├── palette/              command-palette sources + result ranking
+│   ├── summary/              components + detail rows + hooks
+│   ├── settings/             mode-selector + hooks
+│   └── runners/              picker view + catalog adapter + hooks (planner / implementer runner selection)
 ├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
 ├── hooks/                    Shared React hooks (cross-feature primitives, flat)
 └── utils/                    Pure helpers (format, diff, git, process, redact, …)
 ```
 
-UI code is organized by **business feature**, not technical layer — see [`STRUCTURE.md`](./STRUCTURE.md) for the full rationale. `src/features/{feature}/` holds the vertical slice (screen/overlay + feature-local components, hooks, pure helpers). `src/components/`, `src/hooks/`, `src/utils/` hold only code shared across two or more features. There is no `src/screens/` directory (feature entry points are `screen.tsx` / `overlay.tsx` / `picker.tsx` inside each feature) and no `src/ui/` directory (primitives merged into `src/components/`).
+UI code is organized by **business feature**, not technical layer — see [`STRUCTURE.md`](./STRUCTURE.md) for the full rationale. Every surface entry is a **FLAT page** under `src/app/screens/` (screens) or `src/app/overlays/` (overlays); `src/features/{feature}/` holds the feature-local slice that page composes (components, hooks, pure helpers). `src/components/`, `src/hooks/`, `src/utils/` hold only code shared across two or more features. There is no `src/screens/` directory (page entries live under `src/app/`, not inside each feature) and no `src/ui/` directory (primitives merged into `src/components/`).
 
 ---
 
@@ -306,8 +309,8 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
-| New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
-| New feature (new screen / picker / overlay) | `src/features/<feature>/` with `screen.tsx` \| `picker.tsx` \| `overlay.tsx` as entry; wire in `src/app.tsx` |
+| New feature overlay | FLAT page in `src/app/overlays/<name>.tsx` (feature internals in `src/features/<feature>/`) + register via `overlayStore` |
+| New feature (new screen / picker / overlay) | feature internals in `src/features/<feature>/`; entry is a FLAT page in `src/app/screens` \| `src/app/overlays`; wire the dispatch in `src/app/router.tsx` (pure-entry surfaces — help/sessions/setup/skills — are the page alone, no `features/` folder) |
 | New planner capability flag | Extend `PlannerCapabilities` in `src/engine/planners/types.ts`, set the default in each backend, add the fallback branch in the orchestrator |
 
 ---
@@ -441,8 +444,15 @@ Generated via `find src -type f \( -name '*.ts' -o -name '*.tsx' \) | sort`. The
 
 ```
 src/
-├── app.tsx                        Root Ink component; routes screen + overlay
-├── layout.tsx                     Structural shell (header + body + footer)
+├── app/                           App shell + FLAT pages (composition layer)
+│   ├── root.tsx                   Composition root; mounts <AppProvider><Router/>
+│   ├── router.tsx                 renderScreen + renderOverlay switches → <Layout>
+│   ├── provider.tsx               AppProvider (app-level providers; today ThemeProvider)
+│   ├── layout.tsx                 Structural shell (header + body + footer)
+│   ├── keys.ts                    App-wide keyboard dispatch (useAppKeys)
+│   ├── command-context.ts         Runtime-command wiring (useRuntimeCommands)
+│   ├── screens/                   FLAT page entries: home, workflow, summary, setup
+│   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners
 ├── cli.ts                         Top-level entry; registers workflow + utility subcommands
 │
 ├── cli/                           Non-React CLI handlers
@@ -663,45 +673,51 @@ src/
 │                                  conversation-scroll, events, lifecycle,
 │                                  operations, review, tasks, tokens
 │
-├── features/                      TUI features (one folder per business slice)
-│   ├── help/                      overlay (global Ctrl-/ help overlay)
-│   ├── home/                      screen + components (config-summary,
-│   │                              recent-sessions)
-│   ├── palette/                   overlay + results (command palette overlay
-│   │                              and cross-store result aggregator)
-│   ├── sessions/                  picker (session-select action lives in stores/navigation)
-│   ├── settings/                  overlay + mode-selector +
-│   │                              hooks/{buffer, editor}
-│   ├── setup/screen.tsx           First-run / reconfigure flow
-│   ├── skills/picker.tsx          Skills selection
-│   ├── summary/                   screen + components (cost-breakdown,
-│   │                              evidence, phase-timing, progress,
-│   │                              detail-rows, detail-layout)
-│   ├── runners/                   picker, view, catalog, hooks,
-│   │                              transforms, view-state,
+├── features/                      TUI feature slices — components/hooks/helpers
+│                                  (page entries are FLAT pages under app/)
+│   ├── home/                      components (config-summary, recent-sessions
+│   │                              list/shell) + layout + logo +
+│   │                              use-recent-sessions-focus
+│   ├── palette/                   sources + results (command-palette source
+│   │                              assembly + cross-store result aggregator)
+│   ├── runners/                   picker-view, tool-row, model-catalog,
+│   │                              config-transforms, view-state,
+│   │                              use-picker-actions, use-picker-catalog,
 │   │                              two-column-picker/{picker, keyboard,
-│   │                              use-column-state, use-nav-state}
+│   │                              use-column-state, use-nav-state,
+│   │                              virtual-items}
 │   │                              (planner / implementer runner selection)
-│   └── workflow/                  Largest feature
-│       ├── attach-resolver.ts     /attach path resolver
+│   ├── settings/                  mode-selector + presentation +
+│   │                              hooks/{buffer, editor}
+│   ├── summary/                   components (cost-breakdown, hero-savings,
+│   │                              phase-timing, progress, checkpoints,
+│   │                              review-packet, compact-*) + detail-rows +
+│   │                              detail-layout + presentation +
+│   │                              use-summary-evidence-ledger
+│   └── workflow/                  Largest feature (entry: app/screens/workflow.tsx)
 │       ├── conversation-rows/     row-based conversation renderer
-│       ├── components/            approval-prompt, brief-review-view,
-│       │                          chrome, conversation-flow/,
-│       │                          cost/drilldown-overlay,
-│       │                          feedback-row, header, input-footer,
-│       │                          rail, readiness-panel, review-view,
-│       │                          sidebar, task-summary
+│       ├── components/            approval-prompt, body, brief-review-*,
+│       │                          chrome, conversation-flow/, cost/{drilldown-
+│       │                          overlay, compute-eta}, divider, feedback-row,
+│       │                          header, input-footer, prompt-body, rail,
+│       │                          readiness-panel, review-view, runner-label,
+│       │                          sidebar, spinner, task-summary
+│       ├── display/               activity-display-text,
+│       │                          runner-activity-display
 │       ├── handlers.ts            Runtime command context actions
-│       ├── hooks/                 use-advisory,
+│       ├── hooks/                 use-advisory, use-brief-review-keys,
 │       │                          use-cost-stats, use-input-mode,
-│       │                          use-ipc-client, use-keys,
-│       │                          use-mouse-scroll,
-│       │                          use-readiness-fetch,
-│       │                          use-review-content, use-runner
+│       │                          use-ipc-client, use-keys, use-mouse-pointer,
+│       │                          use-mouse-scroll, use-readiness-fetch,
+│       │                          use-review-content, use-runner,
+│       │                          use-workflow-screen
 │       ├── keyboard.ts            Workflow keymap
-│       ├── layout.ts              Workflow-screen layout math
-│       ├── review-parser.ts       Review-text parser
-│       └── screen.tsx             Workflow screen entry
+│       ├── layout/                layout math (brief-review, chrome-rows,
+│       │                          cost-chrome, diff-height, rect, hit-test,
+│       │                          scroll-window, snapshot, task-row)
+│       ├── recovery-driver.ts     Recovery flow (+ recovery-prompt)
+│       ├── review-parser.ts       Review-text parser (+ review-commands)
+│       └── tui-sink.ts            EngineEvent → workflow store sink
 │
 ├── components/                    Shared UI (cross-feature)
 │   ├── filter-input.tsx           Filterable text input
@@ -729,7 +745,7 @@ src/
 │   ├── use-filterable-list.ts
 │   └── use-static-selector.ts
 │
-│   App-wide keyboard dispatch lives at `app/keys.ts` (next to `app.tsx`).
+│   App-wide keyboard dispatch lives at `app/keys.ts` (next to the `app/` shell — `app/root.tsx`/`app/router.tsx`).
 │   The pure list-navigation helper lives at `utils/indexing.ts`.
 │
 ├── lib/                           Third-party adapters
@@ -1114,7 +1130,7 @@ Every `record*` takes an optional `briefHash: string | null` parameter. The inva
 
 ## 9. CLI Commands
 
-Registered in `src/cli.ts` (20 commands). [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag and option reference.
+Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag and option reference.
 
 | Command | Subcommands | Purpose |
 |---|---|---|
@@ -1244,4 +1260,4 @@ Quickest path for a fresh agent:
 6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.
 
-For UI specifically: `src/app.tsx` → `src/features/workflow/screen.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows.ts`.
+For UI specifically: `src/app/root.tsx` → `src/app/router.tsx` → `src/app/screens/workflow.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows.ts`.

@@ -11,9 +11,9 @@ Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtim
 1. Exact match on `name` or any `aliases`. Example: `/config` resolves to `/settings`.
 2. If no exact match, `suggestRuntimeCommand` in `src/core/runtime/commands/lookup.ts` may suggest a close command in the error message — it does not auto-execute. Example: `/mde` returns `Unknown command: /mde. Did you mean /mode?` without running `/mode`.
 
-Each command declares `validScreens`. The four screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere". Attached clients use `ATTACHED_AVAILABLE_COMMANDS` as an allow-list for completion, palette, and help so config/workflow mutations cannot report false local success (see [Attached clients](#attached-clients-start---detach) below).
+Each command declares `validScreens`. The screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere". Attached clients use `ATTACHED_AVAILABLE_COMMANDS` as an allow-list for completion, palette, and help so config/workflow mutations cannot report false local success (see [Attached clients](#attached-clients-start---detach) below).
 
-Three rewind-family commands also enforce a `phaseGuard`. The guards are the single source of truth for when a rewind can run:
+The rewind-family commands also enforce a `phaseGuard`. The guards are the single source of truth for when a rewind can run:
 
 - `canReviseSpec(phase)` — `src/core/runtime/commands/registry.ts` — true once the spec is written (`reviewing-spec` and later, except `idle`/`complete`).
 - `canRevisePlan(phase)` — `src/core/runtime/commands/registry.ts` — true once the plan is written (`reviewing-plan`, `reviewing-briefs`, and later).
@@ -36,7 +36,7 @@ Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/
 | Command | IPC message | Handler |
 |---|---|---|
 | Composer text (normal mode) | `user_input` | `useIpcClient.sendUserInput` → `workflow-bridge.onUserInput` |
-| `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `workflow/screen.tsx` before dispatch) |
+| `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `src/app/screens/workflow.tsx` before dispatch) |
 | Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop.makeCallbacks` |
 
 Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, and `/implementer` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.

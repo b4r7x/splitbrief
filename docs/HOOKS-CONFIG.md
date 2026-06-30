@@ -27,7 +27,7 @@ The first time you run with hooks defined, diptych prompts to trust them. Use `-
 
 ## Hook events
 
-Ten events fire during a workflow (plus `pre_compact`, a reserved key with no dispatch site yet). Each can have multiple hooks declared.
+Lifecycle events fire during a workflow (plus `pre_compact`, a reserved key with no dispatch site yet). Each can have multiple hooks declared.
 
 | Event            | When                                        | Payload (event fields)                                              |
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
@@ -328,7 +328,7 @@ Adding a hook to `.diptych/config.yaml` is RCE on the next `diptych start`. A ma
 
 ## Built-in hooks
 
-Two built-ins ship — both **off by default**:
+Built-ins ship — all **off by default**:
 
 ### `prettier-on-change`
 

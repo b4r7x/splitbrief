@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { createElement } from 'react';
-import { App } from '../../app.js';
+import { App } from '../../app/root.js';
 import { resolveProjectDir, setupWorkflow } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { renderApp } from '../render.js';

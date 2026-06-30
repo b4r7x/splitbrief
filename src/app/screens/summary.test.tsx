@@ -20,7 +20,7 @@ import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { SummaryScreen } from './screen.js';
+import { SummaryScreen } from './summary.js';
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);

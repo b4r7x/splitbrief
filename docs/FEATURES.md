@@ -384,9 +384,9 @@ Manual snapshots require the CLI command above; there is no `/snapshot` slash co
 
 ### Auto-snapshots
 
-**What it does.** Three configurable triggers fire snapshots automatically at orchestrator boundaries.
+**What it does.** Configurable triggers fire snapshots automatically at orchestrator boundaries.
 
-**How to use.** All three default to off:
+**How to use.** They all default to off:
 
 ```yaml
 snapshots:
@@ -431,7 +431,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### External agent handoff packs (advanced)
 
-**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and diptych never spawns an external agent for you. Four built-in targets:
+**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and diptych never spawns an external agent for you. Built-in targets:
 
 | Target | Consumed by |
 |---|---|
@@ -478,7 +478,7 @@ diptych handoff jira --allow-custom-renderer
 
 **What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
 
-MCP also exposes five constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
+MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
 
 **Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
 
@@ -622,7 +622,7 @@ diptych continue 2
 
 **What it does.** Session data is stored as append-only JSONL entries forming a tree: `{id, parentId, type, timestamp, ...payload}`. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — nothing is deleted. Sessions survive crashes, branching is free, and the full audit trail is preserved.
 
-**Entry types.** Seven registered entry types: `session-start`, `plan-step`, `agent-invocation`, `recovery-decision`, `file-state`, `cost-checkpoint`, `branch-summary`.
+**Entry types.** Registered entry types: `session-start`, `plan-step`, `agent-invocation`, `recovery-decision`, `file-state`, `cost-checkpoint`, `branch-summary`.
 
 **How to use.** Automatic. The tree model underlies all session persistence. Implementation: `src/core/sessions/tree/`.
 
@@ -740,7 +740,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Lifecycle hook events
 
-**What it does.** Eleven lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
+**What it does.** Lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
 
 **How to use.** Declare in `.diptych/config.yaml` under `hooks:`. Full list:
 
@@ -774,7 +774,7 @@ hooks:
 
 ### Built-in hooks
 
-Two built-ins ship, both off by default:
+Built-ins ship, all off by default:
 
 - `prettier-on-change` — runs `npx prettier --write ${event.file}` on `post_task`.
 - `block-secrets` — scans `event.file` on `pre_commit` for AWS / GitHub PAT / OpenAI / Anthropic key patterns when optional commit hooks are in use.

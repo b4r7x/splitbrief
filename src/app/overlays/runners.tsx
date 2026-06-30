@@ -4,10 +4,10 @@ import type { Config } from '../../core/schemas/config.js';
 import { useTheme } from '../../components/theme.js';
 import { TextInputOverlay } from '../../components/overlays/text-input-overlay.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { usePickerCatalog } from './use-picker-catalog.js';
-import { usePickerActions } from './use-picker-actions.js';
-import { viewReducer, initialViewState } from './view-state.js';
-import { PickerView } from './picker-view.js';
+import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
+import { usePickerActions } from '../../features/runners/use-picker-actions.js';
+import { viewReducer, initialViewState } from '../../features/runners/view-state.js';
+import { PickerView } from '../../features/runners/picker-view.js';
 
 interface ToolModelPickerProps {
   role: 'planner' | 'implementer';

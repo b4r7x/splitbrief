@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { SOFT_SEP, ARROW_SEP } from '../../components/separators.js';
@@ -6,238 +5,32 @@ import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
-import type { Summary } from '../../core/schemas/summary.js';
-import type { Session } from '../../core/schemas/session.js';
-import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { ScrollableDocument } from '../../components/scrollable-document.js';
-import { SummaryProgress } from './components/progress.js';
-import { HeroSavings } from './components/hero-savings.js';
-import { buildSummaryDetailRows } from './detail-rows.js';
-import { getSummaryDetailViewportHeight } from './detail-layout.js';
+import { SummaryProgress } from '../../features/summary/components/progress.js';
+import { HeroSavings } from '../../features/summary/components/hero-savings.js';
+import { SummaryCompactRunDetails } from '../../features/summary/components/compact-run-details.js';
+import { SummaryCompactLowerSections } from '../../features/summary/components/compact-lower-sections.js';
+import { buildSummaryDetailRows } from '../../features/summary/detail-rows.js';
+import { getSummaryDetailViewportHeight } from '../../features/summary/detail-layout.js';
+import {
+  formatImplementerSummary,
+  formatRouteSummary,
+  getSummaryHeading,
+} from '../../features/summary/presentation.js';
+import { useSummaryEvidenceLedger } from '../../features/summary/hooks/use-summary-evidence-ledger.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { configStore } from '../../stores/project/config.js';
-import { readEvidenceLedger } from '../../core/evidence/ledger.js';
-import { uniqueSorted } from '../../utils/collections.js';
-import { assertNever } from '../../utils/type-guards.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
-}
-
-function formatImplementerSummary(summary: Summary): string | null {
-  if (!summary.implementerTool) return null;
-
-  const taskImplementers = summary.taskBreakdown
-    ?.filter(
-      (task) =>
-        task.tool !== undefined ||
-        task.model !== undefined ||
-        task.implementerProfile !== undefined,
-    )
-    .map(
-      (task) => `${task.implementerProfile ?? ''}\u0000${task.tool ?? ''}\u0000${task.model ?? ''}`,
-    );
-
-  const uniqueTaskImplementers = new Set(taskImplementers ?? []);
-  if (uniqueTaskImplementers.size > 1) {
-    const profiles = uniqueSorted(
-      summary.taskBreakdown
-        ?.map((task) => task.implementerProfile)
-        .filter((profile): profile is string => profile !== undefined) ?? [],
-    );
-    return profiles.length > 0
-      ? stripTerminalControls(`mixed profiles (${profiles.join(', ')})`)
-      : 'mixed implementers';
-  }
-
-  return stripTerminalControls(formatToolModel(summary.implementerTool, summary.implementerModel));
-}
-
-interface SummaryHeading {
-  word: string;
-  color: string;
-  marker: boolean;
-}
-
-function getSummaryHeading(
-  status: Session['status'],
-  theme: ReturnType<typeof useTheme>,
-): SummaryHeading {
-  switch (status) {
-    case 'complete':
-      return { word: 'complete', color: theme.success, marker: true };
-    case 'failed':
-      return { word: 'failed', color: theme.error, marker: false };
-    case 'interrupted':
-      return { word: 'interrupted', color: theme.warning, marker: false };
-    default:
-      return assertNever(status);
-  }
-}
-
-function formatRouteSummary(summary: Summary, implementerSummary: string | null): string | null {
-  const plannerSummary = summary.plannerTool
-    ? stripTerminalControls(formatToolModel(summary.plannerTool, summary.plannerModel))
-    : null;
-  if (!plannerSummary && !implementerSummary) return null;
-  if (!plannerSummary) return implementerSummary;
-  if (!implementerSummary) return plannerSummary;
-  return `${plannerSummary}${ARROW_SEP}${implementerSummary}`;
-}
-
-function compactCount(count: number, noun: string): string {
-  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
-}
-
-function compactPacketPath(path: string): string {
-  const clean = stripTerminalControls(path);
-  const slash = clean.lastIndexOf('/');
-  return slash === -1 ? clean : clean.slice(slash + 1);
-}
-
-function SummaryCompactRunDetails({
-  summary,
-  routeSummary,
-}: {
-  summary: Summary;
-  routeSummary: string | null;
-}) {
-  const theme = useTheme();
-  const runParts = [
-    summary.mode ?? null,
-    formatTime(summary.totalTime),
-    summary.briefQuality
-      ? formatScoreSummary(summary.briefQuality.score, summary.briefQuality, 'quality')
-      : null,
-    summary.driftSummary
-      ? formatScoreSummary(summary.driftSummary.score, summary.driftSummary)
-      : null,
-  ].filter((part): part is string => part !== null);
-
-  return (
-    <Box flexDirection="column" marginTop={1} overflow="hidden">
-      <Text wrap="truncate-end">Feature: {stripTerminalControls(summary.feature)}</Text>
-      <Text color={theme.textDim} wrap="truncate-end">
-        {routeSummary ? `${routeSummary}${SOFT_SEP}` : ''}
-        {runParts.join(SOFT_SEP)}
-      </Text>
-    </Box>
-  );
-}
-
-function SummaryCompactLowerSections({
-  summary,
-  ledger,
-}: {
-  summary: Summary;
-  ledger: EvidenceLedger | null;
-}) {
-  const theme = useTheme();
-  const checkpointSummary = summary.checkpointSummary;
-  const reviewPacket = summary.reviewPacket;
-  const evidence = summary.evidenceSummary;
-  if (!evidence && !checkpointSummary && !reviewPacket) return null;
-
-  return (
-    <Box flexDirection="column" marginTop={1} overflow="hidden">
-      {evidence && (
-        <Text color={theme.textDim} wrap="truncate-end">
-          <Text bold color={theme.text}>
-            Evidence:
-          </Text>{' '}
-          {compactPacketPath(evidence.path)}
-          {SOFT_SEP}
-          {evidence.tasksWithValidationEvidence}/{evidence.totalTasks} validated
-          {ledger?.finalReview ? `${SOFT_SEP}final review: ${ledger.finalReview.status}` : ''}
-        </Text>
-      )}
-      {checkpointSummary && (
-        <Text color={theme.textDim} wrap="truncate-end">
-          <Text bold color={theme.text}>
-            Checkpoints:
-          </Text>{' '}
-          {compactCount(checkpointSummary.count, 'ckpt')}
-          {SOFT_SEP}latest: {stripTerminalControls(checkpointSummary.latestId ?? 'n/a')}
-          {checkpointSummary.preFinalReviewId
-            ? `${SOFT_SEP}pre: ${stripTerminalControls(checkpointSummary.preFinalReviewId)}`
-            : ''}
-        </Text>
-      )}
-      {reviewPacket && (
-        <>
-          <Text color={theme.textDim} wrap="truncate-end">
-            <Text bold color={theme.text}>
-              Review packet:
-            </Text>
-          </Text>
-          <Text color={theme.textDim} wrap="truncate-end">
-            md: {truncateWithEllipsis(compactPacketPath(reviewPacket.markdownPath), 34)}
-          </Text>
-          <Text color={theme.textDim} wrap="truncate-end">
-            json: {truncateWithEllipsis(compactPacketPath(reviewPacket.jsonPath), 32)}
-          </Text>
-          <Text
-            color={reviewPacket.finalReviewStatus === 'written' ? theme.textDim : theme.warning}
-            wrap="truncate-end"
-          >
-            final review: {reviewPacket.finalReviewStatus}
-            {SOFT_SEP}evidence: {reviewPacket.evidenceValidatedTasks}/
-            {reviewPacket.evidenceTotalTasks}
-            {SOFT_SEP}missing: {reviewPacket.missingArtifactCount}
-          </Text>
-        </>
-      )}
-    </Box>
-  );
-}
-
-interface SummaryEvidenceLedgerState {
-  key: string;
-  ledger: EvidenceLedger | null;
-}
-
-function useSummaryEvidenceLedger(
-  summary: Summary | null,
-  sessionId: string | undefined,
-): EvidenceLedger | null {
-  const projectDir = configStore.use((s) => s.projectDir);
-  const evidencePath = summary?.evidenceSummary?.path;
-  const ledgerKey =
-    projectDir && sessionId && evidencePath
-      ? `${projectDir}\u0000${sessionId}\u0000${evidencePath}`
-      : '';
-  const [state, setState] = useState<SummaryEvidenceLedgerState>({ key: '', ledger: null });
-
-  useEffect(() => {
-    if (!projectDir || !sessionId || !evidencePath) {
-      setState((current) =>
-        current.key === ledgerKey && current.ledger === null
-          ? current
-          : { key: ledgerKey, ledger: null },
-      );
-      return;
-    }
-
-    let ledger: EvidenceLedger | null = null;
-    try {
-      ledger = readEvidenceLedger(projectDir, sessionId);
-    } catch {
-      ledger = null;
-    }
-    setState({ key: ledgerKey, ledger });
-  }, [projectDir, sessionId, evidencePath, ledgerKey]);
-
-  return state.key === ledgerKey ? state.ledger : null;
 }
 
 export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps) {

@@ -234,7 +234,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 ## Design Decisions
 
 **Why not Zustand?**
-Same core pattern, zero dependencies. We don't use middleware, devtools, persist, or partial merge — so the 45 lines we have is all we need.
+Same core pattern, zero dependencies. We don't use middleware, devtools, persist, or partial merge — so the few lines we have is all we need.
 
 **Why not React Context?**
 Context re-renders all consumers when any part of the context value changes. External stores with selectors re-render only when the selected slice changes. Also eliminates provider nesting.
